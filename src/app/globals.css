@@ -100,3 +100,4 @@ body {
 .pay-btn { width: 100%; padding: 9px; background: var(--acc); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; }
 .pay-btn:hover { background: #c96a45; }
 .j-info { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 7px; padding: 8px 11px; font-size: 11px; color: #92400e; margin-bottom: 11px; }
+.crm-sec { background: #fff; border: .5px solid var(--bd); border-radius: 12px; padding: 16px; margin-bottom: 14px; }

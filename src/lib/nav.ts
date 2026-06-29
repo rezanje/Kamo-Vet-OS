@@ -97,7 +97,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Verifikasi wajah", icon: "ti-scan-eye", bg: "#f3f4f6", fg: "#9ca3af", p2: true },
   ],
   crm: [
-    { label: "Data pelanggan", icon: "ti-users-group", ...G },
+    { label: "Data pelanggan", icon: "ti-users-group", ...G, href: "/crm/pelanggan" },
     { label: "Promo", icon: "ti-speakerphone", ...A },
     { label: "Kategori pelanggan", icon: "ti-crown", ...P },
     { label: "Retensi & WA", icon: "ti-brand-whatsapp", ...G },
