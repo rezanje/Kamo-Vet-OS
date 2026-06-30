@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VetOS — UI Prototype</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:13px;background:#f0ede8;height:100vh;display:flex;overflow:hidden}
+:root{--acc:#d97757;--sb:#16213e;--bg:#f0ede8;--sf:#fff;--sf1:#f7f5f1;--bd:rgba(0,0,0,.1);--tx:#141413;--tm:#6b6b69;--td:#9ca3af;--gr:#16a34a;--bl:#2563eb;--rd:#dc2626;--am:#d97706;--pu:#7c3aed}
+.sb{width:185px;background:var(--sb);display:flex;flex-direction:column;height:100vh;flex-shrink:0}
+.sb-logo{padding:14px 14px 12px;border-bottom:.5px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:10px}
+.sb-mark{width:32px;height:32px;background:var(--acc);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sb-mark i{color:#fff;font-size:17px}
+.sb-brand div:first-child{color:#fff;font-size:13px;font-weight:500}
+.sb-brand div:last-child{color:rgba(255,255,255,.38);font-size:10px}
+.sb-branch{padding:8px 11px;border-bottom:.5px solid rgba(255,255,255,.07)}
+.sb-branch select{width:100%;background:rgba(255,255,255,.08);border:none;color:#fff;border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;outline:none}
+.sb-nav{flex:1;padding:5px 0;overflow-y:auto}
+.sbi{width:100%;display:flex;align-items:center;gap:9px;padding:8px 13px;border:none;background:none;cursor:pointer;text-align:left;border-left:2.5px solid transparent;transition:background .1s}
+.sbi:hover{background:rgba(255,255,255,.05)}
+.sbi.on{background:rgba(217,119,87,.18);border-left-color:var(--acc)}
+.sbi i{font-size:16px;color:rgba(255,255,255,.55)}
+.sbi.on i{color:var(--acc)}
+.sbi span{font-size:11.5px;color:rgba(255,255,255,.62)}
+.sbi.on span{color:#fff;font-weight:500}
+.sb-user{padding:10px 13px;border-top:.5px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:8px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--acc);display:flex;align-items:center;justify-content:center;font-size:10.5px;color:#fff;font-weight:500;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:42px;background:#fff;border-bottom:.5px solid var(--bd);padding:0 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.bc{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--tm)}
+.ct{flex:1;padding:16px;overflow-y:auto}
+.tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;margin-top:13px}
+.tile{background:#fff;border:.5px solid var(--bd);border-radius:10px;padding:13px 9px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;position:relative;transition:border-color .1s}
+.tile:hover{border-color:var(--acc)}
+.ticon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+.ticon i{font-size:19px}
+.tlabel{font-size:10.5px;color:var(--tx);text-align:center;line-height:1.35}
+.ph2{position:absolute;top:5px;right:5px;background:#6b7280;color:#fff;font-size:8px;font-weight:600;padding:2px 5px;border-radius:3px;letter-spacing:.03em}
+.nbdg{position:absolute;top:5px;left:5px;background:var(--acc);color:#fff;font-size:8px;font-weight:600;padding:2px 5px;border-radius:3px}
+.kgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.kcard{background:#fff;border:.5px solid var(--bd);border-radius:10px;padding:12px}
+.klab{font-size:10.5px;color:var(--tm);margin-bottom:3px}
+.kval{font-size:17px;font-weight:500;color:var(--tx)}
+.kdelta{font-size:10px;margin-top:2px}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{text-align:left;padding:6px 10px;color:var(--tm);border-bottom:.5px solid var(--bd);font-weight:400;font-size:10.5px}
+.tbl td{padding:7px 10px;border-bottom:.5px solid var(--bd)}
+.tbl tr:last-child td{border-bottom:none}
+.bge{display:inline-flex;padding:2px 8px;border-radius:20px;font-size:9.5px;font-weight:500}
+.g{background:#e8f5ee;color:#15803d}.o{background:#fdf0ea;color:#b55a35}.b{background:#eff6ff;color:#1d4ed8}.r{background:#fef2f2;color:#b91c1c}.x{background:#f3f4f6;color:#6b7280}
+.bars{display:flex;align-items:flex-end;gap:3px;height:72px}
+.bar{flex:1;border-radius:2px 2px 0 0}
+.p2ban{background:#fffbeb;border:.5px solid #fcd34d;border-radius:8px;padding:9px 12px;font-size:11px;color:#92400e;margin-bottom:12px;display:flex;align-items:center;gap:9px}
+.fi{width:100%;padding:6px 9px;border:.5px solid var(--bd);border-radius:6px;font-size:12px;color:var(--tx);background:#fff;outline:none}
+.fi:focus{border-color:var(--acc)}
+.flab{font-size:10.5px;color:var(--tm);margin-bottom:3px;display:block}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:8px}
+.fg{margin-bottom:8px}
+.btn-acc{padding:7px 13px;background:var(--acc);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500}
+.btn-def{padding:7px 13px;border:.5px solid var(--bd);border-radius:6px;background:#fff;cursor:pointer;font-size:12px;color:var(--tm)}
+.back-btn{background:none;border:none;cursor:pointer;color:var(--tm);font-size:12px;display:flex;align-items:center;gap:4px}
+.pg-hd{font-size:14px;font-weight:500;color:var(--tx);margin-bottom:2px}
+.pg-sub{font-size:11px;color:var(--tm);margin-bottom:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:#fff;border:.5px solid var(--bd);border-radius:10px;padding:13px}
+.card-hd{font-size:12px;font-weight:500;color:var(--tx);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.pos-wrap{display:grid;grid-template-columns:1fr 215px;gap:12px}
+.pos-pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:7px}
+.pos-p{background:#fff;border:.5px solid var(--bd);border-radius:8px;padding:9px;cursor:pointer;text-align:center}
+.pos-p:hover{border-color:var(--acc)}
+.pos-pn{font-size:10px;font-weight:500;color:var(--tx);margin-top:5px;line-height:1.3}
+.pos-pp{font-size:9.5px;color:var(--tm);margin-top:2px}
+.cart{background:#fff;border:.5px solid var(--bd);border-radius:10px;padding:11px;display:flex;flex-direction:column;gap:7px}
+.ci{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--bd)}
+.pay-btn{width:100%;padding:9px;background:var(--acc);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500}
+.pay-btn:hover{background:#c96a45}
+.j-info{background:#fffbeb;border:.5px solid #fcd34d;border-radius:7px;padding:8px 11px;font-size:11px;color:#92400e;margin-bottom:11px}
+</style>
+</head>
+<body>
+<div class="sb">
+  <div class="sb-logo">
+    <div class="sb-mark"><i class="ti ti-paw"></i></div>
+    <div class="sb-brand"><div>VetOS</div><div>PT Kamo Group</div></div>
+  </div>
+  <div class="sb-branch">
+    <select id="brSel"><option>VET CMGG</option><option>VET CMS</option><option>VET CIAW</option><option>VET TKI</option><option>BTKM</option><option>LOJI</option><option>MUAR</option><option>Semua Cabang</option></select>
+  </div>
+  <div class="sb-nav" id="snav"></div>
+  <div class="sb-user">
+    <div class="av">RA</div>
+    <div><div style="color:#fff;font-size:11px;font-weight:500">Reza A.</div><div style="color:rgba(255,255,255,.38);font-size:9.5px">Admin Pusat</div></div>
+  </div>
+</div>
+<div class="main">
+  <div class="topbar">
+    <div class="bc" id="bc">
+      <i class="ti ti-home" style="font-size:14px"></i><span>/</span>
+      <span id="bcm" style="color:var(--tx);font-weight:500">Dashboard</span>
+      <span id="bcs" style="display:none"><span>/</span><span id="bcsl" style="color:var(--acc)"></span></span>
+    </div>
+    <span style="font-size:10.5px;color:var(--td)">28 Jun 2026 · 14:37 WIB</span>
+  </div>
+  <div class="ct" id="ct"></div>
+</div>
+
+<script>
+var A='#d97757',cur='dashboard',scr=null;
+var ML={dashboard:'Dashboard',klinik:'Klinik',pos:'POS & Inventori',pembelian:'Pembelian',penjualan:'Penjualan',keuangan:'Keuangan',hris:'HRIS',crm:'CRM',pengaturan:'Pengaturan'};
+var MV=[{id:'dashboard',lb:'Dashboard',ic:'ti-layout-dashboard'},{id:'klinik',lb:'Klinik',ic:'ti-stethoscope'},{id:'pos',lb:'POS & Inventori',ic:'ti-shopping-cart'},{id:'pembelian',lb:'Pembelian',ic:'ti-truck-delivery'},{id:'penjualan',lb:'Penjualan',ic:'ti-receipt-2'},{id:'keuangan',lb:'Keuangan',ic:'ti-report-money'},{id:'hris',lb:'HRIS',ic:'ti-users'},{id:'crm',lb:'CRM',ic:'ti-heart-handshake'},{id:'pengaturan',lb:'Pengaturan',ic:'ti-settings'}];
+var TL={
+klinik:[{lb:'Registrasi pasien',ic:'ti-user-plus',bg:'#e8f5ee',fg:'#16a34a',sc:'registrasi'},{lb:'Rekam medis',ic:'ti-notes-medical',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Rawat inap',ic:'ti-bed',bg:'#e8f5ee',fg:'#16a34a',nw:1},{lb:'Jadwal dokter',ic:'ti-calendar-event',bg:'#eff6ff',fg:'#2563eb'},{lb:'e-Resep',ic:'ti-prescription',bg:'#eff6ff',fg:'#2563eb'},{lb:'Booking online',ic:'ti-calendar-plus',bg:'#f3f0ff',fg:'#7c3aed'},{lb:'Antrian digital',ic:'ti-list-numbers',bg:'#eff6ff',fg:'#2563eb'}],
+pos:[{lb:'Transaksi POS',ic:'ti-cash-register',bg:'#e8f5ee',fg:'#16a34a',sc:'transaksi'},{lb:'Stok per gudang',ic:'ti-stack',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Transfer stok',ic:'ti-arrows-transfer-up',bg:'#eff6ff',fg:'#2563eb'},{lb:'Monitor expired',ic:'ti-calendar-x',bg:'#fef2f2',fg:'#dc2626'},{lb:'Reorder alert',ic:'ti-alert-triangle',bg:'#fffbeb',fg:'#d97706'},{lb:'Online / B2C',ic:'ti-world',bg:'#f3f0ff',fg:'#7c3aed',nw:1},{lb:'Stock opname',ic:'ti-clipboard-check',bg:'#eff6ff',fg:'#2563eb'}],
+pembelian:[{lb:'Pesanan pembelian',ic:'ti-file-invoice',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Penerimaan barang',ic:'ti-package-import',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Faktur pembelian',ic:'ti-receipt',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Pembayaran pembelian',ic:'ti-cash',bg:'#eff6ff',fg:'#2563eb'},{lb:'Retur pembelian',ic:'ti-package-export',bg:'#fef2f2',fg:'#dc2626'},{lb:'Master pemasok',ic:'ti-building-store',bg:'#f3f0ff',fg:'#7c3aed'},{lb:'Kat. pemasok',ic:'ti-tag',bg:'#eff6ff',fg:'#2563eb'},{lb:'Perintah pembayaran',ic:'ti-send',bg:'#eff6ff',fg:'#2563eb'}],
+penjualan:[{lb:'Penawaran penjualan',ic:'ti-file-text',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Pesanan penjualan',ic:'ti-shopping-bag',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Pengiriman pesanan',ic:'ti-truck',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Uang muka penjualan',ic:'ti-coin',bg:'#eff6ff',fg:'#2563eb'},{lb:'Faktur penjualan',ic:'ti-receipt-2',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Penerimaan penjualan',ic:'ti-cash-banknote',bg:'#eff6ff',fg:'#2563eb'},{lb:'Retur penjualan',ic:'ti-arrow-back-up',bg:'#fef2f2',fg:'#dc2626'},{lb:'Komisi penjual',ic:'ti-percentage',bg:'#f3f0ff',fg:'#7c3aed'},{lb:'Target penjualan',ic:'ti-target',bg:'#fffbeb',fg:'#d97706'}],
+keuangan:[{lb:'Jurnal umum',ic:'ti-notebook',bg:'#e8f5ee',fg:'#16a34a',sc:'jurnal'},{lb:'Buku besar',ic:'ti-book',bg:'#eff6ff',fg:'#2563eb'},{lb:'Lap. laba rugi',ic:'ti-chart-bar',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Neraca',ic:'ti-scale',bg:'#eff6ff',fg:'#2563eb'},{lb:'Arus kas',ic:'ti-arrows-exchange',bg:'#f3f0ff',fg:'#7c3aed'},{lb:'AR Aging',ic:'ti-clock-hour-4',bg:'#fffbeb',fg:'#d97706'},{lb:'AP Aging',ic:'ti-clock-dollar',bg:'#fef2f2',fg:'#dc2626'},{lb:'Aset tetap',ic:'ti-building',bg:'#f3f0ff',fg:'#7c3aed'},{lb:'Rekonsiliasi bank',ic:'ti-building-bank',bg:'#eff6ff',fg:'#2563eb'},{lb:'Lap. HPP',ic:'ti-report',bg:'#e8f5ee',fg:'#16a34a'}],
+hris:[{lb:'Data karyawan',ic:'ti-user-circle',bg:'#e8f5ee',fg:'#16a34a',sc:'karyawan'},{lb:'Absensi & shift',ic:'ti-map-pin-check',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Lembur & cuti',ic:'ti-calendar-time',bg:'#eff6ff',fg:'#2563eb'},{lb:'Penggajian',ic:'ti-moneybag',bg:'#e8f5ee',fg:'#16a34a'},{lb:'KPI karyawan',ic:'ti-chart-dots',bg:'#f3f0ff',fg:'#7c3aed'},{lb:'Verifikasi wajah',ic:'ti-scan-eye',bg:'#f3f4f6',fg:'#9ca3af',p2:1}],
+crm:[{lb:'Data pelanggan',ic:'ti-users-group',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Promo',ic:'ti-speakerphone',bg:'#fffbeb',fg:'#d97706'},{lb:'Kategori pelanggan',ic:'ti-crown',bg:'#f3f0ff',fg:'#7c3aed'},{lb:'Retensi & WA',ic:'ti-brand-whatsapp',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Owner dashboard',ic:'ti-dashboard',bg:'#eff6ff',fg:'#2563eb'}],
+pengaturan:[{lb:'Cabang & gudang',ic:'ti-building-store',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Manajemen pengguna',ic:'ti-shield',bg:'#eff6ff',fg:'#2563eb'},{lb:'Chart of Accounts',ic:'ti-list-details',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Konfigurasi loyalty',ic:'ti-star',bg:'#fffbeb',fg:'#d97706'},{lb:'WA Engine (7 trigger)',ic:'ti-brand-whatsapp',bg:'#e8f5ee',fg:'#16a34a'},{lb:'Komponen gaji',ic:'ti-coin',bg:'#eff6ff',fg:'#2563eb'}]
+};
+
+function rp(n){return'Rp '+Math.round(n).toLocaleString('id-ID')}
+
+function nav(m,s){cur=m;scr=s||null;buildSB();buildBC();render();}
+
+function buildSB(){
+var el=document.getElementById('snav');el.innerHTML='';
+MV.forEach(function(m){var b=document.createElement('button');b.className='sbi'+(cur===m.id?' on':'');b.innerHTML='<i class="ti '+m.ic+'"></i><span>'+m.lb+'</span>';b.onclick=function(){nav(m.id);};el.appendChild(b);});}
+
+function buildBC(){
+document.getElementById('bcm').textContent=ML[cur]||cur;
+var s=document.getElementById('bcs');
+if(scr){s.style.display='';document.getElementById('bcsl').textContent=scr;}else{s.style.display='none';}}
+
+function render(){
+var el=document.getElementById('ct');
+if(cur==='dashboard')el.innerHTML=dash();
+else if(cur==='hris'&&scr==='karyawan')el.innerHTML=hrisPage();
+else if(cur==='keuangan'&&scr==='jurnal')el.innerHTML=jurnalPage();
+else if(cur==='klinik'&&scr==='registrasi')el.innerHTML=regPage();
+else if(cur==='pos'&&scr==='transaksi')el.innerHTML=posPage();
+else el.innerHTML=modHome(cur);}
+
+function modHome(m){
+var tiles=TL[m]||[];
+return'<div class="pg-hd">'+ML[m]+'</div><div class="pg-sub">Pilih fitur yang ingin diakses</div>'+
+'<div class="tile-grid">'+tiles.map(function(t){
+var oc=t.p2?'onclick="alert(\'Verifikasi Wajah tersedia di Fase 2 — geolokasi aktif di v1\')"':t.sc?'onclick="nav(\''+m+'\',\''+t.sc+'\');"':'onclick="alert(\''+t.lb+' — halaman ini dalam pengembangan\')"';
+return'<div class="tile" '+oc+' style="'+(t.p2?'opacity:.65':'')+'">'+(t.p2?'<span class="ph2">Fase 2</span>':'')+(t.nw?'<span class="nbdg">Baru</span>':'')+'<div class="ticon" style="background:'+t.bg+'"><i class="ti '+t.ic+'" style="color:'+t.fg+'"></i></div><div class="tlabel">'+t.lb+'</div></div>';}).join('')+'</div>';}
+
+function dash(){
+var bv=[32,55,40,62,48,75,60,43,70,52,78,42];
+var bh=bv.map(function(v,i){return'<div class="bar" style="height:'+v+'%;background:'+(i===bv.length-1?A:'#c0dd97')+'" title="'+rp(v*18500)+'"></div>';}).join('');
+return'<div class="pg-hd">Dashboard</div><div class="pg-sub">PT Kamo Group · Semua Cabang · Jun 2026</div>'+
+'<div class="kgrid">'+
+'<div class="kcard"><div class="klab">Pendapatan bulan ini</div><div class="kval">Rp 1,47M</div><div class="kdelta" style="color:#16a34a"><i class="ti ti-trending-up" style="font-size:11px"></i> +4% vs bln lalu</div></div>'+
+'<div class="kcard"><div class="klab">Laba bersih (YTD)</div><div class="kval">Rp 847jt</div><div class="kdelta" style="color:#16a34a"><i class="ti ti-trending-up" style="font-size:11px"></i> +3%</div></div>'+
+'<div class="kcard"><div class="klab">Pembelian</div><div class="kval">Rp 1,05M</div><div class="kdelta" style="color:#dc2626"><i class="ti ti-trending-up" style="font-size:11px"></i> +22%</div></div>'+
+'<div class="kcard"><div class="klab">Pasien hari ini</div><div class="kval">47</div><div class="kdelta" style="color:var(--tm)">12 cabang aktif</div></div>'+
+'</div>'+
+'<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:11px;margin-bottom:13px">'+
+'<div class="card"><div class="card-hd"><i class="ti ti-chart-bar" style="color:var(--acc)"></i>Tren penjualan (12 minggu)</div><div class="bars">'+bh+'</div><div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--td);margin-top:4px"><span>Apr</span><span>Mei</span><span>Jun</span></div></div>'+
+'<div class="card"><div class="card-hd"><i class="ti ti-calendar-event" style="color:#2563eb"></i>Kegiatan mendatang</div>'+
+'<div style="font-size:10.5px;color:var(--tm);margin-bottom:6px">Hari ini · 27 Jun 2026</div>'+
+['SI.01752 · Piutang JT — Citra/Aril','SI.01756 · Piutang JT — Tony/Jono','SI.01758 · Piutang JT — Ayya','RI.00041 · Rawat Inap — Luna (VET CMGG)'].map(function(x){
+return'<div style="font-size:10.5px;padding:4px 0;border-bottom:.5px solid var(--bd);display:flex;gap:7px;align-items:center"><span style="width:5px;height:5px;border-radius:50%;background:#16a34a;flex-shrink:0;display:inline-block"></span>'+x+'</div>';}).join('')+'</div></div>'+
+'<div class="card"><div class="card-hd"><i class="ti ti-list" style="color:var(--tm)"></i>Transaksi terbaru</div>'+
+'<table class="tbl"><thead><tr><th>No. Faktur</th><th>Tipe</th><th>Pelanggan</th><th>Cabang</th><th>Jumlah</th><th>Status</th></tr></thead><tbody>'+
+[['SI.01760','POS','Dian Pratiwi','CMGG',185000,'g','Lunas'],['SI.01759','Klinik','Budi / Max','VET TKI',450000,'o','Belum lunas'],['RI.00041','Rawat Inap','Sari / Luna','VET CMGG',1200000,'b','Aktif'],['SI.01758','Grooming','Ayya / Momo','BTKM',120000,'g','Lunas'],['PI.00892','Pembelian','PT Medion','DC LOJI',3200000,'o','Belum bayar']].map(function(r){
+return'<tr><td style="font-family:monospace;font-size:10px">'+r[0]+'</td><td>'+r[1]+'</td><td>'+r[2]+'</td><td style="font-size:10.5px">'+r[3]+'</td><td>'+rp(r[4])+'</td><td><span class="bge '+r[5]+'">'+r[6]+'</span></td></tr>';}).join('')+'</tbody></table></div>';}
+
+function hrisPage(){
+return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:11px"><button class="back-btn" onclick="nav(\'hris\')"><i class="ti ti-arrow-left"></i> Kembali</button><span style="color:var(--td)">·</span><span style="font-size:13px;font-weight:500">Data Karyawan</span></div>'+
+'<div class="p2ban"><i class="ti ti-scan-eye" style="font-size:18px;color:var(--acc)"></i><div><div style="font-weight:500;color:#92400e;font-size:11.5px">Verifikasi Wajah — Fase 2</div><div style="font-size:10.5px;color:#b45309;margin-top:1px">Absensi v1 menggunakan geolokasi browser. Face verification aktif di fase berikutnya setelah v1 go-live.</div></div></div>'+
+'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="display:flex;gap:7px"><input class="fi" placeholder="Cari karyawan..." style="width:160px"><select class="fi" style="width:130px"><option>Semua cabang</option><option>VET CMGG</option><option>VET TKI</option></select></div><button class="btn-acc">+ Tambah karyawan</button></div>'+
+'<table class="tbl"><thead><tr><th>ID</th><th>Nama</th><th>Jabatan</th><th>Cabang</th><th>Status</th><th>BPJS</th><th></th></tr></thead><tbody>'+
+[['K-2025055023','Aceng Purnama A.','Admin Klinik','VET CMGG','Kontrak','✓','g'],['K-2024018901','Drh. Haidar Rafi A.','Dokter Hewan','Multi-cabang','Tetap','✓','g'],['K-2024032210','Drh. Handitya','Dokter Hewan','VET TKI','Tetap','✓','g'],['K-2025041105','Siti Ambar R.','Kasir','BTKM','Tetap','✓','g'],['K-2026001032','Bekti Sri U.','Groomer','VET GRLG','Kontrak','—','x']].map(function(r){
+return'<tr><td style="font-family:monospace;font-size:10px">'+r[0]+'</td><td style="font-weight:500">'+r[1]+'</td><td style="color:var(--tm)">'+r[2]+'</td><td>'+r[3]+'</td><td><span class="bge '+r[6]+'">'+r[4]+'</span></td><td style="text-align:center;color:'+(r[5]==='✓'?'#16a34a':'var(--td)')+'">'+r[5]+'</td><td><button class="back-btn">Detail</button></td></tr>';}).join('')+'</tbody></table>';}
+
+function jurnalPage(){
+return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:11px"><button class="back-btn" onclick="nav(\'keuangan\')"><i class="ti ti-arrow-left"></i> Kembali</button><span style="color:var(--td)">·</span><span style="font-size:13px;font-weight:500">Jurnal Umum</span></div>'+
+'<div class="j-info"><i class="ti ti-info-circle" style="font-size:13px;vertical-align:-1px;margin-right:6px"></i>Setiap transaksi VetOS auto-generate jurnal double-entry sesuai SAK Indonesia. Jurnal manual hanya untuk koreksi.</div>'+
+'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="display:flex;gap:6px;align-items:center"><input type="date" value="2026-06-01" class="fi" style="width:130px"><span style="color:var(--td)">—</span><input type="date" value="2026-06-27" class="fi" style="width:130px"></div><button class="btn-acc">+ Jurnal manual</button></div>'+
+'<table class="tbl"><thead><tr><th>Tgl</th><th>No. Jurnal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Jumlah</th><th>Tipe</th></tr></thead><tbody>'+
+[['27/6','JU-00892','Auto: Faktur penjualan SI.01760','110201 Piutang Dagang','400001 Pendapatan',185000,'b','Auto'],['27/6','JU-00891','Auto: HPP penjualan SI.01760','510101 BPP','110401 Persediaan',87000,'b','Auto'],['27/6','JU-00890','Auto: Payroll Mei — Drh. Haidar','520101 Bbn Gaji','210301 Hutang Gaji',5427411,'b','Auto'],['26/6','JU-00885','Auto: Penerimaan kas SI.01758','111101 Kas','110201 Piutang',120000,'b','Auto'],['25/6','JU-00878','Manual: Koreksi stok opname','650201 Selisih','110401 Persediaan',45000,'x','Manual'],['25/6','JU-00877','Auto: Penyusutan aset Jun 2026','530101 Bbn Penyusutan','170101 Ak. Penyusutan',1200000,'b','Auto']].map(function(r){
+return'<tr><td style="font-size:10px;color:var(--td)">'+r[0]+'</td><td style="font-family:monospace;font-size:9.5px">'+r[1]+'</td><td style="font-size:10.5px;max-width:110px">'+r[2]+'</td><td style="font-size:9.5px;color:#2563eb">'+r[3]+'</td><td style="font-size:9.5px;color:#dc2626">'+r[4]+'</td><td style="font-size:11px">'+rp(r[5])+'</td><td><span class="bge '+r[6]+'">'+r[7]+'</span></td></tr>';}).join('')+'</tbody></table>';}
+
+function regPage(){
+return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:11px"><button class="back-btn" onclick="nav(\'klinik\')"><i class="ti ti-arrow-left"></i> Kembali</button><span style="color:var(--td)">·</span><span style="font-size:13px;font-weight:500">Registrasi Pasien Baru</span></div>'+
+'<div class="grid2">'+
+'<div class="card"><div class="card-hd"><i class="ti ti-user" style="color:var(--acc)"></i> Pemilik hewan</div>'+
+'<div class="fg"><label class="flab">Nomor HP <span style="color:#dc2626">*</span></label><div style="display:flex;gap:5px"><input class="fi" placeholder="081234567890" style="flex:1"><button class="btn-acc" style="padding:6px 10px;font-size:11px">Cari</button></div></div>'+
+'<div class="frow"><div><label class="flab">Nama lengkap <span style="color:#dc2626">*</span></label><input class="fi" placeholder="Dian Pratiwi"></div>'+
+'<div><label class="flab" title="Untuk WA trigger #6 ulang tahun pemilik">Tgl lahir <span style="color:#dc2626">*</span> <span style="color:var(--acc)" title="Wajib — untuk WA birthday trigger">★WA</span></label><input class="fi" type="date"></div></div>'+
+'<div class="fg"><label class="flab">Alamat</label><input class="fi" placeholder="Jl. Contoh No. 1, Bogor"></div>'+
+'<div><label class="flab">WhatsApp (untuk notifikasi otomatis)</label><input class="fi" placeholder="Sama dengan HP"></div></div>'+
+'<div class="card"><div class="card-hd"><i class="ti ti-paw" style="color:#16a34a"></i> Data hewan peliharaan</div>'+
+'<div class="frow"><div><label class="flab">Nama hewan <span style="color:#dc2626">*</span></label><input class="fi" placeholder="Max"></div>'+
+'<div><label class="flab">Spesies <span style="color:#dc2626">*</span></label><select class="fi"><option>Anjing</option><option>Kucing</option><option>Kelinci</option><option>Burung</option><option>Lainnya</option></select></div></div>'+
+'<div class="frow"><div><label class="flab">Ras</label><input class="fi" placeholder="Golden Retriever"></div>'+
+'<div><label class="flab" title="Untuk WA trigger #7 ulang tahun hewan">Tgl lahir <span style="color:#dc2626">*</span> <span style="color:var(--acc)">★WA</span></label><input class="fi" type="date"></div></div>'+
+'<div class="frow"><div><label class="flab">Jenis kelamin</label><select class="fi"><option>Jantan</option><option>Betina</option></select></div>'+
+'<div><label class="flab">Berat badan (kg)</label><input class="fi" type="number" placeholder="5.2"></div></div>'+
+'<div><label class="flab">Tipe kunjungan</label><select class="fi"><option>Konsultasi</option><option>Vaksinasi</option><option>Grooming</option><option>Rawat Inap</option><option>Operasi / Bedah</option></select></div></div></div>'+
+'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn-def" onclick="nav(\'klinik\')">Batal</button><button class="btn-acc" onclick="alert(\'Pasien berhasil didaftarkan!\\nNomor antrian: A-047\')">Daftarkan pasien</button></div>';}
+
+function posPage(){
+var prods=[['Royal Canin Mini 4kg',285000],['Vetflox 100ml',45000],['Pasir Toffu 7L',95000],['Whiskas Pouch',8500],['Grooming Shampoo',75000],['Collar Kucing S',35000],['Pedigree Adult 3kg',120000],['Ivermectin 10ml',28000]];
+var cart=[['Royal Canin Mini 4kg',2,285000],['Grooming Shampoo',1,75000]];
+var sub=cart.reduce(function(a,i){return a+i[1]*i[2];},0);
+return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><button class="back-btn" onclick="nav(\'pos\')"><i class="ti ti-arrow-left"></i> Kembali</button><span style="color:var(--td)">·</span><span style="font-size:13px;font-weight:500">Transaksi POS — VET CMGG</span></div>'+
+'<div style="margin-bottom:9px;display:flex;gap:7px"><input class="fi" placeholder="Cari produk atau scan barcode..." style="flex:1"><select class="fi" style="width:120px"><option>Semua</option><option>Makanan</option><option>Obat</option><option>Aksesoris</option><option>Grooming</option></select></div>'+
+'<div class="pos-wrap">'+
+'<div><div class="pos-pgrid">'+prods.map(function(p){return'<div class="pos-p"><i class="ti ti-package" style="font-size:20px;color:var(--td)"></i><div class="pos-pn">'+p[0]+'</div><div class="pos-pp">'+rp(p[1])+'</div></div>';}).join('')+'</div></div>'+
+'<div class="cart">'+
+'<div style="font-size:12px;font-weight:500"><i class="ti ti-shopping-cart" style="font-size:14px;vertical-align:-1px;color:var(--acc);margin-right:5px"></i>Keranjang ('+cart.length+' item)</div>'+
+'<input class="fi" placeholder="Cari pelanggan / member...">'+
+cart.map(function(i){return'<div class="ci"><div style="flex:1;font-size:10.5px">'+i[0]+'</div><div style="font-size:10.5px;color:var(--tm)">'+i[1]+'×</div><div style="font-size:10.5px;min-width:65px;text-align:right">'+rp(i[1]*i[2])+'</div></div>';}).join('')+
+'<div style="border-top:.5px solid var(--bd);padding-top:7px">'+
+'<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--tm);margin-bottom:3px"><span>Subtotal</span><span>'+rp(sub)+'</span></div>'+
+'<div style="display:flex;justify-content:space-between;font-size:10.5px;color:#16a34a;margin-bottom:8px"><span>Poin member (150 poin)</span><span>-Rp 1.500</span></div>'+
+'<div style="display:flex;justify-content:space-between;margin-bottom:10px"><span style="font-size:12px;font-weight:500">Total</span><span style="font-size:17px;font-weight:500">'+rp(sub-1500)+'</span></div></div>'+
+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:7px">'+
+'<button class="btn-def" style="font-size:11px"><i class="ti ti-cash" style="font-size:12px;vertical-align:-1px"></i> Tunai</button>'+
+'<button style="padding:7px;border:2px solid var(--acc);border-radius:6px;background:#fdf0ea;cursor:pointer;font-size:11px;color:#b55a35;font-weight:500"><i class="ti ti-qrcode" style="font-size:12px;vertical-align:-1px"></i> QRIS</button>'+
+'</div>'+
+'<button class="pay-btn" onclick="alert(\'Transaksi berhasil!\\nStruk dikirim via WA ke pelanggan.\')">Bayar '+rp(sub-1500)+'</button></div></div>';}
+
+buildSB();buildBC();render();
+</script>
+</body>
+</html>

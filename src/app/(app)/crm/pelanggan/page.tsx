@@ -29,6 +29,58 @@ const CUSTOMERS: Customer[] = [
   { id: "C-005", name: "Nadia Tania",   initials: "NT", color: "#16a34a", membership: "Member",     tier: "bronze",   transaksi: 9,  total: 1560000,  anabul: 1, since: "18 Feb 2025", phone: "0821-9999-8888", email: "nadia.t@gmail.com",        points: 1560  },
 ];
 
+type Purchase = { tgl: string; item: string; qty: number; harga: number; cabang: string };
+type PoinHistory = { tgl: string; item: string; poin: number; status: "Berhasil" | "Diproses" };
+
+const PURCHASES: Record<string, Purchase[]> = {
+  "C-001": [
+    { tgl: "20 Jun 2026", item: "Royal Canin Kitten 2kg",     qty: 1, harga: 285000, cabang: "VET CMGG" },
+    { tgl: "08 Jun 2026", item: "Grooming Premium",           qty: 1, harga: 150000, cabang: "VET CMGG" },
+    { tgl: "22 Mei 2026", item: "Vaksinasi Rabies",           qty: 1, harga: 120000, cabang: "VET TKI"  },
+  ],
+  "C-002": [
+    { tgl: "15 Jun 2026", item: "Whiskas Tuna 1,2kg",         qty: 2, harga: 70000,  cabang: "BTKM"     },
+    { tgl: "01 Jun 2026", item: "Konsultasi Dokter",          qty: 1, harga: 100000, cabang: "BTKM"     },
+  ],
+  "C-003": [
+    { tgl: "25 Jun 2026", item: "Royal Canin Kitten 2kg",     qty: 2, harga: 285000, cabang: "VET CMGG" },
+    { tgl: "18 Jun 2026", item: "Pro Plan Sterilized 1,5kg",  qty: 1, harga: 245000, cabang: "VET CMGG" },
+    { tgl: "10 Jun 2026", item: "Vaksinasi DHPP",             qty: 1, harga: 135000, cabang: "VET CMGG" },
+    { tgl: "29 Mei 2026", item: "Grooming Premium",           qty: 1, harga: 150000, cabang: "VET TKI"  },
+  ],
+  "C-004": [
+    { tgl: "02 Jun 2026", item: "Konsultasi Dokter",          qty: 1, harga: 100000, cabang: "VET TKI"  },
+  ],
+  "C-005": [
+    { tgl: "12 Jun 2026", item: "Pellet Kelinci 1kg",         qty: 1, harga: 45000,  cabang: "BTKM"     },
+  ],
+};
+
+const POIN_HISTORY: Record<string, PoinHistory[]> = {
+  "C-001": [{ tgl: "08 Jun 2026", item: "Voucher Grooming 50%", poin: 2000, status: "Berhasil" }],
+  "C-002": [],
+  "C-003": [
+    { tgl: "18 Jun 2026", item: "Diskon Produk 10%",    poin: 1500, status: "Berhasil" },
+    { tgl: "01 Jun 2026", item: "Free Konsultasi",      poin: 1000, status: "Diproses" },
+  ],
+  "C-004": [],
+  "C-005": [{ tgl: "12 Jun 2026", item: "Diskon Produk 5%", poin: 500, status: "Berhasil" }],
+};
+
+const CATATAN: Record<string, string> = {
+  "C-001": "Pelanggan loyal, selalu beli produk kucing premium. Prefer dihubungi via WhatsApp.",
+  "C-002": "—",
+  "C-003": "VIP — anabul banyak (4 ekor). Rutin vaksin tepat waktu. Sangat aktif di promo member.",
+  "C-004": "Baru daftar, belum pernah pakai layanan klinik.",
+  "C-005": "—",
+};
+
+const PROGRAM_MEMBER = [
+  { icon: "ti-gift",       label: "Diskon Birthday",   desc: "10% di bulan ulang tahun",     color: "#d97757" },
+  { icon: "ti-cash-banknote", label: "Cashback Bulanan", desc: "2% dari total belanja",      color: "#16a34a" },
+  { icon: "ti-vaccine",    label: "Gratis Vaksin",      desc: "1x / tahun untuk member Gold+", color: "#2563eb" },
+];
+
 type Pet = { name: string; jenis: string; ras: string; kelamin: string; usia: string; since: string };
 
 const PETS: Record<string, Pet[]> = {
@@ -131,8 +183,11 @@ function Av({ initials, color, size = 28 }: { initials: string; color: string; s
   );
 }
 
+type DetailTab = "pembelian" | "program" | "catatan";
+
 export default function PelangganPage() {
   const [sel, setSel] = useState<Customer>(CUSTOMERS[2]);
+  const [tab, setTab] = useState<DetailTab>("pembelian");
 
   return (
     <>
@@ -347,6 +402,11 @@ export default function PelangganPage() {
               </div>
             ))}
 
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 5 }}>CATATAN</div>
+              <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>{CATATAN[sel.id]}</div>
+            </div>
+
             <div style={{ fontSize: 9, color: "var(--td)", marginTop: 9 }}>*Data per 25 Jun 2026</div>
           </div>
 
@@ -410,6 +470,101 @@ export default function PelangganPage() {
               </table>
             </div>
           </div>
+        </div>
+
+        {/* ── Riwayat pembelian / program & poin / catatan tabs ──── */}
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: ".5px solid var(--bd)" }}>
+          <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+            {([
+              { key: "pembelian", label: "Riwayat Pembelian" },
+              { key: "program",   label: "Program & Poin" },
+              { key: "catatan",   label: "Catatan" },
+            ] as const).map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                style={{
+                  padding: "6px 14px", fontSize: 11.5, fontWeight: 500, borderRadius: 7, cursor: "pointer",
+                  border: ".5px solid var(--bd)",
+                  background: tab === t.key ? "var(--sb)" : "#fff",
+                  color:      tab === t.key ? "#fff"       : "var(--tm)",
+                }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "pembelian" && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl" style={{ minWidth: 520 }}>
+                <thead>
+                  <tr>
+                    <th>No.</th><th>Tanggal</th><th>Produk / Jasa</th>
+                    <th style={{ textAlign: "center" }}>Qty</th>
+                    <th style={{ textAlign: "right" }}>Harga</th>
+                    <th>Cabang</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(PURCHASES[sel.id] ?? []).map((p, i) => (
+                    <tr key={i}>
+                      <td style={{ color: "var(--td)", fontSize: 11 }}>{i + 1}</td>
+                      <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.tgl}</td>
+                      <td style={{ fontWeight: 500 }}>{p.item}</td>
+                      <td style={{ textAlign: "center" }}>{p.qty}</td>
+                      <td style={{ textAlign: "right", fontWeight: 500, fontSize: 11 }}>{rp(p.harga)}</td>
+                      <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.cabang}</td>
+                    </tr>
+                  ))}
+                  {(PURCHASES[sel.id] ?? []).length === 0 && (
+                    <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada riwayat pembelian</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {tab === "program" && (
+            <div className="grid2" style={{ alignItems: "start" }}>
+              <div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 8 }}>PROGRAM MEMBER</div>
+                {PROGRAM_MEMBER.map(p => (
+                  <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", border: ".5px solid var(--bd)", borderRadius: 8, marginBottom: 7 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 7, background: `${p.color}1a`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <i className={`ti ${p.icon}`} style={{ color: p.color, fontSize: 15 }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11.5, fontWeight: 600 }}>{p.label}</div>
+                      <div style={{ fontSize: 10, color: "var(--tm)" }}>{p.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 8 }}>RIWAYAT PENUKARAN POIN</div>
+                <table className="tbl">
+                  <thead>
+                    <tr><th>Tanggal</th><th>Item Ditukar</th><th style={{ textAlign: "right" }}>Poin</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {(POIN_HISTORY[sel.id] ?? []).map((p, i) => (
+                      <tr key={i}>
+                        <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.tgl}</td>
+                        <td style={{ fontWeight: 500, fontSize: 11.5 }}>{p.item}</td>
+                        <td style={{ textAlign: "right", fontSize: 11 }}>{fmt(p.poin)}</td>
+                        <td><span className={`bge ${p.status === "Berhasil" ? "g" : "o"}`}>{p.status}</span></td>
+                      </tr>
+                    ))}
+                    {(POIN_HISTORY[sel.id] ?? []).length === 0 && (
+                      <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada penukaran poin</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {tab === "catatan" && (
+            <div style={{ fontSize: 11.5, color: "var(--tm)", lineHeight: 1.6, padding: "4px 0" }}>{CATATAN[sel.id]}</div>
+          )}
         </div>
       </div>
     </>
