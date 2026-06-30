@@ -49,8 +49,9 @@ export const TILES: Record<string, Tile[]> = {
   pos: [
     { label: "Transaksi POS", icon: "ti-cash-register", ...G, href: "/pos/transaksi" },
     { label: "Shift kasir", icon: "ti-clock-dollar", ...G, href: "/pos/shift" },
-    { label: "Stok per gudang", icon: "ti-stack", ...G },
-    { label: "Transfer stok", icon: "ti-arrows-transfer-up", ...B },
+    { label: "Pengeluaran", icon: "ti-receipt-2", ...G, href: "/pos/expense" },
+    { label: "Stok per gudang", icon: "ti-stack", ...G, href: "/pos/stok" },
+    { label: "Permintaan barang", icon: "ti-truck-delivery", ...B, href: "/pos/permintaan" },
     { label: "Monitor expired", icon: "ti-calendar-x", ...R },
     { label: "Reorder alert", icon: "ti-alert-triangle", ...A },
     { label: "Online / B2C", icon: "ti-world", ...P, nw: true },

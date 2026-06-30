@@ -155,3 +155,33 @@ from (values
 ) as v(phone,delta,saldo,ref,descr,ts)
 join customers c on c.phone=v.phone
 where not exists (select 1 from point_ledger pl where pl.ref=v.ref);
+
+-- POS Fase 3 demo: stok, pengeluaran, permintaan barang.
+insert into stock(warehouse_id, item_id, qty)
+select w.id, i.id, v.qty from (values
+ ('WH_BTKM','ITM-001',24),('WH_BTKM','ITM-003',40),('WH_BTKM','ITM-005',15),
+ ('WH_BTKM','ITM-006',30),('WH_BTKM','ITM-009',18),('WH_BTKM','ITM-011',50),
+ ('WH_BTKM','ITM-004',12),('WH_BTKM','ITM-007',60)
+) v(wh,code,qty)
+join warehouses w on w.code=v.wh join items i on i.code=v.code
+where not exists (select 1 from stock s where s.warehouse_id=w.id and s.item_id=i.id);
+
+insert into expenses(branch_id,tanggal,kategori,deskripsi,jumlah,metode_bayar)
+select b.id, v.tgl::date, v.kat, v.descr, v.jml, 'Tunai' from (values
+ ('BTKM','2026-06-30','Listrik & Air','Token listrik bulanan',350000),
+ ('BTKM','2026-06-28','Perlengkapan','Plastik & kemasan toko',120000),
+ ('BTKM','2026-07-01','Operasional','Galon & ATK',85000)
+) v(code,tgl,kat,descr,jml)
+join branches b on b.code=v.code
+where not exists (select 1 from expenses e where e.branch_id=b.id and e.deskripsi=v.descr);
+
+with r as (
+  insert into stock_requests(no_request,from_branch_id,to_warehouse_id,status,catatan)
+  select 'PRM-20260701-0001', b.id, w.id, 'Menunggu Persetujuan', 'Restok mingguan cabang'
+  from branches b, warehouses w where b.code='BTKM' and w.code='DC_LOJI'
+  and not exists (select 1 from stock_requests x where x.no_request='PRM-20260701-0001')
+  returning id
+)
+insert into stock_request_items(request_id,nama,qty_diminta)
+  select id,'Royal Canin Kitten 2kg',12 from r
+  union all select id,'Whiskas Tuna 1.2kg',24 from r;
