@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { updateVisitStatus } from "./actions";
 import { CancelButton } from "./CancelButton";
+import { SecHeader } from "@/components/SecHeader";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -86,8 +87,11 @@ export default async function AntrianPage({
         ))}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 4 }}>
+      <div className="crm-sec">
+        <SecHeader num="01" title="ANTRIAN PASIEN" desc="Daftar pasien & status pemeriksaan hari ini."
+          action={<Link href="/klinik/registrasi" className="btn-acc" style={{ textDecoration: "none" }}>+ Daftarkan pasien</Link>} />
+
+        <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
           {[
             { key: "aktif", label: "Aktif" },
             { key: "selesai", label: "Selesai" },
@@ -104,10 +108,7 @@ export default async function AntrianPage({
             </Link>
           ))}
         </div>
-        <Link href="/klinik/registrasi" className="btn-acc">+ Daftarkan pasien</Link>
-      </div>
 
-      <div className="card" style={{ padding: 0 }}>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
             <thead>

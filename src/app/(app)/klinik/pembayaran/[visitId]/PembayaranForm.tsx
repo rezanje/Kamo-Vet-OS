@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SecHeader } from "@/components/SecHeader";
 import { bayarVisit } from "./actions";
 
 type Line = { deskripsi: string; qty: number; harga: number };
@@ -36,13 +37,11 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
 
       <div className="grid2" style={{ alignItems: "start" }}>
         {/* Line items */}
-        <div className="card">
-          <div className="card-hd" style={{ justifyContent: "space-between" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <i className="ti ti-receipt" style={{ color: "var(--acc)" }} /> Rincian tagihan
-            </span>
-            <button type="button" onClick={add} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>+ Tambah item</button>
-          </div>
+        <div className="crm-sec" style={{ marginBottom: 0 }}>
+          <SecHeader num="01" title="RINCIAN TAGIHAN" desc="Item & harga bisa diedit kasir (§3.10)."
+            action={
+              <button type="button" onClick={add} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>+ Tambah item</button>
+            } />
 
           <table className="tbl">
             <thead>
@@ -66,8 +65,8 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
         </div>
 
         {/* Pembayaran */}
-        <div className="card">
-          <div className="card-hd"><i className="ti ti-cash" style={{ color: "#16a34a" }} /> Pembayaran</div>
+        <div className="crm-sec" style={{ marginBottom: 0 }}>
+          <SecHeader num="02" title="PEMBAYARAN" desc="Total, metode & status pembayaran." />
 
           <SummaryRow label="Subtotal" value={rp(subtotal)} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: ".5px solid var(--bd)" }}>

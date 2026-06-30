@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SecHeader } from "@/components/SecHeader";
 import { simpanRekamMedis } from "./actions";
 
 type Row = { nama_obat: string; qty: number; aturan_pakai: string };
@@ -22,10 +23,8 @@ export function RekamForm({ visitId, petId, currentWeight }: { visitId: string; 
       <input type="hidden" name="resep" value={JSON.stringify(rows)} />
 
       <div className="grid2">
-        <div className="card">
-          <div className="card-hd">
-            <i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Pemeriksaan
-          </div>
+        <div className="crm-sec" style={{ marginBottom: 0 }}>
+          <SecHeader num="01" title="PEMERIKSAAN" desc="Anamnesis, diagnosa, dokter PIC & berat." />
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Dokter PIC</label>
@@ -48,15 +47,13 @@ export function RekamForm({ visitId, petId, currentWeight }: { visitId: string; 
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-hd" style={{ justifyContent: "space-between" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <i className="ti ti-prescription" style={{ color: "#16a34a" }} /> Resep obat
-            </span>
-            <button type="button" onClick={add} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
-              + Tambah obat
-            </button>
-          </div>
+        <div className="crm-sec" style={{ marginBottom: 0 }}>
+          <SecHeader num="02" title="RESEP OBAT" desc="Aturan pakai dicatat per obat (§3.5)."
+            action={
+              <button type="button" onClick={add} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
+                + Tambah obat
+              </button>
+            } />
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {rows.map((r, i) => (
