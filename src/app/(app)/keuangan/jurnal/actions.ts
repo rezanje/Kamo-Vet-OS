@@ -47,11 +47,9 @@ export async function jurnalManual(formData: FormData) {
         )
     );
 
-  // Generate no_jurnal: JRN-YYYYMM-NNNN
-  const now = new Date(tanggal);
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const prefix = `JRN-${yyyy}${mm}`;
+  // Generate no_jurnal: JRN-YYYYMM-NNNN. Pakai string slice (bukan new Date) supaya
+  // bulan tidak bergeser akibat timezone server non-UTC.
+  const prefix = `JRN-${tanggal.slice(0, 7).replace("-", "")}`;
   const { count } = await supabase
     .from("journal_entries")
     .select("*", { count: "exact", head: true })
@@ -86,10 +84,13 @@ export async function jurnalManual(formData: FormData) {
     }))
   );
 
-  if (lineErr)
+  if (lineErr) {
+    // hapus header supaya tidak ada entri jurnal tanpa baris (yatim).
+    await supabase.from("journal_entries").delete().eq("id", entry!.id);
     redirect(
       "/keuangan/jurnal?error=" + encodeURIComponent(lineErr.message)
     );
+  }
 
   redirect("/keuangan/jurnal?success=1");
 }

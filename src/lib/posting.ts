@@ -77,7 +77,11 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
       debit: l.debit,
       credit: l.credit,
     }));
-    await supabase.from("journal_lines").insert(lineRows);
+    const { error: lineErr } = await supabase.from("journal_lines").insert(lineRows);
+    if (lineErr) {
+      // jangan tinggalkan header tanpa baris — hapus supaya tidak jadi entri yatim.
+      await supabase.from("journal_entries").delete().eq("id", entry.id);
+    }
   } catch (err) {
     // Best-effort: swallow any error so the primary transaction is never blocked.
     console.error("[postJournal] accounting error (ignored):", err);
