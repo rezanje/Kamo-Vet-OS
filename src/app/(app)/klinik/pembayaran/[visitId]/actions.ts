@@ -28,9 +28,12 @@ export async function bayarVisit(formData: FormData) {
 
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
   const discount = Number(formData.get("discount")) || 0;
-  const total = Math.max(0, subtotal - discount);
+  const dpp = Math.max(0, subtotal - discount);
+  const tax = Math.round(dpp * 0.11); // PPN 11% di atas DPP
+  const total = dpp + tax;
 
   const paidStatus = String(formData.get("paid_status") ?? "Lunas");
+  const metode = String(formData.get("metode_bayar") ?? "Tunai");
   const dpAmount = paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
   const paidAt = paidStatus === "Lunas" ? new Date().toISOString() : null;
@@ -38,9 +41,17 @@ export async function bayarVisit(formData: FormData) {
   // ponytail: re-bayar replaces the previous invoice for this visit (unique visit_id).
   await supabase.from("invoices").delete().eq("visit_id", visitId);
 
+  // Nomor invoice INV-YYYYMM-NNNN, urut per bulan.
+  // ponytail: count+1 bisa race di concurrency tinggi; unique constraint jadi backstop.
+  const now = new Date();
+  const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const { count } = await supabase
+    .from("invoices").select("*", { count: "exact", head: true }).like("invoice_no", `${prefix}-%`);
+  const invoiceNo = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+
   const { data: inv, error: invErr } = await supabase
     .from("invoices")
-    .insert({ visit_id: visitId, subtotal, discount, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, paid_at: paidAt })
+    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt })
     .select("id").single();
   if (invErr || !inv) {
     redirect(`${back}?error=${encodeURIComponent(invErr?.message ?? "Gagal simpan invoice")}`);

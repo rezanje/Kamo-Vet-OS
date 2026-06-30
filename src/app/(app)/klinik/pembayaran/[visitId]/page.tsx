@@ -42,7 +42,7 @@ export default async function PembayaranPage({
 
   // invoice tersimpan (kalau sudah dibayar) untuk tampilan read-only.
   const { data: invoice } = await supabase
-    .from("invoices").select("id, subtotal, discount, total, dp_amount, dp_date, paid_status, paid_at").eq("visit_id", visitId).maybeSingle();
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at").eq("visit_id", visitId).maybeSingle();
   const { data: invItems } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at")
     : { data: [] as { deskripsi: string; qty: number; harga: number }[] };
@@ -111,7 +111,24 @@ export default async function PembayaranPage({
             {invoice.paid_status === "DP" && ` — DP ${rp(invoice.dp_amount)}, sisa ${rp(invoice.total - invoice.dp_amount)}`}
           </div>
           <div className="card">
-            <div className="card-hd"><i className="ti ti-receipt" style={{ color: "var(--acc)" }} /> Rincian tagihan</div>
+            <div className="card-hd" style={{ justifyContent: "space-between" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i className="ti ti-receipt" style={{ color: "var(--acc)" }} /> {invoice.invoice_no ?? "Rincian tagihan"}
+                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
+              </span>
+              <span style={{ display: "flex", gap: 5 }}>
+                {lunas && (
+                  <Link href={`/klinik/pembayaran/${visit.id}/struk`} className="btn-def"
+                    style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <i className="ti ti-receipt-2" /> Struk
+                  </Link>
+                )}
+                <Link href={`/klinik/pembayaran/${visit.id}/invoice`} className="btn-acc"
+                  style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <i className="ti ti-file-invoice" /> Invoice
+                </Link>
+              </span>
+            </div>
             <table className="tbl">
               <thead><tr><th>Item</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>Subtotal</th></tr></thead>
               <tbody>
@@ -123,6 +140,7 @@ export default async function PembayaranPage({
             <div style={{ marginTop: 10, marginLeft: "auto", width: 220 }}>
               <SumRow label="Subtotal" value={rp(invoice.subtotal)} />
               {invoice.discount > 0 && <SumRow label="Diskon" value={`- ${rp(invoice.discount)}`} />}
+              <SumRow label="PPN 11%" value={rp(invoice.tax)} />
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
                 <span style={{ fontWeight: 600 }}>Total</span>
                 <span style={{ fontWeight: 700, color: "var(--acc)" }}>{rp(invoice.total)}</span>

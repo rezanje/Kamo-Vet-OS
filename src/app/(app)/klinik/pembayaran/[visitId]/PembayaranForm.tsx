@@ -10,6 +10,7 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
   const [rows, setRows] = useState<Line[]>(initialItems.length ? initialItems : [{ deskripsi: "", qty: 1, harga: 0 }]);
   const [discount, setDiscount] = useState(0);
   const [paid, setPaid] = useState<"Lunas" | "DP" | "Belum Lunas">("Lunas");
+  const [metode, setMetode] = useState("Tunai");
   const [dpAmount, setDpAmount] = useState(0);
   const [dpDate, setDpDate] = useState("");
 
@@ -18,7 +19,9 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
   const del = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
 
   const subtotal = rows.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.harga) || 0), 0);
-  const total = Math.max(0, subtotal - discount);
+  const dpp = Math.max(0, subtotal - discount);
+  const tax = Math.round(dpp * 0.11);
+  const total = dpp + tax;
   const sisa = paid === "Lunas" ? 0 : paid === "DP" ? Math.max(0, total - dpAmount) : total;
 
   return (
@@ -27,6 +30,7 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="paid_status" value={paid} />
+      <input type="hidden" name="metode_bayar" value={metode} />
       <input type="hidden" name="dp_amount" value={dpAmount} />
       <input type="hidden" name="dp_date" value={dpDate} />
 
@@ -70,9 +74,17 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
             <span style={{ fontSize: 11, color: "var(--tm)" }}>Diskon</span>
             <input className="fi" type="number" min={0} step={1000} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 120, textAlign: "right" }} />
           </div>
+          <SummaryRow label="PPN 11%" value={rp(tax)} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--bd)" }}>
             <span style={{ fontSize: 12, fontWeight: 600 }}>Total</span>
             <span style={{ fontSize: 16, fontWeight: 700, color: "var(--acc)" }}>{rp(total)}</span>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <label className="flab">Metode pembayaran</label>
+            <select className="fi" value={metode} onChange={(e) => setMetode(e.target.value)}>
+              <option>Tunai</option><option>QRIS</option><option>Transfer</option><option>Debit</option>
+            </select>
           </div>
 
           <div style={{ marginTop: 12 }}>
