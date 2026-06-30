@@ -93,10 +93,10 @@ export const TILES: Record<string, Tile[]> = {
   ],
   hris: [
     { label: "Data karyawan", icon: "ti-user-circle", ...G, href: "/hris/karyawan" },
-    { label: "Absensi & shift", icon: "ti-map-pin-check", ...G },
-    { label: "Lembur & cuti", icon: "ti-calendar-time", ...B },
+    { label: "Absensi", icon: "ti-map-pin-check", ...G, href: "/hris/absensi" },
+    { label: "Cuti & lembur", icon: "ti-calendar-time", ...B, href: "/hris/cuti" },
     { label: "Penggajian", icon: "ti-moneybag", ...G, href: "/hris/penggajian" },
-    { label: "KPI karyawan", icon: "ti-chart-dots", ...P },
+    { label: "KPI karyawan", icon: "ti-chart-dots", ...P, href: "/hris/kpi" },
     { label: "Verifikasi wajah", icon: "ti-scan-eye", bg: "#f3f4f6", fg: "#9ca3af", p2: true },
   ],
   crm: [

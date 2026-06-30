@@ -284,3 +284,34 @@ from (values
 ) as v(nik,nama,jabatan,dept,code,phone,email,masuk,gaji,status)
 join branches b on b.code=v.code
 where not exists (select 1 from employees e where e.nik=v.nik);
+
+-- HRIS demo: absensi hari ini, pengajuan cuti/lembur, KPI.
+insert into attendance(employee_id,tanggal,jam_masuk,jam_pulang,status,keterangan)
+select e.id, v.tgl::date, v.masuk::time, v.pulang::time, v.status, v.ket
+from (values
+ ('K-2024018901','2026-07-01','08:00','17:00','Hadir',null),
+ ('K-2024032210','2026-07-01','08:30','16:30','Hadir',null),
+ ('K-2025055023','2026-07-01','08:00','17:00','Hadir',null),
+ ('K-2025041105','2026-07-01',null,null,'Sakit','Demam')
+) v(nik,tgl,masuk,pulang,status,ket)
+join employees e on e.nik=v.nik
+where not exists (select 1 from attendance a where a.employee_id=e.id and a.tanggal=v.tgl::date);
+
+insert into leave_requests(employee_id,jenis,tanggal_mulai,tanggal_selesai,durasi,alasan,status)
+select e.id,v.jenis,v.mulai::date,v.selesai::date,v.durasi,v.alasan,v.status::leave_status
+from (values
+ ('K-2025055023','Cuti','2026-07-10','2026-07-12',3,'Acara keluarga','Menunggu'),
+ ('K-2024018901','Lembur','2026-06-28','2026-06-28',4,'Operasi darurat malam','Disetujui')
+) v(nik,jenis,mulai,selesai,durasi,alasan,status)
+join employees e on e.nik=v.nik
+where not exists (select 1 from leave_requests lr where lr.employee_id=e.id and lr.jenis=v.jenis and lr.tanggal_mulai=v.mulai::date);
+
+insert into kpi_records(employee_id,periode,metrik,target,realisasi,skor,catatan)
+select e.id,'2026-07',v.metrik,v.target,v.realisasi,v.skor,v.cat
+from (values
+ ('K-2025041105','Akurasi Kas',100,98,95,'Sangat baik'),
+ ('K-2025055023','Kelengkapan Data',100,90,85,'Perlu sedikit perbaikan'),
+ ('K-2024018901','Kepuasan Pasien',100,92,90,'Pasien puas')
+) v(nik,metrik,target,realisasi,skor,cat)
+join employees e on e.nik=v.nik
+where not exists (select 1 from kpi_records k where k.employee_id=e.id and k.periode='2026-07' and k.metrik=v.metrik);
