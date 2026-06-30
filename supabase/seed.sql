@@ -238,3 +238,36 @@ select e.id, a.id,
   case when a.code='1301' then val.total else 0 end,
   case when a.code='3101' then val.total else 0 end
 from e, val, coa_accounts a where a.code in ('1301','3101');
+
+-- Jurnal demo aktivitas: 3 pengeluaran + 4 penjualan (revenue PPN-split + HPP) — reconcile dgn seed POS.
+insert into journal_entries(no_jurnal,tanggal,deskripsi,source) values
+ ('JRN-202607-0003','2026-06-30','Pengeluaran: Token listrik bulanan','expense'),
+ ('JRN-202607-0004','2026-06-28','Pengeluaran: Plastik & kemasan toko','expense'),
+ ('JRN-202607-0005','2026-07-01','Pengeluaran: Galon & ATK','expense'),
+ ('JRN-202607-0006','2026-06-25','Penjualan POS-SEED-MC1','sale'),
+ ('JRN-202607-0007','2026-06-25','HPP POS-SEED-MC1','sale-hpp'),
+ ('JRN-202607-0008','2026-06-18','Penjualan POS-SEED-MC2','sale'),
+ ('JRN-202607-0009','2026-06-18','HPP POS-SEED-MC2','sale-hpp'),
+ ('JRN-202607-0010','2026-06-10','Penjualan POS-SEED-MC3','sale'),
+ ('JRN-202607-0011','2026-06-10','HPP POS-SEED-MC3','sale-hpp'),
+ ('JRN-202607-0012','2026-06-20','Penjualan POS-SEED-DW1','sale'),
+ ('JRN-202607-0013','2026-06-20','HPP POS-SEED-DW1','sale-hpp')
+on conflict (no_jurnal) do nothing;
+
+insert into journal_lines(entry_id,account_id,debit,credit)
+select e.id,a.id,v.d,v.k from (values
+ ('JRN-202607-0003','5301',350000,0),('JRN-202607-0003','1101',0,350000),
+ ('JRN-202607-0004','5302',120000,0),('JRN-202607-0004','1101',0,120000),
+ ('JRN-202607-0005','5401',85000,0),('JRN-202607-0005','1101',0,85000),
+ ('JRN-202607-0006','1101',370000,0),('JRN-202607-0006','4101',0,333333),('JRN-202607-0006','2201',0,36667),
+ ('JRN-202607-0007','5101',270000,0),('JRN-202607-0007','1301',0,270000),
+ ('JRN-202607-0008','1101',120000,0),('JRN-202607-0008','4101',0,108108),('JRN-202607-0008','2201',0,11892),
+ ('JRN-202607-0009','5101',85000,0),('JRN-202607-0009','1301',0,85000),
+ ('JRN-202607-0010','1101',140000,0),('JRN-202607-0010','4101',0,126126),('JRN-202607-0010','2201',0,13874),
+ ('JRN-202607-0011','5101',104000,0),('JRN-202607-0011','1301',0,104000),
+ ('JRN-202607-0012','1101',195000,0),('JRN-202607-0012','4101',0,175676),('JRN-202607-0012','2201',0,19324),
+ ('JRN-202607-0013','5101',140000,0),('JRN-202607-0013','1301',0,140000)
+) v(no,code,d,k)
+join journal_entries e on e.no_jurnal=v.no
+join coa_accounts a on a.code=v.code
+where not exists (select 1 from journal_lines jl where jl.entry_id=e.id);
