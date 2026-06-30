@@ -69,3 +69,31 @@ insert into item_categories (name, track_expiry, track_batch) values
   ('Grooming Supplies', false, false),
   ('Kupon / Voucher',   false, false),
   ('Jasa',              false, false);
+
+-- CRM demo pelanggan + anabul (idempotent by phone / name).
+insert into customers (name, phone, email, dob, address, tier, keanggotaan, points, total_spending, pekerjaan, sumber_info, catatan)
+select * from (values
+  ('Maria Cahyani','0812-3456-7890','maria.cahyani@email.com',date '1990-05-12','Jl. Cimanggu No. 4, Bogor','Platinum','Member',12560,12400000,'Dokter','Instagram','VIP — anabul banyak. Rutin vaksin tepat waktu. Aktif di promo member.'),
+  ('Dewi Sandra','0812-9876-5432','dewi.s@gmail.com',date '1988-09-03','Jl. Pajajaran No. 21, Bogor','Gold','Member',7850,7850000,'Wiraswasta','Teman','Loyal, beli produk kucing premium. Prefer dihubungi via WhatsApp.'),
+  ('Andi Rahman','0857-1234-5678','andi.r@gmail.com',date '1995-02-18','Jl. Tajur No. 9, Bogor','Silver','Member',3250,3250000,'Karyawan Swasta','Google Maps',null),
+  ('Nadia Tania','0821-9999-8888','nadia.t@gmail.com',date '1999-11-27','Jl. Baranangsiang No. 12, Bogor','Bronze','Member',1560,1560000,'Mahasiswa','Instagram',null),
+  ('Budi Santoso','0878-5555-4444','budi.s@yahoo.com',date '1985-07-01','Jl. Warung Jambu No. 3, Bogor','New','Non Member',0,980000,'PNS','Walk-in','Baru daftar, belum pernah pakai layanan klinik.')
+) as v(name,phone,email,dob,address,tier,keanggotaan,points,total_spending,pekerjaan,sumber_info,catatan)
+where not exists (select 1 from customers c where c.phone = v.phone);
+
+insert into pets (customer_id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status)
+select c.id, p.name, p.species, p.breed, p.gender, p.dob, p.weight, p.warna, p.sterilisasi, p.gol, 'Aktif'
+from (values
+  ('0812-3456-7890','Milo','Kucing','British Shorthair','Jantan',date '2024-03-20',4.2,'Abu-abu','Steril','A'),
+  ('0812-3456-7890','Max','Anjing','Golden Retriever','Jantan',date '2023-05-20',28.0,'Golden','Utuh','DEA 1.1'),
+  ('0812-3456-7890','Luna','Kelinci','Holland Lop','Betina',date '2024-12-05',1.6,'Putih-coklat','Utuh',null),
+  ('0812-3456-7890','Kiwi','Burung','Lovebird','Jantan',date '2025-10-10',0.05,'Hijau',null,null),
+  ('0812-9876-5432','Rocky','Anjing','Labrador','Jantan',date '2023-01-12',30.5,'Hitam','Steril','DEA 1.1'),
+  ('0812-9876-5432','Whiskers','Kucing','Persia','Betina',date '2024-03-15',3.8,'Putih','Steril','B'),
+  ('0857-1234-5678','Boni','Anjing','Shih Tzu','Jantan',date '2024-03-05',5.4,'Coklat','Utuh',null),
+  ('0857-1234-5678','Luna','Kucing','Domestik','Betina',date '2025-07-10',3.1,'Calico','Utuh',null),
+  ('0821-9999-8888','Putih','Kelinci','Angora','Betina',date '2025-12-18',1.2,'Putih','Utuh',null),
+  ('0878-5555-4444','Coco','Kucing','Domestik','Betina',date '2025-04-02',2.9,'Oranye','Utuh',null)
+) as p(phone,name,species,breed,gender,dob,weight,warna,sterilisasi,gol)
+join customers c on c.phone = p.phone
+where not exists (select 1 from pets x where x.customer_id = c.id and x.name = p.name);
