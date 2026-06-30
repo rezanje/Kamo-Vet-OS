@@ -271,3 +271,16 @@ select e.id,a.id,v.d,v.k from (values
 join journal_entries e on e.no_jurnal=v.no
 join coa_accounts a on a.code=v.code
 where not exists (select 1 from journal_lines jl where jl.entry_id=e.id);
+
+-- HRIS demo karyawan (branch via code).
+insert into employees (nik, nama, jabatan, departemen, branch_id, phone, email, tgl_masuk, gaji_pokok, status)
+select v.nik, v.nama, v.jabatan, v.dept, b.id, v.phone, v.email, v.masuk::date, v.gaji, v.status
+from (values
+  ('K-2024018901','Drh. Haidar Rafi Ananta','Dokter Hewan','Medis','VET_CMGG','0812-9001-1111','haidar@klinik.com','2024-01-15',9000000,'Aktif'),
+  ('K-2024032210','Drh. Handitya Prasetyo','Dokter Hewan','Medis','VET_TKI','0813-5522-3344','handitya@klinik.com','2024-03-22',8500000,'Aktif'),
+  ('K-2025055023','Aceng Purnama Aji','Admin Klinik','Operasional','VET_CMGG','0857-1234-5678','aceng@klinik.com','2025-05-01',4200000,'Aktif'),
+  ('K-2025041105','Siti Ambar Rahayu','Kasir','Keuangan','BTKM','0878-8800-9900','siti@klinik.com','2025-04-11',4000000,'Aktif'),
+  ('K-2026001032','Bekti Sri Utami','Groomer','Grooming','BTKM','0821-6677-4455','bekti@klinik.com','2026-01-03',3500000,'Nonaktif')
+) as v(nik,nama,jabatan,dept,code,phone,email,masuk,gaji,status)
+join branches b on b.code=v.code
+where not exists (select 1 from employees e where e.nik=v.nik);
