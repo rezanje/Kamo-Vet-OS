@@ -62,6 +62,21 @@ export async function checkoutSale(formData: FormData) {
   );
   if (itErr) redirect(`/pos/transaksi?error=${encodeURIComponent(itErr.message)}`);
 
+  // Loop inventory: kurangi stok fisik di gudang cabang untuk item terjual (best-effort,
+  // ponytail: ambil gudang aktif pertama cabang; skip kalau item tidak ada stoknya).
+  const { data: wh } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
+  if (wh) {
+    for (const r of rows) {
+      if (!r.item_id) continue;
+      const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", wh.id).eq("item_id", r.item_id).maybeSingle();
+      if (st) {
+        await supabase.from("stock").update({ qty: Number(st.qty) - r.qty, updated_at: new Date().toISOString() })
+          .eq("warehouse_id", wh.id).eq("item_id", r.item_id);
+      }
+    }
+  }
+
   // §1.4: poin masuk ledger + saldo berjalan, total_spending pelanggan naik.
   if (customerId && poin > 0) {
     const { data: cust } = await supabase.from("customers").select("points, total_spending").eq("id", customerId).single();

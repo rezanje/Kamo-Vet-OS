@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { postJournal } from "@/lib/posting";
 
 export async function tambahStok(formData: FormData) {
   const supabase = await createClient();
@@ -41,6 +42,27 @@ export async function tambahStok(formData: FormData) {
       .from("stock")
       .insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
     if (error) redirect(`${back}&error=${encodeURIComponent(error.message)}`);
+  }
+
+  // Loop inventory: stok masuk (delta>0) dijurnal sbg pembelian persediaan →
+  // Dr Persediaan / Cr Hutang Usaha = qty × buy_price. Menambah sisi Persediaan
+  // (HPP penjualan menguranginya).
+  if (delta > 0) {
+    const { data: item } = await supabase.from("items").select("buy_price").eq("id", itemId).maybeSingle();
+    const { data: wh } = await supabase.from("warehouses").select("branch_id").eq("id", warehouseId).maybeSingle();
+    const nilai = Math.round((Number(item?.buy_price) || 0) * delta);
+    if (nilai > 0) {
+      await postJournal(supabase, {
+        tanggal: new Date().toISOString().slice(0, 10),
+        deskripsi: "Stok masuk (pembelian persediaan)",
+        source: "stock-in",
+        branchId: wh?.branch_id ?? null,
+        lines: [
+          { code: "1301", debit: nilai, credit: 0 },
+          { code: "2101", debit: 0, credit: nilai },
+        ],
+      });
+    }
   }
 
   revalidatePath("/pos/stok");
