@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { postJournal } from "@/lib/posting";
 
 type CartLine = { item_id: string | null; nama: string; qty: number; harga: number; target_species: string };
 
@@ -68,6 +69,21 @@ export async function checkoutSale(formData: FormData) {
     await supabase.from("customers").update({ points: saldo, total_spending: (Number(cust?.total_spending) || 0) + total }).eq("id", customerId);
     await supabase.from("point_ledger").insert({ customer_id: customerId, delta: poin, saldo, ref: noStruk, description: `Transaksi ${noStruk}` });
   }
+
+  // Accounting: Dr Kas/Bank, Cr Pendapatan Penjualan Produk.
+  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  await postJournal(supabase, {
+    tanggal: todayIso,
+    deskripsi: `Penjualan POS ${noStruk}`,
+    source: "sale",
+    sourceRef: noStruk,
+    branchId,
+    lines: [
+      { code: kasCode, debit: total, credit: 0 },
+      { code: "4101", debit: 0, credit: total },
+    ],
+  });
 
   redirect(`/pos/struk/${sale!.id}`);
 }

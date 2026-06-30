@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { postJournal } from "@/lib/posting";
 
 export async function openShift(formData: FormData) {
   const supabase = await createClient();
@@ -28,7 +29,7 @@ export async function closeShift(formData: FormData) {
   if (!shiftId) redirect(`/pos/shift?error=${encodeURIComponent("Shift tidak valid")}`);
 
   const { data: shift } = await supabase
-    .from("cashier_shifts").select("opening_balance").eq("id", shiftId).single();
+    .from("cashier_shifts").select("opening_balance, branch_id").eq("id", shiftId).single();
 
   // expected = modal awal + total penjualan tunai selama shift.
   const { data: cashSales } = await supabase
@@ -41,6 +42,30 @@ export async function closeShift(formData: FormData) {
     .from("cashier_shifts")
     .update({ closing_balance: closing, expected_cash: expected, selisih, closed_at: new Date().toISOString(), status: "closed" })
     .eq("id", shiftId);
+
+  // Accounting: post selisih kas only when non-zero.
+  if (selisih !== 0) {
+    const today = new Date().toISOString().slice(0, 10);
+    const absSelisih = Math.abs(selisih);
+    // selisih < 0 = kurang: Dr Selisih Kas, Cr Kas.
+    // selisih > 0 = lebih:  Dr Kas, Cr Selisih Kas.
+    await postJournal(supabase, {
+      tanggal: today,
+      deskripsi: "Selisih kas tutup shift",
+      source: "shift",
+      sourceRef: shiftId,
+      branchId: shift?.branch_id ?? null,
+      lines: selisih < 0
+        ? [
+            { code: "5901", debit: absSelisih, credit: 0 },
+            { code: "1101", debit: 0, credit: absSelisih },
+          ]
+        : [
+            { code: "1101", debit: absSelisih, credit: 0 },
+            { code: "5901", debit: 0, credit: absSelisih },
+          ],
+    });
+  }
 
   redirect("/pos/shift?success=close");
 }
