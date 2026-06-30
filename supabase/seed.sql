@@ -117,3 +117,41 @@ from (values
 ) as v(code,name,cat,sell,buy,species)
 join item_categories c on c.name = v.cat
 where not exists (select 1 from items i where i.code = v.code);
+
+-- POS demo transaksi (riwayat beli §1.3 + poin ledger §1.4). Saldo ledger berakhir = customers.points.
+insert into sales(branch_id,customer_id,pet_id,no_struk,subtotal,total,metode_bayar,bayar,kembali,poin_earned,created_at)
+select b.id, c.id, p.id, v.no, v.total, v.total, 'Tunai', v.total, 0, v.poin, v.ts::timestamptz
+from (values
+  ('POS-SEED-MC1','0812-3456-7890','Milo',370000,370,'2026-06-25 10:15'),
+  ('POS-SEED-MC2','0812-3456-7890','Milo',120000,120,'2026-06-18 14:20'),
+  ('POS-SEED-MC3','0812-3456-7890','Milo',140000,140,'2026-06-10 09:30'),
+  ('POS-SEED-DW1','0812-9876-5432','Whiskers',195000,195,'2026-06-20 16:05')
+) as v(no,phone,petname,total,poin,ts)
+join customers c on c.phone=v.phone
+join branches b on b.code='VET_CMGG'
+left join pets p on p.customer_id=c.id and p.name=v.petname
+where not exists (select 1 from sales s where s.no_struk=v.no);
+
+insert into sale_items(sale_id,nama,qty,harga,target_species)
+select s.id, x.nama, x.qty, x.harga, x.sp
+from (values
+  ('POS-SEED-MC1','Royal Canin Kitten 2kg',1,285000,'Kucing'),
+  ('POS-SEED-MC1','Probiotik Kucing 30gr',1,85000,'Kucing'),
+  ('POS-SEED-MC2','Vitamin Kulit & Bulu 60ml',1,120000,'Universal'),
+  ('POS-SEED-MC3','Whiskas Tuna 1.2kg',2,70000,'Kucing'),
+  ('POS-SEED-DW1','Grooming Shampoo 250ml',1,75000,'Universal'),
+  ('POS-SEED-DW1','Pedigree Adult 3kg',1,120000,'Anjing')
+) as x(no,nama,qty,harga,sp)
+join sales s on s.no_struk=x.no
+where not exists (select 1 from sale_items si where si.sale_id=s.id and si.nama=x.nama);
+
+insert into point_ledger(customer_id,delta,saldo,ref,description,created_at)
+select c.id, v.delta, v.saldo, v.ref, v.descr, v.ts::timestamptz
+from (values
+  ('0812-3456-7890',370,12560,'POS-SEED-MC1','Transaksi POS-SEED-MC1','2026-06-25 10:15'),
+  ('0812-3456-7890',120,12190,'POS-SEED-MC2','Transaksi POS-SEED-MC2','2026-06-18 14:20'),
+  ('0812-3456-7890',140,12070,'POS-SEED-MC3','Transaksi POS-SEED-MC3','2026-06-10 09:30'),
+  ('0812-9876-5432',195,7850,'POS-SEED-DW1','Transaksi POS-SEED-DW1','2026-06-20 16:05')
+) as v(phone,delta,saldo,ref,descr,ts)
+join customers c on c.phone=v.phone
+where not exists (select 1 from point_ledger pl where pl.ref=v.ref);
