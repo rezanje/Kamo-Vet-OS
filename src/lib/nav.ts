@@ -44,7 +44,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Jadwal dokter", icon: "ti-calendar-event", ...B },
     { label: "e-Resep", icon: "ti-prescription", ...B },
     { label: "Booking online", icon: "ti-calendar-plus", ...P },
-    { label: "Antrian digital", icon: "ti-list-numbers", ...B },
+    { label: "Antrian digital", icon: "ti-list-numbers", ...B, href: "/klinik/antrian" },
   ],
   pos: [
     { label: "Transaksi POS", icon: "ti-cash-register", ...G, href: "/pos/transaksi" },
