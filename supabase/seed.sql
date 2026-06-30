@@ -185,3 +185,27 @@ with r as (
 insert into stock_request_items(request_id,nama,qty_diminta)
   select id,'Royal Canin Kitten 2kg',12 from r
   union all select id,'Whiskas Tuna 1.2kg',24 from r;
+
+-- Keuangan: Chart of Accounts standar (ASET 1xxx, LIABILITAS 2xxx, EKUITAS 3xxx, PENDAPATAN 4xxx, BEBAN 5xxx).
+insert into coa_accounts (code, name, type, normal_balance) values
+  ('1101','Kas','ASET','D'),
+  ('1102','Bank BCA','ASET','D'),
+  ('1201','Piutang Usaha','ASET','D'),
+  ('1301','Persediaan Obat & Produk','ASET','D'),
+  ('1401','Perlengkapan Klinik','ASET','D'),
+  ('2101','Hutang Usaha','LIABILITAS','K'),
+  ('2201','PPN Keluaran','LIABILITAS','K'),
+  ('2301','Hutang Gaji','LIABILITAS','K'),
+  ('3101','Modal Pemilik','EKUITAS','K'),
+  ('3201','Laba Ditahan','EKUITAS','K'),
+  ('4101','Pendapatan Penjualan Produk','PENDAPATAN','K'),
+  ('4201','Pendapatan Jasa Klinik','PENDAPATAN','K'),
+  ('5101','Beban Pokok Penjualan','BEBAN','D'),
+  ('5201','Beban Gaji & Tunjangan','BEBAN','D'),
+  ('5301','Beban Listrik & Air','BEBAN','D'),
+  ('5302','Beban Perlengkapan','BEBAN','D'),
+  ('5303','Beban Transportasi','BEBAN','D'),
+  ('5304','Beban Perawatan Aset','BEBAN','D'),
+  ('5401','Beban Operasional Lain-lain','BEBAN','D'),
+  ('5901','Selisih Kas','BEBAN','D')
+on conflict (code) do nothing;
