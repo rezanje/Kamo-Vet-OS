@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { postJournal } from "@/lib/posting";
 
 type Line = { deskripsi: string; qty: number; harga: number };
 
@@ -65,6 +66,28 @@ export async function bayarVisit(formData: FormData) {
   }
 
   await supabase.from("visits").update({ status: "Selesai" }).eq("id", visitId);
+
+  // Accounting (akrual): pendapatan jasa klinik diakui saat invoice; PPN dipisah.
+  // Kas/Bank untuk yang dibayar, sisa (DP/Belum Lunas) masuk Piutang Usaha.
+  const { data: v } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const cashReceived = paidStatus === "Lunas" ? total : paidStatus === "DP" ? dpAmount : 0;
+  const piutang = Math.max(0, total - cashReceived);
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  await postJournal(supabase, {
+    tanggal: todayIso,
+    deskripsi: `Pendapatan jasa klinik ${invoiceNo}`,
+    source: "klinik",
+    sourceRef: invoiceNo,
+    branchId: v?.branch_id ?? null,
+    lines: [
+      ...(cashReceived > 0 ? [{ code: kasCode, debit: cashReceived, credit: 0 }] : []),
+      ...(piutang > 0 ? [{ code: "1201", debit: piutang, credit: 0 }] : []),
+      { code: "4201", debit: 0, credit: dpp },
+      ...(tax > 0 ? [{ code: "2201", debit: 0, credit: tax }] : []),
+    ],
+  });
+
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
   redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
 }

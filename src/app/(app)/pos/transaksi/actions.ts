@@ -70,8 +70,11 @@ export async function checkoutSale(formData: FormData) {
     await supabase.from("point_ledger").insert({ customer_id: customerId, delta: poin, saldo, ref: noStruk, description: `Transaksi ${noStruk}` });
   }
 
-  // Accounting: Dr Kas/Bank, Cr Pendapatan Penjualan Produk.
+  // Accounting: Dr Kas/Bank; Cr Pendapatan + PPN Keluaran.
+  // Harga POS = PPN-inklusif (standar retail) → pisah DPP = total*100/111, PPN = sisanya.
   const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const dppPos = Math.round((total * 100) / 111);
+  const ppnPos = total - dppPos;
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   await postJournal(supabase, {
     tanggal: todayIso,
@@ -81,7 +84,8 @@ export async function checkoutSale(formData: FormData) {
     branchId,
     lines: [
       { code: kasCode, debit: total, credit: 0 },
-      { code: "4101", debit: 0, credit: total },
+      { code: "4101", debit: 0, credit: dppPos },
+      ...(ppnPos > 0 ? [{ code: "2201", debit: 0, credit: ppnPos }] : []),
     ],
   });
 
