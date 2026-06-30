@@ -66,7 +66,9 @@ body {
 .kval { font-size: 17px; font-weight: 500; color: var(--tx); }
 .kdelta { font-size: 10px; margin-top: 2px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
-.tbl th { text-align: left; padding: 6px 10px; color: var(--tm); border-bottom: .5px solid var(--bd); font-weight: 400; font-size: 10.5px; }
+.tbl th { text-align: left; padding: 8px 10px; color: #fff; background: var(--sb); font-weight: 500; font-size: 10.5px; white-space: nowrap; }
+.tbl thead th:first-child { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+.tbl thead th:last-child { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
 .tbl td { padding: 7px 10px; border-bottom: .5px solid var(--bd); }
 .tbl tr:last-child td { border-bottom: none; }
 .bge { display: inline-flex; padding: 2px 8px; border-radius: 20px; font-size: 9.5px; font-weight: 500; }
@@ -81,13 +83,14 @@ body {
 .flab { font-size: 10.5px; color: var(--tm); margin-bottom: 3px; display: block; }
 .frow { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 8px; }
 .fg { margin-bottom: 8px; }
-.btn-acc { padding: 7px 13px; background: var(--acc); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+.btn-acc { padding: 7px 13px; background: var(--sb); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; transition: background .12s; }
+.btn-acc:hover { background: #24365f; }
 .btn-def { padding: 7px 13px; border: .5px solid var(--bd); border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: var(--tm); }
 .back-btn { background: none; border: none; cursor: pointer; color: var(--tm); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
 .pg-hd { font-size: 14px; font-weight: 500; color: var(--tx); margin-bottom: 2px; }
 .pg-sub { font-size: 11px; color: var(--tm); margin-bottom: 13px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.card { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 13px; }
+.card { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 13px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
 .card-hd { font-size: 12px; font-weight: 500; color: var(--tx); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .pos-wrap { display: grid; grid-template-columns: 1fr 215px; gap: 12px; }
 .pos-pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px,1fr)); gap: 7px; }
@@ -97,8 +100,8 @@ body {
 .pos-pp { font-size: 9.5px; color: var(--tm); margin-top: 2px; }
 .cart { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 11px; display: flex; flex-direction: column; gap: 7px; }
 .ci { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: .5px solid var(--bd); }
-.pay-btn { width: 100%; padding: 9px; background: var(--acc); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; }
-.pay-btn:hover { background: #c96a45; }
+.pay-btn { width: 100%; padding: 9px; background: var(--sb); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; }
+.pay-btn:hover { background: #24365f; }
 .j-info { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 7px; padding: 8px 11px; font-size: 11px; color: #92400e; margin-bottom: 11px; }
 .crm-sec { background: #fff; border: .5px solid var(--bd); border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
 
