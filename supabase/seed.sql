@@ -222,3 +222,19 @@ select e.id, a.id, v.d, v.k
 from e
 join (values ('1101',10000000,0),('3101',0,10000000)) as v(code,d,k) on true
 join coa_accounts a on a.code=v.code;
+
+-- Saldo awal persediaan = nilai stok (qty × buy_price). Dr Persediaan / Cr Modal.
+-- Supaya akun Persediaan tidak negatif saat HPP penjualan mengkreditnya (sisi pembelian belum di-jurnal).
+with e as (
+  insert into journal_entries(no_jurnal,tanggal,deskripsi,source)
+  select 'JRN-202607-0002','2026-07-01','Saldo awal persediaan','manual'
+  where not exists (select 1 from journal_entries where no_jurnal='JRN-202607-0002')
+  returning id
+), val as (
+  select coalesce(sum(s.qty * i.buy_price),0)::numeric as total from stock s join items i on i.id=s.item_id
+)
+insert into journal_lines(entry_id,account_id,debit,credit)
+select e.id, a.id,
+  case when a.code='1301' then val.total else 0 end,
+  case when a.code='3101' then val.total else 0 end
+from e, val, coa_accounts a where a.code in ('1301','3101');

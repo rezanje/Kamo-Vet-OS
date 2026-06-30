@@ -89,5 +89,28 @@ export async function checkoutSale(formData: FormData) {
     ],
   });
 
+  // HPP: catat beban pokok penjualan dari buy_price item → laba kotor akurat.
+  // ponytail: kredit Persediaan; sisi beli (Dr Persediaan saat penerimaan) belum di-jurnal,
+  // jadi saldo awal persediaan diseed agar tidak negatif. Stok fisik belum auto-dikurangi.
+  const itemIds = rows.map((r) => r.item_id).filter((id): id is string => !!id);
+  if (itemIds.length) {
+    const { data: costs } = await supabase.from("items").select("id, buy_price").in("id", itemIds);
+    const costMap = new Map((costs ?? []).map((c: { id: string; buy_price: number }) => [c.id, Number(c.buy_price) || 0]));
+    const hpp = rows.reduce((a, r) => a + (r.item_id ? (costMap.get(r.item_id) ?? 0) * r.qty : 0), 0);
+    if (hpp > 0) {
+      await postJournal(supabase, {
+        tanggal: todayIso,
+        deskripsi: `HPP penjualan ${noStruk}`,
+        source: "sale-hpp",
+        sourceRef: noStruk,
+        branchId,
+        lines: [
+          { code: "5101", debit: hpp, credit: 0 },
+          { code: "1301", debit: 0, credit: hpp },
+        ],
+      });
+    }
+  }
+
   redirect(`/pos/struk/${sale!.id}`);
 }
