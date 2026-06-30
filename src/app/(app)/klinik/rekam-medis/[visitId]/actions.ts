@@ -9,6 +9,10 @@ export async function simpanRekamMedis(formData: FormData) {
   const supabase = await createClient();
 
   const visitId = String(formData.get("visitId") ?? "");
+  const petId = String(formData.get("petId") ?? "");
+  const dokter = String(formData.get("dokter") ?? "").trim() || null;
+  const beratRaw = formData.get("berat");
+  const berat = beratRaw ? Number(beratRaw) : null;
   const diagnosis = String(formData.get("diagnosis") ?? "") || null;
   const anamnesis = String(formData.get("anamnesis") ?? "") || null;
 
@@ -48,8 +52,13 @@ export async function simpanRekamMedis(formData: FormData) {
     }
   }
 
+  // berat terbaru ditarik ke kartu anabul (ponytail: single column, bukan time-series §1.2).
+  if (petId && berat && berat > 0) {
+    await supabase.from("pets").update({ weight: berat }).eq("id", petId);
+  }
+
   // §3.4: rekam medis selesai → kunjungan ditutup (skip rawat inap/racik untuk prototype).
-  await supabase.from("visits").update({ status: "Selesai" }).eq("id", visitId);
+  await supabase.from("visits").update({ status: "Selesai", dokter }).eq("id", visitId);
 
   redirect("/klinik/antrian?success=rm");
 }

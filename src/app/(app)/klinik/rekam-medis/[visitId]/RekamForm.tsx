@@ -7,7 +7,7 @@ type Row = { nama_obat: string; qty: number; aturan_pakai: string };
 
 const blank: Row = { nama_obat: "", qty: 1, aturan_pakai: "" };
 
-export function RekamForm({ visitId }: { visitId: string }) {
+export function RekamForm({ visitId, petId, currentWeight }: { visitId: string; petId: string; currentWeight: number | null }) {
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
 
   const set = (i: number, patch: Partial<Row>) =>
@@ -18,12 +18,23 @@ export function RekamForm({ visitId }: { visitId: string }) {
   return (
     <form action={simpanRekamMedis}>
       <input type="hidden" name="visitId" value={visitId} />
+      <input type="hidden" name="petId" value={petId} />
       <input type="hidden" name="resep" value={JSON.stringify(rows)} />
 
       <div className="grid2">
         <div className="card">
           <div className="card-hd">
             <i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Pemeriksaan
+          </div>
+          <div className="frow" style={{ marginBottom: 10 }}>
+            <div>
+              <label className="flab">Dokter PIC</label>
+              <input className="fi" name="dokter" placeholder="drh. Nama" />
+            </div>
+            <div>
+              <label className="flab">Berat saat ini (kg)</label>
+              <input className="fi" name="berat" type="number" step="0.1" defaultValue={currentWeight ?? undefined} placeholder="5.2" />
+            </div>
           </div>
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Anamnesis / catatan klinis</label>

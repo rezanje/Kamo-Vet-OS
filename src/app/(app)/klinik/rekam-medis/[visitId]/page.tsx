@@ -10,7 +10,6 @@ function one<T>(r: Rel<T>): T | null {
 
 // §3.4 visit state machine — rawat inap & racik obat kondisional, disembunyikan untuk prototype.
 const STEPS = ["Pendaftaran", "Antrian", "Rekam Medis", "Pembayaran"];
-const ACTIVE = 2; // 0-indexed: Rekam Medis sedang berjalan
 
 export default async function RekamMedisPage({
   params,
@@ -25,7 +24,7 @@ export default async function RekamMedisPage({
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, poli, status, keluhan, created_at, pets(name, species, breed, weight), customers(name, phone)")
+    .select("id, pet_id, poli, status, dokter, keluhan, created_at, pets(name, species, breed, weight), customers(name, phone)")
     .eq("id", visitId)
     .maybeSingle();
 
@@ -33,6 +32,31 @@ export default async function RekamMedisPage({
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
+  const selesai = visit.status === "Selesai";
+
+  // Rekam medis tersimpan (read-only) untuk kunjungan yang sudah selesai.
+  let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
+  let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
+  if (selesai) {
+    const { data: mr } = await supabase
+      .from("medical_records")
+      .select("id, diagnosis, anamnesis")
+      .eq("visit_id", visitId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    record = mr;
+    if (mr) {
+      const { data: pi } = await supabase
+        .from("prescription_items")
+        .select("nama_obat, qty, aturan_pakai")
+        .eq("medical_record_id", mr.id)
+        .order("created_at");
+      resep = pi ?? [];
+    }
+  }
+
+  const activeStep = selesai ? 3 : 2;
 
   return (
     <>
@@ -54,8 +78,8 @@ export default async function RekamMedisPage({
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
           {STEPS.map((s, i) => {
-            const done = i < ACTIVE;
-            const active = i === ACTIVE;
+            const done = i < activeStep;
+            const active = i === activeStep;
             const color = done ? "#16a34a" : active ? "var(--acc)" : "var(--td)";
             return (
               <div key={s} style={{ display: "flex", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
@@ -86,16 +110,47 @@ export default async function RekamMedisPage({
           <Field label="Berat" value={pet?.weight ? `${pet.weight} kg` : "—"} />
           <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
           <Field label="Poli" value={visit.poli} />
+          {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
           <Field label="Keluhan" value={visit.keluhan ?? "—"} />
         </div>
       </div>
 
-      {visit.status === "Selesai" ? (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Kunjungan ini sudah selesai. Rekam medis terkunci.
-        </div>
+      {selesai ? (
+        <>
+          <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+            <i className="ti ti-circle-check" /> Kunjungan selesai. Rekam medis terkunci (read-only).
+          </div>
+          <div className="grid2">
+            <div className="card">
+              <div className="card-hd"><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</div>
+              <ReadField label="Anamnesis / catatan klinis" value={record?.anamnesis} />
+              <ReadField label="Diagnosa" value={record?.diagnosis} />
+            </div>
+            <div className="card">
+              <div className="card-hd"><i className="ti ti-prescription" style={{ color: "#16a34a" }} /> Resep obat</div>
+              {resep.length === 0 ? (
+                <div style={{ fontSize: 11, color: "var(--td)" }}>Tidak ada resep.</div>
+              ) : (
+                <table className="tbl">
+                  <thead>
+                    <tr><th>Obat</th><th style={{ textAlign: "center" }}>Qty</th><th>Aturan pakai</th></tr>
+                  </thead>
+                  <tbody>
+                    {resep.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 500 }}>{r.nama_obat}</td>
+                        <td style={{ textAlign: "center" }}>{r.qty}</td>
+                        <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.aturan_pakai ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </>
       ) : (
-        <RekamForm visitId={visit.id} />
+        <RekamForm visitId={visit.id} petId={visit.pet_id} currentWeight={pet?.weight ?? null} />
       )}
     </>
   );
@@ -106,6 +161,15 @@ function Field({ label, value }: { label: string; value: string }) {
     <div>
       <div style={{ fontSize: 9.5, color: "var(--td)" }}>{label}</div>
       <div style={{ fontSize: 12 }}>{value}</div>
+    </div>
+  );
+}
+
+function ReadField({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 10, color: "var(--td)", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "var(--tx)", whiteSpace: "pre-wrap" }}>{value || "—"}</div>
     </div>
   );
 }

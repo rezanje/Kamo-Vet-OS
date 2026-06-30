@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { updateVisitStatus } from "./actions";
+import { CancelButton } from "./CancelButton";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -27,6 +28,19 @@ export default async function AntrianPage({
 
   const { data: visits } = await query;
 
+  // Counter hari ini (§3.3) — query terpisah, tidak terpengaruh filter tabel.
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const { data: today } = await supabase
+    .from("visits")
+    .select("status")
+    .gte("created_at", startOfDay.toISOString());
+  const counts = { Menunggu: 0, Diperiksa: 0, Selesai: 0 };
+  for (const v of today ?? []) {
+    if (v.status in counts) counts[v.status as keyof typeof counts]++;
+  }
+  const totalToday = today?.length ?? 0;
+
   const fmtTime = (iso: string) =>
     new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
@@ -42,9 +56,32 @@ export default async function AntrianPage({
 
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Pasien berhasil didaftarkan, masuk antrian.
+          <i className="ti ti-circle-check" />{" "}
+          {success === "rm" ? "Rekam medis tersimpan, kunjungan selesai." : "Pasien berhasil didaftarkan, masuk antrian."}
         </div>
       )}
+
+      {/* Counter hari ini (§3.3) */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
+        {([
+          { label: "Menunggu", val: counts.Menunggu, color: "#b55a35", bg: "#fdf0ea", icon: "ti-clock" },
+          { label: "Diperiksa", val: counts.Diperiksa, color: "#1d4ed8", bg: "#eff6ff", icon: "ti-stethoscope" },
+          { label: "Selesai", val: counts.Selesai, color: "#15803d", bg: "#e8f5ee", icon: "ti-circle-check" },
+          { label: "Total hari ini", val: totalToday, color: "#141413", bg: "#f7f5f1", icon: "ti-users" },
+        ] as const).map((c) => (
+          <div key={c.label} className="card" style={{ padding: "11px 13px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, background: c.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <i className={`ti ${c.icon}`} style={{ color: c.color, fontSize: 15 }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#141413", lineHeight: 1 }}>{c.val}</div>
+                <div style={{ fontSize: 9.5, color: "var(--tm)", marginTop: 2 }}>{c.label}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 4 }}>
@@ -101,11 +138,14 @@ export default async function AntrianPage({
                     <td>
                       <div style={{ display: "flex", gap: 5 }}>
                         {v.status === "Menunggu" && (
-                          <form action={updateVisitStatus}>
-                            <input type="hidden" name="id" value={v.id} />
-                            <input type="hidden" name="status" value="Diperiksa" />
-                            <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>Panggil</button>
-                          </form>
+                          <>
+                            <form action={updateVisitStatus}>
+                              <input type="hidden" name="id" value={v.id} />
+                              <input type="hidden" name="status" value="Diperiksa" />
+                              <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>Panggil</button>
+                            </form>
+                            <CancelButton id={v.id} />
+                          </>
                         )}
                         {v.status === "Diperiksa" && (
                           <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-acc"
