@@ -215,7 +215,10 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
         {/* Section 02: Customer List */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <SecHeader num="02" title="DAFTAR PELANGGAN" desc="Data pelanggan berdasarkan kategori dan keanggotaan." />
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <Link href="/crm/pelanggan/baru" className="btn-acc" style={{ fontSize: 11 }}>
+              <i className="ti ti-plus" /> Tambah pelanggan
+            </Link>
             <div style={{ position: "relative", width: 220 }}>
               <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
               <i className="ti ti-search" style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />
@@ -304,7 +307,12 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <span style={{ fontWeight: 600, fontSize: 12, letterSpacing: ".03em" }}>DAFTAR ANABUL</span>
-                  <span style={{ fontSize: 10, color: "var(--td)" }}>{sel.pets.length} ekor</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 10, color: "var(--td)" }}>{sel.pets.length} ekor</span>
+                    <Link href={`/crm/anabul/baru?customer=${sel.id}`} className="btn-acc" style={{ fontSize: 10, padding: "4px 9px" }}>
+                      <i className="ti ti-plus" /> Tambah anabul
+                    </Link>
+                  </div>
                 </div>
                 <div style={{ overflowX: "auto" }}>
                   <table className="tbl" style={{ minWidth: 600 }}>
