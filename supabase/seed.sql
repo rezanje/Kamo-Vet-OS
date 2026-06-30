@@ -209,3 +209,16 @@ insert into coa_accounts (code, name, type, normal_balance) values
   ('5401','Beban Operasional Lain-lain','BEBAN','D'),
   ('5901','Selisih Kas','BEBAN','D')
 on conflict (code) do nothing;
+
+-- Jurnal demo: setoran modal awal (Dr Kas / Cr Modal), balanced.
+with e as (
+  insert into journal_entries(no_jurnal, tanggal, deskripsi, source)
+  select 'JRN-202607-0001','2026-07-01','Setoran modal awal pemilik','manual'
+  where not exists (select 1 from journal_entries where no_jurnal='JRN-202607-0001')
+  returning id
+)
+insert into journal_lines(entry_id, account_id, debit, credit)
+select e.id, a.id, v.d, v.k
+from e
+join (values ('1101',10000000,0),('3101',0,10000000)) as v(code,d,k) on true
+join coa_accounts a on a.code=v.code;
