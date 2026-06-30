@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { SecHeader } from "@/components/SecHeader";
 import { registrasiPasien } from "./actions";
 
 export default async function RegistrasiPage({
@@ -30,10 +31,8 @@ export default async function RegistrasiPage({
 
       <form action={registrasiPasien}>
         <div className="grid2">
-          <div className="card">
-            <div className="card-hd">
-              <i className="ti ti-user" style={{ color: "var(--acc)" }} /> Pemilik hewan
-            </div>
+          <div className="crm-sec" style={{ marginBottom: 0 }}>
+            <SecHeader num="01" title="PEMILIK HEWAN" desc="Data pelanggan / pemilik anabul." />
             <div className="fg">
               <label className="flab">
                 Nomor HP <span style={{ color: "#dc2626" }}>*</span>
@@ -64,10 +63,8 @@ export default async function RegistrasiPage({
             </div>
           </div>
 
-          <div className="card">
-            <div className="card-hd">
-              <i className="ti ti-paw" style={{ color: "#16a34a" }} /> Data hewan peliharaan
-            </div>
+          <div className="crm-sec" style={{ marginBottom: 0 }}>
+            <SecHeader num="02" title="DATA ANABUL" desc="Data hewan peliharaan yang akan diperiksa." />
             <div className="frow">
               <div>
                 <label className="flab">
