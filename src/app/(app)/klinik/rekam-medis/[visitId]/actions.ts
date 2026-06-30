@@ -57,8 +57,8 @@ export async function simpanRekamMedis(formData: FormData) {
     await supabase.from("pets").update({ weight: berat }).eq("id", petId);
   }
 
-  // §3.4: rekam medis selesai → kunjungan ditutup (skip rawat inap/racik untuk prototype).
-  await supabase.from("visits").update({ status: "Selesai", dokter }).eq("id", visitId);
+  // §3.4: rekam medis selesai → lanjut tahap Pembayaran (skip rawat inap/racik untuk prototype).
+  await supabase.from("visits").update({ status: "Pembayaran", dokter }).eq("id", visitId);
 
-  redirect("/klinik/antrian?success=rm");
+  redirect(`/klinik/pembayaran/${visitId}`);
 }

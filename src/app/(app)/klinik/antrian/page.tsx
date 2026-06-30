@@ -8,7 +8,7 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-const STATUS_BADGE: Record<string, string> = { Menunggu: "o", Diperiksa: "b", Selesai: "g" };
+const STATUS_BADGE: Record<string, string> = { Menunggu: "o", Diperiksa: "b", Pembayaran: "r", Selesai: "g" };
 
 export default async function AntrianPage({
   searchParams,
@@ -35,7 +35,7 @@ export default async function AntrianPage({
     .from("visits")
     .select("status")
     .gte("created_at", startOfDay.toISOString());
-  const counts = { Menunggu: 0, Diperiksa: 0, Selesai: 0 };
+  const counts = { Menunggu: 0, Diperiksa: 0, Pembayaran: 0, Selesai: 0 };
   for (const v of today ?? []) {
     if (v.status in counts) counts[v.status as keyof typeof counts]++;
   }
@@ -57,15 +57,18 @@ export default async function AntrianPage({
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" />{" "}
-          {success === "rm" ? "Rekam medis tersimpan, kunjungan selesai." : "Pasien berhasil didaftarkan, masuk antrian."}
+          {success === "bayar"
+            ? "Pembayaran selesai, kunjungan ditutup."
+            : "Pasien berhasil didaftarkan, masuk antrian."}
         </div>
       )}
 
       {/* Counter hari ini (§3.3) */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginBottom: 14 }}>
         {([
           { label: "Menunggu", val: counts.Menunggu, color: "#b55a35", bg: "#fdf0ea", icon: "ti-clock" },
           { label: "Diperiksa", val: counts.Diperiksa, color: "#1d4ed8", bg: "#eff6ff", icon: "ti-stethoscope" },
+          { label: "Pembayaran", val: counts.Pembayaran, color: "#b91c1c", bg: "#fef2f2", icon: "ti-cash" },
           { label: "Selesai", val: counts.Selesai, color: "#15803d", bg: "#e8f5ee", icon: "ti-circle-check" },
           { label: "Total hari ini", val: totalToday, color: "#141413", bg: "#f7f5f1", icon: "ti-users" },
         ] as const).map((c) => (
@@ -153,9 +156,17 @@ export default async function AntrianPage({
                             <i className="ti ti-stethoscope" /> Rekam medis
                           </Link>
                         )}
+                        {v.status === "Pembayaran" && (
+                          <Link href={`/klinik/pembayaran/${v.id}`} className="btn-acc"
+                            style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                            <i className="ti ti-cash" /> Bayar
+                          </Link>
+                        )}
                         {v.status === "Selesai" && (
-                          <Link href={`/klinik/rekam-medis/${v.id}`} className="back-btn"
-                            style={{ fontSize: 10.5 }}>Lihat</Link>
+                          <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
+                            style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <i className="ti ti-eye" /> Lihat
+                          </Link>
                         )}
                       </div>
                     </td>

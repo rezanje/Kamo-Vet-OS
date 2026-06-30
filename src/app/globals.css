@@ -101,3 +101,11 @@ body {
 .pay-btn:hover { background: #c96a45; }
 .j-info { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 7px; padding: 8px 11px; font-size: 11px; color: #92400e; margin-bottom: 11px; }
 .crm-sec { background: #fff; border: .5px solid var(--bd); border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+
+/* Print: sembunyikan chrome aplikasi, cetak hanya konten (dipakai lembar resep) */
+@media print {
+  .sb, .topbar, .no-print { display: none !important; }
+  .shell, .main, .ct { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
+  .ct { padding: 0 !important; }
+  @page { margin: 16mm; }
+}

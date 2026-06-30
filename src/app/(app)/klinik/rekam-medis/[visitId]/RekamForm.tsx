@@ -85,7 +85,7 @@ export function RekamForm({ visitId, petId, currentWeight }: { visitId: string; 
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <button type="submit" className="btn-acc">
-          <i className="ti ti-circle-check" /> Simpan &amp; selesaikan kunjungan
+          <i className="ti ti-arrow-right" /> Simpan &amp; lanjut pembayaran
         </button>
       </div>
     </form>

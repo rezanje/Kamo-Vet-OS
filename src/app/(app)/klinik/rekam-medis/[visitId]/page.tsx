@@ -32,12 +32,14 @@ export default async function RekamMedisPage({
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
+  const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
+  const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
 
-  // Rekam medis tersimpan (read-only) untuk kunjungan yang sudah selesai.
+  // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
   let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
-  if (selesai) {
+  if (recorded) {
     const { data: mr } = await supabase
       .from("medical_records")
       .select("id, diagnosis, anamnesis")
@@ -56,7 +58,8 @@ export default async function RekamMedisPage({
     }
   }
 
-  const activeStep = selesai ? 3 : 2;
+  const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 3, Selesai: 4 };
+  const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
 
   return (
     <>
@@ -115,11 +118,23 @@ export default async function RekamMedisPage({
         </div>
       </div>
 
-      {selesai ? (
+      {recorded ? (
         <>
-          <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-            <i className="ti ti-circle-check" /> Kunjungan selesai. Rekam medis terkunci (read-only).
-          </div>
+          {menungguBayar ? (
+            <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", justifyContent: "space-between" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <i className="ti ti-clock-dollar" /> Pemeriksaan selesai — menunggu pembayaran.
+              </span>
+              <Link href={`/klinik/pembayaran/${visit.id}`} className="btn-acc"
+                style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+                Lanjut ke Pembayaran <i className="ti ti-arrow-right" />
+              </Link>
+            </div>
+          ) : (
+            <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+              <i className="ti ti-circle-check" /> Kunjungan selesai. Rekam medis terkunci (read-only).
+            </div>
+          )}
           <div className="grid2">
             <div className="card">
               <div className="card-hd"><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</div>
@@ -127,7 +142,15 @@ export default async function RekamMedisPage({
               <ReadField label="Diagnosa" value={record?.diagnosis} />
             </div>
             <div className="card">
-              <div className="card-hd"><i className="ti ti-prescription" style={{ color: "#16a34a" }} /> Resep obat</div>
+              <div className="card-hd" style={{ justifyContent: "space-between" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <i className="ti ti-prescription" style={{ color: "#16a34a" }} /> Resep obat
+                </span>
+                <Link href={`/klinik/rekam-medis/${visit.id}/resep`} className="btn-def"
+                  style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <i className="ti ti-printer" /> Cetak resep
+                </Link>
+              </div>
               {resep.length === 0 ? (
                 <div style={{ fontSize: 11, color: "var(--td)" }}>Tidak ada resep.</div>
               ) : (
