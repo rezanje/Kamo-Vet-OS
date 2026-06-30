@@ -65,5 +65,6 @@ export async function bayarVisit(formData: FormData) {
   }
 
   await supabase.from("visits").update({ status: "Selesai" }).eq("id", visitId);
-  redirect("/klinik/antrian?success=bayar");
+  // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
+  redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
 }

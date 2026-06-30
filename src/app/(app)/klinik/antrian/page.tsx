@@ -163,10 +163,16 @@ export default async function AntrianPage({
                           </Link>
                         )}
                         {v.status === "Selesai" && (
-                          <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
-                            style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <i className="ti ti-eye" /> Lihat
-                          </Link>
+                          <>
+                            <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
+                              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <i className="ti ti-eye" /> Lihat
+                            </Link>
+                            <Link href={`/klinik/pembayaran/${v.id}`} className="btn-def"
+                              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <i className="ti ti-file-invoice" /> Tagihan
+                            </Link>
+                          </>
                         )}
                       </div>
                     </td>

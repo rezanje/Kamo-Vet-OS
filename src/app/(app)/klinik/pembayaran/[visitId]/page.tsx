@@ -17,10 +17,10 @@ export default async function PembayaranPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; success?: string }>;
 }) {
   const { visitId } = await params;
-  const { error } = await searchParams;
+  const { error, success } = await searchParams;
   const supabase = await createClient();
 
   const { data: visit } = await supabase
@@ -67,6 +67,11 @@ export default async function PembayaranPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+      {success === "bayar" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Pembayaran berhasil. Cetak struk / invoice di bawah.
         </div>
       )}
 
