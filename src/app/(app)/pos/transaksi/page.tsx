@@ -16,6 +16,10 @@ export default async function TransaksiPage({
     supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
   ]);
 
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: openShift } = await supabase
+    .from("cashier_shifts").select("id").eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -27,6 +31,14 @@ export default async function TransaksiPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+      {!openShift && (
+        <div className="p2ban" style={{ justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <i className="ti ti-clock-pause" /> Shift belum dibuka — penjualan tidak tercatat ke rekonsiliasi kas.
+          </span>
+          <Link href="/pos/shift" className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>Buka shift</Link>
         </div>
       )}
 

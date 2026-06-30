@@ -34,6 +34,11 @@ export async function checkoutSale(formData: FormData) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
+  // §2.1: tautkan ke shift kasir yang sedang terbuka (kalau ada) untuk rekonsiliasi kas.
+  const { data: openShift } = await supabase
+    .from("cashier_shifts").select("id")
+    .eq("branch_id", branchId).eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+
   const now = new Date();
   const prefix = `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
   const { count } = await supabase.from("sales").select("*", { count: "exact", head: true }).like("no_struk", `${prefix}-%`);
@@ -46,7 +51,7 @@ export async function checkoutSale(formData: FormData) {
     .insert({
       branch_id: branchId, customer_id: customerId, pet_id: petId, no_struk: noStruk,
       subtotal, discount, total, metode_bayar: metode, bayar, kembali, poin_earned: poin,
-      cashier_id: user?.id ?? null,
+      cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
     })
     .select("id").single();
   if (saleErr || !sale) redirect(`/pos/transaksi?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
