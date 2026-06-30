@@ -9,12 +9,15 @@ export type PetRow = {
   warna: string | null; sterilisasi: string | null; golongan_darah: string | null;
   status: string; created_at: string;
 };
+export type Purchase = { tgl: string; produk: string; qty: number; total: number; cabang: string; anabul: string };
+export type Ledger = { tgl: string; desc: string; delta: number; saldo: number };
 export type CustomerRow = {
   id: string; name: string; phone: string; email: string | null;
   dob: string | null; address: string | null; tier: string | null;
   keanggotaan: string; points: number; total_spending: number;
   catatan: string | null; pekerjaan: string | null; sumber_info: string | null;
   created_at: string; pets: PetRow[];
+  purchases: Purchase[]; ledger: Ledger[];
 };
 
 const fmt = (n: number) => n.toLocaleString("id-ID");
@@ -354,8 +357,27 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
               </div>
 
               {tab === "pembelian" && (
-                <div className="p2ban">
-                  <i className="ti ti-info-circle" /> Riwayat pembelian otomatis muncul setelah modul POS aktif (atribusi per-spesies, PRD §1.3).
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tbl" style={{ minWidth: 540 }}>
+                    <thead>
+                      <tr><th>Tanggal</th><th>Produk</th><th>Anabul</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Total</th><th>Cabang</th></tr>
+                    </thead>
+                    <tbody>
+                      {sel.purchases.map((p, i) => (
+                        <tr key={i}>
+                          <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(p.tgl)}</td>
+                          <td style={{ fontWeight: 500 }}>{p.produk}</td>
+                          <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.anabul}</td>
+                          <td style={{ textAlign: "center" }}>{p.qty}</td>
+                          <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(p.total)}</td>
+                          <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.cabang}</td>
+                        </tr>
+                      ))}
+                      {sel.purchases.length === 0 && (
+                        <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada transaksi.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
@@ -376,11 +398,27 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
                     ))}
                   </div>
                   <div>
-                    <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 8 }}>POIN REWARD</div>
-                    <div style={{ border: ".5px solid var(--bd)", borderRadius: 8, padding: 14, textAlign: "center" }}>
-                      <div style={{ fontSize: 28, fontWeight: 700, color: "var(--acc)" }}>{fmt(sel.points)}</div>
-                      <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 2 }}>Total poin aktif</div>
-                      <div style={{ fontSize: 9, color: "var(--td)", marginTop: 8 }}>Ledger penukaran poin menyusul modul loyalty (§1.4).</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em" }}>POIN REWARD</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--acc)" }}>{fmt(sel.points)} poin</span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table className="tbl">
+                        <thead><tr><th>Tanggal</th><th>Deskripsi</th><th style={{ textAlign: "right" }}>Poin</th><th style={{ textAlign: "right" }}>Saldo</th></tr></thead>
+                        <tbody>
+                          {sel.ledger.map((l, i) => (
+                            <tr key={i}>
+                              <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(l.tgl)}</td>
+                              <td style={{ fontSize: 11 }}>{l.desc}</td>
+                              <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600, color: l.delta >= 0 ? "#15803d" : "#b91c1c" }}>{l.delta >= 0 ? "+" : ""}{l.delta}</td>
+                              <td style={{ textAlign: "right", fontSize: 11 }}>{fmt(l.saldo)}</td>
+                            </tr>
+                          ))}
+                          {sel.ledger.length === 0 && (
+                            <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada riwayat poin.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>

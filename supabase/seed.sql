@@ -97,3 +97,23 @@ from (values
 ) as p(phone,name,species,breed,gender,dob,weight,warna,sterilisasi,gol)
 join customers c on c.phone = p.phone
 where not exists (select 1 from pets x where x.customer_id = c.id and x.name = p.name);
+
+-- POS demo produk (target_species §1.3).
+insert into items (code, name, category_id, unit, sell_price, buy_price, target_species)
+select v.code, v.name, c.id, 'pcs', v.sell, v.buy, v.species
+from (values
+  ('ITM-001','Royal Canin Kitten 2kg','Makanan / Pakan',285000,210000,'Kucing'),
+  ('ITM-002','Royal Canin Mini Adult 4kg','Makanan / Pakan',320000,240000,'Anjing'),
+  ('ITM-003','Whiskas Tuna 1.2kg','Makanan / Pakan',70000,52000,'Kucing'),
+  ('ITM-004','Pedigree Adult 3kg','Makanan / Pakan',120000,90000,'Anjing'),
+  ('ITM-005','Pasir Toffu 7L','Aksesoris',95000,70000,'Kucing'),
+  ('ITM-006','Vetflox 100ml','Obat & Suplemen',45000,30000,'Universal'),
+  ('ITM-007','Ivermectin 10ml','Obat & Suplemen',28000,18000,'Universal'),
+  ('ITM-008','Probiotik Kucing 30gr','Obat & Suplemen',85000,60000,'Kucing'),
+  ('ITM-009','Grooming Shampoo 250ml','Grooming Supplies',75000,50000,'Universal'),
+  ('ITM-010','Vitamin Kulit & Bulu 60ml','Obat & Suplemen',120000,85000,'Universal'),
+  ('ITM-011','Collar Kucing S','Aksesoris',35000,20000,'Kucing'),
+  ('ITM-012','Leash Anjing M','Aksesoris',55000,35000,'Anjing')
+) as v(code,name,cat,sell,buy,species)
+join item_categories c on c.name = v.cat
+where not exists (select 1 from items i where i.code = v.code);
