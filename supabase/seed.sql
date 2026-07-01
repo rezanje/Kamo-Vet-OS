@@ -315,3 +315,10 @@ from (values
 ) v(nik,metrik,target,realisasi,skor,cat)
 join employees e on e.nik=v.nik
 where not exists (select 1 from kpi_records k where k.employee_id=e.id and k.periode='2026-07' and k.metrik=v.metrik);
+
+-- Pembelian: supplier demo.
+insert into suppliers (nama, kontak, telp, alamat) values
+  ('PT Medika Sentosa', 'Budi Hartono', '021-1234567', 'Jl. Sudirman No. 12, Jakarta'),
+  ('CV Aneka Veteriner', 'Siti Rahayu', '0812-3456-7890', 'Jl. Gajah Mada No. 5, Surabaya'),
+  ('UD Hewan Sehat', 'Dian Pratiwi', '0856-7891-234', 'Jl. Diponegoro No. 33, Bandung')
+on conflict do nothing;
