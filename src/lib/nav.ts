@@ -88,7 +88,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "AR Aging", icon: "ti-clock-hour-4", ...A },
     { label: "AP Aging", icon: "ti-clock-dollar", ...R },
     { label: "Aset tetap", icon: "ti-building", ...P },
-    { label: "Rekonsiliasi bank", icon: "ti-building-bank", ...B },
+    { label: "Rekonsiliasi bank", icon: "ti-building-bank", ...B, href: "/keuangan/rekonsiliasi" },
     { label: "Lap. HPP", icon: "ti-report", ...G },
   ],
   hris: [

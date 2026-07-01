@@ -322,3 +322,19 @@ insert into suppliers (nama, kontak, telp, alamat) values
   ('CV Aneka Veteriner', 'Siti Rahayu', '0812-3456-7890', 'Jl. Gajah Mada No. 5, Surabaya'),
   ('UD Hewan Sehat', 'Dian Pratiwi', '0856-7891-234', 'Jl. Diponegoro No. 33, Bandung')
 on conflict do nothing;
+
+-- Keuangan: akun penyesuaian bank + setoran kas ke bank (biar akun Bank 1102 ada saldo utk rekonsiliasi).
+insert into coa_accounts (code, name, type, normal_balance) values
+  ('5501','Beban Administrasi Bank','BEBAN','D'),
+  ('4301','Pendapatan Bunga Bank','PENDAPATAN','K')
+on conflict (code) do nothing;
+
+with e as (
+  insert into journal_entries(no_jurnal,tanggal,deskripsi,source)
+  select 'JRN-SETOR-BANK-01','2026-07-01','Setoran kas ke Bank BCA','manual'
+  where not exists (select 1 from journal_entries where no_jurnal='JRN-SETOR-BANK-01')
+  returning id
+)
+insert into journal_lines(entry_id,account_id,debit,credit)
+select e.id,a.id, case when a.code='1102' then 5000000 else 0 end, case when a.code='1101' then 5000000 else 0 end
+from e cross join coa_accounts a where a.code in ('1102','1101');
