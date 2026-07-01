@@ -59,3 +59,32 @@ export async function getAccountLedger(supabase: AnyClient, code: string): Promi
   rows.sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.no_jurnal.localeCompare(b.no_jurnal));
   return rows;
 }
+
+// Arus kas metode langsung: mutasi jurnal yang menyentuh akun kas/bank (1101,1102),
+// dikelompokkan per source. masuk = debit ke kas, keluar = credit dari kas.
+export type CashMove = { source: string; masuk: number; keluar: number };
+export async function getCashMovements(supabase: AnyClient): Promise<{ moves: CashMove[]; saldoKasNow: number }> {
+  const { data: cashAccs } = (await supabase.from("coa_accounts").select("id, code").eq("code", "1101")) as { data: { id: string; code: string }[] | null };
+  // ambil semua akun kas/bank (kode 1101 & 1102) — dua query karena helper .eq sederhana.
+  const { data: bankAccs } = (await supabase.from("coa_accounts").select("id, code").eq("code", "1102")) as { data: { id: string; code: string }[] | null };
+  const cashIds = new Set([...(cashAccs ?? []), ...(bankAccs ?? [])].map((a) => a.id));
+  if (cashIds.size === 0) return { moves: [], saldoKasNow: 0 };
+
+  const { data: lines } = (await supabase
+    .from("journal_lines")
+    .select("account_id, debit, credit, journal_entries(source)")) as { data: { account_id: string; debit: number; credit: number; journal_entries: { source: string } | { source: string }[] | null }[] | null };
+
+  const agg = new Map<string, CashMove>();
+  let saldo = 0;
+  for (const l of lines ?? []) {
+    if (!cashIds.has(l.account_id)) continue;
+    const je = Array.isArray(l.journal_entries) ? l.journal_entries[0] : l.journal_entries;
+    const src = je?.source ?? "manual";
+    const cur = agg.get(src) ?? { source: src, masuk: 0, keluar: 0 };
+    cur.masuk += Number(l.debit);
+    cur.keluar += Number(l.credit);
+    agg.set(src, cur);
+    saldo += Number(l.debit) - Number(l.credit);
+  }
+  return { moves: [...agg.values()], saldoKasNow: saldo };
+}

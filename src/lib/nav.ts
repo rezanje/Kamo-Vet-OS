@@ -84,7 +84,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Buku besar", icon: "ti-book", ...B, href: "/keuangan/buku-besar" },
     { label: "Lap. laba rugi", icon: "ti-chart-bar", ...G, href: "/keuangan/laba-rugi" },
     { label: "Neraca", icon: "ti-scale", ...B, href: "/keuangan/neraca" },
-    { label: "Arus kas", icon: "ti-arrows-exchange", ...P },
+    { label: "Arus kas", icon: "ti-arrows-exchange", ...P, href: "/keuangan/arus-kas" },
     { label: "AR Aging", icon: "ti-clock-hour-4", ...A },
     { label: "AP Aging", icon: "ti-clock-dollar", ...R },
     { label: "Aset tetap", icon: "ti-building", ...P },
