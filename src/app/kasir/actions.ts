@@ -15,7 +15,13 @@ export async function mulaiShiftKasir(formData: FormData) {
   const { error } = await supabase
     .from("cashier_shifts")
     .insert({ branch_id: branchId, opened_by: user?.id ?? null, opening_balance: opening });
-  if (error) redirect(`/kasir/mulai?error=${encodeURIComponent("Sudah ada shift terbuka di cabang ini")}`);
+  if (error) {
+    // 23505 = unique (shift open di cabang ini sudah ada); selain itu biasanya RLS (cabang bukan tugasmu).
+    const msg = error.code === "23505"
+      ? "Sudah ada shift terbuka di cabang ini"
+      : "Kamu tidak bertugas di cabang ini — pilih cabang penempatanmu.";
+    redirect(`/kasir/mulai?error=${encodeURIComponent(msg)}`);
+  }
 
   redirect("/kasir");
 }
