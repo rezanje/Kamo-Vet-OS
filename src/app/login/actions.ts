@@ -13,7 +13,8 @@ export async function login(formData: FormData) {
   if (error) {
     redirect(`/login?error=${encodeURIComponent(error.message)}`);
   }
-  redirect("/");
+  // setelah login pilih mode kerja dulu: dashboard VetOS atau POS kasir.
+  redirect("/mulai");
 }
 
 export async function logout() {

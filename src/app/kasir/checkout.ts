@@ -1,0 +1,181 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { postJournal } from "@/lib/posting";
+
+type CartLine = { item_id: string; nama: string; qty: number; harga: number; target_species?: string };
+
+const POIN_PER_RUPIAH = 1000; // earn: 1 poin / Rp1.000
+const RUPIAH_PER_POIN = 1;    // redeem: 1 poin = Rp1
+
+export async function checkoutKasir(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // shift & cabang dari server (jangan percaya client).
+  const { data: shift } = await supabase
+    .from("cashier_shifts").select("id, branch_id")
+    .eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+  if (!shift) redirect("/kasir/mulai");
+
+  const branchId = shift!.branch_id;
+  const customerId = String(formData.get("customerId") ?? "") || null;
+  const metode = String(formData.get("metode") ?? "Tunai");
+  const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
+  const voucherCode = String(formData.get("voucherCode") ?? "").trim().toUpperCase() || null;
+  const poinReq = Math.max(0, Math.floor(Number(formData.get("poinDigunakan")) || 0));
+  const bayar = Number(formData.get("bayar")) || 0;
+  const draftId = String(formData.get("draftId") ?? "") || null;
+
+  let cart: CartLine[] = [];
+  try {
+    cart = JSON.parse(String(formData.get("cart") ?? "[]"));
+  } catch {
+    cart = [];
+  }
+  const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
+  if (rows.length === 0) redirect(`/kasir?error=${encodeURIComponent("Keranjang kosong")}`);
+
+  const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+
+  // voucher divalidasi server-side.
+  let voucherVal = 0;
+  if (voucherCode) {
+    const { data: v } = await supabase.from("vouchers").select("tipe, nilai").eq("code", voucherCode).eq("is_active", true).maybeSingle();
+    if (!v) redirect(`/kasir?error=${encodeURIComponent("Kode voucher tidak valid")}`);
+    voucherVal = v!.tipe === "persen" ? Math.round((subtotal * Number(v!.nilai)) / 100) : Number(v!.nilai);
+  }
+
+  // poin divalidasi terhadap saldo pelanggan sebenarnya.
+  let poinDigunakan = 0;
+  let custPoints = 0, custSpending = 0;
+  if (customerId) {
+    const { data: cust } = await supabase.from("customers").select("points, total_spending").eq("id", customerId).single();
+    custPoints = cust?.points ?? 0;
+    custSpending = Number(cust?.total_spending) || 0;
+    poinDigunakan = Math.min(poinReq, custPoints);
+  } else if (poinReq > 0) {
+    redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu untuk pakai poin")}`);
+  }
+
+  const potonganPoin = poinDigunakan * RUPIAH_PER_POIN;
+  const totalDiskon = Math.min(subtotal, diskon + voucherVal + potonganPoin);
+  const total = subtotal - totalDiskon;
+  const kembali = metode === "Tunai" ? Math.max(0, bayar - total) : 0;
+  if (metode === "Tunai" && bayar < total) redirect(`/kasir?error=${encodeURIComponent("Uang bayar kurang")}`);
+
+  const now = new Date();
+  const prefix = `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const { count } = await supabase.from("sales").select("*", { count: "exact", head: true }).like("no_struk", `${prefix}-%`);
+  const noStruk = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+
+  const poinEarned = customerId ? Math.floor(total / POIN_PER_RUPIAH) : 0;
+
+  const { data: sale, error: saleErr } = await supabase
+    .from("sales")
+    .insert({
+      branch_id: branchId, customer_id: customerId, no_struk: noStruk,
+      subtotal, discount: totalDiskon, total, metode_bayar: metode, bayar: metode === "Tunai" ? bayar : total,
+      kembali, poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
+      cashier_id: user?.id ?? null, shift_id: shift!.id,
+    })
+    .select("id").single();
+  if (saleErr || !sale) redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+
+  const { error: itErr } = await supabase.from("sale_items").insert(
+    rows.map((l) => ({ sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga, target_species: l.target_species ?? "Universal" }))
+  );
+  if (itErr) redirect(`/kasir?error=${encodeURIComponent(itErr.message)}`);
+
+  // stok toko berkurang.
+  const { data: wh } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
+  if (wh) {
+    for (const r of rows) {
+      if (!r.item_id) continue;
+      const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", wh.id).eq("item_id", r.item_id).maybeSingle();
+      if (st) {
+        await supabase.from("stock").update({ qty: Number(st.qty) - r.qty, updated_at: new Date().toISOString() })
+          .eq("warehouse_id", wh.id).eq("item_id", r.item_id);
+      }
+    }
+  }
+
+  // poin: redeem (minus) lalu earn (plus), saldo berjalan konsisten di ledger.
+  if (customerId) {
+    let saldo = custPoints;
+    if (poinDigunakan > 0) {
+      saldo -= poinDigunakan;
+      await supabase.from("point_ledger").insert({ customer_id: customerId, delta: -poinDigunakan, saldo, ref: noStruk, description: `Poin digunakan ${noStruk}` });
+    }
+    if (poinEarned > 0) {
+      saldo += poinEarned;
+      await supabase.from("point_ledger").insert({ customer_id: customerId, delta: poinEarned, saldo, ref: noStruk, description: `Transaksi ${noStruk}` });
+    }
+    await supabase.from("customers").update({ points: saldo, total_spending: custSpending + total }).eq("id", customerId);
+  }
+
+  // Jurnal: pendapatan (PPN-inklusif, dipisah) + HPP. Total sudah net semua potongan.
+  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const dpp = Math.round((total * 100) / 111);
+  const ppn = total - dpp;
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  if (total > 0) {
+    await postJournal(supabase, {
+      tanggal: todayIso, deskripsi: `Penjualan POS ${noStruk}`, source: "sale", sourceRef: noStruk, branchId,
+      lines: [
+        { code: kasCode, debit: total, credit: 0 },
+        { code: "4101", debit: 0, credit: dpp },
+        ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
+      ],
+    });
+  }
+  const itemIds = rows.map((r) => r.item_id).filter(Boolean);
+  if (itemIds.length) {
+    const { data: costs } = await supabase.from("items").select("id, buy_price").in("id", itemIds);
+    const costMap = new Map((costs ?? []).map((c: { id: string; buy_price: number }) => [c.id, Number(c.buy_price) || 0]));
+    const hpp = rows.reduce((a, r) => a + (costMap.get(r.item_id) ?? 0) * r.qty, 0);
+    if (hpp > 0) {
+      await postJournal(supabase, {
+        tanggal: todayIso, deskripsi: `HPP penjualan ${noStruk}`, source: "sale-hpp", sourceRef: noStruk, branchId,
+        lines: [
+          { code: "5101", debit: hpp, credit: 0 },
+          { code: "1301", debit: 0, credit: hpp },
+        ],
+      });
+    }
+  }
+
+  // draft yang dilanjutkan dihapus.
+  if (draftId) await supabase.from("sale_drafts").delete().eq("id", draftId);
+
+  redirect(`/kasir/struk/${sale!.id}`);
+}
+
+export async function simpanDraft(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: shift } = await supabase
+    .from("cashier_shifts").select("id, branch_id").eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+  if (!shift) redirect("/kasir/mulai");
+
+  const cart = String(formData.get("cart") ?? "[]");
+  const customerId = String(formData.get("customerId") ?? "") || null;
+  let parsed: unknown[] = [];
+  try { parsed = JSON.parse(cart); } catch { parsed = []; }
+  if (parsed.length === 0) redirect(`/kasir?error=${encodeURIComponent("Keranjang kosong, tidak ada yang disimpan")}`);
+
+  await supabase.from("sale_drafts").insert({ branch_id: shift!.branch_id, cashier_id: user?.id ?? null, customer_id: customerId, cart: parsed });
+  revalidatePath("/kasir");
+  redirect("/kasir");
+}
+
+export async function hapusDraft(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "");
+  if (id) await supabase.from("sale_drafts").delete().eq("id", id);
+  revalidatePath("/kasir");
+  redirect("/kasir");
+}
