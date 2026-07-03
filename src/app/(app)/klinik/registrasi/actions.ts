@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { nextQueueNumber } from "@/lib/queue";
 
 export async function registrasiPasien(formData: FormData) {
   const supabase = await createClient();
@@ -49,9 +50,16 @@ export async function registrasiPasien(formData: FormData) {
     redirect(`/klinik/registrasi?error=${encodeURIComponent(petErr?.message ?? "Gagal simpan data hewan")}`);
   }
 
+  // Addendum §4: nomor antrian [Huruf][3 digit] per cabang per hari, reset tiap hari.
+  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+  const { data: todayQ } = await supabase
+    .from("visits").select("queue_number")
+    .eq("branch_id", branchId).gte("created_at", startOfDay.toISOString());
+  const queueNumber = nextQueueNumber(poli, (todayQ ?? []).map((v) => v.queue_number));
+
   const { error: visitErr } = await supabase
     .from("visits")
-    .insert({ branch_id: branchId, customer_id: customerId, pet_id: pet!.id, poli, keluhan, status: "Menunggu" });
+    .insert({ branch_id: branchId, customer_id: customerId, pet_id: pet!.id, poli, keluhan, status: "Menunggu", queue_number: queueNumber });
   if (visitErr) {
     redirect(`/klinik/registrasi?error=${encodeURIComponent(visitErr.message)}`);
   }

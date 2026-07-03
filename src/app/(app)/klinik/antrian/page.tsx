@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { updateVisitStatus } from "./actions";
 import { CancelButton } from "./CancelButton";
 import { SecHeader } from "@/components/SecHeader";
+import { LiveRefresh } from "./LiveRefresh";
+import { estimatedWaitMinutes } from "@/lib/queue";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -21,13 +23,29 @@ export default async function AntrianPage({
 
   let query = supabase
     .from("visits")
-    .select("id, poli, dokter, status, created_at, keluhan, pets(name, species), customers(name, phone), branches(code)")
+    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, pets(name, species), customers(name, phone), branches(code)")
     .order("created_at", { ascending: true });
 
   if (filter === "aktif") query = query.neq("status", "Selesai");
+  if (filter === "menunggu") query = query.eq("status", "Menunggu");
+  if (filter === "diperiksa") query = query.eq("status", "Diperiksa");
   if (filter === "selesai") query = query.eq("status", "Selesai");
 
   const { data: visits } = await query;
+
+  // Panel "Panggilan Berikutnya" + Informasi Poli (§4): selalu dari seluruh antrian Menunggu.
+  const { data: allWaiting } = await supabase
+    .from("visits")
+    .select("id, poli, queue_number, pets(name, species), customers(name)")
+    .eq("status", "Menunggu")
+    .order("created_at", { ascending: true });
+  const nextUp = (allWaiting ?? [])[0];
+
+  const poliCounts = new Map<string, number>();
+  for (const v of allWaiting ?? []) poliCounts.set(v.poli, (poliCounts.get(v.poli) ?? 0) + 1);
+  // posisi antrian per visit id utk estimasi tunggu (posisi × 20 menit, v1 sederhana).
+  const waitPos = new Map<string, number>();
+  (allWaiting ?? []).forEach((v, i) => waitPos.set(v.id as string, i));
 
   // Counter hari ini (§3.3) — query terpisah, tidak terpengaruh filter tabel.
   const startOfDay = new Date();
@@ -47,12 +65,16 @@ export default async function AntrianPage({
 
   return (
     <>
+      <LiveRefresh />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/klinik" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Antrian Pasien</span>
+        <span style={{ fontSize: 9.5, color: "var(--td)", marginLeft: 6 }}>
+          <i className="ti ti-broadcast" style={{ color: "#16a34a" }} /> live — update otomatis via realtime
+        </span>
       </div>
 
       {success && (
@@ -87,15 +109,65 @@ export default async function AntrianPage({
         ))}
       </div>
 
+      {/* Panel Panggilan Berikutnya + Informasi Poli (§4) */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10, marginBottom: 14 }}>
+        <div className="card" style={{ display: "flex", alignItems: "center", gap: 16, borderColor: "var(--sb)" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--sb)", letterSpacing: ".05em", marginBottom: 4 }}>
+              <i className="ti ti-bell-ringing" /> PANGGILAN BERIKUTNYA
+            </div>
+            {nextUp ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <span style={{ fontSize: 30, fontWeight: 800, color: "var(--sb)", fontFamily: "ui-monospace, monospace" }}>
+                  {nextUp.queue_number ?? "—"}
+                </span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{one(nextUp.pets)?.name ?? "—"} <span style={{ fontWeight: 400, color: "var(--tm)", fontSize: 11 }}>· {one(nextUp.pets)?.species}</span></div>
+                  <div style={{ fontSize: 10.5, color: "var(--tm)" }}>{one(nextUp.customers)?.name ?? "—"} · {nextUp.poli}</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--td)" }}>Tidak ada antrian menunggu.</div>
+            )}
+          </div>
+          {nextUp && (
+            <form action={updateVisitStatus}>
+              <input type="hidden" name="id" value={nextUp.id} />
+              <input type="hidden" name="status" value="Diperiksa" />
+              <button type="submit" className="pay-btn" style={{ padding: "13px 26px", fontSize: 14 }}>
+                <i className="ti ti-bell" /> Panggil Sekarang
+              </button>
+            </form>
+          )}
+        </div>
+        <div className="card">
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--sb)", letterSpacing: ".05em", marginBottom: 6 }}>
+            <i className="ti ti-building-hospital" /> INFORMASI POLI (MENUNGGU)
+          </div>
+          {poliCounts.size === 0 ? (
+            <div style={{ fontSize: 11, color: "var(--td)" }}>Semua poli kosong.</div>
+          ) : (
+            [...poliCounts.entries()].map(([poli, n]) => (
+              <div key={poli} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 11.5 }}>
+                <span style={{ color: "var(--tm)" }}>{poli}</span>
+                <span style={{ fontWeight: 700 }}>{n} <span style={{ fontWeight: 400, color: "var(--td)", fontSize: 10 }}>menunggu</span></span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       <div className="crm-sec">
         <SecHeader num="01" title="ANTRIAN PASIEN" desc="Daftar pasien & status pemeriksaan hari ini."
           action={<Link href="/klinik/registrasi" className="btn-acc" style={{ textDecoration: "none" }}>+ Daftarkan pasien</Link>} />
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
           {[
-            { key: "aktif", label: "Aktif" },
+            { key: "semua", label: "Semua Antrian" },
+            { key: "menunggu", label: "Menunggu" },
+            { key: "diperiksa", label: "Sedang Diperiksa" },
             { key: "selesai", label: "Selesai" },
-            { key: "semua", label: "Semua" },
+            { key: "aktif", label: "Aktif" },
           ].map((t) => (
             <Link key={t.key} href={`/klinik/antrian?filter=${t.key}`}
               className="back-btn"
@@ -113,8 +185,8 @@ export default async function AntrianPage({
           <table className="tbl" style={{ minWidth: 760 }}>
             <thead>
               <tr>
-                <th>Jam</th><th>Pasien</th><th>Pemilik</th><th>Cabang</th>
-                <th>Poli / Keluhan</th><th>Status</th><th>Aksi</th>
+                <th>No</th><th>Jam</th><th>Pasien</th><th>Pemilik</th><th>Cabang</th>
+                <th>Poli / Keluhan</th><th>Estimasi</th><th>Status</th><th>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -122,8 +194,10 @@ export default async function AntrianPage({
                 const pet = one(v.pets);
                 const cust = one(v.customers);
                 const branch = one(v.branches);
+                const pos = waitPos.get(v.id);
                 return (
                   <tr key={v.id}>
+                    <td style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700, fontSize: 12, color: "var(--sb)" }}>{v.queue_number ?? "—"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTime(v.created_at)}</td>
                     <td>
                       <div style={{ fontWeight: 500 }}>{pet?.name ?? "—"}</div>
@@ -137,6 +211,9 @@ export default async function AntrianPage({
                     <td>
                       <div style={{ fontSize: 11.5 }}>{v.poli}</div>
                       {v.keluhan && <div style={{ fontSize: 10, color: "var(--tm)" }}>{v.keluhan}</div>}
+                    </td>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                      {v.status === "Menunggu" && pos !== undefined ? `± ${estimatedWaitMinutes(pos)} mnt` : "—"}
                     </td>
                     <td><span className={`bge ${STATUS_BADGE[v.status]}`}>{v.status}</span></td>
                     <td>
@@ -181,7 +258,7 @@ export default async function AntrianPage({
                 );
               })}
               {(visits ?? []).length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                   Tidak ada pasien di antrian.
                 </td></tr>
               )}
