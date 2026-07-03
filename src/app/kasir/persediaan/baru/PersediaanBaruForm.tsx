@@ -5,9 +5,9 @@ import { SecHeader } from "@/components/SecHeader";
 import { buatPermintaanKasir } from "../actions";
 
 type Warehouse = { id: string; name: string };
-type Row = { nama: string; qty_diminta: number };
+type Row = { nama: string; qty_diminta: number; catatan: string };
 
-const blank: Row = { nama: "", qty_diminta: 1 };
+const blank: Row = { nama: "", qty_diminta: 1, catatan: "" };
 
 export function PersediaanBaruForm({ branchName, warehouses }: { branchName: string; warehouses: Warehouse[] }) {
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
@@ -35,6 +35,13 @@ export function PersediaanBaruForm({ branchName, warehouses }: { branchName: str
               {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           </div>
+          <div className="fg" style={{ marginBottom: 10 }}>
+            <label className="flab">Prioritas</label>
+            <select className="fi" name="priority" defaultValue="normal">
+              <option value="normal">Normal</option>
+              <option value="tinggi">Tinggi</option>
+            </select>
+          </div>
           <div className="fg">
             <label className="flab">Catatan</label>
             <textarea className="fi" name="catatan" rows={3}
@@ -52,12 +59,14 @@ export function PersediaanBaruForm({ branchName, warehouses }: { branchName: str
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {rows.map((r, i) => (
-              <div key={i} style={{ display: "flex", gap: 6 }}>
+              <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <input className="fi" placeholder="Nama barang" value={r.nama}
-                  onChange={(e) => set(i, { nama: e.target.value })} style={{ flex: 1 }} />
+                  onChange={(e) => set(i, { nama: e.target.value })} style={{ flex: 1, minWidth: 160 }} />
                 <input className="fi" type="number" min={0} step="any" value={r.qty_diminta}
                   onChange={(e) => set(i, { qty_diminta: Number(e.target.value) })}
                   style={{ width: 80 }} title="Qty diminta" />
+                <input className="fi" placeholder="Catatan (mis. stok menipis)" value={r.catatan}
+                  onChange={(e) => set(i, { catatan: e.target.value })} style={{ flex: 1, minWidth: 150 }} />
                 <button type="button" onClick={() => del(i)} className="btn-def"
                   style={{ padding: "0 9px", color: "#b91c1c" }} title="Hapus">
                   <i className="ti ti-trash" />

@@ -39,9 +39,13 @@ export default async function TerimaBarangPage({
 
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, from_branch_id, warehouses(name), stock_request_items(id, item_id, nama, qty_diminta)")
+    .select("id, no_request, status, from_branch_id, warehouses(name), stock_request_items(id, item_id, nama, qty_diminta, catatan)")
     .eq("id", id)
     .maybeSingle();
+
+  // katalog barcode utk scan penerimaan (§5).
+  const { data: catalog } = await supabase
+    .from("items").select("id, name, upc").eq("is_active", true);
 
   const req = data as unknown as ReqDetail | null;
 
@@ -68,7 +72,7 @@ export default async function TerimaBarangPage({
           title="TERIMA BARANG"
           desc={`Dari gudang ${wh?.name ?? "—"} · cabang ${shift.branchName} (PRD §2.4)`}
         />
-        <TerimaForm requestId={req.id} items={items} />
+        <TerimaForm requestId={req.id} items={items} catalog={(catalog ?? []) as { id: string; name: string; upc: string | null }[]} />
       </div>
     </>
   );

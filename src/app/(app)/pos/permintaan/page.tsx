@@ -20,6 +20,7 @@ type Req = {
   id: string;
   no_request: string | null;
   status: string;
+  priority?: string;
   created_at: string;
   branches: Rel<{ code: string; name: string }>;
   warehouses: Rel<{ code: string; name: string }>;
@@ -32,14 +33,14 @@ const fmtDt = (iso: string) =>
 export default async function PermintaanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string }>;
+  searchParams: Promise<{ success?: string; error?: string }>;
 }) {
-  const { success } = await searchParams;
+  const { success, error } = await searchParams;
   const supabase = await createClient();
 
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, created_at, branches(code, name), warehouses(code, name), stock_request_items(id)")
+    .select("id, no_request, status, priority, created_at, branches(code, name), warehouses(code, name), stock_request_items(id)")
     .order("created_at", { ascending: false });
 
   const reqs = (data ?? []) as unknown as Req[];
@@ -57,6 +58,11 @@ export default async function PermintaanPage({
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Permintaan barang berhasil dibuat.
+        </div>
+      )}
+      {error && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
 
@@ -92,7 +98,10 @@ export default async function PermintaanPage({
                 const itemCount = r.stock_request_items?.length ?? 0;
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontWeight: 500, fontSize: 11.5 }}>{r.no_request ?? "—"}</td>
+                    <td style={{ fontWeight: 500, fontSize: 11.5 }}>
+                      {r.no_request ?? "—"}
+                      {r.priority === "tinggi" && <span className="bge r" style={{ marginLeft: 6 }}>Tinggi</span>}
+                    </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDt(r.created_at)}</td>
                     <td style={{ fontSize: 11.5 }}>{br?.name ?? "—"}</td>
                     <td style={{ fontSize: 11.5 }}>{wh?.name ?? "—"}</td>

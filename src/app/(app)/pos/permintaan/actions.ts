@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
 
 type ItemInput = { nama: string; qty_diminta: number };
 
@@ -66,6 +67,28 @@ export async function updateRequestStatus(formData: FormData) {
   const supabase = await createClient();
   const id = String(formData.get("id"));
   const status = String(formData.get("status"));
-  await supabase.from("stock_requests").update({ status }).eq("id", id);
+
+  const { data: req } = await supabase.from("stock_requests").select("status").eq("id", id).single();
+  if (!req) redirect(`/pos/permintaan?error=${encodeURIComponent("Permintaan tidak ditemukan")}`);
+
+  // Addendum §5: flow linear — Menunggu → Disetujui → Dikirim → Selesai / Ditolak (terminal).
+  if (!canTransitionRequest(req!.status, status)) {
+    redirect(`/pos/permintaan?error=${encodeURIComponent(`Transisi ${req!.status} → ${status} tidak valid`)}`);
+  }
+
+  // approval/penolakan hanya Kepala Gudang / Manajer (role check server-side, bukan UI).
+  const { data: { user } } = await supabase.auth.getUser();
+  const isApproval = status === "Disetujui" || status === "Ditolak";
+  if (isApproval) {
+    const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+    if (!canApprove(me?.role ?? "")) {
+      redirect(`/pos/permintaan?error=${encodeURIComponent("Hanya Kepala Gudang / Manajer yang bisa menyetujui atau menolak")}`);
+    }
+  }
+
+  await supabase
+    .from("stock_requests")
+    .update(status === "Disetujui" ? { status, approved_by: user?.id ?? null } : { status })
+    .eq("id", id);
   revalidatePath("/pos/permintaan");
 }

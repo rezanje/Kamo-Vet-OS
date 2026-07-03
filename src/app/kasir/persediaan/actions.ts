@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { receiptSummary } from "@/lib/stock-recon";
 
-type ItemInput = { nama: string; qty_diminta: number };
+type ItemInput = { nama: string; qty_diminta: number; catatan?: string };
 
 // Buat permintaan barang dari dunia kasir — cabang asal otomatis dari shift terbuka.
 export async function buatPermintaanKasir(formData: FormData) {
@@ -18,6 +19,7 @@ export async function buatPermintaanKasir(formData: FormData) {
 
   const to_warehouse_id = String(formData.get("to_warehouse_id") ?? "");
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
+  const priority = String(formData.get("priority") ?? "normal") === "tinggi" ? "tinggi" : "normal";
 
   let items: ItemInput[] = [];
   try {
@@ -49,7 +51,7 @@ export async function buatPermintaanKasir(formData: FormData) {
 
   const { data: req, error: reqErr } = await supabase
     .from("stock_requests")
-    .insert({ no_request, from_branch_id: shift.branch_id, to_warehouse_id, catatan })
+    .insert({ no_request, from_branch_id: shift.branch_id, to_warehouse_id, catatan, priority, requested_by: user.id })
     .select("id")
     .single();
 
@@ -61,6 +63,7 @@ export async function buatPermintaanKasir(formData: FormData) {
     request_id: (req as { id: string }).id,
     nama: String(it.nama).slice(0, 160),
     qty_diminta: Number(it.qty_diminta) || 0,
+    catatan: (it.catatan ?? "").trim() || null, // §5: catatan per item ("stok menipis", dst)
   }));
   await supabase.from("stock_request_items").insert(rows);
 
@@ -68,10 +71,10 @@ export async function buatPermintaanKasir(formData: FormData) {
   redirect("/kasir/persediaan?tab=permintaan&success=1");
 }
 
-type TerimaRow = { id: string; item_id: string | null; qty_diterima: number; kondisi: string };
+type TerimaRow = { id: string; item_id: string | null; nama?: string; qty_diminta?: number; qty_diterima: number; kondisi: string; notes?: string };
 
-// Penerimaan barang (§2.4): catat qty diterima + kondisi per item, tandai request Selesai,
-// lalu tambahkan qty ke gudang cabang penerima.
+// Penerimaan barang (Addendum §5): buat dokumen penerimaan (TRM) dgn rekonsiliasi
+// dipesan vs diterima, tandai request Selesai, stok bertambah sesuai QTY DITERIMA.
 export async function terimaBarang(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -90,6 +93,35 @@ export async function terimaBarang(formData: FormData) {
     rows = [];
   }
 
+  // dokumen penerimaan TRM-YYMMDD-NNN (§5).
+  const now = new Date();
+  const ymd = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const { count } = await supabase
+    .from("stock_receipts").select("id", { count: "exact", head: true })
+    .like("receipt_number", `TRM-${ymd}-%`);
+  const receiptNumber = `TRM-${ymd}-${String((count ?? 0) + 1).padStart(3, "0")}`;
+
+  const { data: receipt, error: recErr } = await supabase
+    .from("stock_receipts")
+    .insert({ receipt_number: receiptNumber, stock_request_id: requestId, received_by: user.id })
+    .select("id").single();
+  if (recErr || !receipt) {
+    redirect(`/kasir/persediaan?tab=penerimaan&error=${encodeURIComponent(recErr?.message ?? "Gagal buat dokumen penerimaan")}`);
+  }
+
+  await supabase.from("stock_receipt_items").insert(
+    rows.map((r) => ({
+      stock_receipt_id: receipt!.id,
+      item_id: r.item_id,
+      nama: String(r.nama ?? "").slice(0, 160) || "—",
+      qty_ordered: Number(r.qty_diminta) || 0,
+      qty_received: Number(r.qty_diterima) || 0,
+      condition: (r.kondisi || "baik").toLowerCase(),
+      notes: (r.notes ?? "").trim() || null,
+    })),
+  );
+
+  // legacy view di list lama tetap terisi.
   for (const row of rows) {
     await supabase
       .from("stock_request_items")
@@ -98,6 +130,8 @@ export async function terimaBarang(formData: FormData) {
   }
 
   await supabase.from("stock_requests").update({ status: "Selesai" }).eq("id", requestId);
+
+  const summary = receiptSummary(rows.map((r) => ({ qty_ordered: Number(r.qty_diminta) || 0, qty_received: Number(r.qty_diterima) || 0 })));
 
   // ponytail: transfer internal antar gudang sendiri (DC → cabang) tidak dijurnal ulang —
   // nilainya sudah tercatat sbg Persediaan saat stok masuk di gudang asal; di sini cuma
@@ -137,5 +171,5 @@ export async function terimaBarang(formData: FormData) {
   }
 
   revalidatePath("/kasir/persediaan");
-  redirect("/kasir/persediaan?tab=penerimaan&success=terima");
+  redirect(`/kasir/persediaan?tab=penerimaan&success=terima&trm=${receiptNumber}&selisih=${summary.selisih}`);
 }

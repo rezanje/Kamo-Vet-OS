@@ -33,9 +33,9 @@ const fmtDt = (iso: string) =>
 export default async function PersediaanKasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; success?: string }>;
+  searchParams: Promise<{ tab?: string; success?: string; trm?: string; selisih?: string; error?: string }>;
 }) {
-  const { tab: tabParam, success } = await searchParams;
+  const { tab: tabParam, success, trm, selisih, error } = await searchParams;
   const tab = tabParam === "penerimaan" ? "penerimaan" : "permintaan";
 
   const supabase = await createClient();
@@ -67,7 +67,15 @@ export default async function PersediaanKasirPage({
       )}
       {success === "terima" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Barang diterima & stok telah diperbarui.
+          <i className="ti ti-circle-check" /> Barang diterima ({trm ?? "TRM"}) & stok diperbarui sesuai qty diterima.
+          {selisih && Number(selisih) !== 0 && (
+            <span className="bge r" style={{ marginLeft: 8 }}>Selisih: {Number(selisih) > 0 ? "+" : ""}{selisih}</span>
+          )}
+        </div>
+      )}
+      {error && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
 
