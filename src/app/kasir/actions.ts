@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 
 // Shift gate POS kasir — logika sama dgn /pos/shift, redirect ke dunia kasir.
 export async function mulaiShiftKasir(formData: FormData) {
@@ -14,11 +15,11 @@ export async function mulaiShiftKasir(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase
     .from("cashier_shifts")
-    .insert({ branch_id: branchId, opened_by: user?.id ?? null, opening_balance: opening });
+    .insert({ branch_id: branchId, opened_by: user?.id ?? null, opening_balance: opening, shift_type: "petshop" });
   if (error) {
-    // 23505 = unique (shift open di cabang ini sudah ada); selain itu biasanya RLS (cabang bukan tugasmu).
+    // 23505 = unique (kamu masih punya shift petshop terbuka); selain itu biasanya RLS (cabang bukan tugasmu).
     const msg = error.code === "23505"
-      ? "Sudah ada shift terbuka di cabang ini"
+      ? "Kamu masih punya shift terbuka — tutup dulu sebelum mulai yang baru"
       : "Kamu tidak bertugas di cabang ini — pilih cabang penempatanmu.";
     redirect(`/kasir/mulai?error=${encodeURIComponent(msg)}`);
   }
@@ -33,17 +34,23 @@ export async function tutupShiftKasir(formData: FormData) {
   if (!shiftId) redirect(`/kasir/tutup?error=${encodeURIComponent("Shift tidak valid")}`);
 
   const { data: shift } = await supabase
-    .from("cashier_shifts").select("opening_balance, branch_id").eq("id", shiftId).single();
+    .from("cashier_shifts").select("opening_balance, branch_id, status").eq("id", shiftId).single();
+  if (shift?.status !== "open") redirect(`/kasir/mulai?error=${encodeURIComponent("Shift sudah ditutup")}`);
 
-  const { data: cashSales } = await supabase
-    .from("sales").select("total").eq("shift_id", shiftId).eq("metode_bayar", "Tunai");
-  const tunai = (cashSales ?? []).reduce((a, s) => a + Number(s.total), 0);
-  const expected = (Number(shift?.opening_balance) || 0) + tunai;
-  const selisih = closing - expected;
+  // Addendum §1: breakdown per metode bayar, kas fisik vs sistem.
+  const { data: sales } = await supabase
+    .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
+  const breakdown = methodBreakdown(sales ?? []);
+  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown);
+  const selisih = cashVariance(closing, expected);
 
   await supabase
     .from("cashier_shifts")
-    .update({ closing_balance: closing, expected_cash: expected, selisih, closed_at: new Date().toISOString(), status: "closed" })
+    .update({
+      closing_balance: closing, expected_cash: expected, selisih,
+      closing_breakdown: breakdown,
+      closed_at: new Date().toISOString(), status: "closed",
+    })
     .eq("id", shiftId);
 
   if (selisih !== 0) {
@@ -67,6 +74,6 @@ export async function tutupShiftKasir(formData: FormData) {
     });
   }
 
-  // shift selesai → balik ke pilihan mode.
-  redirect("/mulai");
+  // laporan shift (Addendum §1: bisa dicetak, masuk dashboard manajer).
+  redirect(`/pos/shift/${shiftId}`);
 }

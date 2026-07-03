@@ -17,7 +17,7 @@ export async function checkoutKasir(formData: FormData) {
   // shift & cabang dari server (jangan percaya client).
   const { data: shift } = await supabase
     .from("cashier_shifts").select("id, branch_id")
-    .eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+    .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
   if (!shift) redirect("/kasir/mulai");
 
   const branchId = shift!.branch_id;
@@ -158,7 +158,7 @@ export async function simpanDraft(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: shift } = await supabase
-    .from("cashier_shifts").select("id, branch_id").eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+    .from("cashier_shifts").select("id, branch_id").eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
   if (!shift) redirect("/kasir/mulai");
 
   const cart = String(formData.get("cart") ?? "[]");

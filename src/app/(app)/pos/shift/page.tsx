@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { openShift, closeShift } from "./actions";
+import { openShift, closeShift, forceCloseShift } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -39,10 +39,21 @@ export default async function ShiftPage({
   const { data: branches } = await supabase.from("branches").select("id, name").eq("is_active", true).order("name");
   const { data: history } = await supabase
     .from("cashier_shifts")
-    .select("id, opening_balance, closing_balance, expected_cash, selisih, opened_at, closed_at, branches(name)")
+    .select("id, shift_type, opening_balance, closing_balance, expected_cash, selisih, opened_at, closed_at, branches(name)")
     .eq("status", "closed")
     .order("closed_at", { ascending: false })
     .limit(10);
+
+  // Addendum §1: shift nyangkut >24 jam (staff lupa tutup) — manajer bisa force-close.
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: stale } = await supabase
+    .from("cashier_shifts")
+    .select("id, shift_type, opening_balance, opened_at, branches(name), profiles(full_name)")
+    .eq("status", "open")
+    .lt("opened_at", dayAgo)
+    .order("opened_at");
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const isManager = !!me && ["OWNER", "ADMIN"].includes(me.role);
 
   const openBranch = one(open?.branches as Rel<{ name: string }>);
 
@@ -57,6 +68,7 @@ export default async function ShiftPage({
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success === "open" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Shift dibuka. Kasir siap transaksi.</div>}
       {success === "close" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Shift ditutup & direkonsiliasi.</div>}
+      {success === "force" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Shift ditutup paksa oleh manajer.</div>}
 
       <div className="crm-sec">
         {open ? (
@@ -99,12 +111,48 @@ export default async function ShiftPage({
         )}
       </div>
 
+      {(stale ?? []).length > 0 && (
+        <div className="crm-sec">
+          <SecHeader num="!" title="SHIFT NYANGKUT (>24 JAM)" desc="Staff lupa tutup shift — manajer cabang bisa tutup paksa (Addendum §1)." />
+          <table className="tbl" style={{ minWidth: 560 }}>
+            <thead><tr><th>Dibuka</th><th>Kasir</th><th>Cabang</th><th>Tipe</th><th style={{ textAlign: "right" }}>Modal</th><th /></tr></thead>
+            <tbody>
+              {(stale ?? []).map((s) => {
+                const br = one(s.branches as Rel<{ name: string }>);
+                const kasir = one(s.profiles as Rel<{ full_name: string | null }>);
+                return (
+                  <tr key={s.id}>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDt(s.opened_at)}</td>
+                    <td style={{ fontSize: 11 }}>{kasir?.full_name ?? "—"}</td>
+                    <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
+                    <td style={{ fontSize: 11 }}><span className="bge o">{s.shift_type}</span></td>
+                    <td style={{ textAlign: "right", fontSize: 11 }}>{rp(s.opening_balance)}</td>
+                    <td style={{ textAlign: "right" }}>
+                      {isManager ? (
+                        <form action={forceCloseShift} style={{ display: "inline" }}>
+                          <input type="hidden" name="shiftId" value={s.id} />
+                          <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>
+                            <i className="ti ti-lock-x" /> Tutup Paksa
+                          </button>
+                        </form>
+                      ) : (
+                        <span style={{ fontSize: 10, color: "var(--td)" }}>hanya manajer</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="crm-sec">
         <SecHeader num="02" title="RIWAYAT SHIFT" desc="Shift yang sudah ditutup & selisih kasnya." />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
             <thead>
-              <tr><th>Buka</th><th>Tutup</th><th>Cabang</th><th style={{ textAlign: "right" }}>Modal</th><th style={{ textAlign: "right" }}>Seharusnya</th><th style={{ textAlign: "right" }}>Dihitung</th><th style={{ textAlign: "right" }}>Selisih</th></tr>
+              <tr><th>Buka</th><th>Tutup</th><th>Cabang</th><th>Tipe</th><th style={{ textAlign: "right" }}>Modal</th><th style={{ textAlign: "right" }}>Seharusnya</th><th style={{ textAlign: "right" }}>Dihitung</th><th style={{ textAlign: "right" }}>Selisih</th><th /></tr>
             </thead>
             <tbody>
               {(history ?? []).map((h) => {
@@ -115,17 +163,23 @@ export default async function ShiftPage({
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDt(h.opened_at)}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{h.closed_at ? fmtDt(h.closed_at) : "—"}</td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
+                    <td style={{ fontSize: 11 }}><span className={`bge ${h.shift_type === "klinik" ? "b" : "g"}`}>{h.shift_type}</span></td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(h.opening_balance)}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(h.expected_cash ?? 0)}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(h.closing_balance ?? 0)}</td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600, color: sel === 0 ? "#15803d" : sel > 0 ? "#1d4ed8" : "#b91c1c" }}>
                       {sel > 0 ? "+" : ""}{rp(sel)}
                     </td>
+                    <td style={{ textAlign: "right" }}>
+                      <Link href={`/pos/shift/${h.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10, textDecoration: "none" }}>
+                        <i className="ti ti-file-text" /> Laporan
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}
               {(history ?? []).length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada shift ditutup.</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada shift ditutup.</td></tr>
               )}
             </tbody>
           </table>

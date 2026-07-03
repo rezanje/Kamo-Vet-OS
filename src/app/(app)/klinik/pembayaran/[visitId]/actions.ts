@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { getOpenShift } from "@/lib/shift";
 
 type Line = { deskripsi: string; qty: number; harga: number };
 
@@ -12,6 +13,11 @@ export async function bayarVisit(formData: FormData) {
   const visitId = String(formData.get("visitId") ?? "");
   if (!visitId) redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
   const back = `/klinik/pembayaran/${visitId}`;
+
+  // Addendum §1: transaksi wajib terikat shift klinik yang open (validasi server, bukan UI).
+  const { data: { user: payUser } } = await supabase.auth.getUser();
+  const klinikShift = payUser ? await getOpenShift(supabase as never, payUser.id, "klinik") : null;
+  if (!klinikShift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
 
   let items: Line[] = [];
   try {
@@ -52,7 +58,7 @@ export async function bayarVisit(formData: FormData) {
 
   const { data: inv, error: invErr } = await supabase
     .from("invoices")
-    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt })
+    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, shift_id: klinikShift.id })
     .select("id").single();
   if (invErr || !inv) {
     redirect(`${back}?error=${encodeURIComponent(invErr?.message ?? "Gagal simpan invoice")}`);

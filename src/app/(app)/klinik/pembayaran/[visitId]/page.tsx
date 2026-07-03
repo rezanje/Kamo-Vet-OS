@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
 
 type Rel<T> = T | T[] | null;
@@ -55,6 +56,13 @@ export default async function PembayaranPage({
   ];
 
   const lunas = invoice?.paid_status === "Lunas";
+
+  // Addendum §1: pembayaran klinik hanya bisa saat shift klinik terbuka (gate server-side).
+  if (!lunas) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const shift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;
+    if (!shift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
+  }
 
   return (
     <>
