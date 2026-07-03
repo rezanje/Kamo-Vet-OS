@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { RekamForm } from "./RekamForm";
+import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -65,6 +66,15 @@ export default async function RekamMedisPage({
       racikanList = cr ?? [];
     }
   }
+
+  // Rawat inap aktif utk visit ini (Addendum §3 — admit dari rekam medis, design klinik/07).
+  const { data: inpatient } = await supabase
+    .from("inpatient_records")
+    .select("id, condition_status, discharged_at")
+    .eq("visit_id", visitId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 3, Selesai: 4 };
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
@@ -224,6 +234,42 @@ export default async function RekamMedisPage({
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+
+          {/* Rawat inap (Addendum §3) — popup "Catatan Rawat Inap" design klinik/07 sebagai card inline. */}
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="card-hd" style={{ justifyContent: "space-between" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i className="ti ti-bed" style={{ color: "var(--acc)" }} /> Rawat inap
+              </span>
+              {inpatient && (
+                <Link href={`/klinik/rawat-inap/${inpatient.id}`} className="btn-acc"
+                  style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <i className="ti ti-eye" /> Lihat Detail Rawat Inap
+                </Link>
+              )}
+            </div>
+            {inpatient ? (
+              <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
+                Pasien {inpatient.discharged_at ? "pernah dirawat inap (sudah keluar)" : "sedang dirawat inap"} — kondisi terakhir:{" "}
+                <span className={`bge ${inpatient.condition_status === "kritis" || inpatient.condition_status === "rip" ? "r" : inpatient.condition_status === "sembuh" ? "b" : "g"}`}>
+                  {inpatient.condition_status}
+                </span>
+              </div>
+            ) : (
+              <form action={admitInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <input type="hidden" name="visitId" value={visit.id} />
+                <div style={{ flex: 2, minWidth: 240 }}>
+                  <label className="flab">Rencana tindakan dari dokter PIC *</label>
+                  <input className="fi" name="treatment_plan" required placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />
+                </div>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <label className="flab">Dokter PIC</label>
+                  <input className="fi" name="doctor_name" defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
+                </div>
+                <button type="submit" className="btn-acc"><i className="ti ti-bed" /> Masukkan Rawat Inap</button>
+              </form>
             )}
           </div>
         </>
