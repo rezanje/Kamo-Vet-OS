@@ -42,8 +42,9 @@ export default async function RawatInapPage({
     kritis: (allRecs ?? []).filter((r) => r.condition_status === "kritis" && !r.discharged_at).length,
   };
 
+  const nowMs = new Date().getTime();
   const lamaInap = (admitted: string) => {
-    const days = Math.max(1, Math.ceil((Date.now() - new Date(admitted).getTime()) / 86400000));
+    const days = Math.max(1, Math.ceil((nowMs - new Date(admitted).getTime()) / 86400000));
     return `${days} Hari`;
   };
 

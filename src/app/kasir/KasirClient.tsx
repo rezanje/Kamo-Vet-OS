@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { checkoutKasir, simpanDraft, hapusDraft } from "./checkout";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
@@ -84,10 +84,10 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
   const kurang = metode === "Tunai" && bayar < total;
   const canPay = cart.length > 0 && !kurang && !voucherInvalid;
 
-  // Reminder Promo (§6): non-blocking, muncul saat isi cart berubah dan ada rule match.
+  // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   const promoHits = useMemo(() => matchPromos(promos, cart), [promos, cart]);
-  const [promoDismissed, setPromoDismissed] = useState(false);
-  useEffect(() => { setPromoDismissed(false); }, [cart.length]);
+  const [dismissedAtCartLen, setDismissedAtCartLen] = useState<number | null>(null);
+  const promoDismissed = dismissedAtCartLen === cart.length;
 
   const loadDraft = (d: DraftRow) => {
     setCart(d.cart ?? []);
@@ -330,7 +330,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
           <div style={{ background: "var(--sb)", color: "#fff", padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
             <i className="ti ti-speakerphone" />
             <span style={{ fontSize: 11.5, fontWeight: 700, flex: 1 }}>Reminder Promo</span>
-            <i className="ti ti-x" style={{ cursor: "pointer", fontSize: 13 }} onClick={() => setPromoDismissed(true)} />
+            <i className="ti ti-x" style={{ cursor: "pointer", fontSize: 13 }} onClick={() => setDismissedAtCartLen(cart.length)} />
           </div>
           <div style={{ padding: "8px 12px" }}>
             {promoHits.map((p) => (

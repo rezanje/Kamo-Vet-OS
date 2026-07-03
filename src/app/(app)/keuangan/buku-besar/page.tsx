@@ -19,11 +19,12 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
   const ledger = selected ? await getAccountLedger(supabase as never, selected.code) : [];
 
   // saldo berjalan untuk akun terpilih
-  let running = 0;
-  const ledgerRows = ledger.map((l) => {
-    running += selected!.normal === "D" ? l.debit - l.credit : l.credit - l.debit;
-    return { ...l, saldo: running };
-  });
+  const ledgerRows = ledger.reduce<(typeof ledger[number] & { saldo: number })[]>((acc, l) => {
+    const prev = acc.length ? acc[acc.length - 1].saldo : 0;
+    const delta = selected!.normal === "D" ? l.debit - l.credit : l.credit - l.debit;
+    acc.push({ ...l, saldo: prev + delta });
+    return acc;
+  }, []);
 
   return (
     <>

@@ -45,7 +45,7 @@ export default async function ShiftPage({
     .limit(10);
 
   // Addendum §1: shift nyangkut >24 jam (staff lupa tutup) — manajer bisa force-close.
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const dayAgo = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString();
   const { data: stale } = await supabase
     .from("cashier_shifts")
     .select("id, shift_type, opening_balance, opened_at, branches(name), profiles(full_name)")
