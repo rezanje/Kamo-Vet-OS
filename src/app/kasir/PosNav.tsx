@@ -7,6 +7,7 @@ const TABS = [
   { href: "/kasir", label: "Kasir", icon: "ti-cash-register", exact: true },
   { href: "/kasir/pengeluaran", label: "Pengeluaran", icon: "ti-receipt-2", exact: false },
   { href: "/kasir/persediaan", label: "Persediaan", icon: "ti-stack", exact: false },
+  { href: "/kasir/quest", label: "Quest", icon: "ti-trophy", exact: false },
 ];
 
 export function PosNav({ branchName, userName, hasShift }: { branchName: string | null; userName: string; hasShift: boolean }) {

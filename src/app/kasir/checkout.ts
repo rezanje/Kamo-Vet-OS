@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { computeTotals, lineDiscount } from "@/lib/pos-calc";
+import { processQuestProgress } from "@/lib/quest-hook";
 
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
@@ -163,6 +164,14 @@ export async function checkoutKasir(formData: FormData) {
 
   // draft yang dilanjutkan dihapus.
   if (draftId) await supabase.from("sale_drafts").delete().eq("id", draftId);
+
+  // Addendum §8: progres quest staff (best-effort, tidak mem-block checkout).
+  if (user?.id) {
+    await processQuestProgress(supabase, {
+      staffId: user.id, branchId, saleTotal: total,
+      lines: rows.map((r) => ({ item_id: r.item_id || null, qty: r.qty })),
+    });
+  }
 
   redirect(`/kasir/struk/${sale!.id}`);
 }
