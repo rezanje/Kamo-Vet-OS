@@ -7,13 +7,17 @@ import { bayarVisit } from "./actions";
 type Line = { deskripsi: string; qty: number; harga: number };
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export function PembayaranForm({ visitId, initialItems }: { visitId: string; initialItems: Line[] }) {
+export function PembayaranForm({ visitId, initialItems, initialDiscount = 0, initialPaid = "Lunas", initialMetode = "Tunai", editMode = false }: {
+  visitId: string; initialItems: Line[]; initialDiscount?: number;
+  initialPaid?: "Lunas" | "DP" | "Belum Lunas"; initialMetode?: string; editMode?: boolean;
+}) {
   const [rows, setRows] = useState<Line[]>(initialItems.length ? initialItems : [{ deskripsi: "", qty: 1, harga: 0 }]);
-  const [discount, setDiscount] = useState(0);
-  const [paid, setPaid] = useState<"Lunas" | "DP" | "Belum Lunas">("Lunas");
-  const [metode, setMetode] = useState("Tunai");
+  const [discount, setDiscount] = useState(initialDiscount);
+  const [paid, setPaid] = useState<"Lunas" | "DP" | "Belum Lunas">(initialPaid);
+  const [metode, setMetode] = useState(initialMetode);
   const [dpAmount, setDpAmount] = useState(0);
   const [dpDate, setDpDate] = useState("");
+  const [reason, setReason] = useState("");
 
   const set = (i: number, patch: Partial<Line>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows((rs) => [...rs, { deskripsi: "", qty: 1, harga: 0 }]);
@@ -34,6 +38,7 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
       <input type="hidden" name="metode_bayar" value={metode} />
       <input type="hidden" name="dp_amount" value={dpAmount} />
       <input type="hidden" name="dp_date" value={dpDate} />
+      {editMode && <input type="hidden" name="edit_reason" value={reason} />}
 
       <div className="grid2" style={{ alignItems: "start" }}>
         {/* Line items */}
@@ -82,7 +87,7 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
           <div style={{ marginTop: 12 }}>
             <label className="flab">Metode pembayaran</label>
             <select className="fi" value={metode} onChange={(e) => setMetode(e.target.value)}>
-              <option>Tunai</option><option>QRIS</option><option>Transfer</option><option>Debit</option>
+              <option>Tunai</option><option>Debit</option><option>Kredit</option><option>QRIS</option><option>E-Wallet</option><option>Transfer</option>
             </select>
           </div>
 
@@ -118,8 +123,16 @@ export function PembayaranForm({ visitId, initialItems }: { visitId: string; ini
             </div>
           )}
 
+          {editMode && (
+            <div style={{ marginTop: 12 }}>
+              <label className="flab">Alasan perubahan (wajib bila nominal/item berubah)</label>
+              <input className="fi" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="mis. salah input harga obat" />
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 4 }}>Setiap perubahan tercatat di riwayat audit invoice (Addendum §7).</div>
+            </div>
+          )}
+
           <button type="submit" className="pay-btn" style={{ marginTop: 14 }}>
-            <i className="ti ti-circle-check" /> Proses pembayaran &amp; selesai
+            <i className={`ti ${editMode ? "ti-pencil-check" : "ti-circle-check"}`} /> {editMode ? "Simpan Perubahan Invoice" : "Proses pembayaran & selesai"}
           </button>
         </div>
       </div>

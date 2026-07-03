@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
+import { voidAndReissue } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -18,10 +19,10 @@ export default async function PembayaranPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, success } = await searchParams;
+  const { error, success, edit } = await searchParams;
   const supabase = await createClient();
 
   const { data: visit } = await supabase
@@ -41,12 +42,23 @@ export default async function PembayaranPage({
   const cust = one(visit.customers);
   const activeStep = STEP_BY_STATUS[visit.status] ?? 3;
 
-  // invoice tersimpan (kalau sudah dibayar) untuk tampilan read-only.
+  // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at").eq("visit_id", visitId).maybeSingle();
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from")
+    .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at")
     : { data: [] as { deskripsi: string; qty: number; harga: number }[] };
+
+  // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
+  const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
+  const { data: editLog } = (allInvIds ?? []).length
+    ? await supabase
+        .from("invoice_edit_log")
+        .select("field_changed, old_value, new_value, reason, edited_at, invoice_id, profiles(full_name)")
+        .in("invoice_id", (allInvIds ?? []).map((x) => x.id))
+        .order("edited_at", { ascending: false })
+    : { data: [] };
 
   // prefill item dari resep saat belum bayar: jasa konsultasi + tiap obat (harga diisi kasir).
   const { data: resep } = await supabase.from("prescription_items").select("nama_obat, qty").eq("medical_record_id", mr.id).order("created_at");
@@ -80,6 +92,16 @@ export default async function PembayaranPage({
       {success === "bayar" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Pembayaran berhasil. Cetak struk / invoice di bawah.
+        </div>
+      )}
+      {success === "edit" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Invoice diperbarui — perubahan tercatat di riwayat audit.
+        </div>
+      )}
+      {success === "reissue" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Invoice lama di-void, invoice baru diterbitkan (Belum Lunas).
         </div>
       )}
 
@@ -117,11 +139,31 @@ export default async function PembayaranPage({
         </div>
       </div>
 
-      {invoice ? (
+      {invoice && edit === "1" && !lunas ? (
+        <>
+          <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+            <i className="ti ti-pencil" /> Mode edit invoice {invoice.invoice_no} — perubahan nominal/item wajib alasan & tercatat.
+          </div>
+          <PembayaranForm
+            visitId={visit.id}
+            initialItems={(invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga) }))}
+            initialDiscount={Number(invoice.discount)}
+            initialPaid={invoice.paid_status as "Lunas" | "DP" | "Belum Lunas"}
+            initialMetode={invoice.metode_bayar ?? "Tunai"}
+            editMode
+          />
+        </>
+      ) : invoice ? (
         <>
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
             {invoice.paid_status === "DP" && ` — DP ${rp(invoice.dp_amount)}, sisa ${rp(invoice.total - invoice.dp_amount)}`}
+            {(editLog ?? []).length > 0 && (
+              <span className="bge o" style={{ marginLeft: 8 }}><i className="ti ti-pencil" /> Diedit</span>
+            )}
+            {invoice.reissued_from && (
+              <span className="bge b" style={{ marginLeft: 6 }}><i className="ti ti-rotate" /> Terbit ulang</span>
+            )}
           </div>
           <div className="card">
             <div className="card-hd" style={{ justifyContent: "space-between" }}>
@@ -130,6 +172,12 @@ export default async function PembayaranPage({
                 <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
               </span>
               <span style={{ display: "flex", gap: 5 }}>
+                {!lunas && (
+                  <Link href={`/klinik/pembayaran/${visit.id}?edit=1`} className="btn-def"
+                    style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <i className="ti ti-pencil" /> Edit Invoice
+                  </Link>
+                )}
                 {lunas && (
                   <Link href={`/klinik/pembayaran/${visit.id}/struk`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -160,9 +208,58 @@ export default async function PembayaranPage({
               </div>
             </div>
           </div>
+
+          {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
+          {lunas && (
+            <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
+                <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
+                Invoice lunas tidak boleh diedit langsung. Void membatalkan invoice ini (jurnal dibalik otomatis) dan menerbitkan invoice baru berstatus Belum Lunas untuk dikoreksi.
+              </div>
+              <form action={voidAndReissue} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <input type="hidden" name="visitId" value={visit.id} />
+                <div style={{ flex: 1 }}>
+                  <label className="flab">Alasan void *</label>
+                  <input className="fi" name="reason" required placeholder="mis. salah tagih jasa rawat inap" />
+                </div>
+                <button type="submit" className="btn-def" style={{ color: "#b91c1c", borderColor: "#fca5a5" }}>
+                  <i className="ti ti-file-x" /> Void &amp; Terbitkan Ulang
+                </button>
+              </form>
+            </div>
+          )}
         </>
       ) : (
         <PembayaranForm visitId={visit.id} initialItems={prefill} />
+      )}
+
+      {/* Riwayat perubahan invoice (audit log §7). */}
+      {(editLog ?? []).length > 0 && (
+        <div className="crm-sec" style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
+            <i className="ti ti-history" /> RIWAYAT PERUBAHAN INVOICE
+          </div>
+          <table className="tbl" style={{ minWidth: 640 }}>
+            <thead><tr><th>Waktu</th><th>Oleh</th><th>Field</th><th>Sebelum</th><th>Sesudah</th><th>Alasan</th></tr></thead>
+            <tbody>
+              {(editLog ?? []).map((l, i) => {
+                const editor = one(l.profiles as Rel<{ full_name: string | null }>);
+                return (
+                  <tr key={i}>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{new Date(l.edited_at).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td style={{ fontSize: 10.5 }}>{editor?.full_name ?? "—"}</td>
+                    <td><span className={`bge ${l.field_changed === "voided" ? "r" : "o"}`}>{l.field_changed}</span></td>
+                    <td style={{ fontSize: 10.5, maxWidth: 180, wordBreak: "break-word" }}>{l.old_value ?? "—"}</td>
+                    <td style={{ fontSize: 10.5, maxWidth: 180, wordBreak: "break-word" }}>{l.new_value ?? "—"}</td>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{l.reason ?? "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );

@@ -52,7 +52,7 @@ export default async function PenjualanPage() {
     // ponytail: invoice tidak perlu join branch (visit→branch nested dalam invoices tidak bersih); hanya total & tanggal
     supabase
       .from("invoices")
-      .select("id, total, paid_status, created_at") as unknown as Promise<{ data: InvoiceRow[] | null }>,
+      .select("id, total, paid_status, created_at").is("voided_at", null) as unknown as Promise<{ data: InvoiceRow[] | null }>,
   ]);
 
   const sales = (salesRaw ?? []) as SaleRow[];

@@ -22,7 +22,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
   const { data: invoice } = await supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, created_at")
-    .eq("visit_id", visitId).maybeSingle();
+    .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!invoice) notFound();
 
   const { data: items } = await supabase
