@@ -23,10 +23,16 @@ body {
    Plain CSS classes (not Tailwind) so the React shell matches the
    approved mockup 1:1. Login page stays on Tailwind.
    ─────────────────────────────────────────────────────────────── */
-.shell {
+/* Color tokens live on :root (not .shell) so non-dashboard routes that don't wrap
+   in .shell — /kasir/*, /mulai, /login — can resolve var(--sb) etc. too. Previously
+   scoped to .shell only, which left the kasir POS shell with transparent/invisible
+   chrome (bug, not a design choice). */
+:root {
   --acc: #d97757; --sb: #16213e; --bg: #f0ede8; --sf: #fff; --sf1: #f7f5f1;
   --bd: rgba(0,0,0,.1); --tx: #141413; --tm: #6b6b69; --td: #9ca3af;
   --gr: #16a34a; --bl: #2563eb; --rd: #dc2626; --am: #d97706; --pu: #7c3aed;
+}
+.shell {
   font-size: 13px; background: var(--bg); height: 100vh;
   display: flex; overflow: hidden; width: 100%; color: var(--tx);
 }
@@ -105,13 +111,30 @@ body {
 .j-info { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 7px; padding: 8px 11px; font-size: 11px; color: #92400e; margin-bottom: 11px; }
 .crm-sec { background: #fff; border: .5px solid var(--bd); border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
 
-/* Mode chooser (/mulai) + POS kasir shell */
+/* Mode chooser (/mulai) + POS kasir shell — Kamo Petshop blue theme (design-reference/petshop). */
 .mulai-tile { background: #fff; border-radius: 14px; padding: 26px 20px; display: flex; flex-direction: column; align-items: center; gap: 9px; cursor: pointer; transition: transform .12s, box-shadow .12s; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
 .mulai-tile:hover { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,.3); }
-.pos-topbar { height: 52px; background: var(--sb); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; color: #fff; flex-shrink: 0; }
-.pos-tab { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,.65); text-decoration: none; border: none; cursor: pointer; background: transparent; }
-.pos-tab.on { background: #fff; color: var(--sb); }
-.pos-tab:not(.on):hover { background: rgba(255,255,255,.1); }
+:root { --posb: #0038a6; --posb-dk: #002d85; }
+.pos-topbar { height: 56px; background: var(--posb); display: flex; align-items: center; justify-content: space-between; padding: 0 18px; color: #fff; flex-shrink: 0; }
+.pos-tab { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,.7); text-decoration: none; border: none; cursor: pointer; background: transparent; }
+.pos-tab.on { background: #fff; color: var(--posb); }
+.pos-tab:not(.on):hover { background: rgba(255,255,255,.12); }
+
+/* Kasir cart / product table — mirrors design-reference/petshop/02-kasir-pos-main.png */
+.kpos-catTab { padding: 6px 3px; border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: 11.5px; color: var(--tm); font-weight: 500; }
+.kpos-catTab.on { color: var(--posb); border-bottom-color: var(--posb); }
+.kpos-qtybtn { width: 20px; height: 20px; border-radius: 5px; border: .5px solid var(--bd); background: #fff; color: var(--tm); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; }
+.kpos-qtybtn:hover { background: var(--sf1); }
+.kpos-pagebtn { width: 26px; height: 26px; border-radius: 6px; border: .5px solid var(--bd); background: #fff; color: var(--tm); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; }
+.kpos-pagebtn.on { background: var(--posb); border-color: var(--posb); color: #fff; }
+.kpos-pagebtn:disabled { opacity: .4; cursor: not-allowed; }
+.kpos-pay { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 4px; border-radius: 8px; border: 1.5px solid var(--bd); background: #fff; color: var(--tm); font-size: 11px; cursor: pointer; }
+.kpos-pay.on { border-color: var(--posb); color: var(--posb); background: #eff4ff; font-weight: 600; }
+.kpos-radio { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--bd); flex-shrink: 0; }
+.kpos-pay.on .kpos-radio { border-color: var(--posb); background: var(--posb); box-shadow: inset 0 0 0 2.5px #fff; }
+.kpos-bayar { width: 100%; padding: 11px; background: var(--posb); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.kpos-bayar:hover:not(:disabled) { background: var(--posb-dk); }
+.kpos-bayar:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Print: sembunyikan chrome aplikasi, cetak hanya konten (dipakai lembar resep) */
 @media print {

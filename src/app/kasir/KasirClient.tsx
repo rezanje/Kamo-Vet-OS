@@ -28,6 +28,8 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 8;
   const [cart, setCart] = useState<CartLine[]>([]);
   const [custQ, setCustQ] = useState("");
   const [cust, setCust] = useState<CustRow | null>(null);
@@ -49,6 +51,12 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
     );
   }, [items, q, kat]);
 
+  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pageRows = shown.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+
   const custHits = useMemo(() => {
     const s = custQ.trim().toLowerCase();
     if (!s || cust) return [];
@@ -63,6 +71,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
     });
   const setQty = (id: string, d: number) =>
     setCart((c) => c.flatMap((l) => (l.item_id === id ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
+  const removeLine = (id: string) => setCart((c) => c.filter((l) => l.item_id !== id));
   const setPot = (id: string, val: number) =>
     setCart((c) => c.map((l) => (l.item_id === id ? { ...l, item_discount_value: Math.max(0, val), item_discount_type: l.item_discount_type ?? "nominal" } : l)));
   const togglePotType = (id: string) =>
@@ -108,7 +117,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
       {/* DATA CUSTOMER strip */}
       <div className="card" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
         <div style={{ minWidth: 230, position: "relative" }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--sb)", letterSpacing: ".05em", marginBottom: 4 }}>DATA CUSTOMER</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--posb)", letterSpacing: ".05em", marginBottom: 4 }}>DATA CUSTOMER</div>
           <div style={{ position: "relative" }}>
             <input className="fi" placeholder="Masukkan nomor HP / nama..." value={custQ}
               onChange={(e) => { setCustQ(e.target.value); setCust(null); setPoin(0); }} />
@@ -162,45 +171,62 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
       <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 12, alignItems: "start" }}>
         {/* DAFTAR PRODUK */}
         <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: "11px 13px", borderBottom: ".5px solid var(--bd)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em" }}>DAFTAR PRODUK</span>
+          <div style={{ padding: "13px 15px 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--posb)", letterSpacing: ".03em" }}>DAFTAR PRODUK</span>
             <span style={{ fontSize: 9.5, color: "var(--td)" }}>{branchName}</span>
-            <div style={{ marginLeft: "auto", position: "relative", width: 220 }}>
-              <input className="fi" placeholder="Cari nama / kode barang..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
+            <div style={{ marginLeft: "auto", position: "relative", width: 240 }}>
+              <input className="fi" placeholder="Cari nama / kode barang..." value={q}
+                onChange={(e) => { setQ(e.target.value); setPage(1); }} style={{ fontSize: 11, paddingRight: 26 }} />
               <i className="ti ti-search" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 12 }} />
             </div>
           </div>
-          <div style={{ padding: "8px 13px 0", display: "flex", gap: 4, flexWrap: "wrap" }}>
+          <div style={{ padding: "0 15px 10px", display: "flex", gap: 14, flexWrap: "wrap", borderBottom: ".5px solid var(--bd)" }}>
             {kategoris.map((k) => (
-              <button key={k} type="button" onClick={() => setKat(k)} className="back-btn"
-                style={{ padding: "4px 11px", borderRadius: 20, fontSize: 10.5, border: ".5px solid var(--bd)",
-                  background: kat === k ? "var(--sb)" : "#fff", color: kat === k ? "#fff" : "var(--tm)" }}>
+              <button key={k} type="button" onClick={() => { setKat(k); setPage(1); }}
+                className={`kpos-catTab ${kat === k ? "on" : ""}`}>
                 {k}
               </button>
             ))}
           </div>
-          <div style={{ overflowX: "auto", maxHeight: 480, overflowY: "auto" }}>
+          <div style={{ overflowX: "auto" }}>
             <table className="tbl">
               <thead>
-                <tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "center" }}>Stok</th><th style={{ width: 40 }} /></tr>
+                <tr>
+                  <th style={{ width: 34 }}>No.</th><th>Kode Barang</th><th>Nama Barang</th><th>Kategori</th>
+                  <th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "center" }}>Stok</th><th style={{ width: 40 }} />
+                </tr>
               </thead>
               <tbody>
-                {shown.map((it) => (
+                {pageRows.map((it, i) => (
                   <tr key={it.id}>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pageStart + i + 1}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 10.5, color: "var(--tm)" }}>{it.code}</td>
                     <td style={{ fontSize: 11.5, fontWeight: 500 }}>{it.name}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{it.kategori}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.harga)}</td>
                     <td style={{ textAlign: "center", fontSize: 11, color: it.stok <= 0 ? "#b91c1c" : it.stok < 10 ? "#b55a35" : "var(--tm)" }}>{it.stok}</td>
                     <td style={{ textAlign: "center" }}>
-                      <button type="button" onClick={() => add(it)} className="btn-acc" style={{ padding: "3px 8px", fontSize: 11 }} title="Tambah"><i className="ti ti-plus" /></button>
+                      <button type="button" onClick={() => add(it)} className="btn-acc" style={{ padding: "3px 8px", fontSize: 11, background: "var(--posb)" }} title="Tambah"><i className="ti ti-plus" /></button>
                     </td>
                   </tr>
                 ))}
-                {shown.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Produk tidak ditemukan.</td></tr>}
+                {shown.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Produk tidak ditemukan.</td></tr>}
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, padding: "11px 0" }}>
+              <button type="button" className="kpos-pagebtn" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>
+                <i className="ti ti-chevron-left" />
+              </button>
+              {pageNumbers.map((n) => (
+                <button key={n} type="button" className={`kpos-pagebtn ${n === safePage ? "on" : ""}`} onClick={() => setPage(n)}>{n}</button>
+              ))}
+              <button type="button" className="kpos-pagebtn" disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}>
+                <i className="ti ti-chevron-right" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* KERANJANG BELANJA */}
@@ -215,7 +241,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
           {draftId && <input type="hidden" name="draftId" value={draftId} />}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em" }}>KERANJANG BELANJA</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--posb)", letterSpacing: ".03em" }}>KERANJANG BELANJA</span>
             {cart.length > 0 && (
               <button type="button" onClick={() => { setCart([]); setDraftId(null); }} className="back-btn" style={{ color: "#b91c1c", fontSize: 10.5 }}>
                 <i className="ti ti-trash" /> Kosongkan
@@ -224,32 +250,57 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
           </div>
 
           <div style={{ maxHeight: 230, overflowY: "auto", marginBottom: 8 }}>
-            {cart.map((l) => {
-              const disc = lineDiscount(l);
-              return (
-                <div key={l.item_id} className="ci" style={{ flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, fontSize: 10.5, minWidth: 110 }}>{l.nama}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{rp(l.harga)}</div></div>
-                  <button type="button" onClick={() => setQty(l.item_id, -1)} className="back-btn"><i className="ti ti-minus" /></button>
-                  <span style={{ fontSize: 11, minWidth: 16, textAlign: "center" }}>{l.qty}</span>
-                  <button type="button" onClick={() => setQty(l.item_id, 1)} className="back-btn"><i className="ti ti-plus" /></button>
-                  <div style={{ fontSize: 10.5, minWidth: 64, textAlign: "right", fontWeight: 500 }}>
-                    {rp(l.qty * l.harga - disc)}
-                    {disc > 0 && <div style={{ fontSize: 8.5, color: "#b91c1c" }}>pot. {rp(disc)}</div>}
-                  </div>
-                  {/* Addendum §6: potongan per item (nominal / persen) */}
-                  <div style={{ width: "100%", display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end", marginTop: 2 }}>
-                    <span style={{ fontSize: 9, color: "var(--td)" }}>Pot.</span>
-                    <input className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
-                      onChange={(e) => setPot(l.item_id, Number(e.target.value))}
-                      style={{ width: 70, padding: "2px 6px", fontSize: 10, textAlign: "right" }} />
-                    <button type="button" onClick={() => togglePotType(l.item_id)} className="btn-def" style={{ padding: "1px 6px", fontSize: 9.5 }}>
-                      {l.item_discount_type === "percent" ? "%" : "Rp"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {cart.length === 0 && <div style={{ fontSize: 10.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Klik <i className="ti ti-plus" /> pada produk untuk menambah.</div>}
+            {cart.length === 0 ? (
+              <div style={{ fontSize: 10.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Klik <i className="ti ti-plus" /> pada produk untuk menambah.</div>
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: 22 }}>No.</th><th>Nama Barang</th><th style={{ textAlign: "center", width: 58 }}>Qty</th>
+                    <th style={{ textAlign: "right" }}>Subtotal</th><th style={{ width: 26 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((l, i) => {
+                    const disc = lineDiscount(l);
+                    return (
+                      <tr key={l.item_id}>
+                        <td style={{ fontSize: 10, color: "var(--tm)" }}>{i + 1}</td>
+                        <td style={{ fontSize: 10.5 }}>
+                          {l.nama}
+                          <div style={{ fontSize: 9, color: "var(--td)" }}>{rp(l.harga)}</div>
+                          {/* Addendum §6: potongan per item (nominal / persen) */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
+                            <span style={{ fontSize: 8.5, color: "var(--td)" }}>Pot.</span>
+                            <input className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
+                              onChange={(e) => setPot(l.item_id, Number(e.target.value))}
+                              style={{ width: 52, padding: "1px 4px", fontSize: 9, textAlign: "right" }} />
+                            <button type="button" onClick={() => togglePotType(l.item_id)} className="btn-def" style={{ padding: "0px 5px", fontSize: 8.5 }}>
+                              {l.item_discount_type === "percent" ? "%" : "Rp"}
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                            <button type="button" onClick={() => setQty(l.item_id, -1)} className="kpos-qtybtn"><i className="ti ti-minus" /></button>
+                            <span style={{ fontSize: 10.5, minWidth: 14, textAlign: "center" }}>{l.qty}</span>
+                            <button type="button" onClick={() => setQty(l.item_id, 1)} className="kpos-qtybtn"><i className="ti ti-plus" /></button>
+                          </div>
+                        </td>
+                        <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 500 }}>
+                          {rp(l.qty * l.harga - disc)}
+                          {disc > 0 && <div style={{ fontSize: 8.5, color: "#b91c1c", fontWeight: 400 }}>pot. {rp(disc)}</div>}
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <i className="ti ti-x" onClick={() => removeLine(l.item_id)}
+                            style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
 
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
@@ -282,12 +333,12 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
             {voucherInvalid && <div style={{ fontSize: 9.5, color: "#b91c1c", textAlign: "right" }}>Kode tidak dikenal</div>}
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0", paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--sb)" }}>TOTAL</span>
-              <span style={{ fontSize: 19, fontWeight: 800, color: "var(--sb)" }}>{rp(total)}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--posb)" }}>TOTAL</span>
+              <span style={{ fontSize: 19, fontWeight: 800, color: "var(--posb)" }}>{rp(total)}</span>
             </div>
 
             <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--tm)", letterSpacing: ".04em", marginBottom: 5 }}>METODE PEMBAYARAN</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5, marginBottom: 8 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
               {[
                 { m: "Tunai", ic: "ti-cash" },
                 { m: "Debit", ic: "ti-credit-card" },
@@ -295,10 +346,10 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
                 { m: "QRIS", ic: "ti-qrcode" },
                 { m: "E-Wallet", ic: "ti-wallet" },
               ].map(({ m, ic }) => (
-                <button key={m} type="button" onClick={() => setMetode(m)} className="back-btn"
-                  style={{ padding: "7px 0", justifyContent: "center", borderRadius: 7, fontSize: 11, border: metode === m ? "1.5px solid var(--sb)" : ".5px solid var(--bd)",
-                    background: metode === m ? "#eff6ff" : "#fff", color: metode === m ? "var(--sb)" : "var(--tm)", fontWeight: metode === m ? 600 : 400 }}>
-                  <i className={`ti ${ic}`} style={{ marginRight: 4 }} /> {m}
+                <button key={m} type="button" onClick={() => setMetode(m)}
+                  className={`kpos-pay ${metode === m ? "on" : ""}`} style={{ minWidth: "31%" }}>
+                  <span className="kpos-radio" />
+                  <i className={`ti ${ic}`} /> {m}
                 </button>
               ))}
             </div>
@@ -316,7 +367,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
               <button type="submit" formAction={simpanDraft} className="btn-def" style={{ padding: "9px 0", fontSize: 11.5 }} disabled={cart.length === 0}>
                 <i className="ti ti-device-floppy" /> Simpan Draft
               </button>
-              <button type="submit" className="pay-btn" disabled={!canPay} style={{ opacity: canPay ? 1 : 0.5, cursor: canPay ? "pointer" : "not-allowed" }}>
+              <button type="submit" className="kpos-bayar" disabled={!canPay}>
                 <i className="ti ti-circle-check" /> Bayar {rp(total)}
               </button>
             </div>
@@ -326,8 +377,8 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
 
       {/* Reminder Promo (§6): overlay non-blocking — saran utk kasir, bukan auto-apply. */}
       {promoHits.length > 0 && !promoDismissed && (
-        <div style={{ position: "fixed", right: 18, bottom: 18, width: 300, zIndex: 50, background: "#fff", border: "1px solid var(--sb)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.18)", overflow: "hidden" }}>
-          <div style={{ background: "var(--sb)", color: "#fff", padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ position: "fixed", right: 18, bottom: 18, width: 300, zIndex: 50, background: "#fff", border: "1px solid var(--posb)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.18)", overflow: "hidden" }}>
+          <div style={{ background: "var(--posb)", color: "#fff", padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
             <i className="ti ti-speakerphone" />
             <span style={{ fontSize: 11.5, fontWeight: 700, flex: 1 }}>Reminder Promo</span>
             <i className="ti ti-x" style={{ cursor: "pointer", fontSize: 13 }} onClick={() => setDismissedAtCartLen(cart.length)} />
@@ -355,7 +406,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
 function CustStat({ icon, label, sub, accent }: { icon: string; label: string; sub: string; accent?: boolean }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <i className={`ti ${icon}`} style={{ fontSize: 18, color: accent ? "var(--acc)" : "var(--sb)" }} />
+      <i className={`ti ${icon}`} style={{ fontSize: 18, color: accent ? "var(--acc)" : "var(--posb)" }} />
       <div>
         <div style={{ fontSize: 12.5, fontWeight: 700 }}>{label}</div>
         <div style={{ fontSize: 9, color: "var(--td)" }}>{sub}</div>

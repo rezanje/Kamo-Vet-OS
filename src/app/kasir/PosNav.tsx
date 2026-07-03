@@ -16,13 +16,13 @@ export function PosNav({ branchName, userName, hasShift }: { branchName: string 
   return (
     <div className="pos-topbar no-print">
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <Link href="/mulai" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }} title="Kembali ke pilihan mode">
-          <div style={{ width: 30, height: 30, background: "var(--acc)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <i className="ti ti-paw" style={{ fontSize: 16, color: "#fff" }} />
+        <Link href="/mulai" style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none" }} title="Kembali ke pilihan mode">
+          <div style={{ width: 34, height: 34, background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <i className="ti ti-paw" style={{ fontSize: 17, color: "var(--posb)" }} />
           </div>
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: "#fff", lineHeight: 1.1 }}>KAMO PETSHOP</div>
-            <div style={{ fontSize: 8.5, color: "rgba(255,255,255,.5)" }}>Sistem POS {branchName ? `· ${branchName}` : ""}</div>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: "#fff", lineHeight: 1.1, letterSpacing: ".01em" }}>KAMO PETSHOP</div>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,.65)" }}>Sistem POS Petshop {branchName ? `· ${branchName}` : ""}</div>
           </div>
         </Link>
         {hasShift && (
@@ -39,18 +39,24 @@ export function PosNav({ branchName, userName, hasShift }: { branchName: string 
         )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <i className="ti ti-bell" style={{ fontSize: 16, color: "rgba(255,255,255,.6)" }} title="Notifikasi promo & target (segera)" />
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,.65)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.85)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <i className="ti ti-calendar-event" style={{ fontSize: 14 }} />
           {new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+          {" | "}
+          {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
         </span>
         {hasShift && (
-          <Link href="/kasir/tutup" className="pos-tab" style={{ border: ".5px solid rgba(255,255,255,.3)" }}>
+          <Link href="/kasir/tutup" className="pos-tab" style={{ border: "1px solid rgba(255,255,255,.35)" }}>
             <i className="ti ti-power" style={{ fontSize: 13 }} /> Selesai Shift
           </Link>
         )}
-        <span style={{ fontSize: 11.5, color: "#fff", display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <i className="ti ti-user-circle" style={{ fontSize: 16 }} /> {userName}
+        <span style={{ fontSize: 11.5, color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,.2)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <i className="ti ti-user" style={{ fontSize: 14 }} />
+          </span>
+          {userName}
+          <i className="ti ti-chevron-down" style={{ fontSize: 12, color: "rgba(255,255,255,.6)" }} />
         </span>
       </div>
     </div>
