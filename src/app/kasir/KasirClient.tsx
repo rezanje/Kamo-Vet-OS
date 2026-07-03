@@ -1,13 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { checkoutKasir, simpanDraft, hapusDraft } from "./checkout";
+import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
 export type ItemRow = { id: string; code: string; name: string; harga: number; kategori: string; stok: number };
 export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; keanggotaan: string; trx: number };
 export type DraftRow = { id: string; customer_id: string | null; cart: CartLine[]; created_at: string };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
-type CartLine = { item_id: string; nama: string; qty: number; harga: number };
+export type PromoRow = Promo;
+type CartLine = {
+  item_id: string; nama: string; qty: number; harga: number;
+  item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
+};
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -18,8 +23,8 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
   Platinum: { bg: "#ede9fe", color: "#5b21b6" },
 };
 
-export function KasirClient({ branchName, items, customers, drafts, vouchers, error }: {
-  branchName: string; items: ItemRow[]; customers: CustRow[]; drafts: DraftRow[]; vouchers: VoucherRow[]; error?: string;
+export function KasirClient({ branchName, items, customers, drafts, vouchers, promos = [], error }: {
+  branchName: string; items: ItemRow[]; customers: CustRow[]; drafts: DraftRow[]; vouchers: VoucherRow[]; promos?: PromoRow[]; error?: string;
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
@@ -58,18 +63,31 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, er
     });
   const setQty = (id: string, d: number) =>
     setCart((c) => c.flatMap((l) => (l.item_id === id ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
+  const setPot = (id: string, val: number) =>
+    setCart((c) => c.map((l) => (l.item_id === id ? { ...l, item_discount_value: Math.max(0, val), item_discount_type: l.item_discount_type ?? "nominal" } : l)));
+  const togglePotType = (id: string) =>
+    setCart((c) => c.map((l) => (l.item_id === id ? { ...l, item_discount_type: l.item_discount_type === "percent" ? "nominal" : "percent" } : l)));
 
+  // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lihat lib/pos-calc).
   const subtotal = cart.reduce((a, l) => a + l.qty * l.harga, 0);
-  const diskonVal = diskonPct ? Math.round((subtotal * diskon) / 100) : diskon;
+  const itemDiscTotal = cart.reduce((a, l) => a + lineDiscount(l), 0);
+  const afterItems = subtotal - itemDiscTotal;
+  const diskonVal = diskonPct ? Math.round((afterItems * diskon) / 100) : diskon;
   const v = vouchers.find((x) => x.code === voucher.trim().toUpperCase());
-  const voucherVal = v ? (v.tipe === "persen" ? Math.round((subtotal * Number(v.nilai)) / 100) : Number(v.nilai)) : 0;
+  const voucherVal = v ? (v.tipe === "persen" ? Math.round((afterItems * Number(v.nilai)) / 100) : Number(v.nilai)) : 0;
   const voucherInvalid = voucher.trim() !== "" && !v;
-  const maxPoin = cust ? Math.min(cust.points, Math.max(0, subtotal - diskonVal - voucherVal)) : 0;
+  const totals = computeTotals(cart, diskonVal, voucherVal, 0);
+  const maxPoin = cust ? Math.min(cust.points, totals.afterItems - totals.txnLevel) : 0;
   const poinUsed = Math.min(poin, maxPoin);
-  const total = Math.max(0, subtotal - diskonVal - voucherVal - poinUsed);
+  const total = computeTotals(cart, diskonVal, voucherVal, poinUsed).total;
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
   const canPay = cart.length > 0 && !kurang && !voucherInvalid;
+
+  // Reminder Promo (§6): non-blocking, muncul saat isi cart berubah dan ada rule match.
+  const promoHits = useMemo(() => matchPromos(promos, cart), [promos, cart]);
+  const [promoDismissed, setPromoDismissed] = useState(false);
+  useEffect(() => { setPromoDismissed(false); }, [cart.length]);
 
   const loadDraft = (d: DraftRow) => {
     setCart(d.cart ?? []);
@@ -205,22 +223,39 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, er
             )}
           </div>
 
-          <div style={{ maxHeight: 190, overflowY: "auto", marginBottom: 8 }}>
-            {cart.map((l) => (
-              <div key={l.item_id} className="ci">
-                <div style={{ flex: 1, fontSize: 10.5 }}>{l.nama}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{rp(l.harga)}</div></div>
-                <button type="button" onClick={() => setQty(l.item_id, -1)} className="back-btn"><i className="ti ti-minus" /></button>
-                <span style={{ fontSize: 11, minWidth: 16, textAlign: "center" }}>{l.qty}</span>
-                <button type="button" onClick={() => setQty(l.item_id, 1)} className="back-btn"><i className="ti ti-plus" /></button>
-                <div style={{ fontSize: 10.5, minWidth: 64, textAlign: "right", fontWeight: 500 }}>{rp(l.qty * l.harga)}</div>
-              </div>
-            ))}
+          <div style={{ maxHeight: 230, overflowY: "auto", marginBottom: 8 }}>
+            {cart.map((l) => {
+              const disc = lineDiscount(l);
+              return (
+                <div key={l.item_id} className="ci" style={{ flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, fontSize: 10.5, minWidth: 110 }}>{l.nama}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{rp(l.harga)}</div></div>
+                  <button type="button" onClick={() => setQty(l.item_id, -1)} className="back-btn"><i className="ti ti-minus" /></button>
+                  <span style={{ fontSize: 11, minWidth: 16, textAlign: "center" }}>{l.qty}</span>
+                  <button type="button" onClick={() => setQty(l.item_id, 1)} className="back-btn"><i className="ti ti-plus" /></button>
+                  <div style={{ fontSize: 10.5, minWidth: 64, textAlign: "right", fontWeight: 500 }}>
+                    {rp(l.qty * l.harga - disc)}
+                    {disc > 0 && <div style={{ fontSize: 8.5, color: "#b91c1c" }}>pot. {rp(disc)}</div>}
+                  </div>
+                  {/* Addendum §6: potongan per item (nominal / persen) */}
+                  <div style={{ width: "100%", display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end", marginTop: 2 }}>
+                    <span style={{ fontSize: 9, color: "var(--td)" }}>Pot.</span>
+                    <input className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
+                      onChange={(e) => setPot(l.item_id, Number(e.target.value))}
+                      style={{ width: 70, padding: "2px 6px", fontSize: 10, textAlign: "right" }} />
+                    <button type="button" onClick={() => togglePotType(l.item_id)} className="btn-def" style={{ padding: "1px 6px", fontSize: 9.5 }}>
+                      {l.item_discount_type === "percent" ? "%" : "Rp"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
             {cart.length === 0 && <div style={{ fontSize: 10.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Klik <i className="ti ti-plus" /> pada produk untuk menambah.</div>}
           </div>
 
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />
+            {itemDiscTotal > 0 && <Row k="Pot. per item" v={`- ${rp(itemDiscTotal)}`} red />}
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Diskon</span>
@@ -256,6 +291,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, er
               {[
                 { m: "Tunai", ic: "ti-cash" },
                 { m: "Debit", ic: "ti-credit-card" },
+                { m: "Kredit", ic: "ti-credit-card-pay" },
                 { m: "QRIS", ic: "ti-qrcode" },
                 { m: "E-Wallet", ic: "ti-wallet" },
               ].map(({ m, ic }) => (
@@ -287,6 +323,31 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, er
           </div>
         </form>
       </div>
+
+      {/* Reminder Promo (§6): overlay non-blocking — saran utk kasir, bukan auto-apply. */}
+      {promoHits.length > 0 && !promoDismissed && (
+        <div style={{ position: "fixed", right: 18, bottom: 18, width: 300, zIndex: 50, background: "#fff", border: "1px solid var(--sb)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.18)", overflow: "hidden" }}>
+          <div style={{ background: "var(--sb)", color: "#fff", padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+            <i className="ti ti-speakerphone" />
+            <span style={{ fontSize: 11.5, fontWeight: 700, flex: 1 }}>Reminder Promo</span>
+            <i className="ti ti-x" style={{ cursor: "pointer", fontSize: 13 }} onClick={() => setPromoDismissed(true)} />
+          </div>
+          <div style={{ padding: "8px 12px" }}>
+            {promoHits.map((p) => (
+              <div key={p.id} style={{ padding: "6px 0", borderBottom: ".5px dashed var(--bd)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700 }}>
+                  <i className={`ti ${p.promo_type === "bundling" ? "ti-gift" : p.promo_type === "tebus_murah" ? "ti-tag" : "ti-discount-2"}`} style={{ marginRight: 4, color: "var(--acc)" }} />
+                  {p.name}
+                </div>
+                {p.rule?.suggest && <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 2 }}>{p.rule.suggest}</div>}
+              </div>
+            ))}
+            <div style={{ fontSize: 9, color: "var(--td)", marginTop: 6 }}>
+              Tawarkan ke customer — terapkan manual via potongan item / diskon bila diambil.
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

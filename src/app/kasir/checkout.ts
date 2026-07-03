@@ -4,8 +4,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { computeTotals, lineDiscount } from "@/lib/pos-calc";
 
-type CartLine = { item_id: string; nama: string; qty: number; harga: number; target_species?: string };
+type CartLine = {
+  item_id: string; nama: string; qty: number; harga: number; target_species?: string;
+  item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
+};
 
 const POIN_PER_RUPIAH = 1000; // earn: 1 poin / Rp1.000
 const RUPIAH_PER_POIN = 1;    // redeem: 1 poin = Rp1
@@ -38,14 +42,16 @@ export async function checkoutKasir(formData: FormData) {
   const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
   if (rows.length === 0) redirect(`/kasir?error=${encodeURIComponent("Keranjang kosong")}`);
 
+  // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lib/pos-calc — jangan diubah).
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+  const afterItems = subtotal - rows.reduce((a, l) => a + lineDiscount(l), 0);
 
-  // voucher divalidasi server-side.
+  // voucher divalidasi server-side (persen dihitung setelah diskon item).
   let voucherVal = 0;
   if (voucherCode) {
     const { data: v } = await supabase.from("vouchers").select("tipe, nilai").eq("code", voucherCode).eq("is_active", true).maybeSingle();
     if (!v) redirect(`/kasir?error=${encodeURIComponent("Kode voucher tidak valid")}`);
-    voucherVal = v!.tipe === "persen" ? Math.round((subtotal * Number(v!.nilai)) / 100) : Number(v!.nilai);
+    voucherVal = v!.tipe === "persen" ? Math.round((afterItems * Number(v!.nilai)) / 100) : Number(v!.nilai);
   }
 
   // poin divalidasi terhadap saldo pelanggan sebenarnya.
@@ -61,8 +67,10 @@ export async function checkoutKasir(formData: FormData) {
   }
 
   const potonganPoin = poinDigunakan * RUPIAH_PER_POIN;
-  const totalDiskon = Math.min(subtotal, diskon + voucherVal + potonganPoin);
-  const total = subtotal - totalDiskon;
+  const totals = computeTotals(rows, diskon, voucherVal, potonganPoin);
+  poinDigunakan = totals.poin; // poin efektif setelah cap (tidak melebihi sisa tagihan)
+  const totalDiskon = totals.itemDiscountTotal + totals.txnLevel + totals.poin;
+  const total = totals.total;
   const kembali = metode === "Tunai" ? Math.max(0, bayar - total) : 0;
   if (metode === "Tunai" && bayar < total) redirect(`/kasir?error=${encodeURIComponent("Uang bayar kurang")}`);
 
@@ -85,7 +93,12 @@ export async function checkoutKasir(formData: FormData) {
   if (saleErr || !sale) redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
 
   const { error: itErr } = await supabase.from("sale_items").insert(
-    rows.map((l) => ({ sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga, target_species: l.target_species ?? "Universal" }))
+    rows.map((l) => ({
+      sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
+      target_species: l.target_species ?? "Universal",
+      item_discount_type: l.item_discount_type ?? null,
+      item_discount_value: Math.max(0, Number(l.item_discount_value) || 0),
+    }))
   );
   if (itErr) redirect(`/kasir?error=${encodeURIComponent(itErr.message)}`);
 

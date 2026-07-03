@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
+import { lineDiscount } from "@/lib/pos-calc";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -20,7 +21,9 @@ export default async function KasirStrukPage({ params }: { params: Promise<{ sal
   if (!sale) notFound();
 
   const { data: items } = await supabase
-    .from("sale_items").select("nama, qty, harga").eq("sale_id", saleId).order("created_at");
+    .from("sale_items")
+    .select("nama, qty, harga, item_discount_type, item_discount_value, promos(name)")
+    .eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers);
   const branch = one(sale.branches);
@@ -45,19 +48,39 @@ export default async function KasirStrukPage({ params }: { params: Promise<{ sal
         <Row k="Tgl" v={tgl} />
         <Row k="Pelanggan" v={cust?.name ?? "Umum"} />
         <Hr />
-        {(items ?? []).map((it, i) => (
-          <div key={i} style={{ marginBottom: 3 }}>
-            <div>{it.nama}</div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{it.qty} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
+        {(items ?? []).map((it, i) => {
+          // Addendum §6: struk breakdown — potongan per item tampil di bawah barisnya.
+          const disc = lineDiscount({ qty: it.qty, harga: it.harga, item_discount_type: it.item_discount_type as "nominal" | "percent" | null, item_discount_value: it.item_discount_value });
+          const promo = one(it.promos as Rel<{ name: string }>);
+          return (
+            <div key={i} style={{ marginBottom: 3 }}>
+              <div>{it.nama}</div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{it.qty} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
+              </div>
+              {disc > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                  <span>&nbsp;&nbsp;Pot. {promo?.name ?? "item"}{it.item_discount_type === "percent" ? ` ${Number(it.item_discount_value)}%` : ""}</span>
+                  <span>-{rp(disc)}</span>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         <Hr />
-        <Row k="Subtotal" v={rp(sale.subtotal)} />
-        {sale.poin_digunakan > 0 && <Row k="Poin dipakai" v={`-${rp(sale.poin_digunakan)}`} />}
-        {sale.voucher_code && <Row k={`Voucher ${sale.voucher_code}`} v="✓" />}
-        {sale.discount > 0 && <Row k="Total potongan" v={`-${rp(sale.discount)}`} />}
+        {(() => {
+          const itemDisc = (items ?? []).reduce((a, it) => a + lineDiscount({ qty: it.qty, harga: it.harga, item_discount_type: it.item_discount_type as "nominal" | "percent" | null, item_discount_value: it.item_discount_value }), 0);
+          const txnDisc = Math.max(0, Number(sale.discount) - itemDisc - Number(sale.poin_digunakan));
+          return (
+            <>
+              <Row k="Subtotal" v={rp(sale.subtotal)} />
+              {itemDisc > 0 && <Row k="Pot. per item" v={`-${rp(itemDisc)}`} />}
+              {txnDisc > 0 && <Row k={sale.voucher_code ? `Diskon + voucher ${sale.voucher_code}` : "Diskon transaksi"} v={`-${rp(txnDisc)}`} />}
+              {!txnDisc && sale.voucher_code ? <Row k={`Voucher ${sale.voucher_code}`} v="✓" /> : null}
+              {sale.poin_digunakan > 0 && <Row k="Poin dipakai" v={`-${rp(sale.poin_digunakan)}`} />}
+            </>
+          );
+        })()}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12, marginTop: 2 }}><span>TOTAL</span><span>{rp(sale.total)}</span></div>
         <Hr />
         <Row k={sale.metode_bayar} v={rp(sale.bayar)} />
