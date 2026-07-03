@@ -1,0 +1,131 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { nextStatus, stockDeductions, type RecipeStatus } from "@/lib/compounding";
+
+type IngredientInput = { ingredient_name: string; item_id: string | null; quantity: number; unit: string };
+
+// helper: gudang utama cabang (pola sama dgn checkout kasir).
+async function branchWarehouse(supabase: Awaited<ReturnType<typeof createClient>>, branchId: string) {
+  const { data: wh } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
+  return wh?.id ?? null;
+}
+
+async function adjustStock(supabase: Awaited<ReturnType<typeof createClient>>, warehouseId: string, itemId: string, delta: number) {
+  const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
+  if (st) {
+    await supabase.from("stock").update({ qty: Number(st.qty) + delta, updated_at: new Date().toISOString() })
+      .eq("warehouse_id", warehouseId).eq("item_id", itemId);
+  }
+}
+
+export async function createCompounding(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const medicalRecordId = String(formData.get("medicalRecordId") ?? "");
+  const visitId = String(formData.get("visitId") ?? "");
+  const back = `/klinik/rekam-medis/${visitId}/racikan`;
+
+  const recipeName = String(formData.get("recipe_name") ?? "").trim();
+  const dosage = String(formData.get("dosage_instruction") ?? "").trim();
+  const volume = String(formData.get("total_volume") ?? "").trim();
+  const form = String(formData.get("dosage_form") ?? "lainnya");
+  const steps = String(formData.get("compounding_steps") ?? "").trim();
+  if (!medicalRecordId || !recipeName || !dosage || !volume || !steps) {
+    redirect(`${back}?error=${encodeURIComponent("Lengkapi nama racikan, aturan pakai, jumlah, dan petunjuk racik")}`);
+  }
+
+  let ings: IngredientInput[] = [];
+  try {
+    ings = JSON.parse(String(formData.get("ingredients") ?? "[]"));
+  } catch {
+    ings = [];
+  }
+  const rows = ings.filter((i) => i.ingredient_name?.trim() && Number(i.quantity) > 0);
+  if (rows.length === 0) redirect(`${back}?error=${encodeURIComponent("Minimal 1 bahan racikan")}`);
+
+  const { data: recipe, error: rErr } = await supabase
+    .from("compounding_recipes")
+    .insert({
+      medical_record_id: medicalRecordId, recipe_name: recipeName, dosage_instruction: dosage,
+      total_volume: volume, dosage_form: form, compounding_steps: steps, created_by: user?.id ?? null,
+    })
+    .select("id").single();
+  if (rErr || !recipe) redirect(`${back}?error=${encodeURIComponent(rErr?.message ?? "Gagal simpan racikan")}`);
+
+  const { error: iErr } = await supabase.from("compounding_ingredients").insert(
+    rows.map((i) => ({
+      recipe_id: recipe!.id, ingredient_name: i.ingredient_name.trim(),
+      item_id: i.item_id || null, quantity: Number(i.quantity), unit: i.unit || "pcs",
+    })),
+  );
+  if (iErr) redirect(`${back}?error=${encodeURIComponent(iErr.message)}`);
+
+  // §2: stok bahan auto-deduct saat racikan dibuat (bukan obat jadi).
+  const { data: visit } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+  if (visit) {
+    const whId = await branchWarehouse(supabase, visit.branch_id);
+    if (whId) {
+      for (const d of stockDeductions(rows)) await adjustStock(supabase, whId, d.item_id, -d.qty);
+    }
+  }
+
+  redirect(`/klinik/rekam-medis/${visitId}?racikan=dibuat`);
+}
+
+// pending → ready (obat siap diserahkan) → handed_over (sudah diserahkan).
+export async function advanceRecipeStatus(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const recipeId = String(formData.get("recipeId") ?? "");
+  if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
+
+  const { data: r } = await supabase.from("compounding_recipes").select("status").eq("id", recipeId).single();
+  const next = r ? nextStatus(r.status as RecipeStatus) : null;
+  if (!next) redirect(`/klinik/racik/${recipeId}?error=${encodeURIComponent("Status tidak bisa diubah lagi")}`);
+
+  await supabase
+    .from("compounding_recipes")
+    .update(next === "ready"
+      ? { status: next, prepared_by: user?.id ?? null, prepared_at: new Date().toISOString() }
+      : { status: next })
+    .eq("id", recipeId);
+
+  revalidatePath(`/klinik/racik/${recipeId}`);
+  redirect(`/klinik/racik/${recipeId}?success=${next}`);
+}
+
+// §2 edge case: perubahan setelah diproses → void racikan lama (stok bahan dikembalikan), buat baru.
+export async function voidRecipe(formData: FormData) {
+  const supabase = await createClient();
+  const recipeId = String(formData.get("recipeId") ?? "");
+  const visitId = String(formData.get("visitId") ?? "");
+  if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
+
+  const { data: r } = await supabase
+    .from("compounding_recipes")
+    .select("status, medical_record_id, compounding_ingredients(item_id, quantity)")
+    .eq("id", recipeId).single();
+  if (!r || r.status === "handed_over" || r.status === "void") {
+    redirect(`/klinik/racik/${recipeId}?error=${encodeURIComponent("Racikan sudah diserahkan / sudah void")}`);
+  }
+
+  await supabase.from("compounding_recipes").update({ status: "void" }).eq("id", recipeId);
+
+  // kembalikan stok bahan.
+  const { data: mr } = await supabase.from("medical_records").select("visit_id").eq("id", r!.medical_record_id).maybeSingle();
+  const { data: visit } = mr ? await supabase.from("visits").select("branch_id").eq("id", mr.visit_id).maybeSingle() : { data: null };
+  if (visit) {
+    const whId = await branchWarehouse(supabase, visit.branch_id);
+    if (whId) {
+      const ings = (r!.compounding_ingredients ?? []) as { item_id: string | null; quantity: number }[];
+      for (const d of stockDeductions(ings)) await adjustStock(supabase, whId, d.item_id, +d.qty);
+    }
+  }
+
+  redirect(visitId ? `/klinik/rekam-medis/${visitId}?racikan=void` : `/klinik/racik?success=void`);
+}

@@ -16,10 +16,10 @@ export default async function RekamMedisPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; racikan?: string }>;
 }) {
   const { visitId } = await params;
-  const { error } = await searchParams;
+  const { error, racikan } = await searchParams;
   const supabase = await createClient();
 
   const { data: visit } = await supabase
@@ -39,6 +39,7 @@ export default async function RekamMedisPage({
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
   let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
+  let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
     const { data: mr } = await supabase
       .from("medical_records")
@@ -55,6 +56,13 @@ export default async function RekamMedisPage({
         .eq("medical_record_id", mr.id)
         .order("created_at");
       resep = pi ?? [];
+      // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
+      const { data: cr } = await supabase
+        .from("compounding_recipes")
+        .select("id, recipe_name, dosage_form, total_volume, status")
+        .eq("medical_record_id", mr.id)
+        .order("created_at", { ascending: false });
+      racikanList = cr ?? [];
     }
   }
 
@@ -74,6 +82,16 @@ export default async function RekamMedisPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+      {racikan === "dibuat" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Racikan dibuat — stok bahan terpotong, worklist apoteker terupdate.
+        </div>
+      )}
+      {racikan === "void" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Racikan di-void, stok bahan dikembalikan. Buat racikan baru bila perlu.
         </div>
       )}
 
@@ -170,6 +188,43 @@ export default async function RekamMedisPage({
                 </table>
               )}
             </div>
+          </div>
+
+          {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="card-hd" style={{ justifyContent: "space-between" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i className="ti ti-flask" style={{ color: "#7c3aed" }} /> Obat racikan
+              </span>
+              <Link href={`/klinik/rekam-medis/${visit.id}/racikan`} className="btn-acc"
+                style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <i className="ti ti-plus" /> Racikan baru
+              </Link>
+            </div>
+            {racikanList.length === 0 ? (
+              <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada racikan untuk kunjungan ini.</div>
+            ) : (
+              <table className="tbl">
+                <thead><tr><th>Racikan</th><th>Bentuk</th><th>Jumlah</th><th>Status</th><th /></tr></thead>
+                <tbody>
+                  {racikanList.map((c) => (
+                    <tr key={c.id}>
+                      <td style={{ fontWeight: 500 }}>{c.recipe_name}</td>
+                      <td style={{ fontSize: 11, textTransform: "capitalize" }}>{c.dosage_form}</td>
+                      <td style={{ fontSize: 11 }}>{c.total_volume}</td>
+                      <td><span className={`bge ${c.status === "handed_over" ? "g" : c.status === "ready" ? "b" : c.status === "void" ? "r" : "o"}`}>
+                        {c.status === "pending" ? "Menunggu diracik" : c.status === "ready" ? "Siap diserahkan" : c.status === "handed_over" ? "Diserahkan" : "Void"}
+                      </span></td>
+                      <td>
+                        <Link href={`/klinik/racik/${c.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10, textDecoration: "none" }}>
+                          Detail
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </>
       ) : (
