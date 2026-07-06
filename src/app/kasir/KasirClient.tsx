@@ -8,7 +8,7 @@ export type ItemRow = { id: string; code: string; name: string; harga: number; k
 export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; keanggotaan: string; trx: number };
 export type DraftRow = { id: string; customer_id: string | null; cart: CartLine[]; created_at: string };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
-export type PromoRow = Promo;
+export type PromoRow = Promo & { valid_from?: string | null; valid_until?: string | null };
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
@@ -97,6 +97,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
   const promoHits = useMemo(() => matchPromos(promos, cart), [promos, cart]);
   const [dismissedAtCartLen, setDismissedAtCartLen] = useState<number | null>(null);
   const promoDismissed = dismissedAtCartLen === cart.length;
+  const [showPromoList, setShowPromoList] = useState(false);
 
   const loadDraft = (d: DraftRow) => {
     setCart(d.cart ?? []);
@@ -174,6 +175,13 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
           <div style={{ padding: "13px 15px 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--posb)", letterSpacing: ".03em" }}>DAFTAR PRODUK</span>
             <span style={{ fontSize: 9.5, color: "var(--td)" }}>{branchName}</span>
+            <button type="button" onClick={() => setShowPromoList(true)}
+              className="btn-def" style={{ padding: "4px 11px", fontSize: 10.5, display: "inline-flex", alignItems: "center", gap: 5, borderColor: "var(--posb)", color: "var(--posb)" }}>
+              <i className="ti ti-speakerphone" /> Promo Hari Ini
+              {promos.length > 0 && (
+                <span style={{ background: "var(--posb)", color: "#fff", borderRadius: 999, fontSize: 9, fontWeight: 700, padding: "1px 6px" }}>{promos.length}</span>
+              )}
+            </button>
             <div style={{ marginLeft: "auto", position: "relative", width: 240 }}>
               <input className="fi" placeholder="Cari nama / kode barang..." value={q}
                 onChange={(e) => { setQ(e.target.value); setPage(1); }} style={{ fontSize: 11, paddingRight: 26 }} />
@@ -395,6 +403,42 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
             ))}
             <div style={{ fontSize: 9, color: "var(--td)", marginTop: 6 }}>
               Tawarkan ke customer — terapkan manual via potongan item / diskon bila diambil.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Daftar Promo Hari Ini — referensi kasir (read-only), diset dari pusat per cabang. */}
+      {showPromoList && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.35)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => setShowPromoList(false)}>
+          <div style={{ width: 460, maxHeight: "80vh", overflowY: "auto", background: "#fff", borderRadius: 12, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ background: "var(--posb)", color: "#fff", padding: "11px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+              <i className="ti ti-speakerphone" />
+              <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Promo Hari Ini · {branchName}</span>
+              <i className="ti ti-x" style={{ cursor: "pointer" }} onClick={() => setShowPromoList(false)} />
+            </div>
+            <div style={{ padding: "12px 14px" }}>
+              {promos.length === 0 ? (
+                <div style={{ fontSize: 11.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Tidak ada promo aktif hari ini untuk cabang ini.</div>
+              ) : (
+                promos.map((p) => (
+                  <div key={p.id} style={{ padding: "9px 0", borderBottom: ".5px dashed var(--bd)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                      <i className={`ti ${p.promo_type === "bundling" ? "ti-gift" : p.promo_type === "tebus_murah" ? "ti-tag" : "ti-discount-2"}`} style={{ marginRight: 5, color: "var(--posb)" }} />
+                      {p.name}
+                    </div>
+                    {p.rule?.suggest && <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>{p.rule.suggest}</div>}
+                    <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                      {p.rule?.discount_value != null && <span>Diskon {p.rule.discount_value}{p.rule.discount_type === "percent" ? "%" : " Rp"} · </span>}
+                      Berlaku {p.valid_from ?? "—"} s/d {p.valid_until ?? "∞"}
+                    </div>
+                  </div>
+                ))
+              )}
+              <div style={{ fontSize: 9, color: "var(--td)", marginTop: 10 }}>
+                Diset dari pusat untuk cabang ini. Tawarkan ke customer — terapkan manual via potongan item / diskon.
+              </div>
             </div>
           </div>
         </div>

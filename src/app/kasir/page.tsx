@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { KasirClient, type ItemRow, type CustRow, type DraftRow, type VoucherRow, type PromoRow } from "./KasirClient";
 
 type Rel<T> = T | T[] | null;
@@ -28,8 +29,12 @@ export default async function KasirPage({
     supabase.from("sales").select("customer_id"),
     supabase.from("sale_drafts").select("id, customer_id, cart, created_at").eq("cashier_id", user.id).order("created_at", { ascending: false }),
     supabase.from("vouchers").select("code, tipe, nilai").eq("is_active", true),
-    supabase.from("promos").select("id, name, promo_type, rule").eq("is_active", true),
+    supabase.from("promos").select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until").eq("is_active", true),
   ]);
+
+  // Addendum: promo yang aktif hari ini untuk cabang shift (branch + tanggal).
+  const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const promosActive = ((promos ?? []) as unknown as PromoFull[]).filter((p) => promoActiveFor(p, shift.branch_id, wibToday));
 
   // stok di gudang pertama cabang shift (tampilan stok toko).
   const { data: wh } = await supabase
@@ -63,7 +68,7 @@ export default async function KasirPage({
       customers={custRows}
       drafts={(drafts ?? []) as unknown as DraftRow[]}
       vouchers={(vouchers ?? []) as unknown as VoucherRow[]}
-      promos={(promos ?? []) as unknown as PromoRow[]}
+      promos={promosActive as unknown as PromoRow[]}
       error={error}
     />
   );
