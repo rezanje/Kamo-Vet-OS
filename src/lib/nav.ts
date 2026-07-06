@@ -102,7 +102,7 @@ export const TILES: Record<string, Tile[]> = {
   ],
   crm: [
     { label: "Data pelanggan", icon: "ti-users-group", ...G, href: "/crm/pelanggan" },
-    { label: "Promo", icon: "ti-speakerphone", ...A },
+    { label: "Promo", icon: "ti-speakerphone", ...A, href: "/crm/promo" },
     { label: "Kategori pelanggan", icon: "ti-crown", ...P },
     { label: "Retensi & WA", icon: "ti-brand-whatsapp", ...G },
     { label: "Owner dashboard", icon: "ti-dashboard", ...B },
