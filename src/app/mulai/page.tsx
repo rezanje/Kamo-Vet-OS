@@ -26,13 +26,23 @@ export default async function MulaiPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 260px))", gap: 16, justifyContent: "center" }}>
-        <Link href="/" style={{ textDecoration: "none" }}>
-          <div className="mulai-tile">
-            <i className="ti ti-layout-dashboard" style={{ fontSize: 40, color: "var(--sb)" }} />
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Dashboard VetOS</div>
-            <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Klinik, CRM, Keuangan, HRIS, laporan — semua modul.</div>
-          </div>
-        </Link>
+        {profile?.role === "STAFF" ? (
+          <Link href="/me" style={{ textDecoration: "none" }}>
+            <div className="mulai-tile">
+              <i className="ti ti-user-heart" style={{ fontSize: 40, color: "var(--sb)" }} />
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Dashboard Pribadi</div>
+              <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Quest, KPI, absensi & pengajuan cuti kamu.</div>
+            </div>
+          </Link>
+        ) : (
+          <Link href="/" style={{ textDecoration: "none" }}>
+            <div className="mulai-tile">
+              <i className="ti ti-layout-dashboard" style={{ fontSize: 40, color: "var(--sb)" }} />
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Dashboard VetOS</div>
+              <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Klinik, CRM, Keuangan, HRIS, laporan — semua modul.</div>
+            </div>
+          </Link>
+        )}
         <Link href="/kasir" style={{ textDecoration: "none" }}>
           <div className="mulai-tile">
             <i className="ti ti-cash-register" style={{ fontSize: 40, color: "var(--acc)" }} />
