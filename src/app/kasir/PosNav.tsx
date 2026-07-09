@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { NotificationRow } from "@/lib/notifications";
+import { NotifBell } from "./NotifBell";
 
 const TABS = [
-  { href: "/kasir", label: "Kasir", icon: "ti-cash-register", exact: true },
+  { href: "/kasir", label: "Kasir", icon: "ti-building-store", exact: true },
   { href: "/kasir/pengeluaran", label: "Pengeluaran", icon: "ti-receipt-2", exact: false },
   { href: "/kasir/persediaan", label: "Persediaan", icon: "ti-stack", exact: false },
   { href: "/kasir/quest", label: "Quest", icon: "ti-trophy", exact: false },
 ];
 
-export function PosNav({ branchName, userName, hasShift }: { branchName: string | null; userName: string; hasShift: boolean }) {
+export function PosNav({ branchName, userName, hasShift, notifications }: { branchName: string | null; userName: string; hasShift: boolean; notifications: NotificationRow[] }) {
   const pathname = usePathname();
 
   return (
@@ -46,6 +48,7 @@ export function PosNav({ branchName, userName, hasShift }: { branchName: string 
           {" | "}
           {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
         </span>
+        {hasShift && <NotifBell notifications={notifications} />}
         {hasShift && (
           <Link href="/kasir/tutup" className="pos-tab" style={{ border: "1px solid rgba(255,255,255,.35)" }}>
             <i className="ti ti-power" style={{ fontSize: 13 }} /> Selesai Shift
