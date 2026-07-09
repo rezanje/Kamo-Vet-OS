@@ -19,7 +19,7 @@ export default async function MulaiShiftPage({
   if (shift) redirect("/kasir");
 
   const { data: branches } = await supabase
-    .from("branches").select("id, name").eq("is_active", true).order("name");
+    .from("branches").select("id, name").eq("is_active", true).in("type", ["PETSHOP", "BOTH"]).order("name");
 
   return (
     <div style={{ minHeight: "70vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
