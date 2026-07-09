@@ -81,6 +81,7 @@ body {
 .g { background: #e8f5ee; color: #15803d; } .o { background: #fdf0ea; color: #b55a35; }
 .b { background: #eff6ff; color: #1d4ed8; } .r { background: #fef2f2; color: #b91c1c; }
 .x { background: #f3f4f6; color: #6b7280; }
+.pu { background: #f5f3ff; color: #6d28d9; } .pk { background: #fdf2f8; color: #be185d; }
 .bars { display: flex; align-items: flex-end; gap: 3px; height: 72px; }
 .bar { flex: 1; border-radius: 2px 2px 0 0; }
 .p2ban { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 8px; padding: 9px 12px; font-size: 11px; color: #92400e; margin-bottom: 12px; display: flex; align-items: center; gap: 9px; }
@@ -112,7 +113,7 @@ body {
 .crm-sec { background: #fff; border: .5px solid var(--bd); border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
 
 /* Mode chooser (/mulai) + POS kasir shell — Kamo Petshop blue theme (design-reference/petshop). */
-.mulai-tile { background: #fff; border-radius: 14px; padding: 26px 20px; display: flex; flex-direction: column; align-items: center; gap: 9px; cursor: pointer; transition: transform .12s, box-shadow .12s; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+.mulai-tile { background: #fff; border-radius: 14px; padding: 26px 20px; display: flex; flex-direction: column; align-items: center; gap: 9px; cursor: pointer; transition: transform .12s, box-shadow .12s; box-shadow: 0 2px 10px rgba(0,0,0,.25); width: 240px; flex-shrink: 0; }
 .mulai-tile:hover { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,.3); }
 :root { --posb: #0038a6; --posb-dk: #002d85; }
 .pos-topbar { height: 56px; background: var(--posb); display: flex; align-items: center; justify-content: space-between; padding: 0 18px; color: #fff; flex-shrink: 0; }
