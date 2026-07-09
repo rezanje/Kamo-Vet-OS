@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { SecHeader } from "@/components/SecHeader";
-import { registrasiPasien } from "./actions";
+import { getOpenShift } from "@/lib/shift";
+import { RegistrasiForm } from "./RegistrasiForm";
 
 export default async function RegistrasiPage({
   searchParams,
@@ -10,8 +11,22 @@ export default async function RegistrasiPage({
 }) {
   const { error } = await searchParams;
   const supabase = await createClient();
-  const { data: branches } = await supabase
-    .from("branches").select("id, code, name").order("name");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: profile } = await supabase
+    .from("profiles").select("role").eq("id", user.id).single();
+
+  // Kunci cabang ke shift klinik yang lagi jalan — staff cuma boleh transaksi
+  // di cabang yang di-assign (user_branches), pilih bebas bikin RLS visits nolak insert.
+  const shift = await getOpenShift(supabase as never, user.id, "klinik");
+
+  // STAFF wajib mulai shift dulu (alur kasir) — tanpa shift gak ada cabang terkunci buat dia.
+  if (!shift && profile?.role === "STAFF") redirect("/klinik/shift");
+
+  const { data: branches } = shift
+    ? { data: [{ id: shift.branch_id, code: "", name: shift.branchName }] }
+    : await supabase.from("branches").select("id, code, name").order("name");
 
   return (
     <>
@@ -29,120 +44,7 @@ export default async function RegistrasiPage({
         </div>
       )}
 
-      <form action={registrasiPasien}>
-        <div className="grid2">
-          <div className="crm-sec" style={{ marginBottom: 0 }}>
-            <SecHeader num="01" title="PEMILIK HEWAN" desc="Data pelanggan / pemilik anabul." />
-            <div className="fg">
-              <label className="flab">
-                Nomor HP <span style={{ color: "#dc2626" }}>*</span>
-              </label>
-              <input className="fi" name="phone" placeholder="081234567890" required />
-              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-                Kalau nomor sudah terdaftar, data pelanggan lama otomatis dipakai.
-              </div>
-            </div>
-            <div className="frow">
-              <div>
-                <label className="flab">
-                  Nama lengkap <span style={{ color: "#dc2626" }}>*</span>
-                </label>
-                <input className="fi" name="name" placeholder="Dian Pratiwi" required />
-              </div>
-              <div>
-                <label className="flab">
-                  Tgl lahir{" "}
-                  <span style={{ color: "var(--acc)" }} title="Untuk WA birthday trigger">★WA</span>
-                </label>
-                <input className="fi" name="dob" type="date" />
-              </div>
-            </div>
-            <div>
-              <label className="flab">Alamat</label>
-              <input className="fi" name="address" placeholder="Jl. Contoh No. 1, Bogor" />
-            </div>
-          </div>
-
-          <div className="crm-sec" style={{ marginBottom: 0 }}>
-            <SecHeader num="02" title="DATA ANABUL" desc="Data hewan peliharaan yang akan diperiksa." />
-            <div className="frow">
-              <div>
-                <label className="flab">
-                  Nama hewan <span style={{ color: "#dc2626" }}>*</span>
-                </label>
-                <input className="fi" name="petName" placeholder="Max" required />
-              </div>
-              <div>
-                <label className="flab">
-                  Spesies <span style={{ color: "#dc2626" }}>*</span>
-                </label>
-                <select className="fi" name="species" required>
-                  <option>Anjing</option>
-                  <option>Kucing</option>
-                  <option>Kelinci</option>
-                  <option>Burung</option>
-                  <option>Lainnya</option>
-                </select>
-              </div>
-            </div>
-            <div className="frow">
-              <div>
-                <label className="flab">Ras</label>
-                <input className="fi" name="breed" placeholder="Golden Retriever" />
-              </div>
-              <div>
-                <label className="flab">Tgl lahir</label>
-                <input className="fi" name="petDob" type="date" />
-              </div>
-            </div>
-            <div className="frow">
-              <div>
-                <label className="flab">Jenis kelamin</label>
-                <select className="fi" name="gender">
-                  <option>Jantan</option>
-                  <option>Betina</option>
-                </select>
-              </div>
-              <div>
-                <label className="flab">Berat badan (kg)</label>
-                <input className="fi" name="weight" type="number" step="0.1" placeholder="5.2" />
-              </div>
-            </div>
-            <div className="frow">
-              <div>
-                <label className="flab">
-                  Cabang <span style={{ color: "#dc2626" }}>*</span>
-                </label>
-                <select className="fi" name="branchId" required>
-                  <option value="">Pilih cabang</option>
-                  {(branches ?? []).map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="flab">Poli</label>
-                <select className="fi" name="poli">
-                  <option>Poli Umum</option>
-                  <option>Poli Gigi</option>
-                  <option>Poli Kulit</option>
-                  <option>Vaksinasi</option>
-                  <option>Grooming</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="flab">Keluhan / catatan kunjungan</label>
-              <input className="fi" name="keluhan" placeholder="Batal, nafsu makan turun" />
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-          <Link href="/klinik" className="btn-def">Batal</Link>
-          <button type="submit" className="btn-acc">Daftarkan pasien</button>
-        </div>
-      </form>
+      <RegistrasiForm branches={branches ?? []} lockBranch={!!shift} />
     </>
   );
 }

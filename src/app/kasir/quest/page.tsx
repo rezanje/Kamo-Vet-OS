@@ -103,33 +103,38 @@ export default async function QuestPage({
         {/* KIRI: ringkasan + streak + leaderboard */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="card">
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>RINGKASAN PENCAPAIAN</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", letterSpacing: ".04em", marginBottom: 8 }}>📊 RINGKASAN PENCAPAIAN</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
               {([
-                { label: "Total Poin", val: totalPoints.toLocaleString("id-ID"), icon: "ti-star", bg: "#eff6ff", color: "#1d4ed8" },
-                { label: "Quest Selesai", val: `${questSelesaiTotal}`, icon: "ti-circle-check", bg: "#e8f5ee", color: "#15803d" },
-                { label: "Streak Harian", val: `${streakDays} Hari`, icon: "ti-flame", bg: "#fffbeb", color: "#d97706" },
-                { label: "Reward Terklaim", val: `${rewardClaimed}`, icon: "ti-gift", bg: "#f3f0ff", color: "#7c3aed" },
+                { label: "Total Poin", val: totalPoints.toLocaleString("id-ID"), icon: "ti-star", chip: "#2563eb", bg: "#eff6ff", color: "#1d4ed8", brd: "#bfdbfe" },
+                { label: "Quest Selesai", val: `${questSelesaiTotal}`, icon: "ti-circle-check", chip: "#16a34a", bg: "#f0fdf4", color: "#15803d", brd: "#bbf7d0" },
+                { label: "Streak Harian", val: `${streakDays} Hari`, icon: "ti-flame", chip: "#f59e0b", bg: "#fffbeb", color: "#b45309", brd: "#fde68a" },
+                { label: "Reward Terklaim", val: `${rewardClaimed}`, icon: "ti-gift", chip: "#7c3aed", bg: "#f5f3ff", color: "#6d28d9", brd: "#ddd6fe" },
               ] as const).map((c) => (
-                <div key={c.label} style={{ border: ".5px solid var(--bd)", borderRadius: 8, padding: "9px 10px", background: c.bg }}>
-                  <i className={`ti ${c.icon}`} style={{ color: c.color, fontSize: 15 }} />
-                  <div style={{ fontSize: 15, fontWeight: 800, marginTop: 3 }}>{c.val}</div>
+                <div key={c.label} style={{ border: `1px solid ${c.brd}`, borderRadius: 10, padding: "10px", background: c.bg }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: c.chip, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <i className={`ti ${c.icon}`} style={{ color: "#fff", fontSize: 14 }} />
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 800, marginTop: 6, color: c.color }}>{c.val}</div>
                   <div style={{ fontSize: 8.5, color: "var(--tm)" }}>{c.label}</div>
                 </div>
               ))}
             </div>
             <div style={{ marginTop: 10 }}>
-              {([{ label: "Daily Quest", rows: daily }, { label: "Monthly Quest", rows: monthly }] as const).map((g) => {
+              {([
+                { label: "Daily Quest", rows: daily, grad: "linear-gradient(90deg,#3b82f6,#2563eb)", ink: "#2563eb" },
+                { label: "Monthly Quest", rows: monthly, grad: "linear-gradient(90deg,#a78bfa,#7c3aed)", ink: "#7c3aed" },
+              ] as const).map((g) => {
                 const done = doneCount(g.rows);
                 const pct = g.rows.length ? Math.round((done / g.rows.length) * 100) : 0;
                 return (
-                  <div key={g.label} style={{ marginBottom: 7 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginBottom: 3 }}>
-                      <span style={{ color: "var(--tm)" }}><i className="ti ti-calendar" /> {g.label}</span>
-                      <span style={{ fontWeight: 600 }}>{done} / {g.rows.length} Selesai · {pct}%</span>
+                  <div key={g.label} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginBottom: 4 }}>
+                      <span style={{ color: g.ink, fontWeight: 600 }}><i className="ti ti-calendar" /> {g.label}</span>
+                      <span style={{ fontWeight: 700, color: g.ink }}>{done} / {g.rows.length} Selesai · {pct}%</span>
                     </div>
-                    <div style={{ height: 6, background: "var(--sf1)", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: "var(--sb)" }} />
+                    <div style={{ height: 8, background: "var(--sf1)", borderRadius: 5, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: g.grad, borderRadius: 5 }} />
                     </div>
                   </div>
                 );
@@ -137,28 +142,30 @@ export default async function QuestPage({
             </div>
           </div>
 
-          <div className="card">
+          <div className="card" style={{ borderColor: "#fde68a", background: "linear-gradient(180deg,#fffdf5,#fff)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em" }}>STREAK HARIAN</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", letterSpacing: ".04em" }}><i className="ti ti-flame" /> STREAK HARIAN</span>
               {cfg && (
-                <span style={{ fontSize: 9.5, color: "var(--tm)", border: ".5px solid var(--bd)", borderRadius: 6, padding: "3px 8px" }}>
-                  Bonus streak tiap {cfg.streak_bonus_every_days} hari: <b>{cfg.streak_bonus_points} Poin</b> <i className="ti ti-star" style={{ color: "#d97706" }} />
+                <span style={{ fontSize: 9.5, color: "#92400e", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 6, padding: "3px 8px" }}>
+                  Bonus tiap {cfg.streak_bonus_every_days} hari: <b>{cfg.streak_bonus_points} Poin</b> <i className="ti ti-star" style={{ color: "#f59e0b" }} />
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 12, marginBottom: 8 }}>
-              <i className="ti ti-flame" style={{ color: "#d97706" }} /> <b>{streakDays}</b> hari berturut-turut! <span style={{ color: "var(--td)", fontSize: 10 }}>Pertahankan streak untuk bonus poin!</span>
+            <div style={{ fontSize: 12, marginBottom: 10 }}>
+              <span style={{ fontSize: 15 }}>🔥</span> <b style={{ color: "#b45309" }}>{streakDays}</b> hari berturut-turut! <span style={{ color: "var(--tm)", fontSize: 10 }}>Pertahankan streak untuk bonus poin!</span>
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
               {week.map((d, i) => (
                 <div key={i} style={{ textAlign: "center", flex: 1 }}>
                   <div style={{
-                    width: 30, height: 30, margin: "0 auto", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                    background: d.active ? "#e8f5ee" : "var(--sf1)", border: d.today ? "1.5px solid var(--sb)" : ".5px solid var(--bd)",
+                    width: 32, height: 32, margin: "0 auto", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                    background: d.active ? "linear-gradient(180deg,#34d399,#16a34a)" : "var(--sf1)",
+                    border: d.today ? "2px solid #f59e0b" : ".5px solid var(--bd)",
+                    boxShadow: d.active ? "0 1px 3px rgba(22,163,74,.35)" : "none",
                   }}>
-                    {d.active ? <i className="ti ti-check" style={{ color: "#15803d", fontSize: 14 }} /> : <i className="ti ti-minus" style={{ color: "var(--td)", fontSize: 11 }} />}
+                    {d.active ? <i className="ti ti-check" style={{ color: "#fff", fontSize: 15 }} /> : <i className="ti ti-minus" style={{ color: "var(--td)", fontSize: 11 }} />}
                   </div>
-                  {d.today && d.active && <div style={{ fontSize: 10 }}>🔥</div>}
+                  {d.today && d.active && <div style={{ fontSize: 11, marginTop: 1 }}>🔥</div>}
                   <div style={{ fontSize: 8.5, color: "var(--tm)", marginTop: 2 }}>{d.label}</div>
                 </div>
               ))}
@@ -166,20 +173,29 @@ export default async function QuestPage({
           </div>
 
           <div className="card">
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>LEADERBOARD (BULAN INI · {shift.branchName})</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", letterSpacing: ".04em", marginBottom: 8 }}>🏆 LEADERBOARD (BULAN INI · {shift.branchName})</div>
             {board.length === 0 && <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada poin bulan ini.</div>}
-            {board.slice(0, 10).map((b, i) => (
-              <div key={b.staff_id} style={{
-                display: "flex", alignItems: "center", gap: 9, padding: "6px 9px", borderRadius: 7, marginBottom: 3,
-                background: b.staff_id === user.id ? "#eff6ff" : i < 3 ? "var(--sf1)" : "transparent",
-              }}>
-                <span style={{ fontSize: 13, width: 20 }}>{i === 0 ? "🏆" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`}</span>
-                <span style={{ fontSize: 11.5, flex: 1, fontWeight: b.staff_id === user.id ? 700 : 400 }}>
-                  {nameMap.get(b.staff_id) ?? "—"}{b.staff_id === user.id ? " (Anda)" : ""}
-                </span>
-                <span style={{ fontSize: 11.5, fontWeight: 700 }}>{b.points.toLocaleString("id-ID")} Poin</span>
-              </div>
-            ))}
+            {board.slice(0, 10).map((b, i) => {
+              const rank = [
+                { bg: "linear-gradient(90deg,#fef9c3,#fff)", brd: "#fde047" },
+                { bg: "linear-gradient(90deg,#f1f5f9,#fff)", brd: "#cbd5e1" },
+                { bg: "linear-gradient(90deg,#ffedd5,#fff)", brd: "#fdba74" },
+              ][i];
+              const me = b.staff_id === user.id;
+              return (
+                <div key={b.staff_id} style={{
+                  display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", borderRadius: 8, marginBottom: 4,
+                  background: me ? "#eff6ff" : rank ? rank.bg : "transparent",
+                  border: me ? "1px solid #bfdbfe" : rank ? `1px solid ${rank.brd}` : ".5px solid transparent",
+                }}>
+                  <span style={{ fontSize: 14, width: 20 }}>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`}</span>
+                  <span style={{ fontSize: 11.5, flex: 1, fontWeight: me ? 700 : 400 }}>
+                    {nameMap.get(b.staff_id) ?? "—"}{me ? " (Anda)" : ""}
+                  </span>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: "#1d4ed8" }}>{b.points.toLocaleString("id-ID")} Poin</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -190,7 +206,7 @@ export default async function QuestPage({
               {(["daily", "monthly"] as const).map((t) => (
                 <a key={t} href={`/kasir/quest?tab=${t}`} className="back-btn" style={{
                   padding: "5px 14px", borderRadius: 7, textDecoration: "none", fontSize: 11.5, fontWeight: 600,
-                  border: ".5px solid var(--bd)", background: tab === t ? "var(--sb)" : "#fff", color: tab === t ? "#fff" : "var(--tm)",
+                  border: tab === t ? "1px solid #2563eb" : ".5px solid var(--bd)", background: tab === t ? "linear-gradient(90deg,#3b82f6,#2563eb)" : "#fff", color: tab === t ? "#fff" : "var(--tm)",
                 }}>
                   {t === "daily" ? "Daily Quest" : "Monthly Quest"}
                 </a>
@@ -206,21 +222,21 @@ export default async function QuestPage({
               const isAmount = def.target_kind === "total_sales_amount";
               const done = !!prog && prog.status !== "in_progress";
               return (
-                <div key={def.id} style={{ padding: "9px 0", borderBottom: ".5px dashed var(--bd)" }}>
+                <div key={def.id} style={{ padding: "9px 10px", borderRadius: 9, marginBottom: 6, background: done ? "linear-gradient(90deg,#f0fdf4,#fff)" : "#fafafa", border: `1px solid ${done ? "#bbf7d0" : "var(--bd)"}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <i className={`ti ${done ? "ti-circle-check-filled" : "ti-circle"}`} style={{ color: done ? "#15803d" : "var(--td)", fontSize: 16 }} />
+                    <i className={`ti ${done ? "ti-circle-check-filled" : "ti-circle"}`} style={{ color: done ? "#16a34a" : "#cbd5e1", fontSize: 18 }} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 11.5, fontWeight: 700 }}>{def.title}</div>
-                      <div style={{ height: 6, background: "var(--sf1)", borderRadius: 4, overflow: "hidden", marginTop: 5 }}>
-                        <div style={{ width: `${pct}%`, height: "100%", background: done ? "#16a34a" : "var(--sb)" }} />
+                      <div style={{ height: 8, background: "#eef2f7", borderRadius: 5, overflow: "hidden", marginTop: 5 }}>
+                        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: done ? "linear-gradient(90deg,#34d399,#16a34a)" : "linear-gradient(90deg,#3b82f6,#2563eb)" }} />
                       </div>
                       <div style={{ fontSize: 9.5, color: "var(--tm)", marginTop: 3 }}>
                         {isAmount ? `${rp(cur)} / ${rp(target)}` : `${cur} / ${target}`}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", minWidth: 74 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 800 }}>{def.points_reward} <i className="ti ti-star" style={{ color: "#d97706", fontSize: 11 }} /></div>
-                      <div style={{ fontSize: 8.5, color: "var(--td)" }}>Poin</div>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12.5, fontWeight: 800, color: "#b45309", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 999, padding: "2px 9px" }}>{def.points_reward} <i className="ti ti-star" style={{ color: "#f59e0b", fontSize: 11 }} /></div>
+                      <div style={{ fontSize: 8.5, color: "var(--td)", marginTop: 2 }}>Poin</div>
                       {prog?.status === "completed" && (
                         <form action={claimQuest} style={{ marginTop: 4 }}>
                           <input type="hidden" name="progressId" value={prog.id} />
@@ -237,22 +253,31 @@ export default async function QuestPage({
 
           <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em" }}>REWARD TERSEDIA</span>
-              <span style={{ fontSize: 11 }}>Poin Anda: <b style={{ color: "#d97706" }}><i className="ti ti-star" /> {totalPoints.toLocaleString("id-ID")}</b></span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", letterSpacing: ".04em" }}>🎁 REWARD TERSEDIA</span>
+              <span style={{ fontSize: 11 }}>Poin Anda: <b style={{ color: "#b45309", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 999, padding: "2px 9px" }}><i className="ti ti-star" style={{ color: "#f59e0b" }} /> {totalPoints.toLocaleString("id-ID")}</b></span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
-              {(rewards ?? []).map((r) => {
+              {(rewards ?? []).map((r, i) => {
                 const afford = totalPoints >= r.points_cost;
                 const icon = r.reward_type === "discount_voucher" ? "ti-ticket" : r.reward_type === "free_shipping" ? "ti-truck" : r.reward_type === "free_product" ? "ti-gift" : "ti-star";
+                const tint = [
+                  { chip: "linear-gradient(180deg,#fbbf24,#f59e0b)", bg: "#fffbeb", brd: "#fde68a" },
+                  { chip: "linear-gradient(180deg,#60a5fa,#2563eb)", bg: "#eff6ff", brd: "#bfdbfe" },
+                  { chip: "linear-gradient(180deg,#f472b6,#db2777)", bg: "#fdf2f8", brd: "#fbcfe8" },
+                  { chip: "linear-gradient(180deg,#a78bfa,#7c3aed)", bg: "#f5f3ff", brd: "#ddd6fe" },
+                ][i % 4];
                 return (
-                  <div key={r.id} style={{ border: ".5px solid var(--bd)", borderRadius: 9, padding: "11px 10px", textAlign: "center" }}>
-                    <i className={`ti ${icon}`} style={{ fontSize: 22, color: "var(--acc)" }} />
-                    <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 5, minHeight: 26 }}>{r.reward_name}</div>
-                    <div style={{ fontSize: 13, fontWeight: 800, margin: "3px 0" }}>{r.points_cost.toLocaleString("id-ID")} <i className="ti ti-star" style={{ color: "#d97706", fontSize: 11 }} /></div>
+                  <div key={r.id} style={{ border: `1px solid ${tint.brd}`, background: tint.bg, borderRadius: 11, padding: "12px 10px", textAlign: "center" }}>
+                    <div style={{ width: 40, height: 40, margin: "0 auto", borderRadius: "50%", background: tint.chip, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.12)" }}>
+                      <i className={`ti ${icon}`} style={{ fontSize: 20, color: "#fff" }} />
+                    </div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 7, minHeight: 26 }}>{r.reward_name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, margin: "3px 0", color: "#b45309" }}>{r.points_cost.toLocaleString("id-ID")} <i className="ti ti-star" style={{ color: "#f59e0b", fontSize: 11 }} /></div>
                     <form action={redeemReward}>
                       <input type="hidden" name="rewardId" value={r.id} />
-                      <button type="submit" className={afford ? "btn-acc" : "btn-def"} disabled={!afford}
-                        style={{ width: "100%", padding: "5px 0", fontSize: 10.5, opacity: afford ? 1 : 0.5, cursor: afford ? "pointer" : "not-allowed" }}>
+                      <button type="submit" disabled={!afford}
+                        style={{ width: "100%", padding: "6px 0", fontSize: 10.5, fontWeight: 600, borderRadius: 7, border: "none", color: "#fff",
+                          background: afford ? "linear-gradient(90deg,#3b82f6,#2563eb)" : "#cbd5e1", opacity: afford ? 1 : 0.7, cursor: afford ? "pointer" : "not-allowed" }}>
                         Tukar
                       </button>
                     </form>

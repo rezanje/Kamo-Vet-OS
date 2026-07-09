@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { expectedCash, invoiceCashRows, methodBreakdown, PAYMENT_METHODS } from "@/lib/shift-calc";
+import { SubmitButton } from "@/components/SubmitButton";
 import { mulaiShiftKlinik, tutupShiftKlinik } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -59,7 +60,7 @@ export default async function KlinikShiftPage({
             <input type="hidden" name="shiftId" value={shift.id} />
             <label className="flab">Uang kas dihitung (fisik) *</label>
             <input className="fi" name="closing_balance" type="number" min={0} step={500} placeholder="Hitung uang di kasir" required style={{ marginBottom: 10 }} />
-            <button type="submit" className="pay-btn"><i className="ti ti-lock" /> Tutup Shift Klinik</button>
+            <SubmitButton className="pay-btn" icon="ti-lock" pendingText="Menutup shift…">Tutup Shift Klinik</SubmitButton>
           </form>
           <Link href="/klinik" className="back-btn" style={{ marginTop: 12, justifyContent: "center", width: "100%" }}>
             <i className="ti ti-arrow-left" /> Kembali ke menu klinik
@@ -115,9 +116,7 @@ export default async function KlinikShiftPage({
           </div>
         </div>
 
-        <button type="submit" className="pay-btn">
-          <i className="ti ti-player-play" /> MULAI SHIFT
-        </button>
+        <SubmitButton className="pay-btn" icon="ti-player-play" pendingText="Memulai shift…">MULAI SHIFT</SubmitButton>
       </form>
     </div>
   );

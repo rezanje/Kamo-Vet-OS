@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, ripWaMessage, type Condition } from "@/lib/inpatient";
-import { addDailyLog, changeCondition, sendRipWa } from "../actions";
+import { changeCondition, sendRipWa } from "../actions";
+import { LogDetailButton } from "./LogDetailButton";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -10,6 +11,23 @@ function one<T>(r: Rel<T>): T | null {
 }
 
 const COND_BADGE: Record<string, string> = { stabil: "g", kritis: "r", sembuh: "b", rip: "r" };
+// warna box KONDISI besar (referensi): stabil hijau, kritis merah, sembuh biru, rip merah.
+const COND_BOX: Record<string, { fg: string; bg: string; bd: string }> = {
+  stabil: { fg: "#15803d", bg: "#f0fdf4", bd: "#bbf7d0" },
+  kritis: { fg: "#b91c1c", bg: "#fef2f2", bd: "#fca5a5" },
+  sembuh: { fg: "#1d4ed8", bg: "#eff6ff", bd: "#bfdbfe" },
+  rip: { fg: "#b91c1c", bg: "#fef2f2", bd: "#fca5a5" },
+};
+
+function petAge(dob: string | null | undefined): string | null {
+  if (!dob) return null;
+  const d = new Date(dob), now = new Date();
+  let months = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+  if (now.getDate() < d.getDate()) months--;
+  if (months < 0) return null;
+  const y = Math.floor(months / 12), m = months % 12;
+  return y >= 1 ? `${y} Tahun ${m} Bulan` : `${m} Bulan`;
+}
 
 // Detail rawat inap: laporan harian append-only + ubah kondisi + review WA RIP.
 // Designs: klinik/09 (laporan), klinik/10 (form harian + "Tambah Kondisi: Sembuh, Stabil, Kritis, RIP").
@@ -27,11 +45,11 @@ export default async function RawatInapDetailPage({
   const { data: rec } = await supabase
     .from("inpatient_records")
     .select(`id, condition_status, treatment_plan, doctor_name, admitted_at, discharged_at, visit_id,
-      branches(name), visits(id, poli, keluhan, pets(name, species, breed), customers(name, phone, address))`)
+      branches(name), visits(id, poli, keluhan, created_at, pets(name, species, breed, dob, weight, photo_url), customers(name, phone, address))`)
     .eq("id", id).maybeSingle();
   if (!rec) notFound();
 
-  const visit = one(rec.visits as Rel<{ id: string; poli: string; keluhan: string | null; pets: Rel<{ name: string; species: string | null; breed: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
+  const visit = one(rec.visits as Rel<{ id: string; poli: string; keluhan: string | null; created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null; dob: string | null; weight: number | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
   const branch = one(rec.branches as Rel<{ name: string }>);
@@ -50,14 +68,30 @@ export default async function RawatInapDetailPage({
   const cond = rec.condition_status as Condition;
   const isDoctor = me?.data?.role === "DOCTOR";
   const active = !rec.discharged_at;
+  const age = petAge(pet?.dob);
+  const box = COND_BOX[cond] ?? COND_BOX.stabil;
+  const admitDate = new Date(rec.admitted_at);
+  const noRM = visit
+    ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(rec.visit_id as string).slice(0, 3).toUpperCase()}`
+    : "—";
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/klinik/rawat-inap" className="back-btn"><i className="ti ti-arrow-left" /> Rawat Inap</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{pet?.name ?? "—"} ({cust?.name ?? "—"})</span>
-        <span className={`bge ${COND_BADGE[cond]}`} style={{ marginLeft: 6 }}>{CONDITION_LABEL[cond]}</span>
+      <div style={{ marginBottom: 4 }}>
+        <Link href="/klinik/rawat-inap" className="back-btn"><i className="ti ti-arrow-left" /> Status Rawat Inap</Link>
+      </div>
+
+      {/* Judul besar (gaya referensi) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <i className="ti ti-bed" style={{ fontSize: 22, color: "#2563eb" }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>LAPORAN RAWAT INAP</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Jika pasien dirawat inap, dibuat laporan harian</div>
+        </div>
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
@@ -87,15 +121,36 @@ export default async function RawatInapDetailPage({
         </div>
       )}
 
-      {/* Data pasien */}
-      <div className="card" style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
-        <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}${pet?.breed ? " / " + pet.breed : ""}`} />
-        <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
-        <Field label="Cabang" value={branch?.name ?? "—"} />
-        <Field label="Dokter PIC" value={rec.doctor_name ?? "—"} />
-        <Field label="Masuk" value={new Date(rec.admitted_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
-        {rec.discharged_at && <Field label="Keluar" value={new Date(rec.discharged_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />}
-        <Field label="Rencana tindakan (dokter PIC)" value={rec.treatment_plan ?? "—"} />
+      {/* Kartu pasien besar (gaya referensi) */}
+      <div className="card" style={{ marginBottom: 14, padding: 20 }}>
+        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div style={{ width: 120, height: 120, borderRadius: 12, background: "var(--sf1)", border: ".5px solid var(--bd)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+            {pet?.photo_url
+              ? <img src={pet.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <i className="ti ti-paw" style={{ fontSize: 48, color: "var(--td)" }} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--sb)", marginBottom: 10 }}>
+              {pet?.name ?? "—"} <span style={{ fontWeight: 600, color: "var(--tm)", fontSize: 16 }}>({pet?.species ?? "—"})</span>
+            </div>
+            <PairRow label="Pemilik" value={cust?.name} />
+            <PairRow label="Jenis" value={`${pet?.species ?? "—"}${pet?.breed ? ` / ${pet.breed}` : ""}`} />
+            <PairRow label="Usia" value={age} />
+            <PairRow label="Berat" value={pet?.weight != null ? `${pet.weight} kg` : null} />
+          </div>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <PairRow label="Tanggal Masuk" value={fmtDate(rec.admitted_at)} />
+            <PairRow label="No. Rekam Medis" value={noRM} />
+            <PairRow label="Dokter PIC" value={rec.doctor_name} />
+            {rec.discharged_at && <PairRow label="Tanggal Keluar" value={fmtDate(rec.discharged_at)} />}
+          </div>
+          <div style={{ width: 180, border: `1px solid ${box.bd}`, background: box.bg, borderRadius: 12, padding: 16, textAlign: "center", flexShrink: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tm)", letterSpacing: ".05em", marginBottom: 10 }}>KONDISI</div>
+            <div style={{ display: "inline-block", border: `1px solid ${box.bd}`, background: "#fff", borderRadius: 8, padding: "8px 20px", fontSize: 15, fontWeight: 700, color: box.fg }}>
+              {CONDITION_LABEL[cond]}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Ubah kondisi — 4 status (§3), RIP hanya dokter (server-side check juga). */}
@@ -151,59 +206,49 @@ export default async function RawatInapDetailPage({
         )}
       </div>
 
-      <div className="grid2" style={{ alignItems: "start" }}>
-        {/* Form laporan harian (design 10 kiri) */}
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
-            <i className="ti ti-clipboard-plus" /> CATATAN PERAWATAN HARIAN
+      {/* Laporan rawat inap harian — tabel utama (gaya referensi) */}
+      <div className="crm-sec">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <i className="ti ti-clipboard-list" style={{ fontSize: 18, color: "#2563eb" }} />
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em" }}>LAPORAN RAWAT INAP HARIAN</div>
           </div>
-          {active ? (
-            <form action={addDailyLog}>
-              <input type="hidden" name="recordId" value={rec.id} />
-              <label className="flab">Kondisi pasien *</label>
-              <textarea className="fi" name="condition_note" required rows={2} placeholder="mis. Lemas, batuk, nafsu makan menurun, suhu 39,5°C" style={{ marginBottom: 8 }} />
-              <label className="flab">Tindakan / perawatan</label>
-              <textarea className="fi" name="tindakan" rows={2} placeholder="mis. Terapi cairan, injeksi, pemberian obat, observasi" style={{ marginBottom: 8 }} />
-              <label className="flab">Keterangan</label>
-              <textarea className="fi" name="keterangan" rows={2} placeholder="mis. Pasien mulai menunjukkan respons baik" style={{ marginBottom: 8 }} />
-              <label className="flab">Oleh dokter</label>
-              <input className="fi" name="doctor_name" defaultValue={rec.doctor_name ?? ""} placeholder="Drh. ..." style={{ marginBottom: 10 }} />
-              <button type="submit" className="pay-btn"><i className="ti ti-device-floppy" /> Simpan Catatan Rawat Inap</button>
-              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 6 }}>Append-only: setiap simpan = entry baru, tidak menimpa catatan lama (Addendum §3).</div>
-            </form>
-          ) : (
-            <div style={{ fontSize: 11, color: "var(--td)" }}>Pasien sudah keluar — catatan harian ditutup.</div>
+          {active && (
+            <Link href={`/klinik/rawat-inap/${rec.id}/catatan`} className="btn-acc" style={{ textDecoration: "none", background: "#2563eb" }}>
+              <i className="ti ti-plus" /> Tambah
+            </Link>
           )}
         </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 720 }}>
+            <thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Oleh</th><th style={{ textAlign: "center" }}>Detail</th></tr></thead>
+            <tbody>
+              {(logs ?? []).map((l, i) => (
+                <tr key={i}>
+                  <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{fmtDate(l.created_at)}</td>
+                  <td style={{ fontSize: 11, color: "var(--tm)", whiteSpace: "nowrap" }}>{fmtT(l.created_at)}</td>
+                  <td style={{ fontSize: 11.5 }}>{l.condition_note}</td>
+                  <td style={{ fontSize: 11.5 }}>{l.tindakan ?? "—"}</td>
+                  <td style={{ fontSize: 11.5, color: "var(--tm)" }}>{l.keterangan ?? "—"}</td>
+                  <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.doctor_name ?? "—"}</td>
+                  <td style={{ textAlign: "center" }}>
+                    <LogDetailButton log={{ tanggal: fmtDate(l.created_at), waktu: fmtT(l.created_at), condition_note: l.condition_note, tindakan: l.tindakan, keterangan: l.keterangan, doctor_name: l.doctor_name }} />
+                  </td>
+                </tr>
+              ))}
+              {(logs ?? []).length === 0 && (
+                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Belum ada catatan harian.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-        {/* Laporan harian (design 09) + log status */}
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
-            <i className="ti ti-report-medical" /> LAPORAN RAWAT INAP HARIAN
-          </div>
-          <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto" }}>
-            <table className="tbl" style={{ minWidth: 480 }}>
-              <thead><tr><th>Tanggal</th><th>Kondisi</th><th>Tindakan</th><th>Keterangan</th><th>Dokter</th></tr></thead>
-              <tbody>
-                {(logs ?? []).map((l, i) => (
-                  <tr key={i}>
-                    <td style={{ fontSize: 10.5, color: "var(--tm)", whiteSpace: "nowrap" }}>{new Date(l.created_at).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
-                    <td style={{ fontSize: 11 }}>{l.condition_note}</td>
-                    <td style={{ fontSize: 11 }}>{l.tindakan ?? "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{l.keterangan ?? "—"}</td>
-                    <td style={{ fontSize: 10.5 }}>{l.doctor_name ?? "—"}</td>
-                  </tr>
-                ))}
-                {(logs ?? []).length === 0 && (
-                  <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada catatan harian.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", margin: "14px 0 8px" }}>
-            <i className="ti ti-history" /> LOG PERUBAHAN STATUS
-          </div>
+      <div className="crm-sec">
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
+          <i className="ti ti-history" /> LOG PERUBAHAN STATUS
+        </div>
+        <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 420 }}>
             <thead><tr><th>Waktu</th><th>Dari</th><th>Ke</th><th>Oleh</th><th>Catatan</th></tr></thead>
             <tbody>
@@ -219,6 +264,9 @@ export default async function RawatInapDetailPage({
                   </tr>
                 );
               })}
+              {(statusLog ?? []).length === 0 && (
+                <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada perubahan status.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -227,11 +275,11 @@ export default async function RawatInapDetailPage({
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function PairRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div>
-      <div style={{ fontSize: 9.5, color: "var(--td)" }}>{label}</div>
-      <div style={{ fontSize: 12 }}>{value}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 6, padding: "4px 0", fontSize: 12.5 }}>
+      <span style={{ color: "var(--tm)" }}>{label}</span>
+      <span style={{ color: "var(--tx)", fontWeight: 500 }}>: {value || "—"}</span>
     </div>
   );
 }

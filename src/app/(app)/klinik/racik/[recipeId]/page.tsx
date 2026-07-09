@@ -8,7 +8,18 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-// Layar racik obat utk apoteker/PCA — design-reference/klinik/11-racik-obat.png.
+const statusLabel: Record<string, string> = {
+  pending: "Menunggu diracik", ready: "Siap diserahkan", handed_over: "Sudah diserahkan", void: "Void",
+};
+const statusBadge = (s: string) => (s === "handed_over" ? "g" : s === "ready" ? "b" : s === "void" ? "r" : "o");
+
+type Ingredient = { ingredient_name: string; quantity: number; unit: string };
+type Recipe = {
+  id: string; recipe_name: string; dosage_instruction: string; total_volume: string; dosage_form: string;
+  compounding_steps: string; status: string; compounding_ingredients: Ingredient[];
+};
+
+// Racik obat (referensi RACIK OBAT): petunjuk racik dari resep dokter — apoteker/PCA.
 export default async function RacikDetailPage({
   params,
   searchParams,
@@ -22,143 +33,189 @@ export default async function RacikDetailPage({
 
   const { data: r } = await supabase
     .from("compounding_recipes")
-    .select(`id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, created_at, prepared_at,
-      compounding_ingredients(ingredient_name, quantity, unit),
-      medical_records(id, diagnosis, anamnesis, visit_id,
-        visits(id, poli, dokter, keluhan, created_at, pets(name, species, breed), customers(name, phone, address)))`)
+    .select(`id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, created_at, medical_record_id,
+      medical_records(id, diagnosis, anamnesis, catatan_resep, visit_id,
+        visits(id, poli, dokter, keluhan, created_at, pets(name, species, breed, photo_url), customers(name, phone, address)))`)
     .eq("id", recipeId)
     .maybeSingle();
   if (!r) notFound();
 
-  const mr = one(r.medical_records as Rel<{ id: string; diagnosis: string | null; anamnesis: string | null; visit_id: string; visits: Rel<{ id: string; poli: string; dokter: string | null; keluhan: string | null; created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }> }>);
+  const mr = one(r.medical_records as Rel<{ id: string; diagnosis: string | null; anamnesis: string | null; catatan_resep: string | null; visit_id: string; visits: Rel<{ id: string; poli: string; dokter: string | null; keluhan: string | null; created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }> }>);
   const visit = one(mr?.visits ?? null);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
-  const ings = (r.compounding_ingredients ?? []) as { ingredient_name: string; quantity: number; unit: string }[];
-  const steps = String(r.compounding_steps).split("\n").map((s: string) => s.trim()).filter(Boolean);
 
-  const statusLabel: Record<string, string> = {
-    pending: "Menunggu diracik", ready: "Siap diserahkan", handed_over: "Sudah diserahkan", void: "Void",
-  };
+  // Semua racikan dalam resep yang sama (referensi: daftar bisa >1 baris).
+  const { data: siblings } = mr
+    ? await supabase
+        .from("compounding_recipes")
+        .select("id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, compounding_ingredients(ingredient_name, quantity, unit)")
+        .eq("medical_record_id", mr.id)
+        .order("created_at", { ascending: true })
+    : { data: [] };
+  const recipes = (siblings ?? []) as Recipe[];
+
+  const tglResep = visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+  const tglPeriksa = visit ? new Date(visit.created_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+  const noRM = visit ? `RM/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(visit.id as string).slice(0, 3).toUpperCase()}` : "—";
+  const noResep = visit ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(r.id as string).slice(0, 3).toUpperCase()}` : "—";
+  const catatanResep = mr?.catatan_resep
+    || [mr?.diagnosis ? `Diagnosa: ${mr.diagnosis}` : "", visit?.keluhan ? `Keluhan: ${visit.keluhan}` : ""].filter(Boolean).join(". ")
+    || "—";
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+      <div style={{ marginBottom: 4 }}>
         <Link href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{r.recipe_name}</span>
-        <span className={`bge ${r.status === "handed_over" ? "g" : r.status === "ready" ? "b" : r.status === "void" ? "r" : "o"}`} style={{ marginLeft: 6 }}>
-          {statusLabel[r.status]}
-        </span>
+      </div>
+
+      {/* Judul besar (referensi) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <i className="ti ti-flask" style={{ fontSize: 22, color: "#2563eb" }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>RACIK OBAT</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Petunjuk racik obat dari resep dokter</div>
+        </div>
+        <span className={`bge ${statusBadge(r.status)}`}>{statusLabel[r.status]}</span>
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success === "ready" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Obat siap diserahkan ke pasien.</div>}
       {success === "handed_over" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Racikan sudah diserahkan.</div>}
 
-      {/* Header pasien + catatan resep (design 11) */}
-      <div className="card" style={{ marginBottom: 12, display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
-          <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}${pet?.breed ? " / " + pet.breed : ""}`} />
-          <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
-          <Field label="Dokter penanggung jawab" value={visit?.dokter ?? "—"} />
-          <Field label="Tanggal resep" value={visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) : "—"} />
-        </div>
-        <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 8, padding: "9px 13px", maxWidth: 380 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--sb)", marginBottom: 3 }}><i className="ti ti-notes" /> CATATAN RESEP</div>
-          <div style={{ fontSize: 11, color: "var(--tm)" }}>{mr?.diagnosis ? `Diagnosa: ${mr.diagnosis}. ` : ""}{visit?.keluhan ? `Keluhan: ${visit.keluhan}.` : ""}</div>
+      {/* Kartu pasien + catatan resep */}
+      <div className="card" style={{ marginBottom: 14, padding: 20 }}>
+        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", gap: 16, minWidth: 300, flex: 1 }}>
+            <div style={{ width: 96, height: 96, borderRadius: 12, background: "var(--sf1)", border: ".5px solid var(--bd)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              {pet?.photo_url ? <img src={pet.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <i className="ti ti-paw" style={{ fontSize: 40, color: "var(--td)" }} />}
+            </div>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 19, fontWeight: 800, color: "var(--sb)" }}>{pet?.name ?? "—"}</span>
+                <span className="bge b">{pet?.species ?? "—"}</span>
+              </div>
+              <Pair label="Pemilik" value={cust?.name} />
+              <Pair label="No. RM" value={noRM} />
+              <Pair label="No. HP" value={cust?.phone} />
+              <Pair label="Jenis / Ras" value={`${pet?.species ?? "—"}${pet?.breed ? ` / ${pet.breed}` : ""}`} />
+            </div>
+          </div>
+          <div style={{ minWidth: 220 }}>
+            <div style={{ fontSize: 10, color: "var(--tm)" }}>Dokter Penanggung Jawab</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tx)", marginBottom: 12 }}>{visit?.dokter ?? "—"}</div>
+            <Pair label="Tanggal Resep" value={tglResep} />
+            <Pair label="No. Resep" value={noResep} />
+          </div>
+          <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 14, maxWidth: 360, flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: "#1d4ed8", marginBottom: 6 }}><i className="ti ti-clipboard-text" /> CATATAN RESEP</div>
+            <div style={{ fontSize: 11.5, color: "var(--tm)", lineHeight: 1.5 }}>{catatanResep}</div>
+          </div>
         </div>
       </div>
 
-      {/* Tabel racikan */}
+      {/* Daftar obat racikan */}
       <div className="crm-sec">
-        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
-          <i className="ti ti-flask" /> DAFTAR OBAT RACIKAN
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <i className="ti ti-mortar" style={{ fontSize: 18, color: "#2563eb" }} />
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em" }}>DAFTAR OBAT RACIKAN</div>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 720 }}>
+          <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
-              <tr><th>Nama Racikan</th><th>Komposisi</th><th>Aturan Pakai</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Petunjuk Racik</th></tr>
+              <tr><th style={{ width: 30 }}>No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Aturan Pakai</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Petunjuk Racik</th></tr>
             </thead>
             <tbody>
-              <tr>
-                <td style={{ fontWeight: 600, verticalAlign: "top" }}>{r.recipe_name}</td>
-                <td style={{ verticalAlign: "top" }}>
-                  {ings.map((i, idx) => (
-                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, padding: "1px 0" }}>
-                      <span>• {i.ingredient_name}</span>
-                      <span style={{ color: "var(--tm)", whiteSpace: "nowrap" }}>{Number(i.quantity)} {i.unit}</span>
-                    </div>
-                  ))}
-                </td>
-                <td style={{ fontSize: 11.5, verticalAlign: "top" }}>{r.dosage_instruction}</td>
-                <td style={{ fontSize: 11.5, verticalAlign: "top" }}>{r.total_volume}</td>
-                <td style={{ fontSize: 11.5, verticalAlign: "top", textTransform: "capitalize" }}>{r.dosage_form}</td>
-                <td style={{ verticalAlign: "top" }}>
-                  <ol style={{ margin: 0, paddingLeft: 16 }}>
-                    {steps.map((s: string, i: number) => <li key={i} style={{ fontSize: 11, padding: "1px 0" }}>{s.replace(/^\d+[.)]\s*/, "")}</li>)}
-                  </ol>
-                </td>
-              </tr>
+              {recipes.map((rc, ri) => {
+                const ings = rc.compounding_ingredients ?? [];
+                const steps = String(rc.compounding_steps).split("\n").map((s) => s.trim()).filter(Boolean);
+                return (
+                  <tr key={rc.id}>
+                    <td style={{ verticalAlign: "top", fontSize: 11, color: "var(--tm)" }}>{ri + 1}</td>
+                    <td style={{ fontWeight: 600, verticalAlign: "top" }}>
+                      {rc.recipe_name}
+                      {rc.id !== r.id && <span className={`bge ${statusBadge(rc.status)}`} style={{ display: "block", marginTop: 4, width: "fit-content" }}>{statusLabel[rc.status]}</span>}
+                    </td>
+                    <td style={{ verticalAlign: "top" }}>
+                      {ings.map((i, idx) => (
+                        <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, padding: "1px 0" }}>
+                          <span>• {i.ingredient_name}</span>
+                          <span style={{ color: "var(--tm)", whiteSpace: "nowrap" }}>{Number(i.quantity)} {i.unit}</span>
+                        </div>
+                      ))}
+                    </td>
+                    <td style={{ fontSize: 11.5, verticalAlign: "top", whiteSpace: "pre-line" }}>{rc.dosage_instruction}</td>
+                    <td style={{ fontSize: 11.5, verticalAlign: "top" }}>{rc.total_volume}</td>
+                    <td style={{ fontSize: 11.5, verticalAlign: "top", textTransform: "capitalize" }}>{rc.dosage_form}</td>
+                    <td style={{ verticalAlign: "top" }}>
+                      <ol style={{ margin: 0, paddingLeft: 16 }}>
+                        {steps.map((s, i) => <li key={i} style={{ fontSize: 11, padding: "1px 0" }}>{s.replace(/^\d+[.)]\s*/, "")}</li>)}
+                      </ol>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
 
-        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", marginTop: 12 }}>
-          <i className="ti ti-alert-triangle" /> PERHATIAN — pastikan semua bahan sesuai resep dan dalam kondisi baik sebelum diracik.
+        <div style={{ background: "#fffbeb", border: ".5px solid #fde68a", borderRadius: 10, padding: 14, marginTop: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#d97706", marginBottom: 3 }}><i className="ti ti-alert-triangle" /> PERHATIAN</div>
+          <div style={{ fontSize: 11, color: "#92400e" }}>Pastikan semua bahan sesuai resep dan dalam kondisi baik sebelum diracik.</div>
         </div>
-
-        <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "center" }}>
-          {(r.status === "pending" || r.status === "ready") && (
-            <form action={advanceRecipeStatus}>
-              <input type="hidden" name="recipeId" value={r.id} />
-              <button type="submit" className="pay-btn" style={{ background: "#16a34a", minWidth: 240 }}>
-                <i className="ti ti-circle-check" /> {r.status === "pending" ? "Obat Siap Diserahkan" : "Tandai Sudah Diserahkan"}
-              </button>
-            </form>
-          )}
-          {(r.status === "pending" || r.status === "ready") && (
-            <form action={voidRecipe}>
-              <input type="hidden" name="recipeId" value={r.id} />
-              <input type="hidden" name="visitId" value={visit?.id ?? ""} />
-              <button type="submit" className="btn-def" style={{ color: "#b91c1c", borderColor: "#fca5a5" }}>
-                <i className="ti ti-x" /> Void (resep berubah)
-              </button>
-            </form>
-          )}
-        </div>
-        {r.status !== "pending" && (
-          <div style={{ fontSize: 10, color: "var(--td)", textAlign: "center", marginTop: 8 }}>
-            Racikan sudah diproses — perubahan resep butuh racikan baru (void yang lama). Addendum §2.
-          </div>
-        )}
       </div>
 
-      {/* Informasi resep + pemilik (design 11 bawah) */}
+      {/* Informasi resep + pemilik */}
       <div className="grid2" style={{ marginTop: 12 }}>
-        <div className="card">
-          <div className="card-hd"><i className="ti ti-file-text" style={{ color: "var(--acc)" }} /> Informasi Resep</div>
-          <Field label="Tanggal periksa" value={visit ? new Date(visit.created_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"} />
-          <Field label="Poli" value={visit?.poli ?? "—"} />
-          <Field label="Keluhan" value={visit?.keluhan ?? "—"} />
-          <Field label="Diagnosa" value={mr?.diagnosis ?? "—"} />
+        <div className="crm-sec" style={{ marginBottom: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 10 }}>INFORMASI RESEP</div>
+          <Pair label="Tanggal Periksa" value={tglPeriksa} />
+          <Pair label="Poli" value={visit?.poli} />
+          <Pair label="Keluhan" value={visit?.keluhan} />
+          <Pair label="Diagnosa" value={mr?.diagnosis} />
         </div>
-        <div className="card">
-          <div className="card-hd"><i className="ti ti-user" style={{ color: "var(--acc)" }} /> Informasi Pemilik</div>
-          <Field label="Nama" value={cust?.name ?? "—"} />
-          <Field label="No. HP" value={cust?.phone ?? "—"} />
-          <Field label="Alamat" value={cust?.address ?? "—"} />
+        <div className="crm-sec" style={{ marginBottom: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 10 }}>INFORMASI PEMILIK</div>
+          <Pair label="Nama" value={cust?.name} />
+          <Pair label="No. HP" value={cust?.phone} />
+          <Pair label="Alamat" value={cust?.address} />
         </div>
       </div>
+
+      {/* Aksi */}
+      {(r.status === "pending" || r.status === "ready") && (
+        <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center" }}>
+          <form action={advanceRecipeStatus}>
+            <input type="hidden" name="recipeId" value={r.id} />
+            <button type="submit" className="pay-btn" style={{ background: "#16a34a", minWidth: 260, padding: "12px 22px", fontSize: 13.5 }}>
+              <i className="ti ti-circle-check" /> {r.status === "pending" ? "Obat Siap Diserahkan" : "Tandai Sudah Diserahkan"}
+            </button>
+          </form>
+          <form action={voidRecipe}>
+            <input type="hidden" name="recipeId" value={r.id} />
+            <input type="hidden" name="visitId" value={visit?.id ?? ""} />
+            <button type="submit" className="btn-def" style={{ color: "#b91c1c", borderColor: "#fca5a5", padding: "12px 18px" }}>
+              <i className="ti ti-x" /> Void (resep berubah)
+            </button>
+          </form>
+        </div>
+      )}
+      {r.status !== "pending" && r.status !== "ready" && (
+        <div style={{ fontSize: 10, color: "var(--td)", textAlign: "center", marginTop: 12 }}>
+          Racikan sudah diproses — perubahan resep butuh racikan baru (void yang lama). Addendum §2.
+        </div>
+      )}
     </>
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Pair({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ fontSize: 9.5, color: "var(--td)" }}>{label}</div>
-      <div style={{ fontSize: 12 }}>{value}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 6, padding: "3px 0", fontSize: 12 }}>
+      <span style={{ color: "var(--tm)" }}>{label}</span>
+      <span style={{ color: "var(--tx)", fontWeight: 500 }}>: {value || "—"}</span>
     </div>
   );
 }

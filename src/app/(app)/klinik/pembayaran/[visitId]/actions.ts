@@ -6,7 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
 
-type Line = { deskripsi: string; qty: number; harga: number };
+type Line = { deskripsi: string; qty: number; harga: number; jenis?: string };
 
 // Baris jurnal invoice klinik (dipakai posting normal + pembalikan saat edit/void).
 function invoiceJournalLines(inv: { total: number; dpp: number; tax: number; dp_amount: number; paid_status: string; metode_bayar: string }, reverse = false) {
@@ -56,7 +56,7 @@ export async function bayarVisit(formData: FormData) {
   }
   const rows = items
     .filter((l) => l.deskripsi?.trim())
-    .map((l) => ({ deskripsi: l.deskripsi.trim(), qty: Number(l.qty) > 0 ? Number(l.qty) : 1, harga: Number(l.harga) || 0 }));
+    .map((l) => ({ deskripsi: l.deskripsi.trim(), qty: Number(l.qty) > 0 ? Number(l.qty) : 1, harga: Number(l.harga) || 0, jenis: l.jenis === "jasa" ? "jasa" : "obat" }));
 
   if (rows.length === 0) {
     redirect(`${back}?error=${encodeURIComponent("Minimal 1 item tagihan")}`);
@@ -68,12 +68,16 @@ export async function bayarVisit(formData: FormData) {
   const tax = Math.round(dpp * 0.11); // PPN 11% di atas DPP
   const total = dpp + tax;
 
-  const paidStatus = String(formData.get("paid_status") ?? "Lunas");
+  // "Bayar & Selesai" memaksa lunas; "Simpan" pakai status turunan dari jumlah bayar.
+  const finalize = String(formData.get("finalize") ?? "") === "1";
+  const paidStatus = finalize ? "Lunas" : String(formData.get("paid_status") ?? "Belum Lunas");
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
   const dpAmount = paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
   const paidAt = paidStatus === "Lunas" ? new Date().toISOString() : null;
   const reason = String(formData.get("edit_reason") ?? "").trim() || null;
+  // Visit ditutup hanya saat lunas; DP/Belum Lunas tetap tahap Pembayaran (bisa dilanjut).
+  const visitStatus = paidStatus === "Lunas" ? "Selesai" : "Pembayaran";
 
   // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
   const { data: existing } = await supabase
@@ -122,7 +126,7 @@ export async function bayarVisit(formData: FormData) {
     await supabase.from("invoice_items").delete().eq("invoice_id", existing.id);
     const { error: itErr } = await supabase
       .from("invoice_items")
-      .insert(rows.map((l) => ({ invoice_id: existing.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga })));
+      .insert(rows.map((l) => ({ invoice_id: existing.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis })));
     if (itErr) redirect(`${back}?error=${encodeURIComponent(itErr.message)}`);
 
     // §7 edge case: buku besar wajib re-sync — balikkan jurnal lama, posting ulang yang baru.
@@ -138,7 +142,7 @@ export async function bayarVisit(formData: FormData) {
       lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus, metode_bayar: metode }),
     });
 
-    await supabase.from("visits").update({ status: "Selesai" }).eq("id", visitId);
+    await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
     redirect(`${back}?success=edit`);
   }
 
@@ -155,12 +159,12 @@ export async function bayarVisit(formData: FormData) {
 
   const { error: itErr } = await supabase
     .from("invoice_items")
-    .insert(rows.map((l) => ({ invoice_id: inv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga })));
+    .insert(rows.map((l) => ({ invoice_id: inv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis })));
   if (itErr) {
     redirect(`${back}?error=${encodeURIComponent(itErr.message)}`);
   }
 
-  await supabase.from("visits").update({ status: "Selesai" }).eq("id", visitId);
+  await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
 
   // Accounting (akrual): pendapatan jasa klinik diakui saat invoice; PPN dipisah.
   await postJournal(supabase, {
@@ -195,7 +199,7 @@ export async function voidAndReissue(formData: FormData) {
   if (inv!.paid_status !== "Lunas") redirect(`${back}?error=${encodeURIComponent("Void & Reissue hanya untuk invoice lunas — edit langsung saja")}`);
 
   const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", inv!.id).order("created_at");
+    .from("invoice_items").select("deskripsi, qty, harga, jenis").eq("invoice_id", inv!.id).order("created_at");
 
   // 1) void invoice lama + log.
   const { error: voidErr } = await supabase
@@ -224,7 +228,7 @@ export async function voidAndReissue(formData: FormData) {
   if (newErr || !newInv) redirect(`${back}?error=${encodeURIComponent(newErr?.message ?? "Gagal terbitkan ulang")}`);
 
   await supabase.from("invoice_items").insert(
-    (items ?? []).map((l) => ({ invoice_id: newInv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga })),
+    (items ?? []).map((l) => ({ invoice_id: newInv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis })),
   );
 
   await supabase.from("invoice_edit_log").insert({

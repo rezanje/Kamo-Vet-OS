@@ -137,6 +137,33 @@ body {
 .kpos-bayar:hover:not(:disabled) { background: var(--posb-dk); }
 .kpos-bayar:disabled { opacity: .45; cursor: not-allowed; }
 
+/* Spinner tombol submit (SubmitButton) — cegah double-klik saat proses */
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+.btn-spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: btn-spin .6s linear infinite; vertical-align: -2px; margin-right: 4px; }
+
+/* Layar sambutan staff klinik (StaffKlinikHome) */
+.skl-wrap { min-height: 68vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 24px 8px; }
+.skl-hero-head { text-align: center; }
+.skl-welcome { font-size: 40px; font-weight: 800; color: var(--sb); line-height: 1.1; }
+.skl-sub { font-size: 16px; color: var(--tm); margin-top: 8px; }
+.skl-hint { font-size: 12.5px; color: var(--td); margin-top: 10px; }
+.skl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; width: 100%; max-width: 960px; }
+.skl-card { background: #fff; border: .5px solid var(--bd); border-radius: 16px; padding: 26px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05); transition: transform .12s, box-shadow .12s; }
+a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.09); }
+.skl-icon { width: 76px; height: 76px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+.skl-title { font-size: 16px; font-weight: 800; letter-spacing: .02em; }
+.skl-desc { font-size: 12.5px; color: var(--tm); line-height: 1.45; }
+.skl-list { list-style: none; padding: 0; margin: 0; width: 100%; text-align: left; }
+.skl-list li { font-size: 12.5px; color: var(--tm); padding: 4px 0; position: relative; padding-left: 14px; }
+.skl-list li::before { content: "•"; position: absolute; left: 2px; color: #7c3aed; }
+.skl-list li a { color: var(--tm); text-decoration: none; }
+.skl-list li a:hover { color: #7c3aed; }
+.skl-list li.skl-soon { cursor: pointer; }
+.skl-list li.skl-soon:hover { color: var(--tx); }
+.skl-selesai { display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border: 1.5px solid var(--sb); border-radius: 10px; background: #fff; color: var(--sb); font-size: 13.5px; font-weight: 700; letter-spacing: .03em; text-decoration: none; }
+.skl-selesai:hover { background: var(--sb); color: #fff; }
+@media (max-width: 780px) { .skl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skl-welcome { font-size: 30px; } }
+
 /* Print: sembunyikan chrome aplikasi, cetak hanya konten (dipakai lembar resep) */
 @media print {
   .sb, .topbar, .no-print { display: none !important; }

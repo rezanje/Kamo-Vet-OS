@@ -38,6 +38,8 @@ export function useNotifSeen(): Set<string> {
   // localStorage baru dibaca setelah mount.
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
   useEffect(() => {
+    // sengaja baca localStorage sekali setelah mount (hindari hydration mismatch).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSeen(readSeen());
     const onChange = () => setSeen(readSeen());
     window.addEventListener(EVT, onChange);

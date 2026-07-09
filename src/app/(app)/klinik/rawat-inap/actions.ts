@@ -61,6 +61,70 @@ export async function addDailyLog(formData: FormData) {
   redirect(`${back}?success=log`);
 }
 
+// Catatan harian rawat inap versi lengkap (desain POS): simpan log harian + obat/jasa
+// yang diberikan (masuk ke resep visit → ikut tagihan) + opsi ubah kondisi sekalian.
+type ResepItem = { nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string };
+export async function addDailyLogPos(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const recordId = String(formData.get("recordId") ?? "");
+  const conditionNote = String(formData.get("condition_note") ?? "").trim();
+  const tindakan = String(formData.get("tindakan") ?? "").trim() || null;
+  const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
+  const doctorName = String(formData.get("doctor_name") ?? "").trim() || null;
+  const newStatus = String(formData.get("new_status") ?? "").trim() as Condition | "";
+  const cetak = String(formData.get("cetak") ?? "") === "1";
+  const back = `/klinik/rawat-inap/${recordId}`;
+  if (!recordId || !conditionNote) redirect(`${back}?error=${encodeURIComponent("Isi kondisi pasien")}`);
+
+  const { data: rec } = await supabase
+    .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
+  if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
+
+  // 1) log harian (append-only)
+  const { error: logErr } = await supabase.from("inpatient_daily_logs").insert({
+    inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
+    doctor_name: doctorName, created_by: user?.id ?? null,
+  });
+  if (logErr) redirect(`${back}?error=${encodeURIComponent(logErr.message)}`);
+
+  // 2) obat/jasa → resep visit (medical_record) supaya ikut tagihan saat pulang
+  let mrId = rec!.medical_record_id as string | null;
+  if (!mrId) {
+    const { data: mr } = await supabase.from("medical_records").select("id").eq("visit_id", rec!.visit_id)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    mrId = mr?.id ?? null;
+  }
+  let resep: ResepItem[] = [];
+  try { resep = JSON.parse(String(formData.get("resep") ?? "[]")); } catch { resep = []; }
+  if (mrId && resep.length) {
+    const rows = resep.filter((r) => r.nama_obat?.trim()).map((r) => ({
+      medical_record_id: mrId, nama_obat: r.nama_obat.trim(),
+      qty: Number(r.qty) > 0 ? Number(r.qty) : 1, satuan: r.satuan?.trim() || "pcs",
+      harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
+      jenis: r.jenis === "jasa" ? "jasa" : "obat",
+    }));
+    if (rows.length) await supabase.from("prescription_items").insert(rows);
+  }
+
+  // 3) ubah kondisi kalau dipilih & beda dari sekarang
+  if (newStatus && ["stabil", "kritis", "sembuh", "rip"].includes(newStatus) && newStatus !== rec!.condition_status) {
+    const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+    if (canTransition((me?.role ?? "STAFF") as Role, newStatus)) {
+      await supabase.from("inpatient_status_log").insert({
+        inpatient_record_id: recordId, previous_status: rec!.condition_status, new_status: newStatus,
+        changed_by: user?.id ?? null, notes: "Diubah dari catatan harian",
+      });
+      await supabase.from("inpatient_records").update({
+        condition_status: newStatus,
+        ...(isTerminal(newStatus) ? { discharged_at: new Date().toISOString() } : {}),
+      }).eq("id", recordId);
+    }
+  }
+
+  redirect(cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log`);
+}
+
 // Ubah kondisi (stabil/kritis/sembuh/rip) — rip hanya dokter, wajib tercatat di status log.
 export async function changeCondition(formData: FormData) {
   const supabase = await createClient();

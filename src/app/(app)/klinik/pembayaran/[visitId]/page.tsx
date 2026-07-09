@@ -27,16 +27,20 @@ export default async function PembayaranPage({
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, status, poli, dokter, created_at, pets(name, species, weight), customers(name, phone)")
+    .select("id, status, poli, dokter, created_at, pets(name, species, weight, photo_url), customers(name, phone, address)")
     .eq("id", visitId)
     .maybeSingle();
   if (!visit) notFound();
 
   // butuh rekam medis dulu sebelum bayar.
   const { data: mr } = await supabase
-    .from("medical_records").select("id").eq("visit_id", visitId)
+    .from("medical_records").select("id, catatan_resep").eq("visit_id", visitId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!mr) redirect(`/klinik/rekam-medis/${visitId}`);
+
+  // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
+  const { data: inpat } = await supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle();
+  const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
@@ -44,11 +48,11 @@ export default async function PembayaranPage({
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from")
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
-    ? await supabase.from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at")
-    : { data: [] as { deskripsi: string; qty: number; harga: number }[] };
+    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis").eq("invoice_id", invoice.id).order("created_at")
+    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string }[] };
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -60,14 +64,35 @@ export default async function PembayaranPage({
         .order("edited_at", { ascending: false })
     : { data: [] };
 
-  // prefill item dari resep saat belum bayar: jasa konsultasi + tiap obat (harga diisi kasir).
-  const { data: resep } = await supabase.from("prescription_items").select("nama_obat, qty").eq("medical_record_id", mr.id).order("created_at");
-  const prefill = [
-    { deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0 },
-    ...(resep ?? []).map((r) => ({ deskripsi: r.nama_obat, qty: r.qty, harga: 0 })),
-  ];
+  // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
+  // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
+  const { data: resep } = await supabase.from("prescription_items").select("nama_obat, qty, harga, jenis").eq("medical_record_id", mr.id).order("created_at");
+  const resepRows = (resep ?? []).map((r) => ({ deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0, jenis: r.jenis ?? "obat" }));
+  const prefill = resepRows.length
+    ? resepRows
+    : [{ deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0, jenis: "jasa" }];
 
   const lunas = invoice?.paid_status === "Lunas";
+
+  // Split obat vs jasa dari kolom `jenis` (2 tabel gaya referensi).
+  const sourceItems = invoice
+    ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat" }))
+    : prefill;
+  const initialObat = sourceItems.filter((r) => r.jenis !== "jasa");
+  const initialJasa = sourceItems.filter((r) => r.jenis === "jasa");
+
+  const patient = {
+    photo: pet?.photo_url ?? null,
+    name: pet?.name ?? "—",
+    species: pet?.species ?? "—",
+    owner: cust?.name ?? "—",
+    phone: cust?.phone ?? "—",
+    address: cust?.address ?? "—",
+    dokter: visit.dokter ?? "—",
+    jenisLayanan,
+    noInvoice: invoice?.invoice_no ?? "(baru)",
+    tanggal: new Date((invoice?.created_at as string) ?? visit.created_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+  };
 
   // Addendum §1: pembayaran klinik hanya bisa saat shift klinik terbuka (gate server-side).
   if (!lunas) {
@@ -78,10 +103,17 @@ export default async function PembayaranPage({
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+      <div style={{ marginBottom: 4 }}>
         <Link href="/klinik/antrian" className="back-btn"><i className="ti ti-arrow-left" /> Antrian</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Pembayaran</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <i className="ti ti-file-invoice" style={{ fontSize: 22, color: "#2563eb" }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>INVOICE / PEMBAYARAN</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Detail tagihan dan metode pembayaran</div>
+        </div>
       </div>
 
       {error && (
@@ -129,15 +161,17 @@ export default async function PembayaranPage({
         </div>
       </div>
 
-      {/* Pasien */}
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
-          <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}`} />
-          <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
-          <Field label="Poli" value={visit.poli} />
-          {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
+      {/* Pasien (hanya di tampilan read-only invoice; form editable punya header sendiri) */}
+      {invoice && !(edit === "1" && !lunas) && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
+            <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}`} />
+            <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
+            <Field label="Poli" value={visit.poli} />
+            {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
+          </div>
         </div>
-      </div>
+      )}
 
       {invoice && edit === "1" && !lunas ? (
         <>
@@ -146,10 +180,13 @@ export default async function PembayaranPage({
           </div>
           <PembayaranForm
             visitId={visit.id}
-            initialItems={(invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga) }))}
+            patient={patient}
+            initialObat={initialObat}
+            initialJasa={initialJasa}
+            catatanResep={mr.catatan_resep}
             initialDiscount={Number(invoice.discount)}
-            initialPaid={invoice.paid_status as "Lunas" | "DP" | "Belum Lunas"}
-            initialMetode={invoice.metode_bayar ?? "Tunai"}
+            initialDpAmount={Number(invoice.dp_amount)}
+            initialDpDate={invoice.dp_date}
             editMode
           />
         </>
@@ -232,7 +269,13 @@ export default async function PembayaranPage({
           )}
         </>
       ) : (
-        <PembayaranForm visitId={visit.id} initialItems={prefill} />
+        <PembayaranForm
+          visitId={visit.id}
+          patient={patient}
+          initialObat={initialObat}
+          initialJasa={initialJasa}
+          catatanResep={mr.catatan_resep}
+        />
       )}
 
       {/* Riwayat perubahan invoice (audit log §7). */}

@@ -20,10 +20,11 @@ const today = "2026-07-01";
 // Penerimaan barang (Addendum §5, mockup petshop): dipesan vs diterima, kondisi per item,
 // ringkasan footer, scan barcode auto-isi qty. Layout mengikuti mockup PENERIMAAN BARANG.
 export function TerimaForm({
-  requestId, noRequest, whName, userName, items, catalog,
+  requestId, noRequest, whName, userName, items, catalog, action = terimaBarang, backHref = "/kasir/persediaan?tab=penerimaan",
 }: {
   requestId: string; noRequest: string; whName: string; userName: string;
   items: ItemIn[]; catalog: CatalogItem[];
+  action?: (formData: FormData) => void | Promise<void>; backHref?: string;
 }) {
   const [rows, setRows] = useState<Row[]>(
     items.map((it) => ({ ...it, qty_diterima: Number(it.qty_diminta) || 0, kondisi: "baik", notes: "" }))
@@ -62,7 +63,7 @@ export function TerimaForm({
   const summary = receiptSummary(rows.map((r) => ({ qty_ordered: Number(r.qty_diminta) || 0, qty_received: Number(r.qty_diterima) || 0 })));
 
   return (
-    <form action={terimaBarang}>
+    <form action={action}>
       <input type="hidden" name="request_id" value={requestId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
@@ -77,7 +78,7 @@ export function TerimaForm({
             <div style={{ fontSize: 11.5, color: "var(--tm)", marginTop: 1 }}>Catat barang yang diterima dari gudang / supplier</div>
           </div>
         </div>
-        <Link href="/kasir/persediaan?tab=penerimaan" className="btn-def" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }}>
+        <Link href={backHref} className="btn-def" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }}>
           <i className="ti ti-arrow-left" /> Kembali
         </Link>
       </div>

@@ -9,8 +9,8 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-// §3.4 visit state machine — rawat inap & racik obat kondisional, disembunyikan untuk prototype.
-const STEPS = ["Pendaftaran", "Antrian", "Rekam Medis", "Pembayaran"];
+// §3.4 visit state machine — 6 tahap sesuai desain dokter poli (referensi).
+const STEPS = ["Pendaftaran", "Antrian", "Rekam Medis", "Rawat Inap", "Racik Obat", "Pembayaran"];
 
 export default async function RekamMedisPage({
   params,
@@ -25,7 +25,7 @@ export default async function RekamMedisPage({
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, pet_id, poli, status, dokter, keluhan, created_at, pets(name, species, breed, weight), customers(name, phone)")
+    .select("id, pet_id, poli, status, dokter, keluhan, created_at, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
     .eq("id", visitId)
     .maybeSingle();
 
@@ -76,8 +76,30 @@ export default async function RekamMedisPage({
     .limit(1)
     .maybeSingle();
 
-  const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 3, Selesai: 4 };
+  const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 5, Selesai: 6 };
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
+
+  // Daftar obat (POS) untuk form pemeriksaan — hanya diperlukan saat mode input.
+  let items: { id: string; name: string; unit: string; sell_price: number; stok: number }[] = [];
+  if (!recorded) {
+    const { data: itemRows } = await supabase
+      .from("items").select("id, name, unit, sell_price").eq("is_active", true).order("name").limit(200);
+    const ids = (itemRows ?? []).map((i) => i.id);
+    const { data: stockRows } = ids.length
+      ? await supabase.from("stock").select("item_id, qty").in("item_id", ids)
+      : { data: [] as { item_id: string; qty: number }[] };
+    const stokByItem = new Map<string, number>();
+    for (const s of stockRows ?? []) stokByItem.set(s.item_id as string, (stokByItem.get(s.item_id as string) ?? 0) + Number(s.qty));
+    items = (itemRows ?? []).map((i) => ({
+      id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
+      sell_price: Number(i.sell_price), stok: stokByItem.get(i.id as string) ?? 0,
+    }));
+  }
+
+  const petIdCode = pet
+    ? `RM-${new Date(visit.created_at as string).toISOString().slice(2, 10).replace(/-/g, "")}-${(visit.id as string).slice(0, 4).toUpperCase()}`
+    : "—";
+  const tglPeriksa = new Date(visit.created_at as string).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <>
@@ -134,17 +156,19 @@ export default async function RekamMedisPage({
         </div>
       </div>
 
-      {/* Identitas pasien */}
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
-          <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}${pet?.breed ? " / " + pet.breed : ""}`} />
-          <Field label="Berat" value={pet?.weight ? `${pet.weight} kg` : "—"} />
-          <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
-          <Field label="Poli" value={visit.poli} />
-          {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
-          <Field label="Keluhan" value={visit.keluhan ?? "—"} />
+      {/* Identitas pasien — hanya di mode read-only (form input punya kartu pasien sendiri) */}
+      {recorded && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
+            <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}${pet?.breed ? " / " + pet.breed : ""}`} />
+            <Field label="Berat" value={pet?.weight ? `${pet.weight} kg` : "—"} />
+            <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
+            <Field label="Poli" value={visit.poli} />
+            {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
+            <Field label="Keluhan" value={visit.keluhan ?? "—"} />
+          </div>
         </div>
-      </div>
+      )}
 
       {recorded ? (
         <>
@@ -274,7 +298,26 @@ export default async function RekamMedisPage({
           </div>
         </>
       ) : (
-        <RekamForm visitId={visit.id} petId={visit.pet_id} currentWeight={pet?.weight ?? null} />
+        <RekamForm
+          visitId={visit.id}
+          petId={visit.pet_id}
+          currentWeight={pet?.weight ?? null}
+          items={items}
+          patient={{
+            name: pet?.name ?? "—",
+            species: pet?.species ?? "—",
+            breed: pet?.breed ?? null,
+            noRM: petIdCode,
+            tglPeriksa,
+            dokter: visit.dokter ?? "",
+            owner: cust?.name ?? "—",
+            phone: cust?.phone ?? "—",
+            address: cust?.address ?? "—",
+            tier: cust?.tier ?? "—",
+            keluhan: visit.keluhan ?? null,
+            photo: pet?.photo_url ?? null,
+          }}
+        />
       )}
     </>
   );
