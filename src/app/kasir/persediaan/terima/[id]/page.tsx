@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { SecHeader } from "@/components/SecHeader";
 import { TerimaForm } from "./TerimaForm";
 
 type Rel<T> = T | T[] | null;
@@ -43,9 +41,14 @@ export default async function TerimaBarangPage({
     .eq("id", id)
     .maybeSingle();
 
-  // katalog barcode utk scan penerimaan (§5).
-  const { data: catalog } = await supabase
-    .from("items").select("id, name, upc").eq("is_active", true);
+  // katalog barang: barcode scan + detail (kode/kategori/satuan) per item penerimaan.
+  const { data: catalogRaw } = await supabase
+    .from("items").select("id, code, name, unit, upc, item_categories(name)").eq("is_active", true);
+  type CatRel = { name: string } | { name: string }[] | null;
+  const catalog = ((catalogRaw ?? []) as { id: string; code: string; name: string; unit: string; upc: string | null; item_categories: CatRel }[]).map((c) => ({
+    id: c.id, code: c.code, name: c.name, unit: c.unit, upc: c.upc,
+    kategori: (Array.isArray(c.item_categories) ? c.item_categories[0]?.name : c.item_categories?.name) ?? "Lainnya",
+  }));
 
   const req = data as unknown as ReqDetail | null;
 
@@ -53,27 +56,20 @@ export default async function TerimaBarangPage({
   if (!req || req.from_branch_id !== shift.branch_id) redirect("/kasir/persediaan?tab=penerimaan");
   if (req.status !== "Dikirim") redirect("/kasir/persediaan?tab=penerimaan");
 
+  const { data: profile } = await supabase
+    .from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+
   const wh = one(req.warehouses);
   const items = req.stock_request_items ?? [];
 
   return (
-    <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/kasir/persediaan?tab=penerimaan" className="back-btn">
-          <i className="ti ti-arrow-left" /> Kembali
-        </Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Penerimaan Barang — {req.no_request ?? "—"}</span>
-      </div>
-
-      <div className="crm-sec">
-        <SecHeader
-          num="01"
-          title="TERIMA BARANG"
-          desc={`Dari gudang ${wh?.name ?? "—"} · cabang ${shift.branchName} (PRD §2.4)`}
-        />
-        <TerimaForm requestId={req.id} items={items} catalog={(catalog ?? []) as { id: string; name: string; upc: string | null }[]} />
-      </div>
-    </>
+    <TerimaForm
+      requestId={req.id}
+      noRequest={req.no_request ?? "—"}
+      whName={wh?.name ?? "—"}
+      userName={profile?.full_name ?? user.email ?? "Frontliner"}
+      items={items}
+      catalog={catalog}
+    />
   );
 }

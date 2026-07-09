@@ -28,13 +28,19 @@ export default async function AppLayout({
     .eq("is_active", true)
     .order("name");
 
+  // STAFF cuma masuk (app) lewat alur kasir klinik (/klinik/shift & seterusnya) —
+  // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
+  const isStaff = profile?.role === "STAFF";
+
   return (
     <div className="shell">
-      <Sidebar
-        branches={branches ?? []}
-        fullName={profile?.full_name ?? user.email ?? "Pengguna"}
-        role={profile?.role ?? "—"}
-      />
+      {!isStaff && (
+        <Sidebar
+          branches={branches ?? []}
+          fullName={profile?.full_name ?? user.email ?? "Pengguna"}
+          role={profile?.role ?? "—"}
+        />
+      )}
       <div className="main">
         <div className="topbar">
           <Breadcrumb />

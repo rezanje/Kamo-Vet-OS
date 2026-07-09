@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { SecHeader } from "@/components/SecHeader";
 import { simpanPengeluaranKasir } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -18,6 +17,12 @@ type ExpenseRow = {
 
 const KATEGORI = ["Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Lain-lain"];
 const METODE = ["Tunai", "QRIS", "Transfer"];
+
+// Warna badge per kategori (mengikuti mockup pengeluaran petshop).
+const KAT_BADGE: Record<string, string> = {
+  "Operasional": "b", "Listrik & Air": "g", "Perlengkapan": "o",
+  "Transportasi": "pu", "Perawatan": "pk", "Lain-lain": "x",
+};
 
 // Pengeluaran dari dunia kasir — dibatasi ke cabang shift yang sedang terbuka (tanpa pilihan cabang).
 export default async function PengeluaranKasirPage({
@@ -61,90 +66,94 @@ export default async function PengeluaranKasirPage({
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success === "1" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengeluaran tercatat.</div>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginBottom: 14 }}>
-        <Stat label="Pengeluaran Hari Ini" value={rp(totHari)} />
-        <Stat label="Pengeluaran Bulan Ini" value={rp(totBulan)} accent />
+      {/* Header halaman: ikon dompet + judul + subjudul (mockup pengeluaran petshop). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <div style={{ width: 46, height: 46, borderRadius: "50%", background: "var(--posb)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <i className="ti ti-wallet" style={{ fontSize: 22, color: "#fff" }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "var(--posb)", letterSpacing: ".01em" }}>PENGELUARAN</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)", marginTop: 1 }}>Catat semua pengeluaran operasional · {shift.branchName}</div>
+        </div>
       </div>
 
-      <div className="crm-sec">
-        <SecHeader num="01" title="CATAT PENGELUARAN" desc={`Tambahkan pengeluaran operasional · ${shift.branchName}`} />
-        <form action={simpanPengeluaranKasir}>
-          <input type="hidden" name="branchId" value={shift.branch_id} />
-          <div className="grid2">
-            <div>
+      {/* Layout dua kolom: form input kiri, daftar + ringkasan kanan. */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 340px) minmax(0, 1fr)", gap: 14, alignItems: "start" }}>
+        {/* KIRI — form tambah pengeluaran */}
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)", marginBottom: 12, letterSpacing: ".03em" }}>TAMBAH PENGELUARAN</div>
+          <form action={simpanPengeluaranKasir}>
+            <input type="hidden" name="branchId" value={shift.branch_id} />
+            <div style={{ marginBottom: 10 }}>
               <label className="flab">Tanggal *</label>
               <input className="fi" name="tanggal" type="date" defaultValue={today} required />
             </div>
-            <div>
+            <div style={{ marginBottom: 10 }}>
               <label className="flab">Kategori *</label>
-              <select className="fi" name="kategori" required>
-                <option value="">Pilih kategori</option>
+              <select className="fi" name="kategori" required defaultValue="">
+                <option value="" disabled>Pilih kategori</option>
                 {KATEGORI.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
             </div>
-            <div>
-              <label className="flab">Metode Bayar *</label>
+            <div style={{ marginBottom: 10 }}>
+              <label className="flab">Deskripsi</label>
+              <textarea className="fi" name="deskripsi" rows={2} placeholder="Contoh: Beli air galon, bayar listrik, dll" style={{ resize: "vertical" }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label className="flab">Jumlah (Rp) *</label>
+              <div style={{ display: "flex", alignItems: "stretch" }}>
+                <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderRight: "none", borderRadius: "6px 0 0 6px", padding: "6px 10px", fontSize: 12, color: "var(--tm)" }}>Rp</span>
+                <input className="fi" name="jumlah" type="number" min={0} step={1000} placeholder="Masukkan jumlah" required style={{ borderRadius: "0 6px 6px 0" }} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label className="flab">Metode Pembayaran *</label>
               <select className="fi" name="metode_bayar" defaultValue="Tunai" required>
                 {METODE.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
-            <div>
-              <label className="flab">Jumlah (Rp) *</label>
-              <input className="fi" name="jumlah" type="number" min={0} step={1000} placeholder="50000" required />
-            </div>
-            <div>
-              <label className="flab">Deskripsi</label>
-              <input className="fi" name="deskripsi" type="text" placeholder="Keterangan pengeluaran (opsional)" />
-            </div>
-          </div>
-          {/* ponytail: tanpa upload bukti — bukti_url dibiarkan null sesuai spec. */}
-          <div style={{ marginTop: 12, borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
-            <button type="submit" className="btn-acc"><i className="ti ti-plus" /> Simpan Pengeluaran</button>
-          </div>
-        </form>
-      </div>
+            {/* ponytail: upload bukti belum diwire — kolom bukti_url dibiarkan null sesuai spec. */}
+            <button type="submit" className="pay-btn" style={{ width: "100%" }}>Simpan Pengeluaran</button>
+          </form>
+        </div>
 
-      <div className="crm-sec">
-        <SecHeader num="02" title="DAFTAR PENGELUARAN" desc={`20 pengeluaran terbaru · ${shift.branchName}`} />
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 600 }}>
-            <thead>
-              <tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Metode</th><th style={{ textAlign: "right" }}>Jumlah</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}</td>
-                  <td style={{ fontSize: 11 }}><span className="bge o">{r.kategori}</span></td>
-                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.deskripsi || "—"}</td>
-                  <td style={{ fontSize: 11 }}>{r.metode_bayar}</td>
-                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada pengeluaran tercatat.</td></tr>
-              )}
-            </tbody>
-            {rows.length > 0 && (
-              <tfoot>
+        {/* KANAN — daftar pengeluaran + total */}
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)", marginBottom: 12, letterSpacing: ".03em" }}>DAFTAR PENGELUARAN</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ minWidth: 620 }}>
+              <thead>
                 <tr>
-                  <td colSpan={4} style={{ fontSize: 11, fontWeight: 700, textAlign: "right" }}>Total</td>
-                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 700 }}>{rp(totDaftar)}</td>
+                  <th style={{ width: 34 }}>No.</th>
+                  <th>Tanggal</th><th>Kategori</th><th>Deskripsi</th>
+                  <th style={{ textAlign: "right" }}>Jumlah</th><th>Metode</th>
                 </tr>
-              </tfoot>
-            )}
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id}>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}</td>
+                    <td style={{ fontSize: 11 }}><span className={`bge ${KAT_BADGE[r.kategori] ?? "x"}`}>{r.kategori}</span></td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.deskripsi || "—"}</td>
+                    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>
+                    <td style={{ fontSize: 11 }}>{r.metode_bayar}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada pengeluaran tercatat.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {rows.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
+              <span style={{ fontSize: 11, color: "var(--tm)" }}>Ringkasan · Hari ini {rp(totHari)} · Bulan ini {rp(totBulan)}</span>
+              <span style={{ fontSize: 11, color: "var(--tm)" }}>Total Pengeluaran <span style={{ fontSize: 16, fontWeight: 800, color: "var(--posb)", marginLeft: 6 }}>{rp(totDaftar)}</span></span>
+            </div>
+          )}
         </div>
       </div>
     </>
-  );
-}
-
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className="card" style={{ padding: "11px 13px" }}>
-      <div style={{ fontSize: 9.5, color: "var(--tm)" }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: accent ? "var(--acc)" : "#141413", marginTop: 3 }}>{value}</div>
-    </div>
   );
 }

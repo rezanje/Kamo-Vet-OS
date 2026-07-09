@@ -52,6 +52,14 @@ export default async function LoginPage({
         >
           Masuk
         </button>
+
+        {/* Demo only: daftar akun uji coba biar gampang login. Hapus sebelum produksi. */}
+        <div className="rounded border border-dashed border-black/20 dark:border-white/25 p-3 text-xs text-black/60 dark:text-white/60 space-y-1">
+          <p className="font-semibold text-black/70 dark:text-white/70">Akun demo (password: password123)</p>
+          <p><span className="font-medium">owner@vetos.local</span> — OWNER</p>
+          <p><span className="font-medium">claude-test@vetos.local</span> — ADMIN</p>
+          <p><span className="font-medium">staff@vetos.local</span> — STAFF (kasir)</p>
+        </div>
       </form>
     </main>
   );

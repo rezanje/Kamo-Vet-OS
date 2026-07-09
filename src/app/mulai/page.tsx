@@ -25,31 +25,49 @@ export default async function MulaiPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 260px))", gap: 16, justifyContent: "center" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", maxWidth: 860 }}>
         {profile?.role === "STAFF" ? (
-          <Link href="/me" style={{ textDecoration: "none" }}>
-            <div className="mulai-tile">
-              <i className="ti ti-user-heart" style={{ fontSize: 40, color: "var(--sb)" }} />
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Dashboard Pribadi</div>
-              <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Quest, KPI, absensi & pengajuan cuti kamu.</div>
-            </div>
-          </Link>
+          <>
+            <Link href="/me" style={{ textDecoration: "none" }}>
+              <div className="mulai-tile">
+                <i className="ti ti-user-heart" style={{ fontSize: 40, color: "var(--sb)" }} />
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Dashboard Pribadi</div>
+                <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Quest, KPI, absensi & pengajuan cuti kamu.</div>
+              </div>
+            </Link>
+            <Link href="/kasir" style={{ textDecoration: "none" }}>
+              <div className="mulai-tile">
+                <i className="ti ti-building-store" style={{ fontSize: 40, color: "var(--acc)" }} />
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Petshop</div>
+                <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Mulai shift, transaksi kasir, pengeluaran & persediaan toko.</div>
+              </div>
+            </Link>
+            <Link href="/klinik/shift" style={{ textDecoration: "none" }}>
+              <div className="mulai-tile">
+                <i className="ti ti-stethoscope" style={{ fontSize: 40, color: "var(--acc)" }} />
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Klinik</div>
+                <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Mulai shift & pembayaran klinik.</div>
+              </div>
+            </Link>
+          </>
         ) : (
-          <Link href="/" style={{ textDecoration: "none" }}>
-            <div className="mulai-tile">
-              <i className="ti ti-layout-dashboard" style={{ fontSize: 40, color: "var(--sb)" }} />
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Dashboard VetOS</div>
-              <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Klinik, CRM, Keuangan, HRIS, laporan — semua modul.</div>
-            </div>
-          </Link>
+          <>
+            <Link href="/" style={{ textDecoration: "none" }}>
+              <div className="mulai-tile">
+                <i className="ti ti-layout-dashboard" style={{ fontSize: 40, color: "var(--sb)" }} />
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>Dashboard VetOS</div>
+                <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Klinik, CRM, Keuangan, HRIS, laporan — semua modul.</div>
+              </div>
+            </Link>
+            <Link href="/kasir" style={{ textDecoration: "none" }}>
+              <div className="mulai-tile">
+                <i className="ti ti-building-store" style={{ fontSize: 40, color: "var(--acc)" }} />
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>POS Kasir</div>
+                <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Mulai shift, transaksi kasir, pengeluaran & persediaan toko.</div>
+              </div>
+            </Link>
+          </>
         )}
-        <Link href="/kasir" style={{ textDecoration: "none" }}>
-          <div className="mulai-tile">
-            <i className="ti ti-cash-register" style={{ fontSize: 40, color: "var(--acc)" }} />
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>POS Kasir</div>
-            <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>Mulai shift, transaksi kasir, pengeluaran & persediaan toko.</div>
-          </div>
-        </Link>
       </div>
 
       <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.35)" }}>VetOS · PT Kamo Group</div>

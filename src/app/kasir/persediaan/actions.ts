@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { receiptSummary } from "@/lib/stock-recon";
 
-type ItemInput = { nama: string; qty_diminta: number; catatan?: string };
+type ItemInput = { item_id?: string; nama: string; qty_diminta: number; catatan?: string };
 
 // Buat permintaan barang dari dunia kasir — cabang asal otomatis dari shift terbuka.
 export async function buatPermintaanKasir(formData: FormData) {
@@ -61,6 +61,7 @@ export async function buatPermintaanKasir(formData: FormData) {
 
   const rows = items.map((it) => ({
     request_id: (req as { id: string }).id,
+    item_id: it.item_id || null, // tautan ke master barang (buat penerimaan/potong stok)
     nama: String(it.nama).slice(0, 160),
     qty_diminta: Number(it.qty_diminta) || 0,
     catatan: (it.catatan ?? "").trim() || null, // §5: catatan per item ("stok menipis", dst)
@@ -148,6 +149,10 @@ export async function terimaBarang(formData: FormData) {
   if (wh) {
     for (const row of rows) {
       if (!row.item_id) continue;
+      // Hanya barang kondisi "baik" yang masuk stok jual. Rusak/kurang tetap tercatat
+      // penuh di dokumen TRM (stock_receipt_items.condition) sebagai basis klaim ke DC,
+      // tapi tidak boleh jadi stok yang bisa dijual.
+      if ((row.kondisi || "baik").toLowerCase() !== "baik") continue;
       const qty = Number(row.qty_diterima) || 0;
       if (qty <= 0) continue;
 

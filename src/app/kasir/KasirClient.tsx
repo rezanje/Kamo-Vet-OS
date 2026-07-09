@@ -169,7 +169,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 12, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.5fr) minmax(360px, 1fr)", gap: 12, alignItems: "start" }}>
         {/* DAFTAR PRODUK */}
         <div className="card" style={{ padding: 0 }}>
           <div style={{ padding: "13px 15px 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -383,26 +383,30 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
         </form>
       </div>
 
-      {/* Reminder Promo (§6): overlay non-blocking — saran utk kasir, bukan auto-apply. */}
+      {/* Reminder Promo (§6): modal tengah non-blocking — saran utk kasir, bukan auto-apply. */}
       {promoHits.length > 0 && !promoDismissed && (
-        <div style={{ position: "fixed", right: 18, bottom: 18, width: 300, zIndex: 50, background: "#fff", border: "1px solid var(--posb)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.18)", overflow: "hidden" }}>
-          <div style={{ background: "var(--posb)", color: "#fff", padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
-            <i className="ti ti-speakerphone" />
-            <span style={{ fontSize: 11.5, fontWeight: 700, flex: 1 }}>Reminder Promo</span>
-            <i className="ti ti-x" style={{ cursor: "pointer", fontSize: 13 }} onClick={() => setDismissedAtCartLen(cart.length)} />
-          </div>
-          <div style={{ padding: "8px 12px" }}>
-            {promoHits.map((p) => (
-              <div key={p.id} style={{ padding: "6px 0", borderBottom: ".5px dashed var(--bd)" }}>
-                <div style={{ fontSize: 11, fontWeight: 700 }}>
-                  <i className={`ti ${p.promo_type === "bundling" ? "ti-gift" : p.promo_type === "tebus_murah" ? "ti-tag" : "ti-discount-2"}`} style={{ marginRight: 4, color: "var(--acc)" }} />
-                  {p.name}
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.35)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => setDismissedAtCartLen(cart.length)}>
+          <div style={{ width: 480, maxWidth: "92vw", maxHeight: "80vh", overflowY: "auto", background: "#fff", borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,.28)", overflow: "hidden" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ background: "var(--posb)", color: "#fff", padding: "13px 18px", display: "flex", alignItems: "center", gap: 8 }}>
+              <i className="ti ti-speakerphone" style={{ fontSize: 18 }} />
+              <span style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>Reminder Promo</span>
+              <i className="ti ti-x" style={{ cursor: "pointer", fontSize: 16 }} onClick={() => setDismissedAtCartLen(cart.length)} />
+            </div>
+            <div style={{ padding: "14px 18px" }}>
+              {promoHits.map((p) => (
+                <div key={p.id} style={{ padding: "11px 0", borderBottom: ".5px dashed var(--bd)" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    <i className={`ti ${p.promo_type === "bundling" ? "ti-gift" : p.promo_type === "tebus_murah" ? "ti-tag" : "ti-discount-2"}`} style={{ marginRight: 6, color: "var(--acc)", fontSize: 16 }} />
+                    {p.name}
+                  </div>
+                  {p.rule?.suggest && <div style={{ fontSize: 12.5, color: "var(--tm)", marginTop: 4 }}>{p.rule.suggest}</div>}
                 </div>
-                {p.rule?.suggest && <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 2 }}>{p.rule.suggest}</div>}
+              ))}
+              <div style={{ fontSize: 11, color: "var(--td)", marginTop: 12 }}>
+                Tawarkan ke customer — terapkan manual via potongan item / diskon bila diambil.
               </div>
-            ))}
-            <div style={{ fontSize: 9, color: "var(--td)", marginTop: 6 }}>
-              Tawarkan ke customer — terapkan manual via potongan item / diskon bila diambil.
             </div>
           </div>
         </div>
