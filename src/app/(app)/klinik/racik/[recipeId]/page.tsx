@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { advanceRecipeStatus, voidRecipe } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -189,16 +190,12 @@ export default async function RacikDetailPage({
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center" }}>
           <form action={advanceRecipeStatus}>
             <input type="hidden" name="recipeId" value={r.id} />
-            <button type="submit" className="pay-btn" style={{ background: "#16a34a", minWidth: 260, padding: "12px 22px", fontSize: 13.5 }}>
-              <i className="ti ti-circle-check" /> {r.status === "pending" ? "Obat Siap Diserahkan" : "Tandai Sudah Diserahkan"}
-            </button>
+            <SubmitButton className="pay-btn" icon="ti-circle-check" style={{ background: "#16a34a", minWidth: 260, padding: "12px 22px", fontSize: 13.5 }} pendingText="Memproses…">{r.status === "pending" ? "Obat Siap Diserahkan" : "Tandai Sudah Diserahkan"}</SubmitButton>
           </form>
           <form action={voidRecipe}>
             <input type="hidden" name="recipeId" value={r.id} />
             <input type="hidden" name="visitId" value={visit?.id ?? ""} />
-            <button type="submit" className="btn-def" style={{ color: "#b91c1c", borderColor: "#fca5a5", padding: "12px 18px" }}>
-              <i className="ti ti-x" /> Void (resep berubah)
-            </button>
+            <SubmitButton className="btn-def" icon="ti-x" style={{ color: "#b91c1c", borderColor: "#fca5a5", padding: "12px 18px" }} pendingText="Memproses…">Void (resep berubah)</SubmitButton>
           </form>
         </div>
       )}

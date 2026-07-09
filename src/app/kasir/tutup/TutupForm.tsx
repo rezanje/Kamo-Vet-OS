@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { tutupShiftKasir } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -41,7 +42,7 @@ export function TutupForm({ shiftId, expected }: { shiftId: string; expected: nu
       <div style={{ fontSize: 9.5, color: "var(--td)", marginBottom: 12 }}>
         Selisih ≠ 0 tetap bisa tutup shift — tercatat & dilaporkan ke manajer cabang (bukan diblokir).
       </div>
-      <button type="submit" className="pay-btn"><i className="ti ti-lock" /> Tutup Shift & Lihat Laporan</button>
+      <SubmitButton className="pay-btn" icon="ti-lock" pendingText="Menutup shift…">Tutup Shift &amp; Lihat Laporan</SubmitButton>
     </form>
   );
 }

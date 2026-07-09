@@ -1,5 +1,6 @@
 "use client";
 
+import { SubmitButton } from "@/components/SubmitButton";
 import { cancelVisit } from "./actions";
 
 export function CancelButton({ id }: { id: string }) {
@@ -9,9 +10,9 @@ export function CancelButton({ id }: { id: string }) {
       onSubmit={(e) => { if (!confirm("Batalkan pasien dari antrian?")) e.preventDefault(); }}
     >
       <input type="hidden" name="id" value={id} />
-      <button type="submit" className="btn-def" style={{ padding: "4px 9px", fontSize: 10.5, color: "#b91c1c" }} title="Batalkan">
+      <SubmitButton className="btn-def" style={{ padding: "4px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="">
         <i className="ti ti-x" />
-      </button>
+      </SubmitButton>
     </form>
   );
 }

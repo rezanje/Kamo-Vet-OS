@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, ripWaMessage, type Condition } from "@/lib/inpatient";
 import { changeCondition, sendRipWa } from "../actions";
 import { LogDetailButton } from "./LogDetailButton";
+import { SubmitButton } from "@/components/SubmitButton";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -112,9 +113,7 @@ export default async function RawatInapDetailPage({
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <form action={sendRipWa}>
               <input type="hidden" name="recordId" value={rec.id} />
-              <button type="submit" className="btn-acc" style={{ background: "#16a34a", borderColor: "#16a34a" }}>
-                <i className="ti ti-send" /> Kirim WA ke {cust?.phone ?? "—"}
-              </button>
+              <SubmitButton className="btn-acc" icon="ti-send" style={{ background: "#16a34a", borderColor: "#16a34a" }} pendingText="Mengirim…">Kirim WA ke {cust?.phone ?? "—"}</SubmitButton>
             </form>
             <Link href={`/klinik/rawat-inap/${rec.id}`} className="btn-def" style={{ textDecoration: "none" }}>Nanti saja</Link>
           </div>
@@ -178,7 +177,7 @@ export default async function RawatInapDetailPage({
             <label className="flab">Catatan perubahan</label>
             <input className="fi" name="notes" placeholder="mis. respon terapi baik / henti jantung" />
           </div>
-          <button type="submit" className="btn-acc"><i className="ti ti-check" /> Simpan Kondisi</button>
+          <SubmitButton className="btn-acc" icon="ti-check" pendingText="Menyimpan…">Simpan Kondisi</SubmitButton>
         </form>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
           Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · sembuh → lanjut pembayaran; RIP → invoice tetap terbit (tidak diblokir).

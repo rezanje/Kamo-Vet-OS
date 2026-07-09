@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { RekamForm } from "./RekamForm";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -292,7 +293,7 @@ export default async function RekamMedisPage({
                   <label className="flab">Dokter PIC</label>
                   <input className="fi" name="doctor_name" defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
                 </div>
-                <button type="submit" className="btn-acc"><i className="ti ti-bed" /> Masukkan Rawat Inap</button>
+                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…">Masukkan Rawat Inap</SubmitButton>
               </form>
             )}
           </div>

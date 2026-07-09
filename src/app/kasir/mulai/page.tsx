@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { mulaiShiftKasir } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 // Layar pembuka POS (mockup "Selamat Datang"): wajib mulai shift sebelum kasir aktif.
 export default async function MulaiShiftPage({
@@ -64,9 +65,7 @@ export default async function MulaiShiftPage({
           </div>
         </div>
 
-        <button type="submit" className="pay-btn">
-          <i className="ti ti-player-play" /> MULAI SHIFT
-        </button>
+        <SubmitButton className="pay-btn" icon="ti-player-play" pendingText="Memulai shift…">MULAI SHIFT</SubmitButton>
       </form>
     </div>
   );

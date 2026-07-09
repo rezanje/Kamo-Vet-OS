@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { checkoutKasir, simpanDraft, hapusDraft } from "./checkout";
+import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
 export type ItemRow = { id: string; code: string; name: string; harga: number; kategori: string; stok: number };
@@ -372,12 +373,8 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr", gap: 6 }}>
-              <button type="submit" formAction={simpanDraft} className="btn-def" style={{ padding: "9px 0", fontSize: 11.5 }} disabled={cart.length === 0}>
-                <i className="ti ti-device-floppy" /> Simpan Draft
-              </button>
-              <button type="submit" className="kpos-bayar" disabled={!canPay}>
-                <i className="ti ti-circle-check" /> Bayar {rp(total)}
-              </button>
+              <SubmitButton formAction={simpanDraft} className="btn-def" icon="ti-device-floppy" style={{ padding: "9px 0", fontSize: 11.5 }} disabled={cart.length === 0} pendingText="…">Simpan Draft</SubmitButton>
+              <SubmitButton className="kpos-bayar" icon="ti-circle-check" disabled={!canPay} pendingText="Memproses…">Bayar {rp(total)}</SubmitButton>
             </div>
           </div>
         </form>

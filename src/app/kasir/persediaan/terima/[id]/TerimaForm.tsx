@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { terimaBarang } from "../../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 import { receiptSummary } from "@/lib/stock-recon";
 
 type ItemIn = { id: string; item_id: string | null; nama: string; qty_diminta: number; catatan?: string | null };
@@ -211,9 +212,7 @@ export function TerimaForm({
           <span style={{ fontSize: 11 }}>Diterima <b>{summary.received}</b></span>
           <span style={{ fontSize: 11, color: summary.selisih === 0 ? "#15803d" : "#b91c1c" }}>Selisih <b>{summary.selisih > 0 ? "+" : ""}{summary.selisih}</b></span>
         </div>
-        <button type="submit" className="pay-btn" style={{ width: "auto", padding: "9px 22px" }} disabled={rows.length === 0}>
-          <i className="ti ti-circle-check" /> Simpan Penerimaan
-        </button>
+        <SubmitButton className="pay-btn" icon="ti-circle-check" style={{ width: "auto", padding: "9px 22px" }} disabled={rows.length === 0} pendingText="Menyimpan…">Simpan Penerimaan</SubmitButton>
       </div>
       <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, textAlign: "right" }}>
         Stok cabang bertambah sesuai QTY DITERIMA (bukan dipesan) — selisih tercatat di dokumen TRM.

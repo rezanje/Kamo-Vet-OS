@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
+import { SubmitButton } from "@/components/SubmitButton";
 import { voidAndReissue } from "./actions";
 
 type Rel<T> = T | T[] | null;
@@ -261,9 +262,7 @@ export default async function PembayaranPage({
                   <label className="flab">Alasan void *</label>
                   <input className="fi" name="reason" required placeholder="mis. salah tagih jasa rawat inap" />
                 </div>
-                <button type="submit" className="btn-def" style={{ color: "#b91c1c", borderColor: "#fca5a5" }}>
-                  <i className="ti ti-file-x" /> Void &amp; Terbitkan Ulang
-                </button>
+                <SubmitButton className="btn-def" icon="ti-file-x" style={{ color: "#b91c1c", borderColor: "#fca5a5" }} pendingText="Memproses…">Void &amp; Terbitkan Ulang</SubmitButton>
               </form>
             </div>
           )}

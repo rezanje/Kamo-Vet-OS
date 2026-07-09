@@ -1,4 +1,5 @@
 import { login } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export default async function LoginPage({
   searchParams,
@@ -46,12 +47,12 @@ export default async function LoginPage({
           />
         </label>
 
-        <button
-          type="submit"
+        <SubmitButton
           className="w-full rounded bg-foreground px-3 py-2 font-medium text-background"
+          pendingText="Masuk…"
         >
           Masuk
-        </button>
+        </SubmitButton>
 
         {/* Demo only: daftar akun uji coba biar gampang login. Hapus sebelum produksi. */}
         <div className="rounded border border-dashed border-black/20 dark:border-white/25 p-3 text-xs text-black/60 dark:text-white/60 space-y-1">

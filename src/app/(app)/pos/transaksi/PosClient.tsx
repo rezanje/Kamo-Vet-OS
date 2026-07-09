@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { checkoutSale } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export type Item = { id: string; name: string; sell_price: number; target_species: string };
 export type Pet = { id: string; name: string; species: string | null };
@@ -168,9 +169,7 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
             </div>
           )}
 
-          <button type="submit" className="pay-btn" disabled={!canPay} style={{ marginTop: 8, opacity: canPay ? 1 : 0.5, cursor: canPay ? "pointer" : "not-allowed" }}>
-            <i className="ti ti-circle-check" /> Bayar {rp(total)}
-          </button>
+          <SubmitButton className="pay-btn" icon="ti-circle-check" disabled={!canPay} style={{ marginTop: 8, opacity: canPay ? 1 : 0.5 }} pendingText="Memproses…">Bayar {rp(total)}</SubmitButton>
         </div>
       </div>
     </form>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { buatPermintaanKasir } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 type Warehouse = { id: string; name: string };
 type Item = { id: string; code: string; name: string; unit: string; kategori: string; stok: number };
@@ -157,9 +158,7 @@ export function PersediaanBaruForm({
           <span style={{ fontSize: 11, color: "var(--tm)" }}>Dibuat Oleh</span>
           <input className="fi" value={userName} disabled style={{ background: "var(--sf1)", color: "var(--tm)", width: 220 }} />
         </div>
-        <button type="submit" className="pay-btn" style={{ width: "auto", padding: "9px 22px" }}>
-          <i className="ti ti-send" /> Kirim Permintaan
-        </button>
+        <SubmitButton className="pay-btn" icon="ti-send" style={{ width: "auto", padding: "9px 22px" }} pendingText="Mengirim…">Kirim Permintaan</SubmitButton>
       </div>
     </form>
   );

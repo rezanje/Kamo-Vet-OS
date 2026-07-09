@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
+import { SubmitButton } from "@/components/SubmitButton";
 import { createCompounding } from "@/app/(app)/klinik/racik/actions";
 import { DOSAGE_FORMS } from "@/lib/compounding";
 
@@ -92,9 +93,7 @@ export function RacikanForm({ visitId, medicalRecordId, items }: {
             Bahan yang cocok dengan inventory otomatis memotong stok cabang (Addendum §2).
           </div>
 
-          <button type="submit" className="pay-btn" style={{ marginTop: 14 }}>
-            <i className="ti ti-flask" /> Simpan Racikan
-          </button>
+          <SubmitButton className="pay-btn" icon="ti-flask" style={{ marginTop: 14 }} pendingText="Menyimpan…">Simpan Racikan</SubmitButton>
         </div>
       </div>
     </form>
