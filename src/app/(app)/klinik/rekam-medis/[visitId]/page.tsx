@@ -188,6 +188,11 @@ export default async function RekamMedisPage({
               <i className="ti ti-circle-check" /> Kunjungan selesai. Rekam medis terkunci (read-only).
             </div>
           )}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+            <Link href={`/klinik/rekam-medis/${visit.id}/dokumen`} className="btn-acc" style={{ textDecoration: "none", background: "#1d4ed8" }}>
+              <i className="ti ti-file-text" /> Cetak Rekam Medis
+            </Link>
+          </div>
           <div className="grid2">
             <div className="card">
               <div className="card-hd"><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</div>
