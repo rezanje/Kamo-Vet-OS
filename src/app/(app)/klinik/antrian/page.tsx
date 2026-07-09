@@ -58,28 +58,25 @@ export default async function AntrianPage({
   if (filter === "diperiksa") query = query.eq("status", "Diperiksa");
   if (filter === "selesai") query = query.eq("status", "Selesai");
 
-  const { data: visits } = await query;
+  // 3 query independen → jalan barengan (kurangi latency berurutan).
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const [{ data: visits }, { data: allWaiting }, { data: today }] = await Promise.all([
+    query,
+    supabase
+      .from("visits")
+      .select("id, poli, dokter, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone)")
+      .eq("status", "Menunggu")
+      .order("created_at", { ascending: true }),
+    supabase.from("visits").select("status").gte("created_at", startOfDay.toISOString()),
+  ]);
 
-  // Panel "Panggilan Berikutnya" + Informasi Poli (§4): selalu dari seluruh antrian Menunggu.
-  const { data: allWaiting } = await supabase
-    .from("visits")
-    .select("id, poli, dokter, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone)")
-    .eq("status", "Menunggu")
-    .order("created_at", { ascending: true });
   const nextUp = (allWaiting ?? [])[0];
-
   const poliCounts = new Map<string, number>();
   for (const v of allWaiting ?? []) poliCounts.set(v.poli, (poliCounts.get(v.poli) ?? 0) + 1);
   const waitPos = new Map<string, number>();
   (allWaiting ?? []).forEach((v, i) => waitPos.set(v.id as string, i));
 
-  // Counter hari ini (§3.3) — query terpisah, tidak terpengaruh filter tabel.
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const { data: today } = await supabase
-    .from("visits")
-    .select("status")
-    .gte("created_at", startOfDay.toISOString());
   const counts = { Menunggu: 0, Diperiksa: 0, Pembayaran: 0, Selesai: 0 };
   for (const v of today ?? []) {
     if (v.status in counts) counts[v.status as keyof typeof counts]++;

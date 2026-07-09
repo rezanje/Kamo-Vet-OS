@@ -83,28 +83,22 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
     };
   });
 
-  // ===== Rawat inap =====
+  // ===== Rawat inap + Racikan (independen → barengan) =====
   const visitIds = (history ?? []).map((v) => v.id as string);
-  const { data: inapRows } = visitIds.length
-    ? await supabase
-        .from("inpatient_records")
-        .select("id, visit_id, doctor_name, condition_status, admitted_at, discharged_at")
-        .in("visit_id", visitIds)
-        .order("admitted_at", { ascending: false })
-    : { data: [] };
+  const [{ data: inapRows }, { data: racikRows }] = visitIds.length
+    ? await Promise.all([
+        supabase.from("inpatient_records")
+          .select("id, visit_id, doctor_name, condition_status, admitted_at, discharged_at")
+          .in("visit_id", visitIds).order("admitted_at", { ascending: false }),
+        supabase.from("compounding_recipes")
+          .select("id, recipe_name, dosage_form, total_volume, status, created_at, medical_records!inner(visit_id)")
+          .in("medical_records.visit_id", visitIds).order("created_at", { ascending: false }),
+      ])
+    : [{ data: [] }, { data: [] }];
   const inap: InapEntry[] = (inapRows ?? []).map((r) => ({
     id: r.id as string, visitId: r.visit_id as string, doctor: r.doctor_name as string | null,
     condition: r.condition_status as string, admitted: r.admitted_at as string, discharged: r.discharged_at as string | null,
   }));
-
-  // ===== Racikan =====
-  const { data: racikRows } = visitIds.length
-    ? await supabase
-        .from("compounding_recipes")
-        .select("id, recipe_name, dosage_form, total_volume, status, created_at, medical_records!inner(visit_id)")
-        .in("medical_records.visit_id", visitIds)
-        .order("created_at", { ascending: false })
-    : { data: [] };
   const racikan: RacikanEntry[] = (racikRows ?? []).map((r) => ({
     id: r.id as string, recipe_name: r.recipe_name as string, dosage_form: r.dosage_form as string,
     total_volume: r.total_volume as string, status: r.status as string, date: r.created_at as string,

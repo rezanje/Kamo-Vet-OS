@@ -137,6 +137,10 @@ body {
 .kpos-bayar:hover:not(:disabled) { background: var(--posb-dk); }
 .kpos-bayar:disabled { opacity: .45; cursor: not-allowed; }
 
+/* Skeleton loading (loading.tsx) — feedback instan saat navigasi */
+@keyframes sk-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.sk { background: linear-gradient(90deg, var(--sf1), #ececec, var(--sf1)); border-radius: 8px; animation: sk-pulse 1.1s ease-in-out infinite; }
+
 /* Spinner tombol submit (SubmitButton) — cegah double-klik saat proses */
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 .btn-spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: btn-spin .6s linear infinite; vertical-align: -2px; margin-right: 4px; }
