@@ -26,6 +26,7 @@ export async function checkoutKasir(formData: FormData) {
 
   const branchId = shift!.branch_id;
   const customerId = String(formData.get("customerId") ?? "") || null;
+  if (!customerId) redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu sebelum bayar")}`);
   const metode = String(formData.get("metode") ?? "Tunai");
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
   const voucherCode = String(formData.get("voucherCode") ?? "").trim().toUpperCase() || null;

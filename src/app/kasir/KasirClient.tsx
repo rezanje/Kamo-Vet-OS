@@ -110,7 +110,7 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const total = computeTotals(cart, diskonVal, voucherVal, poinUsed).total;
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
-  const canPay = cart.length > 0 && !kurang && !voucherInvalid;
+  const canPay = cart.length > 0 && !kurang && !voucherInvalid && !!cust;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   const promoHits = useMemo(() => matchPromos(promos, cart), [promos, cart]);
@@ -164,7 +164,7 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
             <CustStat icon="ti-shopping-bag" label={`${cust.trx}`} sub="Total transaksi" />
           </>
         ) : (
-          <span style={{ fontSize: 11, color: "var(--td)" }}>Transaksi umum (tanpa member) — cari pelanggan untuk poin & tier.</span>
+          <span style={{ fontSize: 11, color: "#b91c1c" }}><i className="ti ti-alert-circle" style={{ marginRight: 3 }} />Pilih atau tambah pelanggan dulu — wajib diisi sebelum bayar.</span>
         )}
       </div>
 
