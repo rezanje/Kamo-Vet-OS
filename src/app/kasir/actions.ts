@@ -5,6 +5,42 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 
+export type NewCustResult =
+  | { ok: true; customer: { id: string; name: string; phone: string; points: number; tier: string | null; keanggotaan: string; trx: number } }
+  | { ok: false; error: string };
+
+// Tambah customer inline dari POS — insert + kembalikan row (BUKAN redirect: cart di client, jangan pindah halaman).
+export async function tambahCustomerKasir(formData: FormData): Promise<NewCustResult> {
+  const supabase = await createClient();
+
+  const nama = String(formData.get("nama") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim() || null;
+  const dob = String(formData.get("dob") ?? "") || null;
+  const alamat = String(formData.get("alamat") ?? "").trim() || null;
+  const pekerjaan = String(formData.get("pekerjaan") ?? "").trim() || null;
+  const sumber_info = String(formData.get("sumber_info") ?? "").trim() || null;
+  const keanggotaan = String(formData.get("keanggotaan") ?? "Non Member");
+  const tier = String(formData.get("tier") ?? "").trim() || null;
+  const catatan = String(formData.get("catatan") ?? "").trim() || null;
+
+  if (!nama || !phone) return { ok: false, error: "Nama dan No. HP wajib diisi" };
+
+  // dedup by phone — sama pola /crm/pelanggan/baru.
+  const { data: existing } = await supabase.from("customers").select("id").eq("phone", phone).maybeSingle();
+  if (existing) return { ok: false, error: "No HP sudah terdaftar" };
+
+  const { data, error } = await supabase
+    .from("customers")
+    .insert({ name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, keanggotaan, tier, catatan })
+    .select("id, name, phone, points, tier, keanggotaan")
+    .single();
+
+  if (error || !data) return { ok: false, error: error?.message ?? "Gagal simpan customer" };
+
+  return { ok: true, customer: { ...data, trx: 0 } };
+}
+
 // Shift gate POS kasir — logika sama dgn /pos/shift, redirect ke dunia kasir.
 export async function mulaiShiftKasir(formData: FormData) {
   const supabase = await createClient();
