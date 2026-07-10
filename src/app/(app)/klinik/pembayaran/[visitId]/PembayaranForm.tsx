@@ -237,9 +237,15 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, cat
 
           {/* Aksi */}
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: 6 }}>
-            <Link href={`/klinik/pembayaran/${visitId}/invoice`} className="btn-def" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", fontSize: 11, textDecoration: "none" }}>
-              <i className="ti ti-printer" /> Cetak
-            </Link>
+            {editMode ? (
+              <Link href={`/klinik/pembayaran/${visitId}/invoice`} className="btn-def" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", fontSize: 11, textDecoration: "none" }}>
+                <i className="ti ti-printer" /> Cetak
+              </Link>
+            ) : (
+              <span className="btn-def" title="Simpan invoice dulu sebelum cetak" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", fontSize: 11, opacity: 0.5, cursor: "not-allowed" }}>
+                <i className="ti ti-printer" /> Cetak
+              </span>
+            )}
             <SubmitButton className="btn-acc" name="finalize" value="0" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "#2563eb" }}>Simpan</SubmitButton>
             <SubmitButton className="kpos-bayar" name="finalize" value="1" icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>
           </div>
