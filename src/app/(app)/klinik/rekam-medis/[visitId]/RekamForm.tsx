@@ -89,7 +89,7 @@ export function RekamForm({ visitId, petId, patient, items, currentWeight }: {
                 <MiniKV k="Pemilik" v={patient.owner} />
                 <MiniKV k="Dokter" v={patient.dokter || "—"} />
                 <MiniKV k="No. HP" v={patient.phone} />
-                <MiniKV k="Kategori" v={patient.tier} />
+                <MiniKV k="Tier" v={patient.tier} />
               </div>
             </div>
           </div>

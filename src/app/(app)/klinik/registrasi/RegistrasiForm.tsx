@@ -113,20 +113,9 @@ export function RegistrasiForm({ branches, lockBranch = false }: { branches: { i
               <input className="fi" name="dob" type="date" defaultValue={customer?.dob ?? ""} key={`dob-${customer?.id ?? "new"}`} />
             </div>
           </div>
-          <div className="frow">
-            <div>
-              <label className="flab">Email</label>
-              <input className="fi" name="email" type="email" placeholder="susi@gmail.com" defaultValue={customer?.email ?? ""} key={`email-${customer?.id ?? "new"}`} />
-            </div>
-            <div>
-              <label className="flab">Kategori pelanggan</label>
-              <select className="fi" name="tier" defaultValue={customer?.tier ?? "New"} key={`tier-${customer?.id ?? "new"}`}>
-                <option value="New">Baru</option>
-                <option value="Silver">Silver</option>
-                <option value="Gold">Gold</option>
-                <option value="Platinum">Platinum</option>
-              </select>
-            </div>
+          <div className="fg">
+            <label className="flab">Email</label>
+            <input className="fi" name="email" type="email" placeholder="susi@gmail.com" defaultValue={customer?.email ?? ""} key={`email-${customer?.id ?? "new"}`} />
           </div>
           <div>
             <label className="flab">Alamat</label>

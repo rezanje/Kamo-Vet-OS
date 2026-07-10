@@ -11,7 +11,7 @@ export default async function PelangganPage() {
   const { data: custData } = await supabase
     .from("customers")
     .select(
-      "id, name, phone, email, dob, address, tier, keanggotaan, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
+      "id, name, phone, email, dob, address, tier, kategori, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
         "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)"
     )
     .order("total_spending", { ascending: false });
@@ -51,7 +51,30 @@ export default async function PelangganPage() {
     (ledByCust[l.customer_id] ??= []).push({ tgl: l.created_at, desc: l.description ?? "—", delta: l.delta, saldo: l.saldo });
   }
 
-  const enriched = customers.map((c) => ({ ...c, purchases: purByCust[c.id] ?? [], ledger: ledByCust[c.id] ?? [] }));
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const isAdmin = !!me && ["OWNER", "ADMIN"].includes(me.role);
 
-  return <PelangganClient customers={enriched} />;
+  // Agregat per unit (admin view). Petshop: sales.total. Klinik: invoices lunas via visits.
+  const statByCust: Record<string, { petshopCount: number; petshopTotal: number; klinikCount: number; klinikTotal: number }> = {};
+  if (isAdmin && ids.length) {
+    const [{ data: salesAgg }, { data: invAgg }] = await Promise.all([
+      supabase.from("sales").select("customer_id, total").in("customer_id", ids),
+      supabase.from("invoices").select("total, visits!inner(customer_id)").eq("paid_status", "Lunas").is("voided_at", null).in("visits.customer_id", ids),
+    ]);
+    for (const s of (salesAgg ?? []) as { customer_id: string; total: number }[]) {
+      const st = (statByCust[s.customer_id] ??= { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0 });
+      st.petshopCount++; st.petshopTotal += Number(s.total || 0);
+    }
+    for (const iv of (invAgg ?? []) as { total: number; visits: { customer_id: string } | { customer_id: string }[] }[]) {
+      const cid = Array.isArray(iv.visits) ? iv.visits[0]?.customer_id : iv.visits?.customer_id;
+      if (!cid) continue;
+      const st = (statByCust[cid] ??= { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0 });
+      st.klinikCount++; st.klinikTotal += Number(iv.total || 0);
+    }
+  }
+
+  const enriched = customers.map((c) => ({ ...c, purchases: purByCust[c.id] ?? [], ledger: ledByCust[c.id] ?? [], stat: statByCust[c.id] ?? null }));
+
+  return <PelangganClient customers={enriched} isAdmin={isAdmin} />;
 }

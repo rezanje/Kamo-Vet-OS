@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { updateKategoriPelanggan, KATEGORI_OPTIONS } from "./actions";
 
 export type PetRow = {
   id: string; name: string; species: string | null; breed: string | null;
@@ -11,13 +12,14 @@ export type PetRow = {
 };
 export type Purchase = { tgl: string; produk: string; qty: number; total: number; cabang: string; anabul: string };
 export type Ledger = { tgl: string; desc: string; delta: number; saldo: number };
+export type UnitStat = { petshopCount: number; petshopTotal: number; klinikCount: number; klinikTotal: number };
 export type CustomerRow = {
   id: string; name: string; phone: string; email: string | null;
   dob: string | null; address: string | null; tier: string | null;
-  keanggotaan: string; points: number; total_spending: number;
+  kategori: string; points: number; total_spending: number;
   catatan: string | null; pekerjaan: string | null; sumber_info: string | null;
   created_at: string; pets: PetRow[];
-  purchases: Purchase[]; ledger: Ledger[];
+  purchases: Purchase[]; ledger: Ledger[]; stat: UnitStat | null;
 };
 
 const fmt = (n: number) => n.toLocaleString("id-ID");
@@ -55,15 +57,12 @@ const TIER_CFG: Record<string, { label: string; bg: string; bd: string; color: s
 const TIER_ORDER = ["Bronze", "Silver", "Gold", "Platinum"];
 
 function TierBadge({ c }: { c: CustomerRow }) {
-  const cfg = c.keanggotaan === "Member" && c.tier ? TIER_CFG[c.tier] : null;
+  const cfg = c.tier ? TIER_CFG[c.tier] : null;
   if (!cfg) return <span style={{ color: "var(--td)" }}>—</span>;
   return <span className="bge" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>;
 }
-function MemberBadge({ v }: { v: string }) {
-  const isM = v === "Member";
-  return (
-    <span className="bge" style={{ background: isM ? "#eff6ff" : "#f3f4f6", color: isM ? "#1d4ed8" : "#6b7280" }}>{v}</span>
-  );
+function KategoriBadge({ v }: { v: string }) {
+  return <span className="bge" style={{ background: "#eff6ff", color: "#1d4ed8" }}>{v}</span>;
 }
 
 function SecHeader({ num, title, desc }: { num: string; title: string; desc: string }) {
@@ -119,16 +118,16 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
+export function PelangganClient({ customers, isAdmin }: { customers: CustomerRow[]; isAdmin: boolean }) {
   const [selId, setSelId] = useState<string | null>(customers[0]?.id ?? null);
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState("");
 
   const agg = useMemo(() => {
     const total = customers.length;
-    const member = customers.filter((c) => c.keanggotaan === "Member").length;
+    const member = customers.filter((c) => c.kategori === "Member").length;
     const tierCounts: Record<string, number> = {};
-    for (const k of TIER_ORDER) tierCounts[k] = customers.filter((c) => c.keanggotaan === "Member" && c.tier === k).length;
+    for (const k of TIER_ORDER) tierCounts[k] = customers.filter((c) => c.tier === k).length;
     return { total, member, nonMember: total - member, tierCounts };
   }, [customers]);
 
@@ -151,7 +150,7 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         {/* Section 01: Stats */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <SecHeader num="01" title="DATA PELANGGAN" desc="Ringkasan pelanggan berdasarkan kategori dan keanggotaan." />
+          <SecHeader num="01" title="DATA PELANGGAN" desc="Ringkasan pelanggan berdasarkan tier dan kategori." />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 7, marginBottom: 12 }}>
             {TIER_ORDER.map((k) => {
               const t = TIER_CFG[k];
@@ -214,7 +213,7 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
 
         {/* Section 02: Customer List */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <SecHeader num="02" title="DAFTAR PELANGGAN" desc="Data pelanggan berdasarkan kategori dan keanggotaan." />
+          <SecHeader num="02" title="DAFTAR PELANGGAN" desc="Data pelanggan berdasarkan tier dan kategori." />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <Link href="/crm/pelanggan/baru" className="btn-acc" style={{ fontSize: 11 }}>
               <i className="ti ti-plus" /> Tambah pelanggan
@@ -228,7 +227,7 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
             <table className="tbl" style={{ minWidth: 500 }}>
               <thead>
                 <tr>
-                  <th>No.</th><th>Nama Pelanggan</th><th>Keanggotaan</th><th>Kategori</th>
+                  <th>No.</th><th>Nama Pelanggan</th><th>Kategori</th><th>Tier</th>
                   <th style={{ textAlign: "right" }}>Total Pembelian</th>
                   <th style={{ textAlign: "center" }}>Anabul</th>
                   <th>Terdaftar Sejak</th><th>Aksi</th>
@@ -244,7 +243,7 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
                         <span style={{ fontWeight: 500, fontSize: 11.5 }}>{c.name}</span>
                       </div>
                     </td>
-                    <td><MemberBadge v={c.keanggotaan} /></td>
+                    <td><KategoriBadge v={c.kategori} /></td>
                     <td><TierBadge c={c} /></td>
                     <td style={{ textAlign: "right", fontWeight: 500, fontSize: 11 }}>{rp(c.total_spending)}</td>
                     <td style={{ textAlign: "center" }}>{c.pets.length}</td>
@@ -279,7 +278,17 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
                   <Av initials={initials(sel.name)} color={colorFor(sel.id)} size={40} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{sel.name}</div>
-                    <div style={{ marginTop: 4, display: "flex", gap: 5 }}><MemberBadge v={sel.keanggotaan} /><TierBadge c={sel} /></div>
+                    <div style={{ marginTop: 4, display: "flex", gap: 5 }}><KategoriBadge v={sel.kategori} /><TierBadge c={sel} /></div>
+                    {isAdmin && (
+                      <form action={updateKategoriPelanggan} style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
+                        <input type="hidden" name="id" value={sel.id} />
+                        <label style={{ fontSize: 10, color: "var(--tm)" }}>Kategori:</label>
+                        <select name="kategori" defaultValue={sel.kategori} className="fi" style={{ width: "auto", fontSize: 11, padding: "4px 8px" }} key={`kat-${sel.id}`}>
+                          {KATEGORI_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
+                        </select>
+                        <button type="submit" className="btn-acc" style={{ fontSize: 10, padding: "4px 10px" }}>Simpan</button>
+                      </form>
+                    )}
                   </div>
                   <div style={{ fontSize: 9.5, color: "var(--td)", textAlign: "right" }}>Terdaftar sejak<br />{fmtDate(sel.created_at)}</div>
                 </div>
@@ -298,6 +307,20 @@ export function PelangganClient({ customers }: { customers: CustomerRow[] }) {
                     <span style={{ fontSize: 11, fontWeight: 500, textAlign: "right", maxWidth: 180 }}>{row.val}</span>
                   </div>
                 ))}
+                {isAdmin && sel.stat && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 6 }}>RINCIAN TRANSAKSI (ADMIN)</div>
+                    {[
+                      { unit: "Petshop", count: sel.stat.petshopCount, total: sel.stat.petshopTotal },
+                      { unit: "Klinik", count: sel.stat.klinikCount, total: sel.stat.klinikTotal },
+                    ].map((u) => (
+                      <div key={u.unit} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
+                        <span>{u.unit}</span>
+                        <span>{u.count}x · {rp(u.total)} · rata2 {rp(u.count ? u.total / u.count : 0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
                   <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 5 }}>CATATAN</div>
                   <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>{sel.catatan ?? "—"}</div>

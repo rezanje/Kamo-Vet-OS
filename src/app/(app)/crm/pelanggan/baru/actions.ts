@@ -14,8 +14,6 @@ export async function simpanPelanggan(formData: FormData) {
   const alamat = String(formData.get("alamat") ?? "").trim() || null;
   const pekerjaan = String(formData.get("pekerjaan") ?? "").trim() || null;
   const sumber_info = String(formData.get("sumber_info") ?? "").trim() || null;
-  const keanggotaan = String(formData.get("keanggotaan") ?? "Non Member");
-  const tier = String(formData.get("tier") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
   if (!nama || !phone) {
@@ -37,18 +35,8 @@ export async function simpanPelanggan(formData: FormData) {
     );
   }
 
-  // tier: not-null di db (default 'New') — kirim undefined kalau kosong biar default kepakai, bukan null.
   const { error } = await supabase.from("customers").insert({
-    name: nama,
-    phone,
-    email,
-    dob,
-    address: alamat,
-    pekerjaan,
-    sumber_info,
-    keanggotaan,
-    tier: tier ?? undefined,
-    catatan,
+    name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, catatan,
   });
 
   if (error) {

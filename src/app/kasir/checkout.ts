@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { computeTotals, lineDiscount } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
+import { recomputeCustomerTier } from "@/lib/customer-tier";
 
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
@@ -56,11 +57,10 @@ export async function checkoutKasir(formData: FormData) {
 
   // poin divalidasi terhadap saldo pelanggan sebenarnya.
   let poinDigunakan = 0;
-  let custPoints = 0, custSpending = 0;
+  let custPoints = 0;
   if (customerId) {
     const { data: cust } = await supabase.from("customers").select("points, total_spending").eq("id", customerId).single();
     custPoints = cust?.points ?? 0;
-    custSpending = Number(cust?.total_spending) || 0;
     poinDigunakan = Math.min(poinReq, custPoints);
   } else if (poinReq > 0) {
     redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu untuk pakai poin")}`);
@@ -127,7 +127,8 @@ export async function checkoutKasir(formData: FormData) {
       saldo += poinEarned;
       await supabase.from("point_ledger").insert({ customer_id: customerId, delta: poinEarned, saldo, ref: noStruk, description: `Transaksi ${noStruk}` });
     }
-    await supabase.from("customers").update({ points: saldo, total_spending: custSpending + total }).eq("id", customerId);
+    await supabase.from("customers").update({ points: saldo }).eq("id", customerId);
+    await recomputeCustomerTier(supabase, customerId);
   }
 
   // Jurnal: pendapatan (PPN-inklusif, dipisah) + HPP. Total sudah net semua potongan.

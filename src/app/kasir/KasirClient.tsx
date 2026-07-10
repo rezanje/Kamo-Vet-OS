@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
 export type ItemRow = { id: string; code: string; name: string; harga: number; kategori: string; stok: number };
-export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; keanggotaan: string; trx: number };
+export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
 export type PromoRow = Promo & { valid_from?: string | null; valid_until?: string | null };
 type CartLine = {
@@ -19,6 +19,7 @@ type CartLine = {
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 const TIER_BADGE: Record<string, { bg: string; color: string }> = {
+  New: { bg: "#f1f5f9", color: "#475569" },
   Bronze: { bg: "#fef3c7", color: "#92400e" },
   Silver: { bg: "#f3f4f6", color: "#4b5563" },
   Gold: { bg: "#fef9c3", color: "#713f12" },
@@ -155,11 +156,17 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
           <>
             <CustStat icon="ti-user" label={cust.name} sub={cust.phone} />
             <CustStat icon="ti-star" label={`${cust.points.toLocaleString("id-ID")} Poin`} sub="Jumlah poin" accent />
-            <div>
-              <span className="bge" style={{ ...(TIER_BADGE[cust.tier ?? ""] ?? { bg: "#f3f4f6", color: "#6b7280" }), fontSize: 11, padding: "3px 12px" }}>
-                <i className="ti ti-crown" style={{ marginRight: 4 }} />{cust.keanggotaan === "Member" ? cust.tier ?? "Member" : "Non Member"}
+            <div style={{ textAlign: "center" }}>
+              <span className="bge" style={{ ...(TIER_BADGE[cust.tier ?? "New"] ?? { bg: "#f3f4f6", color: "#6b7280" }), fontSize: 11, padding: "3px 12px" }}>
+                <i className="ti ti-award" style={{ marginRight: 4 }} />{cust.tier ?? "New"}
               </span>
-              <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3, textAlign: "center" }}>Kategori</div>
+              <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3 }}>Tier</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <span className="bge" style={{ background: "#eff6ff", color: "#1d4ed8", fontSize: 11, padding: "3px 12px" }}>
+                {cust.kategori}
+              </span>
+              <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3 }}>Kategori</div>
             </div>
             <CustStat icon="ti-shopping-bag" label={`${cust.trx}`} sub="Total transaksi" />
           </>
@@ -476,12 +483,6 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
                 <input className="fi" name="pekerjaan" placeholder="Wiraswasta" /></div>
               <div className="fg"><label className="flab">Sumber Info</label>
                 <input className="fi" name="sumber_info" placeholder="Instagram, Teman, dll." /></div>
-            </div>
-            <div className="frow">
-              <div className="fg"><label className="flab">Keanggotaan</label>
-                <select className="fi" name="keanggotaan"><option value="Non Member">Non Member</option><option value="Member">Member</option></select></div>
-              <div className="fg"><label className="flab">Kategori / Tier</label>
-                <select className="fi" name="tier"><option value="">— Tidak ada —</option><option value="Bronze">Bronze</option><option value="Silver">Silver</option><option value="Gold">Gold</option><option value="Platinum">Platinum</option></select></div>
             </div>
             <div className="fg"><label className="flab">Catatan</label>
               <textarea className="fi" name="catatan" placeholder="Catatan tambahan..." rows={3} style={{ resize: "vertical" }} /></div>
