@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-
-export const KATEGORI_OPTIONS = ["Umum", "Member", "B2B", "Rescuer"] as const;
+import { KATEGORI_OPTIONS } from "./kategori";
 
 // Kategori pelanggan hanya boleh diubah OWNER/ADMIN (pola crm/promo).
 export async function updateKategoriPelanggan(formData: FormData) {

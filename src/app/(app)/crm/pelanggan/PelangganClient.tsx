@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { updateKategoriPelanggan, KATEGORI_OPTIONS } from "./actions";
+import { updateKategoriPelanggan } from "./actions";
+import { KATEGORI_OPTIONS } from "./kategori";
 
 export type PetRow = {
   id: string; name: string; species: string | null; breed: string | null;
