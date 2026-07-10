@@ -71,14 +71,14 @@ insert into item_categories (name, track_expiry, track_batch) values
   ('Jasa',              false, false);
 
 -- CRM demo pelanggan + anabul (idempotent by phone / name).
-insert into customers (name, phone, email, dob, address, tier, keanggotaan, points, total_spending, pekerjaan, sumber_info, catatan)
+insert into customers (name, phone, email, dob, address, tier, kategori, points, total_spending, pekerjaan, sumber_info, catatan)
 select * from (values
   ('Maria Cahyani','0812-3456-7890','maria.cahyani@email.com',date '1990-05-12','Jl. Cimanggu No. 4, Bogor','Platinum','Member',12560,12400000,'Dokter','Instagram','VIP — anabul banyak. Rutin vaksin tepat waktu. Aktif di promo member.'),
   ('Dewi Sandra','0812-9876-5432','dewi.s@gmail.com',date '1988-09-03','Jl. Pajajaran No. 21, Bogor','Gold','Member',7850,7850000,'Wiraswasta','Teman','Loyal, beli produk kucing premium. Prefer dihubungi via WhatsApp.'),
   ('Andi Rahman','0857-1234-5678','andi.r@gmail.com',date '1995-02-18','Jl. Tajur No. 9, Bogor','Silver','Member',3250,3250000,'Karyawan Swasta','Google Maps',null),
   ('Nadia Tania','0821-9999-8888','nadia.t@gmail.com',date '1999-11-27','Jl. Baranangsiang No. 12, Bogor','Bronze','Member',1560,1560000,'Mahasiswa','Instagram',null),
-  ('Budi Santoso','0878-5555-4444','budi.s@yahoo.com',date '1985-07-01','Jl. Warung Jambu No. 3, Bogor','New','Non Member',0,980000,'PNS','Walk-in','Baru daftar, belum pernah pakai layanan klinik.')
-) as v(name,phone,email,dob,address,tier,keanggotaan,points,total_spending,pekerjaan,sumber_info,catatan)
+  ('Budi Santoso','0878-5555-4444','budi.s@yahoo.com',date '1985-07-01','Jl. Warung Jambu No. 3, Bogor','New','Umum',0,980000,'PNS','Walk-in','Baru daftar, belum pernah pakai layanan klinik.')
+) as v(name,phone,email,dob,address,tier,kategori,points,total_spending,pekerjaan,sumber_info,catatan)
 where not exists (select 1 from customers c where c.phone = v.phone);
 
 insert into pets (customer_id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status)
