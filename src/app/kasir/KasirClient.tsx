@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { checkoutKasir, simpanDraft, hapusDraft } from "./checkout";
+import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
@@ -41,6 +43,23 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
   const [metode, setMetode] = useState("Tunai");
   const [bayar, setBayar] = useState(0);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [showAddCust, setShowAddCust] = useState(false);
+  const [addErr, setAddErr] = useState<string | null>(null);
+  const [addPending, startAdd] = useTransition();
+  const router = useRouter();
+
+  const submitNewCust = (fd: FormData) => {
+    setAddErr(null);
+    startAdd(async () => {
+      const res = await tambahCustomerKasir(fd);
+      if (!res.ok) { setAddErr(res.error); return; }
+      setCust(res.customer);
+      setCustQ(res.customer.name);
+      setPoin(0);
+      setShowAddCust(false);
+      router.refresh(); // masukkan customer baru ke daftar cari; state cart client tetap.
+    });
+  };
 
   const kategoris = useMemo(() => ["Semua", ...new Set(items.map((i) => i.kategori))], [items]);
 
@@ -137,6 +156,10 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
             </div>
           )}
         </div>
+        <button type="button" onClick={() => { setAddErr(null); setShowAddCust(true); }}
+          className="btn-def" style={{ padding: "6px 12px", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5, borderColor: "var(--posb)", color: "var(--posb)" }}>
+          <i className="ti ti-user-plus" /> Customer Baru
+        </button>
         {cust ? (
           <>
             <CustStat icon="ti-user" label={cust.name} sub={cust.phone} />
@@ -442,6 +465,63 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {showAddCust && (
+        <div onClick={() => !addPending && setShowAddCust(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+          <form action={submitNewCust} onClick={(e) => e.stopPropagation()}
+            className="card" style={{ width: 520, maxWidth: "100%", padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--posb)" }}>
+                <i className="ti ti-user-plus" style={{ marginRight: 6 }} />Tambah Customer Baru
+              </span>
+              <button type="button" onClick={() => setShowAddCust(false)} className="back-btn" style={{ marginLeft: "auto" }}><i className="ti ti-x" /></button>
+            </div>
+
+            {addErr && (
+              <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", marginBottom: 10 }}>
+                <i className="ti ti-alert-circle" /> {addErr}
+              </div>
+            )}
+
+            <div className="frow">
+              <div className="fg"><label className="flab">Nama <span style={{ color: "#dc2626" }}>*</span></label>
+                <input className="fi" name="nama" placeholder="Andi Santoso" required /></div>
+              <div className="fg"><label className="flab">No. HP <span style={{ color: "#dc2626" }}>*</span></label>
+                <input className="fi" name="phone" placeholder="081234567890" required /></div>
+            </div>
+            <div className="frow">
+              <div className="fg"><label className="flab">Email</label>
+                <input className="fi" name="email" type="email" placeholder="andi@email.com" /></div>
+              <div className="fg"><label className="flab">Tgl Lahir</label>
+                <input className="fi" name="dob" type="date" /></div>
+            </div>
+            <div className="fg"><label className="flab">Alamat</label>
+              <input className="fi" name="alamat" placeholder="Jl. Merdeka No. 10, Jakarta" /></div>
+            <div className="frow">
+              <div className="fg"><label className="flab">Pekerjaan</label>
+                <input className="fi" name="pekerjaan" placeholder="Wiraswasta" /></div>
+              <div className="fg"><label className="flab">Sumber Info</label>
+                <input className="fi" name="sumber_info" placeholder="Instagram, Teman, dll." /></div>
+            </div>
+            <div className="frow">
+              <div className="fg"><label className="flab">Keanggotaan</label>
+                <select className="fi" name="keanggotaan"><option value="Non Member">Non Member</option><option value="Member">Member</option></select></div>
+              <div className="fg"><label className="flab">Kategori / Tier</label>
+                <select className="fi" name="tier"><option value="">— Tidak ada —</option><option value="Bronze">Bronze</option><option value="Silver">Silver</option><option value="Gold">Gold</option><option value="Platinum">Platinum</option></select></div>
+            </div>
+            <div className="fg"><label className="flab">Catatan</label>
+              <textarea className="fi" name="catatan" placeholder="Catatan tambahan..." rows={3} style={{ resize: "vertical" }} /></div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+              <button type="button" onClick={() => setShowAddCust(false)} className="btn-def" disabled={addPending}>Batal</button>
+              <button type="submit" className="btn-acc" disabled={addPending}>
+                {addPending ? "Menyimpan..." : "Simpan & Pilih"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </>
