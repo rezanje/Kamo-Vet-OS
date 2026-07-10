@@ -37,6 +37,7 @@ export async function simpanPelanggan(formData: FormData) {
     );
   }
 
+  // tier: not-null di db (default 'New') — kirim undefined kalau kosong biar default kepakai, bukan null.
   const { error } = await supabase.from("customers").insert({
     name: nama,
     phone,
@@ -46,7 +47,7 @@ export async function simpanPelanggan(formData: FormData) {
     pekerjaan,
     sumber_info,
     keanggotaan,
-    tier,
+    tier: tier ?? undefined,
     catatan,
   });
 

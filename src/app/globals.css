@@ -87,6 +87,8 @@ body {
 .p2ban { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 8px; padding: 9px 12px; font-size: 11px; color: #92400e; margin-bottom: 12px; display: flex; align-items: center; gap: 9px; }
 .fi { width: 100%; padding: 6px 9px; border: .5px solid var(--bd); border-radius: 6px; font-size: 12px; color: var(--tx); background: #fff; outline: none; }
 .fi:focus { border-color: var(--acc); }
+.fi[type="number"]::-webkit-outer-spin-button, .fi[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.fi[type="number"] { -moz-appearance: textfield; }
 .flab { font-size: 10.5px; color: var(--tm); margin-bottom: 3px; display: block; }
 .frow { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 8px; }
 .fg { margin-bottom: 8px; }

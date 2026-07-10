@@ -30,9 +30,10 @@ export async function tambahCustomerKasir(formData: FormData): Promise<NewCustRe
   const { data: existing } = await supabase.from("customers").select("id").eq("phone", phone).maybeSingle();
   if (existing) return { ok: false, error: "No HP sudah terdaftar" };
 
+  // tier: not-null di db (default 'New') — kirim undefined kalau kosong biar default kepakai, bukan null.
   const { data, error } = await supabase
     .from("customers")
-    .insert({ name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, keanggotaan, tier, catatan })
+    .insert({ name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, keanggotaan, tier: tier ?? undefined, catatan })
     .select("id, name, phone, points, tier, keanggotaan")
     .single();
 
