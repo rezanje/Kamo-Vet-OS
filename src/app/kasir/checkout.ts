@@ -1,7 +1,6 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { computeTotals, lineDiscount } from "@/lib/pos-calc";
@@ -32,7 +31,6 @@ export async function checkoutKasir(formData: FormData) {
   const voucherCode = String(formData.get("voucherCode") ?? "").trim().toUpperCase() || null;
   const poinReq = Math.max(0, Math.floor(Number(formData.get("poinDigunakan")) || 0));
   const bayar = Number(formData.get("bayar")) || 0;
-  const draftId = String(formData.get("draftId") ?? "") || null;
 
   let cart: CartLine[] = [];
   try {
@@ -162,9 +160,6 @@ export async function checkoutKasir(formData: FormData) {
     }
   }
 
-  // draft yang dilanjutkan dihapus.
-  if (draftId) await supabase.from("sale_drafts").delete().eq("id", draftId);
-
   // Addendum §8: progres quest staff (best-effort, tidak mem-block checkout).
   if (user?.id) {
     await processQuestProgress(supabase, {
@@ -174,30 +169,4 @@ export async function checkoutKasir(formData: FormData) {
   }
 
   redirect(`/kasir/struk/${sale!.id}`);
-}
-
-export async function simpanDraft(formData: FormData) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data: shift } = await supabase
-    .from("cashier_shifts").select("id, branch_id").eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
-  if (!shift) redirect("/kasir/mulai");
-
-  const cart = String(formData.get("cart") ?? "[]");
-  const customerId = String(formData.get("customerId") ?? "") || null;
-  let parsed: unknown[] = [];
-  try { parsed = JSON.parse(cart); } catch { parsed = []; }
-  if (parsed.length === 0) redirect(`/kasir?error=${encodeURIComponent("Keranjang kosong, tidak ada yang disimpan")}`);
-
-  await supabase.from("sale_drafts").insert({ branch_id: shift!.branch_id, cashier_id: user?.id ?? null, customer_id: customerId, cart: parsed });
-  revalidatePath("/kasir");
-  redirect("/kasir");
-}
-
-export async function hapusDraft(formData: FormData) {
-  const supabase = await createClient();
-  const id = String(formData.get("id") ?? "");
-  if (id) await supabase.from("sale_drafts").delete().eq("id", id);
-  revalidatePath("/kasir");
-  redirect("/kasir");
 }

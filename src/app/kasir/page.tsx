@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
-import { KasirClient, type ItemRow, type CustRow, type DraftRow, type VoucherRow, type PromoRow } from "./KasirClient";
+import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -23,11 +23,10 @@ export default async function KasirPage({
   const shift = await getOpenShift(supabase as never, user.id);
   if (!shift) redirect("/kasir/mulai");
 
-  const [{ data: items }, { data: customers }, { data: salesCnt }, { data: drafts }, { data: vouchers }, { data: promos }] = await Promise.all([
+  const [{ data: items }, { data: customers }, { data: salesCnt }, { data: vouchers }, { data: promos }] = await Promise.all([
     supabase.from("items").select("id, code, name, sell_price, target_species, item_categories(name)").eq("is_active", true).order("name"),
     supabase.from("customers").select("id, name, phone, points, tier, keanggotaan").order("name"),
     supabase.from("sales").select("customer_id"),
-    supabase.from("sale_drafts").select("id, customer_id, cart, created_at").eq("cashier_id", user.id).order("created_at", { ascending: false }),
     supabase.from("vouchers").select("code, tipe, nilai").eq("is_active", true),
     supabase.from("promos").select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until").eq("is_active", true),
   ]);
@@ -66,7 +65,6 @@ export default async function KasirPage({
       branchName={shift.branchName}
       items={itemRows}
       customers={custRows}
-      drafts={(drafts ?? []) as unknown as DraftRow[]}
       vouchers={(vouchers ?? []) as unknown as VoucherRow[]}
       promos={promosActive as unknown as PromoRow[]}
       error={error}

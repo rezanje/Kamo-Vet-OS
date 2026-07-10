@@ -2,14 +2,13 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { checkoutKasir, simpanDraft, hapusDraft } from "./checkout";
+import { checkoutKasir } from "./checkout";
 import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
 export type ItemRow = { id: string; code: string; name: string; harga: number; kategori: string; stok: number };
 export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; keanggotaan: string; trx: number };
-export type DraftRow = { id: string; customer_id: string | null; cart: CartLine[]; created_at: string };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
 export type PromoRow = Promo & { valid_from?: string | null; valid_until?: string | null };
 type CartLine = {
@@ -26,8 +25,8 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
   Platinum: { bg: "#ede9fe", color: "#5b21b6" },
 };
 
-export function KasirClient({ branchName, items, customers, drafts, vouchers, promos = [], error }: {
-  branchName: string; items: ItemRow[]; customers: CustRow[]; drafts: DraftRow[]; vouchers: VoucherRow[]; promos?: PromoRow[]; error?: string;
+export function KasirClient({ branchName, items, customers, vouchers, promos = [], error }: {
+  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; promos?: PromoRow[]; error?: string;
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
@@ -42,7 +41,6 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
   const [voucher, setVoucher] = useState("");
   const [metode, setMetode] = useState("Tunai");
   const [bayar, setBayar] = useState(0);
-  const [draftId, setDraftId] = useState<string | null>(null);
   const [showAddCust, setShowAddCust] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addPending, startAdd] = useTransition();
@@ -120,14 +118,6 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
   const promoDismissed = dismissedAtCartLen === cart.length;
   const [showPromoList, setShowPromoList] = useState(false);
 
-  const loadDraft = (d: DraftRow) => {
-    setCart(d.cart ?? []);
-    setDraftId(d.id);
-    const c = customers.find((x) => x.id === d.customer_id) ?? null;
-    setCust(c);
-    setCustQ(c?.name ?? "");
-  };
-
   return (
     <>
       {error && (
@@ -175,22 +165,6 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
           </>
         ) : (
           <span style={{ fontSize: 11, color: "var(--td)" }}>Transaksi umum (tanpa member) — cari pelanggan untuk poin & tier.</span>
-        )}
-        {drafts.length > 0 && (
-          <div style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
-            <span style={{ fontSize: 9.5, color: "var(--tm)" }}>Draft:</span>
-            {drafts.slice(0, 3).map((d, i) => (
-              <span key={d.id} style={{ display: "inline-flex", gap: 4 }}>
-                <button type="button" onClick={() => loadDraft(d)} className="btn-def" style={{ padding: "3px 9px", fontSize: 10 }}>
-                  <i className="ti ti-file-import" /> #{i + 1} ({(d.cart ?? []).length} item)
-                </button>
-                <form action={hapusDraft}>
-                  <input type="hidden" name="id" value={d.id} />
-                  <button type="submit" className="back-btn" style={{ color: "#b91c1c", fontSize: 11 }} title="Hapus draft"><i className="ti ti-trash" /></button>
-                </form>
-              </span>
-            ))}
-          </div>
         )}
       </div>
 
@@ -271,12 +245,11 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
           <input type="hidden" name="voucherCode" value={v ? v.code : ""} />
           <input type="hidden" name="metode" value={metode} />
           <input type="hidden" name="bayar" value={bayar} />
-          {draftId && <input type="hidden" name="draftId" value={draftId} />}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--posb)", letterSpacing: ".03em" }}>KERANJANG BELANJA</span>
             {cart.length > 0 && (
-              <button type="button" onClick={() => { setCart([]); setDraftId(null); }} className="back-btn" style={{ color: "#b91c1c", fontSize: 10.5 }}>
+              <button type="button" onClick={() => setCart([])} className="back-btn" style={{ color: "#b91c1c", fontSize: 10.5 }}>
                 <i className="ti ti-trash" /> Kosongkan
               </button>
             )}
@@ -396,10 +369,7 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr", gap: 6 }}>
-              <SubmitButton formAction={simpanDraft} className="btn-def" icon="ti-device-floppy" style={{ padding: "9px 0", fontSize: 11.5 }} disabled={cart.length === 0} pendingText="…">Simpan Draft</SubmitButton>
-              <SubmitButton className="kpos-bayar" icon="ti-circle-check" disabled={!canPay} pendingText="Memproses…">Bayar {rp(total)}</SubmitButton>
-            </div>
+            <SubmitButton className="kpos-bayar" icon="ti-circle-check" disabled={!canPay} pendingText="Memproses…">Bayar {rp(total)}</SubmitButton>
           </div>
         </form>
       </div>
