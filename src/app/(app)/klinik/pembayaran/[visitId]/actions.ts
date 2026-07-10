@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
+import { recomputeCustomerTier } from "@/lib/customer-tier";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string };
 
@@ -85,7 +86,7 @@ export async function bayarVisit(formData: FormData) {
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
 
-  const { data: v } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+  const { data: v } = await supabase.from("visits").select("branch_id, customer_id").eq("id", visitId).maybeSingle();
 
   if (existing) {
     // §7: invoice Lunas tidak boleh diedit langsung — wajib Void & Reissue.
@@ -143,6 +144,7 @@ export async function bayarVisit(formData: FormData) {
     });
 
     await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
+    if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
     redirect(`${back}?success=edit`);
   }
 
@@ -176,6 +178,7 @@ export async function bayarVisit(formData: FormData) {
     lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus, metode_bayar: metode }),
   });
 
+  if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
   redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
 }
@@ -208,7 +211,7 @@ export async function voidAndReissue(formData: FormData) {
 
   // 2) balikkan jurnal invoice lama (buku besar tetap sinkron — §7 edge case).
   const dpp = Math.max(0, Number(inv!.subtotal) - Number(inv!.discount));
-  const { data: v } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+  const { data: v } = await supabase.from("visits").select("branch_id, customer_id").eq("id", visitId).maybeSingle();
   await postJournal(supabase, {
     tanggal: todayIso(), deskripsi: `Void invoice ${inv!.invoice_no}`, source: "klinik-void",
     sourceRef: inv!.invoice_no, branchId: v?.branch_id ?? null,
@@ -239,5 +242,6 @@ export async function voidAndReissue(formData: FormData) {
   // invoice baru belum dibayar → visit balik ke tahap Pembayaran.
   await supabase.from("visits").update({ status: "Pembayaran" }).eq("id", visitId);
 
+  if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
   redirect(`${back}?success=reissue`);
 }
