@@ -80,7 +80,8 @@ export function KasirClient({ branchName, items, customers, drafts, vouchers, pr
   const custHits = useMemo(() => {
     const s = custQ.trim().toLowerCase();
     if (!s || cust) return [];
-    return customers.filter((c) => c.phone.replace(/\D/g, "").includes(s.replace(/\D/g, "")) || c.name.toLowerCase().includes(s)).slice(0, 5);
+    const digits = s.replace(/\D/g, "");
+    return customers.filter((c) => (digits && c.phone.replace(/\D/g, "").includes(digits)) || c.name.toLowerCase().includes(s)).slice(0, 5);
   }, [customers, custQ, cust]);
 
   const add = (it: ItemRow) =>
