@@ -25,7 +25,7 @@ export default async function KasirPage({
 
   const [{ data: items }, { data: customers }, { data: salesCnt }, { data: vouchers }, { data: promos }] = await Promise.all([
     supabase.from("items").select("id, code, name, sell_price, target_species, item_categories(name)").eq("is_active", true).order("name"),
-    supabase.from("customers").select("id, name, phone, points, tier, keanggotaan").order("name"),
+    supabase.from("customers").select("id, name, phone, points, tier, kategori").order("name"),
     supabase.from("sales").select("customer_id"),
     supabase.from("vouchers").select("code, tipe, nilai").eq("is_active", true),
     supabase.from("promos").select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until").eq("is_active", true),
@@ -56,7 +56,7 @@ export default async function KasirPage({
     stok: stockMap[i.id] ?? 0,
   }));
 
-  const custRows: CustRow[] = ((customers ?? []) as { id: string; name: string; phone: string; points: number; tier: string | null; keanggotaan: string }[]).map((c) => ({
+  const custRows: CustRow[] = ((customers ?? []) as { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string }[]).map((c) => ({
     ...c, trx: trxCount[c.id] ?? 0,
   }));
 

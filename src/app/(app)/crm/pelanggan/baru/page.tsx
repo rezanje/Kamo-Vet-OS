@@ -29,7 +29,7 @@ export default async function TambahPelangganPage({
       )}
 
       <form action={simpanPelanggan}>
-        <div className="grid2">
+        <div>
           {/* Section 01: Data Pribadi */}
           <div className="crm-sec" style={{ marginBottom: 0 }}>
             <SecHeader num="01" title="DATA PRIBADI" desc="Informasi dasar pelanggan baru." />
@@ -77,40 +77,10 @@ export default async function TambahPelangganPage({
                 <input className="fi" name="sumber_info" placeholder="Instagram, Teman, dll." />
               </div>
             </div>
-          </div>
-
-          {/* Section 02: Keanggotaan */}
-          <div className="crm-sec" style={{ marginBottom: 0 }}>
-            <SecHeader num="02" title="KEANGGOTAAN" desc="Atur status keanggotaan dan kategori pelanggan." />
-
-            <div className="fg">
-              <label className="flab">Keanggotaan</label>
-              <select className="fi" name="keanggotaan">
-                <option value="Non Member">Non Member</option>
-                <option value="Member">Member</option>
-              </select>
-            </div>
-
-            <div className="fg">
-              <label className="flab">Kategori / Tier</label>
-              <select className="fi" name="tier">
-                <option value="">— Tidak ada —</option>
-                <option value="Bronze">Bronze</option>
-                <option value="Silver">Silver</option>
-                <option value="Gold">Gold</option>
-                <option value="Platinum">Platinum</option>
-              </select>
-            </div>
 
             <div className="fg">
               <label className="flab">Catatan</label>
-              <textarea
-                className="fi"
-                name="catatan"
-                placeholder="Catatan tambahan tentang pelanggan ini..."
-                rows={5}
-                style={{ resize: "vertical" }}
-              />
+              <textarea className="fi" name="catatan" placeholder="Catatan tambahan tentang pelanggan ini..." rows={5} style={{ resize: "vertical" }} />
             </div>
           </div>
         </div>

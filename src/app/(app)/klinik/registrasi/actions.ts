@@ -15,7 +15,6 @@ async function daftar(formData: FormData): Promise<string> {
   const dob = String(formData.get("dob") ?? "") || null;
   const email = String(formData.get("email") ?? "").trim() || null;
   const address = String(formData.get("address") ?? "") || null;
-  const tier = String(formData.get("tier") ?? "New") || "New";
   const catatan = String(formData.get("catatan") ?? "") || null;
 
   const petName = String(formData.get("petName") ?? "").trim();
@@ -57,7 +56,7 @@ async function daftar(formData: FormData): Promise<string> {
     customerId = existing.id;
   } else {
     const { data: created, error } = await supabase
-      .from("customers").insert({ name, phone, dob, email, address, tier, catatan }).select("id").single();
+      .from("customers").insert({ name, phone, dob, email, address, catatan }).select("id").single();
     if (error || !created) {
       redirect(`/klinik/registrasi?error=${encodeURIComponent(error?.message ?? "Gagal simpan pelanggan")}`);
     }
