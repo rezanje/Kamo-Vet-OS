@@ -75,11 +75,24 @@ export async function recomputeCustomerTier(supabase, customerId: string): Promi
 
 ### c) Kategori — fixed list, admin-only edit
 - Fixed di kode: `Umum`, `Member`, `B2B`, `Rescuer` (const array, satu tempat — reuse di form admin & seed).
-- **Create forms** (`KasirClient.tsx` modal `tambahCustomerKasir` di `src/app/kasir/actions.ts`, dan `/crm/pelanggan/baru`): hapus field Tier & Kategori/Keanggotaan sepenuhnya dari form + action. Customer baru selalu `kategori` default `'Umum'` (db default), `tier` default `'New'` (db default) — gak dikirim dari client sama sekali.
+- **Create forms — TIGA tempat** (bukan dua): hapus field Tier & Kategori/Keanggotaan sepenuhnya dari form + action. Customer baru selalu `kategori` default `'Umum'` (db default), `tier` default `'New'` (db default) — gak dikirim dari client sama sekali:
+  1. POS modal `tambahCustomerKasir` (`src/app/kasir/actions.ts` + form di `KasirClient.tsx`).
+  2. `/crm/pelanggan/baru` (`page.tsx` + `actions.ts`).
+  3. **Registrasi klinik** (`src/app/(app)/klinik/registrasi/RegistrasiForm.tsx` baris ~123 dropdown `name="tier"`, dan `actions.ts` yang insert `tier`) — form ini cuma punya picker tier (gak ada keanggotaan). Buang picker + stop kirim tier dari action.
+
+### c2) Blast radius rename `keanggotaan` → `kategori` (breaking — WAJIB semua kena)
+Rename kolom itu breaking; kalau ada pembaca kelewat, build/query pecah. File yang baca/tulis `keanggotaan` dan HARUS diganti ke `kategori`:
+- `src/app/kasir/page.tsx` (select + map ke CustRow), `src/app/kasir/KasirClient.tsx` (type `CustRow.keanggotaan` + badge), `src/app/kasir/actions.ts` (`NewCustResult` type + insert — insert-nya malah dibuang, lihat (c)).
+- `src/app/(app)/crm/pelanggan/page.tsx` (select), `PelangganClient.tsx` (type + badge display).
+- `src/app/(app)/crm/pelanggan/baru/page.tsx` + `actions.ts` (field dibuang, lihat (c)).
+- `supabase/seed.sql` baris ~74/81 (`insert into customers(... keanggotaan ...)` → `kategori`, dan sesuaikan nilai `Non Member`→`Umum`).
 - **CRM pelanggan detail** (`PelangganClient.tsx` + `actions.ts` baru di `src/app/(app)/crm/pelanggan/`): tambah kontrol edit Kategori (dropdown 4 pilihan + tombol simpan, server action `updateKategoriPelanggan`). Action cek role server-side (query `profiles.role`, tolak kalau bukan OWNER/ADMIN — pola sama `crm/promo/actions.ts`). Halaman `page.tsx` fetch role user saat ini, pass `isAdmin` boolean ke client component — kalau bukan admin, kontrol edit gak dirender (cuma badge read-only), form gak ada di DOM sama sekali (bukan cuma disabled).
 
 ### d) Tampilan POS petshop
 - `KasirClient.tsx` panel customer: pecah badge gabungan jadi 2 badge terpisah — **Tier** (read-only, `TIER_BADGE` map yang udah ada, tambah "New" eksplisit ke map biar gak fallback abu-abu generik) dan **Kategori** (read-only, badge simpel nampilin nilai `kategori` apa adanya). Gak ada kontrol edit di POS sama sekali (sesuai existing pattern — POS emang gak punya jalur admin actions).
+
+### d2) Klinik read-only displays (perbaikan label)
+Klinik nampilin `customers.tier` read-only di beberapa dokumen — sebagian besar cuma badge tier (award icon), biarin. TAPI `RekamForm.tsx` baris ~92 (`<MiniKV k="Kategori" v={patient.tier} />`) salah label: nampilin nilai **tier** tapi di-label "Kategori". Setelah tier & kategori jadi 2 konsep beda, ini menyesatkan. Fix: relabel jadi "Tier" (nilai yang ditampilin emang tier). Gak nambah field kategori ke dokumen klinik — requirement cuma minta kategori tampil di **dashboard POS**, bukan dokumen klinik (YAGNI). `dokumen/page.tsx` & `antrian/[id]/page.tsx` cuma badge tier tanpa label salah — biarin apa adanya.
 
 ### e) Admin aggregate view — breakdown per unit
 - Blok baru di `PelangganClient.tsx` detail panel, render cuma kalau `isAdmin`: dua baris **Petshop** dan **Klinik**, masing-masing (jumlah transaksi, total nilai, rata-rata/transaksi).
