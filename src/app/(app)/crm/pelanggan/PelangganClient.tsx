@@ -150,7 +150,7 @@ export function PelangganClient({ customers, isAdmin }: { customers: CustomerRow
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         {/* Section 01: Stats */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <SecHeader num="01" title="DATA PELANGGAN" desc="Ringkasan pelanggan berdasarkan kategori dan keanggotaan." />
+          <SecHeader num="01" title="DATA PELANGGAN" desc="Ringkasan pelanggan berdasarkan tier dan kategori." />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 7, marginBottom: 12 }}>
             {TIER_ORDER.map((k) => {
               const t = TIER_CFG[k];
@@ -213,7 +213,7 @@ export function PelangganClient({ customers, isAdmin }: { customers: CustomerRow
 
         {/* Section 02: Customer List */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <SecHeader num="02" title="DAFTAR PELANGGAN" desc="Data pelanggan berdasarkan kategori dan keanggotaan." />
+          <SecHeader num="02" title="DAFTAR PELANGGAN" desc="Data pelanggan berdasarkan tier dan kategori." />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <Link href="/crm/pelanggan/baru" className="btn-acc" style={{ fontSize: 11 }}>
               <i className="ti ti-plus" /> Tambah pelanggan
