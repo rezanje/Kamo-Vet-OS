@@ -134,13 +134,13 @@ export default async function RekamMedisPage({
           {STEPS.map((s, i) => {
             const done = i < activeStep;
             const active = i === activeStep;
-            const color = done ? "#16a34a" : active ? "var(--acc)" : "var(--td)";
+            const color = done || active ? "#2563eb" : "var(--td)";
             return (
               <div key={s} style={{ display: "flex", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{
                     width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
-                    background: done ? "#16a34a" : active ? "var(--acc)" : "#f3f4f6",
+                    background: done || active ? "#2563eb" : "#f3f4f6",
                     color: done || active ? "#fff" : "var(--td)",
                     display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600,
                   }}>
@@ -149,7 +149,7 @@ export default async function RekamMedisPage({
                   <span style={{ fontSize: 11, fontWeight: active ? 600 : 400, color }}>{s}</span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div style={{ flex: 1, height: 1.5, background: done ? "#16a34a" : "var(--bd)", margin: "0 9px" }} />
+                  <div style={{ flex: 1, height: 1.5, background: done ? "#2563eb" : "var(--bd)", margin: "0 9px" }} />
                 )}
               </div>
             );

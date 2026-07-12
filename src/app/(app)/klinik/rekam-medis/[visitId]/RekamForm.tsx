@@ -156,7 +156,7 @@ export function RekamForm({ visitId, petId, patient, items, currentWeight }: {
                           <div style={{ fontSize: 11.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</div>
                           <div style={{ fontSize: 9.5, color: "var(--tm)" }}>Stok {it.stok} {it.unit} · {rp(it.sell_price)}</div>
                         </div>
-                        <button type="button" onClick={() => addObat(it)} className="btn-acc" style={{ padding: "3px 8px", fontSize: 11, background: "#16a34a" }}>
+                        <button type="button" onClick={() => addObat(it)} className="btn-acc" style={{ padding: "3px 8px", fontSize: 11, background: "#2563eb" }}>
                           <i className="ti ti-plus" />
                         </button>
                       </div>
@@ -168,7 +168,7 @@ export function RekamForm({ visitId, petId, patient, items, currentWeight }: {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <input className="fi" placeholder="Nama jasa (mis. Konsultasi, Scaling gigi)" value={jasaNama} onChange={(e) => setJasaNama(e.target.value)} />
                   <input className="fi" type="number" min={0} step={1000} placeholder="Harga" value={jasaHarga || ""} onChange={(e) => setJasaHarga(Number(e.target.value))} />
-                  <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "#16a34a", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
+                  <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "#2563eb", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
                 </div>
               )}
               {tab === "Paket" && (
@@ -221,7 +221,8 @@ export function RekamForm({ visitId, petId, patient, items, currentWeight }: {
 
       {/* Aksi */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <SubmitButton className="btn-acc" icon="ti-arrow-right" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; lanjut pembayaran</SubmitButton>
+        <SubmitButton className="btn-def" icon="ti-printer" name="next" value="resep" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Cetak Resep</SubmitButton>
+        <SubmitButton className="btn-acc" icon="ti-bed" name="next" value="rawatinap" style={{ padding: "10px 20px", fontSize: 13, background: "#16a34a" }} pendingText="Menyimpan…">Simpan &amp; Lanjut Rawat Inap</SubmitButton>
       </div>
     </form>
   );

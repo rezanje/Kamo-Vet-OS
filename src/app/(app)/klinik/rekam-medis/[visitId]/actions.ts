@@ -22,6 +22,7 @@ export async function simpanRekamMedis(formData: FormData) {
   const diagnosis = String(formData.get("diagnosis") ?? "") || null;
   const follow_up = String(formData.get("follow_up") ?? "") || null;
   const catatan_resep = String(formData.get("catatan_resep") ?? "") || null;
+  const next = String(formData.get("next") ?? "");
 
   if (!visitId) {
     redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
@@ -70,5 +71,8 @@ export async function simpanRekamMedis(formData: FormData) {
   // §3.4: rekam medis selesai → lanjut tahap Pembayaran. keluhan disinkron ke visit.
   await supabase.from("visits").update({ status: "Pembayaran", dokter, keluhan }).eq("id", visitId);
 
-  redirect(`/klinik/pembayaran/${visitId}`);
+  // Tujuan setelah simpan tergantung tombol yg dipencet.
+  if (next === "resep") redirect(`${back}/resep`);            // cetak resep
+  if (next === "rawatinap") redirect(back);                   // form admit rawat inap ada di view recorded
+  redirect(`/klinik/pembayaran/${visitId}`);                  // fallback
 }
