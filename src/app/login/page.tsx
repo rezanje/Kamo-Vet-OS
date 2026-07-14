@@ -12,17 +12,17 @@ export default async function LoginPage({
     <main className="flex flex-1 items-center justify-center p-6">
       <form
         action={login}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-black/10 dark:border-white/15 p-6"
+        className="w-full max-w-sm space-y-4 rounded-lg border border-black/10 p-6 text-black"
       >
         <div>
           <h1 className="text-xl font-semibold">VetOS</h1>
-          <p className="text-sm text-black/60 dark:text-white/60">
+          <p className="text-sm text-black/60">
             Masuk ke platform Kamo Group
           </p>
         </div>
 
         {error && (
-          <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
         )}
@@ -33,7 +33,7 @@ export default async function LoginPage({
             name="email"
             type="email"
             required
-            className="w-full rounded border border-black/15 dark:border-white/20 bg-transparent px-3 py-2"
+            className="w-full rounded border border-black/15 bg-white px-3 py-2 text-black"
           />
         </label>
 
@@ -43,7 +43,7 @@ export default async function LoginPage({
             name="password"
             type="password"
             required
-            className="w-full rounded border border-black/15 dark:border-white/20 bg-transparent px-3 py-2"
+            className="w-full rounded border border-black/15 bg-white px-3 py-2 text-black"
           />
         </label>
 
@@ -55,8 +55,8 @@ export default async function LoginPage({
         </SubmitButton>
 
         {/* Demo only: daftar akun uji coba biar gampang login. Hapus sebelum produksi. */}
-        <div className="rounded border border-dashed border-black/20 dark:border-white/25 p-3 text-xs text-black/60 dark:text-white/60 space-y-1">
-          <p className="font-semibold text-black/70 dark:text-white/70">Akun demo (password: password123)</p>
+        <div className="rounded border border-dashed border-black/20 p-3 text-xs text-black/60 space-y-1">
+          <p className="font-semibold text-black/70">Akun demo (password: password123)</p>
           <p><span className="font-medium">owner@vetos.local</span> — OWNER</p>
           <p><span className="font-medium">claude-test@vetos.local</span> — ADMIN</p>
           <p><span className="font-medium">staff@vetos.local</span> — STAFF (kasir)</p>
