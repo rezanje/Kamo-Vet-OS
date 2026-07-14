@@ -2,21 +2,27 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances, getAccountLedger } from "@/lib/ledger";
+import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string }> }) {
-  const { akun } = await searchParams;
+export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string }> }) {
+  const { akun, dari, sampai } = await searchParams;
   const supabase = await createClient();
-  const balances = await getAccountBalances(supabase as never);
+  const filter = { from: dari || undefined, to: sampai || undefined };
+  const balances = await getAccountBalances(supabase as never, filter);
 
   const totalDebit = balances.reduce((a, b) => a + b.debit, 0);
   const totalKredit = balances.reduce((a, b) => a + b.credit, 0);
   const seimbang = Math.round(totalDebit) === Math.round(totalKredit);
 
   const selected = akun ? balances.find((b) => b.code === akun) : null;
-  const ledger = selected ? await getAccountLedger(supabase as never, selected.code) : [];
+  const ledger = selected ? await getAccountLedger(supabase as never, selected.code, filter) : [];
+  const qs = (extra: string) => {
+    const parts = [dari ? `dari=${dari}` : "", sampai ? `sampai=${sampai}` : "", extra].filter(Boolean);
+    return parts.length ? `?${parts.join("&")}` : "";
+  };
 
   // saldo berjalan untuk akun terpilih
   const ledgerRows = ledger.reduce<(typeof ledger[number] & { saldo: number })[]>((acc, l) => {
@@ -36,6 +42,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
 
       <div className="crm-sec">
         <SecHeader num="01" title="RINGKASAN BUKU BESAR" desc="Saldo seluruh akun (neraca saldo / trial balance)." />
+        <PeriodFilter basePath="/keuangan/buku-besar" dari={dari} sampai={sampai} />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 560 }}>
             <thead>
@@ -50,7 +57,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                   <td style={{ textAlign: "right", fontSize: 11 }}>{b.debit ? rp(b.debit) : "—"}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{b.credit ? rp(b.credit) : "—"}</td>
                   <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(b.saldo)}</td>
-                  <td><Link href={`/keuangan/buku-besar?akun=${b.code}`} className="back-btn" style={{ fontSize: 11 }} title="Lihat mutasi"><i className="ti ti-eye" /></Link></td>
+                  <td><Link href={`/keuangan/buku-besar${qs(`akun=${b.code}`)}`} className="back-btn" style={{ fontSize: 11 }} title="Lihat mutasi"><i className="ti ti-eye" /></Link></td>
                 </tr>
               ))}
             </tbody>
@@ -71,7 +78,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
       {selected && (
         <div className="crm-sec">
           <SecHeader num="02" title={`MUTASI — ${selected.code} ${selected.name}`} desc="Rincian transaksi & saldo berjalan."
-            action={<Link href="/keuangan/buku-besar" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>Tutup</Link>} />
+            action={<Link href={`/keuangan/buku-besar${qs("")}`} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>Tutup</Link>} />
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 560 }}>
               <thead>

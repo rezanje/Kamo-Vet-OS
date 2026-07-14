@@ -53,22 +53,33 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
       .from("journal_entries")
       .select("*", { count: "exact", head: true })
       .like("no_jurnal", `${prefix}-%`);
-    const noJurnal = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
 
-    // Insert journal_entries.
-    const { data: entry, error: entryErr } = await supabase
-      .from("journal_entries")
-      .insert({
-        no_jurnal: noJurnal,
-        tanggal,
-        deskripsi,
-        source,
-        source_ref: sourceRef ?? null,
-        branch_id: branchId ?? null,
-      })
-      .select("id")
-      .single();
-    if (entryErr || !entry) return;
+    // count+1 bisa race di request paralel; unique constraint jadi backstop —
+    // kalau tabrakan (23505), coba ulang dengan nomor berikutnya lalu suffix acak.
+    const seq = (count ?? 0) + 1;
+    const candidates = [
+      `${prefix}-${String(seq).padStart(4, "0")}`,
+      `${prefix}-${String(seq + 1).padStart(4, "0")}`,
+      `${prefix}-${String(seq).padStart(4, "0")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+    ];
+    let entry: { id: string } | null = null;
+    for (const noJurnal of candidates) {
+      const { data, error: entryErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          no_jurnal: noJurnal,
+          tanggal,
+          deskripsi,
+          source,
+          source_ref: sourceRef ?? null,
+          branch_id: branchId ?? null,
+        })
+        .select("id")
+        .single();
+      if (data) { entry = data; break; }
+      if (entryErr?.code !== "23505") return; // error lain: menyerah (best-effort)
+    }
+    if (!entry) return;
 
     // Insert journal_lines.
     const lineRows = active.map((l) => ({

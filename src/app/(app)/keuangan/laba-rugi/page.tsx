@@ -2,12 +2,17 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances } from "@/lib/ledger";
+import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function LabaRugiPage() {
+export default async function LabaRugiPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }> }) {
+  const { dari, sampai, cabang } = await searchParams;
   const supabase = await createClient();
-  const balances = await getAccountBalances(supabase as never);
+  const [balances, { data: branches }] = await Promise.all([
+    getAccountBalances(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
+    supabase.from("branches").select("id, name").order("name"),
+  ]);
 
   const pendapatan = balances.filter((b) => b.type === "PENDAPATAN" && b.saldo !== 0);
   const beban = balances.filter((b) => b.type === "BEBAN" && b.saldo !== 0);
@@ -28,7 +33,8 @@ export default async function LabaRugiPage() {
       </div>
 
       <div className="crm-sec">
-        <SecHeader num="01" title="LABA RUGI" desc="Pendapatan dikurangi beban (seluruh periode)." />
+        <SecHeader num="01" title="LABA RUGI" desc={dari || sampai ? `Periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Pendapatan dikurangi beban (seluruh periode)."} />
+        <PeriodFilter basePath="/keuangan/laba-rugi" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} />
 
         <Group title="PENDAPATAN" rows={pendapatan} />
         <TotalRow label="Total Pendapatan" value={totalPendapatan} />

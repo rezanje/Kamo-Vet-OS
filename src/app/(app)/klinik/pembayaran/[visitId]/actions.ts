@@ -93,6 +93,13 @@ export async function bayarVisit(formData: FormData) {
     if (existing.paid_status === "Lunas") {
       redirect(`${back}?error=${encodeURIComponent("Invoice lunas tidak boleh diedit — gunakan Void & Terbitkan Ulang")}`);
     }
+    // Invoice yang sudah menerima pelunasan piutang juga tidak boleh diedit langsung —
+    // jurnal pelunasannya tidak ikut ter-reverse oleh jalur edit.
+    const { count: payCount } = await supabase
+      .from("invoice_payments").select("*", { count: "exact", head: true }).eq("invoice_id", existing.id);
+    if ((payCount ?? 0) > 0) {
+      redirect(`${back}?error=${encodeURIComponent("Invoice sudah menerima pelunasan piutang — gunakan Void & Terbitkan Ulang")}`);
+    }
 
     const { data: oldItems } = await supabase
       .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", existing.id).order("created_at");
@@ -199,7 +206,13 @@ export async function voidAndReissue(formData: FormData) {
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, shift_id")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!inv) redirect(`${back}?error=${encodeURIComponent("Invoice aktif tidak ditemukan")}`);
-  if (inv!.paid_status !== "Lunas") redirect(`${back}?error=${encodeURIComponent("Void & Reissue hanya untuk invoice lunas — edit langsung saja")}`);
+  // Boleh void: invoice lunas, ATAU invoice yang sudah menerima pelunasan piutang
+  // (edit langsung diblokir untuk keduanya — jurnalnya harus di-reverse lewat sini).
+  const { data: invPays } = await supabase
+    .from("invoice_payments").select("tanggal, amount, metode").eq("invoice_id", inv!.id);
+  if (inv!.paid_status !== "Lunas" && (invPays ?? []).length === 0) {
+    redirect(`${back}?error=${encodeURIComponent("Void & Reissue hanya untuk invoice lunas / sudah ada pelunasan — edit langsung saja")}`);
+  }
 
   const { data: items } = await supabase
     .from("invoice_items").select("deskripsi, qty, harga, jenis").eq("invoice_id", inv!.id).order("created_at");
@@ -217,6 +230,23 @@ export async function voidAndReissue(formData: FormData) {
     sourceRef: inv!.invoice_no, branchId: v?.branch_id ?? null,
     lines: invoiceJournalLines({ total: Number(inv!.total), dpp, tax: Number(inv!.tax), dp_amount: Number(inv!.dp_amount), paid_status: inv!.paid_status, metode_bayar: inv!.metode_bayar }, true),
   });
+
+  // 2b) invoice belum-lunas dengan pelunasan parsial: jurnal pelunasannya (Dr kas / Cr piutang)
+  // tidak tercakup reversal di atas — balikkan satu per satu. (Kalau Lunas, reversal
+  // berbentuk-Lunas di atas sudah menetralkan kas & piutang sekaligus.)
+  if (inv!.paid_status !== "Lunas") {
+    for (const p of invPays ?? []) {
+      const kasCode = p.metode === "Tunai" ? "1101" : "1102";
+      await postJournal(supabase, {
+        tanggal: todayIso(), deskripsi: `Void pelunasan piutang ${inv!.invoice_no}`, source: "klinik-void",
+        sourceRef: inv!.invoice_no, branchId: v?.branch_id ?? null,
+        lines: [
+          { code: "1201", debit: Number(p.amount), credit: 0 },
+          { code: kasCode, debit: 0, credit: Number(p.amount) },
+        ],
+      });
+    }
+  }
 
   // 3) terbitkan invoice baru (Belum Lunas) dgn item yang sama, reference ke yang lama.
   const newNo = await nextInvoiceNo(supabase);

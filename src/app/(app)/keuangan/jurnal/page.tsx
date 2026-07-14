@@ -24,7 +24,19 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   manual:  { label: "Manual",  cls: "x" },
   expense: { label: "Expense", cls: "o" },
   sale:    { label: "Sale",    cls: "b" },
+  "sale-hpp": { label: "HPP", cls: "b" },
   shift:   { label: "Shift",   cls: "g" },
+  klinik:  { label: "Klinik",  cls: "g" },
+  "klinik-edit": { label: "Edit Inv", cls: "o" },
+  "klinik-void": { label: "Void Inv", cls: "r" },
+  "klinik-ar": { label: "Pelunasan AR", cls: "g" },
+  purchase: { label: "Pembelian", cls: "b" },
+  "purchase-pay": { label: "Bayar AP", cls: "o" },
+  "stock-in": { label: "Stok Masuk", cls: "b" },
+  payroll: { label: "Payroll", cls: "x" },
+  "bank-rec": { label: "Rekon Bank", cls: "b" },
+  asset: { label: "Aset", cls: "x" },
+  depreciation: { label: "Penyusutan", cls: "x" },
 };
 
 export default async function JurnalPage({

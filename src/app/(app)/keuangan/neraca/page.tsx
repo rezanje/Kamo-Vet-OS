@@ -2,12 +2,15 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances } from "@/lib/ledger";
+import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function NeracaPage() {
+export default async function NeracaPage({ searchParams }: { searchParams: Promise<{ sampai?: string }> }) {
+  const { sampai } = await searchParams;
   const supabase = await createClient();
-  const balances = await getAccountBalances(supabase as never);
+  // Neraca = posisi kumulatif s/d tanggal (bukan rentang) — laba berjalan ikut terpotong otomatis.
+  const balances = await getAccountBalances(supabase as never, { to: sampai || undefined });
 
   const aset = balances.filter((b) => b.type === "ASET" && b.saldo !== 0);
   const liabilitas = balances.filter((b) => b.type === "LIABILITAS" && b.saldo !== 0);
@@ -29,6 +32,8 @@ export default async function NeracaPage() {
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Neraca</span>
       </div>
+
+      <PeriodFilter basePath="/keuangan/neraca" sampai={sampai} tanggalOnly />
 
       <div className={`p2ban`} style={{ background: seimbang ? "#e8f5ee" : "#fef2f2", border: `.5px solid ${seimbang ? "#86efac" : "#fca5a5"}`, color: seimbang ? "#15803d" : "#b91c1c" }}>
         <i className={`ti ti-${seimbang ? "circle-check" : "alert-triangle"}`} /> {seimbang ? `Neraca seimbang — Aktiva = Pasiva = ${rp(totalAset)}` : "Neraca TIDAK seimbang — ada kesalahan posting!"}

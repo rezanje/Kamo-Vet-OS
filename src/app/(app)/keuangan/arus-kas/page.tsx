@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getCashMovements } from "@/lib/ledger";
+import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -9,17 +10,27 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const SRC: Record<string, { act: "operasi" | "investasi" | "pendanaan"; label: string }> = {
   sale: { act: "operasi", label: "Penerimaan penjualan POS" },
   klinik: { act: "operasi", label: "Penerimaan jasa klinik" },
+  "klinik-ar": { act: "operasi", label: "Pelunasan piutang pelanggan" },
+  "klinik-edit": { act: "operasi", label: "Koreksi invoice klinik" },
+  "klinik-void": { act: "operasi", label: "Void invoice klinik" },
   expense: { act: "operasi", label: "Pembayaran beban operasional" },
   payroll: { act: "operasi", label: "Pembayaran gaji karyawan" },
   shift: { act: "operasi", label: "Selisih kas kasir" },
   purchase: { act: "operasi", label: "Pembayaran pembelian" },
+  "purchase-pay": { act: "operasi", label: "Pembayaran hutang pembelian" },
   "stock-in": { act: "operasi", label: "Pembelian stok" },
+  "bank-rec": { act: "operasi", label: "Penyesuaian rekonsiliasi bank" },
+  asset: { act: "investasi", label: "Pembelian aset tetap" },
   manual: { act: "pendanaan", label: "Setoran modal / jurnal manual" },
 };
 
-export default async function ArusKasPage() {
+export default async function ArusKasPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }> }) {
+  const { dari, sampai, cabang } = await searchParams;
   const supabase = await createClient();
-  const { moves, saldoKasNow } = await getCashMovements(supabase as never);
+  const [{ moves, saldoKasNow, saldoAwal }, { data: branches }] = await Promise.all([
+    getCashMovements(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
+    supabase.from("branches").select("id, name").order("name"),
+  ]);
 
   const rows = moves.map((m) => {
     const cfg = SRC[m.source] ?? { act: "operasi" as const, label: m.source };
@@ -32,7 +43,7 @@ export default async function ArusKasPage() {
   const sub = (arr: typeof rows) => arr.reduce((a, r) => a + r.net, 0);
   const netOperasi = sub(operasi), netInvestasi = sub(investasi), netPendanaan = sub(pendanaan);
   const kenaikan = netOperasi + netInvestasi + netPendanaan;
-  const saldoAwal = 0; // ponytail: all-time dari nol; per-periode saat closing bulanan ada.
+  // saldoAwal = posisi kas sebelum periode (dihitung dari jurnal, bukan hardcode).
   const saldoAkhir = saldoAwal + kenaikan;
   const sinkron = Math.round(saldoAkhir) === Math.round(saldoKasNow);
 
@@ -53,6 +64,7 @@ export default async function ArusKasPage() {
 
       <div className="crm-sec">
         <SecHeader num="01" title="ARUS KAS (METODE LANGSUNG)" desc="Pergerakan kas dari seluruh transaksi, dikelompokkan per aktivitas." />
+        <PeriodFilter basePath="/keuangan/arus-kas" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} />
 
         <Activity title="AKTIVITAS OPERASI" rows={operasi} subtotal={netOperasi} />
         <div style={{ height: 14 }} />
