@@ -60,6 +60,7 @@ export default async function LoginPage({
           <p><span className="font-medium">owner@vetos.local</span> — OWNER</p>
           <p><span className="font-medium">claude-test@vetos.local</span> — ADMIN</p>
           <p><span className="font-medium">staff@vetos.local</span> — STAFF (kasir)</p>
+          <p><span className="font-medium">finance@vetos.local</span> — FINANCE (keuangan)</p>
         </div>
       </form>
     </main>
