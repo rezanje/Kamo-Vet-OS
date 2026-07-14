@@ -11,6 +11,9 @@ export default async function MulaiPage() {
   const { data: profile } = await supabase
     .from("profiles").select("full_name, role").eq("id", user.id).maybeSingle();
 
+  // FINANCE tidak pegang POS — langsung ke dashboard, skip pilihan mode kerja.
+  if (profile?.role === "FINANCE") redirect("/");
+
   const nama = profile?.full_name ?? user.email ?? "Pengguna";
 
   return (
