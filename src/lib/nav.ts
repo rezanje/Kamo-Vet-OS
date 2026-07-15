@@ -23,6 +23,7 @@ export const MODULES: Module[] = [
   { id: "keuangan", label: "Keuangan", icon: "ti-report-money" },
   { id: "hris", label: "HRIS", icon: "ti-users" },
   { id: "crm", label: "CRM", icon: "ti-heart-handshake" },
+  { id: "perusahaan", label: "Perusahaan", icon: "ti-building-skyscraper" },
   { id: "pengaturan", label: "Pengaturan", icon: "ti-settings" },
 ];
 
@@ -107,6 +108,15 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Kategori pelanggan", icon: "ti-crown", ...P },
     { label: "Retensi & WA", icon: "ti-brand-whatsapp", ...G },
     { label: "Owner dashboard", icon: "ti-dashboard", ...B },
+  ],
+  perusahaan: [
+    { label: "Cabang", icon: "ti-building-community", ...B, href: "/pengaturan/cabang" },
+    { label: "Transaksi berulang", icon: "ti-repeat", ...G, nw: true },
+    { label: "Proses akhir bulan", icon: "ti-calendar-stats", ...G, nw: true },
+    { label: "Transaksi favorit", icon: "ti-star", ...P },
+    { label: "Persetujuan (approval)", icon: "ti-file-check", ...P },
+    { label: "Kalender", icon: "ti-calendar", ...P },
+    { label: "Log aktifitas", icon: "ti-history", ...P },
   ],
   pengaturan: [
     { label: "Cabang & gudang", icon: "ti-building-store", ...G, href: "/pengaturan/cabang" },
