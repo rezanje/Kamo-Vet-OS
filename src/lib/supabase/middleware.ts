@@ -45,15 +45,25 @@ export async function updateSession(request: NextRequest) {
   // (Dashboard, Keuangan, HRIS, dll) tetap bisa diakses langsung lewat URL kalau
   // nggak diblok di sini juga.
   const STAFF_ALLOWED = ["/me", "/kasir", "/klinik", "/mulai", "/login", "/auth"];
+  // FINANCE hanya dunia keuangan (selaras dgn sidebar & FINANCE_MODULES).
+  const FINANCE_ALLOWED = ["/", "/buku-besar", "/keuangan", "/me", "/mulai", "/login", "/auth"];
   if (user) {
     const path = request.nextUrl.pathname;
     const isInternal = path.startsWith("/_next") || path.startsWith("/api");
-    if (!isInternal && !STAFF_ALLOWED.some((p) => path === p || path.startsWith(p + "/"))) {
+    if (!isInternal) {
       const { data: profile } = await supabase
         .from("profiles").select("role").eq("id", user.id).maybeSingle();
-      if (profile?.role === "STAFF") {
+      const role = profile?.role;
+      const blockedStaff = role === "STAFF" && !STAFF_ALLOWED.some((p) => path === p || path.startsWith(p + "/"));
+      const blockedFinance = role === "FINANCE" && !FINANCE_ALLOWED.some((p) => path === p || path.startsWith(p + "/"));
+      if (blockedStaff) {
         const url = request.nextUrl.clone();
         url.pathname = "/mulai";
+        return NextResponse.redirect(url);
+      }
+      if (blockedFinance) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/";
         return NextResponse.redirect(url);
       }
     }

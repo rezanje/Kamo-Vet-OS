@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MODULES } from "@/lib/nav";
+import { MODULES, allowedModules } from "@/lib/nav";
 import { logout } from "@/app/login/actions";
 
 type Props = {
@@ -52,7 +52,10 @@ export function Sidebar({ branches, fullName, role }: Props) {
       </div>
 
       <div className="sb-nav">
-        {MODULES.map((m) => {
+        {(() => {
+          const allow = allowedModules(role);
+          return allow ? MODULES.filter((m) => allow.includes(m.id)) : MODULES;
+        })().map((m) => {
           const href = m.id === "dashboard" ? "/" : `/${m.id}`;
           return (
             <Link

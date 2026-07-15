@@ -32,6 +32,15 @@ export const MODULE_LABEL: Record<string, string> = Object.fromEntries(
   MODULES.map((m) => [m.id, m.label]),
 );
 
+// FINANCE hanya pegang dunia keuangan — sidebar & akses URL dibatasi ke modul ini.
+export const FINANCE_MODULES = ["dashboard", "buku-besar", "keuangan"];
+
+// Modul yang boleh diakses per role. Undefined = semua (OWNER/ADMIN).
+export function allowedModules(role: string): string[] | null {
+  if (role === "FINANCE") return FINANCE_MODULES;
+  return null; // full akses
+}
+
 const G = { bg: "#e8f5ee", fg: "#16a34a" }; // green
 const B = { bg: "#eff6ff", fg: "#2563eb" }; // blue
 const P = { bg: "#f3f0ff", fg: "#7c3aed" }; // purple
