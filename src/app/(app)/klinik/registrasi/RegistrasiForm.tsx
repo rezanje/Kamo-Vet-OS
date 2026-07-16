@@ -300,7 +300,7 @@ export function RegistrasiForm({ branches, lockBranch = false }: { branches: { i
 
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 12 }}>
         <Link href="/klinik" className="btn-def">Batal</Link>
-        <SubmitButton className="btn-def" style={{ fontWeight: 600 }} pendingText="Menyimpan…">Simpan pendaftaran</SubmitButton>
+        <SubmitButton className="btn-acc" style={{ fontWeight: 600 }} pendingText="Menyimpan…">Simpan pendaftaran</SubmitButton>
         <SubmitButton className="btn-acc" icon="ti-cash" formAction={registrasiDanBayar} pendingText="Memproses…">Simpan &amp; pembayaran</SubmitButton>
       </div>
     </form>
