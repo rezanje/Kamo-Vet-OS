@@ -39,6 +39,9 @@ export default async function RacikListPage({
         <Link href="/klinik" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Racik Obat</span>
+        <Link href="/klinik/bahan-baku" className="btn-def" style={{ marginLeft: "auto", padding: "5px 12px", fontSize: 11, textDecoration: "none" }}>
+          <i className="ti ti-flask-2" /> Kelola Bahan Baku
+        </Link>
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
