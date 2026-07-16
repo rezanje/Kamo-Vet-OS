@@ -2,8 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { stockDeductions } from "@/lib/compounding";
 
-type ResepItem = { nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string };
+type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
+type ResepItem = {
+  nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
+  ingredients?: RacikBahan[]; dosage_form?: string;
+};
 
 export async function simpanRekamMedis(formData: FormData) {
   const supabase = await createClient();
@@ -51,15 +56,58 @@ export async function simpanRekamMedis(formData: FormData) {
       medical_record_id: mr!.id,
       nama_obat: r.nama_obat.trim(),
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
-      satuan: r.satuan?.trim() || "pcs",
+      satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
       harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
       aturan_pakai: r.aturan_pakai?.trim() || null,
+      // racikan ditagih sebagai baris "obat" (invoice/struk existing tak berubah, nama-only otomatis).
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
     }));
   if (rows.length) {
     const { error: piErr } = await supabase.from("prescription_items").insert(rows);
     if (piErr) {
       redirect(`${back}?error=${encodeURIComponent(piErr.message)}`);
+    }
+  }
+
+  // Racikan → compounding_recipes (worklist apoteker) + BOM + potong stok bahan (spec §4).
+  const racikan = resep.filter((r) => r.jenis === "racikan" && (r.ingredients ?? []).length > 0);
+  if (racikan.length) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: visitRow } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+    const { data: wh } = visitRow
+      ? await supabase.from("warehouses").select("id").eq("branch_id", visitRow.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle()
+      : { data: null };
+
+    for (const r of racikan) {
+      const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
+      if (ings.length === 0) continue;
+      const total = ings.reduce((a, b) => a + (Number(b.harga) || 0) * (Number(b.qty) || 0), 0);
+
+      const { data: recipe } = await supabase
+        .from("compounding_recipes")
+        .insert({
+          medical_record_id: mr!.id, recipe_name: r.nama_obat.trim(),
+          dosage_instruction: r.aturan_pakai?.trim() || null,
+          dosage_form: r.dosage_form || null, total_price: total,
+          status: "pending", created_by: user?.id ?? null,
+        })
+        .select("id").single();
+      if (!recipe) continue;
+
+      await supabase.from("compounding_ingredients").insert(
+        ings.map((b) => ({
+          recipe_id: recipe.id, ingredient_name: b.nama, item_id: b.item_id,
+          quantity: Number(b.qty), unit: b.satuan || "pcs", unit_price: Number(b.harga) || 0,
+        })),
+      );
+
+      // potong stok bahan di gudang cabang (pola createCompounding).
+      if (wh) {
+        for (const d of stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))) {
+          const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", wh.id).eq("item_id", d.item_id).maybeSingle();
+          if (st) await supabase.from("stock").update({ qty: Number(st.qty) - d.qty, updated_at: new Date().toISOString() }).eq("warehouse_id", wh.id).eq("item_id", d.item_id);
+        }
+      }
     }
   }
 
