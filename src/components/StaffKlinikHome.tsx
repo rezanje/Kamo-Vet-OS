@@ -77,6 +77,13 @@ function HeroCard({ h }: { h: Hero }) {
 export function StaffKlinikHome({ fullName }: { fullName: string }) {
   return (
     <div className="skl-wrap">
+      {/* watermark paw + plus (dekoratif, ala referensi KAMO CLINIC) */}
+      <i className="ti ti-paw skl-deco" style={{ top: "12%", left: "6%", fontSize: 90 }} />
+      <i className="ti ti-paw skl-deco" style={{ bottom: "10%", left: "12%", fontSize: 60 }} />
+      <i className="ti ti-paw skl-deco" style={{ bottom: "16%", right: "8%", fontSize: 96 }} />
+      <i className="ti ti-plus skl-deco" style={{ top: "18%", right: "10%", fontSize: 54 }} />
+      <i className="ti ti-plus skl-deco" style={{ bottom: "8%", right: "26%", fontSize: 40 }} />
+
       <div className="skl-hero-head">
         <div className="skl-welcome">Selamat Datang!</div>
         <div className="skl-sub">Sistem Informasi Klinik Hewan</div>
@@ -91,7 +98,7 @@ export function StaffKlinikHome({ fullName }: { fullName: string }) {
         {/* LAIN-LAIN: kartu ungu berisi daftar fitur klinik lain */}
         <div className="skl-card">
           <div className="skl-icon" style={{ background: "#f3f0ff", color: "#7c3aed" }}>
-            <i className="ti ti-dots-circle-horizontal" />
+            <i className="ti ti-shopping-cart" />
           </div>
           <div className="skl-title" style={{ color: "#7c3aed" }}>
             LAIN-LAIN

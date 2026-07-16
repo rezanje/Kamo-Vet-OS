@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/Sidebar";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Clock } from "@/components/Clock";
+import { KlinikTopbar } from "@/components/KlinikTopbar";
+import { getOpenShift } from "@/lib/shift";
 
 export default async function AppLayout({
   children,
@@ -31,6 +33,7 @@ export default async function AppLayout({
   // STAFF cuma masuk (app) lewat alur kasir klinik (/klinik/shift & seterusnya) —
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
   const isStaff = profile?.role === "STAFF";
+  const staffBranch = isStaff ? await getOpenShift(supabase as never, user.id, "klinik") : null;
 
   return (
     <div className="shell">
@@ -42,10 +45,14 @@ export default async function AppLayout({
         />
       )}
       <div className="main">
-        <div className="topbar">
-          <Breadcrumb />
-          <Clock />
-        </div>
+        {isStaff ? (
+          <KlinikTopbar fullName={profile?.full_name ?? "Staff"} branchName={staffBranch?.branchName ?? "—"} />
+        ) : (
+          <div className="topbar">
+            <Breadcrumb />
+            <Clock />
+          </div>
+        )}
         <div className="ct">{children}</div>
       </div>
     </div>

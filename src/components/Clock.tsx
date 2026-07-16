@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 // Client-only to avoid SSR/client time hydration mismatch.
-export function Clock() {
+export function Clock({ light }: { light?: boolean } = {}) {
   const [now, setNow] = useState<string>("");
 
   useEffect(() => {
@@ -25,6 +25,6 @@ export function Clock() {
   }, []);
 
   return (
-    <span style={{ fontSize: 10.5, color: "var(--td)" }}>{now}</span>
+    <span style={{ fontSize: light ? 12 : 10.5, color: light ? "rgba(255,255,255,.9)" : "var(--td)" }}>{now}</span>
   );
 }

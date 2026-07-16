@@ -156,12 +156,24 @@ body {
 .btn-spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: btn-spin .6s linear infinite; vertical-align: -2px; margin-right: 4px; }
 
 /* Layar sambutan staff klinik (StaffKlinikHome) */
-.skl-wrap { min-height: 68vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 24px 8px; }
-.skl-hero-head { text-align: center; }
-.skl-welcome { font-size: 40px; font-weight: 800; color: var(--sb); line-height: 1.1; }
+.skl-wrap { position: relative; overflow: hidden; min-height: 72vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 36px 8px; border-radius: 18px; background: linear-gradient(160deg, #eef4ff 0%, #f6faff 55%, #eaf6f0 100%); }
+.skl-deco { position: absolute; color: #2563eb; opacity: .06; pointer-events: none; z-index: 0; }
+.skl-hero-head { text-align: center; position: relative; z-index: 1; }
+.skl-welcome { font-size: 42px; font-weight: 800; color: #1d4ed8; line-height: 1.1; }
+
+/* Header biru staff klinik (KlinikTopbar) */
+.klinik-topbar { height: 60px; background: linear-gradient(90deg, #1d4ed8, #2563eb); display: flex; align-items: center; justify-content: space-between; padding: 0 22px; color: #fff; flex-shrink: 0; }
+.kt-brand { display: flex; align-items: center; gap: 11px; }
+.kt-logo { width: 36px; height: 36px; border-radius: 9px; background: rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.kt-name { font-size: 15px; font-weight: 800; letter-spacing: .04em; line-height: 1.1; }
+.kt-sub { font-size: 10.5px; color: rgba(255,255,255,.8); }
+.kt-right { display: flex; align-items: center; gap: 10px; }
+.kt-divider { width: 1px; height: 22px; background: rgba(255,255,255,.28); }
+.kt-avatar { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.2); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.kt-user { font-size: 12.5px; font-weight: 600; }
 .skl-sub { font-size: 16px; color: var(--tm); margin-top: 8px; }
 .skl-hint { font-size: 12.5px; color: var(--td); margin-top: 10px; }
-.skl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; width: 100%; max-width: 960px; }
+.skl-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; width: 100%; max-width: 960px; }
 .skl-card { background: #fff; border: .5px solid var(--bd); border-radius: 16px; padding: 26px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05); transition: transform .12s, box-shadow .12s; }
 a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.09); }
 .skl-icon { width: 76px; height: 76px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 34px; }
@@ -174,8 +186,8 @@ a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,
 .skl-list li a:hover { color: #7c3aed; }
 .skl-list li.skl-soon { cursor: pointer; }
 .skl-list li.skl-soon:hover { color: var(--tx); }
-.skl-selesai { display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border: 1.5px solid var(--sb); border-radius: 10px; background: #fff; color: var(--sb); font-size: 13.5px; font-weight: 700; letter-spacing: .03em; text-decoration: none; }
-.skl-selesai:hover { background: var(--sb); color: #fff; }
+.skl-selesai { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border: 1.5px solid #1d4ed8; border-radius: 10px; background: #fff; color: #1d4ed8; font-size: 13.5px; font-weight: 700; letter-spacing: .03em; text-decoration: none; }
+.skl-selesai:hover { background: #1d4ed8; color: #fff; }
 @media (max-width: 780px) { .skl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skl-welcome { font-size: 30px; } }
 
 /* Print: sembunyikan chrome aplikasi, cetak hanya konten (dipakai lembar resep) */
