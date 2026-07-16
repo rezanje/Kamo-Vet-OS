@@ -11,7 +11,14 @@ function one<T>(r: Rel<T>): T | null {
 }
 
 // §3.4 visit state machine — 6 tahap sesuai desain dokter poli (referensi).
-const STEPS = ["Pendaftaran", "Antrian", "Rekam Medis", "Rawat Inap", "Racik Obat", "Pembayaran"];
+const STEPS: [string, string][] = [
+  ["Pendaftaran", "ti-file-plus"],
+  ["Antrian", "ti-users"],
+  ["Rekam Medis", "ti-stethoscope"],
+  ["Rawat Inap", "ti-bed"],
+  ["Racik Obat", "ti-flask"],
+  ["Pembayaran", "ti-credit-card"],
+];
 
 export default async function RekamMedisPage({
   params,
@@ -81,20 +88,25 @@ export default async function RekamMedisPage({
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
 
   // Daftar obat (POS) untuk form pemeriksaan — hanya diperlukan saat mode input.
-  let items: { id: string; name: string; unit: string; sell_price: number; stok: number }[] = [];
+  type ItemLiteFull = { id: string; name: string; unit: string; sell_price: number; stok: number; is_compound_material: boolean };
+  let obatItems: ItemLiteFull[] = [];
+  let bahanItems: ItemLiteFull[] = [];
   if (!recorded) {
     const { data: itemRows } = await supabase
-      .from("items").select("id, name, unit, sell_price").eq("is_active", true).order("name").limit(200);
+      .from("items").select("id, name, unit, sell_price, is_compound_material").eq("is_active", true).order("name").limit(400);
     const ids = (itemRows ?? []).map((i) => i.id);
     const { data: stockRows } = ids.length
       ? await supabase.from("stock").select("item_id, qty").in("item_id", ids)
       : { data: [] as { item_id: string; qty: number }[] };
     const stokByItem = new Map<string, number>();
     for (const s of stockRows ?? []) stokByItem.set(s.item_id as string, (stokByItem.get(s.item_id as string) ?? 0) + Number(s.qty));
-    items = (itemRows ?? []).map((i) => ({
+    const all: ItemLiteFull[] = (itemRows ?? []).map((i) => ({
       id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
       sell_price: Number(i.sell_price), stok: stokByItem.get(i.id as string) ?? 0,
+      is_compound_material: Boolean(i.is_compound_material),
     }));
+    obatItems = all.filter((i) => !i.is_compound_material);
+    bahanItems = all.filter((i) => i.is_compound_material);
   }
 
   const petIdCode = pet
@@ -128,28 +140,33 @@ export default async function RekamMedisPage({
         </div>
       )}
 
-      {/* Stepper status kunjungan (§3.4) */}
+      {/* Stepper status kunjungan (§3.4) — ikon + sub-status (ala referensi) */}
       <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-          {STEPS.map((s, i) => {
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
+          {STEPS.map(([s, ic], i) => {
             const done = i < activeStep;
             const active = i === activeStep;
-            const color = done || active ? "#2563eb" : "var(--td)";
+            const on = done || active;
+            const sub = done ? "Selesai" : active ? "Proses" : "Belum";
             return (
-              <div key={s} style={{ display: "flex", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div key={s} style={{ display: "flex", alignItems: "flex-start", flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                   <span style={{
-                    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
-                    background: done || active ? "#2563eb" : "#f3f4f6",
-                    color: done || active ? "#fff" : "var(--td)",
-                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600,
+                    width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+                    background: on ? "#2563eb" : "#f3f4f6",
+                    color: on ? "#fff" : "var(--td)",
+                    border: active ? "2px solid #93c5fd" : "none",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
                   }}>
-                    {done ? <i className="ti ti-check" /> : i + 1}
+                    {done ? <i className="ti ti-check" /> : <i className={`ti ${ic}`} />}
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: active ? 600 : 400, color }}>{s}</span>
+                  <div style={{ lineHeight: 1.2 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: active ? 700 : 500, color: on ? "#2563eb" : "var(--tm)" }}>{s}</div>
+                    <div style={{ fontSize: 9.5, color: active ? "#2563eb" : "var(--td)" }}>{sub}</div>
+                  </div>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div style={{ flex: 1, height: 1.5, background: done ? "#2563eb" : "var(--bd)", margin: "0 9px" }} />
+                  <div style={{ flex: 1, height: 2, background: done ? "#2563eb" : "var(--bd)", margin: "16px 9px 0" }} />
                 )}
               </div>
             );
@@ -308,7 +325,8 @@ export default async function RekamMedisPage({
           visitId={visit.id}
           petId={visit.pet_id}
           currentWeight={pet?.weight ?? null}
-          items={items}
+          items={obatItems}
+          bahanItems={bahanItems}
           patient={{
             name: pet?.name ?? "—",
             species: pet?.species ?? "—",
