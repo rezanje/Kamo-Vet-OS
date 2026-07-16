@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { PrintButton } from "@/components/PrintButton";
+import { PrintButton, AutoPrint } from "@/components/PrintButton";
 import { lineDiscount } from "@/lib/pos-calc";
 
 type Rel<T> = T | T[] | null;
@@ -10,8 +10,9 @@ function one<T>(r: Rel<T>): T | null {
 }
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function KasirStrukPage({ params }: { params: Promise<{ saleId: string }> }) {
+export default async function KasirStrukPage({ params, searchParams }: { params: Promise<{ saleId: string }>; searchParams: Promise<{ print?: string }> }) {
   const { saleId } = await params;
+  const autoPrint = (await searchParams).print === "1";
   const supabase = await createClient();
 
   const { data: sale } = await supabase
@@ -32,6 +33,7 @@ export default async function KasirStrukPage({ params }: { params: Promise<{ sal
   return (
     <>
       <style>{`@media print { @page { size: 80mm auto; margin: 3mm; } .pos-topbar { display: none !important; } }`}</style>
+      {autoPrint && <AutoPrint />}
 
       <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}>
         <Link href="/kasir" className="back-btn"><i className="ti ti-arrow-left" /> Transaksi baru</Link>

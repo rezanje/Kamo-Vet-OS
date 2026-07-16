@@ -170,5 +170,6 @@ export async function checkoutKasir(formData: FormData) {
     });
   }
 
-  redirect(`/kasir/struk/${sale!.id}`);
+  // Tunai: auto-cetak struk (fire window.print di halaman struk). Non-tunai: cetak manual.
+  redirect(`/kasir/struk/${sale!.id}${metode === "Tunai" ? "?print=1" : ""}`);
 }
