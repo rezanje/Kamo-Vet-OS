@@ -83,7 +83,7 @@ export async function simpanRekamMedis(formData: FormData) {
       if (ings.length === 0) continue;
       const total = ings.reduce((a, b) => a + (Number(b.harga) || 0) * (Number(b.qty) || 0), 0);
 
-      const { data: recipe } = await supabase
+      const { data: recipe, error: recipeErr } = await supabase
         .from("compounding_recipes")
         .insert({
           medical_record_id: mr!.id, recipe_name: r.nama_obat.trim(),
@@ -92,14 +92,19 @@ export async function simpanRekamMedis(formData: FormData) {
           status: "pending", created_by: user?.id ?? null,
         })
         .select("id").single();
-      if (!recipe) continue;
+      if (recipeErr || !recipe) {
+        redirect(`${back}?error=${encodeURIComponent(recipeErr?.message ?? "Gagal simpan racikan")}`);
+      }
 
-      await supabase.from("compounding_ingredients").insert(
+      const { error: ingErr } = await supabase.from("compounding_ingredients").insert(
         ings.map((b) => ({
           recipe_id: recipe.id, ingredient_name: b.nama, item_id: b.item_id,
           quantity: Number(b.qty), unit: b.satuan || "pcs", unit_price: Number(b.harga) || 0,
         })),
       );
+      if (ingErr) {
+        redirect(`${back}?error=${encodeURIComponent(ingErr.message)}`);
+      }
 
       // potong stok bahan di gudang cabang (pola createCompounding).
       if (wh) {

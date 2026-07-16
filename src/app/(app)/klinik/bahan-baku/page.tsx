@@ -15,7 +15,7 @@ export default async function BahanBakuPage() {
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (profile?.role === "STAFF") redirect("/klinik"); // master data admin-only
+  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") redirect("/klinik"); // master data admin-only (selaras RLS 0045)
 
   const { data } = await supabase
     .from("items")

@@ -316,7 +316,9 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
                             )}
                           </td>
                           <td style={{ textAlign: "center" }}>
-                            <input className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />
+                            {r.jenis === "racikan"
+                              ? <span style={{ fontSize: 10.5 }}>1</span>
+                              : <input className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>

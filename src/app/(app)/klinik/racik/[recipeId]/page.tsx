@@ -131,7 +131,7 @@ export default async function RacikDetailPage({
             <tbody>
               {recipes.map((rc, ri) => {
                 const ings = rc.compounding_ingredients ?? [];
-                const steps = String(rc.compounding_steps).split("\n").map((s) => s.trim()).filter(Boolean);
+                const steps = (rc.compounding_steps ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
                 return (
                   <tr key={rc.id}>
                     <td style={{ verticalAlign: "top", fontSize: 11, color: "var(--tm)" }}>{ri + 1}</td>
