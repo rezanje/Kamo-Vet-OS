@@ -2,11 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { expectedCash, invoiceCashRows, methodBreakdown, PAYMENT_METHODS } from "@/lib/shift-calc";
 import { SubmitButton } from "@/components/SubmitButton";
 import { mulaiShiftKlinik, tutupShiftKlinik } from "./actions";
-
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 // Layar "Mulai Shift" klinik (design-reference/klinik/01-shift-start.png):
 // wajib buka shift sebelum akses pembayaran klinik (Addendum §1).
@@ -23,12 +20,7 @@ export default async function KlinikShiftPage({
   const shift = await getOpenShift(supabase as never, user.id, "klinik");
 
   if (shift) {
-    // shift berjalan → ringkasan + tutup shift.
-    const { data: invoices } = await supabase
-      .from("invoices").select("total, dp_amount, paid_status, metode_bayar").eq("shift_id", shift.id);
-    const breakdown = methodBreakdown(invoiceCashRows(invoices ?? []));
-    const expected = expectedCash(Number(shift.opening_balance), breakdown);
-
+    // Kasir buta: hanya input kas fisik, tanpa breakdown/ekspektasi (spec 2026-07-17).
     return (
       <div style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
         <div style={{ textAlign: "center" }}>
@@ -43,18 +35,16 @@ export default async function KlinikShiftPage({
           </div>
         )}
         <div className="card" style={{ width: "100%", maxWidth: 460, padding: 22 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tm)", letterSpacing: ".04em", marginBottom: 8 }}>
-            KAS DITERIMA PER METODE (INVOICE SHIFT INI)
-          </div>
-          {PAYMENT_METHODS.map((m) => (
-            <div key={m} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: ".5px dashed var(--bd)" }}>
-              <span style={{ fontSize: 12, color: "var(--tm)" }}>{m}</span>
-              <span style={{ fontSize: 12.5, fontWeight: 600 }}>{rp(breakdown[m] ?? 0)}</span>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--sb)" }} />
             </div>
-          ))}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", marginBottom: 10 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700 }}>Kas seharusnya (modal + tunai)</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: "var(--acc)" }}>{rp(expected)}</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>HITUNG UANG DI KASIR</div>
+              <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>
+                Hitung total uang tunai fisik di laci, lalu masukkan jumlahnya untuk menutup shift.
+              </div>
+            </div>
           </div>
           <form action={tutupShiftKlinik}>
             <input type="hidden" name="shiftId" value={shift.id} />

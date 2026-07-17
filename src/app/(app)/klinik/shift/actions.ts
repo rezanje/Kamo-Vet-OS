@@ -62,5 +62,5 @@ export async function tutupShiftKlinik(formData: FormData) {
     });
   }
 
-  redirect(`/pos/shift/${shiftId}`);
+  redirect("/klinik?success=close");
 }
