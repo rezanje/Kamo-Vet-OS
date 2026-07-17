@@ -46,7 +46,7 @@ export async function updateSession(request: NextRequest) {
   // nggak diblok di sini juga.
   const STAFF_ALLOWED = ["/me", "/kasir", "/klinik", "/mulai", "/login", "/auth"];
   // FINANCE hanya dunia keuangan (selaras dgn sidebar & FINANCE_MODULES).
-  const FINANCE_ALLOWED = ["/", "/buku-besar", "/keuangan", "/me", "/mulai", "/login", "/auth"];
+  const FINANCE_ALLOWED = ["/", "/buku-besar", "/keuangan", "/me", "/mulai", "/login", "/auth", "/pos/shift"];
   if (user) {
     const path = request.nextUrl.pathname;
     const isInternal = path.startsWith("/_next") || path.startsWith("/api");

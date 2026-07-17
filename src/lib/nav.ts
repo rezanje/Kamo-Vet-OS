@@ -114,6 +114,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Rekonsiliasi bank", icon: "ti-building-bank", ...B, href: "/keuangan/rekonsiliasi" },
     { label: "Sinkronisasi jurnal", icon: "ti-refresh-dot", ...A, nw: true, href: "/keuangan/sinkron" },
     { label: "Lap. HPP", icon: "ti-report", ...G },
+    { label: "Shift kasir (selisih kas)", icon: "ti-clock-dollar", ...B, href: "/pos/shift" },
   ],
   hris: [
     { label: "Data karyawan", icon: "ti-user-circle", ...G, href: "/hris/karyawan" },
