@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { RekamForm } from "./RekamForm";
+import { RacikanInline } from "./RacikanInline";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -47,6 +48,7 @@ export default async function RekamMedisPage({
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
+  let mrId: string | null = null;
   let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
@@ -58,6 +60,7 @@ export default async function RekamMedisPage({
       .limit(1)
       .maybeSingle();
     record = mr;
+    mrId = mr?.id ?? null;
     if (mr) {
       const { data: pi } = await supabase
         .from("prescription_items")
@@ -87,11 +90,11 @@ export default async function RekamMedisPage({
   const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 5, Selesai: 6 };
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
 
-  // Daftar obat (POS) untuk form pemeriksaan — hanya diperlukan saat mode input.
+  // Daftar obat (form pemeriksaan) + bahan baku (racikan inline, dipakai juga di recorded view).
   type ItemLiteFull = { id: string; name: string; unit: string; sell_price: number; stok: number; is_compound_material: boolean };
   let obatItems: ItemLiteFull[] = [];
   let bahanItems: ItemLiteFull[] = [];
-  if (!recorded) {
+  {
     const { data: itemRows } = await supabase
       .from("items").select("id, name, unit, sell_price, is_compound_material").eq("is_active", true).order("name").limit(400);
     const ids = (itemRows ?? []).map((i) => i.id);
@@ -249,14 +252,10 @@ export default async function RekamMedisPage({
 
           {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
           <div className="card" style={{ marginTop: 12 }}>
-            <div className="card-hd" style={{ justifyContent: "space-between" }}>
+            <div className="card-hd">
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <i className="ti ti-flask" style={{ color: "#7c3aed" }} /> Obat racikan
               </span>
-              <Link href={`/klinik/rekam-medis/${visit.id}/racikan`} className="btn-acc"
-                style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <i className="ti ti-plus" /> Racikan baru
-              </Link>
             </div>
             {racikanList.length === 0 ? (
               <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada racikan untuk kunjungan ini.</div>
@@ -281,6 +280,11 @@ export default async function RekamMedisPage({
                   ))}
                 </tbody>
               </table>
+            )}
+            {mrId && (
+              <div style={{ marginTop: 10 }}>
+                <RacikanInline visitId={visit.id} medicalRecordId={mrId} bahanItems={bahanItems} />
+              </div>
             )}
           </div>
 

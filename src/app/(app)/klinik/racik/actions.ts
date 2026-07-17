@@ -5,8 +5,6 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nextStatus, stockDeductions, type RecipeStatus } from "@/lib/compounding";
 
-type IngredientInput = { ingredient_name: string; item_id: string | null; quantity: number; unit: string };
-
 // helper: gudang utama cabang (pola sama dgn checkout kasir).
 async function branchWarehouse(supabase: Awaited<ReturnType<typeof createClient>>, branchId: string) {
   const { data: wh } = await supabase
@@ -22,56 +20,59 @@ async function adjustStock(supabase: Awaited<ReturnType<typeof createClient>>, w
   }
 }
 
-export async function createCompounding(formData: FormData) {
+// Tambah racikan inline dari view rekam medis (recorded) — field ringkas sama seperti
+// tab Racikan di form pemeriksaan: nama, bentuk, aturan pakai, bahan+qty. total_volume &
+// petunjuk racik dibiarkan kosong (nullable, §0044). Semantik tulis = jalur simpanRekamMedis.
+export async function addRacikan(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   const medicalRecordId = String(formData.get("medicalRecordId") ?? "");
   const visitId = String(formData.get("visitId") ?? "");
-  const back = `/klinik/rekam-medis/${visitId}/racikan`;
+  const back = `/klinik/rekam-medis/${visitId}`;
 
   const recipeName = String(formData.get("recipe_name") ?? "").trim();
-  const dosage = String(formData.get("dosage_instruction") ?? "").trim();
-  const volume = String(formData.get("total_volume") ?? "").trim();
-  const form = String(formData.get("dosage_form") ?? "lainnya");
-  const steps = String(formData.get("compounding_steps") ?? "").trim();
-  if (!medicalRecordId || !recipeName || !dosage || !volume || !steps) {
-    redirect(`${back}?error=${encodeURIComponent("Lengkapi nama racikan, aturan pakai, jumlah, dan petunjuk racik")}`);
+  const form = String(formData.get("dosage_form") ?? "").trim() || null;
+  const aturan = String(formData.get("aturan_pakai") ?? "").trim() || null;
+  if (!medicalRecordId || !recipeName) {
+    redirect(`${back}?error=${encodeURIComponent("Lengkapi nama racikan")}`);
   }
 
-  let ings: IngredientInput[] = [];
+  type Bahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
+  let bahan: Bahan[] = [];
   try {
-    ings = JSON.parse(String(formData.get("ingredients") ?? "[]"));
+    bahan = JSON.parse(String(formData.get("ingredients") ?? "[]"));
   } catch {
-    ings = [];
+    bahan = [];
   }
-  const rows = ings.filter((i) => i.ingredient_name?.trim() && Number(i.quantity) > 0);
-  if (rows.length === 0) redirect(`${back}?error=${encodeURIComponent("Minimal 1 bahan racikan")}`);
+  const ings = bahan.filter((b) => b.item_id && Number(b.qty) > 0);
+  if (ings.length === 0) redirect(`${back}?error=${encodeURIComponent("Minimal 1 bahan racikan")}`);
+
+  const total = ings.reduce((a, b) => a + (Number(b.harga) || 0) * (Number(b.qty) || 0), 0);
 
   const { data: recipe, error: rErr } = await supabase
     .from("compounding_recipes")
     .insert({
-      medical_record_id: medicalRecordId, recipe_name: recipeName, dosage_instruction: dosage,
-      total_volume: volume, dosage_form: form, compounding_steps: steps, created_by: user?.id ?? null,
+      medical_record_id: medicalRecordId, recipe_name: recipeName,
+      dosage_instruction: aturan, dosage_form: form, total_price: total,
+      status: "pending", created_by: user?.id ?? null,
     })
     .select("id").single();
   if (rErr || !recipe) redirect(`${back}?error=${encodeURIComponent(rErr?.message ?? "Gagal simpan racikan")}`);
 
   const { error: iErr } = await supabase.from("compounding_ingredients").insert(
-    rows.map((i) => ({
-      recipe_id: recipe!.id, ingredient_name: i.ingredient_name.trim(),
-      item_id: i.item_id || null, quantity: Number(i.quantity), unit: i.unit || "pcs",
+    ings.map((b) => ({
+      recipe_id: recipe!.id, ingredient_name: b.nama, item_id: b.item_id,
+      quantity: Number(b.qty), unit: b.satuan || "pcs", unit_price: Number(b.harga) || 0,
     })),
   );
   if (iErr) redirect(`${back}?error=${encodeURIComponent(iErr.message)}`);
 
-  // §2: stok bahan auto-deduct saat racikan dibuat (bukan obat jadi).
+  // §2: potong stok bahan di gudang cabang.
   const { data: visit } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
   if (visit) {
     const whId = await branchWarehouse(supabase, visit.branch_id);
-    if (whId) {
-      for (const d of stockDeductions(rows)) await adjustStock(supabase, whId, d.item_id, -d.qty);
-    }
+    if (whId) for (const d of stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))) await adjustStock(supabase, whId, d.item_id, -d.qty);
   }
 
   redirect(`/klinik/rekam-medis/${visitId}?racikan=dibuat`);
