@@ -108,6 +108,6 @@ export async function tutupShiftKasir(formData: FormData) {
     });
   }
 
-  // Kasir buta: balik ke menu kasir dgn banner sukses; laporan shift hanya utk manajer/finance.
-  redirect("/kasir?success=close");
+  // Kasir buta: balik ke layar pilih mode; laporan shift hanya utk manajer/finance.
+  redirect("/mulai?success=close");
 }

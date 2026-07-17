@@ -3,7 +3,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 // Pilih mode kerja setelah login: dashboard VetOS penuh atau dunia POS kasir.
-export default async function MulaiPage() {
+export default async function MulaiPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ success?: string }>;
+}) {
+  const { success } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -17,7 +22,12 @@ export default async function MulaiPage() {
   const nama = profile?.full_name ?? user.email ?? "Pengguna";
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--sb)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, padding: 20 }}>
+    <div style={{ minHeight: "100vh", background: "var(--sb)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, padding: 20, position: "relative" }}>
+      {success === "close" && (
+        <div style={{ position: "absolute", top: 20, display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(134,239,172,.15)", border: ".5px solid rgba(134,239,172,.5)", color: "#bbf7d0", borderRadius: 999, padding: "8px 18px", fontSize: 12.5, fontWeight: 600 }}>
+          <i className="ti ti-circle-check" /> Shift ditutup.
+        </div>
+      )}
       <div style={{ textAlign: "center" }}>
         <div style={{ width: 52, height: 52, background: "var(--acc)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
           <i className="ti ti-paw" style={{ fontSize: 28, color: "#fff" }} />

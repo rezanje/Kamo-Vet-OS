@@ -62,5 +62,5 @@ export async function tutupShiftKlinik(formData: FormData) {
     });
   }
 
-  redirect("/klinik?success=close");
+  redirect("/mulai?success=close");
 }

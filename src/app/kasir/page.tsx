@@ -12,9 +12,9 @@ function one<T>(r: Rel<T>): T | null {
 export default async function KasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -68,7 +68,6 @@ export default async function KasirPage({
       vouchers={(vouchers ?? []) as unknown as VoucherRow[]}
       promos={promosActive as unknown as PromoRow[]}
       error={error}
-      success={success}
     />
   );
 }

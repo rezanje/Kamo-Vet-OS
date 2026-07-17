@@ -26,8 +26,8 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
   Platinum: { bg: "#ede9fe", color: "#5b21b6" },
 };
 
-export function KasirClient({ branchName, items, customers, vouchers, promos = [], error, success }: {
-  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; promos?: PromoRow[]; error?: string; success?: string;
+export function KasirClient({ branchName, items, customers, vouchers, promos = [], error }: {
+  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; promos?: PromoRow[]; error?: string;
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
@@ -127,11 +127,6 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
         </div>
       )}
 
-      {success === "close" && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Shift ditutup.
-        </div>
-      )}
 
       {/* DATA CUSTOMER strip */}
       <div className="card" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
