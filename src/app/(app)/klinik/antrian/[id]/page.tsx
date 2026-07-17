@@ -25,6 +25,7 @@ const fmtDateLong = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) : "—";
 const fmtDaftar = (iso: string) =>
   new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 // warna titik timeline per poli (fallback siklus).
 const POLI_COLOR: Record<string, string> = {
@@ -38,7 +39,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, pet_id, created_at, pets(id, name, species, breed, dob, gender, weight, warna, sterilisasi, microchip, alergi, kondisi_khusus, golongan_darah, photo_url, created_at), customers(name, phone, email, address, tier), branches(name, code)")
+    .select("id, pet_id, created_at, pets(id, name, species, breed, dob, gender, weight, warna, sterilisasi, microchip, alergi, kondisi_khusus, golongan_darah, photo_url, created_at), customers(id, name, phone, email, address, tier, points), branches(name, code)")
     .eq("id", id)
     .maybeSingle();
 
@@ -104,6 +105,27 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
     total_volume: r.total_volume as string, status: r.status as string, date: r.created_at as string,
   }));
 
+  // ===== Ringkasan transaksi customer (petshop + klinik, semua waktu) =====
+  const [{ data: salesAgg }, { data: invAgg }] = cust?.id
+    ? await Promise.all([
+        supabase.from("sales").select("total").eq("customer_id", cust.id),
+        supabase
+          .from("invoices")
+          .select("total, visits!inner(customer_id)")
+          .eq("paid_status", "Lunas")
+          .is("voided_at", null)
+          .eq("visits.customer_id", cust.id),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const trxTotals = [
+    ...((salesAgg ?? []) as { total: number }[]).map((s) => Number(s.total || 0)),
+    ...((invAgg ?? []) as { total: number }[]).map((iv) => Number(iv.total || 0)),
+  ];
+  const trxCount = trxTotals.length;
+  const trxSum = trxTotals.reduce((a, b) => a + b, 0);
+  const trxAvg = trxCount ? trxSum / trxCount : 0;
+  const poin = cust?.points ?? 0;
+
   // ===== Invoice =====
   const invoices: InvoiceEntry[] = (history ?? [])
     .map((v) => {
@@ -148,6 +170,11 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
             <HeadCell icon="ti-calendar" label="TANGGAL DAFTAR" value={fmtDaftar(visit.created_at as string)} />
           </div>
           <PrintButton label="Cetak" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, borderTop: ".5px solid var(--bd)", marginTop: 14, paddingTop: 14 }}>
+          <HeadCell icon="ti-trending-up" label="RATA-RATA TRANSAKSI" value={rp(trxAvg)} />
+          <HeadCell icon="ti-star" label="POIN" value={`${poin.toLocaleString("id-ID")} Poin`} />
+          <HeadCell icon="ti-shopping-bag" label="TOTAL TRANSAKSI" value={`${trxCount}x · ${rp(trxSum)}`} />
         </div>
       </div>
 
