@@ -23,7 +23,7 @@ export default async function PembayaranPage({
   searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, success, edit } = await searchParams;
+  const { error, success } = await searchParams;
   const supabase = await createClient();
 
   const { data: visit } = await supabase
@@ -162,8 +162,8 @@ export default async function PembayaranPage({
         </div>
       </div>
 
-      {/* Pasien (hanya di tampilan read-only invoice; form editable punya header sendiri) */}
-      {invoice && !(edit === "1" && !lunas) && (
+      {/* Pasien (hanya di tampilan read-only invoice lunas; form editable punya header sendiri) */}
+      {invoice && lunas && (
         <div className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
             <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}`} />
@@ -174,23 +174,18 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {invoice && edit === "1" && !lunas ? (
-        <>
-          <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
-            <i className="ti ti-pencil" /> Mode edit invoice {invoice.invoice_no} — perubahan nominal/item wajib alasan & tercatat.
-          </div>
-          <PembayaranForm
-            visitId={visit.id}
-            patient={patient}
-            initialObat={initialObat}
-            initialJasa={initialJasa}
-            catatanResep={mr.catatan_resep}
-            initialDiscount={Number(invoice.discount)}
-            initialDpAmount={Number(invoice.dp_amount)}
-            initialDpDate={invoice.dp_date}
-            editMode
-          />
-        </>
+      {invoice && !lunas ? (
+        <PembayaranForm
+          visitId={visit.id}
+          patient={patient}
+          initialObat={initialObat}
+          initialJasa={initialJasa}
+          catatanResep={mr.catatan_resep}
+          initialDiscount={Number(invoice.discount)}
+          initialDpAmount={Number(invoice.dp_amount)}
+          initialDpDate={invoice.dp_date}
+          editMode
+        />
       ) : invoice ? (
         <>
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
