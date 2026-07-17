@@ -108,6 +108,6 @@ export async function tutupShiftKasir(formData: FormData) {
     });
   }
 
-  // laporan shift (Addendum §1: bisa dicetak, masuk dashboard manajer).
-  redirect(`/pos/shift/${shiftId}`);
+  // Kasir buta: balik ke menu kasir dgn banner sukses; laporan shift hanya utk manajer/finance.
+  redirect("/kasir?success=close");
 }
