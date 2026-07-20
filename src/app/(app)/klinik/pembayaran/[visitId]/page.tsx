@@ -33,11 +33,11 @@ export default async function PembayaranPage({
     .maybeSingle();
   if (!visit) notFound();
 
-  // butuh rekam medis dulu sebelum bayar.
+  // Rekam medis opsional: transaksi walk-in tanpa dokter (grooming, beli obat,
+  // retail) masuk lewat "Simpan & pembayaran" di registrasi — langsung ke invoice.
   const { data: mr } = await supabase
     .from("medical_records").select("id, catatan_resep").eq("visit_id", visitId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (!mr) redirect(`/klinik/rekam-medis/${visitId}`);
 
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
   const { data: inpat } = await supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle();
@@ -67,7 +67,9 @@ export default async function PembayaranPage({
 
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
-  const { data: resep } = await supabase.from("prescription_items").select("nama_obat, qty, harga, jenis").eq("medical_record_id", mr.id).order("created_at");
+  const { data: resep } = mr
+    ? await supabase.from("prescription_items").select("nama_obat, qty, harga, jenis").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string }[] };
   const resepRows = (resep ?? []).map((r) => ({ deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0, jenis: r.jenis ?? "obat" }));
   const prefill = resepRows.length
     ? resepRows
@@ -180,7 +182,7 @@ export default async function PembayaranPage({
           patient={patient}
           initialObat={initialObat}
           initialJasa={initialJasa}
-          catatanResep={mr.catatan_resep}
+          catatanResep={mr?.catatan_resep ?? null}
           initialDiscount={Number(invoice.discount)}
           initialDpAmount={Number(invoice.dp_amount)}
           initialDpDate={invoice.dp_date}
@@ -268,7 +270,7 @@ export default async function PembayaranPage({
           patient={patient}
           initialObat={initialObat}
           initialJasa={initialJasa}
-          catatanResep={mr.catatan_resep}
+          catatanResep={mr?.catatan_resep ?? null}
         />
       )}
 
