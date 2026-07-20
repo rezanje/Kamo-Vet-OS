@@ -381,8 +381,8 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
 
       {/* Aksi */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <SubmitButton className="btn-def" icon="ti-printer" name="next" value="resep" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Cetak Resep</SubmitButton>
-        <SubmitButton className="btn-acc" icon="ti-bed" name="next" value="rawatinap" style={{ padding: "10px 20px", fontSize: 13, background: "#16a34a" }} pendingText="Menyimpan…">Simpan &amp; Lanjut Rawat Inap</SubmitButton>
+        <SubmitButton className="btn-acc" icon="ti-printer" name="next" value="resep" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Cetak Resep</SubmitButton>
+        <SubmitButton className="btn-acc" icon="ti-bed" name="next" value="rawatinap" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Lanjut Rawat Inap</SubmitButton>
       </div>
     </form>
   );
