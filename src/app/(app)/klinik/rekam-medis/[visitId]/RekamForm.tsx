@@ -102,6 +102,9 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
   const del = (key: string) => setCart((c) => c.filter((r) => r.key !== key));
   const clear = () => setCart([]);
 
+  // ponytail: catatan resep hanya relevan untuk SKU racikan
+  const hasRacikan = cart.some((r) => r.jenis === "racikan");
+
   const subtotal = cart.reduce((a, r) => a + r.qty * r.harga, 0);
   const discountVal = Math.round((subtotal * discountPct) / 100);
   const ppn = 0; // ponytail: PPN 0% (display); tarif final ditentukan kasir saat pembayaran
@@ -112,7 +115,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="petId" value={petId} />
       <input type="hidden" name="resep" value={JSON.stringify(cart)} />
-      <input type="hidden" name="catatan_resep" value={catatan} />
+      <input type="hidden" name="catatan_resep" value={hasRacikan ? catatan : ""} />
 
       <div className="grid2" style={{ alignItems: "start" }}>
         {/* ================= KIRI: data pasien + pemeriksaan ================= */}
@@ -347,10 +350,12 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
                 )}
               </div>
 
-              <div style={{ marginTop: 10 }}>
-                <label className="flab">Catatan resep (aturan pakai)</label>
-                <textarea className="fi" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="mis. Amoxicillin 2x sehari 1 tablet…" style={{ resize: "vertical" }} />
-              </div>
+              {hasRacikan && (
+                <div style={{ marginTop: 10 }}>
+                  <label className="flab">Catatan resep (aturan pakai) · racikan</label>
+                  <textarea className="fi" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="mis. Puyer 3x sehari 1 bungkus…" style={{ resize: "vertical" }} />
+                </div>
+              )}
 
               <div style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
                 <Row k="Subtotal" v={rp(subtotal)} />
