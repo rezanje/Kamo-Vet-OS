@@ -24,24 +24,31 @@ export default async function TutupShiftPage({
   const trx = (sales ?? []).length;
 
   return (
-    <div style={{ minHeight: "70vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: "24px 0" }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--sb)" }}>Selesai Shift</div>
-        <div style={{ fontSize: 12, color: "var(--tm)", marginTop: 2 }}>
+    <div className="pshop-wrap">
+      <i className="ti ti-bone pshop-deco" style={{ top: "14%", left: "7%", fontSize: 70 }} />
+      <i className="ti ti-paw pshop-deco" style={{ top: "16%", right: "9%", fontSize: 86 }} />
+      <i className="ti ti-paw pshop-deco" style={{ bottom: "12%", left: "5%", fontSize: 60 }} />
+      <i className="ti ti-plus pshop-deco" style={{ top: "42%", right: "6%", fontSize: 46 }} />
+      <i className="ti ti-shopping-bag pshop-deco" style={{ bottom: "8%", right: "10%", fontSize: 72 }} />
+      <i className="ti ti-home pshop-deco" style={{ bottom: "10%", left: "16%", fontSize: 66 }} />
+
+      <div className="pshop-hero">
+        <div className="pshop-welcome" style={{ fontSize: 28 }}>Selesai Shift</div>
+        <div style={{ fontSize: 12, color: "var(--tm)", marginTop: 6 }}>
           {shift.branchName} · dibuka {new Date(shift.opened_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} · {trx} transaksi
         </div>
       </div>
 
       {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", maxWidth: 460 }}>
+        <div className="p2ban pshop-card" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", maxWidth: 460 }}>
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
 
-      <div className="card" style={{ width: "100%", maxWidth: 480, padding: 22 }}>
+      <div className="card pshop-card" style={{ width: "100%", maxWidth: 480, padding: 22 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--sb)" }} />
+            <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700 }}>HITUNG UANG DI LACI</div>

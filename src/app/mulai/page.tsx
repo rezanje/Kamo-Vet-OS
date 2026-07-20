@@ -22,23 +22,30 @@ export default async function MulaiPage({
   const nama = profile?.full_name ?? user.email ?? "Pengguna";
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--sb)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, padding: 20, position: "relative" }}>
+    <div className="pshop-wrap" style={{ minHeight: "100vh", borderRadius: 0, gap: 28 }}>
+      <i className="ti ti-bone pshop-deco" style={{ top: "14%", left: "7%", fontSize: 70 }} />
+      <i className="ti ti-paw pshop-deco" style={{ top: "16%", right: "9%", fontSize: 86 }} />
+      <i className="ti ti-paw pshop-deco" style={{ bottom: "16%", left: "5%", fontSize: 60 }} />
+      <i className="ti ti-plus pshop-deco" style={{ top: "42%", right: "6%", fontSize: 46 }} />
+      <i className="ti ti-shopping-bag pshop-deco" style={{ bottom: "10%", right: "10%", fontSize: 72 }} />
+      <i className="ti ti-home pshop-deco" style={{ bottom: "12%", left: "16%", fontSize: 66 }} />
+
       {success === "close" && (
-        <div style={{ position: "absolute", top: 20, display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(134,239,172,.15)", border: ".5px solid rgba(134,239,172,.5)", color: "#bbf7d0", borderRadius: 999, padding: "8px 18px", fontSize: 12.5, fontWeight: 600 }}>
+        <div className="pshop-card" style={{ position: "absolute", top: 20, display: "inline-flex", alignItems: "center", gap: 8, background: "#ecfdf5", border: ".5px solid #6ee7b7", color: "#047857", borderRadius: 999, padding: "8px 18px", fontSize: 12.5, fontWeight: 600 }}>
           <i className="ti ti-circle-check" /> Shift ditutup.
         </div>
       )}
-      <div style={{ textAlign: "center" }}>
+      <div className="pshop-hero">
         <div style={{ width: 52, height: 52, background: "var(--acc)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
           <i className="ti ti-paw" style={{ fontSize: 28, color: "#fff" }} />
         </div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>Selamat datang, {nama.split(" ")[0]}!</div>
-        <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.55)", marginTop: 4 }}>
+        <div className="pshop-welcome" style={{ fontSize: 24 }}>Selamat datang, {nama.split(" ")[0]}!</div>
+        <div style={{ fontSize: 12.5, color: "var(--tm)", marginTop: 4 }}>
           Mau kerja di mana hari ini? <span style={{ opacity: .7 }}>({profile?.role ?? "—"})</span>
         </div>
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", maxWidth: 860 }}>
+      <div className="pshop-card" style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", maxWidth: 860 }}>
         {profile?.role === "STAFF" ? (
           <>
             <Link href="/me" style={{ textDecoration: "none" }}>
@@ -83,7 +90,7 @@ export default async function MulaiPage({
         )}
       </div>
 
-      <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.35)" }}>VetOS · PT Kamo Group</div>
+      <div className="pshop-card" style={{ fontSize: 10.5, color: "var(--td)" }}>VetOS · PT Kamo Group</div>
     </div>
   );
 }

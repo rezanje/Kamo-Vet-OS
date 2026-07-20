@@ -23,23 +23,30 @@ export default async function MulaiShiftPage({
     .from("branches").select("id, name").eq("is_active", true).in("type", ["PETSHOP", "BOTH"]).order("name");
 
   return (
-    <div style={{ minHeight: "70vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 26, fontWeight: 800, color: "var(--sb)" }}>Selamat Datang!</div>
+    <div className="pshop-wrap">
+      <i className="ti ti-bone pshop-deco" style={{ top: "14%", left: "7%", fontSize: 70 }} />
+      <i className="ti ti-paw pshop-deco" style={{ top: "16%", right: "9%", fontSize: 86 }} />
+      <i className="ti ti-paw pshop-deco" style={{ bottom: "12%", left: "5%", fontSize: 60 }} />
+      <i className="ti ti-plus pshop-deco" style={{ top: "42%", right: "6%", fontSize: 46 }} />
+      <i className="ti ti-shopping-bag pshop-deco" style={{ bottom: "8%", right: "10%", fontSize: 72 }} />
+      <i className="ti ti-home pshop-deco" style={{ bottom: "10%", left: "16%", fontSize: 66 }} />
+
+      <div className="pshop-hero">
+        <div className="pshop-welcome">Selamat Datang!</div>
         <div style={{ fontSize: 13, color: "var(--tm)", marginTop: 2 }}>Sistem POS Kamo Petshop</div>
         <div style={{ fontSize: 11.5, color: "var(--td)", marginTop: 8 }}>Silakan mulai shift untuk mengakses sistem kasir.</div>
       </div>
 
       {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", maxWidth: 420 }}>
+        <div className="p2ban pshop-card" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", maxWidth: 420 }}>
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
 
-      <form action={mulaiShiftKasir} className="card" style={{ width: "100%", maxWidth: 440, padding: 22 }}>
+      <form action={mulaiShiftKasir} className="card pshop-card" style={{ width: "100%", maxWidth: 440, padding: 22 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--sb)" }} />
+            <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700 }}>UANG DI KASIR SAAT INI</div>
@@ -59,13 +66,13 @@ export default async function MulaiShiftPage({
 
         <div style={{ marginBottom: 14 }}>
           <label className="flab">Modal awal kas (Rp) *</label>
-          <div style={{ display: "flex", alignItems: "stretch" }}>
-            <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderRight: "none", borderRadius: "6px 0 0 6px", padding: "6px 10px", fontSize: 12, color: "var(--tm)" }}>Rp</span>
-            <input className="fi" name="opening_balance" type="number" min={0} step={1000} placeholder="0" required style={{ borderRadius: "0 6px 6px 0" }} />
+          <div className="pshop-rp">
+            <span>Rp</span>
+            <input className="fi" name="opening_balance" type="number" min={0} step={1000} placeholder="0" required />
           </div>
         </div>
 
-        <SubmitButton className="pay-btn" icon="ti-player-play" pendingText="Memulai shift…">MULAI SHIFT</SubmitButton>
+        <SubmitButton className="kpos-bayar" icon="ti-player-play" pendingText="Memulai shift…">MULAI SHIFT</SubmitButton>
       </form>
     </div>
   );

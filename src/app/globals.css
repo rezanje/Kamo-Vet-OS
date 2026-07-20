@@ -123,6 +123,16 @@ body {
 .pos-tab.on { background: #fff; color: var(--posb); }
 .pos-tab:not(.on):hover { background: rgba(255,255,255,.12); }
 
+/* Layar hero petshop biru (mulai/tutup shift) — mirrors design-reference/petshop/01-shift-start.png */
+.pshop-wrap { position: relative; overflow: hidden; min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 36px 8px; border-radius: 18px; background: linear-gradient(160deg, #eef2ff 0%, #f6f8ff 55%, #eef4ff 100%); }
+.pshop-deco { position: absolute; color: var(--posb); opacity: .07; pointer-events: none; z-index: 0; }
+.pshop-hero { text-align: center; position: relative; z-index: 1; }
+.pshop-welcome { font-size: 32px; font-weight: 800; color: var(--posb); line-height: 1.15; }
+.pshop-card { position: relative; z-index: 1; }
+.pshop-rp { display: flex; align-items: stretch; }
+.pshop-rp span { background: var(--sf1); border: .5px solid var(--bd); border-right: none; border-radius: 6px 0 0 6px; padding: 6px 10px; font-size: 12px; color: var(--tm); display: flex; align-items: center; }
+.pshop-rp input { border-radius: 0 6px 6px 0 !important; }
+
 /* Kasir cart / product table — mirrors design-reference/petshop/02-kasir-pos-main.png */
 .kpos-catTab { padding: 6px 3px; border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: 11.5px; color: var(--tm); font-weight: 500; }
 .kpos-catTab.on { color: var(--posb); border-bottom-color: var(--posb); }
@@ -188,6 +198,9 @@ a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,
 .skl-list li.skl-soon:hover { color: var(--tx); }
 .skl-selesai { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border: 1.5px solid #1d4ed8; border-radius: 10px; background: #fff; color: #1d4ed8; font-size: 13.5px; font-weight: 700; letter-spacing: .03em; text-decoration: none; }
 .skl-selesai:hover { background: #1d4ed8; color: #fff; }
+.kt-btn { width: 100%; padding: 11px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.kt-btn:hover:not(:disabled) { background: #1e40af; }
+.kt-btn:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 780px) { .skl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skl-welcome { font-size: 30px; } }
 
 /* Print: sembunyikan chrome aplikasi, cetak hanya konten (dipakai lembar resep) */

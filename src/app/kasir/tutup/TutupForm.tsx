@@ -9,11 +9,14 @@ export function TutupForm({ shiftId }: { shiftId: string }) {
     <form action={tutupShiftKasir}>
       <input type="hidden" name="shiftId" value={shiftId} />
       <label className="flab">Total uang cash di kasir (fisik) *</label>
-      <input
-        className="fi" name="closing_balance" type="number" min={0} step={500}
-        placeholder="Hitung uang di laci" required style={{ marginBottom: 12 }}
-      />
-      <SubmitButton className="pay-btn" icon="ti-lock" pendingText="Menutup shift…">Tutup Shift</SubmitButton>
+      <div className="pshop-rp" style={{ marginBottom: 12 }}>
+        <span>Rp</span>
+        <input
+          className="fi" name="closing_balance" type="number" min={0} step={500}
+          placeholder="0" required
+        />
+      </div>
+      <SubmitButton className="kpos-bayar" icon="ti-lock" pendingText="Menutup shift…">TUTUP SHIFT</SubmitButton>
     </form>
   );
 }
