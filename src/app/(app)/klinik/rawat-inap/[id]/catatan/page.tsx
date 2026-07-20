@@ -24,14 +24,15 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
   const cust = one(visit?.customers ?? null);
 
   const { data: itemRows } = await supabase
-    .from("items").select("id, name, unit, sell_price").eq("is_active", true).order("name").limit(200);
+    .from("items").select("id, name, unit, sell_price, is_compound_material").eq("is_active", true).order("name").limit(200);
   const ids = (itemRows ?? []).map((i) => i.id);
   const { data: stockRows } = ids.length
     ? await supabase.from("stock").select("item_id, qty").in("item_id", ids)
     : { data: [] as { item_id: string; qty: number }[] };
   const stok = new Map<string, number>();
   for (const s of stockRows ?? []) stok.set(s.item_id as string, (stok.get(s.item_id as string) ?? 0) + Number(s.qty));
-  const items = (itemRows ?? []).map((i) => ({ id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price), stok: stok.get(i.id as string) ?? 0 }));
+  const items = (itemRows ?? []).map((i) => ({ id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price), stok: stok.get(i.id as string) ?? 0, is_compound_material: !!i.is_compound_material }));
+  const bahanItems = items.filter((i) => i.is_compound_material);
 
   const noRM = visit
     ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(rec.visit_id as string).slice(0, 3).toUpperCase()}`
@@ -57,6 +58,7 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
         recordId={id}
         backHref={`/klinik/rawat-inap/${id}`}
         items={items}
+        bahanItems={bahanItems}
         patient={{
           name: pet?.name ?? "—",
           species: pet?.species ?? "—",

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
+import { stockDeductions } from "@/lib/compounding";
 import { sendWA } from "@/lib/fonnte";
 
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
@@ -63,7 +64,11 @@ export async function addDailyLog(formData: FormData) {
 
 // Catatan harian rawat inap versi lengkap (desain POS): simpan log harian + obat/jasa
 // yang diberikan (masuk ke resep visit → ikut tagihan) + opsi ubah kondisi sekalian.
-type ResepItem = { nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string };
+type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
+type ResepItem = {
+  nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string;
+  aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
+};
 export async function addDailyLogPos(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -72,6 +77,8 @@ export async function addDailyLogPos(formData: FormData) {
   const tindakan = String(formData.get("tindakan") ?? "").trim() || null;
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
   const doctorName = String(formData.get("doctor_name") ?? "").trim() || null;
+  const logDate = String(formData.get("log_date") ?? "").trim();
+  const logTime = String(formData.get("log_time") ?? "").trim();
   const newStatus = String(formData.get("new_status") ?? "").trim() as Condition | "";
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
@@ -81,10 +88,13 @@ export async function addDailyLogPos(formData: FormData) {
     .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
   if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
 
-  // 1) log harian (append-only)
+  // 1) log harian (append-only). Tanggal+waktu dari form (default = sekarang di client).
+  const stamp = logDate && logTime ? new Date(`${logDate}T${logTime}`) : null;
   const { error: logErr } = await supabase.from("inpatient_daily_logs").insert({
     inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
     doctor_name: doctorName, created_by: user?.id ?? null,
+    ...(logDate ? { log_date: logDate } : {}),
+    ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
   });
   if (logErr) redirect(`${back}?error=${encodeURIComponent(logErr.message)}`);
 
@@ -100,11 +110,55 @@ export async function addDailyLogPos(formData: FormData) {
   if (mrId && resep.length) {
     const rows = resep.filter((r) => r.nama_obat?.trim()).map((r) => ({
       medical_record_id: mrId, nama_obat: r.nama_obat.trim(),
-      qty: Number(r.qty) > 0 ? Number(r.qty) : 1, satuan: r.satuan?.trim() || "pcs",
+      qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
+      satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
       harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
+      aturan_pakai: r.aturan_pakai?.trim() || null,
+      // racikan ditagih sebagai baris "obat" — sama seperti jalur simpanRekamMedis.
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
     }));
     if (rows.length) await supabase.from("prescription_items").insert(rows);
+  }
+
+  // 2b) Racikan → compounding_recipes (worklist apoteker) + BOM + potong stok bahan.
+  const racikan = resep.filter((r) => r.jenis === "racikan" && (r.ingredients ?? []).length > 0);
+  if (mrId && racikan.length) {
+    const { data: visitRow } = await supabase.from("visits").select("branch_id").eq("id", rec!.visit_id).maybeSingle();
+    const { data: wh } = visitRow
+      ? await supabase.from("warehouses").select("id").eq("branch_id", visitRow.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle()
+      : { data: null };
+
+    for (const r of racikan) {
+      const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
+      if (ings.length === 0) continue;
+      const total = ings.reduce((a, b) => a + (Number(b.harga) || 0) * (Number(b.qty) || 0), 0);
+
+      const { data: recipe, error: recipeErr } = await supabase
+        .from("compounding_recipes")
+        .insert({
+          medical_record_id: mrId, recipe_name: r.nama_obat.trim(),
+          dosage_instruction: r.aturan_pakai?.trim() || null,
+          dosage_form: r.dosage_form || null, total_price: total,
+          status: "pending", created_by: user?.id ?? null,
+        })
+        .select("id").single();
+      if (recipeErr || !recipe) redirect(`${back}?error=${encodeURIComponent(recipeErr?.message ?? "Gagal simpan racikan")}`);
+
+      const { error: ingErr } = await supabase.from("compounding_ingredients").insert(
+        ings.map((b) => ({
+          recipe_id: recipe!.id, ingredient_name: b.nama, item_id: b.item_id,
+          quantity: Number(b.qty), unit: b.satuan || "pcs", unit_price: Number(b.harga) || 0,
+        })),
+      );
+      if (ingErr) redirect(`${back}?error=${encodeURIComponent(ingErr.message)}`);
+
+      if (wh) {
+        for (const d of stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))) {
+          const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", wh.id).eq("item_id", d.item_id).maybeSingle();
+          if (st) await supabase.from("stock").update({ qty: Number(st.qty) - d.qty, updated_at: new Date().toISOString() }).eq("warehouse_id", wh.id).eq("item_id", d.item_id);
+        }
+      }
+    }
   }
 
   // 3) ubah kondisi kalau dipilih & beda dari sekarang
