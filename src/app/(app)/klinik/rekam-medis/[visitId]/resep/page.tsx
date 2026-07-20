@@ -42,7 +42,12 @@ export default async function ResepPage({ params }: { params: Promise<{ visitId:
         <Link href={`/klinik/rekam-medis/${visitId}`} className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali ke rekam medis
         </Link>
-        <PrintButton />
+        <div style={{ display: "flex", gap: 8 }}>
+          <PrintButton />
+          <Link href={`/klinik/pembayaran/${visitId}`} className="btn-acc">
+            <i className="ti ti-credit-card" /> Lanjut ke Pembayaran
+          </Link>
+        </div>
       </div>
 
       <div style={{ maxWidth: 560, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", borderRadius: 10, padding: "26px 30px", fontSize: 12.5, color: "#141413" }}>
