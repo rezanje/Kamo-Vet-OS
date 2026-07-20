@@ -3,12 +3,34 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stockDeductions } from "@/lib/compounding";
+import { FOLLOWUP_JENIS } from "@/lib/followup";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
 };
+
+type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
+
+// Baris follow up datang sbg JSON dari klien. Tanggal & jenis divalidasi di sini —
+// jangan percaya nilai dari form, kolom `jenis` punya CHECK constraint di DB.
+function parseFollowUps(raw: FormDataEntryValue | null): FollowUpDraft[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(raw ?? "[]"));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((r) => {
+    const row = r as Partial<FollowUpDraft>;
+    const tanggal = String(row?.tanggal ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) return [];
+    const jenis = FOLLOWUP_JENIS.includes(row?.jenis as never) ? String(row!.jenis) : "Lainnya";
+    return [{ jenis, tanggal, catatan: String(row?.catatan ?? "").trim() }];
+  });
+}
 
 export async function simpanRekamMedis(formData: FormData) {
   const supabase = await createClient();
@@ -25,7 +47,11 @@ export async function simpanRekamMedis(formData: FormData) {
   const gejala_klinis = String(formData.get("gejala_klinis") ?? "") || null;
   const hasil_penunjang = String(formData.get("hasil_penunjang") ?? "") || null;
   const diagnosis = String(formData.get("diagnosis") ?? "") || null;
-  const follow_up = String(formData.get("follow_up") ?? "") || null;
+  // Ringkasan teks tetap diisi utk dokumen rekam medis cetak (kolom lama).
+  const followUps = parseFollowUps(formData.get("follow_ups"));
+  const follow_up = followUps.length
+    ? followUps.map((f) => `${f.jenis} ${f.tanggal}${f.catatan ? ` — ${f.catatan}` : ""}`).join("; ")
+    : null;
   const catatan_resep = String(formData.get("catatan_resep") ?? "") || null;
   const next = String(formData.get("next") ?? "");
 
@@ -53,6 +79,27 @@ export async function simpanRekamMedis(formData: FormData) {
     .select("id").single();
   if (mrErr || !mr) {
     redirect(`${back}?error=${encodeURIComponent(mrErr?.message ?? "Gagal simpan rekam medis")}`);
+  }
+
+  // Rencana follow up → worklist reminder pelanggan (/klinik/follow-up).
+  if (followUps.length) {
+    const { data: v } = await supabase
+      .from("visits").select("branch_id, pets(customer_id)").eq("id", visitId).maybeSingle();
+    const petRel = v?.pets as { customer_id: string | null } | { customer_id: string | null }[] | null;
+    const customerId = (Array.isArray(petRel) ? petRel[0] : petRel)?.customer_id ?? null;
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const { error: fuErr } = await supabase.from("follow_ups").insert(
+      followUps.map((f) => ({
+        visit_id: visitId, medical_record_id: mr!.id, pet_id: petId,
+        customer_id: customerId, branch_id: v?.branch_id ?? null,
+        jenis: f.jenis, tanggal: f.tanggal, catatan: f.catatan || null,
+        created_by: user?.id ?? null,
+      })),
+    );
+    if (fuErr) {
+      redirect(`${back}?error=${encodeURIComponent(fuErr.message)}`);
+    }
   }
 
   // Keranjang obat & jasa (POS) datang sebagai JSON dari form client.

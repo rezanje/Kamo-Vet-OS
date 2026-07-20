@@ -6,6 +6,7 @@ import { simpanRekamMedis } from "./actions";
 import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
 import { PetPhotoUpload } from "@/components/PetPhotoUpload";
+import { FollowUpTable } from "@/components/FollowUpTable";
 import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
 
 export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number };
@@ -171,9 +172,6 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
           </ExamField>
           <ExamField icon="ti-stethoscope" color="#2563eb" label="Diagnosa">
             <textarea className="fi" name="diagnosis" rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />
-          </ExamField>
-          <ExamField icon="ti-calendar-event" color="#d97706" label="Follow Up">
-            <input className="fi" name="follow_up" placeholder="Rencana kontrol berikutnya" />
           </ExamField>
         </div>
 
@@ -375,6 +373,8 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
           </div>
         </div>
       </div>
+
+      <FollowUpTable name="follow_ups" />
 
       {/* Aksi */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
