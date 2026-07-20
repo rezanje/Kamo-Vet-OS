@@ -92,6 +92,15 @@ export default async function RekamMedisPage({
   const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 5, Selesai: 6 };
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
 
+  // Rawat Inap & Racik Obat itu opsional — banyak kunjungan rawat jalan gak pernah
+  // lewat situ. Setelah rekam medis tersimpan (recorded), status "sudah lewat tahap
+  // ini" dari activeStep gak lagi cukup: kalau datanya emang gak ada, jangan
+  // ditampilkan sbg "Selesai" (menyesatkan) — sembunyikan aja dari stepper.
+  // Selama masih diperiksa (belum recorded), tetap tampil apa adanya (masih mungkin dipakai).
+  const hideRawatInap = recorded && !inpatient;
+  const hideRacikObat = recorded && racikanList.length === 0;
+  const stepsShown = STEPS.filter(([s]) => !(s === "Rawat Inap" && hideRawatInap) && !(s === "Racik Obat" && hideRacikObat));
+
   // Daftar obat (form pemeriksaan) + bahan baku (racikan inline, dipakai juga di recorded view)
   // + jasa. Jasa wajib dari master SKU — dokter tidak boleh mengetik jasa bebas.
   type ItemLiteFull = {
@@ -183,13 +192,14 @@ export default async function RekamMedisPage({
       {/* Stepper status kunjungan (§3.4) — ikon + sub-status (ala referensi) */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
-          {STEPS.map(([s, ic], i) => {
+          {stepsShown.map(([s, ic], shownI) => {
+            const i = STEPS.findIndex(([name]) => name === s); // index asli — activeStep dihitung dari 6 tahap, bukan yg tampil
             const done = i < activeStep;
             const active = i === activeStep;
             const on = done || active;
             const sub = done ? "Selesai" : active ? "Proses" : "Belum";
             return (
-              <div key={s} style={{ display: "flex", alignItems: "flex-start", flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
+              <div key={s} style={{ display: "flex", alignItems: "flex-start", flex: shownI < stepsShown.length - 1 ? 1 : "0 0 auto" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                   <span style={{
                     width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
@@ -205,7 +215,7 @@ export default async function RekamMedisPage({
                     <div style={{ fontSize: 9.5, color: active ? "#2563eb" : "var(--td)" }}>{sub}</div>
                   </div>
                 </div>
-                {i < STEPS.length - 1 && (
+                {shownI < stepsShown.length - 1 && (
                   <div style={{ flex: 1, height: 2, background: done ? "#2563eb" : "var(--bd)", margin: "16px 9px 0" }} />
                 )}
               </div>
