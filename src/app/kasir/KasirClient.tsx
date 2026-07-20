@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
 export type ItemRow = { id: string; code: string; name: string; harga: number; kategori: string; stok: number };
-export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number };
+export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
 export type PromoRow = Promo & { valid_from?: string | null; valid_until?: string | null };
 type CartLine = {
@@ -40,7 +40,7 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const [diskonPct, setDiskonPct] = useState(false);
   const [poin, setPoin] = useState(0);
   const [voucher, setVoucher] = useState("");
-  const [metode, setMetode] = useState("Tunai");
+  const [metode, setMetode] = useState("");
   const [bayar, setBayar] = useState(0);
   const [showAddCust, setShowAddCust] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const total = computeTotals(cart, diskonVal, voucherVal, poinUsed).total;
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
-  const canPay = cart.length > 0 && !kurang && !voucherInvalid && !!cust;
+  const canPay = cart.length > 0 && !!metode && !kurang && !voucherInvalid && !!cust;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   const promoHits = useMemo(() => matchPromos(promos, cart), [promos, cart]);
@@ -169,7 +169,8 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
               </span>
               <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3 }}>Kategori</div>
             </div>
-            <CustStat icon="ti-shopping-bag" label={`${cust.trx}`} sub="Total transaksi" />
+            <CustStat icon="ti-shopping-bag" label={`${cust.trx}x · ${rp(cust.belanja)}`} sub="Total transaksi" />
+            <CustStat icon="ti-trending-up" label={rp(cust.trx ? cust.belanja / cust.trx : 0)} sub="Rata-rata transaksi" />
           </>
         ) : (
           <span style={{ fontSize: 11, color: "#b91c1c" }}><i className="ti ti-alert-circle" style={{ marginRight: 3 }} />Pilih atau tambah pelanggan dulu — wajib diisi sebelum bayar.</span>

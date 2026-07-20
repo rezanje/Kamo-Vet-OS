@@ -28,7 +28,8 @@ export async function checkoutKasir(formData: FormData) {
   const branchId = shift!.branch_id;
   const customerId = String(formData.get("customerId") ?? "") || null;
   if (!customerId) redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu sebelum bayar")}`);
-  const metode = String(formData.get("metode") ?? "Tunai");
+  const metode = String(formData.get("metode") ?? "");
+  if (!metode) redirect(`/kasir?error=${encodeURIComponent("Pilih metode pembayaran dulu")}`);
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
   const voucherCode = String(formData.get("voucherCode") ?? "").trim().toUpperCase() || null;
   const poinReq = Math.max(0, Math.floor(Number(formData.get("poinDigunakan")) || 0));
@@ -170,6 +171,6 @@ export async function checkoutKasir(formData: FormData) {
     });
   }
 
-  // Tunai: auto-cetak struk (fire window.print di halaman struk). Non-tunai: cetak manual.
-  redirect(`/kasir/struk/${sale!.id}${metode === "Tunai" ? "?print=1" : ""}`);
+  // Auto-cetak struk (fire window.print di halaman struk) — semua metode bayar.
+  redirect(`/kasir/struk/${sale!.id}?print=1`);
 }

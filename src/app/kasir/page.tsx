@@ -23,10 +23,15 @@ export default async function KasirPage({
   const shift = await getOpenShift(supabase as never, user.id);
   if (!shift) redirect("/kasir/mulai");
 
-  const [{ data: items }, { data: customers }, { data: salesCnt }, { data: vouchers }, { data: promos }] = await Promise.all([
+  const [{ data: items }, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
     supabase.from("items").select("id, code, name, sell_price, target_species, item_categories(name)").eq("is_active", true).order("name"),
     supabase.from("customers").select("id, name, phone, points, tier, kategori").order("name"),
-    supabase.from("sales").select("customer_id"),
+    supabase.from("sales").select("customer_id, total"),
+    supabase
+      .from("invoices")
+      .select("total, visits!inner(customer_id)")
+      .eq("paid_status", "Lunas")
+      .is("voided_at", null),
     supabase.from("vouchers").select("code, tipe, nilai").eq("is_active", true),
     supabase.from("promos").select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until").eq("is_active", true),
   ]);
@@ -44,10 +49,20 @@ export default async function KasirPage({
     for (const s of st ?? []) stockMap[s.item_id as string] = Number(s.qty);
   }
 
-  // jumlah transaksi per pelanggan (buat panel customer).
+  // Ringkasan transaksi per pelanggan (petshop sales + klinik invoices lunas,
+  // semua waktu) — sama pola dengan header detail owner di antrian.
   const trxCount: Record<string, number> = {};
-  for (const s of (salesCnt ?? []) as { customer_id: string | null }[]) {
-    if (s.customer_id) trxCount[s.customer_id] = (trxCount[s.customer_id] ?? 0) + 1;
+  const trxSum: Record<string, number> = {};
+  for (const s of (salesAgg ?? []) as { customer_id: string | null; total: number }[]) {
+    if (!s.customer_id) continue;
+    trxCount[s.customer_id] = (trxCount[s.customer_id] ?? 0) + 1;
+    trxSum[s.customer_id] = (trxSum[s.customer_id] ?? 0) + Number(s.total || 0);
+  }
+  for (const iv of (invAgg ?? []) as { total: number; visits: Rel<{ customer_id: string | null }> }[]) {
+    const custId = one(iv.visits)?.customer_id;
+    if (!custId) continue;
+    trxCount[custId] = (trxCount[custId] ?? 0) + 1;
+    trxSum[custId] = (trxSum[custId] ?? 0) + Number(iv.total || 0);
   }
 
   const itemRows: ItemRow[] = ((items ?? []) as unknown as { id: string; code: string; name: string; sell_price: number; target_species: string; item_categories: Rel<{ name: string }> }[]).map((i) => ({
@@ -57,7 +72,7 @@ export default async function KasirPage({
   }));
 
   const custRows: CustRow[] = ((customers ?? []) as { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string }[]).map((c) => ({
-    ...c, trx: trxCount[c.id] ?? 0,
+    ...c, trx: trxCount[c.id] ?? 0, belanja: trxSum[c.id] ?? 0,
   }));
 
   return (
