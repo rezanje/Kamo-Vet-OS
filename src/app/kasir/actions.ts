@@ -3,10 +3,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
+import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 
 export type NewCustResult =
-  | { ok: true; customer: { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number } }
+  | { ok: true; customer: { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number } }
   | { ok: false; error: string };
 
 // Tambah customer inline dari POS — insert + kembalikan row (BUKAN redirect: cart di client, jangan pindah halaman).
@@ -36,7 +36,7 @@ export async function tambahCustomerKasir(formData: FormData): Promise<NewCustRe
 
   if (error || !data) return { ok: false, error: error?.message ?? "Gagal simpan customer" };
 
-  return { ok: true, customer: { ...data, trx: 0 } };
+  return { ok: true, customer: { ...data, trx: 0, belanja: 0 } };
 }
 
 // Shift gate POS kasir — logika sama dgn /pos/shift, redirect ke dunia kasir.
@@ -74,8 +74,11 @@ export async function tutupShiftKasir(formData: FormData) {
   // Addendum §1: breakdown per metode bayar, kas fisik vs sistem.
   const { data: sales } = await supabase
     .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
+  const { data: expenses } = await supabase
+    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
   const breakdown = methodBreakdown(sales ?? []);
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown);
+  const kasKeluar = cashExpenseTotal(expenses ?? []);
+  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, kasKeluar);
   const selisih = cashVariance(closing, expected);
 
   await supabase
@@ -108,6 +111,7 @@ export async function tutupShiftKasir(formData: FormData) {
     });
   }
 
-  // Kasir buta: balik ke layar pilih mode; laporan shift hanya utk manajer/finance.
-  redirect("/mulai?success=close");
+  // Kasir buta cuma berlaku SEBELUM submit (biar kas fisik dihitung independen).
+  // Setelah kas fisik terkunci, kasir boleh lihat breakdown-nya sendiri.
+  redirect(`/kasir/tutup/${shiftId}`);
 }

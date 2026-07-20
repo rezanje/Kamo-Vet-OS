@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
+import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 
 export async function openShift(formData: FormData) {
   const supabase = await createClient();
@@ -36,8 +36,10 @@ export async function closeShift(formData: FormData) {
   // Addendum §1: breakdown per metode disimpan untuk laporan shift.
   const { data: sales } = await supabase
     .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
+  const { data: expenses } = await supabase
+    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
   const breakdown = methodBreakdown(sales ?? []);
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown);
+  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, cashExpenseTotal(expenses ?? []));
   const selisih = cashVariance(closing, expected);
 
   await supabase
@@ -98,8 +100,10 @@ export async function forceCloseShift(formData: FormData) {
   // tutup tanpa hitung fisik: closing = expected (selisih 0), ditandai force-close.
   const { data: sales } = await supabase
     .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
+  const { data: expenses } = await supabase
+    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
   const breakdown = methodBreakdown(sales ?? []);
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown);
+  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, cashExpenseTotal(expenses ?? []));
 
   await supabase
     .from("cashier_shifts")

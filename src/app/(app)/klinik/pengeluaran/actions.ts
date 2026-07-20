@@ -25,9 +25,15 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Tempel ke shift klinik berjalan biar pengeluaran tunai ikut ngurangin kas seharusnya saat tutup shift.
+  const { data: shift } = await supabase
+    .from("cashier_shifts").select("id")
+    .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "klinik").maybeSingle();
+
   const { error } = await supabase.from("expenses").insert({
     branch_id: branchId, tanggal: tanggal || undefined, kategori,
-    deskripsi: deskripsi || null, jumlah, metode_bayar: metode, bukti_url: null, created_by: user?.id ?? null,
+    deskripsi: deskripsi || null, jumlah, metode_bayar: metode, bukti_url: null,
+    shift_id: shift?.id ?? null, created_by: user?.id ?? null,
   });
   if (error) redirect(`${back}?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
 

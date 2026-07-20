@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cashVariance, expectedCash, invoiceCashRows, methodBreakdown, PAYMENT_METHODS } from "../shift-calc";
+import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown, PAYMENT_METHODS } from "../shift-calc";
 
 describe("methodBreakdown", () => {
   it("groups totals per payment method with all methods present", () => {
@@ -26,6 +26,22 @@ describe("expectedCash", () => {
   });
   it("handles missing Tunai key", () => {
     expect(expectedCash(100000, {})).toBe(100000);
+  });
+  it("subtracts cash expenses taken from the drawer", () => {
+    expect(expectedCash(100000, { Tunai: 50000 }, 20000)).toBe(130000);
+  });
+});
+
+describe("cashExpenseTotal", () => {
+  it("counts only Tunai expenses — transfer/QRIS leave the bank, not the drawer", () => {
+    expect(cashExpenseTotal([
+      { jumlah: 25000, metode_bayar: "Tunai" },
+      { jumlah: 15000, metode_bayar: "Tunai" },
+      { jumlah: 250000, metode_bayar: "Transfer" },
+    ])).toBe(40000);
+  });
+  it("is zero when there are no expenses", () => {
+    expect(cashExpenseTotal([])).toBe(0);
   });
 });
 

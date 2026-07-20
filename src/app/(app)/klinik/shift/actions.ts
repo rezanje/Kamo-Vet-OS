@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "@/lib/shift-calc";
+import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "@/lib/shift-calc";
 
 // Shift klinik (Addendum §1: shift_type 'klinik' — gate modul pembayaran klinik).
 export async function mulaiShiftKlinik(formData: FormData) {
@@ -37,8 +37,10 @@ export async function tutupShiftKlinik(formData: FormData) {
 
   const { data: invoices } = await supabase
     .from("invoices").select("total, dp_amount, paid_status, metode_bayar").eq("shift_id", shiftId);
+  const { data: expenses } = await supabase
+    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
   const breakdown = methodBreakdown(invoiceCashRows(invoices ?? []));
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown);
+  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, cashExpenseTotal(expenses ?? []));
   const selisih = cashVariance(closing, expected);
 
   await supabase
@@ -62,5 +64,6 @@ export async function tutupShiftKlinik(formData: FormData) {
     });
   }
 
-  redirect("/mulai?success=close");
+  // Kasir buta cuma berlaku SEBELUM submit; setelah kas fisik terkunci breakdown boleh dilihat.
+  redirect(`/klinik/shift/${shiftId}`);
 }

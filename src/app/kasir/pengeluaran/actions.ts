@@ -20,6 +20,11 @@ export async function simpanPengeluaranKasir(formData: FormData) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Tempel ke shift berjalan biar pengeluaran tunai ikut ngurangin kas seharusnya saat tutup shift.
+  const { data: shift } = await supabase
+    .from("cashier_shifts").select("id")
+    .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
+
   const { error } = await supabase.from("expenses").insert({
     branch_id: branchId,
     tanggal: tanggal || undefined,
@@ -28,6 +33,7 @@ export async function simpanPengeluaranKasir(formData: FormData) {
     jumlah,
     metode_bayar: metode,
     bukti_url: null, // ponytail: skip upload bukti, kolom dibiarkan null sesuai spec.
+    shift_id: shift?.id ?? null,
     created_by: user?.id ?? null,
   });
   if (error) {
