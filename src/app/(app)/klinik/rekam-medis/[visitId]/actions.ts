@@ -7,7 +7,7 @@ import { stockDeductions } from "@/lib/compounding";
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
-  ingredients?: RacikBahan[]; dosage_form?: string;
+  kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
 };
 
 export async function simpanRekamMedis(formData: FormData) {
@@ -73,6 +73,8 @@ export async function simpanRekamMedis(formData: FormData) {
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" (invoice/struk existing tak berubah, nama-only otomatis).
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
+      // Kategori tindakan (§6.3) — dasar penentuan wajib/tidaknya form persetujuan.
+      kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
     }));
   if (rows.length) {
     const { error: piErr } = await supabase.from("prescription_items").insert(rows);

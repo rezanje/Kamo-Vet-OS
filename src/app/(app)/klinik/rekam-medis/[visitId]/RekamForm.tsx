@@ -5,11 +5,13 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { simpanRekamMedis } from "./actions";
 import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
+import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
 
 export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   jenis: "obat" | "jasa" | "racikan";
+  kategori?: string;
   ingredients?: RacikanIngredient[]; dosage_form?: string; aturan_pakai?: string;
 };
 
@@ -42,6 +44,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
   const [discountPct, setDiscountPct] = useState(0);
   const [jasaNama, setJasaNama] = useState("");
   const [jasaHarga, setJasaHarga] = useState(0);
+  const [jasaKategori, setJasaKategori] = useState<string>("Konsultasi");
 
   // Builder racikan
   const [racikNama, setRacikNama] = useState("");
@@ -92,7 +95,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
   };
   const addJasa = () => {
     if (!jasaNama.trim()) return;
-    setCart((c) => [...c, { key: `jasa-${c.length}-${jasaNama}`, item_id: null, nama_obat: jasaNama.trim(), qty: 1, satuan: "jasa", harga: jasaHarga, jenis: "jasa" }]);
+    setCart((c) => [...c, { key: `jasa-${c.length}-${jasaNama}`, item_id: null, nama_obat: jasaNama.trim(), qty: 1, satuan: "jasa", harga: jasaHarga, jenis: "jasa", kategori: jasaKategori }]);
     setJasaNama(""); setJasaHarga(0);
   };
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
@@ -224,6 +227,17 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
               {tab === "Jasa" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <input className="fi" placeholder="Nama jasa (mis. Konsultasi, Scaling gigi)" value={jasaNama} onChange={(e) => setJasaNama(e.target.value)} />
+                  <div>
+                    <label className="flab">Kategori tindakan *</label>
+                    <select className="fi" value={jasaKategori} onChange={(e) => setJasaKategori(e.target.value)}>
+                      {TINDAKAN_KATEGORI.map((k) => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                    {kategoriWajibConsent(jasaKategori) && (
+                      <div style={{ fontSize: 9.5, color: "#b91c1c", marginTop: 3 }}>
+                        <i className="ti ti-file-alert" /> Wajib form persetujuan — pembayaran diblokir sampai pemilik tanda tangan.
+                      </div>
+                    )}
+                  </div>
                   <input className="fi" type="number" min={0} step={1000} placeholder="Harga" value={jasaHarga || ""} onChange={(e) => setJasaHarga(Number(e.target.value))} />
                   <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "#2563eb", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
                 </div>

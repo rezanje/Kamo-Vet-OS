@@ -5,6 +5,7 @@ import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { voidAndReissue } from "./actions";
+import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -71,6 +72,16 @@ export default async function PembayaranPage({
     ? await supabase.from("prescription_items").select("nama_obat, qty, harga, jenis").eq("medical_record_id", mr.id).order("created_at")
     : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string }[] };
   const resepRows = (resep ?? []).map((r) => ({ deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0, jenis: r.jenis ?? "obat" }));
+
+  // §6.3: tindakan berisiko wajib punya consent bertanda tangan sebelum boleh ditagih.
+  const { data: kategoriRows } = mr
+    ? await supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id)
+    : { data: [] as { jenis: string; kategori: string | null }[] };
+  const { data: consentRows } = await supabase.from("consents").select("status").eq("visit_id", visitId);
+  const jasaKategori = (kategoriRows ?? []) as { jenis: string; kategori: string | null }[];
+  const consentList = (consentRows ?? []) as { status: string }[];
+  const bolehTagih = bolehBayar(jasaKategori, !!inpat, consentList);
+  const katBerisiko = kategoriBerisiko(jasaKategori, !!inpat);
   const prefill = resepRows.length
     ? resepRows
     : [{ deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0, jenis: "jasa" }];
@@ -176,7 +187,18 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {invoice && !lunas ? (
+      {!bolehTagih && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <i className="ti ti-file-alert" /> Pembayaran diblokir — tindakan {katBerisiko.join(", ")} wajib form persetujuan yang sudah ditandatangani.
+          </span>
+          <Link href={`/klinik/rekam-medis/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+            Buat / Tanda Tangani
+          </Link>
+        </div>
+      )}
+
+      {!bolehTagih ? null : invoice && !lunas ? (
         <PembayaranForm
           visitId={visit.id}
           patient={patient}

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
+import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string };
@@ -48,6 +49,30 @@ export async function bayarVisit(formData: FormData) {
   const { data: { user: payUser } } = await supabase.auth.getUser();
   const klinikShift = payUser ? await getOpenShift(supabase as never, payUser.id, "klinik") : null;
   if (!klinikShift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
+
+  // §6.3: tindakan berisiko tidak boleh ditagih sebelum pemilik menandatangani form
+  // persetujuan. Dicek server-side — UI menyembunyikan tombol, tapi itu bukan pengaman.
+  {
+    const { data: mrGate } = await supabase
+      .from("medical_records").select("id").eq("visit_id", visitId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const [{ data: jasaRows }, { data: inpatRow }, { data: consentRows }] = await Promise.all([
+      mrGate
+        ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mrGate.id)
+        : Promise.resolve({ data: [] as { jenis: string; kategori: string | null }[] }),
+      supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
+      supabase.from("consents").select("status").eq("visit_id", visitId),
+    ]);
+    const boleh = bolehBayar(
+      (jasaRows ?? []) as { jenis: string; kategori: string | null }[],
+      !!inpatRow,
+      (consentRows ?? []) as { status: string }[],
+    );
+    if (!boleh) {
+      const kat = kategoriBerisiko((jasaRows ?? []) as { jenis: string; kategori: string | null }[], !!inpatRow);
+      redirect(`${back}?error=${encodeURIComponent(`Form persetujuan untuk tindakan ${kat.join(", ")} belum ditandatangani`)}`);
+    }
+  }
 
   let items: Line[] = [];
   try {
