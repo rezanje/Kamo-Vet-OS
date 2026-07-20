@@ -51,17 +51,26 @@ export default async function RawatInapPage({
   let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at");
   if (branch) counterQ = counterQ.eq("branch_id", branch);
   const { data: allRecs } = await counterQ;
-  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+
+  // Server jalan di UTC, klinik di WIB. Tanpa geser +7 jam, pasien yang masuk
+  // 00.00–07.00 WIB terhitung "kemarin" di kartu RAWAT INAP HARI INI.
+  const tglWIB = (iso: string) => new Date(new Date(iso).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+  const hariIniWIB = tglWIB(new Date().toISOString());
+
   const counts = {
     total: (allRecs ?? []).filter((r) => !r.discharged_at).length,
-    hariIni: (allRecs ?? []).filter((r) => new Date(r.admitted_at) >= startOfDay).length,
-    sembuh: (allRecs ?? []).filter((r) => r.condition_status === "sembuh").length,
+    hariIni: (allRecs ?? []).filter((r) => tglWIB(r.admitted_at) === hariIniWIB).length,
+    // Yang dihitung: masih di klinik & sudah boleh pulang (perlu ditindaklanjuti staff).
+    // Sebelumnya semua pasien berstatus "sembuh" ikut terhitung selamanya — termasuk
+    // yang sudah pulang berbulan-bulan lalu, jadi angkanya cuma naik dan tak pernah turun.
+    sembuh: (allRecs ?? []).filter((r) => r.condition_status === "sembuh" && !r.discharged_at).length,
     kritis: (allRecs ?? []).filter((r) => r.condition_status === "kritis" && !r.discharged_at).length,
   };
 
   const nowMs = new Date().getTime();
-  const lamaInap = (admitted: string) => {
-    const days = Math.max(1, Math.ceil((nowMs - new Date(admitted).getTime()) / 86400000));
+  const lamaInap = (admitted: string, discharged?: string | null) => {
+    const akhir = discharged ? new Date(discharged).getTime() : nowMs;
+    const days = Math.max(1, Math.ceil((akhir - new Date(admitted).getTime()) / 86400000));
     return `${days} Hari`;
   };
 
@@ -163,7 +172,10 @@ export default async function RawatInapPage({
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.doctor_name ?? "—"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{new Date(r.admitted_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
-                    <td style={{ fontSize: 11 }}>{r.discharged_at ? "Pulang" : lamaInap(r.admitted_at)}</td>
+                    <td style={{ fontSize: 11 }}>
+                      {lamaInap(r.admitted_at, r.discharged_at)}
+                      {r.discharged_at && <div style={{ fontSize: 9, color: "var(--tm)" }}>sudah pulang</div>}
+                    </td>
                     <td><span className={`bge ${COND_BADGE[r.condition_status] ?? "o"}`}>{CONDITION_LABEL[r.condition_status as keyof typeof CONDITION_LABEL] ?? r.condition_status}</span></td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)", maxWidth: 160 }}>{r.treatment_plan ?? "—"}</td>
                     <td>
