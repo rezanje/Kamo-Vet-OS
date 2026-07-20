@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
+import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
+import { templatesForBranch } from "@/lib/consent";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -26,15 +28,15 @@ export default async function RekamMedisPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; racikan?: string }>;
+  searchParams: Promise<{ error?: string; racikan?: string; success?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, racikan } = await searchParams;
+  const { error, racikan, success } = await searchParams;
   const supabase = await createClient();
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, pet_id, poli, status, dokter, keluhan, created_at, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
+    .select("id, pet_id, branch_id, poli, status, dokter, keluhan, created_at, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
     .eq("id", visitId)
     .maybeSingle();
 
@@ -112,6 +114,19 @@ export default async function RekamMedisPage({
     bahanItems = all.filter((i) => i.is_compound_material);
   }
 
+  // Form persetujuan (spec 2026-07-20) — template yang berlaku utk cabang kunjungan ini.
+  const [{ data: consentRows }, { data: tplRows }] = await Promise.all([
+    supabase.from("consents")
+      .select("id, tindakan, isi_snapshot, status, signer_name, signature_data, signed_at")
+      .eq("visit_id", visitId).order("created_at"),
+    supabase.from("consent_templates").select("id, nama, branch_id, is_active"),
+  ]);
+  const consents = (consentRows ?? []) as ConsentRow[];
+  const templates = templatesForBranch(
+    (tplRows ?? []) as { id: string; nama: string; branch_id: string | null; is_active: boolean }[],
+    (visit.branch_id as string) ?? null,
+  );
+
   const petIdCode = pet
     ? `RM-${new Date(visit.created_at as string).toISOString().slice(2, 10).replace(/-/g, "")}-${(visit.id as string).slice(0, 4).toUpperCase()}`
     : "—";
@@ -140,6 +155,16 @@ export default async function RekamMedisPage({
       {racikan === "void" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Racikan di-void, stok bahan dikembalikan. Buat racikan baru bila perlu.
+        </div>
+      )}
+      {success === "consent" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Form persetujuan dibuat — minta pemilik menandatangani.
+        </div>
+      )}
+      {success === "ttd" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Form persetujuan ditandatangani.
         </div>
       )}
 
@@ -286,6 +311,10 @@ export default async function RekamMedisPage({
                 <RacikanInline visitId={visit.id} medicalRecordId={mrId} bahanItems={bahanItems} />
               </div>
             )}
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />
           </div>
 
           {/* Rawat inap (Addendum §3) — popup "Catatan Rawat Inap" design klinik/07 sebagai card inline. */}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, ripWaMessage, type Condition } from "@/lib/inpatient";
+import { hasSignedConsent } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
 import { LogDetailButton } from "./LogDetailButton";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -55,6 +56,12 @@ export default async function RawatInapDetailPage({
   const cust = one(visit?.customers ?? null);
   const branch = one(rec.branches as Rel<{ name: string }>);
 
+  // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
+  // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
+  const { data: consentRows } = await supabase
+    .from("consents").select("status").eq("visit_id", rec.visit_id as string);
+  const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
+
   const [{ data: logs }, { data: statusLog }, { data: me }] = await Promise.all([
     supabase.from("inpatient_daily_logs").select("log_date, condition_note, tindakan, keterangan, doctor_name, created_at")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
@@ -100,6 +107,18 @@ export default async function RawatInapDetailPage({
       {success === "log" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Laporan harian tercatat (append-only).</div>}
       {success === "status" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Kondisi pasien diperbarui & tercatat di log.</div>}
       {success === "wa" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-brand-whatsapp" /> WA duka terkirim ke pemilik.</div>}
+      {consentBelum && (
+        <div className="p2ban" style={{ justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <i className="ti ti-file-alert" /> Belum ada form persetujuan yang ditandatangani untuk kunjungan ini.
+          </span>
+          {visit && (
+            <Link href={`/klinik/rekam-medis/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+              Buat Form Persetujuan
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Review WA RIP — spec §3: single doctor approval + review sebelum kirim, BUKAN auto-send. */}
       {cond === "rip" && wa === "review" && (

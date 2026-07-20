@@ -35,9 +35,21 @@ export async function simpanRekamMedis(formData: FormData) {
 
   const back = `/klinik/rekam-medis/${visitId}`;
 
+  // Foto penunjang: path di bucket privat `medical-docs`, dikirim sbg JSON dari klien.
+  let penunjangUrls: string[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("penunjang_urls") ?? "[]"));
+    if (Array.isArray(parsed)) penunjangUrls = parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+  } catch {
+    penunjangUrls = [];
+  }
+
   const { data: mr, error: mrErr } = await supabase
     .from("medical_records")
-    .insert({ visit_id: visitId, diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang, follow_up, catatan_resep })
+    .insert({
+      visit_id: visitId, diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang, follow_up, catatan_resep,
+      penunjang_urls: penunjangUrls.length ? penunjangUrls : null,
+    })
     .select("id").single();
   if (mrErr || !mr) {
     redirect(`${back}?error=${encodeURIComponent(mrErr?.message ?? "Gagal simpan rekam medis")}`);

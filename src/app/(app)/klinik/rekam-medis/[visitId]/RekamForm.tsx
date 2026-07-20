@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { simpanRekamMedis } from "./actions";
 import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
+import { PenunjangUpload } from "@/components/PenunjangUpload";
 
 export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number };
 type CartRow = {
@@ -163,6 +164,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
           </ExamField>
           <ExamField icon="ti-flask" color="#7c3aed" label="Hasil Pemeriksaan Penunjang">
             <input className="fi" name="hasil_penunjang" placeholder="mis. Foto thorax normal" />
+            <PenunjangUpload name="penunjang_urls" />
           </ExamField>
           <ExamField icon="ti-stethoscope" color="#2563eb" label="Diagnosa">
             <textarea className="fi" name="diagnosis" rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />

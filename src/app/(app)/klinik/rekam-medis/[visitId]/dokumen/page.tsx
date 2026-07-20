@@ -34,8 +34,22 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
 
   const { data: mr } = await supabase
     .from("medical_records")
-    .select("id, diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang, follow_up, catatan_resep, created_at")
+    .select("id, diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang, penunjang_urls, follow_up, catatan_resep, created_at")
     .eq("visit_id", visitId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+  // Form persetujuan asli — sebelumnya nilai ini hardcoded "Ditandatangani".
+  const { data: consentRows } = await supabase
+    .from("consents").select("status, tindakan, signer_name, signed_at").eq("visit_id", visitId).order("created_at");
+  const consents = (consentRows ?? []) as { status: string; tindakan: string; signer_name: string | null; signed_at: string | null }[];
+  const consentSigned = consents.find((c) => c.status === "sudah_ttd") ?? null;
+
+  // Bucket medical-docs privat → butuh signed URL, tidak bisa dipakai langsung.
+  const penunjangPaths = ((mr?.penunjang_urls ?? []) as string[]).filter(Boolean);
+  let penunjangUrls: string[] = [];
+  if (penunjangPaths.length) {
+    const { data: signed } = await supabase.storage.from("medical-docs").createSignedUrls(penunjangPaths, 3600);
+    penunjangUrls = (signed ?? []).map((s) => s.signedUrl).filter((u): u is string => !!u);
+  }
 
   const { data: presc } = mr
     ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, jenis").eq("medical_record_id", mr.id).order("created_at")
@@ -121,8 +135,27 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
             <Clin label="Gejala Klinis" value={mr?.gejala_klinis} />
             <Clin label="Hasil Pemeriksaan Penunjang" value={mr?.hasil_penunjang} />
             <Clin label="Diagnosa" value={mr?.diagnosis} />
-            <Clin label="Form Persetujuan" value={<span style={{ color: "#15803d", fontWeight: 600 }}>Ditandatangani</span>} />
+            <Clin label="Form Persetujuan" value={
+              consentSigned
+                ? <span style={{ color: "#15803d", fontWeight: 600 }}>Ditandatangani{consentSigned.signer_name ? ` — ${consentSigned.signer_name}` : ""}</span>
+                : consents.length
+                  ? <span style={{ color: "#b91c1c", fontWeight: 600 }}>Belum ditandatangani</span>
+                  : <span style={{ color: "var(--tm)" }}>Tidak ada</span>
+            } />
             <Clin label="Status" value={visit.status} />
+
+            {penunjangUrls.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <SecTitle icon="ti-photo" text="FOTO HASIL PENUNJANG" />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {penunjangUrls.map((u, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={i} src={u} alt={`Hasil penunjang ${i + 1}`}
+                      style={{ width: 120, height: 120, objectFit: "cover", border: ".5px solid var(--bd)", borderRadius: 8 }} />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={{ marginTop: 14 }}>
               <SecTitle icon="ti-calendar-event" text="FOLLOW UP" />
