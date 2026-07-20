@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { simpanRekamMedis } from "./actions";
 import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
+import { PetPhotoUpload } from "@/components/PetPhotoUpload";
 import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
 
 export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number };
@@ -123,11 +124,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
           <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--sb)", letterSpacing: ".02em", marginBottom: 12 }}>DATA PASIEN</div>
 
           <div style={{ display: "flex", gap: 14, marginBottom: 14 }}>
-            <div style={{ width: 72, height: 72, borderRadius: 10, background: "var(--sf1)", border: ".5px solid var(--bd)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-              {patient.photo
-                ? <img src={patient.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <i className="ti ti-paw" style={{ fontSize: 30, color: "var(--td)" }} />}
-            </div>
+            <PetPhotoUpload petId={petId} initialUrl={patient.photo} />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 17, fontWeight: 800, color: "var(--sb)" }}>{patient.name}</span>
