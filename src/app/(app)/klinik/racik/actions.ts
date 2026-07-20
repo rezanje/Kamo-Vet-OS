@@ -78,6 +78,31 @@ export async function addRacikan(formData: FormData) {
   redirect(`/klinik/rekam-medis/${visitId}?racikan=dibuat`);
 }
 
+// Petunjuk racik diisi apoteker di halaman racik (bukan dokter): jumlah jadi + langkah
+// racik teknis. Hanya selama racikan belum diserahkan.
+export async function updateRacikPetunjuk(formData: FormData) {
+  const supabase = await createClient();
+  const recipeId = String(formData.get("recipeId") ?? "");
+  const totalVolume = String(formData.get("total_volume") ?? "").trim() || null;
+  const steps = String(formData.get("compounding_steps") ?? "").trim() || null;
+  const back = `/klinik/racik/${recipeId}`;
+  if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
+
+  const { data: r } = await supabase.from("compounding_recipes").select("status").eq("id", recipeId).maybeSingle();
+  if (!r || r.status === "handed_over" || r.status === "void") {
+    redirect(`${back}?error=${encodeURIComponent("Racikan sudah diserahkan / void — tidak bisa diubah")}`);
+  }
+
+  const { error } = await supabase
+    .from("compounding_recipes")
+    .update({ total_volume: totalVolume, compounding_steps: steps })
+    .eq("id", recipeId);
+  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+
+  revalidatePath(back);
+  redirect(`${back}?success=petunjuk`);
+}
+
 // pending → ready (obat siap diserahkan) → handed_over (sudah diserahkan).
 export async function advanceRecipeStatus(formData: FormData) {
   const supabase = await createClient();
