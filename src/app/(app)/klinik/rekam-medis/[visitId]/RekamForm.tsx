@@ -7,9 +7,12 @@ import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
 import { PetPhotoUpload } from "@/components/PetPhotoUpload";
 import { FollowUpTable } from "@/components/FollowUpTable";
-import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
+import { kategoriWajibConsent } from "@/lib/tindakan";
 
-export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number };
+export type ItemLite = {
+  id: string; name: string; unit: string; sell_price: number; stok: number;
+  tindakan_kategori?: string | null;
+};
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   jenis: "obat" | "jasa" | "racikan";
@@ -32,11 +35,12 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, patient, items, bahanItems, currentWeight }: {
+export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItems, currentWeight }: {
   visitId: string; petId: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   bahanItems: ItemLite[];
+  jasaItems: ItemLite[];
   currentWeight: number | null;
 }) {
   const [tab, setTab] = useState<"Obat" | "Jasa" | "Paket" | "Racikan">("Obat");
@@ -44,9 +48,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
   const [cart, setCart] = useState<CartRow[]>([]);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
-  const [jasaNama, setJasaNama] = useState("");
-  const [jasaHarga, setJasaHarga] = useState(0);
-  const [jasaKategori, setJasaKategori] = useState<string>("Konsultasi");
+  const [jasaSearch, setJasaSearch] = useState("");
 
   // Builder racikan
   const [racikNama, setRacikNama] = useState("");
@@ -95,10 +97,22 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
       return [...c, { key: it.id, item_id: it.id, nama_obat: it.name, qty: 1, satuan: it.unit, harga: it.sell_price, jenis: "obat" }];
     });
   };
-  const addJasa = () => {
-    if (!jasaNama.trim()) return;
-    setCart((c) => [...c, { key: `jasa-${c.length}-${jasaNama}`, item_id: null, nama_obat: jasaNama.trim(), qty: 1, satuan: "jasa", harga: jasaHarga, jenis: "jasa", kategori: jasaKategori }]);
-    setJasaNama(""); setJasaHarga(0);
+  const jasaFiltered = useMemo(
+    () => jasaItems.filter((it) => it.name.toLowerCase().includes(jasaSearch.toLowerCase())).slice(0, 40),
+    [jasaItems, jasaSearch],
+  );
+
+  // Jasa hanya dari master SKU — kategori tindakan ikut item, bukan pilihan bebas staff,
+  // supaya aturan wajib-consent (§6.3) tidak bisa dilewati.
+  const addJasa = (it: ItemLite) => {
+    setCart((c) => {
+      const ex = c.find((r) => r.item_id === it.id);
+      if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
+      return [...c, {
+        key: it.id, item_id: it.id, nama_obat: it.name, qty: 1, satuan: it.unit || "tindakan",
+        harga: it.sell_price, jenis: "jasa", kategori: it.tindakan_kategori ?? undefined,
+      }];
+    });
   };
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
   const del = (key: string) => setCart((c) => c.filter((r) => r.key !== key));
@@ -224,20 +238,40 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, currentW
               )}
               {tab === "Jasa" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <input className="fi" placeholder="Nama jasa (mis. Konsultasi, Scaling gigi)" value={jasaNama} onChange={(e) => setJasaNama(e.target.value)} />
-                  <div>
-                    <label className="flab">Kategori tindakan *</label>
-                    <select className="fi" value={jasaKategori} onChange={(e) => setJasaKategori(e.target.value)}>
-                      {TINDAKAN_KATEGORI.map((k) => <option key={k} value={k}>{k}</option>)}
-                    </select>
-                    {kategoriWajibConsent(jasaKategori) && (
-                      <div style={{ fontSize: 9.5, color: "#b91c1c", marginTop: 3 }}>
-                        <i className="ti ti-file-alert" /> Wajib form persetujuan — pembayaran diblokir sampai pemilik tanda tangan.
+                  <div style={{ position: "relative" }}>
+                    <input className="fi" placeholder="Cari jasa / tindakan..." value={jasaSearch} onChange={(e) => setJasaSearch(e.target.value)} style={{ paddingRight: 28 }} />
+                    <i className="ti ti-search" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 13 }} />
+                  </div>
+                  <div style={{ maxHeight: 210, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
+                    {jasaItems.length === 0 && (
+                      <div style={{ fontSize: 10.5, color: "var(--td)", padding: "10px" }}>
+                        Belum ada SKU jasa. Tambahkan dulu di POS &amp; Inventori → Master SKU (kategori Jasa).
                       </div>
                     )}
+                    {jasaItems.length > 0 && jasaFiltered.length === 0 && (
+                      <div style={{ fontSize: 10.5, color: "var(--td)", padding: "10px" }}>Tidak ada jasa cocok.</div>
+                    )}
+                    {jasaFiltered.map((it) => (
+                      <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderBottom: ".5px solid var(--bd)" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</div>
+                          <div style={{ fontSize: 9, color: "var(--tm)", display: "flex", alignItems: "center", gap: 5 }}>
+                            {rp(it.sell_price)}
+                            {it.tindakan_kategori && (
+                              <span className={`bge ${kategoriWajibConsent(it.tindakan_kategori) ? "r" : "b"}`} style={{ fontSize: 8 }}>
+                                {it.tindakan_kategori}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => addJasa(it)} className="btn-acc"
+                          style={{ padding: "3px 8px", background: "#2563eb" }}><i className="ti ti-plus" /></button>
+                      </div>
+                    ))}
                   </div>
-                  <input className="fi" type="number" min={0} step={1000} placeholder="Harga" value={jasaHarga || ""} onChange={(e) => setJasaHarga(Number(e.target.value))} />
-                  <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "#2563eb", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
+                  <div style={{ fontSize: 9, color: "var(--td)" }}>
+                    <i className="ti ti-info-circle" /> Jasa &amp; tarifnya diatur di Master SKU, tidak bisa diketik bebas di sini.
+                  </div>
                 </div>
               )}
               {tab === "Paket" && (

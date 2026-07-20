@@ -92,25 +92,37 @@ export default async function RekamMedisPage({
   const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 5, Selesai: 6 };
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
 
-  // Daftar obat (form pemeriksaan) + bahan baku (racikan inline, dipakai juga di recorded view).
-  type ItemLiteFull = { id: string; name: string; unit: string; sell_price: number; stok: number; is_compound_material: boolean };
+  // Daftar obat (form pemeriksaan) + bahan baku (racikan inline, dipakai juga di recorded view)
+  // + jasa. Jasa wajib dari master SKU — dokter tidak boleh mengetik jasa bebas.
+  type ItemLiteFull = {
+    id: string; name: string; unit: string; sell_price: number; stok: number;
+    is_compound_material: boolean; tindakan_kategori?: string | null;
+  };
   let obatItems: ItemLiteFull[] = [];
   let bahanItems: ItemLiteFull[] = [];
+  let jasaItems: ItemLiteFull[] = [];
   {
+    const { data: jasaKat } = await supabase
+      .from("item_categories").select("id").eq("name", "Jasa").maybeSingle();
     const { data: itemRows } = await supabase
-      .from("items").select("id, name, unit, sell_price, is_compound_material").eq("is_active", true).order("name").limit(400);
+      .from("items").select("id, name, unit, sell_price, is_compound_material, category_id, tindakan_kategori")
+      .eq("is_active", true).order("name").limit(400);
     const ids = (itemRows ?? []).map((i) => i.id);
     const { data: stockRows } = ids.length
       ? await supabase.from("stock").select("item_id, qty").in("item_id", ids)
       : { data: [] as { item_id: string; qty: number }[] };
     const stokByItem = new Map<string, number>();
     for (const s of stockRows ?? []) stokByItem.set(s.item_id as string, (stokByItem.get(s.item_id as string) ?? 0) + Number(s.qty));
-    const all: ItemLiteFull[] = (itemRows ?? []).map((i) => ({
+    const all = (itemRows ?? []).map((i) => ({
       id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
       sell_price: Number(i.sell_price), stok: stokByItem.get(i.id as string) ?? 0,
       is_compound_material: Boolean(i.is_compound_material),
+      category_id: (i.category_id as string | null) ?? null,
+      tindakan_kategori: (i.tindakan_kategori as string | null) ?? null,
     }));
-    obatItems = all.filter((i) => !i.is_compound_material);
+    const isJasa = (i: { category_id: string | null }) => !!jasaKat && i.category_id === jasaKat.id;
+    jasaItems = all.filter(isJasa);
+    obatItems = all.filter((i) => !i.is_compound_material && !isJasa(i));
     bahanItems = all.filter((i) => i.is_compound_material);
   }
 
@@ -360,6 +372,7 @@ export default async function RekamMedisPage({
           currentWeight={pet?.weight ?? null}
           items={obatItems}
           bahanItems={bahanItems}
+          jasaItems={jasaItems}
           patient={{
             name: pet?.name ?? "—",
             species: pet?.species ?? "—",
