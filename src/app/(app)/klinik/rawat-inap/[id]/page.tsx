@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, ripWaMessage, type Condition } from "@/lib/inpatient";
 import { hasSignedConsent } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
-import { LogDetailButton } from "./LogDetailButton";
 import { SubmitButton } from "@/components/SubmitButton";
 
 type Rel<T> = T | T[] | null;
@@ -63,7 +62,7 @@ export default async function RawatInapDetailPage({
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
 
   const [{ data: logs }, { data: statusLog }, { data: me }] = await Promise.all([
-    supabase.from("inpatient_daily_logs").select("log_date, condition_note, tindakan, keterangan, doctor_name, created_at")
+    supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, updated_at")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
     supabase.from("inpatient_status_log").select("previous_status, new_status, notes, changed_at, profiles(full_name)")
       .eq("inpatient_record_id", id).order("changed_at", { ascending: false }),
@@ -105,6 +104,7 @@ export default async function RawatInapDetailPage({
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success === "admit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pasien masuk rawat inap.</div>}
       {success === "log" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Laporan harian tercatat (append-only).</div>}
+      {success === "logedit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Catatan dikoreksi — isi lama tersimpan di riwayat koreksi.</div>}
       {success === "status" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Kondisi pasien diperbarui & tercatat di log.</div>}
       {success === "wa" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-brand-whatsapp" /> WA duka terkirim ke pemilik.</div>}
       {consentBelum && (
@@ -245,12 +245,18 @@ export default async function RawatInapDetailPage({
                 <tr key={i}>
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{fmtDate(l.created_at)}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)", whiteSpace: "nowrap" }}>{fmtT(l.created_at)}</td>
-                  <td style={{ fontSize: 11.5 }}>{l.condition_note}</td>
+                  <td style={{ fontSize: 11.5 }}>
+                    {l.condition_note}
+                    {l.updated_at && <span className="bge o" style={{ marginLeft: 5, fontSize: 8 }} title="Catatan pernah dikoreksi">diedit</span>}
+                  </td>
                   <td style={{ fontSize: 11.5 }}>{l.tindakan ?? "—"}</td>
                   <td style={{ fontSize: 11.5, color: "var(--tm)" }}>{l.keterangan ?? "—"}</td>
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.doctor_name ?? "—"}</td>
                   <td style={{ textAlign: "center" }}>
-                    <LogDetailButton log={{ tanggal: fmtDate(l.created_at), waktu: fmtT(l.created_at), condition_note: l.condition_note, tindakan: l.tindakan, keterangan: l.keterangan, doctor_name: l.doctor_name }} />
+                    <Link href={`/klinik/rawat-inap/${rec.id}/catatan/${l.id}`} title="Lihat detail"
+                      style={{ display: "inline-flex", width: 26, height: 26, borderRadius: 6, border: "1px solid #bfdbfe", color: "#2563eb", background: "#fff", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
+                      <i className="ti ti-eye" />
+                    </Link>
                   </td>
                 </tr>
               ))}

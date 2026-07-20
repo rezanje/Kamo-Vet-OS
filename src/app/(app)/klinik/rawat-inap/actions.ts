@@ -242,3 +242,55 @@ export async function sendRipWa(formData: FormData) {
   const result = await sendWA(cust!.phone, ripWaMessage(pet?.name ?? "anabul Anda", cust!.name, branch?.name ?? "klinik kami"));
   redirect(result.ok ? `${back}?success=wa` : `${back}?error=${encodeURIComponent("WA gagal terkirim: " + (result.reason ?? ""))}`);
 }
+
+// Koreksi catatan harian. Append-only dilonggarkan (spec 2026-07-20) TAPI isi lama
+// selalu disnapshot ke inpatient_daily_log_edits — rekam medis yang bisa diubah
+// tanpa jejak tidak bisa dipakai kalau ada sengketa dgn pemilik hewan.
+export async function updateDailyLog(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const logId = String(formData.get("logId") ?? "");
+  const recordId = String(formData.get("recordId") ?? "");
+  const conditionNote = String(formData.get("condition_note") ?? "").trim();
+  const tindakan = String(formData.get("tindakan") ?? "").trim() || null;
+  const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
+  const doctorName = String(formData.get("doctor_name") ?? "").trim() || null;
+  const logDate = String(formData.get("log_date") ?? "").trim();
+  const logTime = String(formData.get("log_time") ?? "").trim();
+  const alasan = String(formData.get("alasan") ?? "").trim() || null;
+
+  const back = `/klinik/rawat-inap/${recordId}`;
+  const here = `${back}/catatan/${logId}`;
+  if (!logId || !recordId) redirect(`${back}?error=${encodeURIComponent("Catatan tidak valid")}`);
+  if (!conditionNote) redirect(`${here}?error=${encodeURIComponent("Kondisi pasien wajib diisi")}`);
+
+  const { data: before } = await supabase
+    .from("inpatient_daily_logs")
+    .select("id, inpatient_record_id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at")
+    .eq("id", logId).maybeSingle();
+  if (!before) redirect(`${back}?error=${encodeURIComponent("Catatan tidak ditemukan")}`);
+
+  // Pasien sudah pulang/RIP → catatan dikunci. Koreksi setelah kasus ditutup harus
+  // lewat jalur lain, bukan diam-diam dari layar ini.
+  const { data: rec } = await supabase
+    .from("inpatient_records").select("discharged_at").eq("id", recordId).maybeSingle();
+  if (rec?.discharged_at) redirect(`${back}?error=${encodeURIComponent("Rawat inap sudah ditutup — catatan tidak bisa diubah lagi")}`);
+
+  const stamp = logDate && logTime ? new Date(`${logDate}T${logTime}`) : null;
+  const { error: upErr } = await supabase.from("inpatient_daily_logs").update({
+    condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
+    updated_at: new Date().toISOString(), updated_by: user?.id ?? null,
+    ...(logDate ? { log_date: logDate } : {}),
+    ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
+  }).eq("id", logId);
+  if (upErr) redirect(`${here}?error=${encodeURIComponent(upErr.message)}`);
+
+  // Snapshot ditulis setelah update berhasil supaya tidak ada baris audit palsu
+  // untuk perubahan yang sebenarnya gagal.
+  await supabase.from("inpatient_daily_log_edits").insert({
+    log_id: logId, edited_by: user?.id ?? null, before, alasan,
+  });
+
+  redirect(`${back}?success=logedit`);
+}
