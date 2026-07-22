@@ -66,6 +66,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Master SKU", icon: "ti-package", ...B, nw: true, href: "/pos/sku" },
     { label: "Stok per gudang", icon: "ti-stack", ...G, href: "/pos/stok" },
     { label: "Permintaan barang", icon: "ti-truck-delivery", ...B, href: "/pos/permintaan" },
+    { label: "Pemindahan barang", icon: "ti-transfer", ...G, nw: true, href: "/pos/pemindahan" },
     { label: "Monitor expired", icon: "ti-calendar-x", ...R },
     { label: "Reorder alert", icon: "ti-alert-triangle", ...A },
     { label: "Quest staff", icon: "ti-trophy", ...A, nw: true, href: "/pos/quest" },
