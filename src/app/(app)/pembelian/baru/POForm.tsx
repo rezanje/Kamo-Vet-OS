@@ -9,24 +9,37 @@ import { buatPO } from "../actions";
 type Supplier = { id: string; nama: string };
 type Warehouse = { id: string; name: string };
 type Branch = { id: string; name: string };
-type Row = { nama: string; qty: number; harga_beli: number };
+type Item = { id: string; code: string; name: string; buy_price: number };
+type Row = { nama: string; qty: number; harga_beli: number; item_id?: string | null };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const blank: Row = { nama: "", qty: 1, harga_beli: 0 };
+const blank: Row = { nama: "", qty: 1, harga_beli: 0, item_id: null };
+const itemLabel = (it: Item) => `${it.code} — ${it.name}`;
 
 export function POForm({
   suppliers,
   warehouses,
   branches,
+  items,
 }: {
   suppliers: Supplier[];
   warehouses: Warehouse[];
   branches: Branch[];
+  items: Item[];
 }) {
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
+  const byLabel = new Map(items.map((it) => [itemLabel(it), it]));
 
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  // Pilih dari master SKU → link item_id + prefill harga beli; teks bebas tetap boleh (item_id null).
+  const setNama = (i: number, v: string) => {
+    const it = byLabel.get(v);
+    set(i, it
+      ? { nama: v, item_id: it.id, harga_beli: Number(it.buy_price) || 0 }
+      : { nama: v, item_id: null });
+  };
   const add = () => setRows((rs) => [...rs, { ...blank }]);
   const del = (i: number) =>
     setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
@@ -41,6 +54,9 @@ export function POForm({
   return (
     <form action={buatPO}>
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
+      <datalist id="po-items">
+        {items.map((it) => <option key={it.id} value={itemLabel(it)} />)}
+      </datalist>
 
       <div className="grid2">
         {/* Kolom kiri: detail PO */}
@@ -127,9 +143,10 @@ export function POForm({
               <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <input
                   className="fi"
-                  placeholder="Nama barang"
+                  list="po-items"
+                  placeholder="Kode / nama barang"
                   value={r.nama}
-                  onChange={(e) => set(i, { nama: e.target.value })}
+                  onChange={(e) => setNama(i, e.target.value)}
                   style={{ flex: 2 }}
                 />
                 <input
@@ -168,7 +185,8 @@ export function POForm({
           </div>
 
           <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
-            Baris tanpa nama barang akan diabaikan. Item linked ke master katalog bisa diisi setelah PO diterima.
+            Pilih dari daftar master SKU agar stok otomatis bertambah saat PO diterima (dan bisa diretur).
+            Baris tanpa nama diabaikan.
           </div>
         </div>
       </div>

@@ -75,6 +75,7 @@ export const TILES: Record<string, Tile[]> = {
   ],
   pembelian: [
     { label: "Pesanan pembelian", icon: "ti-file-invoice", ...G },
+    { label: "Retur pembelian", icon: "ti-truck-return", ...G, nw: true, href: "/pembelian/retur" },
     { label: "Penerimaan barang", icon: "ti-package-import", ...G },
     { label: "Faktur pembelian", icon: "ti-receipt", ...G },
     { label: "Pembayaran pembelian", icon: "ti-cash", ...B, nw: true, href: "/keuangan/hutang" },
@@ -90,7 +91,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Uang muka penjualan", icon: "ti-coin", ...B },
     { label: "Faktur penjualan", icon: "ti-receipt-2", ...G },
     { label: "Penerimaan penjualan", icon: "ti-cash-banknote", ...B },
-    { label: "Retur penjualan", icon: "ti-arrow-back-up", ...R },
+    { label: "Retur penjualan", icon: "ti-arrow-back-up", ...G, nw: true, href: "/penjualan/retur" },
     { label: "Komisi penjual", icon: "ti-percentage", ...P },
     { label: "Target penjualan", icon: "ti-target", ...A },
   ],

@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 
-type ItemInput = { nama: string; qty: number; harga_beli: number };
+type ItemInput = { nama: string; qty: number; harga_beli: number; item_id?: string | null };
 
 // ─── Buat PO ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +57,7 @@ export async function buatPO(formData: FormData) {
   const poId = (po as { id: string }).id;
   const rows = items.map((it) => ({
     po_id: poId,
+    item_id: it.item_id || null,   // link master SKU → stok bertambah saat Diterima & bisa diretur
     nama: String(it.nama).slice(0, 160),
     qty: Number(it.qty) || 0,
     harga_beli: Number(it.harga_beli) || 0,

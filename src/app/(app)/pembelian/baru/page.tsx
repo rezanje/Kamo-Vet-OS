@@ -12,10 +12,11 @@ export default async function BaruPOPage({
   const { error } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: suppliers }, { data: warehouses }, { data: branches }] = await Promise.all([
+  const [{ data: suppliers }, { data: warehouses }, { data: branches }, { data: items }] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name").order("name"),
     supabase.from("branches").select("id, name").order("name"),
+    supabase.from("items").select("id, code, name, buy_price").eq("is_active", true).order("name"),
   ]);
 
   return (
@@ -38,6 +39,7 @@ export default async function BaruPOPage({
         suppliers={suppliers ?? []}
         warehouses={warehouses ?? []}
         branches={branches ?? []}
+        items={items ?? []}
       />
     </>
   );

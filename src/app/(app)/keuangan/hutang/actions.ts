@@ -27,9 +27,13 @@ export async function bayarHutang(formData: FormData) {
   if (!po) redirect(`${back}?error=${encodeURIComponent("PO tidak ditemukan")}`);
   if (po!.status !== "Diterima") redirect(`${back}?error=${encodeURIComponent("Hanya PO berstatus Diterima yang punya hutang")}`);
 
-  const { data: pays } = await supabase.from("po_payments").select("amount").eq("po_id", poId);
+  const [{ data: pays }, { data: rets }] = await Promise.all([
+    supabase.from("po_payments").select("amount").eq("po_id", poId),
+    supabase.from("purchase_returns").select("total").eq("po_id", poId),
+  ]);
   const sudahDibayar = (pays ?? []).reduce((a, p) => a + Number(p.amount), 0);
-  const sisa = Math.max(0, Number(po!.total) - sudahDibayar);
+  const totalRetur = (rets ?? []).reduce((a, r) => a + Number(r.total), 0);
+  const sisa = Math.max(0, Number(po!.total) - sudahDibayar - totalRetur);
 
   if (sisa <= 0) redirect(`${back}?error=${encodeURIComponent("Hutang PO ini sudah lunas")}`);
   if (amount > sisa) redirect(`${back}?error=${encodeURIComponent(`Nominal melebihi sisa hutang (maks Rp ${Math.round(sisa).toLocaleString("id-ID")})`)}`);

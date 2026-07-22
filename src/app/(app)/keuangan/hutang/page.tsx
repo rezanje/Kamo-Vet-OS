@@ -25,17 +25,23 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
     .order("tanggal");
 
   const ids = (pos ?? []).map((p) => p.id);
-  const { data: pays } = ids.length
-    ? await supabase.from("po_payments").select("po_id, amount").in("po_id", ids)
-    : { data: [] as { po_id: string; amount: number }[] };
+  const [{ data: pays }, { data: rets }] = ids.length
+    ? await Promise.all([
+        supabase.from("po_payments").select("po_id, amount").in("po_id", ids),
+        supabase.from("purchase_returns").select("po_id, total").in("po_id", ids),
+      ])
+    : [{ data: [] as { po_id: string; amount: number }[] }, { data: [] as { po_id: string; total: number }[] }];
 
   const paidMap = new Map<string, number>();
   for (const p of pays ?? []) paidMap.set(p.po_id, (paidMap.get(p.po_id) ?? 0) + Number(p.amount));
+  // retur pembelian memotong hutang (Dr Hutang / Cr Persediaan)
+  const returMap = new Map<string, number>();
+  for (const r of rets ?? []) returMap.set(r.po_id, (returMap.get(r.po_id) ?? 0) + Number(r.total));
 
   const rows: Row[] = (pos ?? [])
     .map((p) => {
       const sup = Array.isArray(p.suppliers) ? p.suppliers[0] : p.suppliers;
-      const dibayar = paidMap.get(p.id) ?? 0;
+      const dibayar = (paidMap.get(p.id) ?? 0) + (returMap.get(p.id) ?? 0);
       const sisa = Math.max(0, Number(p.total) - dibayar);
       return {
         id: p.id, no_po: p.no_po, tanggal: p.tanggal,
