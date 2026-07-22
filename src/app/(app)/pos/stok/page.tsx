@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { pivotStokPerGudang, type StokBaris } from "@/lib/laporan";
 import { tambahStok } from "./actions";
 
 type Rel<T> = T | T[] | null;
@@ -27,8 +28,30 @@ export default async function StokPage({
     .order("name");
   const warehouses = (warehousesRaw ?? []) as unknown as Warehouse[];
 
+  // "all" = matrix semua gudang (ala laporan Persediaan per Gudang Accurate).
+  const matrixMode = wh === "all";
   // gudang terpilih dari ?wh (filter Link-based), fallback ke yang pertama.
-  const selectedWh = warehouses.find((w) => w.id === wh) ?? warehouses[0] ?? null;
+  const selectedWh = matrixMode ? null : warehouses.find((w) => w.id === wh) ?? warehouses[0] ?? null;
+
+  let matrix: ReturnType<typeof pivotStokPerGudang> | null = null;
+  if (matrixMode) {
+    const { data: allStock } = await supabase
+      .from("stock")
+      .select("item_id, qty, warehouses(code), items(id, code, name, unit)");
+    const rows: StokBaris[] = ((allStock ?? []) as unknown as { item_id: string; qty: number; warehouses: Rel<{ code: string }>; items: Rel<Item> }[])
+      .map((s) => {
+        const it = one(s.items);
+        return {
+          item_id: s.item_id,
+          code: it?.code ?? "—",
+          name: it?.name ?? "—",
+          unit: it?.unit ?? "",
+          wh_code: one(s.warehouses)?.code ?? "?",
+          qty: Number(s.qty),
+        };
+      });
+    matrix = pivotStokPerGudang(rows);
+  }
 
   let stock: StockRow[] = [];
   let items: Item[] = [];
@@ -64,6 +87,11 @@ export default async function StokPage({
         <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 8 }}>Pilih gudang</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
           {warehouses.length === 0 && <span style={{ fontSize: 11, color: "var(--td)" }}>Belum ada gudang aktif.</span>}
+          {warehouses.length > 0 && (
+            <Link href="/pos/stok?wh=all" className={matrixMode ? "btn-acc" : "btn-def"} style={{ fontSize: 11 }}>
+              <i className="ti ti-table" /> Semua gudang (matrix)
+            </Link>
+          )}
           {warehouses.map((w) => {
             const active = selectedWh?.id === w.id;
             return (
@@ -80,6 +108,48 @@ export default async function StokPage({
         </div>
       </div>
 
+      {matrixMode && matrix && (
+        <div className="crm-sec">
+          <SecHeader
+            num="01"
+            title="RINGKASAN PERSEDIAAN PER GUDANG"
+            desc={`${matrix.items.length} barang × ${matrix.gudang.length} gudang (ala laporan Accurate). Geser ke samping untuk semua gudang.`}
+          />
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ minWidth: 520 + matrix.gudang.length * 72 }}>
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Nama</th>
+                  {matrix.gudang.map((g) => (
+                    <th key={g} style={{ textAlign: "right", whiteSpace: "nowrap" }}>{g}</th>
+                  ))}
+                  <th style={{ textAlign: "right" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.items.map((r) => (
+                  <tr key={r.item_id}>
+                    <td style={{ fontSize: 11, fontFamily: "var(--mono, monospace)" }}>{r.code}</td>
+                    <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{r.name}</td>
+                    {matrix!.gudang.map((g) => (
+                      <td key={g} style={{ textAlign: "right", fontSize: 11, color: r.per[g] ? undefined : "var(--td)" }}>
+                        {r.per[g] ? Number(r.per[g]).toLocaleString("id-ID") : "·"}
+                      </td>
+                    ))}
+                    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 700 }}>{r.total.toLocaleString("id-ID")}</td>
+                  </tr>
+                ))}
+                {matrix.items.length === 0 && (
+                  <tr><td colSpan={3 + matrix.gudang.length} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada stok tercatat.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!matrixMode && (
       <div className="crm-sec">
         <SecHeader
           num="01"
@@ -114,7 +184,9 @@ export default async function StokPage({
           </div>
         )}
       </div>
+      )}
 
+      {!matrixMode && (
       <div className="crm-sec">
         <SecHeader num="02" title="STOK MASUK (penyesuaian)" desc="Tambah qty ke stok gudang terpilih." />
         {!selectedWh ? (
@@ -144,6 +216,7 @@ export default async function StokPage({
         )}
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>Qty ditambahkan ke stok yang ada (akumulatif). Gunakan nilai negatif untuk koreksi/pengurangan.</div>
       </div>
+      )}
     </>
   );
 }

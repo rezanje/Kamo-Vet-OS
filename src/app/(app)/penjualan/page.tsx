@@ -10,10 +10,12 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-// ponytail: tanggal referensi — hari ini 2026-07-01
-const TODAY_STR = "2026-07-01";
-const MONTH_START = "2026-07-01";
-const MONTH_END = "2026-07-31";
+// tanggal referensi = hari ini (dulu hardcoded 2026-07-01 — bug, kartu "hari ini" selalu nol)
+const now = new Date();
+const pad = (n: number) => String(n).padStart(2, "0");
+const TODAY_STR = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+const MONTH_START = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+const MONTH_END = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-31`;
 
 type SaleRow = {
   id: string;
@@ -37,7 +39,12 @@ type InvoiceRow = {
   created_at: string;
 };
 
-export default async function PenjualanPage() {
+export default async function PenjualanPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dari?: string; sampai?: string }>;
+}) {
+  const { dari, sampai } = await searchParams;
   const supabase = await createClient();
 
   // ponytail: fetch semua sales + cabang; invoice tanpa nested branch (join visits→branches awkward, skip per spec)
@@ -55,9 +62,21 @@ export default async function PenjualanPage() {
       .select("id, total, paid_status, created_at").is("voided_at", null) as unknown as Promise<{ data: InvoiceRow[] | null }>,
   ]);
 
-  const sales = (salesRaw ?? []) as SaleRow[];
-  const saleItems = (saleItemsRaw ?? []) as SaleItemRow[];
-  const invoices = (invoicesRaw ?? []) as InvoiceRow[];
+  const salesAll = (salesRaw ?? []) as SaleRow[];
+  const saleItemsAll = (saleItemsRaw ?? []) as SaleItemRow[];
+  const invoicesAll = (invoicesRaw ?? []) as InvoiceRow[];
+
+  // filter periode (laporan Penjualan ala Accurate): berlaku ke seksi per cabang & per barang
+  const dalamPeriode = (iso: string) => {
+    const d = iso.slice(0, 10);
+    if (dari && d < dari) return false;
+    if (sampai && d > sampai) return false;
+    return true;
+  };
+  const sales = salesAll.filter((s) => dalamPeriode(s.created_at));
+  const salesIds = new Set(sales.map((s) => s.id));
+  const saleItems = saleItemsAll.filter((si) => salesIds.has(si.sale_id));
+  const invoices = invoicesAll.filter((inv) => dalamPeriode(inv.created_at));
 
   // ponytail: helper cek tanggal dalam rentang string YYYY-MM-DD
   const inRange = (iso: string, start: string, end: string) => {
@@ -65,17 +84,17 @@ export default async function PenjualanPage() {
     return d >= start && d <= end;
   };
 
-  // ponytail: agregat POS
-  const posHariIni = sales.filter((s) => inRange(s.created_at, TODAY_STR, TODAY_STR));
-  const posBulanIni = sales.filter((s) => inRange(s.created_at, MONTH_START, MONTH_END));
+  // ponytail: agregat POS — kartu hari ini/bulan ini selalu dari semua data (tak ikut filter periode)
+  const posHariIni = salesAll.filter((s) => inRange(s.created_at, TODAY_STR, TODAY_STR));
+  const posBulanIni = salesAll.filter((s) => inRange(s.created_at, MONTH_START, MONTH_END));
 
   const posOmzetHariIni = posHariIni.reduce((a, s) => a + Number(s.total), 0);
   const posOmzetBulanIni = posBulanIni.reduce((a, s) => a + Number(s.total), 0);
   const posTotalOmzet = sales.reduce((a, s) => a + Number(s.total), 0);
 
   // ponytail: agregat Klinik (invoices lunas / DP dihitung — semua yg ada)
-  const klinikHariIni = invoices.filter((inv) => inRange(inv.created_at, TODAY_STR, TODAY_STR));
-  const klinikBulanIni = invoices.filter((inv) => inRange(inv.created_at, MONTH_START, MONTH_END));
+  const klinikHariIni = invoicesAll.filter((inv) => inRange(inv.created_at, TODAY_STR, TODAY_STR));
+  const klinikBulanIni = invoicesAll.filter((inv) => inRange(inv.created_at, MONTH_START, MONTH_END));
 
   const klinikOmzetHariIni = klinikHariIni.reduce((a, inv) => a + Number(inv.total), 0);
   const klinikOmzetBulanIni = klinikBulanIni.reduce((a, inv) => a + Number(inv.total), 0);
@@ -109,9 +128,10 @@ export default async function PenjualanPage() {
       omzet: prev.omzet + Number(si.qty) * Number(si.harga),
     });
   }
+  // laporan "Penjualan per Barang" ala Accurate: urut omzet, 20 teratas
   const topProduk = Array.from(prodMap.values())
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 10);
+    .sort((a, b) => b.omzet - a.omzet)
+    .slice(0, 20);
 
   return (
     <>
@@ -126,16 +146,34 @@ export default async function PenjualanPage() {
       {/* Kartu summary */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 18 }}>
         <StatCard label="Omzet Hari Ini" value={rp(omzetHariIni)} sub={TODAY_STR} accent />
-        <StatCard label="Omzet Bulan Ini" value={rp(omzetBulanIni)} sub="Juli 2026" />
-        <StatCard label="Total Transaksi" value={String(totalTransaksi)} sub="POS + Klinik (semua)" />
+        <StatCard label="Omzet Bulan Ini" value={rp(omzetBulanIni)} sub={MONTH_START.slice(0, 7)} />
+        <StatCard label="Total Transaksi" value={String(totalTransaksi)} sub={dari || sampai ? "POS + Klinik (periode terpilih)" : "POS + Klinik (semua)"} />
       </div>
+
+      {/* Filter periode — berlaku ke seksi 01–03 (laporan Penjualan ala Accurate) */}
+      <form method="get" style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}>
+        <div>
+          <label className="flab">Dari tanggal</label>
+          <input className="fi" type="date" name="dari" defaultValue={dari ?? ""} style={{ width: 140 }} />
+        </div>
+        <div>
+          <label className="flab">Sampai tanggal</label>
+          <input className="fi" type="date" name="sampai" defaultValue={sampai ?? ""} style={{ width: 140 }} />
+        </div>
+        <button type="submit" className="btn-def" style={{ padding: "7px 14px", fontSize: 11 }}>
+          <i className="ti ti-filter" /> Terapkan
+        </button>
+        {(dari || sampai) && (
+          <a href="/penjualan" className="btn-def" style={{ padding: "7px 14px", fontSize: 11, textDecoration: "none" }}>Reset</a>
+        )}
+      </form>
 
       {/* Seksi 01 — Ringkasan per channel */}
       <div className="crm-sec">
         <SecHeader
           num="01"
           title="RINGKASAN PENJUALAN"
-          desc="Perbandingan omzet POS retail vs Klinik (seluruh periode)."
+          desc={dari || sampai ? `Perbandingan omzet POS vs Klinik, periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Perbandingan omzet POS retail vs Klinik (seluruh periode)."}
         />
         <table className="tbl" style={{ width: "100%" }}>
           <thead>
@@ -221,8 +259,8 @@ export default async function PenjualanPage() {
       <div className="crm-sec">
         <SecHeader
           num="03"
-          title="PRODUK TERLARIS"
-          desc="Top 10 produk berdasarkan jumlah qty terjual di POS (dari sale_items)."
+          title="PENJUALAN PER BARANG"
+          desc="20 barang omzet terbesar di POS (ala laporan Accurate). Ikut filter periode di atas."
         />
         {topProduk.length === 0 ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>

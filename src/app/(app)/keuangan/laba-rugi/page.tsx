@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances } from "@/lib/ledger";
+import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -9,10 +10,20 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 export default async function LabaRugiPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }> }) {
   const { dari, sampai, cabang } = await searchParams;
   const supabase = await createClient();
-  const [balances, { data: branches }] = await Promise.all([
-    getAccountBalances(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
-    supabase.from("branches").select("id, name").order("name"),
-  ]);
+  const { data: branches } = await supabase.from("branches").select("id, name, type").order("name");
+
+  // preset unit:KLINIK / unit:PETSHOP → filter daftar cabang berdasarkan tipe (laporan Memorize Accurate)
+  const unitTypes = resolveUnitTypes(cabang);
+  const branchIds = unitTypes
+    ? (branches ?? []).filter((b) => unitTypes.includes(b.type as string)).map((b) => b.id as string)
+    : undefined;
+
+  const balances = await getAccountBalances(supabase as never, {
+    from: dari || undefined,
+    to: sampai || undefined,
+    branchId: unitTypes ? undefined : cabang || undefined,
+    branchIds,
+  });
 
   const pendapatan = balances.filter((b) => b.type === "PENDAPATAN" && b.saldo !== 0);
   const beban = balances.filter((b) => b.type === "BEBAN" && b.saldo !== 0);
@@ -34,7 +45,7 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
 
       <div className="crm-sec">
         <SecHeader num="01" title="LABA RUGI" desc={dari || sampai ? `Periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Pendapatan dikurangi beban (seluruh periode)."} />
-        <PeriodFilter basePath="/keuangan/laba-rugi" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} />
+        <PeriodFilter basePath="/keuangan/laba-rugi" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets />
 
         <Group title="PENDAPATAN" rows={pendapatan} />
         <TotalRow label="Total Pendapatan" value={totalPendapatan} />

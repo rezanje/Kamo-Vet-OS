@@ -4,7 +4,7 @@ import Link from "next/link";
 type Branch = { id: string; name: string };
 
 export function PeriodFilter({
-  basePath, dari, sampai, cabang, branches, tanggalOnly,
+  basePath, dari, sampai, cabang, branches, tanggalOnly, unitPresets,
 }: {
   basePath: string;
   dari?: string;
@@ -12,6 +12,7 @@ export function PeriodFilter({
   cabang?: string;
   branches?: Branch[];
   tanggalOnly?: boolean; // neraca: hanya "per tanggal"
+  unitPresets?: boolean; // laba-rugi: preset "Semua Klinik/Petshop" (nilai unit:*)
 }) {
   const aktif = dari || sampai || cabang;
   return (
@@ -31,6 +32,12 @@ export function PeriodFilter({
           <label className="flab">Cabang</label>
           <select className="fi" name="cabang" defaultValue={cabang ?? ""} style={{ width: 160 }}>
             <option value="">Semua cabang</option>
+            {unitPresets && (
+              <>
+                <option value="unit:KLINIK">— Semua Klinik —</option>
+                <option value="unit:PETSHOP">— Semua Petshop —</option>
+              </>
+            )}
             {branches.map((b) => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}

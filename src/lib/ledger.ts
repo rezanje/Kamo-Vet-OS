@@ -5,7 +5,7 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
-export type LedgerFilter = { from?: string; to?: string; branchId?: string };
+export type LedgerFilter = { from?: string; to?: string; branchId?: string; branchIds?: string[] };
 
 export type AccountBalance = {
   code: string; name: string; type: string; normal: string;
@@ -28,6 +28,7 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
   if (f?.from) q = q.gte("journal_entries.tanggal", f.from);
   if (f?.to) q = q.lte("journal_entries.tanggal", f.to);
   if (f?.branchId) q = q.eq("journal_entries.branch_id", f.branchId);
+  if (f?.branchIds?.length) q = q.in("journal_entries.branch_id", f.branchIds);
   const { data } = await q;
   return ((data ?? []) as RawLine[]).map((r) => ({
     ...r,
