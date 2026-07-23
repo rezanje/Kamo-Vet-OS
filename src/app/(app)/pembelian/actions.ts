@@ -167,9 +167,11 @@ export async function updatePOStatus(formData: FormData) {
         source: "purchase",
         sourceRef: noPo,
         branchId,
+        // hutang usaha (2101) baru lahir saat Faktur Pembelian; saat terima barang
+        // masuk akun antara 2102 Hutang Belum Difakturkan (ala Accurate/GRNI).
         lines: [
           { code: "1301", debit: total, credit: 0 },
-          { code: "2101", debit: 0, credit: total },
+          { code: "2102", debit: 0, credit: total },
         ],
       });
     }
