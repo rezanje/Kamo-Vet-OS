@@ -5,23 +5,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { formatNoRetur, sisaRetur, totalRetur } from "@/lib/retur";
+import { stockInAtBuyPrice } from "@/lib/inventory";
 
 type ItemInput = { item_id: string; qty: number };
 
 type Db = Awaited<ReturnType<typeof createClient>>;
-
-async function addQty(supabase: Db, warehouseId: string, itemId: string, delta: number) {
-  const { data: st } = await supabase
-    .from("stock").select("qty")
-    .eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
-  if (st) {
-    await supabase.from("stock")
-      .update({ qty: Number(st.qty) + delta, updated_at: new Date().toISOString() })
-      .eq("warehouse_id", warehouseId).eq("item_id", itemId);
-  } else {
-    await supabase.from("stock").insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
-  }
-}
 
 // Retur Penjualan: barang balik dari pelanggan, refund tunai di kasir.
 // Refund dicatat sebagai expenses (Tunai, shift open cabang bila ada) → kepotong di tutup shift.
@@ -128,7 +116,12 @@ export async function buatReturJual(formData: FormData) {
     .eq("branch_id", sale!.branch_id).eq("is_active", true)
     .order("type").limit(1).maybeSingle();
   if (wh) {
-    for (const r of rows) await addQty(supabase, wh.id as string, r.item_id, r.qty);
+    // barang balik jadi layer FIFO baru @ buy_price (konsisten jurnal reversal HPP)
+    for (const r of rows) {
+      await stockInAtBuyPrice(supabase, {
+        warehouseId: wh.id as string, itemId: r.item_id, qty: r.qty, source: "retur-jual", ref: no_retur,
+      });
+    }
   }
 
   // jurnal refund (balik pendapatan) + stok balik (balik HPP, nilai buy_price)

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { stockIn } from "@/lib/inventory";
 
 type ItemInput = { nama: string; qty: number; harga_beli: number; item_id?: string | null };
 
@@ -127,30 +128,18 @@ export async function updatePOStatus(formData: FormData) {
     const items = (poItems ?? []) as { item_id: string | null; qty: number; harga_beli: number }[];
     const warehouseId = (po as { to_warehouse_id: string | null }).to_warehouse_id;
 
-    // Increment stock for each item that has a linked item_id.
+    // Stok masuk via lib FIFO: layer baru @ harga_beli PO (sumber cost utama HPP).
     if (warehouseId) {
+      const noPoRef = (po as { no_po: string | null }).no_po ?? id;
       for (const it of items) {
         if (!it.item_id) continue;
         const delta = Number(it.qty) || 0;
         if (delta <= 0) continue;
-
-        const { data: existing } = await supabase
-          .from("stock")
-          .select("qty")
-          .eq("warehouse_id", warehouseId)
-          .eq("item_id", it.item_id)
-          .maybeSingle();
-
-        if (existing) {
-          const newQty = Number((existing as { qty: number }).qty) + delta;
-          await supabase
-            .from("stock")
-            .update({ qty: newQty })
-            .eq("warehouse_id", warehouseId)
-            .eq("item_id", it.item_id);
-        } else {
-          await supabase.from("stock").insert({ warehouse_id: warehouseId, item_id: it.item_id, qty: delta });
-        }
+        await stockIn(supabase, {
+          warehouseId, itemId: it.item_id, qty: delta,
+          unitCost: Number(it.harga_beli) || 0,
+          source: "purchase", ref: noPoRef,
+        });
       }
     }
 

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
 
 export async function tambahStok(formData: FormData) {
   const supabase = await createClient();
@@ -20,28 +21,11 @@ export async function tambahStok(formData: FormData) {
     redirect(`${back}&error=${encodeURIComponent("Qty tidak boleh nol")}`);
   }
 
-  // ponytail: upsert JS-nya REPLACE qty, bukan tambah. Jadi baca qty lama dulu,
-  // lalu insert/update qty + delta supaya akumulatif (stok masuk = penambahan).
-  const { data: existing } = await supabase
-    .from("stock")
-    .select("qty")
-    .eq("warehouse_id", warehouseId)
-    .eq("item_id", itemId)
-    .maybeSingle();
-
-  if (existing) {
-    const newQty = Number(existing.qty) + delta;
-    const { error } = await supabase
-      .from("stock")
-      .update({ qty: newQty, updated_at: new Date().toISOString() })
-      .eq("warehouse_id", warehouseId)
-      .eq("item_id", itemId);
-    if (error) redirect(`${back}&error=${encodeURIComponent(error.message)}`);
+  // Mutasi via lib FIFO: masuk = layer baru @ buy_price; keluar (koreksi minus) = konsumsi FIFO.
+  if (delta > 0) {
+    await stockInAtBuyPrice(supabase, { warehouseId, itemId, qty: delta, source: "manual" });
   } else {
-    const { error } = await supabase
-      .from("stock")
-      .insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
-    if (error) redirect(`${back}&error=${encodeURIComponent(error.message)}`);
+    await stockOut(supabase, { warehouseId, itemId, qty: -delta, source: "manual" });
   }
 
   // Loop inventory: stok masuk (delta>0) dijurnal sbg pembelian persediaan →

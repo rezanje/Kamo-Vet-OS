@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { receiptSummary } from "@/lib/stock-recon";
+import { stockInAtBuyPrice } from "@/lib/inventory";
 
 type ItemInput = { item_id?: string; nama: string; qty_diminta: number; catatan?: string };
 
@@ -156,22 +157,8 @@ export async function terimaBarang(formData: FormData) {
       const qty = Number(row.qty_diterima) || 0;
       if (qty <= 0) continue;
 
-      const { data: existing } = await supabase
-        .from("stock")
-        .select("qty")
-        .eq("warehouse_id", wh.id)
-        .eq("item_id", row.item_id)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase
-          .from("stock")
-          .update({ qty: Number(existing.qty) + qty, updated_at: new Date().toISOString() })
-          .eq("warehouse_id", wh.id)
-          .eq("item_id", row.item_id);
-      } else {
-        await supabase.from("stock").insert({ warehouse_id: wh.id, item_id: row.item_id, qty });
-      }
+      // layer FIFO baru @ buy_price (penerimaan internal dari permintaan barang)
+      await stockInAtBuyPrice(supabase, { warehouseId: wh.id, itemId: row.item_id, qty, source: "terima-permintaan" });
     }
   }
 

@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nextStatus, stockDeductions, type RecipeStatus } from "@/lib/compounding";
 
+import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
+
 // helper: gudang utama cabang (pola sama dgn checkout kasir).
 async function branchWarehouse(supabase: Awaited<ReturnType<typeof createClient>>, branchId: string) {
   const { data: wh } = await supabase
@@ -12,12 +14,10 @@ async function branchWarehouse(supabase: Awaited<ReturnType<typeof createClient>
   return wh?.id ?? null;
 }
 
+// delta>0 = kembalikan bahan (layer baru @buy_price); delta<0 = potong bahan (FIFO).
 async function adjustStock(supabase: Awaited<ReturnType<typeof createClient>>, warehouseId: string, itemId: string, delta: number) {
-  const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
-  if (st) {
-    await supabase.from("stock").update({ qty: Number(st.qty) + delta, updated_at: new Date().toISOString() })
-      .eq("warehouse_id", warehouseId).eq("item_id", itemId);
-  }
+  if (delta > 0) await stockInAtBuyPrice(supabase, { warehouseId, itemId, qty: delta, source: "racik" });
+  else if (delta < 0) await stockOut(supabase, { warehouseId, itemId, qty: -delta, source: "racik" });
 }
 
 // Tambah racikan inline dari view rekam medis (recorded) — field ringkas sama seperti

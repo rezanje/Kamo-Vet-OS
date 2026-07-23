@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
 import { stockDeductions } from "@/lib/compounding";
+import { stockOut } from "@/lib/inventory";
 import { sendWA } from "@/lib/fonnte";
 
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
@@ -154,8 +155,7 @@ export async function addDailyLogPos(formData: FormData) {
 
       if (wh) {
         for (const d of stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))) {
-          const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", wh.id).eq("item_id", d.item_id).maybeSingle();
-          if (st) await supabase.from("stock").update({ qty: Number(st.qty) - d.qty, updated_at: new Date().toISOString() }).eq("warehouse_id", wh.id).eq("item_id", d.item_id);
+          await stockOut(supabase, { warehouseId: wh.id, itemId: d.item_id, qty: d.qty, source: "klinik", ref: null });
         }
       }
     }

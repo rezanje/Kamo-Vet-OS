@@ -5,23 +5,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { formatNoRetur, sisaRetur, totalRetur } from "@/lib/retur";
+import { stockOut } from "@/lib/inventory";
 
 type ItemInput = { item_id: string; qty: number };
 
 type Db = Awaited<ReturnType<typeof createClient>>;
-
-async function addQty(supabase: Db, warehouseId: string, itemId: string, delta: number) {
-  const { data: st } = await supabase
-    .from("stock").select("qty")
-    .eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
-  if (st) {
-    await supabase.from("stock")
-      .update({ qty: Number(st.qty) + delta, updated_at: new Date().toISOString() })
-      .eq("warehouse_id", warehouseId).eq("item_id", itemId);
-  } else {
-    await supabase.from("stock").insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
-  }
-}
 
 // ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan).
 async function nextNoRetur(supabase: Db, table: "purchase_returns" | "sales_returns", jenis: "RB" | "RJ") {
@@ -130,8 +118,13 @@ export async function buatReturBeli(formData: FormData) {
     fail("Gagal menyimpan rincian retur.");
   }
 
-  // stok keluar dari gudang PO
-  for (const r of rows) await addQty(supabase, po!.to_warehouse_id as string, r.item_id, -r.qty);
+  // stok keluar dari gudang PO — via FIFO (jurnal potong hutang tetap @ harga PO)
+  for (const r of rows) {
+    await stockOut(supabase, {
+      warehouseId: po!.to_warehouse_id as string, itemId: r.item_id, qty: r.qty,
+      source: "retur-beli", ref: no_retur,
+    });
+  }
 
   await postJournal(supabase, {
     tanggal,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { JurnalForm } from "./JurnalForm";
+import { postRecurringCatchUp } from "@/lib/recurring";
 
 // ponytail: jurnal umum — catat + riwayat. Real data dari journal_entries + journal_lines.
 
@@ -37,6 +38,13 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   "bank-rec": { label: "Rekon Bank", cls: "b" },
   asset: { label: "Aset", cls: "x" },
   depreciation: { label: "Penyusutan", cls: "x" },
+  recurring: { label: "Berulang", cls: "x" },
+  closing: { label: "Tutup Buku", cls: "r" },
+  opname: { label: "Opname", cls: "b" },
+  "purchase-invoice": { label: "Faktur Beli", cls: "b" },
+  "purchase-return": { label: "Retur Beli", cls: "o" },
+  "sales-return": { label: "Retur Jual", cls: "o" },
+  "sales-return-hpp": { label: "HPP Retur", cls: "o" },
 };
 
 export default async function JurnalPage({
@@ -46,6 +54,9 @@ export default async function JurnalPage({
 }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
+
+  // Jurnal berulang: catch-up bulan tertinggal (idempotent via last_posted).
+  const recurringPosted = await postRecurringCatchUp(supabase);
 
   const [{ data: accData }, { data: branchData }, { data: entryData }] = await Promise.all([
     supabase
@@ -80,6 +91,13 @@ export default async function JurnalPage({
       </div>
 
       {/* Banners */}
+      {recurringPosted.length > 0 && (
+        <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #93c5fd", color: "#1d4ed8" }}>
+          <i className="ti ti-repeat" /> Jurnal berulang otomatis diposting:{" "}
+          {recurringPosted.map((p) => `${p.nama} (${p.periode})`).join(", ")}.
+        </div>
+      )}
+
       {success && (
         <div
           className="p2ban"

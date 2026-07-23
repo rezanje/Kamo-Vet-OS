@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { formatNoOpname, nilaiSelisih } from "@/lib/opname";
+import { formatNoOpname } from "@/lib/opname";
+import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -96,20 +97,24 @@ export async function simpanHasil(formData: FormData) {
     fail("Gagal menyimpan rincian hasil opname.");
   }
 
-  // set stok = fisik (hanya baris yang berubah)
+  // sesuaikan stok via lib FIFO: lebih = layer baru @buy_price; kurang = konsumsi FIFO
+  // (nilai jurnal kurang = cost layer RIIL, bukan buy_price statis).
+  let kurang = 0;
+  let lebih = 0;
   for (const r of rows) {
     if (r.selisih === 0) continue;
-    if (sistemMap.has(r.item_id)) {
-      await supabase.from("stock")
-        .update({ qty: r.qty_fisik, updated_at: new Date().toISOString() })
-        .eq("warehouse_id", order!.warehouse_id).eq("item_id", r.item_id);
+    if (r.selisih > 0) {
+      await stockInAtBuyPrice(supabase, {
+        warehouseId: order!.warehouse_id, itemId: r.item_id, qty: r.selisih, source: "opname", ref: no_hasil,
+      });
+      lebih += r.selisih * (hargaMap.get(r.item_id) ?? 0);
     } else {
-      await supabase.from("stock").insert({ warehouse_id: order!.warehouse_id, item_id: r.item_id, qty: r.qty_fisik });
+      const { cost } = await stockOut(supabase, {
+        warehouseId: order!.warehouse_id, itemId: r.item_id, qty: -r.selisih, source: "opname", ref: no_hasil,
+      });
+      kurang += cost;
     }
   }
-
-  // jurnal penyesuaian (source: opname) — nilai pakai buy_price
-  const { lebih, kurang } = nilaiSelisih(rows.map((r) => ({ ...r, buy_price: hargaMap.get(r.item_id) ?? 0 })));
   const wh = order!.warehouses as unknown as { branch_id: string } | null;
   if (lebih > 0 || kurang > 0) {
     await postJournal(supabase, {

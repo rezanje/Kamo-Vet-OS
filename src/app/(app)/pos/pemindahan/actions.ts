@@ -4,30 +4,17 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatNoPemindahan, hitungStatusKirim, sisaTransit } from "@/lib/pemindahan";
+import { transferStock } from "@/lib/inventory";
 
 type ItemInput = { item_id: string; qty: number };
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
-// --- helper stok: baca qty lalu update/insert (pola existing: klinik/penerimaan, kasir/checkout) ---
 async function getQty(supabase: Db, warehouseId: string, itemId: string): Promise<number> {
   const { data } = await supabase
     .from("stock").select("qty")
     .eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
   return data ? Number(data.qty) : 0;
-}
-
-async function addQty(supabase: Db, warehouseId: string, itemId: string, delta: number) {
-  const { data: st } = await supabase
-    .from("stock").select("qty")
-    .eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
-  if (st) {
-    await supabase.from("stock")
-      .update({ qty: Number(st.qty) + delta, updated_at: new Date().toISOString() })
-      .eq("warehouse_id", warehouseId).eq("item_id", itemId);
-  } else {
-    await supabase.from("stock").insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
-  }
 }
 
 // Gudang Transit tunggal per perusahaan (meniru "Transit (AOL System)" Accurate).
@@ -111,10 +98,12 @@ export async function buatKirim(formData: FormData) {
     fail("Gagal menyimpan rincian barang.");
   }
 
-  // stok: asal -> Transit
+  // stok: asal -> Transit (cost FIFO ikut barang)
   for (const it of items) {
-    await addQty(supabase, from_warehouse_id, it.item_id, -Number(it.qty));
-    await addQty(supabase, transitId, it.item_id, Number(it.qty));
+    await transferStock(supabase, {
+      fromWarehouseId: from_warehouse_id, toWarehouseId: transitId,
+      itemId: it.item_id, qty: Number(it.qty), source: "transfer", ref: no_pemindahan, tanggal,
+    });
   }
 
   revalidatePath("/pos/pemindahan");
@@ -188,10 +177,12 @@ export async function terimaBarang(formData: FormData) {
     fail("Gagal menyimpan rincian penerimaan.");
   }
 
-  // stok: Transit -> tujuan
+  // stok: Transit -> tujuan (cost FIFO ikut barang)
   for (const it of items) {
-    await addQty(supabase, transitId, it.item_id, -Number(it.qty));
-    await addQty(supabase, kirim!.to_warehouse_id, it.item_id, Number(it.qty));
+    await transferStock(supabase, {
+      fromWarehouseId: transitId, toWarehouseId: kirim!.to_warehouse_id,
+      itemId: it.item_id, qty: Number(it.qty), source: "transfer", ref: no_pemindahan, tanggal,
+    });
   }
 
   // update status dokumen Kirim

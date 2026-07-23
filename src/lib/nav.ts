@@ -120,6 +120,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Sinkronisasi jurnal", icon: "ti-refresh-dot", ...A, nw: true, href: "/keuangan/sinkron" },
     { label: "Tutup buku", icon: "ti-lock", ...G, nw: true, href: "/keuangan/tutup-buku" },
     { label: "Rekap PPN", icon: "ti-receipt-tax", ...G, nw: true, href: "/keuangan/ppn" },
+    { label: "Neraca saldo", icon: "ti-list-check", ...G, nw: true, href: "/keuangan/neraca-saldo" },
+    { label: "Jurnal berulang", icon: "ti-repeat", ...G, nw: true, href: "/keuangan/jurnal-berulang" },
     { label: "Lap. HPP", icon: "ti-report", ...G },
     { label: "Shift kasir (selisih kas)", icon: "ti-clock-dollar", ...B, href: "/pos/shift" },
   ],

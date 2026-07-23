@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
+import { stockOut } from "@/lib/inventory";
 
 type CartLine = { item_id: string | null; nama: string; qty: number; harga: number; target_species: string };
 
@@ -63,18 +64,17 @@ export async function checkoutSale(formData: FormData) {
   );
   if (itErr) redirect(`/pos/transaksi?error=${encodeURIComponent(itErr.message)}`);
 
-  // Loop inventory: kurangi stok fisik di gudang cabang untuk item terjual (best-effort,
-  // ponytail: ambil gudang aktif pertama cabang; skip kalau item tidak ada stoknya).
+  // Stok keluar via FIFO — total cost jadi HPP riil (PRD §10.2).
+  let hppFifo = 0;
   const { data: wh } = await supabase
     .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   if (wh) {
     for (const r of rows) {
       if (!r.item_id) continue;
-      const { data: st } = await supabase.from("stock").select("qty").eq("warehouse_id", wh.id).eq("item_id", r.item_id).maybeSingle();
-      if (st) {
-        await supabase.from("stock").update({ qty: Number(st.qty) - r.qty, updated_at: new Date().toISOString() })
-          .eq("warehouse_id", wh.id).eq("item_id", r.item_id);
-      }
+      const { cost } = await stockOut(supabase, {
+        warehouseId: wh.id, itemId: r.item_id, qty: r.qty, source: "sale", ref: noStruk,
+      });
+      hppFifo += cost;
     }
   }
 
@@ -104,27 +104,19 @@ export async function checkoutSale(formData: FormData) {
     ],
   });
 
-  // HPP: catat beban pokok penjualan dari buy_price item → laba kotor akurat.
-  // ponytail: kredit Persediaan; sisi beli (Dr Persediaan saat penerimaan) belum di-jurnal,
-  // jadi saldo awal persediaan diseed agar tidak negatif. Stok fisik belum auto-dikurangi.
-  const itemIds = rows.map((r) => r.item_id).filter((id): id is string => !!id);
-  if (itemIds.length) {
-    const { data: costs } = await supabase.from("items").select("id, buy_price").in("id", itemIds);
-    const costMap = new Map((costs ?? []).map((c: { id: string; buy_price: number }) => [c.id, Number(c.buy_price) || 0]));
-    const hpp = rows.reduce((a, r) => a + (r.item_id ? (costMap.get(r.item_id) ?? 0) * r.qty : 0), 0);
-    if (hpp > 0) {
-      await postJournal(supabase, {
-        tanggal: todayIso,
-        deskripsi: `HPP penjualan ${noStruk}`,
-        source: "sale-hpp",
-        sourceRef: noStruk,
-        branchId,
-        lines: [
-          { code: "5101", debit: hpp, credit: 0 },
-          { code: "1301", debit: 0, credit: hpp },
-        ],
-      });
-    }
+  // HPP = cost FIFO riil dari layer yang terkonsumsi (bukan buy_price statis).
+  if (hppFifo > 0) {
+    await postJournal(supabase, {
+      tanggal: todayIso,
+      deskripsi: `HPP penjualan ${noStruk}`,
+      source: "sale-hpp",
+      sourceRef: noStruk,
+      branchId,
+      lines: [
+        { code: "5101", debit: hppFifo, credit: 0 },
+        { code: "1301", debit: 0, credit: hppFifo },
+      ],
+    });
   }
 
   redirect(`/pos/struk/${sale!.id}`);
