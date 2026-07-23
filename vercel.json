@@ -1,3 +1,6 @@
 {
-  "regions": ["sin1"]
+  "regions": ["sin1"],
+  "crons": [
+    { "path": "/api/cron/depreciation", "schedule": "0 1 1 * *" }
+  ]
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { depreciationPerMonth } from "@/lib/aging";
+import { catchUpDepreciation } from "@/lib/depreciation";
 import { tambahAset, jalankanPenyusutan } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -10,6 +11,10 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { da
 export default async function AsetPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; n?: string }> }) {
   const { success, error, n } = await searchParams;
   const supabase = await createClient();
+
+  // Penyusutan otomatis (lazy catch-up): periode yang belum disusutkan langsung
+  // dijalankan saat halaman dibuka. Idempotent — aman dipanggil berulang.
+  const autoRuns = await catchUpDepreciation(supabase);
 
   const [{ data: assets }, { data: deps }, { data: branches }] = await Promise.all([
     supabase.from("fixed_assets").select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, is_active").order("tanggal_perolehan"),
@@ -41,6 +46,13 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Aset Tetap</span>
       </div>
+
+      {autoRuns.length > 0 && (
+        <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #93c5fd", color: "#1d4ed8" }}>
+          <i className="ti ti-refresh-dot" /> Penyusutan otomatis: {autoRuns.length} periode diproses (
+          {autoRuns.map((r) => r.periode).join(", ")}), total {rp(autoRuns.reduce((a, r) => a + r.total, 0))} dijurnal.
+        </div>
+      )}
 
       {success === "aset" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
