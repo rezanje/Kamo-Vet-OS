@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 
 const back = "/keuangan/sinkron";
 
@@ -94,10 +95,10 @@ export async function perbaikiDrift() {
     n += 1;
   }
 
+  const pajak = await getPajakSettings(supabase);
   for (const s of sales) {
     const kasCode = s.metode_bayar === "Tunai" ? "1101" : "1102";
-    const dpp = Math.round((s.total * 100) / 111);
-    const ppn = s.total - dpp;
+    const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
     await postJournal(supabase, {
       tanggal: s.tanggal,
       deskripsi: `Sinkronisasi: penjualan POS ${s.no_struk}`,

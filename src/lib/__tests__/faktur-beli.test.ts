@@ -38,6 +38,15 @@ describe("buildFakturLines", () => {
   it("nol semua -> kosong", () => {
     expect(buildFakturLines(0, 0)).toEqual([]);
   });
+
+  it("Mode PKP: PPN masukan Dr 1105, tetap seimbang", () => {
+    // faktur 111 (inkl PPN 11), nilai PO 100 → Dr 2102 100, Dr 1105 11, Cr 2101 111
+    const lines = buildFakturLines(100, 111, 11);
+    expect(lines).toContainEqual({ code: "1105", debit: 11, credit: 0 });
+    expect(lines.find((l) => l.code === "1301")).toBeUndefined(); // selisih 0
+    const { d, k } = sum(lines);
+    expect(d).toBe(k);
+  });
 });
 
 describe("sisaFakturable", () => {

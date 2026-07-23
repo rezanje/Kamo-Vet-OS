@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 
 type CartLine = { item_id: string | null; nama: string; qty: number; harga: number; target_species: string };
 
@@ -85,11 +86,10 @@ export async function checkoutSale(formData: FormData) {
     await supabase.from("point_ledger").insert({ customer_id: customerId, delta: poin, saldo, ref: noStruk, description: `Transaksi ${noStruk}` });
   }
 
-  // Accounting: Dr Kas/Bank; Cr Pendapatan + PPN Keluaran.
-  // Harga POS = PPN-inklusif (standar retail) → pisah DPP = total*100/111, PPN = sisanya.
+  // Accounting: Dr Kas/Bank; Cr Pendapatan (+ PPN Keluaran bila Mode PKP aktif).
+  // Harga POS = PPN-inklusif (standar retail).
   const kasCode = metode === "Tunai" ? "1101" : "1102";
-  const dppPos = Math.round((total * 100) / 111);
-  const ppnPos = total - dppPos;
+  const { dpp: dppPos, ppn: ppnPos } = splitPpnInklusif(total, await getPajakSettings(supabase));
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   await postJournal(supabase, {
     tanggal: todayIso,

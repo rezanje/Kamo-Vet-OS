@@ -8,16 +8,17 @@ export function formatNoFaktur(date: Date, seq: number): string {
 }
 
 // Jurnal faktur: Dr 2102 (nilai PO porsi difakturkan) / Cr 2101 (nilai faktur);
-// selisih harga → 1301 (Dr bila faktur lebih mahal, Cr bila lebih murah).
+// ppn (Mode PKP): Dr 1105 PPN Masukan; sisa selisih → 1301 (koreksi nilai persediaan).
 export type JurnalLine = { code: string; debit: number; credit: number };
 
-export function buildFakturLines(nilaiPO: number, nilaiFaktur: number): JurnalLine[] {
+export function buildFakturLines(nilaiPO: number, nilaiFaktur: number, ppn = 0): JurnalLine[] {
   if (nilaiPO <= 0 && nilaiFaktur <= 0) return [];
   const lines: JurnalLine[] = [
     { code: "2102", debit: nilaiPO, credit: 0 },
     { code: "2101", debit: 0, credit: nilaiFaktur },
   ];
-  const selisih = nilaiFaktur - nilaiPO;
+  if (ppn > 0) lines.push({ code: "1105", debit: ppn, credit: 0 });
+  const selisih = nilaiFaktur - ppn - nilaiPO;
   if (selisih > 0) lines.push({ code: "1301", debit: selisih, credit: 0 });
   else if (selisih < 0) lines.push({ code: "1301", debit: 0, credit: -selisih });
   return lines.filter((l) => l.debit > 0 || l.credit > 0);

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
@@ -91,8 +92,8 @@ export async function bayarVisit(formData: FormData) {
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
   const discount = Number(formData.get("discount")) || 0;
   const dpp = Math.max(0, subtotal - discount);
-  const tax = Math.round(dpp * 0.11); // PPN 11% di atas DPP
-  const total = dpp + tax;
+  // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
+  const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
 
   // "Bayar & Selesai" memaksa lunas; "Simpan" pakai status turunan dari jumlah bayar.
   const finalize = String(formData.get("finalize") ?? "") === "1";

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { buildFakturLines, formatNoFaktur, sisaFakturable } from "@/lib/faktur-beli";
+import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { totalRetur } from "@/lib/retur";
 
 type ItemInput = { item_id: string; qty: number; harga: number };
@@ -104,13 +105,15 @@ export async function buatFaktur(formData: FormData) {
     fail("Gagal menyimpan rincian faktur.");
   }
 
+  // Mode PKP: total faktur dianggap inklusif PPN → pisahkan PPN Masukan (Dr 1105).
+  const { ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Faktur pembelian ${no_faktur} (${po!.no_po ?? po_id})`,
     source: "purchase-invoice",
     sourceRef: no_faktur,
     branchId: po!.branch_id ?? null,
-    lines: buildFakturLines(nilaiPOFakturkan, total),
+    lines: buildFakturLines(nilaiPOFakturkan, total, ppn),
   });
 
   revalidatePath("/pembelian/faktur");
