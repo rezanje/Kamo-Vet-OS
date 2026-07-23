@@ -151,7 +151,7 @@ export const TILES: Record<string, Tile[]> = {
   ],
   pengaturan: [
     { label: "Cabang & gudang", icon: "ti-building-store", ...G, href: "/pengaturan/cabang" },
-    { label: "Manajemen pengguna", icon: "ti-shield", ...B },
+    { label: "Manajemen pengguna", icon: "ti-shield", ...G, nw: true, href: "/pengaturan/pengguna" },
     { label: "Chart of Accounts", icon: "ti-list-details", ...G },
     { label: "Konfigurasi loyalty", icon: "ti-star", ...A, href: "/pengaturan/tier" },
     { label: "Pajak (Mode PKP)", icon: "ti-receipt-tax", ...G, nw: true, href: "/pengaturan/pajak" },

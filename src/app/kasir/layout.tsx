@@ -12,7 +12,11 @@ export default async function KasirLayout({ children }: { children: React.ReactN
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase
-    .from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+    .from("profiles").select("full_name, is_active").eq("id", user.id).maybeSingle();
+  if (profile && profile.is_active === false) {
+    await supabase.auth.signOut();
+    redirect("/login?error=" + encodeURIComponent("Akun Anda dinonaktifkan. Hubungi admin."));
+  }
   const shift = await getOpenShift(supabase as never, user.id);
 
   let notifications: NotificationRow[] = [];

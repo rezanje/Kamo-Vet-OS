@@ -47,14 +47,10 @@ export default async function LoginPage({
             Masuk
           </SubmitButton>
 
-          {/* Demo only: daftar akun uji coba biar gampang login. Hapus sebelum produksi. */}
-          <div style={{ borderRadius: 8, border: ".5px dashed var(--bd)", padding: 12, fontSize: 10.5, color: "var(--tm)" }}>
-            <p style={{ fontWeight: 700, color: "var(--tx)", marginBottom: 4 }}>Akun demo (password: password123)</p>
-            <p><span style={{ fontWeight: 500 }}>owner@vetos.local</span> — OWNER</p>
-            <p><span style={{ fontWeight: 500 }}>claude-test@vetos.local</span> — ADMIN</p>
-            <p><span style={{ fontWeight: 500 }}>staff@vetos.local</span> — STAFF (kasir)</p>
-            <p><span style={{ fontWeight: 500 }}>finance@vetos.local</span> — FINANCE (keuangan)</p>
-          </div>
+          {/* Akun dibuat oleh admin di Pengaturan → Manajemen Pengguna. */}
+          <p style={{ fontSize: 10, color: "var(--td)", textAlign: "center", margin: 0 }}>
+            Lupa password atau belum punya akun? Hubungi admin Kamo Group.
+          </p>
         </div>
       </form>
     </main>

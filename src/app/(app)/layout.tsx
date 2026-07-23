@@ -19,9 +19,15 @@ export default async function AppLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, role")
+    .select("full_name, role, is_active")
     .eq("id", user.id)
     .single();
+
+  // akun dinonaktifkan admin → keluar paksa
+  if (profile && profile.is_active === false) {
+    await supabase.auth.signOut();
+    redirect("/login?error=" + encodeURIComponent("Akun Anda dinonaktifkan. Hubungi admin."));
+  }
 
   // branches: master ref, readable by any authenticated user (RLS).
   const { data: branches } = await supabase
