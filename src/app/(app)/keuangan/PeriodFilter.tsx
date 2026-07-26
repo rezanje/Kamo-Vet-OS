@@ -36,6 +36,7 @@ export function PeriodFilter({
               <>
                 <option value="unit:KLINIK">— Semua Klinik —</option>
                 <option value="unit:PETSHOP">— Semua Petshop —</option>
+                <option value="unit:ONLINE">— Semua Online —</option>
               </>
             )}
             {branches.map((b) => (

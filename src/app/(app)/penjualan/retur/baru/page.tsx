@@ -26,10 +26,13 @@ export default async function ReturJualBaruPage({
   let notFoundMsg: string | null = null;
 
   if (struk?.trim()) {
+    // Order online (channel terisi) tidak bisa diretur lewat jalur ini —
+    // refund retur jual keluar dari kas kasir, sedangkan online tidak punya shift kasir.
     const { data } = await supabase
       .from("sales")
       .select("id, no_struk, total, created_at, customers(name), sale_items(item_id, nama, qty, harga)")
       .eq("no_struk", struk.trim())
+      .is("channel", null)
       .maybeSingle();
     sale = data as unknown as SaleRow | null;
     if (!sale) {

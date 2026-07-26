@@ -58,9 +58,12 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
     };
   }).filter((i) => i.total > 0);
 
+  // Order online punya jurnalnya sendiri (source "sale-online", akun Piutang Marketplace).
+  // Ikut terscan di sini = false positive + repost dengan akun salah.
   const { data: sls } = await supabase
     .from("sales")
-    .select("no_struk, total, metode_bayar, branch_id, created_at");
+    .select("no_struk, total, metode_bayar, branch_id, created_at")
+    .is("channel", null);
   const sales: MissingSale[] = (sls ?? [])
     .filter((s) => s.no_struk && !saleRefs.has(s.no_struk) && Number(s.total) > 0)
     .map((s) => ({

@@ -22,6 +22,7 @@ type SaleRow = {
   branch_id: string | null;
   total: number;
   created_at: string;
+  channel: string | null;
   branches: { code: string; name: string } | { code: string; name: string }[] | null;
 };
 
@@ -51,7 +52,7 @@ export default async function PenjualanPage({
   const [{ data: salesRaw }, { data: saleItemsRaw }, { data: invoicesRaw }] = await Promise.all([
     supabase
       .from("sales")
-      .select("id, branch_id, total, created_at, branches(code, name)")
+      .select("id, branch_id, total, created_at, channel, branches(code, name)")
       .order("created_at", { ascending: false }) as unknown as Promise<{ data: SaleRow[] | null }>,
     supabase
       .from("sale_items")
@@ -78,6 +79,11 @@ export default async function PenjualanPage({
   const saleItems = saleItemsAll.filter((si) => salesIds.has(si.sale_id));
   const invoices = invoicesAll.filter((inv) => dalamPeriode(inv.created_at));
 
+  // channel null = POS retail (perilaku lama); channel terisi = order online.
+  const salesPos = sales.filter((s) => !s.channel);
+  const salesOnline = sales.filter((s) => !!s.channel);
+  const onlineTotalOmzet = salesOnline.reduce((a, s) => a + Number(s.total), 0);
+
   // ponytail: helper cek tanggal dalam rentang string YYYY-MM-DD
   const inRange = (iso: string, start: string, end: string) => {
     const d = iso.slice(0, 10);
@@ -90,7 +96,7 @@ export default async function PenjualanPage({
 
   const posOmzetHariIni = posHariIni.reduce((a, s) => a + Number(s.total), 0);
   const posOmzetBulanIni = posBulanIni.reduce((a, s) => a + Number(s.total), 0);
-  const posTotalOmzet = sales.reduce((a, s) => a + Number(s.total), 0);
+  const posTotalOmzet = salesPos.reduce((a, s) => a + Number(s.total), 0);
 
   // ponytail: agregat Klinik (invoices lunas / DP dihitung — semua yg ada)
   const klinikHariIni = invoicesAll.filter((inv) => inRange(inv.created_at, TODAY_STR, TODAY_STR));
@@ -103,12 +109,12 @@ export default async function PenjualanPage({
   // ponytail: kartu summary — kombinasi POS + Klinik
   const omzetHariIni = posOmzetHariIni + klinikOmzetHariIni;
   const omzetBulanIni = posOmzetBulanIni + klinikOmzetBulanIni;
-  const totalTransaksi = sales.length + invoices.length;
+  const totalTransaksi = salesPos.length + salesOnline.length + invoices.length;
 
   // ponytail: Seksi 02 — penjualan per cabang (POS only; klinik per-branch dihilangkan karena join invoices→visits→branches tidak clean)
   type BranchStat = { name: string; omzet: number; trx: number };
   const branchMap = new Map<string, BranchStat>();
-  for (const s of sales) {
+  for (const s of salesPos) {
     const br = one(s.branches as Rel<{ code: string; name: string }>);
     const key = s.branch_id ?? "__unknown__";
     const name = br?.name ?? "Cabang tidak diketahui";
@@ -189,8 +195,16 @@ export default async function PenjualanPage({
                 <span className="bge g" style={{ marginRight: 6 }}>POS</span>
                 Penjualan Retail
               </td>
-              <td style={{ textAlign: "right" }}>{sales.length.toLocaleString("id-ID")}</td>
+              <td style={{ textAlign: "right" }}>{salesPos.length.toLocaleString("id-ID")}</td>
               <td style={{ textAlign: "right", fontWeight: 600 }}>{rp(posTotalOmzet)}</td>
+            </tr>
+            <tr>
+              <td>
+                <span className="bge" style={{ marginRight: 6, background: "#fff1eb", color: "#ea580c" }}>Online</span>
+                Marketplace &amp; WA
+              </td>
+              <td style={{ textAlign: "right" }}>{salesOnline.length.toLocaleString("id-ID")}</td>
+              <td style={{ textAlign: "right", fontWeight: 600 }}>{rp(onlineTotalOmzet)}</td>
             </tr>
             <tr>
               <td>
@@ -206,12 +220,12 @@ export default async function PenjualanPage({
               <td style={{ fontWeight: 700 }}>Total Gabungan</td>
               <td style={{ textAlign: "right", fontWeight: 700 }}>{totalTransaksi.toLocaleString("id-ID")}</td>
               <td style={{ textAlign: "right", fontWeight: 800, fontSize: 14, color: "var(--acc)" }}>
-                {rp(posTotalOmzet + klinikTotalOmzet)}
+                {rp(posTotalOmzet + onlineTotalOmzet + klinikTotalOmzet)}
               </td>
             </tr>
           </tfoot>
         </table>
-        {sales.length === 0 && invoices.length === 0 && (
+        {salesPos.length === 0 && salesOnline.length === 0 && invoices.length === 0 && (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>
             Belum ada data penjualan.
           </div>

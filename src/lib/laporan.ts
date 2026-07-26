@@ -50,5 +50,6 @@ export function resolveUnitTypes(cabang: string | undefined): string[] | null {
   const unit = cabang.slice(5);
   if (unit === "KLINIK") return ["KLINIK", "BOTH"];
   if (unit === "PETSHOP") return ["PETSHOP", "BOTH"];
+  if (unit === "ONLINE") return ["ONLINE"];
   return null;
 }

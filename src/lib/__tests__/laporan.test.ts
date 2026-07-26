@@ -28,9 +28,10 @@ describe("aggPenjualanPerBarang", () => {
 });
 
 describe("resolveUnitTypes", () => {
-  it("unit:KLINIK / unit:PETSHOP / lainnya", () => {
+  it("unit:KLINIK / unit:PETSHOP / unit:ONLINE / lainnya", () => {
     expect(resolveUnitTypes("unit:KLINIK")).toEqual(["KLINIK", "BOTH"]);
     expect(resolveUnitTypes("unit:PETSHOP")).toEqual(["PETSHOP", "BOTH"]);
+    expect(resolveUnitTypes("unit:ONLINE")).toEqual(["ONLINE"]);
     expect(resolveUnitTypes("some-uuid")).toBeNull();
     expect(resolveUnitTypes(undefined)).toBeNull();
   });
