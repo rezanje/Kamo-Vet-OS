@@ -20,6 +20,15 @@ const BACK = "/penjualan/online";
 const POIN_PER_RUPIAH = 1000; // earn: 1 poin / Rp1.000 (sama dengan POS)
 const MAX_NO_STRUK_ATTEMPTS = 4; // count+1, count+2, count+3, lalu count+1 + suffix acak (last resort)
 
+// Duplikat kecil dari src/app/me/actions.ts (house style — bukan modul bersama baru).
+// Server Vercel jalan di UTC tapi bisnisnya WIB (UTC+7); "hari ini" harus dihitung WIB
+// supaya operator jam 00:00–07:00 WIB tidak ditolak "tanggal masa depan" (I2).
+function todayJakarta(): string {
+  // WIB (UTC+7) date string YYYY-MM-DD.
+  const wib = new Date(new Date().getTime() + 7 * 3600 * 1000);
+  return wib.toISOString().slice(0, 10);
+}
+
 type ItemInput = { item_id: string; nama: string; qty: number; harga: number };
 
 // Order online: TANPA shift kasir (shift_id null) — settlement bukan tunai fisik.
@@ -42,20 +51,31 @@ export async function buatPenjualanOnline(formData: FormData) {
   const customerId = channel === "WA" ? (String(formData.get("customer_id") ?? "") || null) : null;
 
   // tanggal dipakai untuk jurnal (uang) & nomor dokumen — validasi ketat (C2).
+  // Default & pembanding "hari ini" pakai WIB (todayJakarta), bukan UTC — server Vercel
+  // jalan di UTC dan selisih 7 jam itu menolak order sah / salah tanggal blank-date (I2).
   const tanggalRaw = String(formData.get("tanggal") ?? "").trim();
-  const tanggal = tanggalRaw || new Date().toISOString().slice(0, 10);
+  const tanggal = tanggalRaw || todayJakarta();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) fail("Format tanggal tidak valid.");
-  // Konvensi tanggal: dikunci ke UTC midnight (server Vercel default UTC), dipakai konsisten
-  // untuk nomor dokumen ONL- maupun created_at supaya keduanya tidak pernah beda hari (M3).
-  const d = new Date(`${tanggal}T00:00:00Z`);
+  // Konvensi tanggal (M1): `d` diparse sebagai LOCAL midnight (bukan UTC) supaya
+  // prefixNoOnline/formatNoOnline (getter lokal: getFullYear/getMonth/getDate) balik ke
+  // tanggal yang sama persis di server manapun; created_at di bawah disimpan eksplisit
+  // sebagai WIB midnight (+07:00) supaya instant yang tersimpan tetap jatuh di hari
+  // Indonesia yang dimaksud, terlepas dari timezone proses server.
+  const d = new Date(`${tanggal}T00:00:00`);
   if (Number.isNaN(d.getTime())) fail("Tanggal tidak valid.");
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayJakarta();
   if (tanggal > todayStr) fail("Tanggal tidak boleh di masa depan.");
 
   // Periode terkunci (tutup buku) tidak boleh kebobolan — kalau tidak dicek di sini,
   // postJournal akan gagal diam-diam (trigger DB raise, error ditelan) padahal stok/piutang sudah tercatat.
-  const { data: lock } = await supabase
+  const { data: lock, error: lockErr } = await supabase
     .from("accounting_locks").select("closed_until").eq("id", true).maybeSingle();
+  if (lockErr) {
+    // Fail closed (M3a): kalau status tutup buku tidak terbaca, jangan diam-diam
+    // anggap periode terbuka — itu justru lubang buat guard uang ini.
+    console.error("[buatPenjualanOnline] gagal baca status tutup buku:", lockErr);
+    fail("Gagal memeriksa status tutup buku, coba lagi.");
+  }
   if (lock?.closed_until && tanggal <= lock.closed_until) {
     fail(`Periode akuntansi s/d ${lock.closed_until} sudah ditutup — tidak bisa posting tanggal ini.`);
   }
@@ -103,12 +123,15 @@ export async function buatPenjualanOnline(formData: FormData) {
   // no_struk count+1 bisa race di request paralel; unique constraint jadi backstop —
   // kalau tabrakan (23505), coba lagi dengan nomor berikutnya, sama seperti postJournal.
   const seq = (count ?? 0) + 1;
-  const noStrukCandidates = [
-    formatNoOnline(d, seq),
-    formatNoOnline(d, seq + 1),
-    formatNoOnline(d, seq + 2),
+  // MAX_NO_STRUK_ATTEMPTS - 1 nomor berurutan (count+1, count+2, ...), lalu last resort
+  // dengan suffix acak — total persis MAX_NO_STRUK_ATTEMPTS percobaan (M2).
+  const noStrukCandidates = Array.from(
+    { length: MAX_NO_STRUK_ATTEMPTS - 1 },
+    (_, i) => formatNoOnline(d, seq + i),
+  );
+  noStrukCandidates.push(
     `${formatNoOnline(d, seq)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-  ];
+  );
 
   let sale: { id: string } | null = null;
   let noStruk = "";
@@ -123,7 +146,7 @@ export async function buatPenjualanOnline(formData: FormData) {
         poin_earned: poinEarned, cashier_id: user?.id ?? null,
         channel, external_ref: externalRef, buyer_name: buyerName,
         marketplace_status: marketplace ? "piutang" : null,
-        created_at: `${tanggal}T00:00:00Z`,
+        created_at: `${tanggal}T00:00:00+07:00`,
       })
       .select("id").single();
     if (res.data) { sale = res.data; noStruk = candidate; saleErr = null; break; }
@@ -143,7 +166,12 @@ export async function buatPenjualanOnline(formData: FormData) {
   if (itErr) {
     // Defense in depth: baris sudah divalidasi (C1) tapi kalau insert tetap gagal
     // (mis. FK/RLS), jangan tinggalkan sales yatim tanpa sale_items.
-    await supabase.from("sales").delete().eq("id", sale!.id);
+    const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale!.id);
+    if (cleanupErr) {
+      // Cleanup gagal itu sendiri harus kelihatan (M3b) — bukan cuma didiamkan —
+      // supaya baris sales yatim yang tersisa bisa dicek manual.
+      console.error("[buatPenjualanOnline] gagal hapus sales yatim (orphan tersisa):", cleanupErr);
+    }
     console.error("[buatPenjualanOnline] gagal simpan sale_items, sales dihapus:", itErr);
     fail("Gagal simpan barang order online.");
   }
@@ -224,7 +252,21 @@ export async function tandaiCair(formData: FormData) {
   if (nominal > total) fail("Nominal pencairan tidak boleh melebihi total order.");
   const komisi = hitungKomisi(total, nominal);
   const now = new Date();
-  const tanggal = now.toISOString().slice(0, 10);
+  const tanggal = todayJakarta();
+
+  // Periode terkunci (tutup buku) — sama seperti buatPenjualanOnline (I1). Kalau tidak
+  // dicek di sini, UPDATE sales di bawah tetap sukses (marketplace_status='cair' tercatat)
+  // tapi jurnal pencairan gagal diam-diam (trigger DB raise, postJournal menelan error),
+  // dan tidak bisa diretry karena predikat marketplace_status='piutang' sudah tidak match.
+  const { data: lock, error: lockErr } = await supabase
+    .from("accounting_locks").select("closed_until").eq("id", true).maybeSingle();
+  if (lockErr) {
+    console.error("[tandaiCair] gagal baca status tutup buku:", lockErr);
+    fail("Gagal memeriksa status tutup buku, coba lagi.");
+  }
+  if (lock?.closed_until && tanggal <= lock.closed_until) {
+    fail(`Periode akuntansi s/d ${lock.closed_until} sudah ditutup — tidak bisa posting tanggal ini.`);
+  }
 
   // Guard double-submit (C3): predikat marketplace_status ada di UPDATE itu sendiri,
   // bukan cuma di baca sebelumnya. Kalau 0 baris ke-update, order sudah dicairkan duluan
