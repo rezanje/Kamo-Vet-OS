@@ -59,8 +59,7 @@ export async function buatPenjualanOnline(formData: FormData) {
   // Konvensi tanggal (M1): `d` diparse sebagai LOCAL midnight (bukan UTC) supaya
   // prefixNoOnline/formatNoOnline (getter lokal: getFullYear/getMonth/getDate) balik ke
   // tanggal yang sama persis di server manapun; created_at di bawah disimpan eksplisit
-  // sebagai WIB midnight (+07:00) supaya instant yang tersimpan tetap jatuh di hari
-  // Indonesia yang dimaksud, terlepas dari timezone proses server.
+  // sebagai WIB midday (+07:00) supaya instant tetap baca sebagai `tanggal` di UTC dan WIB.
   const d = new Date(`${tanggal}T00:00:00`);
   if (Number.isNaN(d.getTime())) fail("Tanggal tidak valid.");
   const todayStr = todayJakarta();
@@ -146,7 +145,7 @@ export async function buatPenjualanOnline(formData: FormData) {
         poin_earned: poinEarned, cashier_id: user?.id ?? null,
         channel, external_ref: externalRef, buyer_name: buyerName,
         marketplace_status: marketplace ? "piutang" : null,
-        created_at: `${tanggal}T00:00:00+07:00`,
+        created_at: `${tanggal}T12:00:00+07:00`,
       })
       .select("id").single();
     if (res.data) { sale = res.data; noStruk = candidate; saleErr = null; break; }
