@@ -1,6 +1,21 @@
 import { login } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
+// ⚠️ AKUN UJI TERPAJANG PUBLIK — termasuk di production (keputusan boss, 2026-07-26,
+// selama fase development). Artinya siapa pun yang menemukan URL Vercel bisa masuk
+// sebagai OWNER: pembukuan, data pelanggan, dan data gaji HRIS terbuka.
+// HAPUS BLOK INI (dan ganti password akun-akun di bawah) SEBELUM dipakai pelanggan/
+// karyawan asli. Tercatat sebagai item wajib di docs/RINGKASAN-KLONING-ACCURATE-2026-07.md.
+// ponytail: daftar statis, tanpa klik-isi-otomatis (butuh client component); tambah kalau perlu.
+const AKUN_DEV = [
+  { role: "OWNER", email: "owner@vetos.local", ket: "akses penuh" },
+  { role: "ADMIN", email: "claude-test@vetos.local", ket: "akses penuh" },
+  { role: "FINANCE", email: "finance@vetos.local", ket: "hanya modul keuangan" },
+  { role: "STAFF", email: "staff@vetos.local", ket: "cabang yang ditugaskan" },
+  { role: "DOCTOR", email: "doctor@vetos.local", ket: "klinik" },
+];
+const PASSWORD_DEV = "password123";
+
 export default async function LoginPage({
   searchParams,
 }: {
@@ -51,6 +66,36 @@ export default async function LoginPage({
           <p style={{ fontSize: 10, color: "var(--td)", textAlign: "center", margin: 0 }}>
             Lupa password atau belum punya akun? Hubungi admin Kamo Group.
           </p>
+
+          <div
+            style={{
+              marginTop: 4, padding: "10px 12px", borderRadius: 6,
+              background: "#fffbeb", border: ".5px solid #fcd34d",
+            }}
+          >
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: "#b45309", letterSpacing: ".04em", marginBottom: 6 }}>
+              <i className="ti ti-tool" /> AKUN UJI — FASE DEVELOPMENT
+            </div>
+            <table style={{ width: "100%", fontSize: 10, color: "#78350f", borderCollapse: "collapse" }}>
+              <tbody>
+                {AKUN_DEV.map((a) => (
+                  <tr key={a.email}>
+                    <td style={{ fontWeight: 700, paddingRight: 6, whiteSpace: "nowrap", verticalAlign: "top" }}>{a.role}</td>
+                    <td style={{ fontFamily: "var(--font-geist-mono, monospace)", paddingRight: 6 }}>{a.email}</td>
+                    <td style={{ color: "#a16207", whiteSpace: "nowrap", verticalAlign: "top" }}>{a.ket}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 10, color: "#78350f", marginTop: 6, borderTop: ".5px solid #fcd34d", paddingTop: 5 }}>
+              Password semua akun:{" "}
+              <strong style={{ fontFamily: "var(--font-geist-mono, monospace)" }}>{PASSWORD_DEV}</strong>
+            </div>
+            <div style={{ fontSize: 9, color: "#b91c1c", marginTop: 5, fontWeight: 600 }}>
+              <i className="ti ti-alert-triangle" /> Data di sini asli. Hapus blok ini &amp; ganti
+              password sebelum sistem dipakai karyawan/pelanggan.
+            </div>
+          </div>
         </div>
       </form>
     </main>

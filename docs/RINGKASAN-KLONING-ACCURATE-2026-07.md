@@ -39,6 +39,14 @@
   komisi baru muncul saat pencairan aktual (tidak menebak % di depan).
 - Pembeli marketplace = teks bebas, tidak masuk CRM/poin/tier. Hanya order WA yang boleh dilink ke pelanggan.
 
+## ⚠️ WAJIB DICABUT SEBELUM GO-LIVE
+**Login page memajang akun uji + password (`password123`) semua role, termasuk di production.**
+Keputusan boss 2026-07-26 selama fase development. Konsekuensinya: siapa pun yang menemukan URL
+Vercel bisa masuk sebagai OWNER — pembukuan, data pelanggan, dan data gaji HRIS terbuka.
+Sebelum sistem dipakai karyawan/pelanggan asli, kerjakan dua-duanya:
+1. Hapus blok `AKUN_DEV` / `PASSWORD_DEV` di `src/app/login/page.tsx`.
+2. Ganti password kelima akun tersebut (Pengaturan → Manajemen pengguna, atau via SQL).
+
 ## Sisa backlog (belum dikerjakan)
 1. **Verifikasi browser Penjualan Online** — kode sudah live (di-push 2026-07-26) tapi belum pernah dijalankan di browser. Perlu tes: buat order Shopee → cek `marketplace_status='piutang'` + jurnal Dr 1202, tandai cair → cek komisi ke 5305, order WA → badge Lunas. Keputusan boss: deploy dulu, verifikasi nyusul.
 2. **WA otomatis** — kode follow-up klinik & retensi sudah ada, mati karena `FONNTE_TOKEN` belum diisi (nunggu token dari boss).
