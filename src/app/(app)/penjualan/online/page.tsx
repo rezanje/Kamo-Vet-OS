@@ -43,8 +43,14 @@ export default async function PenjualanOnlinePage({
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
 
-  // Dihitung dari query terpisah TANPA limit — kalau dijumlah dari `rows` (dipaging 200),
-  // order piutang di luar 200 terbaru hilang dari total (I4).
+  // Dihitung dari query terpisah (bukan dari `rows` yang dipaging 200) supaya order piutang
+  // di luar 200 terbaru tetap ikut ke total (I4).
+  // ponytail: sum dilakukan di JS, bukan lewat agregat PostgREST (`total.sum()`) — dicek
+  // langsung ke database, `pgrst.db_aggregates_enabled` belum di-set di role manapun (default
+  // off di Supabase). Query ini masih kena ceiling `max_rows` PostgREST (supabase/config.toml,
+  // saat ini 1000) — di atas 1000 baris piutang, total ini diam-diam kurang. Upgrade path:
+  // aktifkan db-aggregates-enabled di API settings project lalu pakai `.select("total.sum()")`,
+  // atau pindahkan sum ke RPC/view di Postgres.
   const { data: piutangRows } = await supabase
     .from("sales")
     .select("total")

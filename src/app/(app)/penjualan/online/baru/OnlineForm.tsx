@@ -46,12 +46,13 @@ export function OnlineForm({
     const it = byLabel.get(v);
     set(i, it
       ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, label: itemLabel(it) }
-      : { nama: v, item_id: "", label: v });
+      // Tak match SKU manapun — item_id kosong (baris ini akan di-drop saat submit), jadi harga
+      // lama juga direset ke 0 supaya tak ada harga basi nempel di SKU yang sudah tak valid.
+      : { nama: v, item_id: "", label: v, harga: 0 });
   };
   const add = () => setRows((rs) => [...rs, { ...blank }]);
   const del = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
 
-  const total = rows.reduce((a, r) => a + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0);
   // WIB (UTC+7), bukan UTC — samakan dengan todayJakarta() di actions.ts. Server Vercel
   // jalan di UTC; tanpa offset ini, order pagi WIB (00:00–07:00) prefill tanggal kemarin (I2).
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
@@ -62,6 +63,9 @@ export function OnlineForm({
   const itemsToSubmit = rows
     .filter((r) => r.item_id)
     .map(({ item_id, nama, qty, harga }) => ({ item_id, nama, qty, harga }));
+  // Total dihitung dari itemsToSubmit (bukan seluruh rows) supaya preview selalu sama dengan
+  // yang benar-benar tersimpan — baris tanpa item_id valid ikut di-drop dari total juga (I3).
+  const total = itemsToSubmit.reduce((a, r) => a + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0);
 
   return (
     <form action={buatPenjualanOnline}>
@@ -165,34 +169,46 @@ export function OnlineForm({
           />
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {rows.map((r, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input
-                  className="fi"
-                  list="onl-items"
-                  placeholder="Kode / nama barang"
-                  value={r.label}
-                  onChange={(e) => setNama(i, e.target.value)}
-                  style={{ flex: 2 }}
-                />
-                <input
-                  className="fi" type="number" min={1} step={1} value={r.qty}
-                  onChange={(e) => set(i, { qty: Number(e.target.value) })}
-                  style={{ width: 70 }} title="Qty" placeholder="Qty"
-                />
-                <input
-                  className="fi" type="number" min={0} step="any" value={r.harga}
-                  onChange={(e) => set(i, { harga: Number(e.target.value) })}
-                  style={{ width: 110 }} title="Harga jual" placeholder="Harga"
-                />
-                <button
-                  type="button" onClick={() => del(i)} className="btn-def"
-                  style={{ padding: "0 9px", color: "#b91c1c", flexShrink: 0 }} title="Hapus baris"
-                >
-                  <i className="ti ti-trash" />
-                </button>
+            {rows.map((r, i) => {
+              // Teks diisi tapi belum match SKU manapun — baris ini akan di-drop saat submit (I3),
+              // beri tanda visual supaya operator sadar sebelum klik Simpan.
+              const belumValid = !r.item_id && r.label.trim().length > 0;
+              return (
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    className="fi"
+                    list="onl-items"
+                    placeholder="Kode / nama barang"
+                    value={r.label}
+                    onChange={(e) => setNama(i, e.target.value)}
+                    style={belumValid ? { flex: 2, border: "1px solid #f59e0b" } : { flex: 2 }}
+                  />
+                  <input
+                    className="fi" type="number" min={1} step={1} value={r.qty}
+                    onChange={(e) => set(i, { qty: Number(e.target.value) })}
+                    style={{ width: 70 }} title="Qty" placeholder="Qty"
+                  />
+                  <input
+                    className="fi" type="number" min={0} step="any" value={r.harga}
+                    onChange={(e) => set(i, { harga: Number(e.target.value) })}
+                    style={{ width: 110 }} title="Harga jual" placeholder="Harga"
+                  />
+                  <button
+                    type="button" onClick={() => del(i)} className="btn-def"
+                    style={{ padding: "0 9px", color: "#b91c1c", flexShrink: 0 }} title="Hapus baris"
+                  >
+                    <i className="ti ti-trash" />
+                  </button>
+                </div>
+                {belumValid && (
+                  <div style={{ fontSize: 9.5, color: "#f59e0b" }}>
+                    Belum cocok dengan SKU manapun — baris ini tidak akan ikut tersimpan.
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
