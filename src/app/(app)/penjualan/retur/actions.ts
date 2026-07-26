@@ -29,11 +29,13 @@ export async function buatReturJual(formData: FormData) {
 
   if (!sale_id || items.length === 0) fail("Pilih struk dan minimal 1 barang.");
 
+  // channel bukan null = order online (Shopee/Tokopedia/TikTok/WA) — retur kasir tunai tidak
+  // berlaku di situ (tidak ada kas fisik yang diterima dari channel itu di cabang manapun).
   const { data: sale } = await supabase
     .from("sales")
     .select("id, no_struk, branch_id, sale_items(item_id, qty, harga)")
-    .eq("id", sale_id).single();
-  if (!sale) fail("Struk tidak ditemukan.");
+    .eq("id", sale_id).is("channel", null).single();
+  if (!sale) fail("Struk tidak ditemukan, atau merupakan order online — retur online tidak didukung di sini.");
 
   // qty terjual & harga per item dari struk
   const sumber: Record<string, number> = {};

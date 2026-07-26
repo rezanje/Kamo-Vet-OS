@@ -9,8 +9,8 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { da
 export default async function SinkronPage({ searchParams }: { searchParams: Promise<{ success?: string }> }) {
   const { success } = await searchParams;
   const supabase = await createClient();
-  const { invoices, sales } = await findDrift(supabase);
-  const totalDrift = invoices.length + sales.length;
+  const { invoices, sales, salesOnline } = await findDrift(supabase);
+  const totalDrift = invoices.length + sales.length + salesOnline.length;
 
   return (
     <>
@@ -30,7 +30,7 @@ export default async function SinkronPage({ searchParams }: { searchParams: Prom
         <i className={`ti ti-${totalDrift === 0 ? "circle-check" : "alert-triangle"}`} />{" "}
         {totalDrift === 0
           ? "Semua transaksi sudah terjurnal — buku besar sinkron dengan operasional."
-          : `${totalDrift} transaksi belum punya jurnal (${invoices.length} invoice klinik, ${sales.length} penjualan POS).`}
+          : `${totalDrift} transaksi belum punya jurnal (${invoices.length} invoice klinik, ${sales.length} penjualan POS, ${salesOnline.length} penjualan online).`}
       </div>
 
       <div className="crm-sec">
@@ -59,6 +59,14 @@ export default async function SinkronPage({ searchParams }: { searchParams: Prom
               {sales.map((s) => (
                 <tr key={s.no_struk}>
                   <td><span className="bge b">Penjualan POS</span></td>
+                  <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{s.no_struk}</td>
+                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(s.tanggal)}</td>
+                  <td style={{ textAlign: "right", fontSize: 11 }}>{rp(s.total)}</td>
+                </tr>
+              ))}
+              {salesOnline.map((s) => (
+                <tr key={s.no_struk}>
+                  <td><span className="bge" style={{ background: "#fff1eb", color: "#ea580c" }}>Penjualan Online ({s.channel})</span></td>
                   <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{s.no_struk}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(s.tanggal)}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(s.total)}</td>

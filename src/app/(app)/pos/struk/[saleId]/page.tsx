@@ -16,7 +16,7 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
   const { data: sale } = await supabase
     .from("sales")
     .select("id, no_struk, subtotal, discount, total, metode_bayar, bayar, kembali, poin_earned, created_at, customers(name), branches(name, code)")
-    .eq("id", saleId).maybeSingle();
+    .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
 
   const { data: items } = await supabase

@@ -55,21 +55,24 @@ export default async function PelangganPage() {
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   const isAdmin = !!me && ["OWNER", "ADMIN"].includes(me.role);
 
-  // Agregat per unit (admin view). Petshop: sales.total. Klinik: invoices lunas via visits.
-  const statByCust: Record<string, { petshopCount: number; petshopTotal: number; klinikCount: number; klinikTotal: number }> = {};
+  // Agregat per unit (admin view). Petshop: sales.total channel null. Klinik: invoices lunas via visits.
+  // Online: sales.total channel terisi — ponytail: hanya WA yang mengisi customer_id (marketplace
+  // tidak pernah), jadi bucket ini pasti seluruhnya order WA, bukan Shopee/Tokopedia/TikTok.
+  const statByCust: Record<string, { petshopCount: number; petshopTotal: number; klinikCount: number; klinikTotal: number; onlineCount: number; onlineTotal: number }> = {};
   if (isAdmin && ids.length) {
     const [{ data: salesAgg }, { data: invAgg }] = await Promise.all([
-      supabase.from("sales").select("customer_id, total").in("customer_id", ids),
+      supabase.from("sales").select("customer_id, total, channel").in("customer_id", ids),
       supabase.from("invoices").select("total, visits!inner(customer_id)").eq("paid_status", "Lunas").is("voided_at", null).in("visits.customer_id", ids),
     ]);
-    for (const s of (salesAgg ?? []) as { customer_id: string; total: number }[]) {
-      const st = (statByCust[s.customer_id] ??= { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0 });
-      st.petshopCount++; st.petshopTotal += Number(s.total || 0);
+    for (const s of (salesAgg ?? []) as { customer_id: string; total: number; channel: string | null }[]) {
+      const st = (statByCust[s.customer_id] ??= { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0, onlineCount: 0, onlineTotal: 0 });
+      if (s.channel) { st.onlineCount++; st.onlineTotal += Number(s.total || 0); }
+      else { st.petshopCount++; st.petshopTotal += Number(s.total || 0); }
     }
     for (const iv of (invAgg ?? []) as { total: number; visits: { customer_id: string } | { customer_id: string }[] }[]) {
       const cid = Array.isArray(iv.visits) ? iv.visits[0]?.customer_id : iv.visits?.customer_id;
       if (!cid) continue;
-      const st = (statByCust[cid] ??= { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0 });
+      const st = (statByCust[cid] ??= { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0, onlineCount: 0, onlineTotal: 0 });
       st.klinikCount++; st.klinikTotal += Number(iv.total || 0);
     }
   }

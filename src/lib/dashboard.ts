@@ -32,7 +32,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
 
   const [balances, salesRows, invRows, invPays, poRows, poPays, cashLines] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
-    supabase.from("sales").select("total, created_at, metode_bayar"),
+    supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status"),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
     supabase.from("invoice_payments").select("invoice_id, amount"),
     supabase.from("purchase_orders").select("id, total, status, tanggal").eq("status", "Diterima"),
@@ -74,8 +74,9 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   }
   const arusKas = hari7.map((t) => ({ tanggal: t, ...cashByDay.get(t)! }));
 
-  // ── Penjualan (tahun ini): POS sales + invoice klinik, lunas vs belum ──
-  const salesTotal = (salesRows.data ?? []).filter((s: { created_at: string }) => s.created_at >= awalTahun).reduce((a: number, s: { total: number }) => a + Number(s.total), 0);
+  // ── Penjualan (tahun ini): POS + Online sales + invoice klinik, lunas vs belum ──
+  const salesRowsThisYear = (salesRows.data ?? []).filter((s: { created_at: string }) => s.created_at >= awalTahun);
+  const salesTotal = salesRowsThisYear.reduce((a: number, s: { total: number }) => a + Number(s.total), 0);
 
   const paidMap = new Map<string, number>();
   for (const p of (invPays.data ?? []) as { invoice_id: string; amount: number }[]) paidMap.set(p.invoice_id, (paidMap.get(p.invoice_id) ?? 0) + Number(p.amount));
@@ -86,9 +87,15 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     invTotal += Number(i.total);
     invBelum += Math.max(0, Number(i.total) - dibayar);
   }
-  // POS dianggap lunas (bayar tunai/QRIS di kasir).
+  // POS dianggap lunas (bayar tunai/QRIS di kasir). Order online marketplace TIDAK —
+  // dana ditahan platform di akun 1202 Piutang Marketplace sampai "Tandai cair" dijalankan,
+  // jadi ikut dihitung belum lunas selama marketplace_status masih 'piutang'.
+  const salesBelumLunas = salesRowsThisYear
+    .filter((s: { marketplace_status: string | null }) => s.marketplace_status === "piutang")
+    .reduce((a: number, s: { total: number }) => a + Number(s.total), 0);
   const penjTotal = salesTotal + invTotal;
-  const penjualan = { total: penjTotal, lunas: penjTotal - invBelum, belumLunas: invBelum };
+  const belumLunas = invBelum + salesBelumLunas;
+  const penjualan = { total: penjTotal, lunas: penjTotal - belumLunas, belumLunas };
 
   // ── Pembelian (PO Diterima), lunas vs belum ──
   const poPaid = new Map<string, number>();

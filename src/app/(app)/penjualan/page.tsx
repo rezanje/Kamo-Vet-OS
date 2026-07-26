@@ -145,7 +145,7 @@ export default async function PenjualanPage({
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: "#141413" }}>Rekap Penjualan</div>
         <div style={{ fontSize: 11, color: "var(--td)", marginTop: 3 }}>
-          Gabungan omzet POS &amp; Klinik · data real-time
+          Gabungan omzet POS, Online &amp; Klinik · data real-time
         </div>
       </div>
 
@@ -153,7 +153,7 @@ export default async function PenjualanPage({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 18 }}>
         <StatCard label="Omzet Hari Ini" value={rp(omzetHariIni)} sub={TODAY_STR} accent />
         <StatCard label="Omzet Bulan Ini" value={rp(omzetBulanIni)} sub={MONTH_START.slice(0, 7)} />
-        <StatCard label="Total Transaksi" value={String(totalTransaksi)} sub={dari || sampai ? "POS + Klinik (periode terpilih)" : "POS + Klinik (semua)"} />
+        <StatCard label="Total Transaksi" value={String(totalTransaksi)} sub={dari || sampai ? "POS + Online + Klinik (periode terpilih)" : "POS + Online + Klinik (semua)"} />
       </div>
 
       {/* Filter periode — berlaku ke seksi 01–03 (laporan Penjualan ala Accurate) */}
@@ -179,7 +179,7 @@ export default async function PenjualanPage({
         <SecHeader
           num="01"
           title="RINGKASAN PENJUALAN"
-          desc={dari || sampai ? `Perbandingan omzet POS vs Klinik, periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Perbandingan omzet POS retail vs Klinik (seluruh periode)."}
+          desc={dari || sampai ? `Perbandingan omzet POS, Online, dan Klinik, periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Perbandingan omzet POS retail, Online, dan Klinik (seluruh periode)."}
         />
         <table className="tbl" style={{ width: "100%" }}>
           <thead>
@@ -273,8 +273,8 @@ export default async function PenjualanPage({
       <div className="crm-sec">
         <SecHeader
           num="03"
-          title="PENJUALAN PER BARANG"
-          desc="20 barang omzet terbesar di POS (ala laporan Accurate). Ikut filter periode di atas."
+          title="PENJUALAN PER BARANG (POS + ONLINE)"
+          desc="20 barang omzet terbesar dari retail POS dan Online — invoice klinik tidak ikut dihitung. Omzetnya nyambung dengan baris POS + Online Seksi 01. Ikut filter periode di atas."
         />
         {topProduk.length === 0 ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>

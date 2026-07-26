@@ -18,7 +18,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
   const { data: sale } = await supabase
     .from("sales")
     .select("id, no_struk, subtotal, discount, total, metode_bayar, bayar, kembali, poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
-    .eq("id", saleId).maybeSingle();
+    .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
 
   const { data: items } = await supabase

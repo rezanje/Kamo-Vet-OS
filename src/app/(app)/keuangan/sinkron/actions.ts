@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
+import { isMarketplace } from "@/lib/online";
 
 const back = "/keuangan/sinkron";
 
@@ -14,14 +15,18 @@ type MissingInvoice = {
 type MissingSale = {
   no_struk: string; tanggal: string; total: number; metode_bayar: string; branch_id: string | null;
 };
+type MissingSaleOnline = {
+  no_struk: string; tanggal: string; total: number; channel: string; branch_id: string | null;
+};
 
 // Cari transaksi operasional yang TIDAK punya jurnal (drift buku besar).
 // postJournal sengaja best-effort, jadi kegagalan diam-diam bisa terjadi — halaman ini penjaganya.
-export async function findDrift(supabase: Awaited<ReturnType<typeof createClient>>): Promise<{ invoices: MissingInvoice[]; sales: MissingSale[] }> {
+export async function findDrift(supabase: Awaited<ReturnType<typeof createClient>>): Promise<{ invoices: MissingInvoice[]; sales: MissingSale[]; salesOnline: MissingSaleOnline[] }> {
   const { data: refs } = await supabase.from("journal_entries").select("source, source_ref").not("source_ref", "is", null);
   // dipisah per jenis: jurnal HPP (sale-hpp) tidak dihitung sebagai jurnal pendapatan.
   const klinikRefs = new Set((refs ?? []).filter((r) => r.source === "klinik" || r.source === "klinik-edit").map((r) => r.source_ref as string));
   const saleRefs = new Set((refs ?? []).filter((r) => r.source === "sale").map((r) => r.source_ref as string));
+  const saleOnlineRefs = new Set((refs ?? []).filter((r) => r.source === "sale-online").map((r) => r.source_ref as string));
 
   const { data: invs } = await supabase
     .from("invoices")
@@ -58,8 +63,8 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
     };
   }).filter((i) => i.total > 0);
 
-  // Order online punya jurnalnya sendiri (source "sale-online", akun Piutang Marketplace).
-  // Ikut terscan di sini = false positive + repost dengan akun salah.
+  // Order online punya jurnalnya sendiri (source "sale-online", akun Piutang Marketplace/Bank).
+  // Dipisah dari arm "sale" biasa (akun beda) = false positive + repost dengan akun salah kalau digabung.
   const { data: sls } = await supabase
     .from("sales")
     .select("no_struk, total, metode_bayar, branch_id, created_at")
@@ -71,13 +76,27 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
       total: Number(s.total), metode_bayar: s.metode_bayar ?? "Tunai", branch_id: s.branch_id ?? null,
     }));
 
-  return { invoices, sales };
+  // Order online (channel terisi) — postJournal juga best-effort di sini (lihat actions.ts online),
+  // jadi drift-nya sama-sama bisa senyap: stok terpotong, marketplace_status berubah, tapi jurnal
+  // pendapatan tidak pernah tercatat. Tanpa arm ini tidak ada halaman lain yang mendeteksinya.
+  const { data: slsOnline } = await supabase
+    .from("sales")
+    .select("no_struk, total, channel, branch_id, created_at")
+    .not("channel", "is", null);
+  const salesOnline: MissingSaleOnline[] = (slsOnline ?? [])
+    .filter((s) => s.no_struk && s.channel && !saleOnlineRefs.has(s.no_struk) && Number(s.total) > 0)
+    .map((s) => ({
+      no_struk: s.no_struk, tanggal: String(s.created_at).slice(0, 10),
+      total: Number(s.total), channel: s.channel as string, branch_id: s.branch_id ?? null,
+    }));
+
+  return { invoices, sales, salesOnline };
 }
 
 // Posting ulang jurnal yang hilang. Idempotent: hanya memproses yang masih hilang saat dijalankan.
 export async function perbaikiDrift() {
   const supabase = await createClient();
-  const { invoices, sales } = await findDrift(supabase);
+  const { invoices, sales, salesOnline } = await findDrift(supabase);
 
   let n = 0;
   for (const i of invoices) {
@@ -110,6 +129,26 @@ export async function perbaikiDrift() {
       branchId: s.branch_id,
       lines: [
         { code: kasCode, debit: s.total, credit: 0 },
+        { code: "4101", debit: 0, credit: dpp },
+        ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
+      ],
+    });
+    n += 1;
+  }
+
+  for (const s of salesOnline) {
+    // Marketplace ditahan platform → piutang (1202); WA langsung ke bank (1102) — sama seperti
+    // jurnal asli di penjualan/online/actions.ts.
+    const debitCode = isMarketplace(s.channel) ? "1202" : "1102";
+    const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
+    await postJournal(supabase, {
+      tanggal: s.tanggal,
+      deskripsi: `Sinkronisasi: penjualan online ${s.channel} ${s.no_struk}`,
+      source: "sale-online",
+      sourceRef: s.no_struk,
+      branchId: s.branch_id,
+      lines: [
+        { code: debitCode, debit: s.total, credit: 0 },
         { code: "4101", debit: 0, credit: dpp },
         ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
       ],

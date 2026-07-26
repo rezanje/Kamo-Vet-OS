@@ -90,7 +90,7 @@ export default async function Dashboard() {
       {/* Baris 2: Tren penjualan · Penjualan/Pembelian */}
       <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 11, marginBottom: 13 }}>
         <div className="card">
-          <div className="card-hd"><i className="ti ti-trending-up" style={{ color: "#2563eb" }} /> Tren penjualan POS (7 hari)</div>
+          <div className="card-hd"><i className="ti ti-trending-up" style={{ color: "#2563eb" }} /> Tren penjualan POS + Online (7 hari)</div>
           <LineChart
             points={d.trenPenjualan.map((t) => t.total)}
             labels={d.trenPenjualan.map((t) => { const dt = new Date(t.tanggal + "T00:00:00"); return `${dt.getDate()}/${dt.getMonth() + 1}`; })}

@@ -13,7 +13,7 @@ export type PetRow = {
 };
 export type Purchase = { tgl: string; produk: string; qty: number; total: number; cabang: string; anabul: string };
 export type Ledger = { tgl: string; desc: string; delta: number; saldo: number };
-export type UnitStat = { petshopCount: number; petshopTotal: number; klinikCount: number; klinikTotal: number };
+export type UnitStat = { petshopCount: number; petshopTotal: number; klinikCount: number; klinikTotal: number; onlineCount: number; onlineTotal: number };
 export type CustomerRow = {
   id: string; name: string; phone: string; email: string | null;
   dob: string | null; address: string | null; tier: string | null;
@@ -313,6 +313,7 @@ export function PelangganClient({ customers, isAdmin }: { customers: CustomerRow
                     <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 6 }}>RINCIAN TRANSAKSI (ADMIN)</div>
                     {[
                       { unit: "Petshop", count: sel.stat.petshopCount, total: sel.stat.petshopTotal },
+                      { unit: "Online (WA)", count: sel.stat.onlineCount, total: sel.stat.onlineTotal },
                       { unit: "Klinik", count: sel.stat.klinikCount, total: sel.stat.klinikTotal },
                     ].map((u) => (
                       <div key={u.unit} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>

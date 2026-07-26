@@ -22,6 +22,11 @@ type RawLine = {
 // Satu jalur query untuk semua laporan — join inner ke journal_entries supaya
 // filter tanggal/cabang berlaku konsisten.
 async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLine[]> {
+  // branchIds: undefined = tanpa filter cabang; [] (allow-list eksplisit kosong) = tidak ada
+  // baris yang cocok, BUKAN "semua cabang" — mis. preset unit:ONLINE saat tidak ada cabang
+  // bertipe ONLINE. Jangan sampai array kosong jatuh ke default "tanpa filter".
+  if (f?.branchIds && f.branchIds.length === 0) return [];
+
   let q = supabase
     .from("journal_lines")
     .select("account_id, debit, credit, journal_entries!inner(tanggal, branch_id, source, no_jurnal, deskripsi)");

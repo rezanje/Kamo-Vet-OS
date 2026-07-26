@@ -50,6 +50,9 @@ export function resolveUnitTypes(cabang: string | undefined): string[] | null {
   const unit = cabang.slice(5);
   if (unit === "KLINIK") return ["KLINIK", "BOTH"];
   if (unit === "PETSHOP") return ["PETSHOP", "BOTH"];
+  // "Cabang Online" = cabang bertipe ONLINE saja (mis. B2C). By design, order online yang
+  // dikirim dari gudang cabang petshop (mis. WH_ONLINE_PDRY, WH_ONLINE_TKI) ikut menumpuk di
+  // cabang petshop tsb, bukan di sini — lihat catatan warehouse→branch di buatPenjualanOnline.
   if (unit === "ONLINE") return ["ONLINE"];
   return null;
 }
