@@ -43,9 +43,13 @@ export default async function PenjualanOnlinePage({
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
 
-  const piutang = rows
-    .filter((r) => r.marketplace_status === "piutang")
-    .reduce((a, r) => a + Number(r.total), 0);
+  // Dihitung dari query terpisah TANPA limit — kalau dijumlah dari `rows` (dipaging 200),
+  // order piutang di luar 200 terbaru hilang dari total (I4).
+  const { data: piutangRows } = await supabase
+    .from("sales")
+    .select("total")
+    .eq("marketplace_status", "piutang");
+  const piutang = (piutangRows ?? []).reduce((a, r) => a + Number(r.total), 0);
 
   return (
     <>

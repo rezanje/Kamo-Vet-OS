@@ -1,7 +1,7 @@
 "use client";
 
 // ponytail: baris item dinamis diserialisasi ke hidden JSON — pola sama dengan POForm.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { CHANNELS } from "@/lib/online";
 import { buatPenjualanOnline } from "../actions";
@@ -9,10 +9,12 @@ import { buatPenjualanOnline } from "../actions";
 type Warehouse = { id: string; name: string; branch_name: string };
 type Item = { id: string; code: string; name: string; sell_price: number };
 type Customer = { id: string; name: string; phone: string | null };
-type Row = { item_id: string; nama: string; qty: number; harga: number };
+// `nama` = nama bare yang diserialisasi ke server (kontrak actions.ts).
+// `label` = teks yang tampil di input (bisa "CODE — Nama" hasil pilih datalist, atau teks bebas).
+type Row = { item_id: string; nama: string; label: string; qty: number; harga: number };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const blank: Row = { item_id: "", nama: "", qty: 1, harga: 0 };
+const blank: Row = { item_id: "", nama: "", label: "", qty: 1, harga: 0 };
 const itemLabel = (it: Item) => `${it.code} — ${it.name}`;
 const custLabel = (c: Customer) => (c.phone ? `${c.name} (${c.phone})` : c.name);
 
@@ -29,29 +31,41 @@ export function OnlineForm({
   const [channel, setChannel] = useState<string>("Shopee");
   const [custText, setCustText] = useState("");
 
-  const byLabel = new Map(items.map((it) => [itemLabel(it), it]));
-  const custByLabel = new Map(customers.map((c) => [custLabel(c), c]));
+  // 2000 item/pelanggan tiap render kalau dibangun ulang tiap keystroke — cukup saat items/customers berubah.
+  const byLabel = useMemo(() => new Map(items.map((it) => [itemLabel(it), it])), [items]);
+  const custByLabel = useMemo(() => new Map(customers.map((c) => [custLabel(c), c])), [customers]);
   const customerId = custByLabel.get(custText)?.id ?? "";
 
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   // Wajib pilih dari master SKU — stok & HPP FIFO butuh item_id (teks bebas ditolak server).
+  // `label` (tampilan input) beda dari `nama` (bare, diserialisasi ke server): datalist
+  // menampilkan "CODE — Nama" tapi server hanya mau nama bare (I1).
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v);
     set(i, it
-      ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0 }
-      : { nama: v, item_id: "" });
+      ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, label: itemLabel(it) }
+      : { nama: v, item_id: "", label: v });
   };
   const add = () => setRows((rs) => [...rs, { ...blank }]);
   const del = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
 
   const total = rows.reduce((a, r) => a + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0);
-  const today = new Date().toISOString().slice(0, 10);
+  // WIB (UTC+7), bukan UTC — samakan dengan todayJakarta() di actions.ts. Server Vercel
+  // jalan di UTC; tanpa offset ini, order pagi WIB (00:00–07:00) prefill tanggal kemarin (I2).
+  const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  // Baris tanpa item_id (kosong / teks bebas tak match SKU) di-drop sebelum kirim — server
+  // menolak SELURUH submit kalau ada satu saja baris tanpa item_id (I3). Kalau hasilnya
+  // nol baris, tetap kirim apa adanya (array kosong) supaya pesan server "Minimal 1 barang"
+  // yang tampil, bukan submit senyap tanpa umpan balik.
+  const itemsToSubmit = rows
+    .filter((r) => r.item_id)
+    .map(({ item_id, nama, qty, harga }) => ({ item_id, nama, qty, harga }));
 
   return (
     <form action={buatPenjualanOnline}>
-      <input type="hidden" name="items" value={JSON.stringify(rows)} />
+      <input type="hidden" name="items" value={JSON.stringify(itemsToSubmit)} />
       <input type="hidden" name="customer_id" value={customerId} />
       <datalist id="onl-items">
         {items.map((it) => <option key={it.id} value={itemLabel(it)} />)}
@@ -71,7 +85,13 @@ export function OnlineForm({
               name="channel"
               required
               value={channel}
-              onChange={(e) => setChannel(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setChannel(v);
+                // Channel selain WA tidak boleh link pelanggan (invarian marketplace) — kosongkan
+                // state supaya customer_id tersembunyi tidak diam-diam ikut submit (M5).
+                if (v !== "WA") setCustText("");
+              }}
             >
               {CHANNELS.map((c) => (
                 <option key={c} value={c}>{c === "WA" ? "WA / Transfer Manual" : c}</option>
@@ -151,12 +171,12 @@ export function OnlineForm({
                   className="fi"
                   list="onl-items"
                   placeholder="Kode / nama barang"
-                  defaultValue={r.nama}
+                  value={r.label}
                   onChange={(e) => setNama(i, e.target.value)}
                   style={{ flex: 2 }}
                 />
                 <input
-                  className="fi" type="number" min={0} step="any" value={r.qty}
+                  className="fi" type="number" min={1} step={1} value={r.qty}
                   onChange={(e) => set(i, { qty: Number(e.target.value) })}
                   style={{ width: 70 }} title="Qty" placeholder="Qty"
                 />
@@ -176,7 +196,8 @@ export function OnlineForm({
           </div>
 
           <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
-            Baris tanpa barang dari master SKU diabaikan (stok &amp; HPP butuh SKU terdaftar).
+            Baris tanpa barang dari master SKU otomatis dihapus saat disimpan (stok &amp; HPP butuh
+            SKU terdaftar) — tidak perlu dihapus manual sebelum submit.
           </div>
         </div>
       </div>
