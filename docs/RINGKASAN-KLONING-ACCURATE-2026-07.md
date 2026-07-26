@@ -20,7 +20,13 @@
 | 10 | Neraca Saldo (trial balance, badge Seimbang) | ✅ | Keuangan → Neraca saldo |
 | 11 | Jurnal Berulang (langganan bulanan auto-posting) | ✅ | Keuangan → Jurnal berulang |
 | 12 | Manajemen Pengguna (akun per karyawan, role, cabang, link HRIS, nonaktifkan; login page dibersihkan dari akun demo) | ✅ | Pengaturan → Manajemen pengguna |
-| 13 | Penjualan Online/B2C (Shopee/Tokopedia/TikTok Shop/WA; marketplace lahir sebagai Piutang Marketplace 1202, komisi dihitung saat pencairan aktual ke 5305) | ✅ | Penjualan → Penjualan online |
+| 13 | Penjualan Online/B2C (Shopee/Tokopedia/TikTok Shop/WA; marketplace lahir sebagai Piutang Marketplace 1202, komisi dihitung saat pencairan aktual ke 5305) | ✅ diuji end-to-end 2026-07-26 | Penjualan → Penjualan online |
+
+**Verifikasi Penjualan Online (2026-07-26, 9/9 lolos):** order Shopee → `piutang` + Dr 1202/Cr 4101 + HPP FIFO ·
+pencairan Rp 142rb dari total Rp 150rb → komisi Rp 8rb ke 5305, jurnal seimbang · order WA → langsung Dr 1102,
+pelanggan dapat poin · tolak: form kosong, qty pecahan, nominal cair melebihi total, klik cair kedua kali ·
+ganti channel WA→Shopee melepas pelanggan · hapus baris tengah tidak menggeser SKU · order `ONL-` tidak bisa
+diretur lewat kasir · drift-checker melaporkan "0 penjualan online". Data uji sudah dihapus bersih.
 
 **Kesimpulan: sisi AKUNTANSI & INVENTORI Accurate sudah 100% pindah ke VetOS. Roadmap paritas Accurate TUTUP.**
 
@@ -48,7 +54,7 @@ Sebelum sistem dipakai karyawan/pelanggan asli, kerjakan dua-duanya:
 2. Ganti password kelima akun tersebut (Pengaturan → Manajemen pengguna, atau via SQL).
 
 ## Sisa backlog (belum dikerjakan)
-1. **Verifikasi browser Penjualan Online** — kode sudah live (di-push 2026-07-26) tapi belum pernah dijalankan di browser. Perlu tes: buat order Shopee → cek `marketplace_status='piutang'` + jurnal Dr 1202, tandai cair → cek komisi ke 5305, order WA → badge Lunas. Keputusan boss: deploy dulu, verifikasi nyusul.
+1. **12 transaksi lama tanpa jurnal** (muncul di Keuangan → Sinkron: 8 POS + 4 invoice klinik, 15–24 Jul, ± Rp 2,95 juta). Boss memastikan 2026-07-26 ini **sisa uji coba dev, bukan penjualan asli** — jadi **JANGAN** klik "Posting Ulang Semua", nanti pembukuan kembung omzet palsu. Yang benar: hapus transaksi + shift terkaitnya. Belum dikerjakan (butuh keputusan boss soal shift & stok yang sudah terlanjur kepotong).
 2. **WA otomatis** — kode follow-up klinik & retensi sudah ada, mati karena `FONNTE_TOKEN` belum diisi (nunggu token dari boss).
 3. **CRM Retensi screen** (7 trigger WA) — belum dibangun; tergantung #2.
 4. Opsional ops: `SUPABASE_SERVICE_ROLE_KEY` + `CRON_SECRET` di Vercel → nyalain cron penyusutan bulanan (tanpa ini pun aman, ada lazy catch-up).
