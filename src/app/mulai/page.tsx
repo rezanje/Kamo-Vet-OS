@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { logout } from "@/app/login/actions";
 
 // Pilih mode kerja setelah login: dashboard VetOS penuh atau dunia POS kasir.
 export default async function MulaiPage({
@@ -89,6 +90,15 @@ export default async function MulaiPage({
           </>
         )}
       </div>
+
+      <form action={logout} className="pshop-card">
+        <button
+          type="submit"
+          style={{ background: "#fff", border: ".5px solid var(--bd, #e5e7eb)", borderRadius: 999, padding: "8px 18px", fontSize: 12, fontWeight: 600, color: "var(--tm)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          <i className="ti ti-logout" /> Keluar
+        </button>
+      </form>
 
       <div className="pshop-card" style={{ fontSize: 10.5, color: "var(--td)" }}>VetOS · PT Kamo Group</div>
     </div>

@@ -4,6 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { NotificationRow } from "@/lib/notifications";
 import { NotifBell } from "./NotifBell";
+import { logout } from "@/app/login/actions";
+
+const menuItem: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
+  fontSize: 12, fontWeight: 600, color: "var(--tx)", borderRadius: 7, textAlign: "left",
+};
 
 const TABS = [
   { href: "/kasir", label: "Kasir", icon: "ti-building-store", exact: true },
@@ -54,13 +60,26 @@ export function PosNav({ branchName, userName, hasShift, notifications }: { bran
             <i className="ti ti-power" style={{ fontSize: 13 }} /> Selesai Shift
           </Link>
         )}
-        <span style={{ fontSize: 11.5, color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,.2)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-            <i className="ti ti-user" style={{ fontSize: 14 }} />
-          </span>
-          {userName}
-          <i className="ti ti-chevron-down" style={{ fontSize: 12, color: "rgba(255,255,255,.6)" }} />
-        </span>
+        {/* ponytail: native <details> dropdown — no state, no outside-click handler. */}
+        <details style={{ position: "relative" }}>
+          <summary style={{ fontSize: 11.5, color: "#fff", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", listStyle: "none" }}>
+            <span style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,.2)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+              <i className="ti ti-user" style={{ fontSize: 14 }} />
+            </span>
+            {userName}
+            <i className="ti ti-chevron-down" style={{ fontSize: 12, color: "rgba(255,255,255,.6)" }} />
+          </summary>
+          <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", background: "#fff", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.18)", minWidth: 190, padding: 6, zIndex: 60 }}>
+            <Link href="/mulai" style={{ ...menuItem, textDecoration: "none" }}>
+              <i className="ti ti-arrows-exchange" style={{ fontSize: 14 }} /> Ganti mode kerja
+            </Link>
+            <form action={logout}>
+              <button type="submit" style={{ ...menuItem, width: "100%", background: "none", border: "none", cursor: "pointer", color: "#b91c1c" }}>
+                <i className="ti ti-logout" style={{ fontSize: 14 }} /> Keluar
+              </button>
+            </form>
+          </div>
+        </details>
       </div>
     </div>
   );
