@@ -196,7 +196,7 @@ export const TILES: Record<string, Tile[]> = {
   ],
   "aset-tetap": [
     { label: "Aset Tetap", icon: "ti-building", ...B, href: "/keuangan/aset" },
-    { label: "Kategori Aset", icon: "ti-category", ...B },
+    { label: "Kategori Aset", icon: "ti-category", ...B, href: "/keuangan/kategori-aset" },
     { label: "Kategori Aset Tetap Pajak", icon: "ti-receipt-tax", ...B },
     { label: "Perubahan Aset Tetap", icon: "ti-edit", ...G },
     { label: "Disposisi Aset Tetap", icon: "ti-trash", ...G },

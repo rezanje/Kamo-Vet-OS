@@ -13,7 +13,7 @@ export async function tambahAset(formData: FormData) {
   const supabase = await createClient();
 
   const nama = String(formData.get("nama") ?? "").trim();
-  const kategori = String(formData.get("kategori") ?? "Peralatan");
+  const categoryId = String(formData.get("category_id") ?? "").trim() || null;
   const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
   const harga = Number(formData.get("harga")) || 0;
   const nilaiSisa = Number(formData.get("nilai_sisa")) || 0;
@@ -28,8 +28,17 @@ export async function tambahAset(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent("Nilai sisa harus lebih kecil dari harga perolehan")}`);
   }
 
+  // fixed_assets.kategori (teks) tetap diisi sebagai jejak historis; sumber
+  // kebenarannya sekarang category_id.
+  let kategori = "Peralatan";
+  if (categoryId) {
+    const { data: kat } = await supabase.from("asset_categories").select("nama").eq("id", categoryId).maybeSingle();
+    if (!kat) redirect(`${back}?error=${encodeURIComponent("Kategori aset tidak valid")}`);
+    kategori = kat.nama as string;
+  }
+
   const { error } = await supabase.from("fixed_assets").insert({
-    nama, kategori, tanggal_perolehan: tanggal, harga_perolehan: harga,
+    nama, kategori, category_id: categoryId, tanggal_perolehan: tanggal, harga_perolehan: harga,
     nilai_sisa: nilaiSisa, umur_bulan: umurBulan, branch_id: branchId,
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);

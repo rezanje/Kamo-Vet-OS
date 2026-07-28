@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { KategoriUmur } from "./KategoriUmur";
 import { depreciationPerMonth } from "@/lib/aging";
 import { catchUpDepreciation } from "@/lib/depreciation";
 import { tambahAset, jalankanPenyusutan } from "./actions";
@@ -16,11 +17,16 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
   // dijalankan saat halaman dibuka. Idempotent — aman dipanggil berulang.
   const autoRuns = await catchUpDepreciation(supabase);
 
-  const [{ data: assets }, { data: deps }, { data: branches }] = await Promise.all([
+  const [{ data: assets }, { data: deps }, { data: branches }, { data: katData }] = await Promise.all([
     supabase.from("fixed_assets").select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, is_active").order("tanggal_perolehan"),
     supabase.from("asset_depreciations").select("asset_id, amount"),
     supabase.from("branches").select("id, name").order("name"),
+    supabase.from("asset_categories").select("id, nama, umur_bulan").eq("is_active", true).order("nama"),
   ]);
+
+  const asetKategori = (katData ?? []).map((k) => ({
+    id: k.id as string, nama: k.nama as string, umur_bulan: Number(k.umur_bulan),
+  }));
 
   const depSum = new Map<string, number>();
   for (const d of deps ?? []) depSum.set(d.asset_id, (depSum.get(d.asset_id) ?? 0) + Number(d.amount));
@@ -115,30 +121,21 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
               <input className="fi" name="nama" placeholder="mis. Mesin X-Ray" required />
             </div>
             <div>
-              <label className="flab">Kategori</label>
-              <select className="fi" name="kategori" defaultValue="Peralatan">
-                <option>Peralatan</option><option>Inventaris Kantor</option><option>Kendaraan</option><option>Bangunan</option>
-              </select>
-            </div>
-          </div>
-          <div className="frow" style={{ marginBottom: 10 }}>
-            <div>
               <label className="flab">Tanggal perolehan</label>
               <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} />
             </div>
+          </div>
+          <div className="frow" style={{ marginBottom: 10 }}>
+            <KategoriUmur kategori={asetKategori} />
+          </div>
+          <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Harga perolehan</label>
               <input className="fi" type="number" name="harga" min={1} step="any" required />
             </div>
-          </div>
-          <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Nilai sisa</label>
               <input className="fi" type="number" name="nilai_sisa" min={0} step="any" defaultValue={0} />
-            </div>
-            <div>
-              <label className="flab">Umur ekonomis (bulan)</label>
-              <input className="fi" type="number" name="umur_bulan" min={1} placeholder="mis. 60 (5 tahun)" required />
             </div>
           </div>
           <div className="frow" style={{ marginBottom: 12 }}>
