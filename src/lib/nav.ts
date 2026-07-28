@@ -1,6 +1,13 @@
-// Navigation + tile config, ported from Dokumen/VetOS_UI_Prototype.html (MV/ML/TL).
+// Navigation + tile config.
+//
+// Penggolongan modul & urutan tile MENGIKUTI Accurate Online, sesuai spek klien
+// `Dokumen/UI ERP KAMO 2026.pdf` (keputusan boss 2026-07-28). Tile yang dicoret ✗
+// di PDF tidak dibawa ke sini. Tile bertanda "khusus VetOS" adalah tambahan di
+// luar Accurate (klinik, POS kasir, quest, dll) dan ditaruh di akhir grup.
+//
 // `href` is set only on tiles that have a real page; the rest render as
-// "dalam pengembangan" until their module lands (PRD phased rollout).
+// "dalam pengembangan" until their module lands. Audit lengkap gap-nya:
+// `docs/GAP-MENU-ACCURATE-2026-07.md`.
 
 export type Module = { id: string; label: string; icon: string };
 
@@ -14,26 +21,43 @@ export type Tile = {
   p2?: boolean; // Fase 2 (disabled)
 };
 
+// Urutan sidebar: modul khusus VetOS (operasional harian) dulu, lalu 10 modul
+// Accurate persis urutan sidebar-nya di PDF.
 export const MODULES: Module[] = [
   { id: "dashboard", label: "Dashboard", icon: "ti-layout-dashboard" },
   { id: "klinik", label: "Klinik", icon: "ti-stethoscope" },
-  { id: "pos", label: "POS & Inventori", icon: "ti-shopping-cart" },
-  { id: "pembelian", label: "Pembelian", icon: "ti-truck-delivery" },
-  { id: "penjualan", label: "Penjualan", icon: "ti-receipt-2" },
-  { id: "buku-besar", label: "Buku Besar", icon: "ti-book-2" },
-  { id: "keuangan", label: "Keuangan", icon: "ti-report-money" },
-  { id: "hris", label: "HRIS", icon: "ti-users" },
   { id: "crm", label: "CRM", icon: "ti-heart-handshake" },
-  { id: "perusahaan", label: "Perusahaan", icon: "ti-building-skyscraper" },
+  { id: "hris", label: "HRIS", icon: "ti-users" },
   { id: "pengaturan", label: "Pengaturan", icon: "ti-settings" },
+  { id: "perusahaan", label: "Perusahaan", icon: "ti-building-skyscraper" },
+  { id: "buku-besar", label: "Buku Besar", icon: "ti-book-2" },
+  { id: "kas-bank", label: "Kas & Bank", icon: "ti-building-bank" },
+  { id: "penjualan", label: "Penjualan", icon: "ti-receipt-2" },
+  { id: "pembelian", label: "Pembelian", icon: "ti-shopping-cart" },
+  { id: "pos", label: "Persediaan", icon: "ti-forklift" },
+  { id: "aset-tetap", label: "Aset Tetap", icon: "ti-building-warehouse" },
+  { id: "pajak", label: "Pajak", icon: "ti-receipt-tax" },
+  { id: "laporan", label: "Daftar Laporan", icon: "ti-chart-pie" },
 ];
 
-export const MODULE_LABEL: Record<string, string> = Object.fromEntries(
-  MODULES.map((m) => [m.id, m.label]),
-);
+// Prefix URL lama yang tidak lagi jadi modul sidebar, tapi anak-anaknya masih
+// dipakai — dipakai Breadcrumb supaya judulnya tidak jadi slug mentah.
+const PATH_ALIAS: Record<string, string> = {
+  keuangan: "Daftar Laporan",
+  kasir: "POS Petshop",
+  me: "Dashboard Pribadi",
+};
+
+export const MODULE_LABEL: Record<string, string> = {
+  ...PATH_ALIAS,
+  ...Object.fromEntries(MODULES.map((m) => [m.id, m.label])),
+};
 
 // FINANCE hanya pegang dunia keuangan — sidebar & akses URL dibatasi ke modul ini.
-export const FINANCE_MODULES = ["dashboard", "buku-besar", "keuangan"];
+// Piutang/hutang hidup di Kas & Bank (ala Accurate), jadi FINANCE tetap kebagian.
+export const FINANCE_MODULES = [
+  "dashboard", "buku-besar", "kas-bank", "aset-tetap", "pajak", "laporan",
+];
 
 // Modul yang boleh diakses per role. Undefined = semua (OWNER/ADMIN).
 export function allowedModules(role: string): string[] | null {
@@ -41,122 +65,163 @@ export function allowedModules(role: string): string[] | null {
   return null; // full akses
 }
 
-const G = { bg: "#e8f5ee", fg: "#16a34a" }; // green
-const B = { bg: "#eff6ff", fg: "#2563eb" }; // blue
-const P = { bg: "#f3f0ff", fg: "#7c3aed" }; // purple
+const G = { bg: "#e8f5ee", fg: "#16a34a" }; // green  — transaksi
+const B = { bg: "#eff6ff", fg: "#2563eb" }; // blue   — master data
+const P = { bg: "#f3f0ff", fg: "#7c3aed" }; // purple — tools & log
 const R = { bg: "#fef2f2", fg: "#dc2626" }; // red
 const A = { bg: "#fffbeb", fg: "#d97706" }; // amber
 
 export const TILES: Record<string, Tile[]> = {
+  // ── Modul khusus VetOS (tidak ada di Accurate) ──────────────────────────────
   klinik: [
     { label: "Registrasi pasien", icon: "ti-user-plus", ...G, href: "/klinik/registrasi" },
+    { label: "Antrian digital", icon: "ti-list-numbers", ...G, href: "/klinik/antrian" },
     { label: "Rekam medis", icon: "ti-notes-medical", ...G },
-    { label: "Rawat inap", icon: "ti-bed", ...G, nw: true, href: "/klinik/rawat-inap" },
-    { label: "Follow up", icon: "ti-calendar-event", ...A, nw: true, href: "/klinik/follow-up" },
+    { label: "Rawat inap", icon: "ti-bed", ...G, href: "/klinik/rawat-inap" },
+    { label: "Racik obat", icon: "ti-flask", ...G, href: "/klinik/racik" },
+    { label: "Form persetujuan", icon: "ti-file-check", ...G, href: "/klinik/persetujuan" },
+    { label: "Follow up", icon: "ti-calendar-event", ...A, href: "/klinik/follow-up" },
+    { label: "Bahan baku klinik", icon: "ti-flask-2", ...B, href: "/klinik/bahan-baku" },
     { label: "Jadwal dokter", icon: "ti-calendar-event", ...B },
-    { label: "Racik obat", icon: "ti-flask", ...B, nw: true, href: "/klinik/racik" },
-    { label: "Form persetujuan", icon: "ti-file-check", ...B, nw: true, href: "/klinik/persetujuan" },
     { label: "Booking online", icon: "ti-calendar-plus", ...P },
-    { label: "Antrian digital", icon: "ti-list-numbers", ...B, href: "/klinik/antrian" },
   ],
-  pos: [
-    { label: "Transaksi POS", icon: "ti-cash-register", ...G, href: "/pos/transaksi" },
-    { label: "Shift kasir", icon: "ti-clock-dollar", ...G, href: "/pos/shift" },
-    { label: "Pengeluaran", icon: "ti-receipt-2", ...G, href: "/pos/expense" },
-    { label: "Master SKU", icon: "ti-package", ...B, nw: true, href: "/pos/sku" },
-    { label: "Stok per gudang", icon: "ti-stack", ...G, href: "/pos/stok" },
-    { label: "Permintaan barang", icon: "ti-truck-delivery", ...B, href: "/pos/permintaan" },
-    { label: "Pemindahan barang", icon: "ti-transfer", ...G, nw: true, href: "/pos/pemindahan" },
-    { label: "Monitor expired", icon: "ti-calendar-x", ...R },
-    { label: "Reorder alert", icon: "ti-alert-triangle", ...A },
-    { label: "Quest staff", icon: "ti-trophy", ...A, nw: true, href: "/pos/quest" },
-    { label: "Online / B2C", icon: "ti-world", ...P, nw: true },
-    { label: "Stock opname", icon: "ti-clipboard-check", ...G, nw: true, href: "/pos/opname" },
+  crm: [
+    { label: "Promo", icon: "ti-speakerphone", ...G, href: "/crm/promo" },
+    { label: "Pelanggan", icon: "ti-users-group", ...B, href: "/crm/pelanggan" },
+    { label: "Kategori Pelanggan", icon: "ti-crown", ...B, href: "/pengaturan/tier" },
+    { label: "Retention (WA)", icon: "ti-brand-whatsapp", ...P },
+    { label: "Owner dashboard", icon: "ti-dashboard", ...P },
   ],
-  pembelian: [
-    { label: "Pesanan pembelian", icon: "ti-file-invoice", ...G },
-    { label: "Retur pembelian", icon: "ti-truck-return", ...G, nw: true, href: "/pembelian/retur" },
-    { label: "Penerimaan barang", icon: "ti-package-import", ...G },
-    { label: "Faktur pembelian", icon: "ti-receipt", ...G, nw: true, href: "/pembelian/faktur" },
-    { label: "Pembayaran pembelian", icon: "ti-cash", ...B, nw: true, href: "/keuangan/hutang" },
-    { label: "Retur pembelian", icon: "ti-package-export", ...R },
-    { label: "Master pemasok", icon: "ti-building-store", ...P },
-    { label: "Kat. pemasok", icon: "ti-tag", ...B },
-    { label: "Perintah pembayaran", icon: "ti-send", ...B },
+  hris: [
+    { label: "Karyawan", icon: "ti-user-circle", ...B, href: "/hris/karyawan" },
+    { label: "Absensi", icon: "ti-map-pin-check", ...G, href: "/hris/absensi" },
+    { label: "Jadwal", icon: "ti-calendar-time", ...G },
+    { label: "Slip Gaji", icon: "ti-moneybag", ...G, href: "/hris/penggajian" },
+    { label: "Menu Karyawan", icon: "ti-id-badge", ...G, href: "/me" },
+    { label: "Cuti & lembur", icon: "ti-beach", ...G, href: "/hris/cuti" },
+    { label: "KPI karyawan", icon: "ti-chart-dots", ...P, href: "/hris/kpi" },
+    { label: "Komponen gaji", icon: "ti-coin", ...B },
+    { label: "Verifikasi wajah", icon: "ti-scan-eye", bg: "#f3f4f6", fg: "#9ca3af", p2: true },
   ],
-  penjualan: [
-    { label: "Penawaran penjualan", icon: "ti-file-text", ...G },
-    { label: "Pesanan penjualan", icon: "ti-shopping-bag", ...G },
-    { label: "Pengiriman pesanan", icon: "ti-truck", ...G },
-    { label: "Uang muka penjualan", icon: "ti-coin", ...B },
-    { label: "Faktur penjualan", icon: "ti-receipt-2", ...G },
-    { label: "Penerimaan penjualan", icon: "ti-cash-banknote", ...B },
-    { label: "Penjualan online", icon: "ti-shopping-cart", ...G, nw: true, href: "/penjualan/online" },
-    { label: "Retur penjualan", icon: "ti-arrow-back-up", ...G, nw: true, href: "/penjualan/retur" },
-    { label: "Komisi penjual", icon: "ti-percentage", ...P },
-    { label: "Target penjualan", icon: "ti-target", ...A },
+
+  // ── 10 modul Accurate ───────────────────────────────────────────────────────
+  pengaturan: [
+    { label: "Preferensi", icon: "ti-adjustments", ...A },
+    { label: "Akses Grup", icon: "ti-users-plus", ...A },
+    { label: "Pengguna", icon: "ti-shield", ...A, href: "/pengaturan/pengguna" },
+    { label: "Penomoran", icon: "ti-list-numbers", ...A },
+    { label: "Desain Cetakan", icon: "ti-printer", ...A },
+    { label: "Penyetuju Transaksi", icon: "ti-user-check", ...A },
+    { label: "Cabang & gudang", icon: "ti-building-store", ...B, href: "/pengaturan/cabang" },
+    { label: "Konfigurasi loyalty", icon: "ti-star", ...B, href: "/pengaturan/tier" },
+    { label: "WA Engine (7 trigger)", icon: "ti-brand-whatsapp", ...B },
+  ],
+  perusahaan: [
+    { label: "Cabang", icon: "ti-building-community", ...B, href: "/perusahaan/cabang" },
+    { label: "Transaksi Berulang", icon: "ti-repeat", ...G, href: "/keuangan/jurnal-berulang" },
+    { label: "Proses Akhir Bulan", icon: "ti-calendar-stats", ...G },
+    { label: "Transaksi Favorit", icon: "ti-star", ...P },
+    { label: "Persetujuan (Approval)", icon: "ti-file-check", ...P },
+    { label: "Kalender", icon: "ti-calendar", ...P },
+    { label: "Log Aktifitas", icon: "ti-history", ...P },
   ],
   "buku-besar": [
     { label: "Akun Perkiraan", icon: "ti-clipboard-list", ...B, href: "/keuangan/coa" },
-    { label: "Pencatatan Beban", icon: "ti-receipt-2", ...G, nw: true, href: "/buku-besar/beban" },
+    { label: "Pencatatan Beban", icon: "ti-receipt-2", ...G, href: "/buku-besar/beban" },
     { label: "Pencatatan Gaji", icon: "ti-cash", ...G, href: "/hris/penggajian" },
     { label: "Jurnal Umum", icon: "ti-table", ...G, href: "/keuangan/jurnal" },
     { label: "Monitor Anggaran", icon: "ti-device-desktop-analytics", ...P },
     { label: "Transfer Anggaran", icon: "ti-arrows-transfer-down", ...G },
     { label: "Anggaran", icon: "ti-chart-arrows-vertical", ...A },
     { label: "Histori Akun", icon: "ti-history", ...P, href: "/keuangan/buku-besar" },
-    { label: "Log Aktifitas Jurnal", icon: "ti-file-search", ...P, nw: true, href: "/buku-besar/log" },
+    { label: "Log Aktifitas Jurnal", icon: "ti-file-search", ...P, href: "/buku-besar/log" },
+    { label: "Jurnal Berulang", icon: "ti-repeat", ...G, href: "/keuangan/jurnal-berulang" },
+    { label: "Tutup Buku", icon: "ti-lock", ...G, href: "/keuangan/tutup-buku" },
+    { label: "Sinkronisasi Jurnal", icon: "ti-refresh-dot", ...A, href: "/keuangan/sinkron" },
   ],
-  keuangan: [
-    { label: "Bagan Akun (COA)", icon: "ti-list-numbers", ...G, href: "/keuangan/coa" },
-    { label: "Jurnal umum", icon: "ti-notebook", ...G, href: "/keuangan/jurnal" },
-    { label: "Buku besar", icon: "ti-book", ...B, href: "/keuangan/buku-besar" },
-    { label: "Lap. laba rugi", icon: "ti-chart-bar", ...G, href: "/keuangan/laba-rugi" },
-    { label: "Neraca", icon: "ti-scale", ...B, href: "/keuangan/neraca" },
-    { label: "Arus kas", icon: "ti-arrows-exchange", ...P, href: "/keuangan/arus-kas" },
-    { label: "Piutang (AR)", icon: "ti-clock-hour-4", ...A, nw: true, href: "/keuangan/piutang" },
-    { label: "Hutang (AP)", icon: "ti-clock-dollar", ...R, nw: true, href: "/keuangan/hutang" },
-    { label: "Aset tetap", icon: "ti-building", ...P, nw: true, href: "/keuangan/aset" },
-    { label: "Rekonsiliasi bank", icon: "ti-building-bank", ...B, href: "/keuangan/rekonsiliasi" },
-    { label: "Sinkronisasi jurnal", icon: "ti-refresh-dot", ...A, nw: true, href: "/keuangan/sinkron" },
-    { label: "Tutup buku", icon: "ti-lock", ...G, nw: true, href: "/keuangan/tutup-buku" },
-    { label: "Rekap PPN", icon: "ti-receipt-tax", ...G, nw: true, href: "/keuangan/ppn" },
-    { label: "Neraca saldo", icon: "ti-list-check", ...G, nw: true, href: "/keuangan/neraca-saldo" },
-    { label: "Jurnal berulang", icon: "ti-repeat", ...G, nw: true, href: "/keuangan/jurnal-berulang" },
-    { label: "Lap. HPP", icon: "ti-report", ...G },
-    { label: "Shift kasir (selisih kas)", icon: "ti-clock-dollar", ...B, href: "/pos/shift" },
+  "kas-bank": [
+    // Accurate: "Pembayaran" = bayar hutang pemasok, "Penerimaan" = terima piutang pelanggan.
+    { label: "Pembayaran", icon: "ti-cash", ...G, href: "/keuangan/hutang" },
+    { label: "Penerimaan", icon: "ti-cash-banknote", ...G, href: "/keuangan/piutang" },
+    { label: "Transfer Bank", icon: "ti-building-bank", ...G },
+    { label: "Rekonsiliasi Bank", icon: "ti-checkbox", ...P, href: "/keuangan/rekonsiliasi" },
+    { label: "Payment Gateway", icon: "ti-credit-card", ...B },
+    { label: "Arus Kas", icon: "ti-arrows-exchange", ...P, href: "/keuangan/arus-kas" },
   ],
-  hris: [
-    { label: "Data karyawan", icon: "ti-user-circle", ...G, href: "/hris/karyawan" },
-    { label: "Absensi", icon: "ti-map-pin-check", ...G, href: "/hris/absensi" },
-    { label: "Cuti & lembur", icon: "ti-calendar-time", ...B, href: "/hris/cuti" },
-    { label: "Penggajian", icon: "ti-moneybag", ...G, href: "/hris/penggajian" },
-    { label: "KPI karyawan", icon: "ti-chart-dots", ...P, href: "/hris/kpi" },
-    { label: "Verifikasi wajah", icon: "ti-scan-eye", bg: "#f3f4f6", fg: "#9ca3af", p2: true },
+  penjualan: [
+    { label: "Penawaran Penjualan", icon: "ti-file-text", ...G },
+    { label: "Pesanan Penjualan", icon: "ti-shopping-bag", ...G },
+    { label: "Pengiriman Pesanan", icon: "ti-truck", ...G },
+    { label: "Uang Muka Penjualan", icon: "ti-coin", ...G },
+    { label: "Faktur Penjualan", icon: "ti-receipt-2", ...G },
+    { label: "Penerimaan Penjualan", icon: "ti-cash-banknote", ...G },
+    { label: "Retur Penjualan", icon: "ti-arrow-back-up", ...G, href: "/penjualan/retur" },
+    { label: "Komisi Penjual", icon: "ti-percentage", ...A },
+    { label: "Target Penjualan", icon: "ti-target", ...A },
+    { label: "Penjualan Online", icon: "ti-world", ...G, nw: true, href: "/penjualan/online" },
   ],
-  crm: [
-    { label: "Data pelanggan", icon: "ti-users-group", ...G, href: "/crm/pelanggan" },
-    { label: "Promo", icon: "ti-speakerphone", ...A, href: "/crm/promo" },
-    { label: "Kategori pelanggan", icon: "ti-crown", ...P },
-    { label: "Retensi & WA", icon: "ti-brand-whatsapp", ...G },
-    { label: "Owner dashboard", icon: "ti-dashboard", ...B },
+  pembelian: [
+    { label: "Pesanan Pembelian", icon: "ti-file-invoice", ...G, href: "/pembelian" },
+    { label: "Penerimaan Barang", icon: "ti-package-import", ...G },
+    { label: "Uang Muka Pembelian", icon: "ti-cash-banknote", ...G },
+    { label: "Faktur Pembelian", icon: "ti-receipt", ...G, href: "/pembelian/faktur" },
+    { label: "Pembayaran Pembelian", icon: "ti-cash", ...G, href: "/keuangan/hutang" },
+    { label: "Retur Pembelian", icon: "ti-truck-return", ...G, href: "/pembelian/retur" },
+    { label: "Kategori Pemasok", icon: "ti-tag", ...B },
+    { label: "Pemasok", icon: "ti-building-store", ...B, href: "/pembelian?tab=supplier" },
+    { label: "Perintah Pembayaran", icon: "ti-send", ...G },
   ],
-  perusahaan: [
-    { label: "Cabang", icon: "ti-building-community", ...B, nw: true, href: "/perusahaan/cabang" },
-    { label: "Transaksi berulang", icon: "ti-repeat", ...G, nw: true },
-    { label: "Proses akhir bulan", icon: "ti-calendar-stats", ...G, nw: true },
-    { label: "Transaksi favorit", icon: "ti-star", ...P },
-    { label: "Persetujuan (approval)", icon: "ti-file-check", ...P },
-    { label: "Kalender", icon: "ti-calendar", ...P },
-    { label: "Log aktifitas", icon: "ti-history", ...P },
+  // id `pos` dipertahankan supaya route /pos/* lama tidak perlu dipindah.
+  pos: [
+    { label: "Permintaan Barang", icon: "ti-clipboard-text", ...G, href: "/pos/permintaan" },
+    { label: "Pemindahan Barang", icon: "ti-transfer", ...G, href: "/pos/pemindahan" },
+    { label: "Penyesuaian Persediaan", icon: "ti-adjustments-alt", ...G },
+    { label: "Pekerjaan Pesanan", icon: "ti-clipboard-check", ...G },
+    { label: "Penambahan Bahan Baku", icon: "ti-package-import", ...G, href: "/klinik/bahan-baku" },
+    { label: "Penyelesaian Pesanan", icon: "ti-checklist", ...G },
+    { label: "Perintah Stok Opname", icon: "ti-clipboard-list", ...G, href: "/pos/opname" },
+    { label: "Hasil Stok Opname", icon: "ti-clipboard-check", ...G, href: "/pos/opname" },
+    { label: "Barang & Jasa", icon: "ti-package", ...B, href: "/pos/sku" },
+    { label: "Gudang", icon: "ti-building-warehouse", ...B, href: "/pengaturan/cabang" },
+    { label: "Satuan Barang", icon: "ti-scale-outline", ...B },
+    { label: "Kategori Barang", icon: "ti-category", ...B },
+    { label: "Merek Barang", icon: "ti-badge", ...B },
+    { label: "Barang Stok Minimum", icon: "ti-alert-triangle", ...P },
+    { label: "Stok per Gudang", icon: "ti-stack", ...P, href: "/pos/stok" },
+    { label: "Monitor Expired", icon: "ti-calendar-x", ...R },
+    { label: "Transaksi POS", icon: "ti-cash-register", ...G, href: "/pos/transaksi" },
+    { label: "Shift Kasir", icon: "ti-clock-dollar", ...G, href: "/pos/shift" },
+    { label: "Pengeluaran", icon: "ti-receipt-2", ...G, href: "/pos/expense" },
+    { label: "Quest Staff", icon: "ti-trophy", ...A, href: "/pos/quest" },
   ],
-  pengaturan: [
-    { label: "Cabang & gudang", icon: "ti-building-store", ...G, href: "/pengaturan/cabang" },
-    { label: "Manajemen pengguna", icon: "ti-shield", ...G, nw: true, href: "/pengaturan/pengguna" },
-    { label: "Chart of Accounts", icon: "ti-list-details", ...G },
-    { label: "Konfigurasi loyalty", icon: "ti-star", ...A, href: "/pengaturan/tier" },
-    { label: "Pajak (Mode PKP)", icon: "ti-receipt-tax", ...G, nw: true, href: "/pengaturan/pajak" },
-    { label: "WA Engine (7 trigger)", icon: "ti-brand-whatsapp", ...G },
-    { label: "Komponen gaji", icon: "ti-coin", ...B },
+  "aset-tetap": [
+    { label: "Aset Tetap", icon: "ti-building", ...B, href: "/keuangan/aset" },
+    { label: "Kategori Aset", icon: "ti-category", ...B },
+    { label: "Kategori Aset Tetap Pajak", icon: "ti-receipt-tax", ...B },
+    { label: "Perubahan Aset Tetap", icon: "ti-edit", ...G },
+    { label: "Disposisi Aset Tetap", icon: "ti-trash", ...G },
+    { label: "Pindah Aset", icon: "ti-arrows-transfer-down", ...G },
+  ],
+  pajak: [
+    { label: "Mode PKP & tarif PPN", icon: "ti-settings", ...B, href: "/pengaturan/pajak" },
+    { label: "Rekap PPN", icon: "ti-receipt-tax", ...G, href: "/keuangan/ppn" },
+    { label: "e-Faktur CTAS", icon: "ti-file-invoice", ...P },
+    { label: "Email Faktur Pajak", icon: "ti-mail-forward", ...P },
+    { label: "e-Faktur Legacy", icon: "ti-file-text", ...P },
+  ],
+  laporan: [
+    { label: "Daftar Laporan", icon: "ti-report-analytics", ...P },
+    { label: "Laba Rugi", icon: "ti-chart-bar", ...G, href: "/keuangan/laba-rugi" },
+    { label: "Neraca", icon: "ti-scale", ...G, href: "/keuangan/neraca" },
+    { label: "Neraca Saldo", icon: "ti-list-check", ...G, href: "/keuangan/neraca-saldo" },
+    { label: "Buku Besar", icon: "ti-book", ...G, href: "/keuangan/buku-besar" },
+    { label: "Arus Kas", icon: "ti-arrows-exchange", ...G, href: "/keuangan/arus-kas" },
+    { label: "Piutang (AR)", icon: "ti-clock-hour-4", ...A, href: "/keuangan/piutang" },
+    { label: "Hutang (AP)", icon: "ti-clock-dollar", ...R, href: "/keuangan/hutang" },
+    { label: "Laporan HPP", icon: "ti-report", ...G },
+    { label: "Shift Kasir (selisih kas)", icon: "ti-clock-dollar", ...G, href: "/pos/shift" },
+    { label: "SPT PPN / PPNBM", icon: "ti-file-dollar", ...P },
+    { label: "SPT PPh Ps.21", icon: "ti-file-description", ...P },
+    { label: "Bukti Potong PPh Ps.21", icon: "ti-file-certificate", ...P },
   ],
 };

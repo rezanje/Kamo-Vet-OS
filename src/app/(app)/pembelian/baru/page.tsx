@@ -16,7 +16,7 @@ export default async function BaruPOPage({
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name").order("name"),
     supabase.from("branches").select("id, name").order("name"),
-    supabase.from("items").select("id, code, name, buy_price").eq("is_active", true).order("name"),
+    supabase.from("items").select("id, code, name, unit, buy_price").eq("is_active", true).order("name"),
   ]);
 
   return (

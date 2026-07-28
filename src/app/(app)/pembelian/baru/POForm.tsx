@@ -9,11 +9,11 @@ import { buatPO } from "../actions";
 type Supplier = { id: string; nama: string };
 type Warehouse = { id: string; name: string };
 type Branch = { id: string; name: string };
-type Item = { id: string; code: string; name: string; buy_price: number };
-type Row = { nama: string; qty: number; harga_beli: number; item_id?: string | null };
+type Item = { id: string; code: string; name: string; unit: string; buy_price: number };
+type Row = { nama: string; qty: number; harga_beli: number; item_id?: string | null; satuan?: string };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const blank: Row = { nama: "", qty: 1, harga_beli: 0, item_id: null };
+const blank: Row = { nama: "", qty: 1, harga_beli: 0, item_id: null, satuan: "" };
 const itemLabel = (it: Item) => `${it.code} — ${it.name}`;
 
 export function POForm({
@@ -37,8 +37,8 @@ export function POForm({
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v);
     set(i, it
-      ? { nama: v, item_id: it.id, harga_beli: Number(it.buy_price) || 0 }
-      : { nama: v, item_id: null });
+      ? { nama: v, item_id: it.id, harga_beli: Number(it.buy_price) || 0, satuan: it.unit || "" }
+      : { nama: v, item_id: null, satuan: "" });
   };
   const add = () => setRows((rs) => [...rs, { ...blank }]);
   const del = (i: number) =>
@@ -125,7 +125,7 @@ export function POForm({
           <SecHeader
             num="02"
             title="DAFTAR ITEM"
-            desc="Nama barang, jumlah, & harga beli per unit."
+            desc="Nama barang, jumlah, satuan, & harga beli per satuan."
             action={
               <button
                 type="button"
@@ -156,10 +156,20 @@ export function POForm({
                   step="any"
                   value={r.qty}
                   onChange={(e) => set(i, { qty: Number(e.target.value) })}
-                  style={{ width: 70 }}
+                  style={{ width: 62 }}
                   title="Qty"
                   placeholder="Qty"
                 />
+                {/* ponytail: satuan ikut master SKU, tampil read-only — bukan konversi pcs↔dus */}
+                <span
+                  style={{
+                    width: 44, flexShrink: 0, fontSize: 10.5,
+                    color: r.satuan ? "var(--tm)" : "var(--td)",
+                  }}
+                  title="Satuan (dari master SKU)"
+                >
+                  {r.satuan || "—"}
+                </span>
                 <input
                   className="fi"
                   type="number"
