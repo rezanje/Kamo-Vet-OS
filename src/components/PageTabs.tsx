@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -8,51 +8,65 @@ import {
 } from "@/lib/tabs";
 
 const STORE_KEY = "vetos.tabs";
+const EMPTY: PageTab[] = [];
+
+// ponytail: store kecil di luar React. Daftar tab hidup di sessionStorage,
+// jadi useSyncExternalStore adalah alatnya — bukan useState + useEffect
+// (yang kena aturan react-hooks/set-state-in-effect dan bikin render bertingkat).
+let store: PageTab[] = EMPTY;
+let loaded = false;
+const listeners = new Set<() => void>();
+
+function read(): PageTab[] {
+  if (loaded || typeof window === "undefined") return store;
+  loaded = true;
+  try {
+    const raw = sessionStorage.getItem(STORE_KEY);
+    if (raw) store = JSON.parse(raw) as PageTab[];
+  } catch {
+    // storage penuh / diblokir — jalan tanpa tab tersimpan.
+  }
+  return store;
+}
+
+function write(next: PageTab[]) {
+  if (next === store) return;
+  store = next;
+  try {
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(next));
+  } catch {
+    // abaikan
+  }
+  for (const l of listeners) l();
+}
+
+function subscribe(fn: () => void) {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+// Server tidak punya sessionStorage → snapshot kosong yang stabil.
+const serverSnapshot = () => EMPTY;
 
 // Tab halaman ala Accurate. Halaman yang dibuka nempel jadi tab supaya bisa
 // gonta-ganti tanpa balik ke sidebar. Umur tab = satu sesi tab browser.
 export function PageTabs() {
   const pathname = usePathname();
   const router = useRouter();
-  const [tabs, setTabs] = useState<PageTab[]>([]);
+  const tabs = useSyncExternalStore(subscribe, read, serverSnapshot);
 
-  // sessionStorage cuma ada di browser → baca setelah hydrate.
+  // Sinkronisasi ke sistem luar (sessionStorage) — memang tugasnya effect.
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(STORE_KEY);
-      if (raw) setTabs(JSON.parse(raw) as PageTab[]);
-    } catch {
-      // storage penuh / diblokir — jalan tanpa tab tersimpan.
-    }
-  }, []);
-
-  useEffect(() => {
-    setTabs((prev) => {
-      const next = openTab(prev, { href: pathname, label: tabLabel(pathname) });
-      if (next !== prev) {
-        try {
-          sessionStorage.setItem(STORE_KEY, JSON.stringify(next));
-        } catch {
-          // abaikan
-        }
-      }
-      return next;
-    });
+    write(openTab(read(), { href: pathname, label: tabLabel(pathname) }));
   }, [pathname]);
 
   function handleClose(e: React.MouseEvent, href: string) {
     e.preventDefault();
     e.stopPropagation();
     const target = pathname === href ? nextActive(tabs, href) : null;
-    setTabs((prev) => {
-      const next = closeTab(prev, href);
-      try {
-        sessionStorage.setItem(STORE_KEY, JSON.stringify(next));
-      } catch {
-        // abaikan
-      }
-      return next;
-    });
+    write(closeTab(tabs, href));
     if (target) router.push(target);
   }
 
