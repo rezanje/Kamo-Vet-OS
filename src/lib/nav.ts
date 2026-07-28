@@ -183,7 +183,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Hasil Stok Opname", icon: "ti-clipboard-check", ...G, href: "/pos/opname" },
     { label: "Barang & Jasa", icon: "ti-package", ...B, href: "/pos/sku" },
     { label: "Gudang", icon: "ti-building-warehouse", ...B, href: "/pengaturan/cabang" },
-    { label: "Satuan Barang", icon: "ti-scale-outline", ...B },
+    { label: "Satuan Barang", icon: "ti-scale-outline", ...B, href: "/pos/satuan" },
     { label: "Kategori Barang", icon: "ti-category", ...B },
     { label: "Merek Barang", icon: "ti-badge", ...B, href: "/pos/merek" },
     { label: "Barang Stok Minimum", icon: "ti-alert-triangle", ...P },
