@@ -22,6 +22,11 @@ describe("pesanSimpanGagal", () => {
       .toBe("Merek dengan nama itu sudah ada");
   });
 
+  it("pelanggaran RLS jadi pesan Indonesia tapi tetap menyebut tabelnya", () => {
+    const p = pesanSimpanGagal('new row violates row-level security policy for table "item_categories"');
+    expect(p).toBe("Perubahan ditolak izin database (tabel item_categories) — hubungi developer");
+  });
+
   it("error tak dikenal dilewatkan apa adanya biar tetap kelihatan", () => {
     expect(pesanSimpanGagal("connection reset by peer")).toBe("connection reset by peer");
   });

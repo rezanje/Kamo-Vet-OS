@@ -62,5 +62,13 @@ export function pesanSimpanGagal(raw: string): string {
   for (const [key, msg] of Object.entries(UNIQUE_MSG)) {
     if (m.includes(key)) return msg;
   }
+  // Pelanggaran RLS = policy tabel kurang, bukan salah pemakai (kejadian nyata:
+  // item_categories cuma punya policy SELECT sampai migrasi 0067). Pesannya tetap
+  // menyebut tabelnya supaya developer bisa langsung nyari, tapi tidak lagi
+  // memuntahkan error Postgres mentah ke layar kasir.
+  if (m.includes("row-level security")) {
+    const tabel = raw.match(/table "([^"]+)"/)?.[1];
+    return `Perubahan ditolak izin database${tabel ? ` (tabel ${tabel})` : ""} — hubungi developer`;
+  }
   return raw;
 }

@@ -51,6 +51,24 @@ pelanggan, aset 'Peralatan' semua ketemu induknya). `npm test` 258 lolos (dari 2
 penyusutan/pemasok diuji langsung ke API (200), dengan kontrol negatif relasi ngawur (400) supaya
 pengujiannya terbukti bergigi.
 
+**Bug yang ketemu saat uji manual (dan sudah diperbaiki, migrasi 0067):** tabel kategori barang
+lahir sejak awal proyek dengan izin **baca saja** — tidak pernah ketahuan selama kategori cuma
+dipakai di dropdown. Begitu halaman kelola kategori dibuat, setiap simpan ditolak diam-diam oleh
+database. Sekarang izin tulisnya ditambah (tetap tanpa izin hapus, supaya aturan "kategori tidak
+pernah dihapus, hanya dinonaktifkan" dijaga database). Pesan error izin juga tidak lagi muncul
+sebagai teks Inggris mentah ke layar kasir.
+
+Uji manual 2026-07-28 (login OWNER, dev server): satuan kembar "PCS" ditolak dgn pesan Indonesia
+(sekaligus bukti normalisasi jalan) · kategori anak tersimpan & tampil bertingkat, dan kategori anak
+TIDAK ditawarkan jadi induk (tingkat ketiga terblokir di layar; guard servernya tertutup 12 tes) ·
+golongan "Uji Reseller 10%" → kasir menampilkan `Subtotal 70.000 · Diskon Uji Reseller (10%) −7.000
+· Diskon manual/promo 3.000 · Total 60.000`, poin ikut total akhir (60) · struk mencetak baris
+"Diskon Uji Reseller" lengkap dgn nama golongan · form aset mengisi umur otomatis dari kategori
+(Bangunan → 240 bulan). **Nol transaksi uji dibuat** — verifikasi struk dipakaikan ke satu struk
+lama yang nilainya dikembalikan detik itu juga; penjualan tetap 29, jurnal 63, stok 430, layer 432,
+poin & total belanja pelanggan tidak berubah. Yang belum diklik: tampilan read-only untuk role
+non-OWNER (guard-nya satu fungsi yang sama di keenam halaman).
+
 Batas yang sengaja tidak dikerjakan: tagihan klinik & order online TIDAK ikut diskon golongan;
 tidak ada daftar harga per barang per golongan; golongan pajak fiskal aset ditunda; "ringkas per
 induk" di laporan dicoret (tidak ada laporan yang mengelompokkan per kategori — itu laporan baru);
