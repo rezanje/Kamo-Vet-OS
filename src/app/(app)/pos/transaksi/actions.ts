@@ -6,6 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
+import { diskonGolongan } from "@/lib/harga-golongan";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -45,7 +46,26 @@ export async function checkoutSale(formData: FormData) {
   });
 
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
-  const total = Math.max(0, subtotal - discount);
+
+  // Diskon golongan diambil dari master lewat customer_id — BUKAN dari form.
+  // Kalau dibaca dari form, kasir bisa mengarang diskon golongan sesukanya.
+  let diskonKategori = 0;
+  if (customerId) {
+    const { data: cust } = await supabase
+      .from("customers")
+      .select("customer_categories(diskon_persen, is_active)")
+      .eq("id", customerId)
+      .maybeSingle();
+    const rel = cust?.customer_categories as
+      | { diskon_persen: number; is_active: boolean }
+      | { diskon_persen: number; is_active: boolean }[]
+      | null
+      | undefined;
+    const kat = Array.isArray(rel) ? rel[0] : rel;
+    if (kat?.is_active) diskonKategori = diskonGolongan(subtotal, Number(kat.diskon_persen));
+  }
+
+  const total = Math.max(0, subtotal - diskonKategori - discount);
   const kembali = Math.max(0, bayar - total);
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -66,7 +86,7 @@ export async function checkoutSale(formData: FormData) {
     .from("sales")
     .insert({
       branch_id: branchId, customer_id: customerId, pet_id: petId, no_struk: noStruk,
-      subtotal, discount, total, metode_bayar: metode, bayar, kembali, poin_earned: poin,
+      subtotal, discount, diskon_kategori: diskonKategori, total, metode_bayar: metode, bayar, kembali, poin_earned: poin,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
     })
     .select("id").single();

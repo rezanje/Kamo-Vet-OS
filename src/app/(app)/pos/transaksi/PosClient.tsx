@@ -4,10 +4,14 @@ import { useMemo, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
+import { diskonGolongan } from "@/lib/harga-golongan";
 
 export type Item = { id: string; name: string; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
-export type Cust = { id: string; name: string; phone: string; points: number; pets: Pet[] };
+export type Cust = {
+  id: string; name: string; phone: string; points: number; pets: Pet[];
+  golongan: { nama: string; diskon_persen: number } | null;
+};
 type Branch = { id: string; code: string; name: string };
 type Line = {
   item_id: string; nama: string; qty: number; harga: number; target_species: string;
@@ -73,7 +77,10 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
     });
 
   const subtotal = cart.reduce((a, l) => a + l.qty * l.harga, 0);
-  const total = Math.max(0, subtotal - discount);
+  // Diskon golongan dihitung di sini HANYA untuk ditampilkan; angka yang disimpan
+  // dihitung ulang di server dari master (kasir tidak boleh bisa mengarangnya).
+  const diskonKategori = diskonGolongan(subtotal, cust?.golongan?.diskon_persen ?? 0);
+  const total = Math.max(0, subtotal - diskonKategori - discount);
   const kembali = Math.max(0, bayar - total);
   const poin = cust ? Math.floor(total / 1000) : 0;
   const kurang = metode === "Tunai" && bayar < total;
@@ -188,8 +195,11 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
           {/* Totals */}
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 7 }}>
             <Row k="Subtotal" v={rp(subtotal)} />
+            {diskonKategori > 0 && cust?.golongan && (
+              <Row k={`Diskon ${cust.golongan.nama} (${cust.golongan.diskon_persen}%)`} v={`-${rp(diskonKategori)}`} />
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
-              <span>Diskon</span>
+              <span>Diskon manual / promo</span>
               <input className="fi" type="number" min={0} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>

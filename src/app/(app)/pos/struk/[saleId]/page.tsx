@@ -15,15 +15,20 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, subtotal, discount, total, metode_bayar, bayar, kembali, poin_earned, created_at, customers(name), branches(name, code)")
+    .select("id, no_struk, subtotal, discount, diskon_kategori, total, metode_bayar, bayar, kembali, poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
 
   const { data: items } = await supabase
     .from("sale_items").select("nama, qty, harga, satuan").eq("sale_id", saleId).order("created_at");
 
-  const cust = one(sale.customers);
+  const cust = one(sale.customers) as { name: string; customer_categories?: unknown } | null;
   const branch = one(sale.branches);
+
+  // Diskon golongan dicetak sebagai baris sendiri supaya struk jujur: mana diskon
+  // sistem (golongan) dan mana diskon yang diketik kasir.
+  const golongan = one((cust?.customer_categories ?? null) as Rel<{ nama: string; diskon_persen: number }>);
+  const diskonKategori = Number(sale.diskon_kategori) || 0;
   const tgl = new Date(sale.created_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -55,6 +60,9 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
         ))}
         <Hr />
         <Row k="Subtotal" v={rp(sale.subtotal)} />
+        {diskonKategori > 0 && (
+          <Row k={`Diskon ${golongan?.nama ?? "golongan"}`} v={`-${rp(diskonKategori)}`} />
+        )}
         {sale.discount > 0 && <Row k="Diskon" v={`-${rp(sale.discount)}`} />}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12, marginTop: 2 }}><span>TOTAL</span><span>{rp(sale.total)}</span></div>
         <Hr />

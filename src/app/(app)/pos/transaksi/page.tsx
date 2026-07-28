@@ -13,7 +13,7 @@ export default async function TransaksiPage({
 
   const [{ data: items }, { data: customers }, { data: branches }] = await Promise.all([
     supabase.from("items").select("id, name, unit, sell_price, target_species").eq("is_active", true).order("name"),
-    supabase.from("customers").select("id, name, phone, points, pets(id, name, species)").order("name"),
+    supabase.from("customers").select("id, name, phone, points, customer_categories(nama, diskon_persen), pets(id, name, species)").order("name"),
     supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
   ]);
 
@@ -26,6 +26,15 @@ export default async function TransaksiPage({
     target_species: i.target_species as string,
     units: unitOptions({ unit: i.unit as string, sell_price: Number(i.sell_price) }, unitMap.get(i.id as string) ?? []),
   }));
+
+  // Relasi Supabase bisa datang sebagai objek ATAU array — dinormalkan sekali di sini
+  // supaya kasir cukup baca satu bentuk (`golongan`).
+  const pelanggan = ((customers ?? []) as unknown as (Omit<Cust, "golongan"> & {
+    customer_categories: { nama: string; diskon_persen: number } | { nama: string; diskon_persen: number }[] | null;
+  })[]).map((c) => {
+    const k = Array.isArray(c.customer_categories) ? c.customer_categories[0] : c.customer_categories;
+    return { ...c, golongan: k ? { nama: k.nama, diskon_persen: Number(k.diskon_persen) } : null };
+  });
 
   const { data: { user } } = await supabase.auth.getUser();
   const { data: openShift } = await supabase
@@ -55,7 +64,7 @@ export default async function TransaksiPage({
 
       <PosClient
         items={katalog}
-        customers={(customers ?? []) as unknown as Cust[]}
+        customers={pelanggan}
         branches={branches ?? []}
       />
     </>
