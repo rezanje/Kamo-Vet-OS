@@ -1,20 +1,51 @@
 // Mesin penyusutan garis lurus — dipakai action manual, lazy catch-up (halaman Aset),
 // dan cron bulanan (/api/cron/depreciation). Idempotent: unique(asset_id, periode).
 
-import { depreciationPerMonth, monthsElapsed } from "@/lib/aging";
-import { postJournal } from "@/lib/posting";
+// Impor relatif (bukan alias @/) supaya modul ini bisa diuji langsung oleh Vitest,
+// yang tidak memuat alias tsconfig. Sama pola dgn barang.ts → ./tindakan.
+import { depreciationPerMonth, monthsElapsed } from "./aging";
+import { postJournal } from "./posting";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
 export type DepreciationRun = { periode: string; total: number; jumlahAset: number };
 
+export const AKUN_BEBAN_DEFAULT = "5601";
+export const AKUN_AKUM_DEFAULT = "1509";
+
+export type DepEntry = { amount: number; akunBeban: string | null; akunAkumulasi: string | null };
+
+// Baris jurnal penyusutan dikelompokkan per pasangan akun kategori. Satu jurnal,
+// beberapa pasang baris — jadi laporan penyusutan rinci per jenis aset tanpa
+// mengubah total. Aset tanpa kategori memakai akun default lama.
+export function groupDepreciationLines(entries: DepEntry[]): { code: string; debit: number; credit: number }[] {
+  const perPasangan = new Map<string, { beban: string; akum: string; total: number }>();
+  for (const e of entries) {
+    const amount = Number(e.amount) || 0;
+    if (amount <= 0) continue;
+    const beban = e.akunBeban || AKUN_BEBAN_DEFAULT;
+    const akum = e.akunAkumulasi || AKUN_AKUM_DEFAULT;
+    const key = `${beban}::${akum}`;
+    const cur = perPasangan.get(key) ?? { beban, akum, total: 0 };
+    cur.total += amount;
+    perPasangan.set(key, cur);
+  }
+
+  const out: { code: string; debit: number; credit: number }[] = [];
+  for (const { beban, akum, total } of perPasangan.values()) {
+    out.push({ code: beban, debit: total, credit: 0 });
+    out.push({ code: akum, debit: 0, credit: total });
+  }
+  return out;
+}
+
 // Jalankan penyusutan untuk satu periode YYYY-MM. Aman diulang (aset yang sudah
 // disusutkan periode itu ditolak unique constraint → skip).
 export async function runDepreciationPeriod(supabase: AnyClient, periode: string): Promise<DepreciationRun> {
   const { data: assets } = await supabase
     .from("fixed_assets")
-    .select("id, nama, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan")
+    .select("id, nama, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, asset_categories(akun_beban, akun_akumulasi)")
     .eq("is_active", true);
 
   const { data: deps } = await supabase.from("asset_depreciations").select("asset_id, amount");
@@ -23,6 +54,7 @@ export async function runDepreciationPeriod(supabase: AnyClient, periode: string
 
   let total = 0;
   let jumlahAset = 0;
+  const entries: DepEntry[] = [];
   for (const a of assets ?? []) {
     const bulan = monthsElapsed(a.tanggal_perolehan, periode);
     if (bulan < 1 || bulan > a.umur_bulan) continue; // belum mulai / habis umur
@@ -36,6 +68,13 @@ export async function runDepreciationPeriod(supabase: AnyClient, periode: string
     if (error) continue; // sudah pernah jalan utk periode ini → skip
     total += amount;
     jumlahAset += 1;
+
+    const rel = a.asset_categories as
+      | { akun_beban: string; akun_akumulasi: string }
+      | { akun_beban: string; akun_akumulasi: string }[]
+      | null;
+    const kat = Array.isArray(rel) ? rel[0] : rel;
+    entries.push({ amount, akunBeban: kat?.akun_beban ?? null, akunAkumulasi: kat?.akun_akumulasi ?? null });
   }
 
   if (total > 0) {
@@ -45,10 +84,7 @@ export async function runDepreciationPeriod(supabase: AnyClient, periode: string
       source: "depreciation",
       sourceRef: periode,
       branchId: null,
-      lines: [
-        { code: "5601", debit: total, credit: 0 },
-        { code: "1509", debit: 0, credit: total },
-      ],
+      lines: groupDepreciationLines(entries),
     });
   }
   return { periode, total, jumlahAset };
