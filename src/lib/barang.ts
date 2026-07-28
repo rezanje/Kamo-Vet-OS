@@ -47,9 +47,20 @@ export function validasiBarang(d: BarangDraft): string | null {
 
 // Error DB → bahasa manusia. Yang tidak dikenali dilewatkan apa adanya supaya
 // masalah tak terduga tetap kelihatan, bukan ditelan jadi "terjadi kesalahan".
+const UNIQUE_MSG: Record<string, string> = {
+  items_code_key: "Kode barang itu sudah dipakai barang lain",
+  brands_name_key: "Merek dengan nama itu sudah ada",
+  units_nama_key: "Satuan dengan nama itu sudah ada",
+  item_categories_name_key: "Kategori barang dengan nama itu sudah ada",
+  supplier_categories_nama_key: "Kategori pemasok dengan nama itu sudah ada",
+  asset_categories_nama_key: "Kategori aset dengan nama itu sudah ada",
+  customer_categories_nama_key: "Golongan pelanggan dengan nama itu sudah ada",
+};
+
 export function pesanSimpanGagal(raw: string): string {
   const m = raw.toLowerCase();
-  if (m.includes("items_code_key")) return "Kode barang itu sudah dipakai barang lain";
-  if (m.includes("brands_name_key")) return "Merek dengan nama itu sudah ada";
+  for (const [key, msg] of Object.entries(UNIQUE_MSG)) {
+    if (m.includes(key)) return msg;
+  }
   return raw;
 }
