@@ -57,8 +57,15 @@ export function tabLabel(pathname: string): string {
   const last = useful[useful.length - 1] ?? parts[0];
 
   // Halaman "baru" ambil konteks induknya: /pembelian/baru → "Pembelian baru".
+  // Kalau induknya sebuah tile (bukan halaman modul), pakai nama tile-nya supaya
+  // slug mentah tidak bocor ke label: /pos/sku/baru → "Barang & Jasa baru".
   if (last === "baru" && useful.length > 1) {
-    return `${titleCase(useful[useful.length - 2])} baru`;
+    const parentPath = "/" + useful.slice(0, -1).join("/");
+    const parentIsModule = useful.length === 2 && !!MODULE_LABEL[useful[0]];
+    const parent = !parentIsModule && TILE_LABEL[parentPath]
+      ? TILE_LABEL[parentPath]
+      : titleCase(useful[useful.length - 2]);
+    return `${parent} baru`;
   }
   return titleCase(last);
 }

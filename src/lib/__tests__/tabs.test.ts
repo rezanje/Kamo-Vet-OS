@@ -21,6 +21,10 @@ describe("tabLabel", () => {
     expect(tabLabel("/klinik/rekam-medis")).toBe("Rekam medis");
   });
 
+  it("halaman baru di bawah tile pakai nama tile, bukan slug mentah", () => {
+    expect(tabLabel("/pos/sku/baru")).toBe("Barang & Jasa baru");
+  });
+
   it("segmen id dibuang supaya label tidak jadi uuid", () => {
     expect(tabLabel("/klinik/antrian/8c494ccc-fb04-4068-861a-0e5e2e0ff082")).toBe("Antrian digital");
     expect(tabLabel("/pos/opname/12")).toBe("Perintah Stok Opname");

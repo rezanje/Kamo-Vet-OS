@@ -101,7 +101,7 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 | Kategori Pemasok | ❌ | Kolom kategori di tabel `suppliers` tidak ada |
 | Perintah Pembayaran | ❌ | |
 
-## 7. Persediaan (14 wajib) — 7/14
+## 7. Persediaan (14 wajib) — 9/14
 
 | Tile | Status |
 |---|---|
@@ -109,15 +109,15 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 | Pemindahan Barang | ✅ `/pos/pemindahan` |
 | Perintah Stok Opname | ✅ `/pos/opname` |
 | Hasil Stok Opname | ✅ `/pos/opname` |
-| Barang & Jasa | ✅ `/pos/sku` |
+| Barang & Jasa | ✅ `/pos/sku` — form bertab ala Accurate: jenis barang, kode wajib, UPC, merek, min stok |
 | Gudang | ✅ `/pengaturan/cabang` |
 | Penambahan Bahan Baku | ⚠️ `/klinik/bahan-baku` (khusus klinik) |
 | Penyesuaian Persediaan | ❌ |
 | Pekerjaan Pesanan | ❌ |
 | Penyelesaian Pesanan | ❌ |
-| Satuan Barang | ❌ |
-| Kategori Barang | ❌ |
-| Merek Barang | ❌ |
+| Satuan Barang | ✅ per barang lewat satuan berjenjang (`item_units`), bukan master global |
+| Kategori Barang | ⚠️ tabel & dropdown ada, halaman CRUD-nya belum |
+| Merek Barang | ✅ `/pos/merek` |
 | Barang Stok Minimum | ❌ (tile "Reorder alert" ada tapi belum jadi) |
 
 PDF: *"database barang dan jasa dibuat formatnya serupa dengan accurate agar saat migrasi mudah"* →

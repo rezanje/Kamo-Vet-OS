@@ -113,10 +113,8 @@ export default async function RekamMedisPage({
   let bahanItems: ItemLiteFull[] = [];
   let jasaItems: ItemLiteFull[] = [];
   {
-    const { data: jasaKat } = await supabase
-      .from("item_categories").select("id").eq("name", "Jasa").maybeSingle();
     const { data: itemRows } = await supabase
-      .from("items").select("id, name, unit, sell_price, is_compound_material, category_id, tindakan_kategori")
+      .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori")
       .eq("is_active", true).order("name").limit(400);
     const ids = (itemRows ?? []).map((i) => i.id);
     const { data: stockRows } = ids.length
@@ -134,10 +132,11 @@ export default async function RekamMedisPage({
         unitMap.get(i.id as string) ?? [],
       ),
       is_compound_material: Boolean(i.is_compound_material),
-      category_id: (i.category_id as string | null) ?? null,
+      item_type: (i.item_type as string) ?? "Persediaan",
       tindakan_kategori: (i.tindakan_kategori as string | null) ?? null,
     }));
-    const isJasa = (i: { category_id: string | null }) => !!jasaKat && i.category_id === jasaKat.id;
+    // Jenis barang (migrasi 0065) menggantikan trik lama "kategori bernama Jasa".
+    const isJasa = (i: { item_type: string }) => i.item_type === "Jasa";
     jasaItems = all.filter(isJasa);
     obatItems = all.filter((i) => !i.is_compound_material && !isJasa(i));
     bahanItems = all.filter((i) => i.is_compound_material);

@@ -3,20 +3,33 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { kategoriWajibConsent } from "@/lib/tindakan";
-import { loadItemUnits } from "@/lib/satuan";
-import { SkuForm, type SkuRow } from "./SkuForm";
-import { toggleSku } from "./actions";
+import { loadItemUnits, type ItemUnit } from "@/lib/satuan";
+import { ITEM_TYPES } from "@/lib/barang";
+import { BARANG_FIELDS } from "./data";
+import { toggleBarang } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-// Master SKU obat/jasa/barang. Jasa hanya boleh dipakai di rekam medis kalau
-// terdaftar di sini — dokter tidak bisa lagi mengetik jasa bebas (spec 2026-07-20).
-export default async function SkuPage({
+type Rel<T> = T | T[] | null;
+function one<T>(r: Rel<T>): T | null {
+  return Array.isArray(r) ? (r[0] ?? null) : r;
+}
+
+type Row = {
+  id: string; name: string; code: string | null; unit: string; category_id: string | null;
+  item_type: string; sell_price: number; is_active: boolean; tindakan_kategori: string | null;
+  brands: Rel<{ name: string }>;
+  units?: ItemUnit[];
+};
+
+// Master Barang & Jasa (mengikuti menu Persediaan Accurate). Jasa hanya boleh dipakai
+// di rekam medis kalau terdaftar di sini — dokter tidak bisa mengetik jasa bebas.
+export default async function BarangJasaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; edit?: string; kat?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kat?: string; jenis?: string }>;
 }) {
-  const { error, success, edit, kat } = await searchParams;
+  const { error, success, kat, jenis } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -26,20 +39,26 @@ export default async function SkuPage({
 
   const { data: categories } = await supabase.from("item_categories").select("id, name").order("name");
   const cats = categories ?? [];
-  const jasaCategoryId = cats.find((c) => c.name === "Jasa")?.id ?? null;
 
-  let q = supabase
-    .from("items")
-    .select("id, name, code, unit, category_id, sell_price, buy_price, is_active, tindakan_kategori")
-    .order("name").limit(500);
+  let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name)`).order("name").limit(500);
   if (kat) q = q.eq("category_id", kat);
+  if (jenis) q = q.eq("item_type", jenis);
 
   const { data: items } = await q;
-  const baseRows = (items ?? []) as unknown as SkuRow[];
+  const baseRows = (items ?? []) as unknown as Row[];
   const unitMap = await loadItemUnits(supabase, baseRows.map((r) => r.id));
-  const rows: SkuRow[] = baseRows.map((r) => ({ ...r, units: unitMap.get(r.id) ?? [] }));
-  const editing = edit ? rows.find((r) => r.id === edit) ?? null : null;
+  const rows: Row[] = baseRows.map((r) => ({ ...r, units: unitMap.get(r.id) ?? [] }));
   const namaKat = new Map(cats.map((c) => [c.id, c.name]));
+
+  const filterHref = (next: { kat?: string; jenis?: string }) => {
+    const p = new URLSearchParams();
+    const k = "kat" in next ? next.kat : kat;
+    const j = "jenis" in next ? next.jenis : jenis;
+    if (k) p.set("kat", k);
+    if (j) p.set("jenis", j);
+    const s = p.toString();
+    return s ? `/pos/sku?${s}` : "/pos/sku";
+  };
 
   return (
     <>
@@ -52,30 +71,43 @@ export default async function SkuPage({
           <i className="ti ti-package" style={{ fontSize: 22, color: "#2563eb" }} />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>MASTER SKU</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>BARANG &amp; JASA</div>
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Daftar obat, barang & jasa yang boleh dipakai di POS dan rekam medis</div>
         </div>
-        {bolehKelola && <SkuForm categories={cats} editing={editing} jasaCategoryId={jasaCategoryId} />}
+        {bolehKelola && (
+          <Link href="/pos/sku/baru" className="btn-acc" style={{ background: "#2563eb", textDecoration: "none" }}>
+            <i className="ti ti-plus" /> Barang Baru
+          </Link>
+        )}
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> SKU tersimpan.</div>}
-      {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah master SKU. Kamu bisa melihat daftarnya saja.</div>}
+      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Barang tersimpan.</div>}
+      {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah master barang. Kamu bisa melihat daftarnya saja.</div>}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        <Link href={filterHref({ jenis: undefined })} className="back-btn" style={chip(!jenis)}>Semua jenis</Link>
+        {ITEM_TYPES.map((t) => (
+          <Link key={t} href={filterHref({ jenis: t })} className="back-btn" style={chip(jenis === t)}>{t}</Link>
+        ))}
+      </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        <Link href="/pos/sku" className="back-btn" style={chip(!kat)}>Semua</Link>
+        <Link href={filterHref({ kat: undefined })} className="back-btn" style={chip(!kat)}>Semua kategori</Link>
         {cats.map((c) => (
-          <Link key={c.id} href={`/pos/sku?kat=${c.id}`} className="back-btn" style={chip(kat === c.id)}>{c.name}</Link>
+          <Link key={c.id} href={filterHref({ kat: c.id })} className="back-btn" style={chip(kat === c.id)}>{c.name}</Link>
         ))}
       </div>
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 760 }}>
+          <table className="tbl" style={{ minWidth: 860 }}>
             <thead>
               <tr>
                 <th style={{ width: 30 }}>No.</th><th>Nama</th><th style={{ width: 90 }}>Kode</th>
-                <th style={{ width: 130 }}>Kategori</th><th style={{ width: 130 }}>Tindakan</th>
+                <th style={{ width: 110 }}>Jenis</th>
+                <th style={{ width: 120 }}>Kategori</th><th style={{ width: 110 }}>Merek</th>
+                <th style={{ width: 120 }}>Tindakan</th>
                 <th style={{ width: 110, textAlign: "right" }}>Harga jual</th>
                 <th style={{ width: 80 }}>Status</th>{bolehKelola && <th style={{ width: 130 }}>Aksi</th>}
               </tr>
@@ -94,7 +126,9 @@ export default async function SkuPage({
                     </div>
                   </td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{it.code || "—"}</td>
+                  <td style={{ fontSize: 10.5 }}>{it.item_type}</td>
                   <td style={{ fontSize: 10.5 }}>{it.category_id ? namaKat.get(it.category_id) ?? "—" : "—"}</td>
+                  <td style={{ fontSize: 10.5 }}>{one(it.brands)?.name ?? "—"}</td>
                   <td>
                     {it.tindakan_kategori
                       ? <span className={`bge ${kategoriWajibConsent(it.tindakan_kategori) ? "r" : "b"}`}>{it.tindakan_kategori}</span>
@@ -113,8 +147,8 @@ export default async function SkuPage({
                   {bolehKelola && (
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <Link href={`/pos/sku?edit=${it.id}${kat ? `&kat=${kat}` : ""}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Edit</Link>
-                        <form action={toggleSku}>
+                        <Link href={`/pos/sku/${it.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Edit</Link>
+                        <form action={toggleBarang}>
                           <input type="hidden" name="id" value={it.id} />
                           <input type="hidden" name="aktif" value={it.is_active ? "1" : "0"} />
                           <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
@@ -127,8 +161,8 @@ export default async function SkuPage({
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={bolehKelola ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                  Belum ada SKU di kategori ini.
+                <tr><td colSpan={bolehKelola ? 10 : 9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  Belum ada barang di filter ini.
                 </td></tr>
               )}
             </tbody>

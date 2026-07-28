@@ -28,7 +28,9 @@ Keputusan boss (sesi brainstorm 2026-07-28):
   `src/lib/satuan.ts` + test, dipakai POS/pembelian/rekam medis. Jadi konversi satuan
   **dicoret dari scope**; tinggal memastikan halaman detail baru memakainya.
 
-## 1. Tahap 1 — kelengkapan master (rilis pertama)
+## 1. Tahap 1 — kelengkapan master (rilis pertama) — SELESAI 2026-07-28
+
+Migrasi 0065 sudah diterapkan ke DB (5 barang ter-backfill jadi jenis `Jasa`).
 
 ### Migrasi
 ```
