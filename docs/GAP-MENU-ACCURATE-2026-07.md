@@ -7,7 +7,8 @@ Dibandingkan dengan: `src/lib/nav.ts` + route nyata di `src/app/(app)/`.
 > sudah tutup — itu masih benar (FIFO, jurnal, tutup buku, PPN, opname 2-dokumen, dst).
 > Yang diaudit di sini beda: **kelengkapan menu & dokumen** ala Accurate. Mesinnya ada, permukaannya belum.
 
-**Skor kasar: ±30 dari 81 tile wajib = 37%.**
+**Skor kasar: ±34 dari 81 tile wajib = 42%.**
+_(diperbarui 2026-07-28 setelah tahap Master Data & Kategori selesai — migrasi 0066)_
 
 Legenda: ✅ jalan · ⚠️ ada sebagian / beda bentuk · ❌ belum ada · 🔌 halaman ada tapi tile-nya belum di-link
 
@@ -87,7 +88,7 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 - **Komisi Penjual**: insentif % dari jumlah sales karyawan · insentif tetap per produk per karyawan · insentif per kategori target. Pembuatan boleh **import Excel** (klausulnya banyak).
 - **Target Penjualan**: target per kategori produk · per cabang · per karyawan.
 
-## 6. Pembelian (9 wajib) — 5/9
+## 6. Pembelian (9 wajib) — 6/9
 
 | Tile | Status | Catatan |
 |---|---|---|
@@ -98,10 +99,10 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 | Pemasok | 🔌 | Tab di dalam `/pembelian`; field cuma nama/kontak/telp/alamat (belum NPWP, termin, bank) |
 | Penerimaan Barang | ⚠️ | Bukan dokumen sendiri — status PO → "Diterima" langsung stok masuk + jurnal 1301/2102. Belum bisa terima sebagian, catat rusak/selisih, atau punya nomor GR |
 | Uang Muka Pembelian | ❌ | |
-| Kategori Pemasok | ❌ | Kolom kategori di tabel `suppliers` tidak ada |
+| Kategori Pemasok | ✅ | `/pembelian/kategori-pemasok` + kolom & dropdown di daftar pemasok |
 | Perintah Pembayaran | ❌ | |
 
-## 7. Persediaan (14 wajib) — 9/14
+## 7. Persediaan (14 wajib) — 10/14
 
 | Tile | Status |
 |---|---|
@@ -115,20 +116,20 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 | Penyesuaian Persediaan | ❌ |
 | Pekerjaan Pesanan | ❌ |
 | Penyelesaian Pesanan | ❌ |
-| Satuan Barang | ✅ per barang lewat satuan berjenjang (`item_units`), bukan master global |
-| Kategori Barang | ⚠️ tabel & dropdown ada, halaman CRUD-nya belum |
+| Satuan Barang | ✅ `/pos/satuan` — master global; satuan dipilih dari daftar, tidak lagi teks bebas |
+| Kategori Barang | ✅ `/pos/kategori` — CRUD bertingkat 2 tingkat (induk → anak) |
 | Merek Barang | ✅ `/pos/merek` |
 | Barang Stok Minimum | ❌ (tile "Reorder alert" ada tapi belum jadi) |
 
 PDF: *"database barang dan jasa dibuat formatnya serupa dengan accurate agar saat migrasi mudah"* →
 **4 master data terakhir itu blocker migrasi**, bukan nice-to-have.
 
-## 8. Aset Tetap (6 wajib) — 1/6
+## 8. Aset Tetap (6 wajib) — 2/6
 
 | Tile | Status |
 |---|---|
 | Aset Tetap | ✅ `/keuangan/aset` (+ penyusutan otomatis) |
-| Kategori Aset | ❌ |
+| Kategori Aset | ✅ `/keuangan/kategori-aset` — umur & akun jurnal per kategori; jurnal penyusutan pecah per kategori |
 | Kategori Aset Tetap Pajak | ❌ |
 | Perubahan Aset Tetap | ❌ |
 | Disposisi Aset Tetap | ❌ |
@@ -148,12 +149,12 @@ PDF: form SPT/Bupot *"digunakan hanya untuk unduh formulir"*.
 
 ## Tambahan di luar Accurate
 
-### CRM (4 wajib) — 2/4
+### CRM (4 wajib) — 3/4
 | Sub menu | Status |
 |---|---|
 | Promo | ✅ `/crm/promo` |
 | Pelanggan | ✅ `/crm/pelanggan` (+ anabul, rekam medis) |
-| Kategori Pelanggan (membership & strata) | ⚠️ `/pengaturan/tier` punya tier New→VIP, belum jadi menu CRM sendiri |
+| Kategori Pelanggan (membership & strata) | ✅ `/crm/kategori-pelanggan` — golongan bisa dibuat sendiri + diskon persen otomatis di kasir; strata belanja tetap terpisah di `/pengaturan/tier` |
 | Retention (WA automation + history pesan) | ❌ 7 trigger sudah dispesifikasi di PDF; kode follow-up ada tapi mati karena `FONNTE_TOKEN` kosong |
 
 ### HRIS (5 wajib) — 3/5
@@ -198,12 +199,12 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
 
 ## Usulan urutan garap
 
-1. **Master data & kategori** — Satuan Barang, Kategori Barang, Merek Barang, Kategori Pemasok, Kategori Pelanggan, Kategori Aset. Murah, dan PDF bilang ini syarat migrasi data dari Accurate lancar.
+1. ~~**Master data & kategori**~~ — **SELESAI 2026-07-28** (migrasi 0066). Satuan global, Kategori Barang bertingkat, Merek, Kategori Pemasok, Kategori Pelanggan + diskon, Kategori Aset. Sisa: Kategori Aset Tetap **Pajak** — pindah ke butir 7.
 2. **Modul Kas & Bank** — Pembayaran, Penerimaan, Transfer Bank. Satu modul penuh yang hilang.
 3. **Rantai dokumen Penjualan** — Penawaran → Pesanan → Pengiriman → Uang Muka → Faktur → Penerimaan.
 4. **Sisa Pembelian** — Uang Muka, Perintah Pembayaran, Penerimaan Barang jadi dokumen sendiri (terima sebagian).
 5. **Komisi & Target Penjualan** — banyak klausul, siapkan import Excel.
 6. **HRIS Jadwal + komponen gaji berjenjang + reimburse/kasbon + absen radius 500 m.**
-7. **Aset Tetap lengkap** (kategori, perubahan, disposisi, pindah).
+7. **Aset Tetap lengkap** (golongan pajak fiskal, perubahan, disposisi, pindah) — kategori dasarnya sudah ada.
 8. **CRM Retensi** — begitu `FONNTE_TOKEN` masuk. Sekalian struk WA & WA rawat inap.
 9. **Anggaran, SmartLink Tax, Daftar Laporan/SPT** — paling akhir; PDF sendiri bilang belum dipakai.

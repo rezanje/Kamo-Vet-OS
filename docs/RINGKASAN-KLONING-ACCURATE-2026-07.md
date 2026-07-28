@@ -21,6 +21,7 @@
 | 11 | Jurnal Berulang (langganan bulanan auto-posting) | ✅ | Keuangan → Jurnal berulang |
 | 12 | Manajemen Pengguna (akun per karyawan, role, cabang, link HRIS, nonaktifkan; login page dibersihkan dari akun demo) | ✅ | Pengaturan → Manajemen pengguna |
 | 13 | Penjualan Online/B2C (Shopee/Tokopedia/TikTok Shop/WA; marketplace lahir sebagai Piutang Marketplace 1202, komisi dihitung saat pencairan aktual ke 5305) | ✅ diuji end-to-end 2026-07-26 | Penjualan → Penjualan online |
+| 14 | Master Data & Kategori (satuan global, kategori barang bertingkat 2 tingkat, kategori pemasok, kategori aset + akun jurnal, kategori pelanggan + diskon otomatis di kasir) | ✅ 2026-07-28, migrasi 0066 | Persediaan → Satuan/Kategori Barang · Pembelian → Kategori Pemasok · Aset Tetap → Kategori Aset · CRM → Kategori Pelanggan |
 
 **Verifikasi Penjualan Online (2026-07-26, 9/9 lolos):** order Shopee → `piutang` + Dr 1202/Cr 4101 + HPP FIFO ·
 pencairan Rp 142rb dari total Rp 150rb → komisi Rp 8rb ke 5305, jurnal seimbang · order WA → langsung Dr 1102,
@@ -29,6 +30,33 @@ ganti channel WA→Shopee melepas pelanggan · hapus baris tengah tidak menggese
 diretur lewat kasir · drift-checker melaporkan "0 penjualan online". Data uji sudah dihapus bersih.
 
 **Kesimpulan: sisi AKUNTANSI & INVENTORI Accurate sudah 100% pindah ke VetOS. Roadmap paritas Accurate TUTUP.**
+
+**Master Data & Kategori (2026-07-28, migrasi 0066).** Enam master data Accurate dilengkapi.
+Yang berubah buat pemakai sehari-hari:
+- **Satuan barang** jadi daftar resmi. Dulu diketik bebas, jadi "pcs"/"Pcs"/"PCS" dianggap tiga
+  satuan berbeda dan laporan stok pecah. Sekarang dipilih dari daftar.
+- **Kategori barang bertingkat** (induk → anak), maksimum dua tingkat; tingkat ketiga ditolak.
+- **Golongan pelanggan** bisa dibuat sendiri dan punya **diskon persen**. Kasir otomatis dapat
+  harga golongan begitu pelanggannya dipilih. Diskon golongan dihitung SERVER dari master, muncul
+  sebagai baris sendiri di struk, terpisah dari kolom diskon manual kasir — jadi ketahuan mana
+  diskon sistem, mana diskon orang. Kasir tidak bisa mengarang angkanya (tidak dibaca dari form).
+- **Kategori aset** bawa umur penyusutan + sepasang akun jurnal. Efek sampingnya: jurnal
+  penyusutan bulanan yang dulu satu angka gabungan sekarang **pecah per kategori** (total sama).
+- **Kategori pemasok** muncul di daftar pemasok.
+
+Verifikasi 2026-07-28: migrasi dibandingkan sebelum/sesudah — barang 18=18, satuan berjenjang 1=1,
+layer FIFO 432=432, stok 430=430, nol satuan yatim, nol kategori gagal dipetakan (Umum 28 + Member 4
+pelanggan, aset 'Peralatan' semua ketemu induknya). `npm test` 258 lolos (dari 236), `tsc` bersih,
+`npm run build` sukses dengan kelima halaman baru terkompilasi. Bentuk kueri relasi kasir/struk/
+penyusutan/pemasok diuji langsung ke API (200), dengan kontrol negatif relasi ngawur (400) supaya
+pengujiannya terbukti bergigi.
+
+Batas yang sengaja tidak dikerjakan: tagihan klinik & order online TIDAK ikut diskon golongan;
+tidak ada daftar harga per barang per golongan; golongan pajak fiskal aset ditunda; "ringkas per
+induk" di laporan dicoret (tidak ada laporan yang mengelompokkan per kategori — itu laporan baru);
+filter kategori pemasok di halaman hutang ditunda.
+
+
 
 ## Bonus/perbaikan penting yang nemu di jalan
 - Form PO sekarang pilih barang dari master SKU (dulu teks bebas → stok tidak pernah nambah saat PO diterima).
