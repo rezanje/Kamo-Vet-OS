@@ -91,12 +91,13 @@ export async function tambahSupplier(formData: FormData) {
   const kontak = String(formData.get("kontak") ?? "").trim() || null;
   const telp = String(formData.get("telp") ?? "").trim() || null;
   const alamat = String(formData.get("alamat") ?? "").trim() || null;
+  const categoryId = String(formData.get("category_id") ?? "").trim() || null;
 
   if (!nama) {
     redirect("/pembelian?error=" + encodeURIComponent("Nama supplier wajib diisi."));
   }
 
-  await supabase.from("suppliers").insert({ nama, kontak, telp, alamat });
+  await supabase.from("suppliers").insert({ nama, kontak, telp, alamat, category_id: categoryId });
 
   revalidatePath("/pembelian");
   redirect("/pembelian?tab=supplier&success_sup=1");

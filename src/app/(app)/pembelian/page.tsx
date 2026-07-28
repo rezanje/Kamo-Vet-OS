@@ -37,6 +37,7 @@ type Supplier = {
   nama: string;
   kontak: string | null;
   telp: string | null;
+  supplier_categories: Rel<{ nama: string }>;
 };
 
 const fmtDate = (d: string) =>
@@ -50,16 +51,18 @@ export default async function PembelianPage({
   const { success, success_sup, success_terima, error, tab } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: poData }, { data: supData }] = await Promise.all([
+  const [{ data: poData }, { data: supData }, { data: supCatData }] = await Promise.all([
     supabase
       .from("purchase_orders")
       .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(qty, qty_terima, harga_beli)")
       .order("created_at", { ascending: false }),
-    supabase.from("suppliers").select("id, nama, kontak, telp").order("nama"),
+    supabase.from("suppliers").select("id, nama, kontak, telp, supplier_categories(nama)").order("nama"),
+    supabase.from("supplier_categories").select("id, nama").eq("is_active", true).order("nama"),
   ]);
 
   const pos = (poData ?? []) as unknown as PO[];
   const suppliers = (supData ?? []) as unknown as Supplier[];
+  const supplierCategories = (supCatData ?? []) as { id: string; nama: string }[];
   const showSupplier = tab === "supplier";
 
   return (
@@ -229,6 +232,7 @@ export default async function PembelianPage({
                 <thead>
                   <tr>
                     <th>Nama</th>
+                    <th style={{ width: 100 }}>Kategori</th>
                     <th>Kontak</th>
                     <th>Telp</th>
                   </tr>
@@ -237,13 +241,16 @@ export default async function PembelianPage({
                   {suppliers.map((s) => (
                     <tr key={s.id}>
                       <td style={{ fontWeight: 500, fontSize: 11.5 }}>{s.nama}</td>
+                      <td style={{ fontSize: 11.5 }}>
+                        {one(s.supplier_categories)?.nama ?? <span style={{ color: "var(--td)" }}>—</span>}
+                      </td>
                       <td style={{ fontSize: 11.5 }}>{s.kontak ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
                       <td style={{ fontSize: 11.5 }}>{s.telp ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
                     </tr>
                   ))}
                   {suppliers.length === 0 && (
                     <tr>
-                      <td colSpan={3} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
+                      <td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
                         Belum ada supplier.
                       </td>
                     </tr>
@@ -260,6 +267,16 @@ export default async function PembelianPage({
               <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Nama supplier *</label>
                 <input className="fi" name="nama" required placeholder="PT Maju Bersama" />
+              </div>
+              <div className="fg" style={{ marginBottom: 10 }}>
+                <label className="flab">Kategori</label>
+                <select className="fi" name="category_id" defaultValue="">
+                  <option value="">— tanpa kategori —</option>
+                  {supplierCategories.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
+                </select>
+                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                  Daftarnya diatur di <Link href="/pembelian/kategori-pemasok" style={{ color: "#2563eb" }}>Kategori Pemasok</Link>.
+                </div>
               </div>
               <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Nama kontak</label>
