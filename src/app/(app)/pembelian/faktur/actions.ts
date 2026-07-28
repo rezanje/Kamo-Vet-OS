@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { buildFakturLines, formatNoFaktur, sisaFakturable } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
+import { qtyDiterima } from "@/lib/penerimaan";
 import { totalRetur } from "@/lib/retur";
 
 type ItemInput = { item_id: string; qty: number; harga: number };
@@ -43,17 +44,17 @@ export async function buatFaktur(formData: FormData) {
 
   const { data: po } = await supabase
     .from("purchase_orders")
-    .select("id, no_po, status, supplier_id, branch_id, purchase_order_items(item_id, qty, harga_beli)")
+    .select("id, no_po, status, supplier_id, branch_id, purchase_order_items(item_id, qty, qty_terima, harga_beli)")
     .eq("id", po_id).single();
   if (!po) fail("PO tidak ditemukan.");
   if (po!.status !== "Diterima") fail("Hanya PO berstatus Diterima yang bisa difakturkan.");
 
-  // qty PO & harga PO per item
+  // qty diterima (bukan qty pesanan) & harga PO per item
   const qtyPO: Record<string, number> = {};
   const hargaPO: Record<string, number> = {};
   for (const r of po!.purchase_order_items ?? []) {
     if (!r.item_id) continue;
-    qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + Number(r.qty);
+    qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + qtyDiterima(r);
     hargaPO[r.item_id] = Number(r.harga_beli) || 0;
   }
 

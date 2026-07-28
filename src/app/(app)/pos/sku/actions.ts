@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
+import { parseUnitDrafts } from "@/lib/satuan";
 
 const BACK = "/pos/sku";
 
@@ -45,17 +46,43 @@ export async function simpanSku(formData: FormData) {
     redirect(`${BACK}?error=${encodeURIComponent("SKU jasa wajib punya kategori tindakan")}`);
   }
 
+  // Satuan berjenjang: jasa tidak punya kemasan, sisanya divalidasi (faktor > 0, tanpa dobel).
+  const { rows: unitRows, error: unitErr } = parseUnitDrafts(formData.get("units"), unit);
+  if (unitErr) {
+    redirect(`${BACK}?error=${encodeURIComponent(unitErr)}`);
+  }
+  const units = isJasa ? [] : unitRows;
+
   const patch = {
     name, category_id: categoryId, code: code || null, unit,
     sell_price: sellPrice, buy_price: Number.isFinite(buyPrice) ? buyPrice : 0,
     tindakan_kategori,
   };
 
-  const { error } = id
-    ? await supabase.from("items").update(patch).eq("id", id)
-    : await supabase.from("items").insert({ ...patch, is_active: true });
+  const { data: saved, error } = id
+    ? await supabase.from("items").update(patch).eq("id", id).select("id").maybeSingle()
+    : await supabase.from("items").insert({ ...patch, is_active: true }).select("id").maybeSingle();
 
-  redirect(error ? `${BACK}?error=${encodeURIComponent(error.message)}` : `${BACK}?success=1`);
+  if (error) {
+    redirect(`${BACK}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  // Replace-all: baris yang dihapus di form harus benar-benar hilang, kalau tidak
+  // satuan lama tetap bisa dipilih di POS dgn faktor yang sudah tidak berlaku.
+  const itemId = id || saved?.id;
+  if (itemId) {
+    await supabase.from("item_units").delete().eq("item_id", itemId);
+    if (units.length) {
+      const { error: uErr } = await supabase.from("item_units").insert(
+        units.map((u) => ({ item_id: itemId, unit: u.unit, factor: u.factor, sell_price: u.sell_price, buy_price: u.buy_price })),
+      );
+      if (uErr) {
+        redirect(`${BACK}?error=${encodeURIComponent(uErr.message)}`);
+      }
+    }
+  }
+
+  redirect(`${BACK}?success=1`);
 }
 
 export async function toggleSku(formData: FormData) {

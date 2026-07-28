@@ -5,8 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
+import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
 
-type CartLine = { item_id: string | null; nama: string; qty: number; harga: number; target_species: string };
+type CartLine = {
+  item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
+  satuan?: string | null; faktor?: number;
+};
 
 const POIN_PER_RUPIAH = 1000; // 1 poin / Rp1.000
 
@@ -28,8 +32,17 @@ export async function checkoutSale(formData: FormData) {
   } catch {
     cart = [];
   }
-  const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
-  if (rows.length === 0) redirect(`/pos/transaksi?error=${encodeURIComponent("Keranjang kosong")}`);
+  const rawRows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
+  if (rawRows.length === 0) redirect(`/pos/transaksi?error=${encodeURIComponent("Keranjang kosong")}`);
+
+  // Faktor satuan diambil ulang dari master — nilai dari keranjang cuma petunjuk
+  // satuan mana yang dipilih, bukan sumber kebenaran konversi stok.
+  const unitOpts = await loadUnitOptions(supabase, rawRows.map((l) => l.item_id).filter((x): x is string => !!x));
+  const rows = rawRows.map((l) => {
+    const opts = l.item_id ? unitOpts.get(l.item_id) : undefined;
+    const u = opts ? pickUnit(opts, l.satuan) : null;
+    return { ...l, satuan: u?.unit ?? l.satuan ?? null, faktor: u?.factor ?? 1 };
+  });
 
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
   const total = Math.max(0, subtotal - discount);
@@ -60,7 +73,10 @@ export async function checkoutSale(formData: FormData) {
   if (saleErr || !sale) redirect(`/pos/transaksi?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
 
   const { error: itErr } = await supabase.from("sale_items").insert(
-    rows.map((l) => ({ sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga, target_species: l.target_species }))
+    rows.map((l) => ({
+      sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
+      target_species: l.target_species, satuan: l.satuan, faktor: l.faktor,
+    }))
   );
   if (itErr) redirect(`/pos/transaksi?error=${encodeURIComponent(itErr.message)}`);
 
@@ -71,8 +87,9 @@ export async function checkoutSale(formData: FormData) {
   if (wh) {
     for (const r of rows) {
       if (!r.item_id) continue;
+      // Stok disimpan dalam satuan dasar: jual 1 box = keluar 12 pcs.
       const { cost } = await stockOut(supabase, {
-        warehouseId: wh.id, itemId: r.item_id, qty: r.qty, source: "sale", ref: noStruk,
+        warehouseId: wh.id, itemId: r.item_id, qty: toBaseQty(r.qty, r.faktor), source: "sale", ref: noStruk,
       });
       hppFifo += cost;
     }

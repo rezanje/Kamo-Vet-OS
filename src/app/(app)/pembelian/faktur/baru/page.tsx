@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { sisaFakturable } from "@/lib/faktur-beli";
+import { qtyDiterima } from "@/lib/penerimaan";
 import { FakturForm, type PoOption } from "./FakturForm";
 
 type PoRow = {
@@ -8,7 +9,7 @@ type PoRow = {
   no_po: string | null;
   tanggal: string;
   suppliers: { nama: string } | null;
-  purchase_order_items: { item_id: string | null; qty: number; harga_beli: number; nama: string }[] | null;
+  purchase_order_items: { item_id: string | null; qty: number; qty_terima: number | null; harga_beli: number; nama: string }[] | null;
 };
 
 export default async function FakturBaruPage({
@@ -22,7 +23,7 @@ export default async function FakturBaruPage({
   const [{ data: pos }, { data: invs }] = await Promise.all([
     supabase
       .from("purchase_orders")
-      .select("id, no_po, tanggal, suppliers(nama), purchase_order_items(item_id, qty, harga_beli, nama)")
+      .select("id, no_po, tanggal, suppliers(nama), purchase_order_items(item_id, qty, qty_terima, harga_beli, nama)")
       .eq("status", "Diterima")
       .order("created_at", { ascending: false })
       .limit(100),
@@ -40,9 +41,10 @@ export default async function FakturBaruPage({
   const options: PoOption[] = ((pos ?? []) as unknown as PoRow[]).map((p) => {
     const qtyPO: Record<string, number> = {};
     const meta: Record<string, { nama: string; harga: number }> = {};
+    // dasar faktur = qty yang benar-benar diterima, bukan qty pesanan
     for (const r of p.purchase_order_items ?? []) {
       if (!r.item_id) continue;
-      qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + Number(r.qty);
+      qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + qtyDiterima(r);
       meta[r.item_id] = { nama: r.nama, harga: Number(r.harga_beli) || 0 };
     }
     const sisa = sisaFakturable(qtyPO, invoiced[p.id] ?? {});

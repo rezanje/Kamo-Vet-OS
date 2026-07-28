@@ -20,7 +20,7 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
   if (!sale) notFound();
 
   const { data: items } = await supabase
-    .from("sale_items").select("nama, qty, harga").eq("sale_id", saleId).order("created_at");
+    .from("sale_items").select("nama, qty, harga, satuan").eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers);
   const branch = one(sale.branches);
@@ -49,7 +49,7 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
           <div key={i} style={{ marginBottom: 3 }}>
             <div>{it.nama}</div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{it.qty} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
+              <span>{it.qty}{it.satuan ? ` ${it.satuan}` : ""} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
             </div>
           </div>
         ))}

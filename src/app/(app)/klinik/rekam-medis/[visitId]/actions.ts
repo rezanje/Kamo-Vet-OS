@@ -4,12 +4,14 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stockDeductions } from "@/lib/compounding";
 import { stockOut } from "@/lib/inventory";
+import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
+  item_id?: string | null; faktor?: number;
 };
 
 type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
@@ -110,6 +112,18 @@ export async function simpanRekamMedis(formData: FormData) {
   } catch {
     resep = [];
   }
+  // Faktor satuan dibaca ulang dari master — angka dari form cuma menandai satuan mana
+  // yang dipilih dokter, bukan sumber kebenaran konversi.
+  const unitOpts = await loadUnitOptions(
+    supabase,
+    resep.map((r) => r.item_id).filter((x): x is string => !!x),
+  );
+  const faktorDari = (r: ResepItem) => {
+    if (r.jenis === "racikan" || !r.item_id) return 1;
+    const opts = unitOpts.get(r.item_id);
+    return opts ? pickUnit(opts, r.satuan).factor : 1;
+  };
+
   const rows = resep
     .filter((r) => r.nama_obat?.trim())
     .map((r) => ({
@@ -117,6 +131,7 @@ export async function simpanRekamMedis(formData: FormData) {
       nama_obat: r.nama_obat.trim(),
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
       satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
+      faktor: faktorDari(r),
       harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" (invoice/struk existing tak berubah, nama-only otomatis).

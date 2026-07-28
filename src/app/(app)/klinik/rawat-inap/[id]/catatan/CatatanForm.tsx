@@ -4,11 +4,13 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
+import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { addDailyLogPos } from "../../actions";
 
-export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number };
+export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number; units?: ItemUnit[] };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
+  faktor: number;
   jenis: "obat" | "jasa" | "racikan";
   ingredients?: RacikanIngredient[]; dosage_form?: string; aturan_pakai?: string;
 };
@@ -51,11 +53,15 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
   const addObat = (it: ItemLite) => setCart((c) => {
     const ex = c.find((r) => r.item_id === it.id);
     if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
-    return [...c, { key: it.id, item_id: it.id, nama_obat: it.name, qty: 1, satuan: it.unit, harga: it.sell_price, jenis: "obat" }];
+    const u = (it.units ?? [])[0];
+    return [...c, {
+      key: it.id, item_id: it.id, nama_obat: it.name, qty: 1,
+      satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: "obat",
+    }];
   });
   const addJasa = () => {
     if (!jasaNama.trim()) return;
-    setCart((c) => [...c, { key: `jasa-${c.length}-${jasaNama}`, item_id: null, nama_obat: jasaNama.trim(), qty: 1, satuan: "jasa", harga: jasaHarga, jenis: "jasa" }]);
+    setCart((c) => [...c, { key: `jasa-${c.length}-${jasaNama}`, item_id: null, nama_obat: jasaNama.trim(), qty: 1, satuan: "jasa", faktor: 1, harga: jasaHarga, jenis: "jasa" }]);
     setJasaNama(""); setJasaHarga(0);
   };
   const addBahan = (it: ItemLite) => setRacikBahan((b) => {
@@ -68,7 +74,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
   const addRacikanToCart = () => {
     if (!racikNama.trim() || racikBahan.length === 0) return;
     setCart((c) => [...c, {
-      key: `racik-${c.length}-${racikNama}`, item_id: null, nama_obat: racikNama.trim(), qty: 1, satuan: "racikan",
+      key: `racik-${c.length}-${racikNama}`, item_id: null, nama_obat: racikNama.trim(), qty: 1, satuan: "racikan", faktor: 1,
       harga: racikanTotal(racikBahan), jenis: "racikan",
       ingredients: racikBahan, dosage_form: racikForm, aturan_pakai: racikAturan.trim() || undefined,
     }]);
@@ -76,6 +82,14 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
   };
 
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
+  // Satuan berjenjang: ganti ml→btl, harga & faktor ikut satuan yang dipilih.
+  const unitsOf = (itemId: string | null) => (itemId ? items.find((i) => i.id === itemId)?.units ?? [] : []);
+  const setSatuan = (key: string, itemId: string | null, unit: string) =>
+    setCart((c) => c.map((r) => {
+      if (r.key !== key) return r;
+      const u = pickUnit(unitsOf(itemId), unit);
+      return u ? { ...r, satuan: u.unit, harga: u.sell_price, faktor: u.factor } : r;
+    }));
   const del = (key: string) => setCart((c) => c.filter((r) => r.key !== key));
   const clear = () => setCart([]);
 
@@ -299,7 +313,15 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
                               <span>{r.nama_obat}</span>
                               {r.jenis === "racikan" && <span className="bge b" style={{ fontSize: 8 }}>racikan</span>}
                             </div>
-                            <div style={{ fontSize: 9, color: "var(--tm)" }}>{rp(r.harga)} · {r.satuan}</div>
+                            <div style={{ fontSize: 9, color: "var(--tm)", display: "flex", alignItems: "center", gap: 4 }}>
+                              <span>{rp(r.harga)} /</span>
+                              {unitsOf(r.item_id).length > 1 && r.jenis === "obat" ? (
+                                <select className="fi" value={r.satuan} onChange={(e) => setSatuan(r.key, r.item_id, e.target.value)}
+                                  style={{ width: 62, padding: "1px 3px", fontSize: 9.5 }} title="Satuan">
+                                  {unitsOf(r.item_id).map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
+                                </select>
+                              ) : <span>{r.satuan}</span>}
+                            </div>
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (

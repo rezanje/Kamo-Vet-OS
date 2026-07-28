@@ -33,17 +33,19 @@ export async function buatReturJual(formData: FormData) {
   // berlaku di situ (tidak ada kas fisik yang diterima dari channel itu di cabang manapun).
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, branch_id, sale_items(item_id, qty, harga)")
+    .select("id, no_struk, branch_id, sale_items(item_id, qty, harga, faktor)")
     .eq("id", sale_id).is("channel", null).single();
   if (!sale) fail("Struk tidak ditemukan, atau merupakan order online — retur online tidak didukung di sini.");
 
-  // qty terjual & harga per item dari struk
+  // qty terjual & harga per item dari struk — dinormalkan ke SATUAN DASAR, karena
+  // satu struk bisa memuat item yang sama dalam dua satuan (1 box + 3 pcs).
   const sumber: Record<string, number> = {};
   const harga: Record<string, number> = {};
   for (const r of sale!.sale_items ?? []) {
     if (!r.item_id) continue;
-    sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty);
-    harga[r.item_id] = Number(r.harga) || 0;
+    const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
+    sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty) * f;
+    harga[r.item_id] = (Number(r.harga) || 0) / f;
   }
 
   // akumulasi retur sebelumnya utk struk ini

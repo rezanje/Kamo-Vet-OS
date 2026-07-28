@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
 import { sisaFakturable } from "@/lib/faktur-beli";
+import { qtyDiterima } from "@/lib/penerimaan";
 import { bayarFaktur } from "../../pembelian/faktur/actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -29,7 +30,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
       .order("jatuh_tempo"),
     supabase
       .from("purchase_orders")
-      .select("id, no_po, tanggal, total, suppliers(nama), purchase_order_items(item_id, qty, harga_beli)")
+      .select("id, no_po, tanggal, total, suppliers(nama), purchase_order_items(item_id, qty, qty_terima, harga_beli)")
       .eq("status", "Diterima"),
     supabase.from("purchase_returns").select("po_id, total"),
   ]);
@@ -80,14 +81,15 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   }
   const belumFaktur: PoBelum[] = ((pos ?? []) as unknown as {
     id: string; no_po: string | null; tanggal: string; total: number; suppliers: { nama: string } | null;
-    purchase_order_items: { item_id: string | null; qty: number; harga_beli: number }[] | null;
+    purchase_order_items: { item_id: string | null; qty: number; qty_terima: number | null; harga_beli: number }[] | null;
   }[])
     .map((p) => {
       const qtyPO: Record<string, number> = {};
       const harga: Record<string, number> = {};
+      // saldo GRNI 2102 = barang yang diterima & belum difakturkan
       for (const r of p.purchase_order_items ?? []) {
         if (!r.item_id) continue;
-        qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + Number(r.qty);
+        qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + qtyDiterima(r);
         harga[r.item_id] = Number(r.harga_beli) || 0;
       }
       const sisa = sisaFakturable(qtyPO, invoicedByPo[p.id] ?? {});

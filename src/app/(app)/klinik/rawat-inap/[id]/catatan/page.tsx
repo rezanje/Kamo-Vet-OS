@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { CONDITION_LABEL, type Condition } from "@/lib/inpatient";
 import { CatatanForm } from "./CatatanForm";
 
@@ -31,7 +32,17 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
     : { data: [] as { item_id: string; qty: number }[] };
   const stok = new Map<string, number>();
   for (const s of stockRows ?? []) stok.set(s.item_id as string, (stok.get(s.item_id as string) ?? 0) + Number(s.qty));
-  const items = (itemRows ?? []).map((i) => ({ id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price), stok: stok.get(i.id as string) ?? 0, is_compound_material: !!i.is_compound_material }));
+  // Satuan berjenjang ikut dari master SKU (perawat bisa mencatat per btl, bukan per ml).
+  const unitMap = await loadItemUnits(supabase, (itemRows ?? []).map((i) => i.id as string));
+  const items = (itemRows ?? []).map((i) => ({
+    id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
+    sell_price: Number(i.sell_price), stok: stok.get(i.id as string) ?? 0,
+    is_compound_material: !!i.is_compound_material,
+    units: unitOptions(
+      { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
+      unitMap.get(i.id as string) ?? [],
+    ),
+  }));
   const bahanItems = items.filter((i) => i.is_compound_material);
 
   const noRM = visit

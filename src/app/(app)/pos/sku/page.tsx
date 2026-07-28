@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { kategoriWajibConsent } from "@/lib/tindakan";
+import { loadItemUnits } from "@/lib/satuan";
 import { SkuForm, type SkuRow } from "./SkuForm";
 import { toggleSku } from "./actions";
 
@@ -34,7 +35,9 @@ export default async function SkuPage({
   if (kat) q = q.eq("category_id", kat);
 
   const { data: items } = await q;
-  const rows = (items ?? []) as unknown as SkuRow[];
+  const baseRows = (items ?? []) as unknown as SkuRow[];
+  const unitMap = await loadItemUnits(supabase, baseRows.map((r) => r.id));
+  const rows: SkuRow[] = baseRows.map((r) => ({ ...r, units: unitMap.get(r.id) ?? [] }));
   const editing = edit ? rows.find((r) => r.id === edit) ?? null : null;
   const namaKat = new Map(cats.map((c) => [c.id, c.name]));
 
@@ -83,7 +86,12 @@ export default async function SkuPage({
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                     {it.name}
-                    <div style={{ fontSize: 9, color: "var(--tm)" }}>{it.unit}</div>
+                    <div style={{ fontSize: 9, color: "var(--tm)" }}>
+                      {it.unit}
+                      {(it.units ?? []).map((u) => (
+                        <span key={u.unit} style={{ color: "var(--td)" }}> · 1 {u.unit} = {u.factor} {it.unit}</span>
+                      ))}
+                    </div>
                   </td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{it.code || "—"}</td>
                   <td style={{ fontSize: 10.5 }}>{it.category_id ? namaKat.get(it.category_id) ?? "—" : "—"}</td>
@@ -92,7 +100,15 @@ export default async function SkuPage({
                       ? <span className={`bge ${kategoriWajibConsent(it.tindakan_kategori) ? "r" : "b"}`}>{it.tindakan_kategori}</span>
                       : <span style={{ fontSize: 10.5, color: "var(--td)" }}>—</span>}
                   </td>
-                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(it.sell_price))}</td>
+                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
+                    {rp(Number(it.sell_price))}
+                    <div style={{ fontSize: 9, fontWeight: 400, color: "var(--tm)" }}>/ {it.unit}</div>
+                    {(it.units ?? []).map((u) => (
+                      <div key={u.unit} style={{ fontSize: 9.5, fontWeight: 500, color: "var(--tm)" }}>
+                        {rp(u.sell_price)} <span style={{ fontWeight: 400, color: "var(--td)" }}>/ {u.unit}</span>
+                      </div>
+                    ))}
+                  </td>
                   <td><span className={`bge ${it.is_active ? "g" : "x"}`}>{it.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehKelola && (
                     <td>

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { TileGrid } from "@/components/ModuleHome";
 
 // ponytail: format rupiah helper
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -147,6 +148,12 @@ export default async function PenjualanPage({
         <div style={{ fontSize: 11, color: "var(--td)", marginTop: 3 }}>
           Gabungan omzet POS, Online &amp; Klinik · data real-time
         </div>
+      </div>
+
+      {/* Menu modul — dashboard rekap ini menggantikan tile-grid lama, jadi
+          submenu (Retur Penjualan, Penjualan Online, dst) ikut ditaruh di sini. */}
+      <div style={{ marginBottom: 18 }}>
+        <TileGrid moduleId="penjualan" />
       </div>
 
       {/* Kartu summary */}

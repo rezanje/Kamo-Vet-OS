@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { formatNoRetur, sisaRetur, totalRetur } from "@/lib/retur";
 import { stockOut } from "@/lib/inventory";
+import { nilaiDiterima, qtyDiterima } from "@/lib/penerimaan";
+import { toBaseCost, toBaseQty } from "@/lib/satuan";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -40,19 +42,22 @@ export async function buatReturBeli(formData: FormData) {
 
   const { data: po } = await supabase
     .from("purchase_orders")
-    .select("id, no_po, status, total, branch_id, to_warehouse_id, purchase_order_items(item_id, qty, harga_beli)")
+    .select("id, no_po, status, total, branch_id, to_warehouse_id, purchase_order_items(item_id, qty, qty_terima, harga_beli, faktor)")
     .eq("id", po_id).single();
   if (!po) fail("PO tidak ditemukan.");
   if (po!.status !== "Diterima") fail("Hanya PO berstatus Diterima yang bisa diretur.");
   if (!po!.to_warehouse_id) fail("PO tidak punya gudang tujuan.");
 
-  // qty sumber & harga per item dari PO
+  // qty sumber = yang diterima (bukan yang dipesan) & harga per item dari PO.
+  // Dinormalkan ke SATUAN DASAR: satu PO bisa memesan item yang sama per box & per pcs,
+  // dan stok gudang (yang dipotong saat retur) selalu dalam satuan dasar.
   const sumber: Record<string, number> = {};
   const harga: Record<string, number> = {};
   for (const r of po!.purchase_order_items ?? []) {
     if (!r.item_id) continue;
-    sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty);
-    harga[r.item_id] = Number(r.harga_beli) || 0;
+    const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
+    sumber[r.item_id] = (sumber[r.item_id] ?? 0) + toBaseQty(qtyDiterima(r), f);
+    harga[r.item_id] = toBaseCost(Number(r.harga_beli) || 0, f);
   }
 
   // akumulasi retur sebelumnya utk PO ini
@@ -78,7 +83,9 @@ export async function buatReturBeli(formData: FormData) {
   const returSebelum = (prev ?? []).length
     ? (await supabase.from("purchase_returns").select("total").eq("po_id", po_id)).data?.reduce((a, r) => a + Number(r.total), 0) ?? 0
     : 0;
-  const sisaHutang = Math.max(0, Number(po!.total) - dibayar - returSebelum);
+  // plafon = nilai barang diterima (kalau kiriman kurang, hutang juga lebih kecil dari nilai PO)
+  const nilaiTerima = nilaiDiterima(po!.purchase_order_items ?? []);
+  const sisaHutang = Math.max(0, nilaiTerima - dibayar - returSebelum);
   if (total > sisaHutang)
     fail(`Nilai retur (Rp ${Math.round(total).toLocaleString("id-ID")}) melebihi sisa hutang PO (Rp ${Math.round(sisaHutang).toLocaleString("id-ID")}).`);
 

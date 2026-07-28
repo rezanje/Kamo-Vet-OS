@@ -10,7 +10,7 @@ type SaleRow = {
   total: number;
   created_at: string;
   customers: { name: string } | null;
-  sale_items: { item_id: string | null; nama: string; qty: number; harga: number }[] | null;
+  sale_items: { item_id: string | null; nama: string; qty: number; harga: number; satuan: string | null; faktor: number }[] | null;
 };
 
 export default async function ReturJualBaruPage({
@@ -30,7 +30,7 @@ export default async function ReturJualBaruPage({
     // refund retur jual keluar dari kas kasir, sedangkan online tidak punya shift kasir.
     const { data } = await supabase
       .from("sales")
-      .select("id, no_struk, total, created_at, customers(name), sale_items(item_id, nama, qty, harga)")
+      .select("id, no_struk, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, satuan, faktor)")
       .eq("no_struk", struk.trim())
       .is("channel", null)
       .maybeSingle();
@@ -38,12 +38,15 @@ export default async function ReturJualBaruPage({
     if (!sale) {
       notFoundMsg = `Struk "${struk}" tidak ditemukan.`;
     } else {
+      // Retur selalu dihitung dalam satuan dasar (lihat actions.ts) supaya satu item
+      // yang dijual campur box+pcs tidak jadi angka sisa yang ambigu.
       const sumber: Record<string, number> = {};
       const meta: Record<string, { nama: string; harga: number }> = {};
       for (const r of sale.sale_items ?? []) {
         if (!r.item_id) continue;
-        sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty);
-        meta[r.item_id] = { nama: r.nama, harga: Number(r.harga) || 0 };
+        const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
+        sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty) * f;
+        meta[r.item_id] = { nama: r.nama, harga: (Number(r.harga) || 0) / f };
       }
       const { data: prev } = await supabase
         .from("sales_returns").select("sales_return_items(item_id, qty)").eq("sale_id", sale.id);

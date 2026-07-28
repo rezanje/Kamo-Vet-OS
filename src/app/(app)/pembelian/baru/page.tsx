@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { POForm } from "./POForm";
+import { loadItemUnits, unitOptions } from "@/lib/satuan";
+import { POForm, type Item } from "./POForm";
 
 // ponytail: create PO page — server component fetches suppliers, warehouses, branches.
 
@@ -16,8 +17,22 @@ export default async function BaruPOPage({
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name").order("name"),
     supabase.from("branches").select("id, name").order("name"),
-    supabase.from("items").select("id, code, name, unit, buy_price").eq("is_active", true).order("name"),
+    supabase.from("items").select("id, code, name, unit, sell_price, buy_price").eq("is_active", true).order("name"),
   ]);
+
+  // Satuan berjenjang: PO bisa dibuat per box/sak, stok tetap masuk dalam satuan dasar.
+  const unitMap = await loadItemUnits(supabase, (items ?? []).map((i) => i.id as string));
+  const katalog: Item[] = (items ?? []).map((i) => ({
+    id: i.id as string,
+    code: i.code as string,
+    name: i.name as string,
+    unit: i.unit as string,
+    buy_price: Number(i.buy_price),
+    units: unitOptions(
+      { unit: i.unit as string, sell_price: Number(i.sell_price), buy_price: Number(i.buy_price) },
+      unitMap.get(i.id as string) ?? [],
+    ),
+  }));
 
   return (
     <>
@@ -39,7 +54,7 @@ export default async function BaruPOPage({
         suppliers={suppliers ?? []}
         warehouses={warehouses ?? []}
         branches={branches ?? []}
-        items={items ?? []}
+        items={katalog}
       />
     </>
   );

@@ -37,17 +37,26 @@ function TileCard({ tile }: { tile: Tile }) {
   );
 }
 
-export function ModuleHome({ moduleId }: { moduleId: string }) {
+// Deretan kotak menu saja (tanpa judul halaman) — dipakai modul yang halaman
+// root-nya sudah punya konten sendiri (Penjualan, Pembelian) supaya submenunya
+// tetap punya pintu masuk.
+export function TileGrid({ moduleId }: { moduleId: string }) {
   const tiles = TILES[moduleId] ?? [];
+  return (
+    <div className="tile-grid">
+      {tiles.map((t) => (
+        <TileCard key={t.label} tile={t} />
+      ))}
+    </div>
+  );
+}
+
+export function ModuleHome({ moduleId }: { moduleId: string }) {
   return (
     <>
       <div className="pg-hd">{MODULE_LABEL[moduleId]}</div>
       <div className="pg-sub">Pilih fitur yang ingin diakses</div>
-      <div className="tile-grid">
-        {tiles.map((t) => (
-          <TileCard key={t.label} tile={t} />
-        ))}
-      </div>
+      <TileGrid moduleId={moduleId} />
     </>
   );
 }

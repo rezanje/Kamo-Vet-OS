@@ -7,8 +7,13 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { stockIn } from "@/lib/inventory";
+import { nilaiDiterima } from "@/lib/penerimaan";
+import { loadUnitOptions, pickUnit, toBaseCost, toBaseQty } from "@/lib/satuan";
 
-type ItemInput = { nama: string; qty: number; harga_beli: number; item_id?: string | null };
+type ItemInput = {
+  nama: string; qty: number; harga_beli: number; item_id?: string | null;
+  satuan?: string | null; faktor?: number;
+};
 
 // ─── Buat PO ──────────────────────────────────────────────────────────────────
 
@@ -56,13 +61,22 @@ export async function buatPO(formData: FormData) {
   }
 
   const poId = (po as { id: string }).id;
-  const rows = items.map((it) => ({
-    po_id: poId,
-    item_id: it.item_id || null,   // link master SKU → stok bertambah saat Diterima & bisa diretur
-    nama: String(it.nama).slice(0, 160),
-    qty: Number(it.qty) || 0,
-    harga_beli: Number(it.harga_beli) || 0,
-  }));
+  // Satuan beli (box/sak) diambil ulang dari master — faktor dari form tidak dipercaya,
+  // karena faktor palsu bikin stok masuk lebih banyak dari barang yang benar-benar datang.
+  const unitOpts = await loadUnitOptions(supabase, items.map((it) => it.item_id).filter((x): x is string => !!x));
+  const rows = items.map((it) => {
+    const opts = it.item_id ? unitOpts.get(it.item_id) : undefined;
+    const u = opts ? pickUnit(opts, it.satuan) : null;
+    return {
+      po_id: poId,
+      item_id: it.item_id || null,   // link master SKU → stok bertambah saat Diterima & bisa diretur
+      nama: String(it.nama).slice(0, 160),
+      qty: Number(it.qty) || 0,
+      harga_beli: Number(it.harga_beli) || 0,
+      satuan: u?.unit ?? null,
+      faktor: u?.factor ?? 1,
+    };
+  });
   await supabase.from("purchase_order_items").insert(rows);
 
   revalidatePath("/pembelian");
@@ -109,62 +123,103 @@ export async function updatePOStatus(formData: FormData) {
 
   const currentStatus = (po as { status: string }).status;
 
-  // Guard: skip if already Diterima (idempotent).
-  if (currentStatus === "Diterima" && newStatus === "Diterima") {
-    revalidatePath("/pembelian");
-    return;
+  // Penerimaan barang punya halamannya sendiri (qty datang bisa ≠ qty PO).
+  if (newStatus === "Diterima") {
+    if (currentStatus === "Diterima") {
+      revalidatePath("/pembelian");
+      return;
+    }
+    redirect(`/pembelian/${id}/terima`);
   }
 
-  // Perform status update.
   await supabase.from("purchase_orders").update({ status: newStatus }).eq("id", id);
 
-  // ── Receiving logic (only first time → Diterima) ──
-  if (newStatus === "Diterima" && currentStatus !== "Diterima") {
-    const { data: poItems } = await supabase
-      .from("purchase_order_items")
-      .select("item_id, qty, harga_beli")
-      .eq("po_id", id);
+  revalidatePath("/pembelian");
+}
 
-    const items = (poItems ?? []) as { item_id: string | null; qty: number; harga_beli: number }[];
-    const warehouseId = (po as { to_warehouse_id: string | null }).to_warehouse_id;
+// ─── Terima Barang (qty diterima boleh ≠ qty PO) ──────────────────────────────
 
-    // Stok masuk via lib FIFO: layer baru @ harga_beli PO (sumber cost utama HPP).
-    if (warehouseId) {
-      const noPoRef = (po as { no_po: string | null }).no_po ?? id;
-      for (const it of items) {
-        if (!it.item_id) continue;
-        const delta = Number(it.qty) || 0;
-        if (delta <= 0) continue;
-        await stockIn(supabase, {
-          warehouseId, itemId: it.item_id, qty: delta,
-          unitCost: Number(it.harga_beli) || 0,
-          source: "purchase", ref: noPoRef,
-        });
-      }
-    }
+type TerimaInput = { id: string; qty_terima: number };
 
-    // Post ONE journal entry: Dr Persediaan / Cr Hutang Usaha = PO total.
-    const total = Number((po as { total: number }).total) || 0;
-    const noPo = (po as { no_po: string | null }).no_po ?? id;
-    const branchId = (po as { branch_id: string | null }).branch_id;
-    const tanggal = new Date().toISOString().slice(0, 10);
+export async function terimaBarang(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "");
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
 
-    if (total > 0) {
-      await postJournal(supabase, {
-        tanggal,
-        deskripsi: `Penerimaan barang ${noPo}`,
-        source: "purchase",
-        sourceRef: noPo,
-        branchId,
-        // hutang usaha (2101) baru lahir saat Faktur Pembelian; saat terima barang
-        // masuk akun antara 2102 Hutang Belum Difakturkan (ala Accurate/GRNI).
-        lines: [
-          { code: "1301", debit: total, credit: 0 },
-          { code: "2102", debit: 0, credit: total },
-        ],
+  const fail = (msg: string) =>
+    redirect(`/pembelian/${id}/terima?error=` + encodeURIComponent(msg));
+
+  let input: TerimaInput[] = [];
+  try {
+    input = JSON.parse(String(formData.get("rows") ?? "[]")) as TerimaInput[];
+  } catch {
+    input = [];
+  }
+
+  const { data: po } = await supabase
+    .from("purchase_orders")
+    .select("id, no_po, to_warehouse_id, branch_id, status, purchase_order_items(id, item_id, qty, faktor, harga_beli)")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!po) fail("PO tidak ditemukan.");
+  if (po!.status === "Diterima") fail("PO ini sudah diterima.");
+  if (po!.status === "Batal") fail("PO batal tidak bisa diterima.");
+
+  const poItems = (po!.purchase_order_items ?? []) as
+    { id: string; item_id: string | null; qty: number; faktor: number | null; harga_beli: number }[];
+
+  // qty diterima per baris; baris yang tidak dikirim form dianggap sesuai PO.
+  const terimaById = new Map(input.map((r) => [r.id, Number(r.qty_terima)]));
+  const rows = poItems.map((r) => {
+    const q = terimaById.has(r.id) ? terimaById.get(r.id)! : Number(r.qty);
+    return { ...r, qty_terima: Number.isFinite(q) && q > 0 ? q : 0 };
+  });
+
+  if (rows.every((r) => r.qty_terima <= 0)) {
+    fail("Tidak ada barang yang diterima. Batalkan PO kalau kiriman tidak datang.");
+  }
+
+  for (const r of rows) {
+    await supabase.from("purchase_order_items").update({ qty_terima: r.qty_terima }).eq("id", r.id);
+  }
+
+  // Stok masuk via lib FIFO: layer baru @ harga_beli PO (sumber cost utama HPP).
+  const warehouseId = po!.to_warehouse_id as string | null;
+  const noPo = (po!.no_po as string | null) ?? id;
+  if (warehouseId) {
+    for (const r of rows) {
+      if (!r.item_id || r.qty_terima <= 0) continue;
+      // qty diinput dalam satuan baris PO (bisa box/sak) → konversi ke satuan dasar stok
+      await stockIn(supabase, {
+        warehouseId, itemId: r.item_id, qty: toBaseQty(r.qty_terima, r.faktor ?? 1),
+        unitCost: toBaseCost(Number(r.harga_beli) || 0, r.faktor ?? 1),
+        source: "purchase", ref: noPo,
       });
     }
   }
 
+  // Jurnal senilai barang yang BENAR-BENAR diterima (bukan nilai PO).
+  const total = nilaiDiterima(rows);
+  if (total > 0) {
+    await postJournal(supabase, {
+      tanggal,
+      deskripsi: `Penerimaan barang ${noPo}`,
+      source: "purchase",
+      sourceRef: noPo,
+      branchId: (po!.branch_id as string | null) ?? null,
+      // hutang usaha (2101) baru lahir saat Faktur Pembelian; saat terima barang
+      // masuk akun antara 2102 Hutang Belum Difakturkan (ala Accurate/GRNI).
+      lines: [
+        { code: "1301", debit: total, credit: 0 },
+        { code: "2102", debit: 0, credit: total },
+      ],
+    });
+  }
+
+  await supabase.from("purchase_orders").update({ status: "Diterima" }).eq("id", id);
+
   revalidatePath("/pembelian");
+  revalidatePath("/keuangan/hutang");
+  redirect("/pembelian?success_terima=" + encodeURIComponent(`Barang ${noPo} diterima.`));
 }

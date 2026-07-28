@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { TileGrid } from "@/components/ModuleHome";
 import { updatePOStatus, tambahSupplier } from "./actions";
+import { adaSelisih, nilaiDiterima } from "@/lib/penerimaan";
 
 // ponytail: PO list + supplier section. Status badge colours match template.
 
@@ -27,6 +29,7 @@ type PO = {
   total: number;
   suppliers: Rel<{ nama: string }>;
   warehouses: Rel<{ name: string }>;
+  purchase_order_items: { qty: number; qty_terima: number | null; harga_beli: number }[] | null;
 };
 
 type Supplier = {
@@ -42,15 +45,15 @@ const fmtDate = (d: string) =>
 export default async function PembelianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; success_sup?: string; error?: string; tab?: string }>;
+  searchParams: Promise<{ success?: string; success_sup?: string; success_terima?: string; error?: string; tab?: string }>;
 }) {
-  const { success, success_sup, error, tab } = await searchParams;
+  const { success, success_sup, success_terima, error, tab } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: poData }, { data: supData }] = await Promise.all([
     supabase
       .from("purchase_orders")
-      .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name)")
+      .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(qty, qty_terima, harga_beli)")
       .order("created_at", { ascending: false }),
     supabase.from("suppliers").select("id, nama, kontak, telp").order("nama"),
   ]);
@@ -79,11 +82,22 @@ export default async function PembelianPage({
           <i className="ti ti-circle-check" /> Supplier berhasil ditambahkan.
         </div>
       )}
+      {success_terima && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-package-import" /> {success_terima}
+        </div>
+      )}
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+
+      {/* Menu modul — halaman ini menggantikan tile-grid lama, jadi submenu
+          (Faktur Pembelian, Retur Pembelian, dst) ikut ditaruh di sini. */}
+      <div style={{ marginBottom: 18 }}>
+        <TileGrid moduleId="pembelian" />
+      </div>
 
       {/* Tab nav */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
@@ -133,15 +147,27 @@ export default async function PembelianPage({
                 {pos.map((po) => {
                   const sup = one(po.suppliers);
                   const wh = one(po.warehouses);
+                  const items = po.purchase_order_items ?? [];
+                  const beda = adaSelisih(items);
                   return (
                     <tr key={po.id}>
                       <td style={{ fontWeight: 500, fontSize: 11.5 }}>{po.no_po ?? "—"}</td>
                       <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(po.tanggal)}</td>
                       <td style={{ fontSize: 11.5 }}>{sup?.nama ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
                       <td style={{ fontSize: 11.5 }}>{wh?.name ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
-                      <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(po.total)}</td>
+                      <td style={{ textAlign: "right", fontSize: 11.5 }}>
+                        {rp(po.total)}
+                        {beda && (
+                          <div style={{ fontSize: 9.5, color: "#b45309" }}>
+                            diterima {rp(nilaiDiterima(items))}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <span className={`bge ${STATUS_BADGE[po.status] ?? "x"}`}>{po.status}</span>
+                        {beda && (
+                          <span style={{ fontSize: 9.5, color: "#b45309", marginLeft: 5 }}>≠ PO</span>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 5 }}>
@@ -156,13 +182,13 @@ export default async function PembelianPage({
                           )}
                           {po.status === "Dipesan" && (
                             <>
-                              <form action={updatePOStatus}>
-                                <input type="hidden" name="id" value={po.id} />
-                                <input type="hidden" name="status" value="Diterima" />
-                                <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>
-                                  <i className="ti ti-package-import" /> Terima Barang
-                                </button>
-                              </form>
+                              <Link
+                                href={`/pembelian/${po.id}/terima`}
+                                className="btn-acc"
+                                style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}
+                              >
+                                <i className="ti ti-package-import" /> Terima Barang
+                              </Link>
                               <form action={updatePOStatus}>
                                 <input type="hidden" name="id" value={po.id} />
                                 <input type="hidden" name="status" value="Batal" />

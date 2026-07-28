@@ -3,14 +3,21 @@
 import { useMemo, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { pickUnit, type ItemUnit } from "@/lib/satuan";
 
-export type Item = { id: string; name: string; sell_price: number; target_species: string };
+export type Item = { id: string; name: string; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
 export type Cust = { id: string; name: string; phone: string; points: number; pets: Pet[] };
 type Branch = { id: string; code: string; name: string };
-type Line = { item_id: string; nama: string; qty: number; harga: number; target_species: string };
+type Line = {
+  item_id: string; nama: string; qty: number; harga: number; target_species: string;
+  satuan: string; faktor: number;
+};
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+// Satu baris keranjang = kombinasi item + satuan; 1 box dan 3 pcs obat yang sama
+// harus berdiri sendiri karena harganya beda.
+const lineKey = (l: { item_id: string; satuan: string }) => `${l.item_id}::${l.satuan}`;
 
 export function PosClient({ items, customers, branches }: { items: Item[]; customers: Cust[]; branches: Branch[] }) {
   const [branchId, setBranchId] = useState("");
@@ -34,15 +41,36 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
     return customers.filter((c) => c.name.toLowerCase().includes(s) || c.phone.includes(s)).slice(0, 5);
   }, [customers, custQ]);
 
+  const unitsOf = (itemId: string) => items.find((i) => i.id === itemId)?.units ?? [];
+
   const add = (it: Item) =>
     setCart((c) => {
-      const ex = c.find((l) => l.item_id === it.id);
-      if (ex) return c.map((l) => (l.item_id === it.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { item_id: it.id, nama: it.name, qty: 1, harga: it.sell_price, target_species: it.target_species }];
+      const u = it.units[0];
+      const baris: Line = {
+        item_id: it.id, nama: it.name, qty: 1, harga: u.sell_price,
+        target_species: it.target_species, satuan: u.unit, faktor: u.factor,
+      };
+      const k = lineKey(baris);
+      if (c.some((l) => lineKey(l) === k)) return c.map((l) => (lineKey(l) === k ? { ...l, qty: l.qty + 1 } : l));
+      return [...c, baris];
     });
-  const setQty = (id: string, d: number) =>
-    setCart((c) => c.flatMap((l) => (l.item_id === id ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
-  const remove = (id: string) => setCart((c) => c.filter((l) => l.item_id !== id));
+  const setQty = (k: string, d: number) =>
+    setCart((c) => c.flatMap((l) => (lineKey(l) === k ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
+  const remove = (k: string) => setCart((c) => c.filter((l) => lineKey(l) !== k));
+
+  // Ganti satuan → harga ikut satuan baru. Kalau satuan tujuan sudah ada di
+  // keranjang, qty-nya digabung supaya tidak muncul dua baris identik.
+  const setSatuan = (k: string, unit: string) =>
+    setCart((c) => {
+      const l = c.find((x) => lineKey(x) === k);
+      if (!l) return c;
+      const u = pickUnit(unitsOf(l.item_id), unit);
+      const baru: Line = { ...l, satuan: u.unit, faktor: u.factor, harga: u.sell_price };
+      const kBaru = lineKey(baru);
+      const kembar = c.find((x) => lineKey(x) === kBaru && x !== l);
+      if (kembar) return c.flatMap((x) => (x === l ? [] : x === kembar ? [{ ...kembar, qty: kembar.qty + l.qty }] : [x]));
+      return c.map((x) => (x === l ? baru : x));
+    });
 
   const subtotal = cart.reduce((a, l) => a + l.qty * l.harga, 0);
   const total = Math.max(0, subtotal - discount);
@@ -79,8 +107,11 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
               <div key={it.id} className="pos-p" onClick={() => add(it)}>
                 <i className="ti ti-package" style={{ fontSize: 20, color: "var(--td)" }} />
                 <div className="pos-pn">{it.name}</div>
-                <div className="pos-pp">{rp(it.sell_price)}</div>
-                <div style={{ fontSize: 8, color: "var(--td)", marginTop: 2 }}>{it.target_species}</div>
+                <div className="pos-pp">{rp(it.sell_price)}<span style={{ fontSize: 8, fontWeight: 400, color: "var(--td)" }}> /{it.units[0]?.unit ?? "pcs"}</span></div>
+                <div style={{ fontSize: 8, color: "var(--td)", marginTop: 2 }}>
+                  {it.target_species}
+                  {it.units.length > 1 && ` · ${it.units.slice(1).map((u) => u.unit).join("/")}`}
+                </div>
               </div>
             ))}
             {shown.length === 0 && <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--td)", fontSize: 11, padding: 20 }}>Produk tidak ditemukan.</div>}
@@ -126,16 +157,32 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
           )}
 
           {/* Items */}
-          {cart.map((l) => (
-            <div key={l.item_id} className="ci">
-              <div style={{ flex: 1, fontSize: 10.5 }}>{l.nama}</div>
-              <button type="button" onClick={() => setQty(l.item_id, -1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-minus" /></button>
-              <span style={{ fontSize: 10.5, minWidth: 14, textAlign: "center" }}>{l.qty}</span>
-              <button type="button" onClick={() => setQty(l.item_id, 1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-plus" /></button>
-              <div style={{ fontSize: 10.5, minWidth: 62, textAlign: "right" }}>{rp(l.qty * l.harga)}</div>
-              <button type="button" onClick={() => remove(l.item_id)} className="back-btn" style={{ color: "#b91c1c" }}><i className="ti ti-trash" /></button>
-            </div>
-          ))}
+          {cart.map((l) => {
+            const k = lineKey(l);
+            const opts = unitsOf(l.item_id);
+            return (
+              <div key={k} className="ci">
+                <div style={{ flex: 1, fontSize: 10.5 }}>
+                  {l.nama}
+                  <div style={{ fontSize: 9, color: "var(--td)" }}>
+                    {rp(l.harga)}/{l.satuan}
+                    {l.faktor !== 1 && ` · ${l.faktor} ${opts[0]?.unit ?? ""} per ${l.satuan}`}
+                  </div>
+                </div>
+                {opts.length > 1 && (
+                  <select className="fi" value={l.satuan} onChange={(e) => setSatuan(k, e.target.value)}
+                    style={{ width: 64, padding: "2px 4px", fontSize: 10 }} title="Satuan">
+                    {opts.map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
+                  </select>
+                )}
+                <button type="button" onClick={() => setQty(k, -1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-minus" /></button>
+                <span style={{ fontSize: 10.5, minWidth: 14, textAlign: "center" }}>{l.qty}</span>
+                <button type="button" onClick={() => setQty(k, 1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-plus" /></button>
+                <div style={{ fontSize: 10.5, minWidth: 62, textAlign: "right" }}>{rp(l.qty * l.harga)}</div>
+                <button type="button" onClick={() => remove(k)} className="back-btn" style={{ color: "#b91c1c" }}><i className="ti ti-trash" /></button>
+              </div>
+            );
+          })}
           {cart.length === 0 && <div style={{ fontSize: 10.5, color: "var(--td)", textAlign: "center", padding: "8px 0" }}>Klik produk untuk menambah.</div>}
 
           {/* Totals */}

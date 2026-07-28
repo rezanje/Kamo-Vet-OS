@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { PosClient, type Item, type Cust } from "./PosClient";
 
 export default async function TransaksiPage({
@@ -11,10 +12,20 @@ export default async function TransaksiPage({
   const supabase = await createClient();
 
   const [{ data: items }, { data: customers }, { data: branches }] = await Promise.all([
-    supabase.from("items").select("id, name, sell_price, target_species").eq("is_active", true).order("name"),
+    supabase.from("items").select("id, name, unit, sell_price, target_species").eq("is_active", true).order("name"),
     supabase.from("customers").select("id, name, phone, points, pets(id, name, species)").order("name"),
     supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
   ]);
+
+  // Satuan berjenjang: kasir pilih pcs/box saat menambah ke keranjang.
+  const unitMap = await loadItemUnits(supabase, (items ?? []).map((i) => i.id as string));
+  const katalog: Item[] = (items ?? []).map((i) => ({
+    id: i.id as string,
+    name: i.name as string,
+    sell_price: Number(i.sell_price),
+    target_species: i.target_species as string,
+    units: unitOptions({ unit: i.unit as string, sell_price: Number(i.sell_price) }, unitMap.get(i.id as string) ?? []),
+  }));
 
   const { data: { user } } = await supabase.auth.getUser();
   const { data: openShift } = await supabase
@@ -43,7 +54,7 @@ export default async function TransaksiPage({
       )}
 
       <PosClient
-        items={(items ?? []) as Item[]}
+        items={katalog}
         customers={(customers ?? []) as unknown as Cust[]}
         branches={branches ?? []}
       />

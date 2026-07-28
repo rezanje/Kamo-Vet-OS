@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { canTransition, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
 import { stockDeductions } from "@/lib/compounding";
 import { stockOut } from "@/lib/inventory";
+import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
@@ -69,6 +70,7 @@ type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; 
 type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string;
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
+  item_id?: string | null; faktor?: number;
 };
 export async function addDailyLogPos(formData: FormData) {
   const supabase = await createClient();
@@ -109,10 +111,13 @@ export async function addDailyLogPos(formData: FormData) {
   let resep: ResepItem[] = [];
   try { resep = JSON.parse(String(formData.get("resep") ?? "[]")); } catch { resep = []; }
   if (mrId && resep.length) {
+    // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
+    const unitOpts = await loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x));
     const rows = resep.filter((r) => r.nama_obat?.trim()).map((r) => ({
       medical_record_id: mrId, nama_obat: r.nama_obat.trim(),
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
       satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
+      faktor: r.jenis === "racikan" || !r.item_id ? 1 : (unitOpts.get(r.item_id) ? pickUnit(unitOpts.get(r.item_id)!, r.satuan).factor : 1),
       harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" — sama seperti jalur simpanRekamMedis.

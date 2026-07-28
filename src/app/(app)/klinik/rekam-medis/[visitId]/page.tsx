@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { loadItemUnits, unitOptions, type ItemUnit } from "@/lib/satuan";
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
@@ -106,6 +107,7 @@ export default async function RekamMedisPage({
   type ItemLiteFull = {
     id: string; name: string; unit: string; sell_price: number; stok: number;
     is_compound_material: boolean; tindakan_kategori?: string | null;
+    units?: ItemUnit[];
   };
   let obatItems: ItemLiteFull[] = [];
   let bahanItems: ItemLiteFull[] = [];
@@ -122,9 +124,15 @@ export default async function RekamMedisPage({
       : { data: [] as { item_id: string; qty: number }[] };
     const stokByItem = new Map<string, number>();
     for (const s of stockRows ?? []) stokByItem.set(s.item_id as string, (stokByItem.get(s.item_id as string) ?? 0) + Number(s.qty));
+    // Satuan berjenjang: dokter bisa meresepkan per btl walau stok dihitung per ml.
+    const unitMap = await loadItemUnits(supabase, ids as string[]);
     const all = (itemRows ?? []).map((i) => ({
       id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
       sell_price: Number(i.sell_price), stok: stokByItem.get(i.id as string) ?? 0,
+      units: unitOptions(
+        { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
+        unitMap.get(i.id as string) ?? [],
+      ),
       is_compound_material: Boolean(i.is_compound_material),
       category_id: (i.category_id as string | null) ?? null,
       tindakan_kategori: (i.tindakan_kategori as string | null) ?? null,
