@@ -58,6 +58,16 @@ body {
 .topbar { height: 42px; background: #fff; border-bottom: .5px solid var(--bd); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .bc { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tm); }
 .ct { flex: 1; padding: 16px; overflow-y: auto; }
+
+/* Tab halaman ala Accurate — halaman yang dibuka nempel jadi tab. */
+.ptabs { display: flex; align-items: flex-end; gap: 2px; background: #e9edf3; border-bottom: .5px solid var(--bd); padding: 5px 10px 0; flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
+.ptabs::-webkit-scrollbar { display: none; }
+.ptab { display: inline-flex; align-items: center; gap: 6px; max-width: 190px; padding: 6px 10px; border-radius: 6px 6px 0 0; background: #dbe2ec; color: var(--tm); font-size: 11.5px; font-weight: 500; white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+.ptab:hover { background: #cfd8e5; }
+.ptab.on { background: #fff; color: var(--tx); font-weight: 600; cursor: default; box-shadow: 0 -1px 0 var(--acc) inset; }
+.ptab-l { overflow: hidden; text-overflow: ellipsis; color: inherit; text-decoration: none; }
+.ptab-x { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: none; border-radius: 3px; background: none; color: inherit; opacity: .55; cursor: pointer; font-size: 12px; flex-shrink: 0; }
+.ptab-x:hover { opacity: 1; background: rgba(0,0,0,.1); }
 .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px,1fr)); gap: 10px; margin-top: 13px; }
 .tile { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 13px 9px; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; position: relative; transition: border-color .1s; text-decoration: none; }
 .tile:hover { border-color: var(--acc); }

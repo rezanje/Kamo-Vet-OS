@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/Sidebar";
 import { Breadcrumb } from "@/components/Breadcrumb";
+import { PageTabs } from "@/components/PageTabs";
 import { Clock } from "@/components/Clock";
 import { KlinikTopbar } from "@/components/KlinikTopbar";
 import { getOpenShift } from "@/lib/shift";
@@ -54,10 +55,13 @@ export default async function AppLayout({
         {isStaff ? (
           <KlinikTopbar fullName={profile?.full_name ?? "Staff"} branchName={staffBranch?.branchName ?? "—"} />
         ) : (
-          <div className="topbar">
-            <Breadcrumb />
-            <Clock />
-          </div>
+          <>
+            <PageTabs />
+            <div className="topbar">
+              <Breadcrumb />
+              <Clock />
+            </div>
+          </>
         )}
         <div className="ct">{children}</div>
       </div>
