@@ -184,7 +184,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Barang & Jasa", icon: "ti-package", ...B, href: "/pos/sku" },
     { label: "Gudang", icon: "ti-building-warehouse", ...B, href: "/pengaturan/cabang" },
     { label: "Satuan Barang", icon: "ti-scale-outline", ...B, href: "/pos/satuan" },
-    { label: "Kategori Barang", icon: "ti-category", ...B },
+    { label: "Kategori Barang", icon: "ti-category", ...B, href: "/pos/kategori" },
     { label: "Merek Barang", icon: "ti-badge", ...B, href: "/pos/merek" },
     { label: "Barang Stok Minimum", icon: "ti-alert-triangle", ...P },
     { label: "Stok per Gudang", icon: "ti-stack", ...P, href: "/pos/stok" },
