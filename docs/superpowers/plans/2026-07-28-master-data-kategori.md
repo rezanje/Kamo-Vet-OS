@@ -43,7 +43,8 @@ select
   (select count(distinct lower(btrim(unit))) from items) as satuan_items_unik,
   (select count(*) from customers where kategori is not null) as cust_berkategori,
   (select count(*) from fixed_assets) as aset,
-  (select coalesce(sum(qty),0) from stock_layers) as total_layer_qty;
+  (select coalesce(sum(qty_left),0) from stock_layers) as total_layer_qty_left,
+  (select coalesce(sum(qty),0) from stock) as total_stock_qty;
 ```
 
 Kalau tabel `stock_layers` tidak ada dengan nama itu, jalankan `mcp__supabase__list_tables` dulu dan pakai nama tabel layer FIFO yang benar; catat namanya di komentar file migrasi.
@@ -179,7 +180,8 @@ select
   (select count(*) from items i left join units u on u.nama = i.unit where u.id is null) as satuan_yatim,
   (select count(*) from customers where category_id is null and kategori is not null) as cust_gagal_map,
   (select count(*) from fixed_assets where category_id is null) as aset_tanpa_kategori,
-  (select coalesce(sum(qty),0) from stock_layers) as total_layer_qty;
+  (select coalesce(sum(qty_left),0) from stock_layers) as total_layer_qty_left,
+  (select coalesce(sum(qty),0) from stock) as total_stock_qty;
 ```
 
 Harapan:
