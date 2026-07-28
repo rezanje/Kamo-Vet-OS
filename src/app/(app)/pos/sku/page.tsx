@@ -7,6 +7,7 @@ import { loadItemUnits, type ItemUnit } from "@/lib/satuan";
 import { ITEM_TYPES } from "@/lib/barang";
 import { BARANG_FIELDS } from "./data";
 import { toggleBarang } from "./actions";
+import { flatOptions, labelPath, type KategoriRow } from "@/lib/kategori";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -37,8 +38,12 @@ export default async function BarangJasaPage({
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   const bolehKelola = profile?.role === "OWNER" || profile?.role === "ADMIN";
 
-  const { data: categories } = await supabase.from("item_categories").select("id, name").order("name");
-  const cats = categories ?? [];
+  // Kategori bertingkat: chip filter & kolom kategori pakai label "Induk › Anak"
+  // supaya dua anak bernama mirip di induk berbeda tidak tertukar.
+  const { data: categories } = await supabase
+    .from("item_categories").select("id, name, parent_id, is_active").order("name");
+  const katRows = (categories ?? []) as KategoriRow[];
+  const cats = flatOptions(katRows); // chip filter: hanya kategori aktif
 
   let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name)`).order("name").limit(500);
   if (kat) q = q.eq("category_id", kat);
@@ -48,7 +53,9 @@ export default async function BarangJasaPage({
   const baseRows = (items ?? []) as unknown as Row[];
   const unitMap = await loadItemUnits(supabase, baseRows.map((r) => r.id));
   const rows: Row[] = baseRows.map((r) => ({ ...r, units: unitMap.get(r.id) ?? [] }));
-  const namaKat = new Map(cats.map((c) => [c.id, c.name]));
+  // Kolom kategori dipetakan dari SEMUA kategori (termasuk yang nonaktif) — barang
+  // lama tetap menunjukkan kategorinya, bukan tanda strip.
+  const namaKat = new Map(katRows.map((c) => [c.id, labelPath(c.id, katRows)]));
 
   const filterHref = (next: { kat?: string; jenis?: string }) => {
     const p = new URLSearchParams();
@@ -95,7 +102,7 @@ export default async function BarangJasaPage({
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         <Link href={filterHref({ kat: undefined })} className="back-btn" style={chip(!kat)}>Semua kategori</Link>
         {cats.map((c) => (
-          <Link key={c.id} href={filterHref({ kat: c.id })} className="back-btn" style={chip(kat === c.id)}>{c.name}</Link>
+          <Link key={c.id} href={filterHref({ kat: c.id })} className="back-btn" style={chip(kat === c.id)}>{c.label}</Link>
         ))}
       </div>
 

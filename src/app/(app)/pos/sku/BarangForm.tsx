@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
 import { ITEM_TYPES, ITEM_TYPE_HINT, type ItemType } from "@/lib/barang";
+import { flatOptions, type KategoriRow } from "@/lib/kategori";
 import type { ItemUnit } from "@/lib/satuan";
 import { simpanBarang } from "./actions";
 
@@ -23,9 +24,12 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const TABS = ["Umum", "Penjualan / Pembelian"] as const;
 type Tab = (typeof TABS)[number];
 
-export function BarangForm({ categories, brands, editing }: {
-  categories: { id: string; name: string }[];
+// `satuanMaster` = daftar satuan resmi (tabel units). Namanya dibedakan dari state
+// `units` di bawah, yang isinya satuan BERJENJANG milik barang ini.
+export function BarangForm({ categories, brands, satuanMaster, editing }: {
+  categories: KategoriRow[];
   brands: { id: string; name: string }[];
+  satuanMaster: { id: string; nama: string }[];
   editing: BarangRow | null;
 }) {
   const [tab, setTab] = useState<Tab>("Umum");
@@ -79,8 +83,11 @@ export function BarangForm({ categories, brands, editing }: {
             <label className="flab">Kategori barang *</label>
             <select className="fi" name="category_id" defaultValue={editing?.category_id ?? ""} required>
               <option value="">— pilih —</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {flatOptions(categories).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+              Belum ada? Tambah di <Link href="/pos/kategori" style={{ color: "#2563eb" }}>Kategori Barang</Link>.
+            </div>
           </div>
         </div>
 
@@ -119,10 +126,17 @@ export function BarangForm({ categories, brands, editing }: {
         <div className="frow">
           <div>
             <label className="flab">Satuan dasar *</label>
-            <input className="fi" name="unit" value={baseUnit} onChange={(e) => setBaseUnit(e.target.value)}
-              placeholder={isJasa ? "tindakan" : "pcs"} />
+            <select className="fi" name="unit" value={baseUnit} onChange={(e) => setBaseUnit(e.target.value)} required>
+              {/* Satuan lama yang sudah dinonaktifkan tetap ditawarkan saat mengedit
+                  barang yang memakainya — kalau tidak, nilainya hilang diam-diam. */}
+              {baseUnit && !satuanMaster.some((u) => u.nama === baseUnit) && (
+                <option value={baseUnit}>{baseUnit} (nonaktif)</option>
+              )}
+              {satuanMaster.map((u) => <option key={u.id} value={u.nama}>{u.nama}</option>)}
+            </select>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              Satuan terkecil — stok selalu dihitung di sini.
+              Satuan terkecil — stok selalu dihitung di sini. Daftarnya diatur di{" "}
+              <Link href="/pos/satuan" style={{ color: "#2563eb" }}>Satuan Barang</Link>.
             </div>
           </div>
           <div style={{ display: punyaStok ? "block" : "none" }}>
@@ -176,10 +190,17 @@ export function BarangForm({ categories, brands, editing }: {
               const hemat = f > 0 && baseSell > 0 && Number(u.sell_price) > 0 ? perDasar - baseSell : 0;
               return (
                 <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 6 }}>
-                  <div style={{ width: 92, flexShrink: 0 }}>
+                  <div style={{ width: 110, flexShrink: 0 }}>
                     {i === 0 && <label className="flab">Satuan</label>}
-                    <input className="fi" placeholder="box" value={u.unit} maxLength={20}
-                      onChange={(e) => setUnit(i, { unit: e.target.value })} />
+                    <select className="fi" value={u.unit} onChange={(e) => setUnit(i, { unit: e.target.value })}>
+                      <option value="">— pilih —</option>
+                      {u.unit && !satuanMaster.some((x) => x.nama === u.unit) && (
+                        <option value={u.unit}>{u.unit} (nonaktif)</option>
+                      )}
+                      {satuanMaster.filter((x) => x.nama !== dasar).map((x) => (
+                        <option key={x.id} value={x.nama}>{x.nama}</option>
+                      ))}
+                    </select>
                   </div>
                   <div style={{ width: 104, flexShrink: 0 }}>
                     {i === 0 && <label className="flab">Isi ({dasar})</label>}

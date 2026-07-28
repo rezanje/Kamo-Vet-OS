@@ -17,12 +17,14 @@ export async function siapkanFormBarang() {
     redirect(`/pos/sku?error=${encodeURIComponent("Hanya OWNER/ADMIN yang boleh mengubah master barang")}`);
   }
 
-  const [{ data: categories }, { data: brands }] = await Promise.all([
-    supabase.from("item_categories").select("id, name").order("name"),
+  const [{ data: categories }, { data: brands }, { data: units }] = await Promise.all([
+    // parent_id & is_active dipakai flatOptions() utk label bertingkat + buang cabang mati.
+    supabase.from("item_categories").select("id, name, parent_id, is_active").order("name"),
     supabase.from("brands").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("units").select("id, nama").eq("is_active", true).order("nama"),
   ]);
 
-  return { supabase, categories: categories ?? [], brands: brands ?? [] };
+  return { supabase, categories: categories ?? [], brands: brands ?? [], units: units ?? [] };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
