@@ -11,7 +11,8 @@ export default async function PelangganPage() {
   const { data: custData } = await supabase
     .from("customers")
     .select(
-      "id, name, phone, email, dob, address, tier, kategori, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
+      "id, name, phone, email, dob, address, tier, kategori, category_id, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
+        "customer_categories(nama, diskon_persen), " +
         "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)"
     )
     .order("total_spending", { ascending: false });
@@ -79,5 +80,10 @@ export default async function PelangganPage() {
 
   const enriched = customers.map((c) => ({ ...c, purchases: purByCust[c.id] ?? [], ledger: ledByCust[c.id] ?? [], stat: statByCust[c.id] ?? null }));
 
-  return <PelangganClient customers={enriched} isAdmin={isAdmin} />;
+  // Golongan aktif untuk dropdown; diskonnya ditampilkan biar admin sadar dampaknya.
+  const { data: katData } = await supabase
+    .from("customer_categories").select("id, nama, diskon_persen").eq("is_active", true).order("nama");
+  const categories = (katData ?? []).map((k) => ({ ...k, diskon_persen: Number(k.diskon_persen) }));
+
+  return <PelangganClient customers={enriched} isAdmin={isAdmin} categories={categories} />;
 }

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { updateKategoriPelanggan } from "./actions";
-import { KATEGORI_OPTIONS } from "./kategori";
 
 export type PetRow = {
   id: string; name: string; species: string | null; breed: string | null;
@@ -17,10 +16,19 @@ export type UnitStat = { petshopCount: number; petshopTotal: number; klinikCount
 export type CustomerRow = {
   id: string; name: string; phone: string; email: string | null;
   dob: string | null; address: string | null; tier: string | null;
-  kategori: string; points: number; total_spending: number;
+  kategori: string; category_id: string | null;
+  customer_categories: { nama: string; diskon_persen: number } | { nama: string; diskon_persen: number }[] | null;
+  points: number; total_spending: number;
   catatan: string | null; pekerjaan: string | null; sumber_info: string | null;
   created_at: string; pets: PetRow[];
   purchases: Purchase[]; ledger: Ledger[]; stat: UnitStat | null;
+};
+
+// Golongan pelanggan sekarang datang dari master (customer_categories, migrasi 0066);
+// customers.kategori (teks) tinggal jejak historis dan tidak dibaca lagi.
+const namaGolongan = (c: CustomerRow) => {
+  const k = Array.isArray(c.customer_categories) ? c.customer_categories[0] : c.customer_categories;
+  return k?.nama ?? "—";
 };
 
 const fmt = (n: number) => n.toLocaleString("id-ID");
@@ -119,14 +127,18 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin }: { customers: CustomerRow[]; isAdmin: boolean }) {
+export function PelangganClient({ customers, isAdmin, categories }: {
+  customers: CustomerRow[];
+  isAdmin: boolean;
+  categories: { id: string; nama: string; diskon_persen: number }[];
+}) {
   const [selId, setSelId] = useState<string | null>(customers[0]?.id ?? null);
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState("");
 
   const agg = useMemo(() => {
     const total = customers.length;
-    const member = customers.filter((c) => c.kategori === "Member").length;
+    const member = customers.filter((c) => namaGolongan(c) === "Member").length;
     const tierCounts: Record<string, number> = {};
     for (const k of TIER_ORDER) tierCounts[k] = customers.filter((c) => c.tier === k).length;
     return { total, member, nonMember: total - member, tierCounts };
@@ -244,7 +256,7 @@ export function PelangganClient({ customers, isAdmin }: { customers: CustomerRow
                         <span style={{ fontWeight: 500, fontSize: 11.5 }}>{c.name}</span>
                       </div>
                     </td>
-                    <td><KategoriBadge v={c.kategori} /></td>
+                    <td><KategoriBadge v={namaGolongan(c)} /></td>
                     <td><TierBadge c={c} /></td>
                     <td style={{ textAlign: "right", fontWeight: 500, fontSize: 11 }}>{rp(c.total_spending)}</td>
                     <td style={{ textAlign: "center" }}>{c.pets.length}</td>
@@ -279,13 +291,18 @@ export function PelangganClient({ customers, isAdmin }: { customers: CustomerRow
                   <Av initials={initials(sel.name)} color={colorFor(sel.id)} size={40} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{sel.name}</div>
-                    <div style={{ marginTop: 4, display: "flex", gap: 5 }}><KategoriBadge v={sel.kategori} /><TierBadge c={sel} /></div>
+                    <div style={{ marginTop: 4, display: "flex", gap: 5 }}><KategoriBadge v={namaGolongan(sel)} /><TierBadge c={sel} /></div>
                     {isAdmin && (
                       <form action={updateKategoriPelanggan} style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
                         <input type="hidden" name="id" value={sel.id} />
-                        <label style={{ fontSize: 10, color: "var(--tm)" }}>Kategori:</label>
-                        <select name="kategori" defaultValue={sel.kategori} className="fi" style={{ width: "auto", fontSize: 11, padding: "4px 8px" }} key={`kat-${sel.id}`}>
-                          {KATEGORI_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
+                        <label style={{ fontSize: 10, color: "var(--tm)" }}>Golongan:</label>
+                        <select name="category_id" defaultValue={sel.category_id ?? ""} className="fi" style={{ width: "auto", fontSize: 11, padding: "4px 8px" }} key={`kat-${sel.id}`}>
+                          <option value="">— tanpa golongan —</option>
+                          {categories.map((k) => (
+                            <option key={k.id} value={k.id}>
+                              {k.nama}{k.diskon_persen > 0 ? ` (${k.diskon_persen}%)` : ""}
+                            </option>
+                          ))}
                         </select>
                         <button type="submit" className="btn-acc" style={{ fontSize: 10, padding: "4px 10px" }}>Simpan</button>
                       </form>
