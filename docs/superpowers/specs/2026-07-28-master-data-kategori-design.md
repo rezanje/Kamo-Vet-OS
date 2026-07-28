@@ -34,6 +34,11 @@ Aturan bisnis yang dikunci:
 - `customers` (0001): punya `tier varchar(20)` (New→VIP) + `tier_settings` +
   `src/lib/customer-tier.ts`. **Strata belanja otomatis ini tetap jalan apa adanya**
   dan berdiri terpisah dari golongan baru.
+- **`customers.kategori` SUDAH ADA** (migrasi 0042, dulu bernama `keanggotaan`):
+  teks dengan daftar tetap `Umum | Member | B2B | Rescuer` di
+  `src/app/(app)/crm/pelanggan/kategori.ts`, diubah lewat `updateKategoriPelanggan`
+  di halaman pelanggan. Jadi golongan pelanggan **bukan fitur nol** — spec ini
+  menaikkannya jadi master data yang bisa diedit + punya diskon.
 - `fixed_assets` (0043): `kategori varchar(40) default 'Peralatan'` teks bebas,
   dropdown 4 opsi **hardcoded** di `/keuangan/aset/page.tsx`.
 - Penyusutan (`src/lib/depreciation.ts`) posting **satu jurnal agregat** ke
@@ -98,7 +103,6 @@ orang lain. Tidak pakai trigger DB (ponytail: satu pintu tulis, cukup dijaga di 
 
 ### Logika murni — `src/lib/kategori.ts` + test
 - `buildTree(rows): {induk, anak[]}[]` — urut nama, anak nempel ke induknya.
-- `rootOf(id, rows): id` — dipakai laporan buat meringkas per induk.
 - `labelPath(id, rows): string` — "Makanan › Makanan Kucing" untuk dropdown & tabel.
 - `validateParent(id, parentId, rows): string | null` — pesan error kalau melanggar
   batas 2 tingkat atau bikin lingkaran (kategori jadi induk dirinya sendiri).
@@ -111,8 +115,13 @@ Nonaktifkan induk → anaknya ikut disembunyikan dari dropdown pemilihan barang.
 
 ### Dampak
 - `/pos/sku`: dropdown kategori pakai `labelPath`, urut hasil `buildTree`.
-- Laporan yang mengelompokkan per kategori: tambah pilihan "ringkas per induk"
-  memakai `rootOf`. Tidak mengubah angka, cuma pengelompokan.
+
+### Batas scope
+**"Ringkas per induk" di laporan TIDAK dikerjakan di sini.** Audit ulang 2026-07-28:
+tidak ada satu pun laporan yang saat ini mengelompokkan barang per kategori
+(`src/lib/laporan.ts` & `/pos/stok` tidak menyentuh `category_id`), jadi ini bukan
+"menambah opsi" melainkan membuat laporan baru — pekerjaan lain. Kategori bertingkat
+tetap berguna tanpa itu: dropdown, daftar, dan migrasi dari Accurate.
 
 ## 3. Kategori Pemasok
 
@@ -128,8 +137,13 @@ Tanpa backfill (belum ada datanya). Seed 4 baris awal: Obat, Pakan, Alat, Jasa.
 Pola `/pos/merek`. Kolom "Dipakai" = jumlah pemasok.
 
 ### Dampak
-- Tab Pemasok di `/pembelian`: tambah kolom & dropdown Kategori.
-- Laporan hutang (`/keuangan/hutang`): tambah filter kategori pemasok.
+Tab Pemasok di `/pembelian`: tambah kolom & dropdown Kategori.
+
+### Batas scope
+**Filter kategori pemasok di `/keuangan/hutang` TIDAK dikerjakan di sini.** Halaman itu
+menyusun barisnya dari nama pemasok sebagai teks, jadi filternya butuh perubahan query
++ UI di halaman 12 KB yang tidak lain-lainnya tersentuh rilis ini. Nilai utamanya —
+pemasok punya kategori dan bisa dipetakan saat migrasi — sudah tercapai tanpa itu.
 
 ## 4. Kategori Aset
 
@@ -181,7 +195,15 @@ customer_categories(id, nama varchar(60) not null unique,
 customers + category_id uuid references customer_categories(id) on delete set null
 sales + diskon_kategori numeric not null default 0
 ```
-Seed: kosong (boss isi sendiri). Tanpa backfill — pelanggan lama tanpa golongan.
+### Backfill
+Seed `customer_categories` dari daftar tetap yang sekarang dipakai — Umum, Member,
+B2B, Rescuer — semuanya `diskon_persen = 0`, lalu `update customers set category_id`
+dengan pencocokan nama ke `customers.kategori`. Boss tinggal mengisi persennya dan
+menambah golongan baru; nol pelanggan kehilangan golongannya.
+
+`customers.kategori` (teks) **dibiarkan** sebagai jejak historis, tidak dihapus, tapi
+tidak lagi dibaca kode mana pun setelah rilis ini. `src/app/(app)/crm/pelanggan/kategori.ts`
+(daftar hardcoded) **dihapus** — penggantinya tabel master.
 
 `customers.tier` **tidak disentuh**. Satu pelanggan punya dua atribut independen:
 golongan (jenis, manual, memengaruhi harga) dan tier (strata belanja, otomatis,
@@ -214,7 +236,10 @@ Pola `/pos/merek` + kolom Diskon (%). Kolom "Dipakai" = jumlah pelanggan.
 Peringatan di halaman: diskon berlaku otomatis di kasir petshop.
 
 ### Dampak lain
-- Tab/daftar pelanggan `/crm/pelanggan`: tambah kolom & dropdown Golongan + filter.
+`/crm/pelanggan`: dropdown golongan yang sudah ada (baris ~287 `PelangganClient.tsx`)
+berhenti memakai daftar hardcoded, ganti ke baris `customer_categories` aktif yang
+dikirim dari `page.tsx`; `updateKategoriPelanggan` menulis `category_id` (bukan teks)
+dan memvalidasi id-nya ada di master. Badge golongan tetap, isinya dari master.
 
 ### Batas scope (sengaja TIDAK dikerjakan)
 - Filter golongan di laporan penjualan. Halaman master sudah menunjukkan siapa masuk
@@ -271,7 +296,7 @@ backfill, dijalankan sekali. RLS pola `brands` (permissive, guard peran di actio
 
 Logika murni (wajib, pola proyek — `npm test`):
 - `satuan-master.test.ts` — normalisasi & dedupe.
-- `kategori.test.ts` — pohon, `rootOf`, `labelPath`, `validateParent` (termasuk
+- `kategori.test.ts` — pohon, `labelPath`, `validateParent` (termasuk
   tolak 3 tingkat & tolak lingkaran).
 - `harga-golongan.test.ts` — diskon persen, pembulatan, cap `[0, subtotal]`.
 - `depreciation` (tambahan di test yang sudah ada) — jurnal 2 kategori tetap
