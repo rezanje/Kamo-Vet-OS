@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { TileGrid } from "@/components/ModuleHome";
@@ -177,7 +178,7 @@ export default async function PenjualanPage({
           <i className="ti ti-filter" /> Terapkan
         </button>
         {(dari || sampai) && (
-          <a href="/penjualan" className="btn-def" style={{ padding: "7px 14px", fontSize: 11, textDecoration: "none" }}>Reset</a>
+          <Link href="/penjualan" className="btn-def" style={{ padding: "7px 14px", fontSize: 11, textDecoration: "none" }}>Reset</Link>
         )}
       </form>
 

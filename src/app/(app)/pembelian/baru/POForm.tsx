@@ -2,6 +2,7 @@
 
 // ponytail: dynamic item rows serialized to hidden JSON, same pattern as PermintaanForm.
 
+import Link from "next/link";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
@@ -85,7 +86,7 @@ export function POForm({
             </select>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
               Tambah supplier baru di halaman{" "}
-              <a href="/pembelian?tab=supplier" style={{ color: "var(--tm)" }}>Pembelian → Supplier</a>.
+              <Link href="/pembelian?tab=supplier" style={{ color: "var(--tm)" }}>Pembelian → Supplier</Link>.
             </div>
           </div>
 
@@ -236,9 +237,9 @@ export function POForm({
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <a href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
+        <Link href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
           Batal
-        </a>
+        </Link>
         <button type="submit" className="btn-acc">
           <i className="ti ti-device-floppy" /> Simpan PO
         </button>

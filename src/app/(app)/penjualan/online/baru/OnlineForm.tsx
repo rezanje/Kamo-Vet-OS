@@ -1,6 +1,7 @@
 "use client";
 
 // ponytail: baris item dinamis diserialisasi ke hidden JSON — pola sama dengan POForm.
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { CHANNELS } from "@/lib/online";
@@ -219,7 +220,7 @@ export function OnlineForm({
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <a href="/penjualan/online" className="btn-def" style={{ textDecoration: "none" }}>Batal</a>
+        <Link href="/penjualan/online" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>
         <button type="submit" className="btn-acc">
           <i className="ti ti-device-floppy" /> Simpan order
         </button>
