@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { PersediaanBaruForm } from "./PersediaanBaruForm";
 
 export default async function BaruPermintaanKasirPage({
@@ -24,12 +25,8 @@ export default async function BaruPermintaanKasirPage({
     .eq("is_active", true)
     .order("name");
 
-  // katalog barang + kategori (buat item picker di form).
-  const { data: itemsRaw } = await supabase
-    .from("items")
-    .select("id, code, name, unit, item_categories(name)")
-    .eq("is_active", true)
-    .order("name");
+  // katalog barang (hanya Persediaan) + satuan berjenjang buat item picker.
+  const katalog = await loadKatalogPermintaan(supabase);
 
   // stok toko: gudang retail pertama cabang shift.
   const { data: wh } = await supabase
@@ -40,12 +37,7 @@ export default async function BaruPermintaanKasirPage({
     for (const s of st ?? []) stockMap[s.item_id as string] = Number(s.qty);
   }
 
-  type Rel = { name: string } | { name: string }[] | null;
-  const items = ((itemsRaw ?? []) as { id: string; code: string; name: string; unit: string; item_categories: Rel }[]).map((i) => ({
-    id: i.id, code: i.code, name: i.name, unit: i.unit,
-    kategori: (Array.isArray(i.item_categories) ? i.item_categories[0]?.name : i.item_categories?.name) ?? "Lainnya",
-    stok: stockMap[i.id] ?? 0,
-  }));
+  const items = katalog.map((i) => ({ ...i, stok: stockMap[i.id] ?? 0 }));
 
   const { data: profile } = await supabase
     .from("profiles").select("full_name").eq("id", user.id).maybeSingle();

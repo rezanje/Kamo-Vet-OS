@@ -99,7 +99,7 @@ export default async function PermintaanPage({
                 return (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 500, fontSize: 11.5 }}>
-                      {r.no_request ?? "—"}
+                      <Link href={`/pos/permintaan/${r.id}`} style={{ color: "var(--ac)" }}>{r.no_request ?? "—"}</Link>
                       {r.priority === "tinggi" && <span className="bge r" style={{ marginLeft: 6 }}>Tinggi</span>}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDt(r.created_at)}</td>
@@ -111,11 +111,10 @@ export default async function PermintaanPage({
                       <div style={{ display: "flex", gap: 5 }}>
                         {r.status === "Menunggu Persetujuan" && (
                           <>
-                            <form action={updateRequestStatus}>
-                              <input type="hidden" name="id" value={r.id} />
-                              <input type="hidden" name="status" value="Disetujui" />
-                              <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>Setujui</button>
-                            </form>
+                            {/* Persetujuan lewat halaman detail: qty kirim bisa disesuaikan dulu. */}
+                            <Link href={`/pos/permintaan/${r.id}`} className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                              Tinjau &amp; setujui
+                            </Link>
                             <form action={updateRequestStatus}>
                               <input type="hidden" name="id" value={r.id} />
                               <input type="hidden" name="status" value="Ditolak" />

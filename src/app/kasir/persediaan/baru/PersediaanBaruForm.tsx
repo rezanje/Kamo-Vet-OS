@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { buatPermintaanKasir } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { pickUnit } from "@/lib/satuan";
+import type { KatalogItem } from "@/lib/permintaan";
 
 type Warehouse = { id: string; name: string };
-type Item = { id: string; code: string; name: string; unit: string; kategori: string; stok: number };
-type Row = { item_id: string; qty_diminta: number; catatan: string };
+type Item = KatalogItem & { stok: number };
+type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: string };
 
 const today = "2026-07-01";
 
@@ -19,13 +21,17 @@ export function PersediaanBaruForm({
 
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const add = () => setRows((rs) => [...rs, { item_id: "", qty_diminta: 1, catatan: "" }]);
+  const add = () => setRows((rs) => [...rs, { item_id: "", qty_diminta: 1, satuan: "", catatan: "" }]);
   const del = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
 
-  // payload dikirim ke server: nama diambil dari master by item_id.
+  // Ganti barang → satuan ikut reset ke satuan dasar barang itu.
+  const setItem = (i: number, id: string) =>
+    set(i, { item_id: id, satuan: itemMap[id]?.units[0]?.unit ?? "" });
+
+  // payload dikirim ke server: nama & faktor satuan ditentukan ulang di server.
   const payload = rows
     .filter((r) => r.item_id)
-    .map((r) => ({ item_id: r.item_id, nama: itemMap[r.item_id]?.name ?? "", qty_diminta: r.qty_diminta, catatan: r.catatan }));
+    .map((r) => ({ item_id: r.item_id, qty_diminta: r.qty_diminta, satuan: r.satuan, catatan: r.catatan }));
   const totalItem = rows.reduce((a, r) => a + (Number(r.qty_diminta) || 0), 0);
 
   return (
@@ -110,13 +116,23 @@ export function PersediaanBaruForm({
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 10.5, color: "var(--tm)" }}>{it?.code ?? "—"}</td>
                     <td style={{ minWidth: 200 }}>
-                      <select className="fi" value={r.item_id} onChange={(e) => set(i, { item_id: e.target.value })} style={{ fontSize: 11 }}>
+                      <select className="fi" value={r.item_id} onChange={(e) => setItem(i, e.target.value)} style={{ fontSize: 11 }}>
                         <option value="">Pilih barang...</option>
                         {items.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{it?.kategori ?? "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{it?.unit ?? "—"}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>
+                      {/* Satuan berjenjang: minta per pcs / box / sak sesuai master SKU. */}
+                      {it && it.units.length > 1 ? (
+                        <select className="fi" value={r.satuan} onChange={(e) => set(i, { satuan: e.target.value })}
+                          style={{ fontSize: 11, width: 80, padding: "4px 5px" }}>
+                          {it.units.map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
+                        </select>
+                      ) : (
+                        it?.unit ?? "—"
+                      )}
+                    </td>
                     <td style={{ textAlign: "center", fontSize: 11, color: it && it.stok === 0 ? "#b91c1c" : "var(--tm)" }}>{it?.stok ?? "—"}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
@@ -126,6 +142,11 @@ export function PersediaanBaruForm({
                           style={{ width: 48, textAlign: "center", padding: "4px 4px" }} />
                         <button type="button" className="kpos-qtybtn" onClick={() => set(i, { qty_diminta: (Number(r.qty_diminta) || 0) + 1 })}>+</button>
                       </div>
+                      {it && pickUnit(it.units, r.satuan).factor !== 1 && (
+                        <div style={{ fontSize: 9, color: "var(--td)", textAlign: "center", marginTop: 2 }}>
+                          = {(Number(r.qty_diminta) || 0) * pickUnit(it.units, r.satuan).factor} {it.unit}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <input className="fi" placeholder="mis. stok menipis" value={r.catatan}

@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
-
-type ItemInput = { nama: string; qty_diminta: number };
+import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
 
 export async function buatPermintaan(formData: FormData) {
   const supabase = await createClient();
@@ -14,18 +13,15 @@ export async function buatPermintaan(formData: FormData) {
   const to_warehouse_id = String(formData.get("to_warehouse_id") ?? "");
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
-  let items: ItemInput[] = [];
-  try {
-    items = JSON.parse(String(formData.get("items") ?? "[]")) as ItemInput[];
-  } catch {
-    items = [];
+  if (!from_branch_id || !to_warehouse_id) {
+    redirect("/pos/permintaan/baru?error=" + encodeURIComponent("Cabang dan gudang tujuan wajib diisi."));
   }
-  // hanya baris dengan nama terisi yang dipakai.
-  items = items.filter((it) => (it.nama ?? "").trim().length > 0);
 
-  if (!from_branch_id || !to_warehouse_id || items.length === 0) {
-    redirect("/pos/permintaan/baru?error=" + encodeURIComponent("Cabang, gudang, dan minimal 1 item wajib diisi."));
-  }
+  // Satuan & jenis barang ditentukan ulang dari master — kiriman klien tidak dipercaya.
+  const input = parseBarisInput(formData.get("items"));
+  const master = await loadMasterPermintaan(supabase, input.map((b) => String(b.item_id ?? "")));
+  const { rows: baris, error: barisErr } = siapkanBaris(input, master);
+  if (barisErr) redirect("/pos/permintaan/baru?error=" + encodeURIComponent(barisErr));
 
   // no_request = PRM-YYYYMMDD-NNNN (urutan hari ini +1, padded 4). Today 2026-07-01.
   const now = new Date();
@@ -52,15 +48,49 @@ export async function buatPermintaan(formData: FormData) {
     redirect("/pos/permintaan/baru?error=" + encodeURIComponent("Gagal menyimpan permintaan."));
   }
 
-  const rows = items.map((it) => ({
-    request_id: (req as { id: string }).id,
-    nama: String(it.nama).slice(0, 160),
-    qty_diminta: Number(it.qty_diminta) || 0,
-  }));
-  await supabase.from("stock_request_items").insert(rows);
+  await supabase.from("stock_request_items").insert(
+    baris.map((b) => ({ ...b, request_id: (req as { id: string }).id })),
+  );
 
   revalidatePath("/pos/permintaan");
   redirect("/pos/permintaan?success=1");
+}
+
+// Setujui dgn penyesuaian qty (stok DC tidak selalu cukup). Baris yang tidak
+// dikirim sama sekali cukup diisi 0 — permintaannya tetap tercatat utuh.
+export async function setujuiPermintaan(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "");
+  const kembali = `/pos/permintaan/${id}`;
+
+  const { data: req } = await supabase.from("stock_requests").select("status").eq("id", id).maybeSingle();
+  if (!req) redirect(`/pos/permintaan?error=${encodeURIComponent("Permintaan tidak ditemukan")}`);
+  if (!canTransitionRequest(req!.status, "Disetujui")) {
+    redirect(`${kembali}?error=${encodeURIComponent(`Permintaan sudah berstatus ${req!.status}`)}`);
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  if (!canApprove(me?.role ?? "")) {
+    redirect(`${kembali}?error=${encodeURIComponent("Hanya Kepala Gudang / Manajer yang bisa menyetujui")}`);
+  }
+
+  // qty disetujui per baris — hanya baris milik permintaan ini yang boleh disentuh.
+  const { data: baris } = await supabase
+    .from("stock_request_items").select("id, qty_diminta").eq("request_id", id);
+  for (const b of (baris ?? []) as { id: string; qty_diminta: number }[]) {
+    const raw = formData.get(`qty_${b.id}`);
+    const qty = raw == null ? Number(b.qty_diminta) : Math.max(0, Number(raw) || 0);
+    await supabase.from("stock_request_items").update({ qty_disetujui: qty }).eq("id", b.id);
+  }
+
+  await supabase
+    .from("stock_requests")
+    .update({ status: "Disetujui", approved_by: user?.id ?? null })
+    .eq("id", id);
+
+  revalidatePath("/pos/permintaan");
+  redirect(`${kembali}?success=setuju`);
 }
 
 export async function updateRequestStatus(formData: FormData) {

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { PermintaanForm } from "./PermintaanForm";
 
 export default async function BaruPermintaanPage({
@@ -18,6 +19,7 @@ export default async function BaruPermintaanPage({
     .from("warehouses")
     .select("id, name")
     .order("name");
+  const items = await loadKatalogPermintaan(supabase);
 
   return (
     <>
@@ -35,7 +37,7 @@ export default async function BaruPermintaanPage({
         </div>
       )}
 
-      <PermintaanForm branches={branches ?? []} warehouses={warehouses ?? []} />
+      <PermintaanForm branches={branches ?? []} warehouses={warehouses ?? []} items={items} />
     </>
   );
 }

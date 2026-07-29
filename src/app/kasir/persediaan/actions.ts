@@ -6,8 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { receiptSummary } from "@/lib/stock-recon";
 import { transferStock } from "@/lib/inventory";
-
-type ItemInput = { item_id?: string; nama: string; qty_diminta: number; catatan?: string };
+import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
+import { toBaseQty } from "@/lib/satuan";
 
 // Buat permintaan barang dari dunia kasir — cabang asal otomatis dari shift terbuka.
 export async function buatPermintaanKasir(formData: FormData) {
@@ -22,18 +22,15 @@ export async function buatPermintaanKasir(formData: FormData) {
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const priority = String(formData.get("priority") ?? "normal") === "tinggi" ? "tinggi" : "normal";
 
-  let items: ItemInput[] = [];
-  try {
-    items = JSON.parse(String(formData.get("items") ?? "[]")) as ItemInput[];
-  } catch {
-    items = [];
+  if (!to_warehouse_id) {
+    redirect("/kasir/persediaan/baru?error=" + encodeURIComponent("Gudang tujuan wajib diisi."));
   }
-  // hanya baris dengan nama terisi yang dipakai.
-  items = items.filter((it) => (it.nama ?? "").trim().length > 0);
 
-  if (!to_warehouse_id || items.length === 0) {
-    redirect("/kasir/persediaan/baru?error=" + encodeURIComponent("Gudang tujuan dan minimal 1 item wajib diisi."));
-  }
+  // Satuan & jenis barang ditentukan ulang dari master — kiriman klien tidak dipercaya.
+  const input = parseBarisInput(formData.get("items"));
+  const master = await loadMasterPermintaan(supabase, input.map((b) => String(b.item_id ?? "")));
+  const { rows: baris, error: barisErr } = siapkanBaris(input, master);
+  if (barisErr) redirect("/kasir/persediaan/baru?error=" + encodeURIComponent(barisErr));
 
   // no_request = PRM-YYYYMMDD-NNNN (urutan hari ini +1, padded 4). Today 2026-07-01.
   const now = new Date();
@@ -60,14 +57,10 @@ export async function buatPermintaanKasir(formData: FormData) {
     redirect("/kasir/persediaan/baru?error=" + encodeURIComponent("Gagal menyimpan permintaan."));
   }
 
-  const rows = items.map((it) => ({
-    request_id: (req as { id: string }).id,
-    item_id: it.item_id || null, // tautan ke master barang (buat penerimaan/potong stok)
-    nama: String(it.nama).slice(0, 160),
-    qty_diminta: Number(it.qty_diminta) || 0,
-    catatan: (it.catatan ?? "").trim() || null, // §5: catatan per item ("stok menipis", dst)
-  }));
-  await supabase.from("stock_request_items").insert(rows);
+  // §5: catatan per item ("stok menipis", dst) ikut tersimpan dari siapkanBaris.
+  await supabase.from("stock_request_items").insert(
+    baris.map((b) => ({ ...b, request_id: (req as { id: string }).id })),
+  );
 
   revalidatePath("/kasir/persediaan");
   redirect("/kasir/persediaan?tab=permintaan&success=1");
@@ -104,6 +97,16 @@ export async function terimaBarang(formData: FormData) {
     redirect(`/kasir/persediaan?tab=penerimaan&error=${encodeURIComponent("Permintaan tidak ditemukan atau gudang pengirimnya kosong.")}`);
   }
 
+  // Satuan & faktor diambil dari baris permintaan yang tersimpan, bukan dari klien:
+  // stok selalu bertambah dalam satuan dasar (qty × faktor).
+  const { data: baris } = await supabase
+    .from("stock_request_items").select("id, satuan, faktor").eq("request_id", requestId);
+  const satuanOf = new Map(
+    ((baris ?? []) as { id: string; satuan: string | null; faktor: number }[]).map((b) => [
+      b.id, { satuan: b.satuan ?? "", faktor: Number(b.faktor) || 1 },
+    ]),
+  );
+
   const { data: wh } = await supabase
     .from("warehouses").select("id")
     .eq("branch_id", shift.branch_id).eq("is_active", true)
@@ -129,7 +132,7 @@ export async function terimaBarang(formData: FormData) {
         fromWarehouseId: req!.to_warehouse_id as string,
         toWarehouseId: wh!.id as string,
         itemId: row.item_id,
-        qty,
+        qty: toBaseQty(qty, satuanOf.get(row.id)?.faktor ?? 1),
         source: "terima-permintaan",
         ref: requestId,
       });
@@ -164,6 +167,8 @@ export async function terimaBarang(formData: FormData) {
       nama: String(r.nama ?? "").slice(0, 160) || "—",
       qty_ordered: Number(r.qty_diminta) || 0,
       qty_received: Number(r.qty_diterima) || 0,
+      satuan: satuanOf.get(r.id)?.satuan || null,
+      faktor: satuanOf.get(r.id)?.faktor ?? 1,
       condition: (r.kondisi || "baik").toLowerCase(),
       notes: (r.notes ?? "").trim() || null,
     })),

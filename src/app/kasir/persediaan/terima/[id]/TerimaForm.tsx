@@ -6,7 +6,10 @@ import { terimaBarang } from "../../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { receiptSummary } from "@/lib/stock-recon";
 
-type ItemIn = { id: string; item_id: string | null; nama: string; qty_diminta: number; catatan?: string | null };
+type ItemIn = {
+  id: string; item_id: string | null; nama: string; qty_diminta: number;
+  qty_disetujui?: number | null; satuan?: string | null; catatan?: string | null;
+};
 type Row = ItemIn & { qty_diterima: number; kondisi: string; notes: string };
 export type CatalogItem = { id: string; code: string; name: string; unit: string; upc: string | null; kategori: string };
 
@@ -27,8 +30,13 @@ export function TerimaForm({
   items: ItemIn[]; catalog: CatalogItem[];
   action?: (formData: FormData) => void | Promise<void>; backHref?: string;
 }) {
+  // Isi awal = qty yang DISETUJUI gudang (kalau gudang menyesuaikan), bukan qty diminta.
   const [rows, setRows] = useState<Row[]>(
-    items.map((it) => ({ ...it, qty_diterima: Number(it.qty_diminta) || 0, kondisi: "baik", notes: "" }))
+    items.map((it) => ({
+      ...it,
+      qty_diterima: Number(it.qty_disetujui ?? it.qty_diminta) || 0,
+      kondisi: "baik", notes: "",
+    }))
   );
   const [barcode, setBarcode] = useState("");
   const [scanMsg, setScanMsg] = useState<string | null>(null);
@@ -160,8 +168,14 @@ export function TerimaForm({
                       {r.catatan && <div style={{ fontSize: 9.5, color: "var(--td)" }}>catatan: {r.catatan}</div>}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{c?.kategori ?? "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{c?.unit ?? "—"}</td>
-                    <td style={{ textAlign: "center", fontSize: 11.5, color: "var(--tm)" }}>{r.qty_diminta}</td>
+                    {/* Satuan = satuan yang diminta toko (pcs/box/sak), bukan selalu satuan dasar. */}
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.satuan || c?.unit || "—"}</td>
+                    <td style={{ textAlign: "center", fontSize: 11.5, color: "var(--tm)" }}>
+                      {r.qty_diminta}
+                      {r.qty_disetujui != null && Number(r.qty_disetujui) !== Number(r.qty_diminta) && (
+                        <div style={{ fontSize: 9, color: "#b45309" }}>gudang setuju {Number(r.qty_disetujui)}</div>
+                      )}
+                    </td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
                         <button type="button" className="kpos-qtybtn" onClick={() => set(i, { qty_diterima: Math.max(0, (Number(r.qty_diterima) || 0) - 1) })}>−</button>

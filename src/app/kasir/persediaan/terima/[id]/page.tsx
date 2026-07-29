@@ -19,6 +19,8 @@ type ReqDetail = {
     item_id: string | null;
     nama: string;
     qty_diminta: number;
+    qty_disetujui: number | null;
+    satuan: string | null;
   }[] | null;
 };
 
@@ -37,7 +39,7 @@ export default async function TerimaBarangPage({
 
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, from_branch_id, warehouses(name), stock_request_items(id, item_id, nama, qty_diminta, catatan)")
+    .select("id, no_request, status, from_branch_id, warehouses(name), stock_request_items(id, item_id, nama, qty_diminta, qty_disetujui, satuan, catatan)")
     .eq("id", id)
     .maybeSingle();
 
