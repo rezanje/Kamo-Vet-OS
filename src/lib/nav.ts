@@ -141,8 +141,11 @@ export const TILES: Record<string, Tile[]> = {
   ],
   "kas-bank": [
     // Accurate: "Pembayaran" = bayar hutang pemasok, "Penerimaan" = terima piutang pelanggan.
-    { label: "Pembayaran", icon: "ti-cash", ...G, href: "/keuangan/hutang" },
-    { label: "Penerimaan", icon: "ti-cash-banknote", ...G, href: "/keuangan/piutang" },
+    // Kas Masuk/Keluar dipisah sendiri: uang kas TANPA faktur (petty cash).
+    { label: "Pembayaran Hutang", icon: "ti-cash", ...G, href: "/keuangan/hutang" },
+    { label: "Penerimaan Piutang", icon: "ti-cash-banknote", ...G, href: "/keuangan/piutang" },
+    { label: "Kas Keluar (Petty Cash)", icon: "ti-cash-off", ...G, href: "/kas-bank/kas-keluar" },
+    { label: "Kas Masuk", icon: "ti-wallet", ...G, href: "/kas-bank/kas-masuk" },
     { label: "Transfer Bank", icon: "ti-building-bank", ...G, href: "/kas-bank/transfer" },
     { label: "Rekonsiliasi Bank", icon: "ti-checkbox", ...P, href: "/keuangan/rekonsiliasi" },
     { label: "Daftar Rekening", icon: "ti-wallet", ...B, href: "/kas-bank/rekening" },
