@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { allowedBranchIds } from "@/lib/branch-access";
 import { SubmitButton } from "@/components/SubmitButton";
 import { mulaiShiftKlinik, tutupShiftKlinik } from "./actions";
 
@@ -69,8 +70,12 @@ export default async function KlinikShiftPage({
     );
   }
 
-  const { data: branches } = await supabase
-    .from("branches").select("id, name").eq("is_active", true).in("type", ["KLINIK", "BOTH"]).order("name");
+  // Cuma cabang penempatan akun ini yang boleh dipilih (peran global = semua).
+  const allowed = await allowedBranchIds(supabase, user.id);
+  let q = supabase
+    .from("branches").select("id, name").eq("is_active", true).in("type", ["KLINIK", "BOTH"]);
+  if (allowed !== null) q = q.in("id", allowed.length ? allowed : ["-"]);
+  const { data: branches } = await q.order("name");
 
   return (
     <div className="skl-wrap" style={{ minHeight: "60vh" }}>
@@ -111,6 +116,11 @@ export default async function KlinikShiftPage({
             <option value="" disabled>Pilih cabang tempat kamu bertugas</option>
             {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
+          {(branches ?? []).length === 0 && (
+            <div style={{ fontSize: 10.5, color: "#b91c1c", marginTop: 4 }}>
+              Akun kamu belum punya penempatan cabang klinik — hubungi admin.
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: 14 }}>

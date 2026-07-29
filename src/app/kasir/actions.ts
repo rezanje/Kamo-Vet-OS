@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 
 export type NewCustResult =
@@ -47,6 +48,14 @@ export async function mulaiShiftKasir(formData: FormData) {
   if (!branchId) redirect(`/kasir/mulai?error=${encodeURIComponent("Pilih cabang dulu")}`);
 
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/kasir/mulai?error=${encodeURIComponent("Sesi kamu habis — masuk ulang.")}`);
+
+  // RLS transaksi POS dilonggarkan untuk demo, jadi cabang dijaga di sini.
+  const allowed = await allowedBranchIds(supabase, user.id);
+  if (!canUseBranch(allowed, branchId)) {
+    redirect(`/kasir/mulai?error=${encodeURIComponent("Kamu tidak bertugas di cabang ini — pilih cabang penempatanmu.")}`);
+  }
+
   const { error } = await supabase
     .from("cashier_shifts")
     .insert({ branch_id: branchId, opened_by: user?.id ?? null, opening_balance: opening, shift_type: "petshop" });

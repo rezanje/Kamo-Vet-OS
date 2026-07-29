@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "@/lib/shift-calc";
 
 // Shift klinik (Addendum §1: shift_type 'klinik' — gate modul pembayaran klinik).
@@ -13,6 +14,14 @@ export async function mulaiShiftKlinik(formData: FormData) {
   if (!branchId) redirect(`/klinik/shift?error=${encodeURIComponent("Pilih cabang dulu")}`);
 
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/klinik/shift?error=${encodeURIComponent("Sesi kamu habis — masuk ulang.")}`);
+
+  // RLS transaksi klinik dilonggarkan untuk demo, jadi cabang dijaga di sini.
+  const allowed = await allowedBranchIds(supabase, user.id);
+  if (!canUseBranch(allowed, branchId)) {
+    redirect(`/klinik/shift?error=${encodeURIComponent("Kamu tidak bertugas di cabang ini — pilih cabang penempatanmu.")}`);
+  }
+
   const { error } = await supabase
     .from("cashier_shifts")
     .insert({ branch_id: branchId, opened_by: user?.id ?? null, opening_balance: opening, shift_type: "klinik" });

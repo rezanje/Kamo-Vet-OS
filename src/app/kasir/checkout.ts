@@ -112,10 +112,17 @@ export async function checkoutKasir(formData: FormData) {
   if (wh) {
     for (const r of rows) {
       if (!r.item_id) continue;
-      const { cost } = await stockOut(supabase, {
-        warehouseId: wh.id, itemId: r.item_id, qty: r.qty, source: "sale", ref: noStruk,
-      });
-      hppFifo += cost;
+      try {
+        const { cost } = await stockOut(supabase, {
+          warehouseId: wh.id, itemId: r.item_id, qty: r.qty, source: "sale", ref: noStruk,
+        });
+        hppFifo += cost;
+      } catch (e) {
+        // Struk sudah tersimpan — jangan bikin kasir crash di depan pelanggan.
+        // ponytail: dicatat ke log server saja; kalau ini pernah kejadian beneran,
+        // naikkan jadi notifikasi backoffice + antrean koreksi stok.
+        console.error(`[stok] gagal potong stok ${noStruk} item ${r.item_id}:`, e);
+      }
     }
   }
 

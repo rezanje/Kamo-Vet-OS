@@ -29,16 +29,27 @@ export function consumeLayers(layers: Layer[], qty: number): Consumption {
   return { takes, cost, shortfall: Math.max(0, sisa) };
 }
 
+// Kegagalan tulis stok WAJIB meledak, bukan didiamkan: dokumen penerimaan yang
+// bilang "berhasil" padahal stok tidak bertambah adalah bug yang mahal.
+export class StockError extends Error {}
+
+function orThrow(error: { message?: string } | null, what: string) {
+  if (error) throw new StockError(`${what}: ${error.message ?? "gagal"}`);
+}
+
 async function adjustStockQty(supabase: AnyClient, warehouseId: string, itemId: string, delta: number) {
-  const { data: st } = await supabase
+  const { data: st, error: readErr } = await supabase
     .from("stock").select("qty")
     .eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
+  orThrow(readErr, "baca stok");
   if (st) {
-    await supabase.from("stock")
+    const { error } = await supabase.from("stock")
       .update({ qty: Number(st.qty) + delta, updated_at: new Date().toISOString() })
       .eq("warehouse_id", warehouseId).eq("item_id", itemId);
+    orThrow(error, "ubah stok");
   } else {
-    await supabase.from("stock").insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
+    const { error } = await supabase.from("stock").insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
+    orThrow(error, "buat stok");
   }
 }
 
@@ -50,12 +61,13 @@ export type StockInOpts = {
 // Stok masuk: buat layer baru + naikkan qty.
 export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void> {
   if (o.qty <= 0) return;
-  await supabase.from("stock_layers").insert({
+  const { error } = await supabase.from("stock_layers").insert({
     warehouse_id: o.warehouseId, item_id: o.itemId,
     tanggal: o.tanggal ?? new Date().toISOString().slice(0, 10),
     qty_in: o.qty, qty_left: o.qty, unit_cost: o.unitCost,
     source: o.source, source_ref: o.ref ?? null,
   });
+  orThrow(error, "catat lapisan stok masuk");
   await adjustStockQty(supabase, o.warehouseId, o.itemId, o.qty);
 }
 
@@ -69,21 +81,23 @@ export type StockOutOpts = {
 export async function stockOut(supabase: AnyClient, o: StockOutOpts): Promise<{ cost: number }> {
   if (o.qty <= 0) return { cost: 0 };
 
-  const { data: layersRaw } = await supabase
+  const { data: layersRaw, error: layerErr } = await supabase
     .from("stock_layers")
     .select("id, qty_left, unit_cost")
     .eq("warehouse_id", o.warehouseId).eq("item_id", o.itemId)
     .gt("qty_left", 0)
     .order("tanggal", { ascending: true })
     .order("created_at", { ascending: true });
+  orThrow(layerErr, "baca lapisan stok");
 
   const { takes, cost, shortfall } = consumeLayers((layersRaw ?? []) as Layer[], o.qty);
 
   for (const t of takes) {
     const layer = (layersRaw ?? []).find((l: Layer) => l.id === t.id);
-    await supabase.from("stock_layers")
+    const { error } = await supabase.from("stock_layers")
       .update({ qty_left: Number(layer?.qty_left ?? 0) - t.qty })
       .eq("id", t.id);
+    orThrow(error, "kurangi lapisan stok");
   }
 
   let extra = 0;

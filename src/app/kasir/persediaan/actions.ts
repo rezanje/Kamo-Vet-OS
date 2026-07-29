@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { receiptSummary } from "@/lib/stock-recon";
-import { stockInAtBuyPrice } from "@/lib/inventory";
+import { transferStock } from "@/lib/inventory";
 
 type ItemInput = { item_id?: string; nama: string; qty_diminta: number; catatan?: string };
 
@@ -95,6 +95,52 @@ export async function terimaBarang(formData: FormData) {
     rows = [];
   }
 
+  // Gudang asal (DC pengirim) & gudang tujuan (retail cabang shift) wajib ketemu.
+  // Dulu blok stok diam-diam dilewati kalau gudang tujuan tidak ada → dokumen bilang
+  // "berhasil" tapi stok tidak pernah bertambah.
+  const { data: req } = await supabase
+    .from("stock_requests").select("to_warehouse_id").eq("id", requestId).maybeSingle();
+  if (!req?.to_warehouse_id) {
+    redirect(`/kasir/persediaan?tab=penerimaan&error=${encodeURIComponent("Permintaan tidak ditemukan atau gudang pengirimnya kosong.")}`);
+  }
+
+  const { data: wh } = await supabase
+    .from("warehouses").select("id")
+    .eq("branch_id", shift.branch_id).eq("is_active", true)
+    .order("code").limit(1).maybeSingle();
+  if (!wh) {
+    redirect(`/kasir/persediaan?tab=penerimaan&error=${encodeURIComponent("Cabang ini belum punya gudang aktif — stok tidak bisa masuk. Hubungi admin.")}`);
+  }
+
+  // Pindah stok DULU (DC berkurang → cabang bertambah). Kalau gagal, dokumen
+  // penerimaan tidak jadi dibuat — lebih baik gagal terang daripada "berhasil" palsu.
+  // Hanya barang kondisi "baik" yang jadi stok jual; rusak/kurang tetap tercatat penuh
+  // di dokumen TRM sebagai basis klaim ke DC.
+  // ponytail: gagal di tengah loop bisa menyisakan sebagian item terpindah — upgrade
+  // ke RPC Postgres satu transaksi kalau ini pernah kejadian di produksi.
+  let stokErr: string | null = null;
+  try {
+    for (const row of rows) {
+      if (!row.item_id) continue;
+      if ((row.kondisi || "baik").toLowerCase() !== "baik") continue;
+      const qty = Number(row.qty_diterima) || 0;
+      if (qty <= 0) continue;
+      await transferStock(supabase, {
+        fromWarehouseId: req!.to_warehouse_id as string,
+        toWarehouseId: wh!.id as string,
+        itemId: row.item_id,
+        qty,
+        source: "terima-permintaan",
+        ref: requestId,
+      });
+    }
+  } catch (e) {
+    stokErr = e instanceof Error ? e.message : "gagal memperbarui stok";
+  }
+  if (stokErr) {
+    redirect(`/kasir/persediaan?tab=penerimaan&error=${encodeURIComponent(`Penerimaan dibatalkan — stok gagal diperbarui (${stokErr})`)}`);
+  }
+
   // dokumen penerimaan TRM-YYMMDD-NNN (§5).
   const now = new Date();
   const ymd = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
@@ -137,30 +183,7 @@ export async function terimaBarang(formData: FormData) {
 
   // ponytail: transfer internal antar gudang sendiri (DC → cabang) tidak dijurnal ulang —
   // nilainya sudah tercatat sbg Persediaan saat stok masuk di gudang asal; di sini cuma
-  // pindah lokasi qty ke gudang cabang penerima.
-  const { data: wh } = await supabase
-    .from("warehouses")
-    .select("id")
-    .eq("branch_id", shift.branch_id)
-    .eq("is_active", true)
-    .order("code")
-    .limit(1)
-    .maybeSingle();
-
-  if (wh) {
-    for (const row of rows) {
-      if (!row.item_id) continue;
-      // Hanya barang kondisi "baik" yang masuk stok jual. Rusak/kurang tetap tercatat
-      // penuh di dokumen TRM (stock_receipt_items.condition) sebagai basis klaim ke DC,
-      // tapi tidak boleh jadi stok yang bisa dijual.
-      if ((row.kondisi || "baik").toLowerCase() !== "baik") continue;
-      const qty = Number(row.qty_diterima) || 0;
-      if (qty <= 0) continue;
-
-      // layer FIFO baru @ buy_price (penerimaan internal dari permintaan barang)
-      await stockInAtBuyPrice(supabase, { warehouseId: wh.id, itemId: row.item_id, qty, source: "terima-permintaan" });
-    }
-  }
+  // pindah lokasi qty (sudah dikerjakan di atas sebelum dokumen dibuat).
 
   revalidatePath("/kasir/persediaan");
   redirect(`/kasir/persediaan?tab=penerimaan&success=terima&trm=${receiptNumber}&selisih=${summary.selisih}`);

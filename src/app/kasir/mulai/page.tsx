@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { allowedBranchIds } from "@/lib/branch-access";
 import { mulaiShiftKasir } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -19,8 +20,12 @@ export default async function MulaiShiftPage({
   const shift = await getOpenShift(supabase as never, user.id);
   if (shift) redirect("/kasir");
 
-  const { data: branches } = await supabase
-    .from("branches").select("id, name").eq("is_active", true).in("type", ["PETSHOP", "BOTH"]).order("name");
+  // Cuma cabang penempatan akun ini yang boleh dipilih (peran global = semua).
+  const allowed = await allowedBranchIds(supabase, user.id);
+  let q = supabase
+    .from("branches").select("id, name").eq("is_active", true).in("type", ["PETSHOP", "BOTH"]);
+  if (allowed !== null) q = q.in("id", allowed.length ? allowed : ["-"]);
+  const { data: branches } = await q.order("name");
 
   return (
     <div className="pshop-wrap">
@@ -62,6 +67,11 @@ export default async function MulaiShiftPage({
             <option value="" disabled>Pilih cabang tempat kamu bertugas</option>
             {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
+          {(branches ?? []).length === 0 && (
+            <div style={{ fontSize: 10.5, color: "#b91c1c", marginTop: 4 }}>
+              Akun kamu belum punya penempatan cabang petshop — hubungi admin.
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: 14 }}>
