@@ -143,8 +143,9 @@ export const TILES: Record<string, Tile[]> = {
     // Accurate: "Pembayaran" = bayar hutang pemasok, "Penerimaan" = terima piutang pelanggan.
     { label: "Pembayaran", icon: "ti-cash", ...G, href: "/keuangan/hutang" },
     { label: "Penerimaan", icon: "ti-cash-banknote", ...G, href: "/keuangan/piutang" },
-    { label: "Transfer Bank", icon: "ti-building-bank", ...G },
+    { label: "Transfer Bank", icon: "ti-building-bank", ...G, href: "/kas-bank/transfer" },
     { label: "Rekonsiliasi Bank", icon: "ti-checkbox", ...P, href: "/keuangan/rekonsiliasi" },
+    { label: "Daftar Rekening", icon: "ti-wallet", ...B, href: "/kas-bank/rekening" },
     { label: "Payment Gateway", icon: "ti-credit-card", ...B },
     { label: "Arus Kas", icon: "ti-arrows-exchange", ...P, href: "/keuangan/arus-kas" },
   ],
