@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { parseLampiran } from "@/lib/dokumen";
 
 // Catat pengeluaran dari dunia kasir — cabang otomatis dari shift terbuka (bukan pilihan bebas).
 export async function simpanPengeluaranKasir(formData: FormData) {
@@ -18,6 +19,12 @@ export async function simpanPengeluaranKasir(formData: FormData) {
   if (!kategori) redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Pilih kategori dulu")}`);
   if (jumlah <= 0) redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Jumlah pengeluaran harus lebih dari 0")}`);
 
+  // Pengeluaran WAJIB berlampir bukti — kas keluar tanpa nota tidak bisa diaudit.
+  const lampiran = parseLampiran(formData.get("lampiran"));
+  if (lampiran.length === 0) {
+    redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Lampiran bukti wajib diisi sebelum pengeluaran bisa disimpan")}`);
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
 
   // Tempel ke shift berjalan biar pengeluaran tunai ikut ngurangin kas seharusnya saat tutup shift.
@@ -25,20 +32,24 @@ export async function simpanPengeluaranKasir(formData: FormData) {
     .from("cashier_shifts").select("id")
     .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
 
-  const { error } = await supabase.from("expenses").insert({
+  const { data: expense, error } = await supabase.from("expenses").insert({
     branch_id: branchId,
     tanggal: tanggal || undefined,
     kategori,
     deskripsi: deskripsi || null,
     jumlah,
     metode_bayar: metode,
-    bukti_url: null, // ponytail: skip upload bukti, kolom dibiarkan null sesuai spec.
+    bukti_url: lampiran[0].path,
     shift_id: shift?.id ?? null,
     created_by: user?.id ?? null,
-  });
-  if (error) {
+  }).select("id").single();
+  if (error || !expense) {
     redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
   }
+
+  await supabase.from("document_attachments").insert(
+    lampiran.map((l) => ({ ...l, modul: "pengeluaran", ref_id: expense!.id, uploaded_by: user?.id ?? null })),
+  );
 
   // Accounting: Dr Beban, Cr Kas/Bank.
   const kategoriToCode: Record<string, string> = {

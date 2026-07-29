@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { LampiranPicker } from "@/components/LampiranPicker";
 import { simpanPengeluaranKasir } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -112,7 +113,10 @@ export default async function PengeluaranKasirPage({
                 {METODE.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
-            {/* ponytail: upload bukti belum diwire — kolom bukti_url dibiarkan null sesuai spec. */}
+            <div style={{ marginBottom: 14 }}>
+              <label className="flab">Lampiran bukti *</label>
+              <LampiranPicker folder="pengeluaran" wajib />
+            </div>
             <button type="submit" className="pay-btn" style={{ width: "100%" }}>Simpan Pengeluaran</button>
           </form>
         </div>

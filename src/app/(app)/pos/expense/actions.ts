@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { parseLampiran } from "@/lib/dokumen";
 
 export async function simpanExpense(formData: FormData) {
   const supabase = await createClient();
@@ -17,21 +18,32 @@ export async function simpanExpense(formData: FormData) {
   if (!kategori) redirect(`/pos/expense?error=${encodeURIComponent("Pilih kategori dulu")}`);
   if (jumlah <= 0) redirect(`/pos/expense?error=${encodeURIComponent("Jumlah pengeluaran harus lebih dari 0")}`);
 
+  // Pengeluaran WAJIB berlampir bukti — tanpa nota/bukti transfer, kas keluar tidak
+  // bisa diaudit dan itu justru lubang paling gampang disalahgunakan.
+  const lampiran = parseLampiran(formData.get("lampiran"));
+  if (lampiran.length === 0) {
+    redirect(`/pos/expense?error=${encodeURIComponent("Lampiran bukti wajib diisi sebelum pengeluaran bisa disimpan")}`);
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { error } = await supabase.from("expenses").insert({
+  const { data: expense, error } = await supabase.from("expenses").insert({
     branch_id: branchId,
     tanggal: tanggal || undefined,
     kategori,
     deskripsi: deskripsi || null,
     jumlah,
     metode_bayar: metode,
-    bukti_url: null, // ponytail: skip upload bukti, kolom dibiarkan null sesuai spec.
+    bukti_url: lampiran[0].path,
     created_by: user?.id ?? null,
-  });
-  if (error) {
+  }).select("id").single();
+  if (error || !expense) {
     redirect(`/pos/expense?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
   }
+
+  await supabase.from("document_attachments").insert(
+    lampiran.map((l) => ({ ...l, modul: "pengeluaran", ref_id: expense!.id, uploaded_by: user?.id ?? null })),
+  );
 
   // Accounting: Dr Beban, Cr Kas/Bank.
   const kategoriToCode: Record<string, string> = {

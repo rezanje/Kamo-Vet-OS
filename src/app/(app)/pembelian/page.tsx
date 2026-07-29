@@ -154,7 +154,9 @@ export default async function PembelianPage({
                   const beda = adaSelisih(items);
                   return (
                     <tr key={po.id}>
-                      <td style={{ fontWeight: 500, fontSize: 11.5 }}>{po.no_po ?? "—"}</td>
+                      <td style={{ fontWeight: 500, fontSize: 11.5 }}>
+                        <Link href={`/pembelian/${po.id}`} style={{ color: "var(--ac)" }}>{po.no_po ?? "—"}</Link>
+                      </td>
                       <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(po.tanggal)}</td>
                       <td style={{ fontSize: 11.5 }}>{sup?.nama ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
                       <td style={{ fontSize: 11.5 }}>{wh?.name ?? <span style={{ color: "var(--td)" }}>—</span>}</td>

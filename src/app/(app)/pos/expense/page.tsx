@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { LampiranPicker } from "@/components/LampiranPicker";
 import { simpanExpense } from "./actions";
 
 type Rel<T> = T | T[] | null;
@@ -103,7 +104,10 @@ export default async function ExpensePage({
               <input className="fi" name="deskripsi" type="text" placeholder="Keterangan pengeluaran (opsional)" />
             </div>
           </div>
-          {/* ponytail: tanpa upload bukti — bukti_url dibiarkan null sesuai spec. */}
+          <div style={{ marginTop: 12, borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
+            <label className="flab">Lampiran bukti *</label>
+            <LampiranPicker folder="pengeluaran" wajib />
+          </div>
           <div style={{ marginTop: 12, borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
             <button type="submit" className="btn-acc"><i className="ti ti-plus" /> Simpan Pengeluaran</button>
           </div>
@@ -115,7 +119,7 @@ export default async function ExpensePage({
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
             <thead>
-              <tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Cabang</th><th>Metode</th><th style={{ textAlign: "right" }}>Jumlah</th></tr>
+              <tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Cabang</th><th>Metode</th><th style={{ textAlign: "right" }}>Jumlah</th><th style={{ textAlign: "center" }}>Dokumen</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => {
@@ -128,11 +132,16 @@ export default async function ExpensePage({
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.metode_bayar}</td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>
+                    <td style={{ textAlign: "center" }}>
+                      <Link href={`/pos/expense/${r.id}`} className="btn-def" style={{ padding: "2px 8px", fontSize: 10, textDecoration: "none" }} title="Lihat bukti & dokumen">
+                        <i className="ti ti-paperclip" />
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada pengeluaran tercatat.</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada pengeluaran tercatat.</td></tr>
               )}
             </tbody>
           </table>

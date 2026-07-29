@@ -8,7 +8,7 @@ type Row = {
   tanggal: string;
   keterangan: string | null;
   total: number;
-  sales: { no_struk: string | null; customers: { name: string } | null } | null;
+  sales: { id: string; no_struk: string | null; customers: { name: string } | null } | null;
   sales_return_items: { id: string }[] | null;
 };
 
@@ -26,7 +26,7 @@ export default async function ReturJualPage({
 
   const { data } = await supabase
     .from("sales_returns")
-    .select("id, no_retur, tanggal, keterangan, total, sales(no_struk, customers(name)), sales_return_items(id)")
+    .select("id, no_retur, tanggal, keterangan, total, sales(id, no_struk, customers(name)), sales_return_items(id)")
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
@@ -81,7 +81,12 @@ export default async function ReturJualPage({
                 <tr key={r.id}>
                   <td style={{ fontWeight: 500, fontSize: 11.5 }}>{r.no_retur}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtD(r.tanggal)}</td>
-                  <td style={{ fontSize: 11.5 }}>{r.sales?.no_struk ?? "—"}</td>
+                  <td style={{ fontSize: 11.5 }}>
+                    {/* Klik nomor struk → rincian penjualannya (dulu buntu di sini). */}
+                    {r.sales?.id
+                      ? <Link href={`/penjualan/${r.sales.id}`} style={{ color: "var(--ac)" }}>{r.sales.no_struk ?? "—"}</Link>
+                      : (r.sales?.no_struk ?? "—")}
+                  </td>
                   <td style={{ fontSize: 11.5 }}>{r.sales?.customers?.name ?? "Umum"}</td>
                   <td style={{ textAlign: "center", fontSize: 11.5 }}>{r.sales_return_items?.length ?? 0}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? ""}</td>
