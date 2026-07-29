@@ -8,7 +8,9 @@ import { hariIniWIB } from "@/lib/followup";
 import { postJournal } from "@/lib/posting";
 
 const BACK = "/kas-bank/rekening";
-const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
+// Tipe ditulis di variabelnya (bukan cuma di arrow) supaya TypeScript memakai
+// `never` untuk mempersempit tipe sesudah pemanggilan.
+const gagal: (msg: string) => never = (msg) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 
 export async function tambahRekening(formData: FormData) {
   const supabase = await assertMasterAdmin(BACK, "daftar rekening");
