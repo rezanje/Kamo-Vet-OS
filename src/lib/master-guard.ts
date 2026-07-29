@@ -1,10 +1,9 @@
-// Guard peran untuk semua halaman master data (satuan, kategori barang/pemasok/
-// aset/pelanggan). Pola diangkat dari pos/merek/actions.ts supaya aturannya
-// satu tempat: OWNER/ADMIN boleh menulis, role lain read-only.
+// Guard peran untuk halaman master data & transaksi keuangan. Aturannya satu
+// tempat: OWNER/ADMIN boleh mengubah master data, FINANCE ikut untuk Kas & Bank.
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-const BOLEH = ["OWNER", "ADMIN"];
+const ADMIN = ["OWNER", "ADMIN"];
 
 async function roleSaya() {
   const supabase = await createClient();
@@ -15,16 +14,26 @@ async function roleSaya() {
 }
 
 // Dipakai server action: menulis tanpa hak = tendang balik dengan pesan.
-export async function assertMasterAdmin(back: string, apa: string) {
+export async function assertRole(back: string, apa: string, boleh: string[]) {
   const { supabase, role } = await roleSaya();
-  if (!BOLEH.includes(role)) {
-    redirect(`${back}?error=${encodeURIComponent(`Hanya OWNER/ADMIN yang boleh mengubah ${apa}`)}`);
+  if (!boleh.includes(role)) {
+    redirect(`${back}?error=${encodeURIComponent(`Kamu tidak punya hak untuk mengubah ${apa}`)}`);
   }
   return supabase;
+}
+
+export async function assertMasterAdmin(back: string, apa: string) {
+  return assertRole(back, apa, ADMIN);
 }
 
 // Dipakai server component: staf tetap boleh LIHAT daftarnya, form-nya saja disembunyikan.
 export async function bolehKelolaMaster(): Promise<boolean> {
   const { role } = await roleSaya();
-  return BOLEH.includes(role);
+  return ADMIN.includes(role);
+}
+
+// Kas & Bank: transaksi, bukan master data — FINANCE ikut boleh.
+export async function bolehTransaksiKas(): Promise<boolean> {
+  const { role } = await roleSaya();
+  return [...ADMIN, "FINANCE"].includes(role);
 }
