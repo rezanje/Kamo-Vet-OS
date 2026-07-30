@@ -13,6 +13,7 @@ const menuItem: React.CSSProperties = {
 
 const TABS = [
   { href: "/kasir", label: "Kasir", icon: "ti-building-store", exact: true },
+  { href: "/kasir/retur", label: "Retur", icon: "ti-receipt-refund", exact: false },
   { href: "/kasir/pengeluaran", label: "Pengeluaran", icon: "ti-receipt-2", exact: false },
   { href: "/kasir/persediaan", label: "Persediaan", icon: "ti-stack", exact: false },
   { href: "/kasir/quest", label: "Quest", icon: "ti-trophy", exact: false },

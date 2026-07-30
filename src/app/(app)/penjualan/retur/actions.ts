@@ -21,11 +21,18 @@ export async function buatReturJual(formData: FormData) {
   const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
+  // Dipakai dua dunia: backoffice (/penjualan/retur) & layar kasir (/kasir/retur).
+  // Kasir mengirim lock_branch_id supaya tidak bisa meretur struk cabang lain.
+  const kasir = String(formData.get("dari") ?? "") === "kasir";
+  const lockBranchId = String(formData.get("lock_branch_id") ?? "").trim();
+  const formHref = kasir ? "/kasir/retur" : "/penjualan/retur/baru";
+  const listHref = kasir ? "/kasir/retur" : "/penjualan/retur";
+
   let items: ItemInput[] = [];
   try { items = JSON.parse(String(formData.get("items") ?? "[]")) as ItemInput[]; } catch { items = []; }
   items = items.filter((it) => it.item_id && Number(it.qty) > 0);
 
-  const fail = (msg: string) => redirect("/penjualan/retur/baru?error=" + encodeURIComponent(msg));
+  const fail = (msg: string) => redirect(`${formHref}?error=` + encodeURIComponent(msg));
 
   if (!sale_id || items.length === 0) fail("Pilih struk dan minimal 1 barang.");
 
@@ -36,6 +43,9 @@ export async function buatReturJual(formData: FormData) {
     .select("id, no_struk, branch_id, sale_items(item_id, qty, harga, faktor)")
     .eq("id", sale_id).is("channel", null).single();
   if (!sale) fail("Struk tidak ditemukan, atau merupakan order online — retur online tidak didukung di sini.");
+  if (lockBranchId && sale!.branch_id !== lockBranchId) {
+    fail("Struk ini bukan penjualan cabang kamu — retur hanya bisa di cabang tempat barang dijual.");
+  }
 
   // qty terjual & harga per item dari struk — dinormalkan ke SATUAN DASAR, karena
   // satu struk bisa memuat item yang sama dalam dua satuan (1 box + 3 pcs).
@@ -155,8 +165,8 @@ export async function buatReturJual(formData: FormData) {
     });
   }
 
-  revalidatePath("/penjualan/retur");
-  redirect("/penjualan/retur?success=" + encodeURIComponent(`Retur ${no_retur} tersimpan.`));
+  revalidatePath(listHref);
+  redirect(`${listHref}?success=` + encodeURIComponent(`Retur ${no_retur} tersimpan.`));
 }
 
 // ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan).

@@ -1,6 +1,8 @@
 import { PengeluaranDetail } from "@/components/pengeluaran/PengeluaranDetail";
 
-export default async function ExpenseDetailPage({
+// Jalur FINANCE ke bukti pengeluaran: sidebar mereka memuat Buku Besar,
+// bukan modul Persediaan.
+export default async function BebanDetailPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
@@ -11,8 +13,8 @@ export default async function ExpenseDetailPage({
   return (
     <PengeluaranDetail
       id={id}
-      kembaliHref="/pos/expense"
-      kembaliLabel="Kembali"
+      kembaliHref="/buku-besar/beban"
+      kembaliLabel="Kembali ke Pencatatan Beban"
       success={success}
       error={error}
     />

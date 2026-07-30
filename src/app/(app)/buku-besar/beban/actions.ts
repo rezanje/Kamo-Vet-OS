@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { parseLampiran } from "@/lib/dokumen";
 import { KATEGORI_BEBAN } from "./kategori";
 
 const back = "/buku-besar/beban";
@@ -22,19 +23,30 @@ export async function catatBeban(formData: FormData) {
   if (!kategori) redirect(`${back}?error=${encodeURIComponent("Pilih kategori beban")}`);
   if (jumlah <= 0) redirect(`${back}?error=${encodeURIComponent("Nominal harus lebih dari 0")}`);
 
+  // Aturan sama dgn Pengeluaran di modul Persediaan: kas keluar tanpa bukti tidak
+  // bisa diaudit. Kalau jalur ini dibiarkan bebas, aturannya cuma jadi hiasan.
+  const lampiran = parseLampiran(formData.get("lampiran"));
+  if (lampiran.length === 0) {
+    redirect(`${back}?error=${encodeURIComponent("Lampiran bukti wajib diisi sebelum beban bisa disimpan")}`);
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { error } = await supabase.from("expenses").insert({
+  const { data: expense, error } = await supabase.from("expenses").insert({
     branch_id: branchId,
     tanggal,
     kategori,
     deskripsi: deskripsi || null,
     jumlah,
     metode_bayar: metode,
-    bukti_url: null,
+    bukti_url: lampiran[0].path,
     created_by: user?.id ?? null,
-  });
-  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  }).select("id").single();
+  if (error || !expense) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal menyimpan beban")}`);
+
+  await supabase.from("document_attachments").insert(
+    lampiran.map((l) => ({ ...l, modul: "pengeluaran", ref_id: expense!.id, uploaded_by: user?.id ?? null })),
+  );
 
   const bebanCode = KATEGORI_BEBAN[kategori] ?? "5401";
   const kasCode = metode === "Tunai" ? "1101" : "1102";

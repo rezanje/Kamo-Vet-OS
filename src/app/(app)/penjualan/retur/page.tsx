@@ -84,7 +84,15 @@ export default async function ReturJualPage({
                   <td style={{ fontSize: 11.5 }}>
                     {/* Klik nomor struk → rincian penjualannya (dulu buntu di sini). */}
                     {r.sales?.id
-                      ? <Link href={`/penjualan/${r.sales.id}`} style={{ color: "var(--ac)" }}>{r.sales.no_struk ?? "—"}</Link>
+                      ? (
+                        <Link
+                          href={`/penjualan/${r.sales.id}`}
+                          style={{ color: "var(--ac)", textDecoration: "underline", display: "inline-flex", alignItems: "center", gap: 4 }}
+                          title="Lihat rincian penjualan"
+                        >
+                          {r.sales.no_struk ?? "—"} <i className="ti ti-external-link" style={{ fontSize: 12 }} />
+                        </Link>
+                      )
                       : (r.sales?.no_struk ?? "—")}
                   </td>
                   <td style={{ fontSize: 11.5 }}>{r.sales?.customers?.name ?? "Umum"}</td>

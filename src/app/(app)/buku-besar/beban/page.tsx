@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { LampiranPicker } from "@/components/LampiranPicker";
 import { catatBeban } from "./actions";
 import { KATEGORI_BEBAN } from "./kategori";
 
@@ -79,6 +80,10 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
               <input className="fi" name="deskripsi" placeholder="mis. bayar listrik cabang Cimanggu" />
             </div>
           </div>
+          <div style={{ marginBottom: 12 }}>
+            <label className="flab">Lampiran bukti *</label>
+            <LampiranPicker folder="pengeluaran" wajib />
+          </div>
           <button type="submit" className="pay-btn"><i className="ti ti-plus" /> Catat & Jurnal</button>
         </form>
       </div>
@@ -88,7 +93,7 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 620 }}>
             <thead>
-              <tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Cabang</th><th>Sumber</th><th style={{ textAlign: "right" }}>Nominal</th></tr>
+              <tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Cabang</th><th>Sumber</th><th style={{ textAlign: "right" }}>Nominal</th><th style={{ textAlign: "center" }}>Bukti</th></tr>
             </thead>
             <tbody>
               {(rows ?? []).map((r) => {
@@ -101,11 +106,16 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
                     <td><span className={`bge ${r.metode_bayar === "Tunai" ? "g" : "b"}`}>{r.metode_bayar}</span></td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>
+                    <td style={{ textAlign: "center" }}>
+                      <Link href={`/buku-besar/beban/${r.id}`} className="btn-def" style={{ padding: "2px 8px", fontSize: 10, textDecoration: "none" }} title="Lihat bukti & dokumen">
+                        <i className="ti ti-paperclip" />
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}
               {(rows ?? []).length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada beban tercatat.</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada beban tercatat.</td></tr>
               )}
             </tbody>
           </table>

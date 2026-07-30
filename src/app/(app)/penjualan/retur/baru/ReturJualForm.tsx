@@ -8,7 +8,13 @@ type Row = { item_id: string; nama: string; harga: number; sisa: number };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
-export function ReturJualForm({ saleId, info, rows }: { saleId: string; info: string; rows: Row[] }) {
+export function ReturJualForm({
+  saleId, info, rows, dari, lockBranchId,
+}: {
+  saleId: string; info: string; rows: Row[];
+  // "kasir" = dipakai dari layar POS: redirect & pembatasan cabang ikut kasir.
+  dari?: "kasir"; lockBranchId?: string;
+}) {
   const [qty, setQty] = useState<Record<string, number>>({});
 
   const payload = rows
@@ -20,6 +26,8 @@ export function ReturJualForm({ saleId, info, rows }: { saleId: string; info: st
     <form action={buatReturJual}>
       <input type="hidden" name="sale_id" value={saleId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
+      {dari && <input type="hidden" name="dari" value={dari} />}
+      {lockBranchId && <input type="hidden" name="lock_branch_id" value={lockBranchId} />}
 
       <div className="crm-sec">
         <SecHeader num="02" title="RINCIAN BARANG" desc={`Struk ${info}. Isi qty yang dikembalikan.`} />
