@@ -80,7 +80,7 @@ export async function buatReturJual(formData: FormData) {
   const no_retur = await nextNoRetur(supabase);
 
   const { data: itemNames } = await supabase
-    .from("items").select("id, name, buy_price").in("id", items.map((it) => it.item_id));
+    .from("items").select("id, name, buy_price, item_type").in("id", items.map((it) => it.item_id));
   const nameMap = new Map((itemNames ?? []).map((r) => [r.id, r]));
 
   const { data: doc, error } = await supabase
@@ -129,9 +129,13 @@ export async function buatReturJual(formData: FormData) {
     .from("warehouses").select("id")
     .eq("branch_id", sale!.branch_id).eq("is_active", true)
     .order("type").limit(1).maybeSingle();
+  // Jasa (grooming, konsultasi) boleh diretur — uangnya dikembalikan — tapi TIDAK
+  // punya stok. Tanpa saringan ini, membatalkan jasa malah menambah persediaan.
+  const berstok = (id: string) => (nameMap.get(id)?.item_type ?? "Persediaan") === "Persediaan";
   if (wh) {
     // barang balik jadi layer FIFO baru @ buy_price (konsisten jurnal reversal HPP)
     for (const r of rows) {
+      if (!berstok(r.item_id)) continue;
       await stockInAtBuyPrice(supabase, {
         warehouseId: wh.id as string, itemId: r.item_id, qty: r.qty, source: "retur-jual", ref: no_retur,
       });
@@ -150,7 +154,10 @@ export async function buatReturJual(formData: FormData) {
       { code: "1101", debit: 0, credit: total },
     ],
   });
-  const hpp = rows.reduce((a, r) => a + (Number(nameMap.get(r.item_id)?.buy_price) || 0) * r.qty, 0);
+  const hpp = rows.reduce(
+    (a, r) => a + (berstok(r.item_id) ? (Number(nameMap.get(r.item_id)?.buy_price) || 0) * r.qty : 0),
+    0,
+  );
   if (hpp > 0) {
     await postJournal(supabase, {
       tanggal,
