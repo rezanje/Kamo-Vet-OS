@@ -6,6 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
+import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { diskonGolongan } from "@/lib/harga-golongan";
 
 type CartLine = {
@@ -38,11 +39,22 @@ export async function checkoutSale(formData: FormData) {
 
   // Faktor satuan diambil ulang dari master — nilai dari keranjang cuma petunjuk
   // satuan mana yang dipilih, bukan sumber kebenaran konversi stok.
-  const unitOpts = await loadUnitOptions(supabase, rawRows.map((l) => l.item_id).filter((x): x is string => !!x));
+  const cartIds = rawRows.map((l) => l.item_id).filter((x): x is string => !!x);
+  const [unitOpts, hargaMap] = await Promise.all([
+    loadUnitOptions(supabase, cartIds),
+    loadHargaCabang(supabase, branchId, cartIds),
+  ]);
+  // Harga juga diambil ulang dari master + pengecualian cabang: keranjang cuma
+  // menentukan barang & satuan, tidak boleh menentukan harganya sendiri.
   const rows = rawRows.map((l) => {
     const opts = l.item_id ? unitOpts.get(l.item_id) : undefined;
     const u = opts ? pickUnit(opts, l.satuan) : null;
-    return { ...l, satuan: u?.unit ?? l.satuan ?? null, faktor: u?.factor ?? 1 };
+    return {
+      ...l,
+      satuan: u?.unit ?? l.satuan ?? null,
+      faktor: u?.factor ?? 1,
+      harga: l.item_id && u ? hargaCabang(hargaMap, l.item_id, u.unit, u.sell_price) : l.harga,
+    };
   });
 
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);

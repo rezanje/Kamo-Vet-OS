@@ -50,6 +50,18 @@ export async function simpanBarang(formData: FormData) {
   if (unitErr) gagal(unitErr);
   const units = isJasa ? [] : unitRows;
 
+  // Info pembelian & aturan jual (migrasi 0075). Diskon default dipagari 0–100:
+  // constraint DB sudah ada, tapi angka liar dari form lebih enak ditolak di sini
+  // daripada meledak jadi error Postgres mentah di layar admin.
+  const supplierId = String(formData.get("supplier_id") ?? "").trim();
+  const buyUnit = String(formData.get("buy_unit") ?? "").trim();
+  const substituteId = String(formData.get("substitute_item_id") ?? "").trim();
+  const minBuy = Math.max(0, Number(formData.get("min_buy") ?? 0) || 0);
+  const minSellQty = Math.max(0, Number(formData.get("min_sell_qty") ?? 0) || 0);
+  const defaultDiscount = Math.min(100, Math.max(0, Number(formData.get("default_discount") ?? 0) || 0));
+
+  const punyaStok = draft.itemType === "Persediaan";
+
   const patch = {
     name: draft.name,
     code: draft.code,
@@ -61,8 +73,16 @@ export async function simpanBarang(formData: FormData) {
     sell_price: draft.sellPrice,
     buy_price: draft.buyPrice,
     // Jasa & non-persediaan tidak dilacak stoknya — jangan simpan ambang yang tak dipakai.
-    min_stock: draft.itemType === "Persediaan" ? draft.minStock : 0,
+    min_stock: punyaStok ? draft.minStock : 0,
     tindakan_kategori: isJasa ? draft.tindakanKategori : null,
+    // Barang yang tidak punya stok tidak pernah dipesan ulang → info pembelian
+    // & substitusinya dikosongkan supaya tidak muncul di usulan PO.
+    supplier_id: punyaStok ? (supplierId || null) : null,
+    buy_unit: punyaStok ? (buyUnit || null) : null,
+    min_buy: punyaStok ? minBuy : 0,
+    substitute_item_id: punyaStok && substituteId && substituteId !== id ? substituteId : null,
+    min_sell_qty: minSellQty,
+    default_discount: defaultDiscount,
   };
 
   const { data: saved, error } = id

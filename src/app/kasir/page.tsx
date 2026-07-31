@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
+import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 
 type Rel<T> = T | T[] | null;
@@ -24,7 +25,7 @@ export default async function KasirPage({
   if (!shift) redirect("/kasir/mulai");
 
   const [{ data: items }, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
-    supabase.from("items").select("id, code, name, sell_price, target_species, item_categories(name)").eq("is_active", true).order("name"),
+    supabase.from("items").select("id, code, name, unit, sell_price, target_species, min_sell_qty, default_discount, substitute_item_id, item_categories(name)").eq("is_active", true).order("name"),
     supabase.from("customers").select("id, name, phone, points, tier, kategori").order("name"),
     supabase.from("sales").select("customer_id, total"),
     supabase
@@ -65,10 +66,25 @@ export default async function KasirPage({
     trxSum[custId] = (trxSum[custId] ?? 0) + Number(iv.total || 0);
   }
 
-  const itemRows: ItemRow[] = ((items ?? []) as unknown as { id: string; code: string; name: string; sell_price: number; target_species: string; item_categories: Rel<{ name: string }> }[]).map((i) => ({
-    id: i.id, code: i.code, name: i.name, harga: Number(i.sell_price),
+  // Harga jual bisa beda per cabang (migrasi 0073) — dipakai harga cabang shift ini.
+  const harga = await loadHargaCabang(supabase, shift.branch_id);
+
+  type ItemRaw = {
+    id: string; code: string; name: string; unit: string; sell_price: number; target_species: string;
+    min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
+    item_categories: Rel<{ name: string }>;
+  };
+  const itemsRaw = (items ?? []) as unknown as ItemRaw[];
+  // Nama barang substitusi diambil dari daftar yang sama — tidak perlu query lagi.
+  const namaById = new Map(itemsRaw.map((i) => [i.id, i.name]));
+
+  const itemRows: ItemRow[] = itemsRaw.map((i) => ({
+    id: i.id, code: i.code, name: i.name, harga: hargaCabang(harga, i.id, i.unit, Number(i.sell_price)),
     kategori: one(i.item_categories)?.name ?? "Lainnya",
     stok: stockMap[i.id] ?? 0,
+    minJual: Number(i.min_sell_qty) || 0,
+    diskonDefault: Number(i.default_discount) || 0,
+    substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
   }));
 
   const custRows: CustRow[] = ((customers ?? []) as { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string }[]).map((c) => ({

@@ -14,6 +14,8 @@ export type BarangRow = {
   category_id: string | null; brand_id: string | null; item_type: ItemType;
   sell_price: number; buy_price: number; min_stock: number;
   is_active: boolean; tindakan_kategori: string | null;
+  supplier_id: string | null; buy_unit: string | null; min_buy: number;
+  min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
   units?: ItemUnit[];
 };
 
@@ -26,10 +28,12 @@ type Tab = (typeof TABS)[number];
 
 // `satuanMaster` = daftar satuan resmi (tabel units). Namanya dibedakan dari state
 // `units` di bawah, yang isinya satuan BERJENJANG milik barang ini.
-export function BarangForm({ categories, brands, satuanMaster, editing }: {
+export function BarangForm({ categories, brands, satuanMaster, suppliers = [], barangLain = [], editing }: {
   categories: KategoriRow[];
   brands: { id: string; name: string }[];
   satuanMaster: { id: string; nama: string }[];
+  suppliers?: { id: string; nama: string }[];
+  barangLain?: { id: string; code: string | null; name: string }[];
   editing: BarangRow | null;
 }) {
   const [tab, setTab] = useState<Tab>("Umum");
@@ -231,6 +235,90 @@ export function BarangForm({ categories, brands, satuanMaster, editing }: {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Aturan jual & info pembelian (migrasi 0075). Info pembelian tidak relevan
+            untuk jasa/non-persediaan: barangnya tidak pernah dipesan ke pemasok. */}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: ".5px solid var(--bd)" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 7 }}>
+            <i className="ti ti-discount-2" /> Aturan penjualan
+          </div>
+          <div className="frow">
+            <div>
+              <label className="flab">Diskon default (%)</label>
+              <input className="fi" name="default_discount" type="number" min={0} max={100} step="any"
+                defaultValue={editing?.default_discount ?? 0} />
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Dipakai semua satuan. Kosongkan (0) kalau barang ini tidak pernah didiskon otomatis.
+              </div>
+            </div>
+            <div>
+              <label className="flab">Minimum jual <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
+              <input className="fi" name="min_sell_qty" type="number" min={0} step="any"
+                defaultValue={editing?.min_sell_qty ?? 0} />
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Jumlah paling sedikit yang boleh dibeli sekali transaksi. 0 = bebas.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {punyaStok && (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: ".5px solid var(--bd)" }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 2 }}>
+              <i className="ti ti-shopping-cart" /> Informasi pembelian
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginBottom: 7 }}>
+              Dipakai layar <b>Barang Stok Minimum</b> untuk membuat draft PO otomatis.
+              Harga beli di atas cuma acuan PO — HPP tetap rata-rata dari pembelian yang benar-benar masuk.
+            </div>
+
+            <div className="frow">
+              <div>
+                <label className="flab">Pemasok utama</label>
+                <select className="fi" name="supplier_id" defaultValue={editing?.supplier_id ?? ""}>
+                  <option value="">— belum ditentukan —</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.nama}</option>)}
+                </select>
+                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                  Tanpa ini, usulan pesan jadi PO tanpa pemasok dan harus dibetulkan manual.
+                </div>
+              </div>
+              <div>
+                <label className="flab">Satuan beli</label>
+                <select className="fi" name="buy_unit" defaultValue={editing?.buy_unit ?? ""}>
+                  <option value="">Ikut satuan dasar ({dasar})</option>
+                  {satuanMaster.map((u) => <option key={u.id} value={u.nama}>{u.nama}</option>)}
+                </select>
+                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                  Satuan saat memesan — biasanya kemasan besar (box/dus).
+                </div>
+              </div>
+            </div>
+
+            <div className="frow">
+              <div>
+                <label className="flab">Minimum beli</label>
+                <input className="fi" name="min_buy" type="number" min={0} step="any"
+                  defaultValue={editing?.min_buy ?? 0} />
+                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                  Jumlah pesan paling sedikit yang mau dilayani pemasok, dalam satuan beli.
+                </div>
+              </div>
+              <div>
+                <label className="flab">Substitusi dengan</label>
+                <select className="fi" name="substitute_item_id" defaultValue={editing?.substitute_item_id ?? ""}>
+                  <option value="">— tidak ada —</option>
+                  {barangLain.filter((b) => b.id !== editing?.id).map((b) => (
+                    <option key={b.id} value={b.id}>{b.code ? `${b.code} — ` : ""}{b.name}</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                  Barang pengganti saat yang ini kosong.
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

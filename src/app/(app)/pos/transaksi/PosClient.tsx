@@ -23,7 +23,14 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 // harus berdiri sendiri karena harganya beda.
 const lineKey = (l: { item_id: string; satuan: string }) => `${l.item_id}::${l.satuan}`;
 
-export function PosClient({ items, customers, branches }: { items: Item[]; customers: Cust[]; branches: Branch[] }) {
+// Harga jual bisa dikecualikan per cabang (migrasi 0073). Yang dikirim ke sini
+// HANYA pengecualiannya — jumlahnya sedikit — jadi ganti cabang cukup dihitung
+// ulang di layar, tidak perlu bolak-balik ke server.
+export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
+
+export function PosClient({ items, customers, branches, hargaPerCabang = {} }: {
+  items: Item[]; customers: Cust[]; branches: Branch[]; hargaPerCabang?: HargaPerCabang;
+}) {
   const [branchId, setBranchId] = useState("");
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<Line[]>([]);
@@ -34,10 +41,20 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
   const [discount, setDiscount] = useState(0);
   const [bayar, setBayar] = useState(0);
 
+  // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
+  const katalog = useMemo(() => {
+    const ov = hargaPerCabang[branchId];
+    if (!ov) return items;
+    return items.map((i) => {
+      const units = i.units.map((u) => ({ ...u, sell_price: ov[`${i.id}|${u.unit}`] ?? u.sell_price }));
+      return { ...i, units, sell_price: units[0]?.sell_price ?? i.sell_price };
+    });
+  }, [items, hargaPerCabang, branchId]);
+
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return s ? items.filter((i) => i.name.toLowerCase().includes(s)) : items;
-  }, [items, q]);
+    return s ? katalog.filter((i) => i.name.toLowerCase().includes(s)) : katalog;
+  }, [katalog, q]);
 
   const custHits = useMemo(() => {
     const s = custQ.trim().toLowerCase();
@@ -45,7 +62,20 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
     return customers.filter((c) => c.name.toLowerCase().includes(s) || c.phone.includes(s)).slice(0, 5);
   }, [customers, custQ]);
 
-  const unitsOf = (itemId: string) => items.find((i) => i.id === itemId)?.units ?? [];
+  const unitsOf = (itemId: string) => katalog.find((i) => i.id === itemId)?.units ?? [];
+
+  // Pindah cabang = harga keranjang ikut berubah; kalau tidak, kasir bisa checkout
+  // dengan harga cabang lain yang tampil di layar.
+  const gantiCabang = (id: string) => {
+    setBranchId(id);
+    const ov = hargaPerCabang[id];
+    setCart((c) => c.map((l) => ({
+      ...l,
+      harga: ov?.[`${l.item_id}|${l.satuan}`]
+        ?? items.find((i) => i.id === l.item_id)?.units.find((u) => u.unit === l.satuan)?.sell_price
+        ?? l.harga,
+    })));
+  };
 
   const add = (it: Item) =>
     setCart((c) => {
@@ -100,7 +130,7 @@ export function PosClient({ items, customers, branches }: { items: Item[]; custo
       <input type="hidden" name="cart" value={JSON.stringify(cart)} />
 
       <div style={{ marginBottom: 9, display: "flex", gap: 7 }}>
-        <select className="fi" value={branchId} onChange={(e) => setBranchId(e.target.value)} style={{ width: 220 }} required>
+        <select className="fi" value={branchId} onChange={(e) => gantiCabang(e.target.value)} style={{ width: 220 }} required>
           <option value="">Pilih cabang *</option>
           {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>

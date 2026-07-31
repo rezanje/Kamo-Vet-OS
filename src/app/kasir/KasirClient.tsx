@@ -7,13 +7,18 @@ import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 
-export type ItemRow = { id: string; code: string; name: string; harga: number; kategori: string; stok: number };
+export type ItemRow = {
+  id: string; code: string; name: string; harga: number; kategori: string; stok: number;
+  // Aturan jual dari master barang (migrasi 0075).
+  minJual?: number; diskonDefault?: number; substitusi?: string | null;
+};
 export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
 export type PromoRow = Promo & { valid_from?: string | null; valid_until?: string | null };
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
+  minJual?: number;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -83,11 +88,18 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
     return customers.filter((c) => (digits && c.phone.replace(/\D/g, "").includes(digits)) || c.name.toLowerCase().includes(s)).slice(0, 5);
   }, [customers, custQ, cust]);
 
+  // Barang masuk keranjang langsung memakai aturan masternya: qty mulai dari
+  // minimum jual, dan diskon default terpasang sebagai persen (0 = tanpa diskon).
   const add = (it: ItemRow) =>
     setCart((c) => {
       const ex = c.find((l) => l.item_id === it.id);
       if (ex) return c.map((l) => (l.item_id === it.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { item_id: it.id, nama: it.name, qty: 1, harga: it.harga }];
+      const minJual = Math.max(1, Number(it.minJual) || 0);
+      const disk = Number(it.diskonDefault) || 0;
+      return [...c, {
+        item_id: it.id, nama: it.name, qty: minJual, harga: it.harga, minJual,
+        ...(disk > 0 ? { item_discount_type: "percent" as const, item_discount_value: disk } : {}),
+      }];
     });
   const setQty = (id: string, d: number) =>
     setCart((c) => c.flatMap((l) => (l.item_id === id ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
@@ -111,7 +123,9 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const total = computeTotals(cart, diskonVal, voucherVal, poinUsed).total;
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
-  const canPay = cart.length > 0 && !!metode && !kurang && !voucherInvalid && !!cust;
+  // Minimum jual dari master: kasir tidak boleh menjual di bawahnya.
+  const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty < (l.minJual ?? 0));
+  const canPay = cart.length > 0 && !!metode && !kurang && !voucherInvalid && !!cust && dibawahMin.length === 0;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   const promoHits = useMemo(() => matchPromos(promos, cart), [promos, cart]);
@@ -217,7 +231,19 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
                   <tr key={it.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pageStart + i + 1}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 10.5, color: "var(--tm)" }}>{it.code}</td>
-                    <td style={{ fontSize: 11.5, fontWeight: 500 }}>{it.name}</td>
+                    <td style={{ fontSize: 11.5, fontWeight: 500 }}>
+                      {it.name}
+                      {/* Barang kosong: tawarkan penggantinya langsung, jangan biarkan
+                          kasir bilang "habis" padahal ada substitusinya di rak. */}
+                      {it.stok <= 0 && it.substitusi && (
+                        <div style={{ fontSize: 9.5, color: "#b55a35" }}>
+                          <i className="ti ti-arrow-right" /> ganti: {it.substitusi}
+                        </div>
+                      )}
+                      {(it.minJual ?? 0) > 1 && (
+                        <div style={{ fontSize: 9.5, color: "var(--td)" }}>min beli {it.minJual}</div>
+                      )}
+                    </td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{it.kategori}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.harga)}</td>
                     <td style={{ textAlign: "center", fontSize: 11, color: it.stok <= 0 ? "#b91c1c" : it.stok < 10 ? "#b55a35" : "var(--tm)" }}>{it.stok}</td>
@@ -375,6 +401,13 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginTop: 4, color: kurang ? "#b91c1c" : "#15803d" }}>
                   <span>{kurang ? "Kurang" : "Kembalian"}</span><span>{rp(kurang ? total - bayar : kembali)}</span>
                 </div>
+              </div>
+            )}
+
+            {dibawahMin.length > 0 && (
+              <div style={{ fontSize: 10, color: "#b91c1c", marginBottom: 7 }}>
+                <i className="ti ti-alert-circle" /> Di bawah minimum jual:{" "}
+                {dibawahMin.map((l) => `${l.nama} (min ${l.minJual})`).join(", ")}
               </div>
             )}
 

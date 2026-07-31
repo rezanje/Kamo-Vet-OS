@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
+import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { computeTotals, lineDiscount } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
@@ -45,6 +46,35 @@ export async function checkoutKasir(formData: FormData) {
   }
   const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
   if (rows.length === 0) redirect(`/kasir?error=${encodeURIComponent("Keranjang kosong")}`);
+
+  // Harga ditetapkan ULANG di server: harga jual sekarang bisa beda per cabang
+  // (migrasi 0073), jadi layar kasir yang sudah lama terbuka tidak boleh menentukan
+  // harga sendiri. Baris tanpa item_id (ketikan manual) tetap pakai harga yang diisi.
+  const cartIds = [...new Set(rows.map((l) => l.item_id).filter(Boolean))];
+  if (cartIds.length > 0) {
+    const [{ data: itemsHarga }, hargaMap] = await Promise.all([
+      supabase.from("items").select("id, nama:name, unit, sell_price, min_sell_qty").in("id", cartIds),
+      loadHargaCabang(supabase, branchId, cartIds),
+    ]);
+    const pusat = new Map(
+      ((itemsHarga ?? []) as { id: string; nama: string; unit: string; sell_price: number; min_sell_qty: number }[])
+        .map((i) => [i.id, i]),
+    );
+    for (const l of rows) {
+      const p = l.item_id ? pusat.get(l.item_id) : undefined;
+      if (p) l.harga = hargaCabang(hargaMap, l.item_id, p.unit, Number(p.sell_price));
+    }
+
+    // Minimum jual ditegakkan di server juga — kalau hanya di layar, kasir bisa
+    // menembusnya lewat halaman yang sudah lama terbuka atau submit langsung.
+    const kurangMin = rows
+      .map((l) => ({ l, p: l.item_id ? pusat.get(l.item_id) : undefined }))
+      .filter(({ l, p }) => p && Number(p.min_sell_qty) > 0 && l.qty < Number(p.min_sell_qty));
+    if (kurangMin.length > 0) {
+      const pesan = kurangMin.map(({ p }) => `${p!.nama} minimal ${Number(p!.min_sell_qty)}`).join(", ");
+      redirect(`/kasir?error=${encodeURIComponent(`Di bawah minimum jual: ${pesan}`)}`);
+    }
+  }
 
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lib/pos-calc — jangan diubah).
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);

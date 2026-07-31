@@ -27,6 +27,15 @@ export default async function TransaksiPage({
     units: unitOptions({ unit: i.unit as string, sell_price: Number(i.sell_price) }, unitMap.get(i.id as string) ?? []),
   }));
 
+  // Pengecualian harga per cabang (migrasi 0073) — jumlahnya sedikit, jadi dikirim
+  // utuh ke klien supaya ganti cabang langsung mengubah harga tanpa reload.
+  const { data: overrides } = await supabase
+    .from("item_branch_prices").select("item_id, branch_id, unit, sell_price");
+  const hargaPerCabang: Record<string, Record<string, number>> = {};
+  for (const o of (overrides ?? []) as { item_id: string; branch_id: string; unit: string; sell_price: number }[]) {
+    (hargaPerCabang[o.branch_id] ??= {})[`${o.item_id}|${o.unit}`] = Number(o.sell_price);
+  }
+
   // Relasi Supabase bisa datang sebagai objek ATAU array — dinormalkan sekali di sini
   // supaya kasir cukup baca satu bentuk (`golongan`).
   const pelanggan = ((customers ?? []) as unknown as (Omit<Cust, "golongan"> & {
@@ -66,6 +75,7 @@ export default async function TransaksiPage({
         items={katalog}
         customers={pelanggan}
         branches={branches ?? []}
+        hargaPerCabang={hargaPerCabang}
       />
     </>
   );

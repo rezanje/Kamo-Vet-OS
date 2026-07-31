@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions, type ItemUnit } from "@/lib/satuan";
+import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
@@ -124,12 +125,19 @@ export default async function RekamMedisPage({
     for (const s of stockRows ?? []) stokByItem.set(s.item_id as string, (stokByItem.get(s.item_id as string) ?? 0) + Number(s.qty));
     // Satuan berjenjang: dokter bisa meresepkan per btl walau stok dihitung per ml.
     const unitMap = await loadItemUnits(supabase, ids as string[]);
+    // Harga jual cabang kunjungan ini (migrasi 0073) menimpa harga Semua Cabang.
+    const hargaMap = await loadHargaCabang(supabase, visit.branch_id as string, ids as string[]);
     const all = (itemRows ?? []).map((i) => ({
       id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
-      sell_price: Number(i.sell_price), stok: stokByItem.get(i.id as string) ?? 0,
-      units: unitOptions(
-        { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
-        unitMap.get(i.id as string) ?? [],
+      sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
+      stok: stokByItem.get(i.id as string) ?? 0,
+      units: applyHargaCabang(
+        unitOptions(
+          { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
+          unitMap.get(i.id as string) ?? [],
+        ),
+        i.id as string,
+        hargaMap,
       ),
       is_compound_material: Boolean(i.is_compound_material),
       item_type: (i.item_type as string) ?? "Persediaan",

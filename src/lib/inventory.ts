@@ -37,6 +37,22 @@ function orThrow(error: { message?: string } | null, what: string) {
   if (error) throw new StockError(`${what}: ${error.message ?? "gagal"}`);
 }
 
+// Kartu stok (migrasi 0074): satu baris per mutasi, ditulis di pintu yang sama
+// dengan perubahan qty supaya tidak ada mutasi yang lolos tanpa jejak.
+// Gagal mencatat jejak TIDAK membatalkan mutasinya — stok yang benar lebih penting
+// daripada kartu stok yang lengkap; kegagalannya tetap muncul di log server.
+async function catatMutasi(
+  supabase: AnyClient,
+  o: { warehouseId: string; itemId: string; qty: number; unitCost: number; source: string; ref?: string | null; tanggal?: string },
+) {
+  const { error } = await supabase.from("stock_moves").insert({
+    tanggal: o.tanggal ?? new Date().toISOString().slice(0, 10),
+    warehouse_id: o.warehouseId, item_id: o.itemId, qty: o.qty,
+    unit_cost: o.unitCost, source: o.source, source_ref: o.ref ?? null,
+  });
+  if (error) console.error("[kartu-stok] gagal catat mutasi:", error.message);
+}
+
 async function adjustStockQty(supabase: AnyClient, warehouseId: string, itemId: string, delta: number) {
   const { data: st, error: readErr } = await supabase
     .from("stock").select("qty")
@@ -69,6 +85,7 @@ export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void
   });
   orThrow(error, "catat lapisan stok masuk");
   await adjustStockQty(supabase, o.warehouseId, o.itemId, o.qty);
+  await catatMutasi(supabase, { ...o, qty: o.qty });
 }
 
 export type StockOutOpts = {
@@ -107,6 +124,10 @@ export async function stockOut(supabase: AnyClient, o: StockOutOpts): Promise<{ 
   }
 
   await adjustStockQty(supabase, o.warehouseId, o.itemId, -o.qty);
+  await catatMutasi(supabase, {
+    ...o, qty: -o.qty,
+    unitCost: o.qty > 0 ? (cost + extra) / o.qty : 0,
+  });
   return { cost: cost + extra };
 }
 

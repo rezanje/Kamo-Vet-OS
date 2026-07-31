@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
+import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { CONDITION_LABEL, type Condition } from "@/lib/inpatient";
 import { CatatanForm } from "./CatatanForm";
 
@@ -16,11 +17,11 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
 
   const { data: rec } = await supabase
     .from("inpatient_records")
-    .select("id, condition_status, doctor_name, admitted_at, visit_id, visits(created_at, pets(name, species, breed, photo_url), customers(name, phone, address))")
+    .select("id, condition_status, doctor_name, admitted_at, visit_id, visits(created_at, branch_id, pets(name, species, breed, photo_url), customers(name, phone, address))")
     .eq("id", id).maybeSingle();
   if (!rec) notFound();
 
-  const visit = one(rec.visits as Rel<{ created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
+  const visit = one(rec.visits as Rel<{ created_at: string; branch_id: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
 
@@ -34,13 +35,20 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
   for (const s of stockRows ?? []) stok.set(s.item_id as string, (stok.get(s.item_id as string) ?? 0) + Number(s.qty));
   // Satuan berjenjang ikut dari master SKU (perawat bisa mencatat per btl, bukan per ml).
   const unitMap = await loadItemUnits(supabase, (itemRows ?? []).map((i) => i.id as string));
+  // Harga jual cabang kunjungan ini (migrasi 0073) menimpa harga Semua Cabang.
+  const hargaMap = await loadHargaCabang(supabase, visit?.branch_id ?? null, ids as string[]);
   const items = (itemRows ?? []).map((i) => ({
     id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
-    sell_price: Number(i.sell_price), stok: stok.get(i.id as string) ?? 0,
+    sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
+    stok: stok.get(i.id as string) ?? 0,
     is_compound_material: !!i.is_compound_material,
-    units: unitOptions(
-      { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
-      unitMap.get(i.id as string) ?? [],
+    units: applyHargaCabang(
+      unitOptions(
+        { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
+        unitMap.get(i.id as string) ?? [],
+      ),
+      i.id as string,
+      hargaMap,
     ),
   }));
   const bahanItems = items.filter((i) => i.is_compound_material);
