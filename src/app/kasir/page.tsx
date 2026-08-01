@@ -4,6 +4,7 @@ import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
 import type { PromoHitung } from "@/lib/promo-hitung";
+import { loadInfoBarang, type AturanDiskon } from "@/lib/harga-golongan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 
@@ -31,7 +32,7 @@ export default async function KasirPage({
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
     supabase.from("customers")
-      .select("id, name, phone, points, tier, kategori, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active)")
+      .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active)")
       .order("name"),
     supabase.from("sales").select("customer_id, total"),
     supabase
@@ -122,6 +123,7 @@ export default async function KasirPage({
 
   type CustRaw = {
     id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
+    category_id: string | null;
     customer_categories: Rel<{ nama: string; diskon_persen: number; rupiah_per_poin: number; is_active: boolean }>;
   };
   const custRows: CustRow[] = ((customers ?? []) as unknown as CustRaw[]).map((c) => {
@@ -133,9 +135,24 @@ export default async function KasirPage({
       // Golongan nonaktif tidak memberi diskon — sama aturannya dengan server.
       diskonPersen: gol?.is_active ? Number(gol.diskon_persen) : 0,
       rupiahPerPoin: gol?.is_active ? Number(gol.rupiah_per_poin) : undefined,
+      golonganId: gol?.is_active ? c.category_id : null,
       trx: trxCount[c.id] ?? 0, belanja: trxSum[c.id] ?? 0,
     };
   });
+
+  // Pengecualian diskon per produk/kategori (0082) + kategori tiap barang.
+  // Dikirim ke layar supaya angka yang dilihat kasir sama dengan yang nanti
+  // dihitung server saat bayar — bukan supaya klien yang menentukan diskonnya.
+  const [{ data: aturanRows }, infoBarang] = await Promise.all([
+    supabase.from("category_discounts").select("customer_category_id, item_id, item_category_id, diskon_persen"),
+    loadInfoBarang(supabase),
+  ]);
+  const aturanPerGolongan: Record<string, AturanDiskon[]> = {};
+  for (const a of (aturanRows ?? []) as (AturanDiskon & { customer_category_id: string })[]) {
+    (aturanPerGolongan[a.customer_category_id] ??= []).push({
+      item_id: a.item_id, item_category_id: a.item_category_id, diskon_persen: Number(a.diskon_persen),
+    });
+  }
 
   return (
     <KasirClient
@@ -145,6 +162,8 @@ export default async function KasirPage({
       vouchers={vouchersAktif as unknown as VoucherRow[]}
       promos={promosActive as unknown as PromoRow[]}
       promoHitung={promoHitung}
+      aturanDiskon={aturanPerGolongan}
+      infoBarang={Object.fromEntries(infoBarang)}
       error={error}
     />
   );

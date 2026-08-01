@@ -103,6 +103,7 @@ export default async function KategoriPelangganPage({
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
                         <Link href={`/crm/kategori-pelanggan?edit=${k.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Ubah</Link>
+                        <Link href={`/crm/kategori-pelanggan/${k.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Diskon per barang</Link>
                         <form action={toggleKategoriPelanggan}>
                           <input type="hidden" name="id" value={k.id} />
                           <input type="hidden" name="aktif" value={k.is_active ? "1" : "0"} />

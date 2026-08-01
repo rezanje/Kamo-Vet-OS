@@ -6,7 +6,7 @@ import { checkoutKasir } from "./checkout";
 import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
-import { diskonGolongan } from "@/lib/harga-golongan";
+import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { normalizeKode, potonganVoucher } from "@/lib/voucher";
 import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
 
@@ -18,8 +18,9 @@ export type ItemRow = {
 export type CustRow = {
   id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
   trx: number; belanja: number;
-  diskonPersen?: number;      // dari golongan pelanggan (customer_categories)
+  diskonPersen?: number;      // diskon DASAR golongan (customer_categories)
   rupiahPerPoin?: number;     // belanja sebesar ini = 1 poin
+  golonganId?: string | null; // kunci ke pengecualian diskon per produk (0082)
 };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
 export type PromoRow = Promo & {
@@ -42,9 +43,15 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
   Platinum: { bg: "#ede9fe", color: "#5b21b6" },
 };
 
-export function KasirClient({ branchName, items, customers, vouchers, promos = [], promoHitung = [], error }: {
+export function KasirClient({
+  branchName, items, customers, vouchers, promos = [], promoHitung = [],
+  aturanDiskon = {}, infoBarang = {}, error,
+}: {
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[];
-  promos?: PromoRow[]; promoHitung?: PromoHitung[]; error?: string;
+  promos?: PromoRow[]; promoHitung?: PromoHitung[];
+  aturanDiskon?: Record<string, AturanDiskon[]>;
+  infoBarang?: Record<string, BarangDiskon>;
+  error?: string;
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
@@ -146,7 +153,15 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const diskonVal = diskonPct ? Math.round((afterItems * diskon) / 100) : diskon;
   // Diskon golongan dihitung server saat bayar; di sini hanya DITAMPILKAN supaya
   // angka di layar sama dengan yang ditagih — kalau beda, uang kembalian salah.
-  const diskonKategori = diskonGolongan(afterItems, cust?.diskonPersen ?? 0);
+  // Per baris, karena sejak 0082 tiap barang bisa punya persen sendiri.
+  const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
+  const diskonKategori = useMemo(
+    () => diskonGolonganKeranjang(
+      cart, cust?.golonganId ? (aturanDiskon[cust.golonganId] ?? []) : [],
+      cust?.diskonPersen ?? 0, infoMap,
+    ),
+    [cart, cust, aturanDiskon, infoMap],
+  );
   const v = vouchers.find((x) => x.code === normalizeKode(voucher));
   const voucherVal = v ? potonganVoucher(afterItems, v.tipe, Number(v.nilai)) : 0;
   const voucherInvalid = voucher.trim() !== "" && !v;
@@ -398,7 +413,10 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
               </div>
             )}
             {diskonKategori > 0 && (
-              <Row k={`Diskon ${cust?.kategori ?? "golongan"} (${cust?.diskonPersen}%)`} v={`- ${rp(diskonKategori)}`} red />
+              // Persen tidak lagi ditulis di label: sejak 0082 satu transaksi
+              // bisa memakai beberapa persen sekaligus (beda per barang), jadi
+              // satu angka di judul justru menyesatkan.
+              <Row k={`Diskon ${cust?.kategori ?? "golongan"}`} v={`- ${rp(diskonKategori)}`} red />
             )}
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>

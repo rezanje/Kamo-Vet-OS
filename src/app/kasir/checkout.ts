@@ -10,7 +10,9 @@ import { computeTotals, lineDiscount } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
-import { diskonGolongan, poinDidapat } from "@/lib/harga-golongan";
+import {
+  diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
+} from "@/lib/harga-golongan";
 import { hitungPromoKeranjang, loadPromoAktif } from "@/lib/promo-hitung";
 
 type CartLine = {
@@ -119,7 +121,7 @@ export async function checkoutKasir(formData: FormData) {
   if (customerId) {
     const { data: cust } = await supabase
       .from("customers")
-      .select("points, total_spending, customer_categories(diskon_persen, rupiah_per_poin, is_active)")
+      .select("points, total_spending, category_id, customer_categories(diskon_persen, rupiah_per_poin, is_active)")
       .eq("id", customerId).single();
     custPoints = cust?.points ?? 0;
     poinDigunakan = Math.min(poinReq, custPoints);
@@ -130,7 +132,17 @@ export async function checkoutKasir(formData: FormData) {
       | null | undefined;
     const kat = Array.isArray(rel) ? rel[0] : rel;
     if (kat?.is_active) {
-      diskonKategori = diskonGolongan(afterItems, Number(kat.diskon_persen));
+      // Diskon dihitung PER BARIS: sejak 0082 tiap barang bisa punya persen
+      // sendiri untuk golongan ini. Tanpa pengecualian, hasilnya sama dengan
+      // perhitungan rata yang lama.
+      const [aturan, infoBarang] = await Promise.all([
+        loadAturanDiskon(supabase, cust?.category_id),
+        loadInfoBarang(supabase, cartIds),
+      ]);
+      diskonKategori = diskonGolonganKeranjang(
+        rows.map((l) => ({ item_id: l.item_id, qty: l.qty, harga: l.harga })),
+        aturan, Number(kat.diskon_persen), infoBarang,
+      );
       rupiahPerPoin = Number(kat.rupiah_per_poin);
     }
   } else if (poinReq > 0) {
