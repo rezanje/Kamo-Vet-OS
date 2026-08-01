@@ -69,6 +69,15 @@ async function adjustStockQty(supabase: AnyClient, warehouseId: string, itemId: 
   }
 }
 
+// Jasa & Non-Persediaan tidak punya stok: memindahkannya bukan error pemakai,
+// cuma tidak ada artinya. Dilewati DIAM-DIAM di sini supaya penjualan yang
+// mencampur barang & jasa tetap jalan — trigger DB (0081) tinggal jadi jaring
+// pengaman untuk jalur yang lupa memanggil lewat sini.
+async function punyaStok(supabase: AnyClient, itemId: string): Promise<boolean> {
+  const { data } = await supabase.from("items").select("item_type").eq("id", itemId).maybeSingle();
+  return !data?.item_type || data.item_type === "Persediaan";
+}
+
 export type StockInOpts = {
   warehouseId: string; itemId: string; qty: number; unitCost: number;
   source: string; ref?: string | null; tanggal?: string;
@@ -77,6 +86,7 @@ export type StockInOpts = {
 // Stok masuk: buat layer baru + naikkan qty.
 export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void> {
   if (o.qty <= 0) return;
+  if (!(await punyaStok(supabase, o.itemId))) return;
   const { error } = await supabase.from("stock_layers").insert({
     warehouse_id: o.warehouseId, item_id: o.itemId,
     tanggal: o.tanggal ?? new Date().toISOString().slice(0, 10),
@@ -97,6 +107,8 @@ export type StockOutOpts = {
 // Shortfall (layer tidak cukup) dihargai items.buy_price — tidak membuat layer negatif.
 export async function stockOut(supabase: AnyClient, o: StockOutOpts): Promise<{ cost: number }> {
   if (o.qty <= 0) return { cost: 0 };
+  // Jasa tidak mengurangi stok DAN tidak punya HPP persediaan — cost 0, bukan error.
+  if (!(await punyaStok(supabase, o.itemId))) return { cost: 0 };
 
   const { data: layersRaw, error: layerErr } = await supabase
     .from("stock_layers")
