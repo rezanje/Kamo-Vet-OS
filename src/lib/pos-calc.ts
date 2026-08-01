@@ -10,12 +10,18 @@ export type CartLine = {
   harga: number;
   item_discount_type?: "nominal" | "percent" | null;
   item_discount_value?: number | null;
+  // Potongan promo otomatis (rupiah, migrasi 0079). Dihitung lib/promo-hitung.
+  promo_discount?: number | null;
 };
 
+// Diskon manual kasir MENANG atas promo, tidak ditumpuk: kasir yang mengetik
+// potongan sendiri sedang menimpa harga dengan sengaja (nego, barang cacat).
+// Menumpuk keduanya diam-diam bikin harga jatuh di bawah modal tanpa disadari.
 export function lineDiscount(l: CartLine): number {
   const gross = l.qty * l.harga;
   const val = Number(l.item_discount_value) || 0;
-  const raw = l.item_discount_type === "percent" ? Math.round((gross * val) / 100) : val;
+  const manual = l.item_discount_type === "percent" ? Math.round((gross * val) / 100) : val;
+  const raw = manual > 0 ? manual : Math.max(0, Number(l.promo_discount) || 0);
   return Math.min(Math.max(0, raw), gross);
 }
 

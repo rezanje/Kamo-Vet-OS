@@ -8,6 +8,7 @@ import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { diskonGolongan, poinDidapat } from "@/lib/harga-golongan";
+import { hitungPromoKeranjang, loadPromoAktif, totalPotonganPromo } from "@/lib/promo-hitung";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -58,6 +59,15 @@ export async function checkoutSale(formData: FormData) {
 
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
 
+  // Promo otomatis (migrasi 0079) — dihitung dari master, aturannya sama persis
+  // dengan layar kasir. Sengaja dipasang di KEDUA jalur POS: diskon golongan
+  // dulu sempat hanya jalan di sini dan tidak di /kasir, dan selisih diam-diam
+  // antara dua layar yang sama-sama menagih uang itu mahal ketahuannya.
+  const promoAktif = await loadPromoAktif(supabase, branchId);
+  const potonganPromo = totalPotonganPromo(
+    hitungPromoKeranjang(promoAktif, rows.map((l) => ({ item_id: l.item_id ?? "", qty: l.qty, harga: l.harga }))),
+  );
+
   // Diskon golongan diambil dari master lewat customer_id — BUKAN dari form.
   // Kalau dibaca dari form, kasir bisa mengarang diskon golongan sesukanya.
   let diskonKategori = 0;
@@ -80,7 +90,7 @@ export async function checkoutSale(formData: FormData) {
     }
   }
 
-  const total = Math.max(0, subtotal - diskonKategori - discount);
+  const total = Math.max(0, subtotal - potonganPromo - diskonKategori - discount);
   const kembali = Math.max(0, bayar - total);
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -102,7 +112,11 @@ export async function checkoutSale(formData: FormData) {
     .from("sales")
     .insert({
       branch_id: branchId, customer_id: customerId, pet_id: petId, no_struk: noStruk,
-      subtotal, discount, diskon_kategori: diskonKategori, total, metode_bayar: metode, bayar, kembali, poin_earned: poin,
+      // Potongan promo digabung ke `discount` (potongan tingkat transaksi) —
+      // `diskon_kategori` sengaja tetap berisi diskon golongan saja supaya
+      // laporan yang memisahkan keduanya tidak berubah artinya.
+      subtotal, discount: discount + potonganPromo, diskon_kategori: diskonKategori,
+      total, metode_bayar: metode, bayar, kembali, poin_earned: poin,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
     })
     .select("id").single();

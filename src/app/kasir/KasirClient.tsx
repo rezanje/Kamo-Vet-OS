@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 import { diskonGolongan } from "@/lib/harga-golongan";
 import { normalizeKode, potonganVoucher } from "@/lib/voucher";
+import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
 
 export type ItemRow = {
   id: string; code: string; name: string; harga: number; kategori: string; stok: number;
@@ -21,7 +22,10 @@ export type CustRow = {
   rupiahPerPoin?: number;     // belanja sebesar ini = 1 poin
 };
 export type VoucherRow = { code: string; tipe: string; nilai: number };
-export type PromoRow = Promo & { valid_from?: string | null; valid_until?: string | null };
+export type PromoRow = Promo & {
+  valid_from?: string | null; valid_until?: string | null;
+  auto_apply?: boolean;
+};
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
@@ -38,8 +42,9 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
   Platinum: { bg: "#ede9fe", color: "#5b21b6" },
 };
 
-export function KasirClient({ branchName, items, customers, vouchers, promos = [], error }: {
-  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; promos?: PromoRow[]; error?: string;
+export function KasirClient({ branchName, items, customers, vouchers, promos = [], promoHitung = [], error }: {
+  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[];
+  promos?: PromoRow[]; promoHitung?: PromoHitung[]; error?: string;
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
@@ -116,9 +121,27 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const togglePotType = (id: string) =>
     setCart((c) => c.map((l) => (l.item_id === id ? { ...l, item_discount_type: l.item_discount_type === "percent" ? "nominal" : "percent" } : l)));
 
+  // Promo otomatis (migrasi 0079): dihitung ulang tiap isi keranjang berubah.
+  // Angka di sini cuma untuk DITAMPILKAN — server menghitung ulang saat bayar.
+  const potonganPromo = useMemo(() => hitungPromoKeranjang(promoHitung, cart), [promoHitung, cart]);
+  const promoPerItem = useMemo(
+    () => new Map(potonganPromo.map((p) => [p.item_id, p])),
+    [potonganPromo],
+  );
+  // Baris keranjang + potongan promonya, dipakai semua perhitungan di bawah.
+  const cartHitung = useMemo(
+    () => cart.map((l) => ({ ...l, promo_discount: promoPerItem.get(l.item_id)?.potongan ?? 0 })),
+    [cart, promoPerItem],
+  );
+
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lihat lib/pos-calc).
-  const subtotal = cart.reduce((a, l) => a + l.qty * l.harga, 0);
-  const itemDiscTotal = cart.reduce((a, l) => a + lineDiscount(l), 0);
+  const subtotal = cartHitung.reduce((a, l) => a + l.qty * l.harga, 0);
+  const itemDiscTotal = cartHitung.reduce((a, l) => a + lineDiscount(l), 0);
+  // Yang benar-benar terpakai dari promo (diskon manual kasir menang atas promo).
+  const promoTerpakai = cartHitung.reduce(
+    (a, l) => a + Math.min(lineDiscount(l), Number(l.promo_discount) || 0),
+    0,
+  );
   const afterItems = subtotal - itemDiscTotal;
   const diskonVal = diskonPct ? Math.round((afterItems * diskon) / 100) : diskon;
   // Diskon golongan dihitung server saat bayar; di sini hanya DITAMPILKAN supaya
@@ -127,10 +150,10 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const v = vouchers.find((x) => x.code === normalizeKode(voucher));
   const voucherVal = v ? potonganVoucher(afterItems, v.tipe, Number(v.nilai)) : 0;
   const voucherInvalid = voucher.trim() !== "" && !v;
-  const totals = computeTotals(cart, diskonVal + diskonKategori, voucherVal, 0);
+  const totals = computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, 0);
   const maxPoin = cust ? Math.min(cust.points, totals.afterItems - totals.txnLevel) : 0;
   const poinUsed = Math.min(poin, maxPoin);
-  const total = computeTotals(cart, diskonVal + diskonKategori, voucherVal, poinUsed).total;
+  const total = computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, poinUsed).total;
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
   // Minimum jual dari master: kasir tidak boleh menjual di bawahnya.
@@ -138,7 +161,12 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const canPay = cart.length > 0 && !!metode && !kurang && !voucherInvalid && !!cust && dibawahMin.length === 0;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
-  const promoHits = useMemo(() => matchPromos(promos, cart), [promos, cart]);
+  // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
+  // melihat potongannya di rincian. Reminder hanya untuk promo yang masih manual.
+  const promoHits = useMemo(
+    () => matchPromos(promos.filter((p) => !p.auto_apply), cart),
+    [promos, cart],
+  );
   const [dismissedAtCartLen, setDismissedAtCartLen] = useState<number | null>(null);
   const promoDismissed = dismissedAtCartLen === cart.length;
   const [showPromoList, setShowPromoList] = useState(false);
@@ -363,6 +391,12 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />
             {itemDiscTotal > 0 && <Row k="Pot. per item" v={`- ${rp(itemDiscTotal)}`} red />}
+            {promoTerpakai > 0 && (
+              <div style={{ fontSize: 9.5, color: "#15803d", margin: "-2px 0 4px" }}>
+                <i className="ti ti-discount-2" /> termasuk promo:{" "}
+                {[...new Set(potonganPromo.map((p) => p.promoName))].join(", ")}
+              </div>
+            )}
             {diskonKategori > 0 && (
               <Row k={`Diskon ${cust?.kategori ?? "golongan"} (${cust?.diskonPersen}%)`} v={`- ${rp(diskonKategori)}`} red />
             )}

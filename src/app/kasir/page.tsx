@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
+import type { PromoHitung } from "@/lib/promo-hitung";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 
@@ -39,12 +40,35 @@ export default async function KasirPage({
       .eq("paid_status", "Lunas")
       .is("voided_at", null),
     supabase.from("vouchers").select("code, tipe, nilai, is_active, valid_from, valid_until").eq("is_active", true),
-    supabase.from("promos").select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until").eq("is_active", true),
+    supabase.from("promos")
+      .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
+      .eq("is_active", true),
   ]);
 
   // Addendum: promo yang aktif hari ini untuk cabang shift (branch + tanggal).
   const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const promosActive = ((promos ?? []) as unknown as PromoFull[]).filter((p) => promoActiveFor(p, shift.branch_id, wibToday));
+
+  // Barang yang kena tiap promo (migrasi 0079). Promo tanpa baris di sini
+  // berlaku untuk semua barang — lihat lib/promo-hitung.
+  const { data: promoItemRows } = promosActive.length
+    ? await supabase.from("promo_items").select("promo_id, item_id").in("promo_id", promosActive.map((p) => p.id))
+    : { data: [] };
+  const itemsPerPromo = new Map<string, string[]>();
+  for (const r of (promoItemRows ?? []) as { promo_id: string; item_id: string }[]) {
+    itemsPerPromo.set(r.promo_id, [...(itemsPerPromo.get(r.promo_id) ?? []), r.item_id]);
+  }
+  const promoHitung: PromoHitung[] = promosActive.map((p) => ({
+    id: p.id, name: p.name,
+    itemIds: itemsPerPromo.get(p.id) ?? [],
+    minQty: p.min_qty == null ? null : Number(p.min_qty),
+    maxQty: p.max_qty == null ? null : Number(p.max_qty),
+    kelipatan: !!p.kelipatan,
+    autoApply: !!p.auto_apply,
+    discountType: p.discount_type,
+    discountValue: p.discount_value == null ? null : Number(p.discount_value),
+    minSubtotal: p.rule?.min_subtotal ?? null,
+  }));
 
   // Voucher yang sudah lewat/belum mulai tidak dikirim ke layar: kalau dikirim,
   // kasir melihat potongan yang nanti ditolak server saat tombol bayar ditekan.
@@ -120,6 +144,7 @@ export default async function KasirPage({
       customers={custRows}
       vouchers={vouchersAktif as unknown as VoucherRow[]}
       promos={promosActive as unknown as PromoRow[]}
+      promoHitung={promoHitung}
       error={error}
     />
   );

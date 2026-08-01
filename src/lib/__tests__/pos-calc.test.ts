@@ -19,6 +19,22 @@ describe("lineDiscount / lineSubtotal", () => {
   it("no discount type → zero", () => {
     expect(lineDiscount({ qty: 3, harga: 1000 })).toBe(0);
   });
+
+  // Promo otomatis (migrasi 0079) masuk lewat jalur diskon item yang sama.
+  it("potongan promo dipakai kalau kasir tidak mengetik diskon manual", () => {
+    expect(lineDiscount({ qty: 2, harga: 50_000, promo_discount: 10_000 })).toBe(10_000);
+  });
+  it("diskon manual kasir menang atas promo, tidak ditumpuk", () => {
+    const l = {
+      qty: 2, harga: 50_000,
+      item_discount_type: "nominal" as const, item_discount_value: 5_000,
+      promo_discount: 10_000,
+    };
+    expect(lineDiscount(l)).toBe(5_000);
+  });
+  it("potongan promo tetap ter-cap di nilai barisnya", () => {
+    expect(lineDiscount({ qty: 1, harga: 5_000, promo_discount: 99_999 })).toBe(5_000);
+  });
 });
 
 describe("computeTotals — urutan item → transaksi → poin", () => {

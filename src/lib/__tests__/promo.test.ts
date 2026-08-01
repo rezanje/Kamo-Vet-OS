@@ -4,6 +4,10 @@ import { promoActiveFor, promoScheduleStatus, type PromoRow } from "../promo";
 const base: PromoRow = {
   id: "p1", name: "Promo", promo_type: "diskon_produk", rule: {},
   is_active: true, branch_ids: null, valid_from: null, valid_until: null,
+  // Kolom mesin promo (migrasi 0079) — tidak dipakai promoActiveFor, yang
+  // hanya menjawab "aktif hari ini di cabang ini".
+  min_qty: null, max_qty: null, kelipatan: false, auto_apply: false,
+  discount_type: null, discount_value: null,
 };
 
 describe("promoActiveFor", () => {

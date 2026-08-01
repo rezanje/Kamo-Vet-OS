@@ -18,6 +18,14 @@ export type PromoRow = {
   branch_ids: string[] | null; // null / kosong = semua cabang
   valid_from: string | null;   // 'YYYY-MM-DD', null = tanpa batas awal
   valid_until: string | null;  // 'YYYY-MM-DD', null = tanpa batas akhir
+  // Mesin promo (migrasi 0079) — naik dari `rule` jadi kolom karena dipakai
+  // menghitung uang, bukan cuma menyusun kalimat saran.
+  min_qty: number | null;
+  max_qty: number | null;
+  kelipatan: boolean;
+  auto_apply: boolean;
+  discount_type: "percent" | "nominal" | null;
+  discount_value: number | null;
 };
 
 export function promoActiveFor(p: PromoRow, branchId: string, today: string): boolean {

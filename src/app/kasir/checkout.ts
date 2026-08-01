@@ -11,10 +11,12 @@ import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
 import { diskonGolongan, poinDidapat } from "@/lib/harga-golongan";
+import { hitungPromoKeranjang, loadPromoAktif } from "@/lib/promo-hitung";
 
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
+  promo_discount?: number | null;   // diisi server dari master, bukan dari klien
 };
 
 // Earning sekarang ikut golongan pelanggan (lib/harga-golongan → poinDidapat).
@@ -78,6 +80,15 @@ export async function checkoutKasir(formData: FormData) {
       const pesan = kurangMin.map(({ p }) => `${p!.nama} minimal ${Number(p!.min_sell_qty)}`).join(", ");
       redirect(`/kasir?error=${encodeURIComponent(`Di bawah minimum jual: ${pesan}`)}`);
     }
+  }
+
+  // Promo dihitung ULANG di server dari master, bukan dipercaya dari keranjang:
+  // layar kasir yang sudah lama terbuka bisa memegang promo yang sudah dicabut,
+  // dan angka dari klien tidak boleh menentukan potongan uang.
+  const promoAktif = await loadPromoAktif(supabase, branchId);
+  for (const h of hitungPromoKeranjang(promoAktif, rows)) {
+    const baris = rows.find((l) => l.item_id === h.item_id);
+    if (baris) baris.promo_discount = h.potongan;
   }
 
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lib/pos-calc — jangan diubah).
