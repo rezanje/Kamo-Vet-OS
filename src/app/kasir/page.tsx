@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
+import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 
@@ -26,20 +27,28 @@ export default async function KasirPage({
 
   const [{ data: items }, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
     supabase.from("items").select("id, code, name, unit, sell_price, target_species, min_sell_qty, default_discount, substitute_item_id, item_categories(name)").eq("is_active", true).order("name"),
-    supabase.from("customers").select("id, name, phone, points, tier, kategori").order("name"),
+    // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
+    // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
+    supabase.from("customers")
+      .select("id, name, phone, points, tier, kategori, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active)")
+      .order("name"),
     supabase.from("sales").select("customer_id, total"),
     supabase
       .from("invoices")
       .select("total, visits!inner(customer_id)")
       .eq("paid_status", "Lunas")
       .is("voided_at", null),
-    supabase.from("vouchers").select("code, tipe, nilai").eq("is_active", true),
+    supabase.from("vouchers").select("code, tipe, nilai, is_active, valid_from, valid_until").eq("is_active", true),
     supabase.from("promos").select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until").eq("is_active", true),
   ]);
 
   // Addendum: promo yang aktif hari ini untuk cabang shift (branch + tanggal).
   const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const promosActive = ((promos ?? []) as unknown as PromoFull[]).filter((p) => promoActiveFor(p, shift.branch_id, wibToday));
+
+  // Voucher yang sudah lewat/belum mulai tidak dikirim ke layar: kalau dikirim,
+  // kasir melihat potongan yang nanti ditolak server saat tombol bayar ditekan.
+  const vouchersAktif = ((vouchers ?? []) as unknown as VoucherFull[]).filter((v) => voucherBerlaku(v, wibToday));
 
   // stok di gudang pertama cabang shift (tampilan stok toko).
   const { data: wh } = await supabase
@@ -87,16 +96,29 @@ export default async function KasirPage({
     substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
   }));
 
-  const custRows: CustRow[] = ((customers ?? []) as { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string }[]).map((c) => ({
-    ...c, trx: trxCount[c.id] ?? 0, belanja: trxSum[c.id] ?? 0,
-  }));
+  type CustRaw = {
+    id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
+    customer_categories: Rel<{ nama: string; diskon_persen: number; rupiah_per_poin: number; is_active: boolean }>;
+  };
+  const custRows: CustRow[] = ((customers ?? []) as unknown as CustRaw[]).map((c) => {
+    const gol = one(c.customer_categories);
+    return {
+      id: c.id, name: c.name, phone: c.phone, points: c.points, tier: c.tier,
+      // Nama golongan dari master; kolom teks lama dipakai kalau belum dipetakan.
+      kategori: gol?.nama ?? c.kategori,
+      // Golongan nonaktif tidak memberi diskon — sama aturannya dengan server.
+      diskonPersen: gol?.is_active ? Number(gol.diskon_persen) : 0,
+      rupiahPerPoin: gol?.is_active ? Number(gol.rupiah_per_poin) : undefined,
+      trx: trxCount[c.id] ?? 0, belanja: trxSum[c.id] ?? 0,
+    };
+  });
 
   return (
     <KasirClient
       branchName={shift.branchName}
       items={itemRows}
       customers={custRows}
-      vouchers={(vouchers ?? []) as unknown as VoucherRow[]}
+      vouchers={vouchersAktif as unknown as VoucherRow[]}
       promos={promosActive as unknown as PromoRow[]}
       error={error}
     />

@@ -6,13 +6,20 @@ import { checkoutKasir } from "./checkout";
 import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
+import { diskonGolongan } from "@/lib/harga-golongan";
+import { normalizeKode, potonganVoucher } from "@/lib/voucher";
 
 export type ItemRow = {
   id: string; code: string; name: string; harga: number; kategori: string; stok: number;
   // Aturan jual dari master barang (migrasi 0075).
   minJual?: number; diskonDefault?: number; substitusi?: string | null;
 };
-export type CustRow = { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number };
+export type CustRow = {
+  id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
+  trx: number; belanja: number;
+  diskonPersen?: number;      // dari golongan pelanggan (customer_categories)
+  rupiahPerPoin?: number;     // belanja sebesar ini = 1 poin
+};
 export type VoucherRow = { code: string; tipe: string; nilai: number };
 export type PromoRow = Promo & { valid_from?: string | null; valid_until?: string | null };
 type CartLine = {
@@ -114,13 +121,16 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
   const itemDiscTotal = cart.reduce((a, l) => a + lineDiscount(l), 0);
   const afterItems = subtotal - itemDiscTotal;
   const diskonVal = diskonPct ? Math.round((afterItems * diskon) / 100) : diskon;
-  const v = vouchers.find((x) => x.code === voucher.trim().toUpperCase());
-  const voucherVal = v ? (v.tipe === "persen" ? Math.round((afterItems * Number(v.nilai)) / 100) : Number(v.nilai)) : 0;
+  // Diskon golongan dihitung server saat bayar; di sini hanya DITAMPILKAN supaya
+  // angka di layar sama dengan yang ditagih — kalau beda, uang kembalian salah.
+  const diskonKategori = diskonGolongan(afterItems, cust?.diskonPersen ?? 0);
+  const v = vouchers.find((x) => x.code === normalizeKode(voucher));
+  const voucherVal = v ? potonganVoucher(afterItems, v.tipe, Number(v.nilai)) : 0;
   const voucherInvalid = voucher.trim() !== "" && !v;
-  const totals = computeTotals(cart, diskonVal, voucherVal, 0);
+  const totals = computeTotals(cart, diskonVal + diskonKategori, voucherVal, 0);
   const maxPoin = cust ? Math.min(cust.points, totals.afterItems - totals.txnLevel) : 0;
   const poinUsed = Math.min(poin, maxPoin);
-  const total = computeTotals(cart, diskonVal, voucherVal, poinUsed).total;
+  const total = computeTotals(cart, diskonVal + diskonKategori, voucherVal, poinUsed).total;
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
   // Minimum jual dari master: kasir tidak boleh menjual di bawahnya.
@@ -228,7 +238,10 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
               </thead>
               <tbody>
                 {pageRows.map((it, i) => (
-                  <tr key={it.id}>
+                  // Seluruh baris jadi tombol tambah — kasir tidak perlu membidik
+                  // ikon "+" kecil di ujung kanan. Tombolnya tetap ada sebagai
+                  // penanda visual bahwa baris ini bisa diklik.
+                  <tr key={it.id} onClick={() => add(it)} style={{ cursor: "pointer" }} title={`Tambah ${it.name}`}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pageStart + i + 1}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 10.5, color: "var(--tm)" }}>{it.code}</td>
                     <td style={{ fontSize: 11.5, fontWeight: 500 }}>
@@ -248,7 +261,9 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.harga)}</td>
                     <td style={{ textAlign: "center", fontSize: 11, color: it.stok <= 0 ? "#b91c1c" : it.stok < 10 ? "#b55a35" : "var(--tm)" }}>{it.stok}</td>
                     <td style={{ textAlign: "center" }}>
-                      <button type="button" onClick={() => add(it)} className="btn-acc" style={{ padding: "3px 8px", fontSize: 11, background: "var(--posb)" }} title="Tambah"><i className="ti ti-plus" /></button>
+                      {/* stopPropagation: tanpa ini klik tombol ikut memicu klik
+                          baris di atasnya → barang masuk keranjang dua kali. */}
+                      <button type="button" onClick={(e) => { e.stopPropagation(); add(it); }} className="btn-acc" style={{ padding: "3px 8px", fontSize: 11, background: "var(--posb)" }} title="Tambah"><i className="ti ti-plus" /></button>
                     </td>
                   </tr>
                 ))}
@@ -292,7 +307,7 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
 
           <div style={{ maxHeight: 230, overflowY: "auto", marginBottom: 8 }}>
             {cart.length === 0 ? (
-              <div style={{ fontSize: 10.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Klik <i className="ti ti-plus" /> pada produk untuk menambah.</div>
+              <div style={{ fontSize: 10.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Klik baris produk untuk menambah.</div>
             ) : (
               <table className="tbl">
                 <thead>
@@ -348,6 +363,9 @@ export function KasirClient({ branchName, items, customers, vouchers, promos = [
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />
             {itemDiscTotal > 0 && <Row k="Pot. per item" v={`- ${rp(itemDiscTotal)}`} red />}
+            {diskonKategori > 0 && (
+              <Row k={`Diskon ${cust?.kategori ?? "golongan"} (${cust?.diskonPersen}%)`} v={`- ${rp(diskonKategori)}`} red />
+            )}
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Diskon</span>

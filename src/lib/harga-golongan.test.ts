@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { diskonGolongan } from "./harga-golongan";
+import { diskonGolongan, poinDidapat, RUPIAH_PER_POIN_DEFAULT } from "./harga-golongan";
 
 describe("diskonGolongan", () => {
   it("persen normal dihitung dari subtotal", () => {
@@ -29,5 +29,30 @@ describe("diskonGolongan", () => {
     expect(diskonGolongan(100000, -10)).toBe(0);
     expect(diskonGolongan(100000, 400)).toBe(100000);
     expect(diskonGolongan(100000, Number.NaN)).toBe(0);
+  });
+});
+
+describe("poinDidapat", () => {
+  it("golongan tanpa pengaturan sendiri = perilaku lama Rp1.000/poin", () => {
+    expect(RUPIAH_PER_POIN_DEFAULT).toBe(1000);
+    expect(poinDidapat(250_000, null)).toBe(250);
+    expect(poinDidapat(250_000, undefined)).toBe(250);
+  });
+
+  it("golongan lebih royal dapat poin lebih banyak", () => {
+    expect(poinDidapat(250_000, 500)).toBe(500);
+    expect(poinDidapat(250_000, 2000)).toBe(125);
+  });
+
+  it("belanja belum genap tidak dihitung sebagian", () => {
+    expect(poinDidapat(1_999, 1000)).toBe(1);
+    expect(poinDidapat(999, 1000)).toBe(0);
+  });
+
+  it("nilai kotor tidak bikin poin ngawur", () => {
+    expect(poinDidapat(0, 1000)).toBe(0);
+    expect(poinDidapat(-5000, 1000)).toBe(0);
+    expect(poinDidapat(100_000, 0)).toBe(100);      // rate 0 → jatuh ke default
+    expect(poinDidapat(100_000, Number.NaN)).toBe(100);
   });
 });

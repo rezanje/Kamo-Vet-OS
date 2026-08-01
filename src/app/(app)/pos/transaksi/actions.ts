@@ -7,14 +7,13 @@ import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
-import { diskonGolongan } from "@/lib/harga-golongan";
+import { diskonGolongan, poinDidapat } from "@/lib/harga-golongan";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
   satuan?: string | null; faktor?: number;
 };
 
-const POIN_PER_RUPIAH = 1000; // 1 poin / Rp1.000
 
 export async function checkoutSale(formData: FormData) {
   const supabase = await createClient();
@@ -62,19 +61,23 @@ export async function checkoutSale(formData: FormData) {
   // Diskon golongan diambil dari master lewat customer_id — BUKAN dari form.
   // Kalau dibaca dari form, kasir bisa mengarang diskon golongan sesukanya.
   let diskonKategori = 0;
+  let rupiahPerPoin: number | null = null;
   if (customerId) {
     const { data: cust } = await supabase
       .from("customers")
-      .select("customer_categories(diskon_persen, is_active)")
+      .select("customer_categories(diskon_persen, rupiah_per_poin, is_active)")
       .eq("id", customerId)
       .maybeSingle();
     const rel = cust?.customer_categories as
-      | { diskon_persen: number; is_active: boolean }
-      | { diskon_persen: number; is_active: boolean }[]
+      | { diskon_persen: number; rupiah_per_poin: number; is_active: boolean }
+      | { diskon_persen: number; rupiah_per_poin: number; is_active: boolean }[]
       | null
       | undefined;
     const kat = Array.isArray(rel) ? rel[0] : rel;
-    if (kat?.is_active) diskonKategori = diskonGolongan(subtotal, Number(kat.diskon_persen));
+    if (kat?.is_active) {
+      diskonKategori = diskonGolongan(subtotal, Number(kat.diskon_persen));
+      rupiahPerPoin = Number(kat.rupiah_per_poin);
+    }
   }
 
   const total = Math.max(0, subtotal - diskonKategori - discount);
@@ -92,7 +95,8 @@ export async function checkoutSale(formData: FormData) {
   const { count } = await supabase.from("sales").select("*", { count: "exact", head: true }).like("no_struk", `${prefix}-%`);
   const noStruk = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
 
-  const poin = customerId ? Math.floor(total / POIN_PER_RUPIAH) : 0;
+  // Poin ikut golongan pelanggan (migrasi 0078) — rumus sama dengan layar kasir.
+  const poin = customerId ? poinDidapat(total, rupiahPerPoin) : 0;
 
   const { data: sale, error: saleErr } = await supabase
     .from("sales")

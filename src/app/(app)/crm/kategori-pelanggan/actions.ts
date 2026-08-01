@@ -11,13 +11,18 @@ export async function simpanKategoriPelanggan(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   const nama = String(formData.get("nama") ?? "").trim().slice(0, 60);
   const persen = Number(formData.get("diskon_persen"));
+  const rupiahPerPoin = Number(formData.get("rupiah_per_poin"));
 
   if (!nama) redirect(`${BACK}?error=${encodeURIComponent("Nama golongan wajib diisi")}`);
   if (!Number.isFinite(persen) || persen < 0 || persen > 100) {
     redirect(`${BACK}?error=${encodeURIComponent("Diskon harus antara 0 dan 100 persen")}`);
   }
+  // Nol/negatif akan bikin pembagian poin meledak — ditahan di sini dan di DB.
+  if (!Number.isInteger(rupiahPerPoin) || rupiahPerPoin < 1) {
+    redirect(`${BACK}?error=${encodeURIComponent("Rp per 1 poin harus bilangan bulat minimal 1")}`);
+  }
 
-  const patch = { nama, diskon_persen: persen };
+  const patch = { nama, diskon_persen: persen, rupiah_per_poin: rupiahPerPoin };
   const { error } = id
     ? await supabase.from("customer_categories").update(patch).eq("id", id)
     : await supabase.from("customer_categories").insert(patch);

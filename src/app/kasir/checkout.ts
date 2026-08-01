@@ -9,13 +9,15 @@ import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { computeTotals, lineDiscount } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
+import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
+import { diskonGolongan, poinDidapat } from "@/lib/harga-golongan";
 
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
 };
 
-const POIN_PER_RUPIAH = 1000; // earn: 1 poin / Rp1.000
+// Earning sekarang ikut golongan pelanggan (lib/harga-golongan → poinDidapat).
 const RUPIAH_PER_POIN = 1;    // redeem: 1 poin = Rp1
 
 export async function checkoutKasir(formData: FormData) {
@@ -34,7 +36,9 @@ export async function checkoutKasir(formData: FormData) {
   const metode = String(formData.get("metode") ?? "");
   if (!metode) redirect(`/kasir?error=${encodeURIComponent("Pilih metode pembayaran dulu")}`);
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
-  const voucherCode = String(formData.get("voucherCode") ?? "").trim().toUpperCase() || null;
+  // normalizeKode = aturan yang sama dengan layar pengelola voucher, jadi kode
+  // yang diketik pakai spasi ("HEMAT 10") tetap ketemu barisnya.
+  const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
   const poinReq = Math.max(0, Math.floor(Number(formData.get("poinDigunakan")) || 0));
   const bayar = Number(formData.get("bayar")) || 0;
 
@@ -81,26 +85,51 @@ export async function checkoutKasir(formData: FormData) {
   const afterItems = subtotal - rows.reduce((a, l) => a + lineDiscount(l), 0);
 
   // voucher divalidasi server-side (persen dihitung setelah diskon item).
+  // Masa berlaku ikut dicek di sini — kode yang bocor ke luar tidak boleh terus
+  // dipakai hanya karena kasir masih hafal kodenya.
   let voucherVal = 0;
   if (voucherCode) {
-    const { data: v } = await supabase.from("vouchers").select("tipe, nilai").eq("code", voucherCode).eq("is_active", true).maybeSingle();
-    if (!v) redirect(`/kasir?error=${encodeURIComponent("Kode voucher tidak valid")}`);
-    voucherVal = v!.tipe === "persen" ? Math.round((afterItems * Number(v!.nilai)) / 100) : Number(v!.nilai);
+    const { data: v } = await supabase
+      .from("vouchers").select("code, tipe, nilai, is_active, valid_from, valid_until")
+      .eq("code", voucherCode).maybeSingle();
+    const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    const tolak = pesanVoucherDitolak((v ?? null) as VoucherRow | null, wibToday);
+    if (tolak) redirect(`/kasir?error=${encodeURIComponent(tolak)}`);
+    voucherVal = potonganVoucher(afterItems, v!.tipe, Number(v!.nilai));
   }
 
-  // poin divalidasi terhadap saldo pelanggan sebenarnya.
+  // poin divalidasi terhadap saldo pelanggan sebenarnya. Golongan pelanggan
+  // dibaca sekalian: diskon & rumus poinnya diambil dari master lewat customer_id,
+  // BUKAN dari form — kalau dari form, kasir bisa mengarang diskon golongan.
   let poinDigunakan = 0;
   let custPoints = 0;
+  let diskonKategori = 0;
+  let rupiahPerPoin: number | null = null;
   if (customerId) {
-    const { data: cust } = await supabase.from("customers").select("points, total_spending").eq("id", customerId).single();
+    const { data: cust } = await supabase
+      .from("customers")
+      .select("points, total_spending, customer_categories(diskon_persen, rupiah_per_poin, is_active)")
+      .eq("id", customerId).single();
     custPoints = cust?.points ?? 0;
     poinDigunakan = Math.min(poinReq, custPoints);
+
+    const rel = cust?.customer_categories as
+      | { diskon_persen: number; rupiah_per_poin: number; is_active: boolean }
+      | { diskon_persen: number; rupiah_per_poin: number; is_active: boolean }[]
+      | null | undefined;
+    const kat = Array.isArray(rel) ? rel[0] : rel;
+    if (kat?.is_active) {
+      diskonKategori = diskonGolongan(afterItems, Number(kat.diskon_persen));
+      rupiahPerPoin = Number(kat.rupiah_per_poin);
+    }
   } else if (poinReq > 0) {
     redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu untuk pakai poin")}`);
   }
 
   const potonganPoin = poinDigunakan * RUPIAH_PER_POIN;
-  const totals = computeTotals(rows, diskon, voucherVal, potonganPoin);
+  // Diskon golongan digabung ke potongan tingkat transaksi bersama diskon manual
+  // kasir, jadi urutan §6 (item → transaksi → poin) tetap utuh.
+  const totals = computeTotals(rows, diskon + diskonKategori, voucherVal, potonganPoin);
   poinDigunakan = totals.poin; // poin efektif setelah cap (tidak melebihi sisa tagihan)
   const totalDiskon = totals.itemDiscountTotal + totals.txnLevel + totals.poin;
   const total = totals.total;
@@ -112,13 +141,16 @@ export async function checkoutKasir(formData: FormData) {
   const { count } = await supabase.from("sales").select("*", { count: "exact", head: true }).like("no_struk", `${prefix}-%`);
   const noStruk = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
 
-  const poinEarned = customerId ? Math.floor(total / POIN_PER_RUPIAH) : 0;
+  // Poin ikut golongan pelanggan (migrasi 0078); golongan tanpa pengaturan
+  // sendiri tetap Rp1.000 = 1 poin seperti sebelumnya.
+  const poinEarned = customerId ? poinDidapat(total, rupiahPerPoin) : 0;
 
   const { data: sale, error: saleErr } = await supabase
     .from("sales")
     .insert({
       branch_id: branchId, customer_id: customerId, no_struk: noStruk,
-      subtotal, discount: totalDiskon, total, metode_bayar: metode, bayar: metode === "Tunai" ? bayar : total,
+      subtotal, discount: totalDiskon - diskonKategori, diskon_kategori: diskonKategori,
+      total, metode_bayar: metode, bayar: metode === "Tunai" ? bayar : total,
       kembali, poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
       cashier_id: user?.id ?? null, shift_id: shift!.id,
     })
