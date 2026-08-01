@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
+import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 
 export type NewCustResult =
   | { ok: true; customer: { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number } }
@@ -24,6 +25,8 @@ export async function tambahCustomerKasir(formData: FormData): Promise<NewCustRe
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
   if (!nama || !phone) return { ok: false, error: "Nama dan No. HP wajib diisi" };
+  // No. HP = kunci pengenal pelanggan lama; nomor asal bikin dedup gagal.
+  if (!nomorHpValid(phone)) return { ok: false, error: PESAN_HP_TIDAK_VALID };
 
   // dedup by phone — sama pola /crm/pelanggan/baru.
   const { data: existing } = await supabase.from("customers").select("id").eq("phone", phone).maybeSingle();

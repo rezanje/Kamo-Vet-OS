@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 
 export async function simpanPelanggan(formData: FormData) {
   const supabase = await createClient();
@@ -20,6 +21,12 @@ export async function simpanPelanggan(formData: FormData) {
     redirect(
       `/crm/pelanggan/baru?error=${encodeURIComponent("Nama dan No. HP wajib diisi")}`
     );
+  }
+
+  // No. HP adalah kunci pengenal pelanggan lama di semua layar — nomor asal
+  // ("0") bikin dedup gagal dan satu orang punya dua kartu.
+  if (!nomorHpValid(phone)) {
+    redirect(`/crm/pelanggan/baru?error=${encodeURIComponent(PESAN_HP_TIDAK_VALID)}`);
   }
 
   // ponytail: dedup by phone — same as registrasi pattern, but here we reject duplicates.

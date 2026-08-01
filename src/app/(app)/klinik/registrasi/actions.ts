@@ -3,6 +3,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { nextQueueNumber } from "@/lib/queue";
+import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
+import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 
 // Inti registrasi: buat/reuse pelanggan, simpan anabul, buat visit + nomor antrian.
 // Return visitId supaya caller bisa arahkan ke antrian atau langsung pembayaran.
@@ -47,6 +49,12 @@ async function daftar(formData: FormData): Promise<string> {
     redirect(`/klinik/registrasi?error=${encodeURIComponent("Lengkapi data wajib (HP, nama, hewan, cabang)")}`);
   }
 
+  // No. HP dipakai di bawah untuk mengenali pelanggan lama — nomor asal ("0")
+  // bikin pencarian itu gagal dan satu pemilik jadi punya dua kartu.
+  if (!nomorHpValid(phone)) {
+    redirect(`/klinik/registrasi?error=${encodeURIComponent(PESAN_HP_TIDAK_VALID)}`);
+  }
+
   // ponytail: lookup-by-phone reuses an existing customer instead of duplicating.
   let customerId: string;
   const { data: existing } = await supabase
@@ -65,20 +73,32 @@ async function daftar(formData: FormData): Promise<string> {
 
   // petId diisi kalau staff pilih "anabul existing" dari lookup no. HP — reuse
   // pet itu, cuma update berat & foto (data master lain jangan ketimpa diam-diam).
+  //
+  // Kalau staff TIDAK memilih dari daftar tapi mengetik nama yang sudah ada di
+  // pemilik ini, itu tetap maksudnya hewan yang sama — jadi kartunya dipakai
+  // ulang, bukan ditolak. Menolak di sini cuma bikin staff mengarang nama baru
+  // ("Michi 2") dan riwayat medisnya tetap terpecah.
+  const senama = petId ? null : await cariAnabulSenama(supabase, customerId, petName);
+  const reuseId = petId ?? senama?.id ?? null;
+
   let finalPetId: string;
-  if (petId) {
+  if (reuseId) {
     const patch: Record<string, unknown> = {};
     if (weight != null) patch.weight = weight;
     if (photoUrl) patch.photo_url = photoUrl;
-    if (Object.keys(patch).length) await supabase.from("pets").update(patch).eq("id", petId);
-    finalPetId = petId;
+    if (Object.keys(patch).length) await supabase.from("pets").update(patch).eq("id", reuseId);
+    finalPetId = reuseId;
   } else {
     const { data: pet, error: petErr } = await supabase
       .from("pets")
       .insert({ customer_id: customerId, name: petName, species, breed, warna, dob: petDob, gender, weight, sterilisasi, microchip, alergi, kondisi_khusus, golongan_darah, photo_url: photoUrl })
       .select("id").single();
     if (petErr || !pet) {
-      redirect(`/klinik/registrasi?error=${encodeURIComponent(petErr?.message ?? "Gagal simpan data hewan")}`);
+      // Balapan dua staff menyimpan bersamaan: index yang menahan, bukan cek di atas.
+      const pesan = errorAnabulKembar(petErr?.message)
+        ? pesanAnabulKembar(petName)
+        : petErr?.message ?? "Gagal simpan data hewan";
+      redirect(`/klinik/registrasi?error=${encodeURIComponent(pesan)}`);
     }
     finalPetId = pet!.id;
   }

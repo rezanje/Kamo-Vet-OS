@@ -78,7 +78,15 @@ export default async function PelangganPage() {
     }
   }
 
-  const enriched = customers.map((c) => ({ ...c, purchases: purByCust[c.id] ?? [], ledger: ledByCust[c.id] ?? [], stat: statByCust[c.id] ?? null }));
+  // Kartu anabul hasil pembersihan duplikat (status 'Digabung', migrasi 0076)
+  // riwayatnya sudah dipindah ke kartu induk — jangan ditampilkan lagi supaya
+  // daftar anabul tidak kelihatan dobel. Disaring di sini, bukan di query,
+  // karena filter pada tabel bersarang akan ikut membuang pelanggan tanpa anabul.
+  const enriched = customers.map((c) => ({
+    ...c,
+    pets: (c.pets ?? []).filter((p) => p.status === "Aktif"),
+    purchases: purByCust[c.id] ?? [], ledger: ledByCust[c.id] ?? [], stat: statByCust[c.id] ?? null,
+  }));
 
   // Golongan aktif untuk dropdown; diskonnya ditampilkan biar admin sadar dampaknya.
   const { data: katData } = await supabase

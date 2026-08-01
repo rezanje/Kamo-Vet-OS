@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
 
 export async function simpanAnabul(formData: FormData) {
   const supabase = await createClient();
@@ -28,6 +29,16 @@ export async function simpanAnabul(formData: FormData) {
     );
   }
 
+  // Layar ini artinya "tambah anabul BARU" — beda dari registrasi klinik yang
+  // memakai ulang kartu lama. Di sini nama kembar ditolak dengan pesan jelas,
+  // karena menambah kartu kedua untuk hewan yang sama memecah riwayat medisnya.
+  const senama = await cariAnabulSenama(supabase, customerId, nama);
+  if (senama) {
+    redirect(
+      `/crm/anabul/baru?error=${encodeURIComponent(pesanAnabulKembar(nama))}&customer=${customerId}`
+    );
+  }
+
   const { error } = await supabase.from("pets").insert({
     customer_id: customerId,
     name: nama,
@@ -46,8 +57,10 @@ export async function simpanAnabul(formData: FormData) {
   });
 
   if (error) {
+    // Balapan dua staff menyimpan bersamaan: index yang menahan, bukan cek di atas.
+    const pesan = errorAnabulKembar(error.message) ? pesanAnabulKembar(nama) : error.message;
     redirect(
-      `/crm/anabul/baru?error=${encodeURIComponent(error.message)}&customer=${customerId}`
+      `/crm/anabul/baru?error=${encodeURIComponent(pesan)}&customer=${customerId}`
     );
   }
 
