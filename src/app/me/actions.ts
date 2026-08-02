@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyEmployee } from "@/lib/employee";
+import { cekLokasiAbsen, pesanTolakLokasi, type TitikCabang } from "@/lib/lokasi";
 
 function todayJakarta(): string {
   // WIB (UTC+7) date string YYYY-MM-DD.
@@ -14,11 +15,34 @@ function nowTimeJakarta(): string {
   return wib.toISOString().slice(11, 16); // HH:MM
 }
 
-export async function clockIn() {
+// Posisi HP dikirim dari tombol absen; kosong = izin lokasi ditolak atau tidak tersedia.
+function bacaPosisi(formData: FormData): { lat: number; lng: number } | null {
+  const lat = Number(formData.get("lat"));
+  const lng = Number(formData.get("lng"));
+  return Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)
+    ? { lat, lng }
+    : null;
+}
+
+// Absen hanya boleh dari lokasi cabang karyawan — kalau cabangnya sudah diberi titik.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pastikanDiLokasi(supabase: any, branchId: string | null, formData: FormData) {
+  if (!branchId) return;
+  const { data } = await supabase
+    .from("branches").select("lat, lng, radius_m").eq("id", branchId).maybeSingle();
+  if (!data) return;
+
+  const hasil = cekLokasiAbsen(data as TitikCabang, bacaPosisi(formData));
+  if (!hasil.boleh) redirect(`/me?error=${encodeURIComponent(pesanTolakLokasi(hasil))}`);
+}
+
+export async function clockIn(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const emp = user ? await getMyEmployee(supabase as never, user.id) : null;
   if (!emp) redirect(`/me?error=${encodeURIComponent("Akun belum tertaut ke data karyawan")}`);
+
+  await pastikanDiLokasi(supabase, emp!.branch_id, formData);
 
   // upsert: buat / isi jam_masuk untuk hari ini (pola sama dgn hris/absensi).
   await supabase.from("attendance").upsert(
@@ -28,11 +52,13 @@ export async function clockIn() {
   redirect("/me?success=in");
 }
 
-export async function clockOut() {
+export async function clockOut(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const emp = user ? await getMyEmployee(supabase as never, user.id) : null;
   if (!emp) redirect(`/me?error=${encodeURIComponent("Akun belum tertaut ke data karyawan")}`);
+
+  await pastikanDiLokasi(supabase, emp!.branch_id, formData);
 
   await supabase.from("attendance")
     .update({ jam_pulang: nowTimeJakarta() })

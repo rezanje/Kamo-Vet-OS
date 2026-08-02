@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getMyEmployee } from "@/lib/employee";
 import { attendanceState, nextAction } from "@/lib/attendance";
 import { clockIn, clockOut } from "./actions";
+import { AbsenTombol } from "./AbsenTombol";
 import { CutiForm } from "./CutiForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -117,10 +118,10 @@ export default async function MePage({
               <div style={{ fontSize: 11.5 }}>Pulang: <b>{att?.jam_pulang ?? "—"}</b></div>
               <div style={{ marginLeft: "auto" }}>
                 {action === "clockIn" && (
-                  <form action={clockIn}><button type="submit" className="btn-acc"><i className="ti ti-login-2" /> Clock In</button></form>
+                  <AbsenTombol aksi={clockIn} label="Clock In" icon="ti-login-2" />
                 )}
                 {action === "clockOut" && (
-                  <form action={clockOut}><button type="submit" className="btn-acc" style={{ background: "var(--am)" }}><i className="ti ti-logout-2" /> Clock Out</button></form>
+                  <AbsenTombol aksi={clockOut} label="Clock Out" icon="ti-logout-2" warna="var(--am)" />
                 )}
                 {action === null && <span className="bge g">Selesai hari ini</span>}
               </div>
