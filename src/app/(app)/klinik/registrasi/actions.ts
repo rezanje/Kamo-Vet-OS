@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { nextQueueNumber } from "@/lib/queue";
 import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
+import { resolveDokter } from "@/lib/dokter";
 
 // Inti registrasi: buat/reuse pelanggan, simpan anabul, buat visit + nomor antrian.
 // Return visitId supaya caller bisa arahkan ke antrian atau langsung pembayaran.
@@ -36,7 +37,9 @@ async function daftar(formData: FormData): Promise<string> {
   const photoUrl = String(formData.get("photoUrl") ?? "").trim() || null;
 
   const poli = String(formData.get("poli") ?? "Poli Umum");
-  const dokter = String(formData.get("dokter") ?? "") || null;
+  // Dokter dipilih dari daftar karyawan; namanya diambil dari master, bukan dari
+  // form, supaya nama di dokumen cetak tidak pernah beda dari orang yang dibayar.
+  const { doctorId, nama: dokter } = await resolveDokter(supabase, String(formData.get("doctor_id") ?? "").trim() || null);
   const branchId = String(formData.get("branchId") ?? "");
   const kontrol = String(formData.get("kontrol") ?? "baru");
   const tujuanKontrol = String(formData.get("tujuanKontrol") ?? "").trim();
@@ -112,7 +115,7 @@ async function daftar(formData: FormData): Promise<string> {
 
   const { data: visit, error: visitErr } = await supabase
     .from("visits")
-    .insert({ branch_id: branchId, customer_id: customerId, pet_id: finalPetId, poli, dokter, keluhan, status: "Menunggu", queue_number: queueNumber })
+    .insert({ branch_id: branchId, customer_id: customerId, pet_id: finalPetId, poli, dokter, doctor_id: doctorId, keluhan, status: "Menunggu", queue_number: queueNumber })
     .select("id").single();
   if (visitErr || !visit) {
     redirect(`/klinik/registrasi?error=${encodeURIComponent(visitErr?.message ?? "Gagal buat kunjungan")}`);

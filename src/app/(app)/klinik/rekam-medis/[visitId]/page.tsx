@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions, type ItemUnit } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
+import { daftarDokter } from "@/lib/dokter";
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
@@ -38,7 +39,7 @@ export default async function RekamMedisPage({
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, pet_id, branch_id, poli, status, dokter, keluhan, created_at, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
+    .select("id, pet_id, branch_id, poli, status, dokter, doctor_id, keluhan, created_at, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
     .eq("id", visitId)
     .maybeSingle();
 
@@ -46,6 +47,7 @@ export default async function RekamMedisPage({
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
+  const dokterOpsi = await daftarDokter(supabase);
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
@@ -401,6 +403,7 @@ export default async function RekamMedisPage({
         <RekamForm
           visitId={visit.id}
           petId={visit.pet_id}
+          dokterOpsi={dokterOpsi}
           currentWeight={pet?.weight ?? null}
           items={obatItems}
           bahanItems={bahanItems}
@@ -412,6 +415,7 @@ export default async function RekamMedisPage({
             noRM: petIdCode,
             tglPeriksa,
             dokter: visit.dokter ?? "",
+            dokterId: visit.doctor_id ?? null,
             owner: cust?.name ?? "—",
             phone: cust?.phone ?? "—",
             address: cust?.address ?? "—",

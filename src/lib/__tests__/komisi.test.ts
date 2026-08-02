@@ -3,6 +3,7 @@ import { hitungKomisi, realisasiTarget, type AturanKomisi, type BarisJual, type 
 
 const baris = (o: Partial<BarisJual> = {}): BarisJual => ({
   tanggal: "2026-08-10",
+  sumber: "kasir",
   employeeId: "emp1",
   branchId: "cab1",
   itemId: "it1",
@@ -18,6 +19,7 @@ const aturan = (o: Partial<AturanKomisi> = {}): AturanKomisi => ({
   nama: "Komisi",
   tipe: "persen",
   basis: "omzet",
+  sumber: "semua",
   persen: 2,
   nominal: 0,
   employeeId: null,
@@ -114,6 +116,17 @@ describe("hitungKomisi", () => {
     const h = hitungKomisi([baris(), baris({ employeeId: "emp2", omzet: 50_000 })], [aturan()]);
     expect(h).toHaveLength(2);
     expect(h.find((x) => x.employeeId === "emp2")?.komisi).toBe(1_000);
+  });
+
+  it("aturan khusus klinik tidak ikut membayar penjualan kasir, dan sebaliknya", () => {
+    const kasir = baris();
+    const klinik = baris({ sumber: "klinik" });
+
+    expect(satu([kasir], [aturan({ sumber: "klinik" })]).rincian).toHaveLength(0);
+    expect(satu([klinik], [aturan({ sumber: "kasir" })]).rincian).toHaveLength(0);
+    expect(satu([klinik], [aturan({ sumber: "klinik", persen: 5 })]).komisi).toBe(5_000);
+    // 'semua' menjaring keduanya: 2% × 200rb.
+    expect(satu([kasir, klinik], [aturan()]).komisi).toBe(4_000);
   });
 
   it("baris tanpa penjual tidak dapat komisi", () => {

@@ -41,9 +41,17 @@ type ReturRow = {
   sales_return_items: { item_id: string | null; qty: number; harga: number }[] | null;
 };
 
+type InvoiceRow = {
+  id: string;
+  paid_at: string;
+  total: number;
+  visits: { branch_id: string | null; doctor_id: string | null } | { branch_id: string | null; doctor_id: string | null }[] | null;
+  invoice_items: { item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
+};
+
 export type DataKomisi = {
   baris: BarisJual[];
-  /** Omzet yang tidak bisa dibagikan ke siapa pun (kasirnya belum terhubung ke data karyawan). */
+  /** Omzet yang tidak bisa dibagikan ke siapa pun (kasir/dokternya belum terhubung ke data karyawan). */
   omzetTanpaPenjual: number;
 };
 
@@ -120,6 +128,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       // data karyawan. `hitungKomisi` yang menyaringnya.
       baris.push({
         tanggal: s.created_at.slice(0, 10),
+        sumber: "kasir",
         employeeId,
         branchId: s.branch_id,
         itemId: it.item_id,
@@ -154,6 +163,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       const hppUnit = it.item_id ? info.hppPerUnit.get(it.item_id) : undefined;
       baris.push({
         tanggal: r.tanggal,
+        sumber: "kasir",
         employeeId: info.employeeId,
         branchId: info.branchId,
         itemId: it.item_id,
@@ -161,6 +171,45 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
         qty: -qty,
         omzet: -nilai,
         laba: hppUnit === undefined ? null : -(nilai - hppUnit * qty),
+      });
+    }
+  }
+
+  // ── Klinik: tagihan kunjungan yang sudah lunas, jadi haknya dokter ────────────
+  // Dipatok pada tanggal bayar, bukan tanggal periksa: yang dikomisikan adalah uang
+  // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
+  const { data: invData } = await supabase
+    .from("invoices")
+    .select("id, paid_at, total, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp)")
+    .eq("paid_status", "Lunas")
+    .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`);
+
+  for (const inv of (invData ?? []) as InvoiceRow[]) {
+    const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
+    const employeeId = v?.doctor_id ?? null;
+    const items = inv.invoice_items ?? [];
+
+    // Baris tagihan klinik tidak punya diskon per baris; potongannya cuma di kepala
+    // tagihan, jadi dibagi proporsional seperti struk kasir.
+    const kotorPer = items.map((it) => Number(it.qty) * Number(it.harga));
+    const jumlahBaris = kotorPer.reduce((a, x) => a + x, 0);
+    const potongan = Math.max(0, jumlahBaris - Number(inv.total));
+
+    for (const [idx, it] of items.entries()) {
+      const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
+      if (!employeeId) omzetTanpaPenjual += omzet;
+
+      baris.push({
+        tanggal: inv.paid_at.slice(0, 10),
+        sumber: "klinik",
+        employeeId,
+        branchId: v?.branch_id ?? null,
+        itemId: it.item_id,
+        kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
+        qty: Number(it.qty),
+        omzet,
+        // Jasa tidak punya modal barang — labanya utuh, bukan tidak diketahui.
+        laba: it.item_id === null ? omzet : it.hpp === null ? null : omzet - Number(it.hpp),
       });
     }
   }
@@ -190,7 +239,7 @@ async function infoStrukLuarPeriode(
 export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomisi[]> {
   const { data } = await supabase
     .from("commission_rules")
-    .select("id, nama, tipe, basis, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai")
+    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai")
     .eq("is_active", true)
     .order("nama");
 
@@ -199,6 +248,7 @@ export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomis
     nama: String(r.nama),
     tipe: r.tipe as "persen" | "nominal",
     basis: r.basis as "omzet" | "laba",
+    sumber: r.sumber as "semua" | "kasir" | "klinik",
     persen: Number(r.persen),
     nominal: Number(r.nominal),
     employeeId: (r.employee_id as string | null) ?? null,

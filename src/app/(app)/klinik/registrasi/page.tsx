@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { daftarDokter } from "@/lib/dokter";
 import { RegistrasiForm } from "./RegistrasiForm";
 
 export default async function RegistrasiPage({
@@ -28,6 +29,8 @@ export default async function RegistrasiPage({
     ? { data: [{ id: shift.branch_id, code: "", name: shift.branchName }] }
     : await supabase.from("branches").select("id, code, name").order("name");
 
+  const dokter = await daftarDokter(supabase);
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -44,7 +47,7 @@ export default async function RegistrasiPage({
         </div>
       )}
 
-      <RegistrasiForm branches={branches ?? []} lockBranch={!!shift} />
+      <RegistrasiForm branches={branches ?? []} dokter={dokter} lockBranch={!!shift} />
     </>
   );
 }

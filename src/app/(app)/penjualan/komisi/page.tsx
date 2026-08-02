@@ -9,8 +9,14 @@ import { hapusAturanKomisi, simpanAturanKomisi, toggleAturanKomisi } from "./act
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const periodeSekarang = () => new Date().toISOString().slice(0, 7);
 
+const LABEL_SUMBER: Record<string, string> = {
+  semua: "Kasir & klinik",
+  kasir: "Kasir / petshop",
+  klinik: "Klinik",
+};
+
 type Aturan = {
-  id: string; nama: string; tipe: string; basis: string; persen: number; nominal: number;
+  id: string; nama: string; tipe: string; basis: string; sumber: string; persen: number; nominal: number;
   employee_id: string | null; branch_id: string | null; category_id: string | null; item_id: string | null;
   min_omzet: number; berlaku_dari: string | null; berlaku_sampai: string | null; is_active: boolean;
 };
@@ -29,7 +35,7 @@ export default async function KomisiPage({
   const [{ data: aturanData }, { data: empData }, { data: cabData }, { data: katData }, { data: itemData }, hitungan] =
     await Promise.all([
       supabase.from("commission_rules")
-        .select("id, nama, tipe, basis, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active")
+        .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active")
         .order("nama"),
       supabase.from("employees").select("id, nama, jabatan").eq("status", "Aktif").order("nama"),
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
@@ -98,6 +104,14 @@ export default async function KomisiPage({
                 <select className="fi" name="basis" defaultValue="omzet" required>
                   <option value="omzet">Omzet (harga jual)</option>
                   <option value="laba">Laba kotor (harga jual − modal)</option>
+                </select>
+              </div>
+              <div>
+                <label className="flab">Sumber transaksi *</label>
+                <select className="fi" name="sumber" defaultValue="semua" required>
+                  <option value="semua">Kasir &amp; klinik</option>
+                  <option value="kasir">Kasir / petshop saja</option>
+                  <option value="klinik">Klinik saja (insentif dokter)</option>
                 </select>
               </div>
             </div>
@@ -174,6 +188,7 @@ export default async function KomisiPage({
               <tr>
                 <th>Aturan</th>
                 <th style={{ width: 150 }}>Hitungan</th>
+                <th style={{ width: 120 }}>Sumber</th>
                 <th style={{ width: 230 }}>Berlaku untuk</th>
                 <th style={{ width: 130, textAlign: "right" }}>Ambang cair</th>
                 <th style={{ width: 80 }}>Status</th>
@@ -195,6 +210,9 @@ export default async function KomisiPage({
                     {a.tipe === "persen"
                       ? `${Number(a.persen)}% dari ${a.basis === "laba" ? "laba" : "omzet"}`
                       : `${rp(Number(a.nominal))} / unit`}
+                  </td>
+                  <td style={{ fontSize: 10.5 }}>
+                    <span className={`bge ${a.sumber === "klinik" ? "b" : ""}`}>{LABEL_SUMBER[a.sumber] ?? a.sumber}</span>
                   </td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{cakupan(a)}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>
@@ -221,7 +239,7 @@ export default async function KomisiPage({
                 </tr>
               ))}
               {aturan.length === 0 && (
-                <tr><td colSpan={bolehKelola ? 6 : 5} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
+                <tr><td colSpan={bolehKelola ? 7 : 6} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
                   Belum ada aturan komisi — komisi semua karyawan masih nol.
                 </td></tr>
               )}
@@ -233,7 +251,7 @@ export default async function KomisiPage({
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader
           num="02" title="HITUNGAN PER KARYAWAN"
-          desc="Angka hidup dari penjualan & retur bulan itu. Masuk slip gaji saat penggajian dihitung."
+          desc="Angka hidup dari struk kasir, retur, dan tagihan klinik yang lunas bulan itu. Masuk slip gaji saat penggajian dihitung."
           action={
             <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input className="fi" type="month" name="periode" defaultValue={periode} style={{ fontSize: 11, height: 30, width: 150 }} />
@@ -249,8 +267,8 @@ export default async function KomisiPage({
 
         {hitungan.omzetTanpaPenjual !== 0 && (
           <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
-            <i className="ti ti-alert-triangle" /> {rp(hitungan.omzetTanpaPenjual)} penjualan tidak punya penjual —
-            kasirnya belum terhubung ke data karyawan, jadi tidak dapat komisi. Sambungkan di menu Karyawan.
+            <i className="ti ti-alert-triangle" /> {rp(hitungan.omzetTanpaPenjual)} penjualan tidak punya penerima komisi —
+            kasirnya belum terhubung ke data karyawan, atau kunjungan kliniknya belum dipilih dokternya.
           </div>
         )}
         {adaAturanLaba && tanpaHpp > 0 && (

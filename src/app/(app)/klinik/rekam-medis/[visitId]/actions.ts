@@ -6,6 +6,7 @@ import { stockDeductions } from "@/lib/compounding";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
+import { resolveDokter } from "@/lib/dokter";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
@@ -40,7 +41,10 @@ export async function simpanRekamMedis(formData: FormData) {
 
   const visitId = String(formData.get("visitId") ?? "");
   const petId = String(formData.get("petId") ?? "");
-  const dokter = String(formData.get("dokter") ?? "").trim() || null;
+  // Dokter dipilih dari daftar karyawan. Sebelumnya field ini dibaca dari form yang
+  // tidak pernah mengirimnya, jadi setiap simpan rekam medis justru MENGHAPUS nama
+  // dokter yang sudah diisi saat registrasi.
+  const { doctorId, nama: dokter } = await resolveDokter(supabase, String(formData.get("doctor_id") ?? "").trim() || null);
   const beratRaw = formData.get("berat");
   const berat = beratRaw ? Number(beratRaw) : null;
   const suhuRaw = formData.get("suhu");
@@ -202,7 +206,7 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   // §3.4: rekam medis selesai → lanjut tahap Pembayaran. keluhan disinkron ke visit.
-  await supabase.from("visits").update({ status: "Pembayaran", dokter, keluhan }).eq("id", visitId);
+  await supabase.from("visits").update({ status: "Pembayaran", dokter, doctor_id: doctorId, keluhan }).eq("id", visitId);
 
   // Tujuan setelah simpan tergantung tombol yg dipencet.
   if (next === "resep") redirect(`${back}/resep`);            // cetak resep

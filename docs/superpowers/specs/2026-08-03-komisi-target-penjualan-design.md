@@ -20,9 +20,8 @@ Akibatnya:
   `sale_items.hpp` sudah ada sejak migrasi 0084, jadi basis laba bisa dihitung.
   Boss belum mengunci pilihannya → default `omzet`, tinggal ganti per aturan di layar.
 - **Sumber angka = tabel `sales`** (kasir petshop + penjualan online), dikurangi retur
-  penjualan. Invoice klinik (`invoices`) **tidak ikut** — barisnya cuma teks bebas, tidak
-  punya `item_id`/HPP, jadi tidak bisa dipetakan ke produk atau kategori. Jasa medis dokter
-  adalah skema insentif yang berbeda; kalau boss mau, itu fase terpisah.
+  penjualan. Invoice klinik awalnya dinyatakan tidak ikut — **keputusan itu dibatalkan di
+  fase 5 di bawah** setelah dicek ulang; tagihan klinik ternyata bisa dipetakan ke produk.
 - **Atribusi penjual = kasir yang menutup struk** (`sales.cashier_id` → `employees.profile_id`).
   Tidak menambah pemilih "penjual" di layar kasir dulu — struk yang tidak punya karyawan
   terkait dilaporkan sebagai "tanpa penjual", tidak diam-diam hilang.
@@ -83,9 +82,28 @@ supaya ketahuan, bukan diam-diam dianggap laba penuh.
 kolom `payrolls.komisi` menyimpan angkanya sebagai potret. Slip yang sudah disahkan tidak ikut
 berubah kalau ada retur belakangan — itu memang disengaja, sama seperti kolom rincian lain.
 
-## Yang sengaja tidak dikerjakan
+### Fase 5 — Insentif dokter dari klinik (migrasi 0092, 2026-08-03)
 
-- Komisi/jasa medis dokter dari invoice klinik.
+Keputusan awal "invoice klinik tidak ikut" **dibatalkan** setelah dicek ulang: `invoice_items`
+sudah punya `item_id` dan `hpp` sejak migrasi 0084, jadi baris klinik bisa dipetakan ke produk
+dan kategori seperti struk kasir.
+
+Penghalang sebenarnya ada di tempat lain: `visits.dokter` cuma teks bebas. Ditambah
+`visits.doctor_id` (FK ke `employees`, di-backfill dari nama yang persis sama), dan layar
+registrasi + rekam medis sekarang **memilih dokter dari daftar karyawan**, bukan mengetik.
+Nama tetap disimpan di kolom lama supaya resep, dokumen, dan surat persetujuan tidak berubah.
+
+Ikut ketahuan & diperbaiki: `simpanRekamMedis` membaca field `dokter` yang tidak pernah dikirim
+formnya, jadi **setiap simpan rekam medis menghapus nama dokter** yang diisi saat registrasi.
+
+`commission_rules.sumber` (`semua` / `kasir` / `klinik`) menjaga aturan insentif dokter tidak
+ikut membayar penjualan petshop kalau dokternya kebetulan pernah menutup struk kasir.
+
+Baris klinik diambil dari tagihan **berstatus Lunas**, dipatok pada tanggal bayar — yang
+dikomisikan adalah uang yang benar-benar masuk. Baris jasa tidak punya modal barang, jadi
+labanya dianggap utuh, bukan "tidak diketahui".
+
+## Yang sengaja tidak dikerjakan
 - Import Excel aturan & target.
 - Komisi berjenjang bertingkat (mis. 2% sampai 50 juta, 3% di atasnya) — `min_omzet` sudah
   menutup kasus "cair kalau target tercapai"; tingkatan penuh menyusul kalau memang dipakai.

@@ -4,8 +4,12 @@
 // Keluaran: per karyawan — omzet, laba, komisi, dan rincian per aturan supaya angkanya
 // bisa ditelusuri, bukan cuma satu total yang harus dipercaya begitu saja.
 
+/** kasir = struk POS & penjualan online · klinik = tagihan kunjungan yang sudah lunas. */
+export type SumberJual = "kasir" | "klinik";
+
 export type BarisJual = {
   tanggal: string;              // YYYY-MM-DD
+  sumber: SumberJual;
   // null = struknya tidak terhubung ke karyawan mana pun. Barisnya tetap dibawa
   // supaya realisasi target per cabang/kategori tidak kehilangan omzet, tapi
   // tidak ikut dihitung komisinya.
@@ -23,6 +27,7 @@ export type AturanKomisi = {
   nama: string;
   tipe: "persen" | "nominal";
   basis: "omzet" | "laba";
+  sumber: SumberJual | "semua";
   persen: number;
   nominal: number;              // rupiah per unit terjual
   employeeId: string | null;
@@ -80,6 +85,9 @@ export function realisasiTarget(baris: BarisJual[], t: TargetPenjualan): { reali
 }
 
 function cocok(b: BarisJual, a: AturanKomisi): boolean {
+  // Tanpa saringan sumber, aturan "insentif dokter" ikut membayar penjualan petshop
+  // begitu dokternya sekali saja menutup struk kasir.
+  if (a.sumber !== "semua" && a.sumber !== b.sumber) return false;
   if (a.employeeId && a.employeeId !== b.employeeId) return false;
   if (a.branchId && a.branchId !== b.branchId) return false;
   if (a.itemId && a.itemId !== b.itemId) return false;

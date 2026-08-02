@@ -24,7 +24,11 @@ const emptyPet: PetLite = {
   sterilisasi: "Utuh", microchip: "", alergi: "", kondisi_khusus: "", golongan_darah: "", photo_url: "",
 };
 
-export function RegistrasiForm({ branches, lockBranch = false }: { branches: { id: string; name: string }[]; lockBranch?: boolean }) {
+export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
+  branches: { id: string; name: string }[];
+  dokter?: { id: string; nama: string; jabatan: string | null }[];
+  lockBranch?: boolean;
+}) {
   const [phone, setPhone] = useState("");
   const [looking, setLooking] = useState(false);
   const [customer, setCustomer] = useState<CustomerLite | null>(null);
@@ -155,7 +159,12 @@ export function RegistrasiForm({ branches, lockBranch = false }: { branches: { i
           <div className="frow">
             <div>
               <label className="flab">Dokter</label>
-              <input className="fi" name="dokter" placeholder="Drh. Rena" />
+              <select className="fi" name="doctor_id" defaultValue="">
+                <option value="">— belum ditentukan —</option>
+                {dokter.map((d) => (
+                  <option key={d.id} value={d.id}>{d.nama}{d.jabatan ? ` · ${d.jabatan}` : ""}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="flab">Jenis kunjungan</label>

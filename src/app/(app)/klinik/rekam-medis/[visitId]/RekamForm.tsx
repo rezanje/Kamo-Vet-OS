@@ -38,13 +38,14 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItems, currentWeight }: {
+export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItems, currentWeight, dokterOpsi }: {
   visitId: string; petId: string;
-  patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
+  patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   bahanItems: ItemLite[];
   jasaItems: ItemLite[];
   currentWeight: number | null;
+  dokterOpsi: { id: string; nama: string; jabatan: string | null }[];
 }) {
   const [tab, setTab] = useState<"Obat" | "Jasa" | "Paket" | "Racikan">("Obat");
   const [search, setSearch] = useState("");
@@ -164,7 +165,16 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
                 <MiniKV k="No. RM" v={patient.noRM} />
                 <MiniKV k="Tgl Periksa" v={patient.tglPeriksa} />
                 <MiniKV k="Pemilik" v={patient.owner} />
-                <MiniKV k="Dokter" v={patient.dokter || "—"} />
+                {/* Dokter dipilih di sini, bukan cuma ditampilkan: dialah yang
+                    dicatat sebagai penanggung jawab kunjungan dan dapat insentif. */}
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter</span>
+                  <select className="fi" name="doctor_id" defaultValue={patient.dokterId ?? ""}
+                    style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
+                    <option value="">— belum ditentukan —</option>
+                    {dokterOpsi.map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
+                  </select>
+                </div>
                 <MiniKV k="No. HP" v={patient.phone} />
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ color: "var(--tm)", minWidth: 62 }}>Kategori</span>
