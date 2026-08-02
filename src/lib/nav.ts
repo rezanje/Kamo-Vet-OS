@@ -100,6 +100,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Slip Gaji", icon: "ti-moneybag", ...G, href: "/hris/penggajian" },
     { label: "Menu Karyawan", icon: "ti-id-badge", ...G, href: "/me" },
     { label: "Cuti & lembur", icon: "ti-beach", ...G, href: "/hris/cuti" },
+    { label: "Pengajuan (lembur/kasbon/reimburse)", icon: "ti-file-check", ...G, href: "/hris/pengajuan" },
     { label: "KPI karyawan", icon: "ti-chart-dots", ...P, href: "/hris/kpi" },
     { label: "Komponen gaji", icon: "ti-coin", ...B, href: "/hris/komponen-gaji" },
     { label: "Master shift", icon: "ti-clock-hour-8", ...B, href: "/hris/shift" },

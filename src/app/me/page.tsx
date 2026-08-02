@@ -6,6 +6,7 @@ import { attendanceState, nextAction } from "@/lib/attendance";
 import { clockIn, clockOut } from "./actions";
 import { AbsenTombol } from "./AbsenTombol";
 import { CutiForm } from "./CutiForm";
+import { PengajuanCards, type Kasbon, type Lembur, type Reimburse } from "./PengajuanCards";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const LEAVE_BADGE: Record<string, string> = { Menunggu: "o", Disetujui: "g", Ditolak: "r" };
@@ -39,15 +40,28 @@ export default async function MePage({
   let kpi: { metrik: string; target: number | null; realisasi: number | null; skor: number }[] = [];
   let att: { jam_masuk: string | null; jam_pulang: string | null } | null = null;
   let leaves: { jenis: string; tanggal_mulai: string; tanggal_selesai: string | null; durasi: number | null; status: string }[] = [];
+  let lembur: Lembur[] = [];
+  let kasbon: Kasbon[] = [];
+  let reimburse: Reimburse[] = [];
   if (emp) {
-    const [{ data: k }, { data: a }, { data: l }] = await Promise.all([
+    const [{ data: k }, { data: a }, { data: l }, { data: ot }, { data: ca }, { data: rb }] = await Promise.all([
       supabase.from("kpi_records").select("metrik, target, realisasi, skor").eq("employee_id", emp.id).eq("periode", monthKey).order("metrik"),
       supabase.from("attendance").select("jam_masuk, jam_pulang").eq("employee_id", emp.id).eq("tanggal", wibDate).maybeSingle(),
       supabase.from("leave_requests").select("jenis, tanggal_mulai, tanggal_selesai, durasi, status").eq("employee_id", emp.id).order("created_at", { ascending: false }).limit(10),
+      supabase.from("overtime_requests").select("id, tanggal, jam, status").eq("employee_id", emp.id).order("tanggal", { ascending: false }).limit(6),
+      supabase.from("cash_advances").select("id, tanggal, jumlah, tenor_bulan, status, cash_advance_installments(jumlah)").eq("employee_id", emp.id).order("created_at", { ascending: false }).limit(4),
+      supabase.from("reimbursements").select("id, tanggal, kategori, jumlah, status").eq("employee_id", emp.id).order("created_at", { ascending: false }).limit(6),
     ]);
     kpi = k ?? [];
     att = a ?? null;
     leaves = l ?? [];
+    lembur = (ot ?? []) as Lembur[];
+    reimburse = (rb ?? []) as Reimburse[];
+    kasbon = ((ca ?? []) as unknown as (Omit<Kasbon, "dibayar"> & { cash_advance_installments: { jumlah: number }[] })[])
+      .map((c) => ({
+        ...c,
+        dibayar: (c.cash_advance_installments ?? []).reduce((a, i) => a + Number(i.jumlah), 0),
+      }));
   }
   const attState = attendanceState(att);
   const action = nextAction(attState);
@@ -57,6 +71,9 @@ export default async function MePage({
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success === "in" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-login-2" /> Clock-in tercatat. Selamat bekerja!</div>}
       {success === "out" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-logout-2" /> Clock-out tercatat. Sampai jumpa!</div>}
+      {success === "lembur" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengajuan lembur terkirim — menunggu persetujuan.</div>}
+      {success === "kasbon" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengajuan kasbon terkirim — menunggu persetujuan.</div>}
+      {success === "reimburse" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengajuan reimburse terkirim — menunggu persetujuan.</div>}
       {success === "cuti" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengajuan terkirim — menunggu persetujuan manajer.</div>}
 
       <div style={{ fontSize: 18, fontWeight: 800, color: "var(--posb)", marginBottom: 4 }}>Halo, {emp?.nama?.split(" ")[0] ?? "Staff"}!</div>
@@ -127,6 +144,11 @@ export default async function MePage({
               </div>
             </div>
           </div>
+
+          {/* 4b. Lembur, kasbon, reimburse */}
+          {emp && (
+            <PengajuanCards hariIni={wibDate} lembur={lembur} kasbon={kasbon} reimburse={reimburse} />
+          )}
 
           {/* 4. Pengajuan Cuti/Izin */}
           <div className="card">
