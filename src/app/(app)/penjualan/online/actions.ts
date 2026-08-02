@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
@@ -198,7 +199,7 @@ export async function buatPenjualanOnline(formData: FormData) {
   }
 
   // Jurnal pendapatan. Marketplace ditahan platform → piutang; WA langsung ke bank.
-  const debitCode = marketplace ? "1202" : "1102";
+  const debitCode = marketplace ? "1202" : await kodeAkunBayar(supabase, "Transfer", branchId);
   const { dpp, ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
   await postJournal(supabase, {
     tanggal, deskripsi: `Penjualan online ${channel} ${noStruk}`,
@@ -288,7 +289,7 @@ export async function tandaiCair(formData: FormData) {
     deskripsi: `Pencairan ${sale!.channel} ${sale!.no_struk}`,
     source: "sale-online-cair", sourceRef: sale!.no_struk, branchId: sale!.branch_id,
     lines: [
-      { code: "1102", debit: Math.min(nominal, total), credit: 0 },
+      { code: await kodeAkunBayar(supabase, "Transfer", sale!.branch_id), debit: Math.min(nominal, total), credit: 0 },
       ...(komisi > 0 ? [{ code: "5305", debit: komisi, credit: 0 }] : []),
       { code: "1202", debit: 0, credit: total },
     ],

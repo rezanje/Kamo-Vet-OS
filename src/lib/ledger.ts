@@ -2,6 +2,8 @@
 // (volume prototype kecil). Saldo per akun mengikuti sifat saldo normal.
 // Semua fungsi menerima filter periode (from/to, inklusif) + cabang.
 
+import { kodeSemuaRekening } from "./kas-akun";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
@@ -64,7 +66,7 @@ export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter):
     .sort((x, y) => (TYPE_ORDER.indexOf(x.type) - TYPE_ORDER.indexOf(y.type)) || x.code.localeCompare(y.code));
 }
 
-export type LedgerLine = { tanggal: string; no_jurnal: string; deskripsi: string; debit: number; credit: number };
+export type LedgerLine = { tanggal: string; no_jurnal: string; deskripsi: string; source: string; debit: number; credit: number };
 
 // Mutasi satu akun (untuk buku besar detail), urut tanggal — saldo berjalan dihitung di page.
 export async function getAccountLedger(supabase: AnyClient, code: string, f?: LedgerFilter): Promise<LedgerLine[]> {
@@ -79,6 +81,7 @@ export async function getAccountLedger(supabase: AnyClient, code: string, f?: Le
       tanggal: r.journal_entries?.tanggal ?? "",
       no_jurnal: r.journal_entries?.no_jurnal ?? "",
       deskripsi: r.journal_entries?.deskripsi ?? "",
+      source: r.journal_entries?.source ?? "manual",
       debit: Number(r.debit),
       credit: Number(r.credit),
     }));
@@ -92,7 +95,10 @@ export async function getAccountLedger(supabase: AnyClient, code: string, f?: Le
 export type CashMove = { source: string; masuk: number; keluar: number };
 
 async function cashAccountIds(supabase: AnyClient): Promise<Set<string>> {
-  const { data } = (await supabase.from("coa_accounts").select("id, code").in("code", ["1101", "1102"])) as { data: { id: string }[] | null };
+  // Daftar rekening dibaca dari master, bukan kode mati ["1101","1102"] — rekening
+  // yang ditambah belakangan (Mandiri, QRIS, e-wallet) harus ikut terhitung sebagai kas.
+  const kode = await kodeSemuaRekening(supabase);
+  const { data } = (await supabase.from("coa_accounts").select("id, code").in("code", kode)) as { data: { id: string }[] | null };
   return new Set((data ?? []).map((a) => a.id));
 }
 

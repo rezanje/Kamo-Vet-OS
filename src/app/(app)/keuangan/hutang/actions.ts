@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 
 // Bayar hutang usaha atas PO yang sudah Diterima.
 // Jurnal: Dr Hutang Usaha (2101), Cr Kas/Bank.
@@ -44,7 +45,7 @@ export async function bayarHutang(formData: FormData) {
   });
   if (payErr) redirect(`${back}?error=${encodeURIComponent(payErr.message)}`);
 
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const kasCode = await kodeAkunBayar(supabase, metode, po!.branch_id ?? null, String(formData.get("account_id") ?? "").trim() || null);
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Pembayaran hutang ${po!.no_po ?? poId}`,

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { buildFakturLines, formatNoFaktur, sisaFakturable } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { qtyDiterima } from "@/lib/penerimaan";
@@ -146,7 +147,7 @@ export async function buatFaktur(formData: FormData) {
   redirect("/pembelian/faktur?success=" + encodeURIComponent(`Faktur ${no_faktur} tersimpan.`));
 }
 
-// Bayar hutang per faktur. Jurnal: Dr 2101 / Cr Kas(1101)/Bank(1102).
+// Bayar hutang per faktur. Jurnal: Dr 2101 / Cr rekening kas/bank yang dipilih.
 export async function bayarFaktur(formData: FormData) {
   const supabase = await createClient();
   const back = "/keuangan/hutang";
@@ -156,6 +157,7 @@ export async function bayarFaktur(formData: FormData) {
   const metode = String(formData.get("metode") ?? "Transfer");
   const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
+  const accountId = String(formData.get("account_id") ?? "").trim() || null;
 
   const fail = (msg: string) => redirect(`${back}?error=${encodeURIComponent(msg)}`);
   if (!invoiceId || amount <= 0) fail("Nominal pembayaran tidak valid.");
@@ -180,7 +182,7 @@ export async function bayarFaktur(formData: FormData) {
   if (payErr) fail(payErr.message);
 
   const po = inv!.purchase_orders as unknown as { branch_id: string | null } | null;
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const kasCode = await kodeAkunBayar(supabase, metode, po?.branch_id ?? null, accountId);
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Pembayaran faktur ${inv!.no_faktur}`,

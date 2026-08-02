@@ -150,6 +150,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Transfer Bank", icon: "ti-building-bank", ...G, href: "/kas-bank/transfer" },
     { label: "Rekonsiliasi Bank", icon: "ti-checkbox", ...P, href: "/keuangan/rekonsiliasi" },
     { label: "Daftar Rekening", icon: "ti-wallet", ...B, href: "/kas-bank/rekening" },
+    { label: "Peta Rekening Pembayaran", icon: "ti-arrows-split", ...B, href: "/kas-bank/peta" },
     { label: "Payment Gateway", icon: "ti-credit-card", ...B },
     { label: "Arus Kas", icon: "ti-arrows-exchange", ...P, href: "/keuangan/arus-kas" },
   ],

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 
 // Terima pelunasan piutang atas invoice klinik (DP / Belum Lunas).
 // Jurnal: Dr Kas/Bank, Cr Piutang Usaha (1201). Lunas penuh → invoice Lunas, visit Selesai.
@@ -15,6 +16,7 @@ export async function terimaPelunasan(formData: FormData) {
   const metode = String(formData.get("metode") ?? "Tunai");
   const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
+  const accountId = String(formData.get("account_id") ?? "").trim() || null;
 
   if (!invoiceId || amount <= 0) {
     redirect(`${back}?error=${encodeURIComponent("Nominal pelunasan tidak valid")}`);
@@ -35,16 +37,18 @@ export async function terimaPelunasan(formData: FormData) {
   if (sisa <= 0) redirect(`${back}?error=${encodeURIComponent("Piutang invoice ini sudah nol")}`);
   if (amount > sisa) redirect(`${back}?error=${encodeURIComponent(`Nominal melebihi sisa piutang (maks Rp ${Math.round(sisa).toLocaleString("id-ID")})`)}`);
 
+  const { data: v } = await supabase.from("visits").select("branch_id").eq("id", inv!.visit_id).maybeSingle();
+
+  // Rekening: pilihan manual kasir keuangan menang; kalau kosong ikut peta metode bayar.
+  const kasCode = await kodeAkunBayar(supabase, metode, v?.branch_id ?? null, accountId);
+
   const { data: { user } } = await supabase.auth.getUser();
   const { error: payErr } = await supabase.from("invoice_payments").insert({
-    invoice_id: invoiceId, tanggal, amount, metode, catatan, created_by: user?.id ?? null,
+    invoice_id: invoiceId, tanggal, amount, metode, catatan, kas_code: kasCode, created_by: user?.id ?? null,
   });
   if (payErr) redirect(`${back}?error=${encodeURIComponent(payErr.message)}`);
 
-  const { data: v } = await supabase.from("visits").select("branch_id").eq("id", inv!.visit_id).maybeSingle();
-
   // Jurnal: kas masuk, piutang berkurang.
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Pelunasan piutang ${inv!.invoice_no}`,

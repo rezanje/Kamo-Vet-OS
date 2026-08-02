@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { LampiranPicker } from "@/components/LampiranPicker";
+import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { catatBeban } from "./actions";
 import { KATEGORI_BEBAN } from "./kategori";
 
@@ -11,6 +12,7 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { da
 export default async function BebanPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const rekening = await loadRekeningAktif(supabase);
 
   const [{ data: branches }, { data: rows }] = await Promise.all([
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
@@ -75,6 +77,7 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
                 <option value="Transfer">Bank (transfer)</option>
               </select>
             </div>
+            <PilihRekening rekening={rekening} label="Rekening (opsional)" width={200} />
             <div>
               <label className="flab">Keterangan (opsional)</label>
               <input className="fi" name="deskripsi" placeholder="mis. bayar listrik cabang Cimanggu" />

@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
 import { sisaFakturable } from "@/lib/faktur-beli";
 import { qtyDiterima } from "@/lib/penerimaan";
+import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bayarFaktur } from "../../pembelian/faktur/actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -21,6 +22,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const { success, error } = await searchParams;
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);
+  const rekening = await loadRekeningAktif(supabase);
 
   // Hutang usaha (2101) lahir dari Faktur Pembelian; umur dihitung dari JATUH TEMPO (ala Accurate).
   const [{ data: invs }, { data: pos }, { data: rets }] = await Promise.all([
@@ -186,6 +188,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                             <option>Debit</option>
                           </select>
                         </div>
+                        <PilihRekening rekening={rekening} width={150} />
                         <div>
                           <label className="flab">Tanggal</label>
                           <input className="fi" type="date" name="tanggal" defaultValue={today} style={{ width: 140 }} />

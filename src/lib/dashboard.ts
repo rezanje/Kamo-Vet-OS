@@ -1,5 +1,6 @@
 // Agregat dashboard keuangan (ala Accurate). Read-only, hitung di JS.
 import { getAccountBalances } from "./ledger";
+import { kodeSemuaRekening } from "./kas-akun";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -41,7 +42,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     supabase
       .from("journal_lines")
       .select("debit, credit, coa_accounts!inner(code), journal_entries!inner(tanggal)")
-      .in("coa_accounts.code", ["1101", "1102"])
+      .in("coa_accounts.code", await kodeSemuaRekening(supabase))
       .gte("journal_entries.tanggal", awal7)
       .lte("journal_entries.tanggal", today),
   ]);

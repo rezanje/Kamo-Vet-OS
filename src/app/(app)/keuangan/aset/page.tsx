@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { KategoriUmur } from "./KategoriUmur";
 import { depreciationPerMonth } from "@/lib/aging";
 import { catchUpDepreciation } from "@/lib/depreciation";
+import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { tambahAset, jalankanPenyusutan } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -12,6 +13,7 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { da
 export default async function AsetPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; n?: string }> }) {
   const { success, error, n } = await searchParams;
   const supabase = await createClient();
+  const rekening = await loadRekeningAktif(supabase);
 
   // Penyusutan otomatis (lazy catch-up): periode yang belum disusutkan langsung
   // dijalankan saat halaman dibuka. Idempotent — aman dipanggil berulang.
@@ -147,6 +149,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
                 <option value="Bank">Bank (jurnal otomatis)</option>
               </select>
             </div>
+            <PilihRekening rekening={rekening} label="Rekening (opsional)" width={200} />
             <div>
               <label className="flab">Cabang</label>
               <select className="fi" name="branch_id" defaultValue="">

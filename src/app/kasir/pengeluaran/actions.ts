@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseLampiran } from "@/lib/dokumen";
 
 // Catat pengeluaran dari dunia kasir — cabang otomatis dari shift terbuka (bukan pilihan bebas).
@@ -61,7 +62,7 @@ export async function simpanPengeluaranKasir(formData: FormData) {
     "Lain-lain": "5401",
   };
   const bebanCode = kategoriToCode[kategori] ?? "5401";
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   await postJournal(supabase, {
     tanggal: tanggal || new Date().toISOString().slice(0, 10),
     deskripsi: `Pengeluaran: ${deskripsi || kategori}`,

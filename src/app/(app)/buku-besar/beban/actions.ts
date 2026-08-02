@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseLampiran } from "@/lib/dokumen";
 import { KATEGORI_BEBAN } from "./kategori";
 
@@ -49,7 +50,7 @@ export async function catatBeban(formData: FormData) {
   );
 
   const bebanCode = KATEGORI_BEBAN[kategori] ?? "5401";
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const kasCode = await kodeAkunBayar(supabase, metode, branchId, String(formData.get("account_id") ?? "").trim() || null);
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Beban ${kategori}${deskripsi ? " — " + deskripsi : ""}`,

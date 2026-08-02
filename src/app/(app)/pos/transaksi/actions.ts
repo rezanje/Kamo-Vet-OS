@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
@@ -165,7 +166,7 @@ export async function checkoutSale(formData: FormData) {
 
   // Accounting: Dr Kas/Bank; Cr Pendapatan (+ PPN Keluaran bila Mode PKP aktif).
   // Harga POS = PPN-inklusif (standar retail).
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   const { dpp: dppPos, ppn: ppnPos } = splitPpnInklusif(total, await getPajakSettings(supabase));
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   await postJournal(supabase, {

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { runDepreciationPeriod } from "@/lib/depreciation";
 
 const back = "/keuangan/aset";
@@ -44,7 +45,7 @@ export async function tambahAset(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
 
   if (sumber !== "saldo-awal") {
-    const kasCode = sumber === "Tunai" ? "1101" : "1102";
+    const kasCode = await kodeAkunBayar(supabase, sumber, branchId, String(formData.get("account_id") ?? "").trim() || null);
     await postJournal(supabase, {
       tanggal,
       deskripsi: `Pembelian aset tetap: ${nama}`,

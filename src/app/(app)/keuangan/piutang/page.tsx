@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
+import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { terimaPelunasan } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -16,6 +17,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   const { success, error } = await searchParams;
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);
+  const rekening = await loadRekeningAktif(supabase);
 
   // Invoice aktif yang belum lunas + pembayaran yang sudah masuk.
   const { data: invs } = await supabase
@@ -123,6 +125,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                             <option>Tunai</option><option>QRIS</option><option>Transfer</option><option>Debit</option>
                           </select>
                         </div>
+                        <PilihRekening rekening={rekening} width={150} />
                         <button type="submit" className="pay-btn" style={{ padding: "7px 12px", fontSize: 11 }}>Simpan</button>
                       </form>
                     </details>

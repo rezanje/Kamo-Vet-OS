@@ -56,16 +56,18 @@ Ekstra VetOS (di luar Accurate): Pajak/Mode PKP, Konfigurasi loyalty, Cabang & g
 
 PDF: *"Menu anggaran belum dipakai tapi ada rencana dimanfaatkan untuk efisiensi cost"* → prioritas rendah.
 
-## 4. Kas & Bank (4 wajib) — 1/4 ⚠️ MODUL HILANG
-
-Modul "Kas & Bank" **tidak ada** di VetOS. Cuma satu halamannya yang nyempil di modul Keuangan.
+## 4. Kas & Bank (4 wajib) — 4/4 ✅ SELESAI 2026-08-02
 
 | Tile | Status |
 |---|---|
-| Rekonsiliasi Bank | ✅ `/keuangan/rekonsiliasi` |
-| Pembayaran | ❌ |
-| Penerimaan | ❌ |
-| Transfer Bank | ❌ |
+| Rekonsiliasi Bank | ✅ `/keuangan/rekonsiliasi` — per rekening (dulu terkunci ke BCA) |
+| Pembayaran | ✅ `/keuangan/hutang` (bayar faktur) + `/kas-bank/kas-keluar` |
+| Penerimaan | ✅ `/keuangan/piutang` + `/kas-bank/kas-masuk` |
+| Transfer Bank | ✅ `/kas-bank/transfer` |
+
+Ditambah di luar daftar Accurate: master `/kas-bank/rekening` + **buku mutasi per rekening**,
+dan `/kas-bank/peta` (peta metode bayar → rekening) yang menghapus asumsi lama "semua non-tunai
+masuk satu akun Bank".
 
 Plus permintaan PDF: menu integrasi & pengaturan **payment gateway** (rules beda dari Accurate).
 

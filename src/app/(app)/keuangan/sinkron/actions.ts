@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { isMarketplace } from "@/lib/online";
 
@@ -100,7 +101,7 @@ export async function perbaikiDrift() {
 
   let n = 0;
   for (const i of invoices) {
-    const kasCode = i.metode_bayar === "Tunai" ? "1101" : "1102";
+    const kasCode = await kodeAkunBayar(supabase, i.metode_bayar, i.branch_id);
     await postJournal(supabase, {
       tanggal: i.tanggal,
       deskripsi: `Sinkronisasi: pendapatan jasa klinik ${i.invoice_no}`,
@@ -119,7 +120,7 @@ export async function perbaikiDrift() {
 
   const pajak = await getPajakSettings(supabase);
   for (const s of sales) {
-    const kasCode = s.metode_bayar === "Tunai" ? "1101" : "1102";
+    const kasCode = await kodeAkunBayar(supabase, s.metode_bayar, s.branch_id);
     const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
     await postJournal(supabase, {
       tanggal: s.tanggal,
@@ -139,7 +140,7 @@ export async function perbaikiDrift() {
   for (const s of salesOnline) {
     // Marketplace ditahan platform → piutang (1202); WA langsung ke bank (1102) — sama seperti
     // jurnal asli di penjualan/online/actions.ts.
-    const debitCode = isMarketplace(s.channel) ? "1202" : "1102";
+    const debitCode = isMarketplace(s.channel) ? "1202" : await kodeAkunBayar(supabase, "Transfer", s.branch_id);
     const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
     await postJournal(supabase, {
       tanggal: s.tanggal,

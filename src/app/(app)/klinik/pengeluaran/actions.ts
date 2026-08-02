@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 
 const kategoriToCode: Record<string, string> = {
   "Listrik & Air": "5301", "Perlengkapan": "5302", "Transportasi": "5303",
@@ -38,7 +39,7 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
 
   const bebanCode = kategoriToCode[kategori] ?? "5401";
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   await postJournal(supabase, {
     tanggal: tanggal || new Date().toISOString().slice(0, 10),
     deskripsi: `Pengeluaran klinik: ${deskripsi || kategori}`, source: "expense", sourceRef: null, branchId,

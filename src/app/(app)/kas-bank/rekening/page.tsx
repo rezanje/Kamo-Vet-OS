@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
@@ -117,7 +118,9 @@ export default async function RekeningPage({
               {rekening.map((r, i) => (
                 <tr key={r.id}>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.nama}</td>
+                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>
+                    <Link href={`/kas-bank/rekening/${r.id}`} style={{ color: "#2563eb" }}>{r.nama}</Link>
+                  </td>
                   <td style={{ fontSize: 10.5 }}>{r.jenis}</td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
                     {r.bank_nama ?? "—"}{r.no_rekening ? ` · ${r.no_rekening}` : ""}
@@ -161,9 +164,9 @@ export default async function RekeningPage({
       </div>
 
       <div style={{ fontSize: 10, color: "var(--td)", marginTop: 10 }}>
-        Rekening tidak bisa dihapus karena akunnya sudah dipakai jurnal — nonaktifkan saja.
-        Transaksi kasir, klinik, dan gaji masih masuk ke <b>Kas</b> / <b>Bank BCA</b>;
-        memilih rekening di sana adalah pekerjaan berikutnya.
+        Klik nama rekening untuk melihat <b>buku mutasi</b>-nya. Rekening tidak bisa dihapus
+        karena akunnya sudah dipakai jurnal — nonaktifkan saja. Uang dari kasir & klinik masuk
+        mengikuti <b>Peta Rekening Pembayaran</b>.
       </div>
     </MasterPage>
   );

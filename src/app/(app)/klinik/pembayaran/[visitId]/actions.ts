@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar, kodeBawaan, kodeKasJurnalAsal } from "@/lib/kas-akun";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
@@ -52,8 +53,9 @@ async function potongStokObat(
 }
 
 // Baris jurnal invoice klinik (dipakai posting normal + pembalikan saat edit/void).
-function invoiceJournalLines(inv: { total: number; dpp: number; tax: number; dp_amount: number; paid_status: string; metode_bayar: string }, reverse = false) {
-  const kasCode = inv.metode_bayar === "Tunai" ? "1101" : "1102";
+// kasCode diserahkan pemanggil: posting baru memakai peta rekening, pembalikan memakai
+// akun yang dipakai jurnal aslinya.
+function invoiceJournalLines(inv: { total: number; dpp: number; tax: number; dp_amount: number; paid_status: string }, kasCode: string, reverse = false) {
   const cashReceived = inv.paid_status === "Lunas" ? inv.total : inv.paid_status === "DP" ? inv.dp_amount : 0;
   const piutang = Math.max(0, inv.total - cashReceived);
   const lines = [
@@ -211,15 +213,20 @@ export async function bayarVisit(formData: FormData) {
 
     // §7 edge case: buku besar wajib re-sync — balikkan jurnal lama, posting ulang yang baru.
     const oldDpp = Math.max(0, Number(existing.subtotal) - Number(existing.discount));
+    const kasLama = await kodeKasJurnalAsal(
+      supabase, "klinik", existing.invoice_no,
+      await kodeAkunBayar(supabase, existing.metode_bayar, v?.branch_id ?? null),
+    );
+    const kasBaru = await kodeAkunBayar(supabase, metode, v?.branch_id ?? null);
     await postJournal(supabase, {
       tanggal: todayIso(), deskripsi: `Pembalikan edit invoice ${existing.invoice_no}`, source: "klinik-edit",
       sourceRef: existing.invoice_no, branchId: v?.branch_id ?? null,
-      lines: invoiceJournalLines({ total: Number(existing.total), dpp: oldDpp, tax: Number(existing.tax), dp_amount: Number(existing.dp_amount), paid_status: existing.paid_status, metode_bayar: existing.metode_bayar }, true),
+      lines: invoiceJournalLines({ total: Number(existing.total), dpp: oldDpp, tax: Number(existing.tax), dp_amount: Number(existing.dp_amount), paid_status: existing.paid_status }, kasLama, true),
     });
     await postJournal(supabase, {
       tanggal: todayIso(), deskripsi: `Posting ulang invoice ${existing.invoice_no} (edit)`, source: "klinik-edit",
       sourceRef: existing.invoice_no, branchId: v?.branch_id ?? null,
-      lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus, metode_bayar: metode }),
+      lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus }, kasBaru),
     });
 
     await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
@@ -261,7 +268,10 @@ export async function bayarVisit(formData: FormData) {
     source: "klinik",
     sourceRef: invoiceNo,
     branchId: v?.branch_id ?? null,
-    lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus, metode_bayar: metode }),
+    lines: invoiceJournalLines(
+      { total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus },
+      await kodeAkunBayar(supabase, metode, v?.branch_id ?? null),
+    ),
   });
 
   // Beban pokok obat yang ditebus. Tanpa ini seluruh tagihan klinik terlihat
@@ -304,7 +314,7 @@ export async function voidAndReissue(formData: FormData) {
   // Boleh void: invoice lunas, ATAU invoice yang sudah menerima pelunasan piutang
   // (edit langsung diblokir untuk keduanya — jurnalnya harus di-reverse lewat sini).
   const { data: invPays } = await supabase
-    .from("invoice_payments").select("tanggal, amount, metode").eq("invoice_id", inv!.id);
+    .from("invoice_payments").select("tanggal, amount, metode, kas_code").eq("invoice_id", inv!.id);
   if (inv!.paid_status !== "Lunas" && (invPays ?? []).length === 0) {
     redirect(`${back}?error=${encodeURIComponent("Void & Reissue hanya untuk invoice lunas / sudah ada pelunasan — edit langsung saja")}`);
   }
@@ -323,7 +333,14 @@ export async function voidAndReissue(formData: FormData) {
   await postJournal(supabase, {
     tanggal: todayIso(), deskripsi: `Void invoice ${inv!.invoice_no}`, source: "klinik-void",
     sourceRef: inv!.invoice_no, branchId: v?.branch_id ?? null,
-    lines: invoiceJournalLines({ total: Number(inv!.total), dpp, tax: Number(inv!.tax), dp_amount: Number(inv!.dp_amount), paid_status: inv!.paid_status, metode_bayar: inv!.metode_bayar }, true),
+    lines: invoiceJournalLines(
+      { total: Number(inv!.total), dpp, tax: Number(inv!.tax), dp_amount: Number(inv!.dp_amount), paid_status: inv!.paid_status },
+      await kodeKasJurnalAsal(
+        supabase, "klinik", inv!.invoice_no,
+        await kodeAkunBayar(supabase, inv!.metode_bayar, v?.branch_id ?? null),
+      ),
+      true,
+    ),
   });
 
   // 2b) invoice belum-lunas dengan pelunasan parsial: jurnal pelunasannya (Dr kas / Cr piutang)
@@ -331,7 +348,9 @@ export async function voidAndReissue(formData: FormData) {
   // berbentuk-Lunas di atas sudah menetralkan kas & piutang sekaligus.)
   if (inv!.paid_status !== "Lunas") {
     for (const p of invPays ?? []) {
-      const kasCode = p.metode === "Tunai" ? "1101" : "1102";
+      // Rekening pelunasan bisa dipilih manual di layar piutang, jadi metode saja tidak
+      // cukup untuk menebaknya — pakai yang tercatat, bawaan hanya untuk data lama.
+      const kasCode = (p as { kas_code?: string | null }).kas_code || kodeBawaan(p.metode);
       await postJournal(supabase, {
         tanggal: todayIso(), deskripsi: `Void pelunasan piutang ${inv!.invoice_no}`, source: "klinik-void",
         sourceRef: inv!.invoice_no, branchId: v?.branch_id ?? null,

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
@@ -232,7 +233,7 @@ export async function checkoutKasir(formData: FormData) {
   }
 
   // Jurnal: pendapatan (PPN-inklusif, dipisah) + HPP. Total sudah net semua potongan.
-  const kasCode = metode === "Tunai" ? "1101" : "1102";
+  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   const { dpp, ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   if (total > 0) {
