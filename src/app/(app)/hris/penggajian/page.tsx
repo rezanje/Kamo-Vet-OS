@@ -17,7 +17,7 @@ type Slip = {
   employee_id: string; gaji_pokok: number; tunjangan: number; total: number;
   hari_kerja: number; hari_hadir: number; hari_bolos: number; menit_telat: number;
   jam_lembur: number; upah_lembur: number; potongan_telat: number; potongan_bolos: number;
-  cicilan_kasbon: number; reimburse: number; penyesuaian: number; catatan: string | null;
+  cicilan_kasbon: number; reimburse: number; komisi: number; penyesuaian: number; catatan: string | null;
   status: string; employees: Rel<{ nama: string; jabatan: string | null }>;
 };
 
@@ -34,7 +34,7 @@ export default async function PenggajianPage({
 
   const [{ data: slipData }, { data: riwayatData }, rekening, aturan] = await Promise.all([
     supabase.from("payrolls")
-      .select("employee_id, gaji_pokok, tunjangan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, penyesuaian, catatan, status, employees(nama, jabatan)")
+      .select("employee_id, gaji_pokok, tunjangan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, employees(nama, jabatan)")
       .eq("periode", periode),
     supabase.from("payrolls").select("periode, total, status").order("periode", { ascending: false }),
     loadRekeningAktif(supabase),
@@ -111,6 +111,7 @@ export default async function PenggajianPage({
           <Kartu label="Karyawan" nilai={String(slip.length)} />
           <Kartu label="Gaji pokok" nilai={rp(jml((s) => s.gaji_pokok))} />
           <Kartu label="Tunjangan + lembur" nilai={rp(jml((s) => s.tunjangan) + jml((s) => s.upah_lembur))} warna="#15803d" />
+          <Kartu label="Komisi penjualan" nilai={rp(jml((s) => s.komisi))} warna="#15803d" />
           <Kartu label="Potongan" nilai={rp(jml((s) => s.potongan_telat) + jml((s) => s.potongan_bolos))} warna="#b91c1c" />
           <Kartu label="Cicilan kasbon" nilai={rp(jml((s) => s.cicilan_kasbon))} warna="#b91c1c" />
           <Kartu label="Dibayarkan" nilai={rp(totalNetto)} tebal />
@@ -166,6 +167,7 @@ export default async function PenggajianPage({
                     <th style={{ textAlign: "right" }}>Tunjangan</th>
                     <th style={{ textAlign: "right" }}>Lembur</th>
                     <th style={{ textAlign: "right" }}>Reimburse</th>
+                    <th style={{ textAlign: "right" }}>Komisi</th>
                     <th style={{ textAlign: "right" }}>Potongan</th>
                     <th style={{ textAlign: "right" }}>Kasbon</th>
                     <th style={{ width: 120 }}>Koreksi</th>
@@ -194,6 +196,9 @@ export default async function PenggajianPage({
                         <td style={{ textAlign: "right", fontSize: 11 }}>{Number(s.tunjangan) ? rp(s.tunjangan) : "—"}</td>
                         <td style={{ textAlign: "right", fontSize: 11 }}>{Number(s.upah_lembur) ? rp(s.upah_lembur) : "—"}</td>
                         <td style={{ textAlign: "right", fontSize: 11 }}>{Number(s.reimburse) ? rp(s.reimburse) : "—"}</td>
+                        <td style={{ textAlign: "right", fontSize: 11, color: Number(s.komisi) ? "#15803d" : undefined }}>
+                          {Number(s.komisi) ? rp(s.komisi) : "—"}
+                        </td>
                         <td style={{ textAlign: "right", fontSize: 11, color: potongan ? "#b91c1c" : undefined }}>
                           {potongan ? `- ${rp(potongan)}` : "—"}
                         </td>
@@ -220,7 +225,7 @@ export default async function PenggajianPage({
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={11} style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>Total dibayarkan</td>
+                    <td colSpan={12} style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>Total dibayarkan</td>
                     <td style={{ textAlign: "right", fontSize: 13, fontWeight: 800 }}>{rp(totalNetto)}</td>
                   </tr>
                 </tfoot>

@@ -12,7 +12,7 @@ type Slip = {
   employee_id: string; gaji_pokok: number; tunjangan: number; potongan: number; total: number;
   hari_kerja: number; hari_hadir: number; hari_bolos: number; menit_telat: number;
   jam_lembur: number; upah_lembur: number; potongan_telat: number; potongan_bolos: number;
-  cicilan_kasbon: number; reimburse: number; penyesuaian: number; catatan: string | null;
+  cicilan_kasbon: number; reimburse: number; komisi: number; penyesuaian: number; catatan: string | null;
   status: string;
   employees: Rel<{ nama: string; nik: string | null; jabatan: string | null; branches: Rel<{ name: string }> }>;
 };
@@ -28,7 +28,7 @@ export default async function SlipPage({
 
   const { data } = await supabase
     .from("payrolls")
-    .select("employee_id, gaji_pokok, tunjangan, potongan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, penyesuaian, catatan, status, employees(nama, nik, jabatan, branches(name))")
+    .select("employee_id, gaji_pokok, tunjangan, potongan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, employees(nama, nik, jabatan, branches(name))")
     .eq("periode", periode);
 
   const slip = ((data ?? []) as unknown as Slip[])
@@ -87,6 +87,7 @@ export default async function SlipPage({
                 <Baris k="Tunjangan tetap" v={rp(s.tunjangan)} />
                 <Baris k={`Upah lembur (${Number(s.jam_lembur)} jam)`} v={rp(s.upah_lembur)} />
                 <Baris k="Penggantian (reimburse)" v={rp(s.reimburse)} />
+                <Baris k="Komisi penjualan" v={rp(s.komisi)} />
                 {Number(s.penyesuaian) !== 0 && (
                   <Baris k={`Penyesuaian${s.catatan ? ` — ${s.catatan}` : ""}`} v={rp(s.penyesuaian)} />
                 )}

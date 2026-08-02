@@ -27,6 +27,7 @@ export type InputGaji = {
   jamLembur: number;            // total jam lembur yang sudah disetujui
   komponen: KomponenDipakai[];
   reimburse: number;            // reimburse disetujui yang dibayar periode ini
+  komisi: number;               // komisi penjualan periode ini (migrasi 0091)
   kasbon: { jumlah: number; tenor: number; sudahDibayar: number } | null;
   penyesuaian: number;          // koreksi manual pemilik (boleh negatif)
   aturan: AturanGaji;
@@ -37,6 +38,7 @@ export type RincianGaji = {
   tunjangan: number;
   upahLembur: number;
   reimburse: number;
+  komisi: number;
   potonganTetap: number;
   potonganTelat: number;
   potonganBolos: number;
@@ -87,8 +89,10 @@ export function hitungGaji(i: InputGaji): RincianGaji {
     ? cicilanPeriode(i.kasbon.jumlah, i.kasbon.tenor, i.kasbon.sudahDibayar)
     : 0;
 
+  const komisi = Math.round(Number(i.komisi) || 0);
+
   const total =
-    Number(i.gajiPokok) + tunjangan + upahLembur + Number(i.reimburse) + Number(i.penyesuaian)
+    Number(i.gajiPokok) + tunjangan + upahLembur + Number(i.reimburse) + komisi + Number(i.penyesuaian)
     - potonganTetap - potTelat - potBolos - cicilan;
 
   return {
@@ -96,6 +100,7 @@ export function hitungGaji(i: InputGaji): RincianGaji {
     tunjangan,
     upahLembur,
     reimburse: Number(i.reimburse),
+    komisi,
     potonganTetap,
     potonganTelat: potTelat,
     potonganBolos: potBolos,

@@ -165,8 +165,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Faktur Penjualan", icon: "ti-receipt-2", ...G },
     { label: "Penerimaan Penjualan", icon: "ti-cash-banknote", ...G },
     { label: "Retur Penjualan", icon: "ti-arrow-back-up", ...G, href: "/penjualan/retur" },
-    { label: "Komisi Penjual", icon: "ti-percentage", ...A },
-    { label: "Target Penjualan", icon: "ti-target", ...A },
+    { label: "Komisi Penjual", icon: "ti-percentage", ...A, href: "/penjualan/komisi" },
+    { label: "Target Penjualan", icon: "ti-target", ...A, href: "/penjualan/target" },
     { label: "Penjualan Online", icon: "ti-world", ...G, nw: true, href: "/penjualan/online" },
   ],
   pembelian: [

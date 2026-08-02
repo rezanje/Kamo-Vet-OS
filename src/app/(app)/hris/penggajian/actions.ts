@@ -54,6 +54,7 @@ export async function hitungPenggajian(formData: FormData) {
       potongan_bolos: b.rincian.potonganBolos,
       cicilan_kasbon: b.rincian.cicilanKasbon,
       reimburse: b.rincian.reimburse,
+      komisi: b.rincian.komisi,
       penyesuaian: b.rincian.penyesuaian,
       status: "draft",
     })),

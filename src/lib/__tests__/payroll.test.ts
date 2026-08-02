@@ -30,6 +30,7 @@ const dasar: InputGaji = {
   jamLembur: 0,
   komponen: [],
   reimburse: 0,
+  komisi: 0,
   kasbon: null,
   penyesuaian: 0,
   aturan,
@@ -71,6 +72,10 @@ describe("hitungGaji", () => {
     expect(r.menitTelat).toBe(6 + 180 + 0 + 0 + 1);
     expect(r.potonganTelat).toBe(20_000 + 50_000 + 10_000);
     expect(r.total).toBe(4_200_000 - 80_000);
+  });
+
+  it("komisi penjualan menambah gaji bersih", () => {
+    expect(hitungGaji({ ...dasar, komisi: 350_000 }).total).toBe(4_550_000);
   });
 
   it("lembur, tunjangan, potongan tetap, reimburse, dan cicilan kasbon", () => {

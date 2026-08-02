@@ -5,6 +5,7 @@
 
 import { hitungGaji, type HariJadwal, type InputGaji, type RincianGaji } from "./payroll";
 import { getAturanGaji } from "./payroll-aturan";
+import { komisiPeriode } from "./komisi-data";
 import { rentangTanggal } from "./tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,10 +33,12 @@ export async function kumpulkanDataGaji(
   const awal = `${periode}-01`;
   const akhir = akhirBulan(periode);
 
-  const [aturan, { data: empData }] = await Promise.all([
+  const [aturan, { data: empData }, komisi] = await Promise.all([
     getAturanGaji(supabase),
     supabase.from("employees").select("id, nama, jabatan, gaji_pokok").eq("status", "Aktif").order("nama"),
+    komisiPeriode(supabase, periode),
   ]);
+  const komisiPer = new Map(komisi.hasil.map((h) => [h.employeeId, h.komisi]));
   const karyawan = (empData ?? []) as { id: string; nama: string; jabatan: string | null; gaji_pokok: number }[];
   if (karyawan.length === 0) return [];
 
@@ -142,6 +145,7 @@ export async function kumpulkanDataGaji(
       jamLembur: lemburPer.get(k.id) ?? 0,
       komponen: kompPer.get(k.id) ?? [],
       reimburse: reim.total,
+      komisi: komisiPer.get(k.id) ?? 0,
       kasbon: kasbon ? { jumlah: kasbon.jumlah, tenor: kasbon.tenor, sudahDibayar: kasbon.sudahDibayar } : null,
       penyesuaian: penyesuaianPer.get(k.id) ?? 0,
       aturan,
