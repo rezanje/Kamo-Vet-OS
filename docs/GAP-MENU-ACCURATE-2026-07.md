@@ -83,7 +83,7 @@ Plus permintaan PDF: menu integrasi & pengaturan **payment gateway** (rules beda
 | Uang Muka Penjualan | ❌ |
 | Faktur Penjualan | ❌ |
 | Penerimaan Penjualan | ❌ |
-| Komisi Penjual | ✅ `/penjualan/komisi` — aturan persen/nominal, basis omzet atau laba, cakupan berlapis, ambang cair |
+| Komisi Penjual | ✅ `/penjualan/komisi` — aturan persen/nominal, basis omzet atau laba, cakupan berlapis, ambang cair, dan insentif dokter dari tagihan klinik (migrasi 0092) |
 | Target Penjualan | ✅ `/penjualan/target` — per perusahaan/cabang/karyawan/kategori + monitor realisasi |
 
 Klausul tambahan dari PDF (bukan clone polos Accurate):
@@ -205,8 +205,8 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
 2. **Modul Kas & Bank** — Pembayaran, Penerimaan, Transfer Bank. Satu modul penuh yang hilang.
 3. **Rantai dokumen Penjualan** — Penawaran → Pesanan → Pengiriman → Uang Muka → Faktur → Penerimaan.
 4. **Sisa Pembelian** — Uang Muka, Perintah Pembayaran, Penerimaan Barang jadi dokumen sendiri (terima sebagian).
-5. ~~**Komisi & Target Penjualan**~~ — **SELESAI 2026-08-03** (migrasi 0091). Sisa: import Excel
-   aturan/target, insentif jasa medis dokter dari invoice klinik.
+5. ~~**Komisi & Target Penjualan**~~ — **SELESAI 2026-08-03** (migrasi 0091 & 0092, termasuk
+   insentif dokter dari tagihan klinik). Sisa: import Excel aturan/target.
 6. ~~**HRIS Jadwal + komponen gaji + reimburse/kasbon + absen radius**~~ — **SELESAI 2026-08-02**
    (migrasi 0087–0090).
 7. **Aset Tetap lengkap** (golongan pajak fiskal, perubahan, disposisi, pindah) — kategori dasarnya sudah ada.
