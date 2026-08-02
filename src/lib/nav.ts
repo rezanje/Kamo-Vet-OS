@@ -96,12 +96,13 @@ export const TILES: Record<string, Tile[]> = {
   hris: [
     { label: "Karyawan", icon: "ti-user-circle", ...B, href: "/hris/karyawan" },
     { label: "Absensi", icon: "ti-map-pin-check", ...G, href: "/hris/absensi" },
-    { label: "Jadwal", icon: "ti-calendar-time", ...G },
+    { label: "Jadwal", icon: "ti-calendar-time", ...G, href: "/hris/jadwal" },
     { label: "Slip Gaji", icon: "ti-moneybag", ...G, href: "/hris/penggajian" },
     { label: "Menu Karyawan", icon: "ti-id-badge", ...G, href: "/me" },
     { label: "Cuti & lembur", icon: "ti-beach", ...G, href: "/hris/cuti" },
     { label: "KPI karyawan", icon: "ti-chart-dots", ...P, href: "/hris/kpi" },
-    { label: "Komponen gaji", icon: "ti-coin", ...B },
+    { label: "Komponen gaji", icon: "ti-coin", ...B, href: "/hris/komponen-gaji" },
+    { label: "Master shift", icon: "ti-clock-hour-8", ...B, href: "/hris/shift" },
     { label: "Verifikasi wajah", icon: "ti-scan-eye", bg: "#f3f4f6", fg: "#9ca3af", p2: true },
   ],
 
@@ -115,6 +116,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Penyetuju Transaksi", icon: "ti-user-check", ...A },
     { label: "Cabang & gudang", icon: "ti-building-store", ...B, href: "/pengaturan/cabang" },
     { label: "Konfigurasi loyalty", icon: "ti-star", ...B, href: "/pengaturan/tier" },
+    { label: "Aturan gaji", icon: "ti-adjustments-dollar", ...B, href: "/pengaturan/gaji" },
     { label: "WA Engine (7 trigger)", icon: "ti-brand-whatsapp", ...B },
   ],
   perusahaan: [

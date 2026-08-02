@@ -104,7 +104,7 @@ export default async function PengeluaranKasirPage({
               <label className="flab">Jumlah (Rp) *</label>
               <div style={{ display: "flex", alignItems: "stretch" }}>
                 <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderRight: "none", borderRadius: "6px 0 0 6px", padding: "6px 10px", fontSize: 12, color: "var(--tm)" }}>Rp</span>
-                <input className="fi" name="jumlah" type="number" min={0} step={1000} placeholder="Masukkan jumlah" required style={{ borderRadius: "0 6px 6px 0" }} />
+                <input className="fi" name="jumlah" type="number" min={0} step="any" placeholder="Masukkan jumlah" required style={{ borderRadius: "0 6px 6px 0" }} />
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>

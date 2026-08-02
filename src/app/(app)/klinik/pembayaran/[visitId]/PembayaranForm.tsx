@@ -44,7 +44,7 @@ function ItemTable({ title, icon, color, rows, setRows }: {
               <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
               <td><input className="fi" value={r.deskripsi} placeholder="Nama item" onChange={(e) => set(i, { deskripsi: e.target.value })} /></td>
               <td><input className="fi" type="number" min={1} value={r.qty} onChange={(e) => set(i, { qty: Number(e.target.value) })} style={{ textAlign: "center" }} /></td>
-              <td><input className="fi" type="number" min={0} step={500} value={r.harga} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
+              <td><input className="fi" type="number" min={0} step="any" value={r.harga} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(r.qty * r.harga)}</td>
               <td style={{ textAlign: "center" }}><i className="ti ti-x" onClick={() => del(i)} style={{ cursor: "pointer", color: "#dc2626" }} /></td>
             </tr>

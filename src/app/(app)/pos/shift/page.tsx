@@ -84,7 +84,7 @@ export default async function ShiftPage({
               <input type="hidden" name="shiftId" value={open.id} />
               <div style={{ flex: 1, maxWidth: 240 }}>
                 <label className="flab">Uang kas dihitung (tutup shift)</label>
-                <input className="fi" name="closing_balance" type="number" min={0} step={1000} placeholder="Hitung fisik uang di laci" required />
+                <input className="fi" name="closing_balance" type="number" min={0} step="any" placeholder="Hitung fisik uang di laci" required />
               </div>
               <button type="submit" className="btn-acc"><i className="ti ti-lock" /> Selesai Shift</button>
             </form>
@@ -103,7 +103,7 @@ export default async function ShiftPage({
               </div>
               <div style={{ flex: 1, maxWidth: 200 }}>
                 <label className="flab">Uang di kasir saat ini (modal awal)</label>
-                <input className="fi" name="opening_balance" type="number" min={0} step={1000} placeholder="500000" required />
+                <input className="fi" name="opening_balance" type="number" min={0} step="any" placeholder="500000" required />
               </div>
               <button type="submit" className="btn-acc"><i className="ti ti-player-play" /> Mulai Shift</button>
             </form>

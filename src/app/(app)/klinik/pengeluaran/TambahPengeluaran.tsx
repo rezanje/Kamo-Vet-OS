@@ -41,7 +41,7 @@ export function TambahPengeluaran({ branchId, today }: { branchId: string; today
             <div className="frow">
               <div>
                 <label className="flab">Jumlah (Rp) *</label>
-                <input className="fi" name="jumlah" type="number" min={0} step={500} placeholder="0" required />
+                <input className="fi" name="jumlah" type="number" min={0} step="any" placeholder="0" required />
               </div>
               <div>
                 <label className="flab">Metode</label>

@@ -233,7 +233,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
               {tab === "Jasa" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <input className="fi" placeholder="Nama jasa (mis. Rawat inap/hari)" value={jasaNama} onChange={(e) => setJasaNama(e.target.value)} />
-                  <input className="fi" type="number" min={0} step={1000} placeholder="Harga" value={jasaHarga || ""} onChange={(e) => setJasaHarga(Number(e.target.value))} />
+                  <input className="fi" type="number" min={0} step="any" placeholder="Harga" value={jasaHarga || ""} onChange={(e) => setJasaHarga(Number(e.target.value))} />
                   <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "#2563eb", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
                 </div>
               )}

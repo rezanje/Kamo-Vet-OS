@@ -158,12 +158,12 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
         <div className="frow">
           <div>
             <label className="flab">Harga jual * <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
-            <input className="fi" name="sell_price" type="number" min={0} step={1000}
+            <input className="fi" name="sell_price" type="number" min={0} step="any"
               value={baseSell || ""} onChange={(e) => setBaseSell(Number(e.target.value))} required />
           </div>
           <div>
             <label className="flab">Harga beli / modal <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
-            <input className="fi" name="buy_price" type="number" min={0} step={1000} defaultValue={editing?.buy_price ?? 0} />
+            <input className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
           </div>
         </div>
 
@@ -213,7 +213,7 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
                   </div>
                   <div style={{ flex: 1, minWidth: 110 }}>
                     {i === 0 && <label className="flab">Harga jual</label>}
-                    <input className="fi" type="number" min={0} step={1000} value={u.sell_price || ""}
+                    <input className="fi" type="number" min={0} step="any" value={u.sell_price || ""}
                       onChange={(e) => setUnit(i, { sell_price: Number(e.target.value) })} placeholder="0" />
                     {f > 0 && Number(u.sell_price) > 0 && (
                       <div style={{ fontSize: 9, color: hemat < 0 ? "#15803d" : "var(--td)", marginTop: 2 }}>
@@ -224,7 +224,7 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
                   </div>
                   <div style={{ flex: 1, minWidth: 110 }}>
                     {i === 0 && <label className="flab">Harga beli</label>}
-                    <input className="fi" type="number" min={0} step={1000} value={u.buy_price || ""}
+                    <input className="fi" type="number" min={0} step="any" value={u.buy_price || ""}
                       onChange={(e) => setUnit(i, { buy_price: Number(e.target.value) })} placeholder="0" />
                   </div>
                   <button type="button" onClick={() => delUnit(i)} className="btn-def"

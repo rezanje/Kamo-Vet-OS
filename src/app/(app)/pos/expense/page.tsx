@@ -97,7 +97,7 @@ export default async function ExpensePage({
             </div>
             <div>
               <label className="flab">Jumlah (Rp) *</label>
-              <input className="fi" name="jumlah" type="number" min={0} step={1000} placeholder="50000" required />
+              <input className="fi" name="jumlah" type="number" min={0} step="any" placeholder="50000" required />
             </div>
             <div>
               <label className="flab">Deskripsi</label>

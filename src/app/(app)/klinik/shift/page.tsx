@@ -58,7 +58,7 @@ export default async function KlinikShiftPage({
             <label className="flab">Uang kas dihitung (fisik) *</label>
             <div className="pshop-rp" style={{ marginBottom: 10 }}>
               <span>Rp</span>
-              <input className="fi" name="closing_balance" type="number" min={0} step={500} placeholder="0" required />
+              <input className="fi" name="closing_balance" type="number" min={0} step="any" placeholder="0" required />
             </div>
             <SubmitButton className="kt-btn" icon="ti-lock" pendingText="Menutup shift…">TUTUP SHIFT KLINIK</SubmitButton>
           </form>
@@ -127,7 +127,7 @@ export default async function KlinikShiftPage({
           <label className="flab">Modal awal kas (Rp) *</label>
           <div className="pshop-rp">
             <span>Rp</span>
-            <input className="fi" name="opening_balance" type="number" min={0} step={1000} placeholder="0" required />
+            <input className="fi" name="opening_balance" type="number" min={0} step="any" placeholder="0" required />
           </div>
         </div>
 

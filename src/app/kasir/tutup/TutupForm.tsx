@@ -12,7 +12,7 @@ export function TutupForm({ shiftId }: { shiftId: string }) {
       <div className="pshop-rp" style={{ marginBottom: 12 }}>
         <span>Rp</span>
         <input
-          className="fi" name="closing_balance" type="number" min={0} step={500}
+          className="fi" name="closing_balance" type="number" min={0} step="any"
           placeholder="0" required
         />
       </div>

@@ -78,7 +78,7 @@ export default async function MulaiShiftPage({
           <label className="flab">Modal awal kas (Rp) *</label>
           <div className="pshop-rp">
             <span>Rp</span>
-            <input className="fi" name="opening_balance" type="number" min={0} step={1000} placeholder="0" required />
+            <input className="fi" name="opening_balance" type="number" min={0} step="any" placeholder="0" required />
           </div>
         </div>
 

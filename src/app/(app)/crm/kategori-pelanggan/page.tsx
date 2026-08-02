@@ -62,7 +62,7 @@ export default async function KategoriPelangganPage({
             </div>
             <div style={{ width: 170 }}>
               <label className="flab">Rp per 1 poin</label>
-              <input className="fi" name="rupiah_per_poin" type="number" min={1} step={100}
+              <input className="fi" name="rupiah_per_poin" type="number" min={1} step="any"
                 defaultValue={editing?.rupiah_per_poin ?? 1000} required />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Makin kecil, makin royal. 1000 = tiap Rp1.000 dapat 1 poin.
