@@ -180,18 +180,11 @@ export async function checkoutKasir(formData: FormData) {
     .select("id").single();
   if (saleErr || !sale) redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
 
-  const { error: itErr } = await supabase.from("sale_items").insert(
-    rows.map((l) => ({
-      sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
-      target_species: l.target_species ?? "Universal",
-      item_discount_type: l.item_discount_type ?? null,
-      item_discount_value: Math.max(0, Number(l.item_discount_value) || 0),
-    }))
-  );
-  if (itErr) redirect(`/kasir?error=${encodeURIComponent(itErr.message)}`);
-
-  // stok toko berkurang — via FIFO; total cost jadi HPP riil (PRD §10.2).
+  // Stok dipotong DULU, baru baris struk disimpan: modal FIFO tiap baris ikut
+  // dicatat (sale_items.hpp, migrasi 0084) supaya retur nanti bisa menilai
+  // barang yang kembali persis seperti saat keluar.
   let hppFifo = 0;
+  const hppBaris = new Map<string, number>();
   const { data: wh } = await supabase
     .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   if (wh) {
@@ -202,6 +195,7 @@ export async function checkoutKasir(formData: FormData) {
           warehouseId: wh.id, itemId: r.item_id, qty: r.qty, source: "sale", ref: noStruk,
         });
         hppFifo += cost;
+        hppBaris.set(r.item_id, (hppBaris.get(r.item_id) ?? 0) + cost);
       } catch (e) {
         // Struk sudah tersimpan — jangan bikin kasir crash di depan pelanggan.
         // ponytail: dicatat ke log server saja; kalau ini pernah kejadian beneran,
@@ -210,6 +204,17 @@ export async function checkoutKasir(formData: FormData) {
       }
     }
   }
+
+  const { error: itErr } = await supabase.from("sale_items").insert(
+    rows.map((l) => ({
+      sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
+      target_species: l.target_species ?? "Universal",
+      item_discount_type: l.item_discount_type ?? null,
+      item_discount_value: Math.max(0, Number(l.item_discount_value) || 0),
+      hpp: l.item_id ? (hppBaris.get(l.item_id) ?? 0) : null,
+    }))
+  );
+  if (itErr) redirect(`/kasir?error=${encodeURIComponent(itErr.message)}`);
 
   // poin: redeem (minus) lalu earn (plus), saldo berjalan konsisten di ledger.
   if (customerId) {

@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { sisaRetur } from "@/lib/retur";
+import { sisaRetur, rasioBayar, hargaRefund } from "@/lib/retur";
 import { ReturJualForm } from "./ReturJualForm";
 
 type SaleRow = {
   id: string;
   no_struk: string | null;
+  subtotal: number;
   total: number;
   created_at: string;
   customers: { name: string } | null;
@@ -30,7 +31,7 @@ export default async function ReturJualBaruPage({
     // refund retur jual keluar dari kas kasir, sedangkan online tidak punya shift kasir.
     const { data } = await supabase
       .from("sales")
-      .select("id, no_struk, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, satuan, faktor)")
+      .select("id, no_struk, subtotal, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, satuan, faktor)")
       .eq("no_struk", struk.trim())
       .is("channel", null)
       .maybeSingle();
@@ -41,12 +42,16 @@ export default async function ReturJualBaruPage({
       // Retur selalu dihitung dalam satuan dasar (lihat actions.ts) supaya satu item
       // yang dijual campur box+pcs tidak jadi angka sisa yang ambigu.
       const sumber: Record<string, number> = {};
+      const rasio = rasioBayar(Number(sale.subtotal), Number(sale.total));
       const meta: Record<string, { nama: string; harga: number }> = {};
       for (const r of sale.sale_items ?? []) {
         if (!r.item_id) continue;
         const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
         sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty) * f;
-        meta[r.item_id] = { nama: r.nama, harga: (Number(r.harga) || 0) / f };
+        // Harga refund yang DITAMPILKAN harus sama dengan yang nanti dibayar
+        // server: sebanding dengan yang benar-benar dikeluarkan pelanggan,
+        // bukan harga daftar sebelum promo/diskon/voucher.
+        meta[r.item_id] = { nama: r.nama, harga: hargaRefund((Number(r.harga) || 0) / f, rasio) };
       }
       const { data: prev } = await supabase
         .from("sales_returns").select("sales_return_items(item_id, qty)").eq("sale_id", sale.id);

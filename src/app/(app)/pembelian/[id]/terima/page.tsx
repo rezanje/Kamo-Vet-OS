@@ -12,6 +12,7 @@ type PoItem = {
   id: string;
   nama: string;
   qty: number;
+  qty_terima: number | null;   // sudah pernah diterima (penerimaan bertahap)
   harga_beli: number;
   satuan: string | null;   // satuan yang dipilih saat PO (bisa box/sak)
   items: Rel<{ unit: string }>;
@@ -30,7 +31,7 @@ export default async function TerimaBarangPage({
 
   const { data: po } = await supabase
     .from("purchase_orders")
-    .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(id, nama, qty, satuan, harga_beli, items(unit))")
+    .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(id, nama, qty, qty_terima, satuan, harga_beli, items(unit))")
     .eq("id", id)
     .maybeSingle();
 
@@ -39,13 +40,17 @@ export default async function TerimaBarangPage({
     redirect("/pembelian?error=" + encodeURIComponent(`PO ini berstatus ${po.status}.`));
   }
 
-  const rows: BarisPO[] = ((po.purchase_order_items ?? []) as unknown as PoItem[]).map((r) => ({
-    id: r.id,
-    nama: r.nama,
-    qty: Number(r.qty) || 0,
-    harga_beli: Number(r.harga_beli) || 0,
-    satuan: r.satuan || one(r.items)?.unit || "",
-  }));
+  // Yang ditawarkan untuk diterima adalah SISA yang belum datang, bukan qty PO
+  // penuh — pemasok sering mengirim bertahap dan sisanya dicatat menyusul.
+  const rows: BarisPO[] = ((po.purchase_order_items ?? []) as unknown as PoItem[])
+    .map((r) => ({
+      id: r.id,
+      nama: r.nama,
+      qty: Math.max(0, (Number(r.qty) || 0) - (Number(r.qty_terima) || 0)),
+      harga_beli: Number(r.harga_beli) || 0,
+      satuan: r.satuan || one(r.items)?.unit || "",
+    }))
+    .filter((r) => r.qty > 0);
 
   const supplier = one(po.suppliers as Rel<{ nama: string }>)?.nama ?? "Tanpa supplier";
   const gudang = one(po.warehouses as Rel<{ name: string }>)?.name ?? "—";

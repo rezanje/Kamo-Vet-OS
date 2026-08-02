@@ -118,8 +118,15 @@ export default async function RekamMedisPage({
       .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori")
       .eq("is_active", true).order("name").limit(400);
     const ids = (itemRows ?? []).map((i) => i.id);
-    const { data: stockRows } = ids.length
-      ? await supabase.from("stock").select("item_id, qty").in("item_id", ids)
+
+    // Stok yang dilihat dokter harus stok GUDANG KLINIK INI, bukan total semua
+    // cabang. Sebelumnya angkanya dijumlah lintas gudang, jadi dokter bisa
+    // meresepkan obat yang sebenarnya tidak ada di tempatnya.
+    const { data: whRow } = await supabase
+      .from("warehouses").select("id").eq("branch_id", visit.branch_id).eq("is_active", true)
+      .order("type").limit(1).maybeSingle();
+    const { data: stockRows } = ids.length && whRow
+      ? await supabase.from("stock").select("item_id, qty").eq("warehouse_id", whRow.id).in("item_id", ids)
       : { data: [] as { item_id: string; qty: number }[] };
     const stokByItem = new Map<string, number>();
     for (const s of stockRows ?? []) stokByItem.set(s.item_id as string, (stokByItem.get(s.item_id as string) ?? 0) + Number(s.qty));

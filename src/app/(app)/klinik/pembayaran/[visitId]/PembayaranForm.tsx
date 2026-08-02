@@ -5,7 +5,7 @@ import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bayarVisit } from "./actions";
 
-type Line = { deskripsi: string; qty: number; harga: number };
+type Line = { deskripsi: string; qty: number; harga: number; item_id?: string | null };
 type Patient = {
   photo: string | null; name: string; species: string; owner: string; phone: string; address: string;
   dokter: string; jenisLayanan: string; noInvoice: string; tanggal: string;
@@ -60,8 +60,9 @@ function ItemTable({ title, icon, color, rows, setRows }: {
   );
 }
 
-export function PembayaranForm({ visitId, patient, initialObat, initialJasa, catatanResep, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
+export function PembayaranForm({ visitId, patient, initialObat, initialJasa, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
   visitId: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
+  ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialDpDate?: string | null; editMode?: boolean;
 }) {
   const [obat, setObat] = useState<Line[]>(initialObat);
@@ -72,7 +73,10 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, cat
 
   const subtotal = [...obat, ...jasa].reduce((a, r) => a + r.qty * r.harga, 0);
   const dpp = Math.max(0, subtotal - discount);
-  const tax = Math.round(dpp * 0.11);
+  // Tarif PPN datang dari pengaturan Mode PKP, BUKAN dipatok 11% di sini.
+  // Dulu angkanya hardcoded sementara server sudah benar → layar menagih
+  // Rp11.330 lebih besar dari yang tersimpan di invoice.
+  const tax = Math.round((dpp * ppnRate) / 100);
   const total = dpp + tax;
   const dpPaid = initialDpAmount;
   const sisa = Math.max(0, total - dpPaid);
@@ -144,9 +148,9 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, cat
               <SumRow label="Subtotal (Obat + Jasa)" value={rp(subtotal)} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0" }}>
                 <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
-                <input className="fi" type="number" min={0} step={1000} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
+                <input className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
               </div>
-              <SumRow label="PPN 11%" value={rp(tax)} />
+              <SumRow label={`PPN ${ppnRate}%`} value={rp(tax)} />
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1.5px solid var(--bd)" }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)" }}>TOTAL TAGIHAN</span>
                 <span style={{ fontSize: 17, fontWeight: 800, color: "#2563eb" }}>{rp(total)}</span>
@@ -227,7 +231,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, cat
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "#2563eb", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Jumlah Bayar</span>
-              <input className="fi" type="number" min={0} step={1000} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
+              <input className="fi" type="number" min={0} step={1} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
               <span style={{ fontWeight: 600, color: "#15803d" }}>Kembalian</span>

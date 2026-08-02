@@ -159,30 +159,35 @@ export async function terimaBarang(formData: FormData) {
 
   const { data: po } = await supabase
     .from("purchase_orders")
-    .select("id, no_po, to_warehouse_id, branch_id, status, purchase_order_items(id, item_id, qty, faktor, harga_beli)")
+    .select("id, no_po, to_warehouse_id, branch_id, status, purchase_order_items(id, item_id, qty, qty_terima, faktor, harga_beli)")
     .eq("id", id)
     .maybeSingle();
 
   if (!po) fail("PO tidak ditemukan.");
-  if (po!.status === "Diterima") fail("PO ini sudah diterima.");
   if (po!.status === "Batal") fail("PO batal tidak bisa diterima.");
 
   const poItems = (po!.purchase_order_items ?? []) as
-    { id: string; item_id: string | null; qty: number; faktor: number | null; harga_beli: number }[];
+    { id: string; item_id: string | null; qty: number; qty_terima: number | null; faktor: number | null; harga_beli: number }[];
 
-  // qty diterima per baris; baris yang tidak dikirim form dianggap sesuai PO.
+  // Penerimaan boleh BERTAHAP: pemasok sering mengirim sisa beberapa hari
+  // kemudian. Angka di form = qty yang datang KALI INI, ditambahkan ke yang
+  // sudah pernah diterima, dan tidak boleh melewati qty PO.
   const terimaById = new Map(input.map((r) => [r.id, Number(r.qty_terima)]));
   const rows = poItems.map((r) => {
-    const q = terimaById.has(r.id) ? terimaById.get(r.id)! : Number(r.qty);
-    return { ...r, qty_terima: Number.isFinite(q) && q > 0 ? q : 0 };
+    const sudah = Number(r.qty_terima) || 0;
+    const sisaPo = Math.max(0, Number(r.qty) - sudah);
+    const diminta = terimaById.has(r.id) ? terimaById.get(r.id)! : sisaPo;
+    const kaliIni = Number.isFinite(diminta) && diminta > 0 ? Math.min(diminta, sisaPo) : 0;
+    return { ...r, kaliIni, totalTerima: sudah + kaliIni };
   });
 
-  if (rows.every((r) => r.qty_terima <= 0)) {
+  if (rows.every((r) => r.kaliIni <= 0)) {
     fail("Tidak ada barang yang diterima. Batalkan PO kalau kiriman tidak datang.");
   }
 
   for (const r of rows) {
-    await supabase.from("purchase_order_items").update({ qty_terima: r.qty_terima }).eq("id", r.id);
+    if (r.kaliIni <= 0) continue;
+    await supabase.from("purchase_order_items").update({ qty_terima: r.totalTerima }).eq("id", r.id);
   }
 
   // Stok masuk via lib FIFO: layer baru @ harga_beli PO (sumber cost utama HPP).
@@ -190,18 +195,19 @@ export async function terimaBarang(formData: FormData) {
   const noPo = (po!.no_po as string | null) ?? id;
   if (warehouseId) {
     for (const r of rows) {
-      if (!r.item_id || r.qty_terima <= 0) continue;
+      if (!r.item_id || r.kaliIni <= 0) continue;
       // qty diinput dalam satuan baris PO (bisa box/sak) → konversi ke satuan dasar stok
       await stockIn(supabase, {
-        warehouseId, itemId: r.item_id, qty: toBaseQty(r.qty_terima, r.faktor ?? 1),
+        warehouseId, itemId: r.item_id, qty: toBaseQty(r.kaliIni, r.faktor ?? 1),
         unitCost: toBaseCost(Number(r.harga_beli) || 0, r.faktor ?? 1),
         source: "purchase", ref: noPo,
       });
     }
   }
 
-  // Jurnal senilai barang yang BENAR-BENAR diterima (bukan nilai PO).
-  const total = nilaiDiterima(rows);
+  // Jurnal senilai barang yang datang KALI INI saja — penerimaan sebelumnya
+  // sudah punya jurnalnya sendiri.
+  const total = nilaiDiterima(rows.map((r) => ({ qty: r.kaliIni, qty_terima: r.kaliIni, harga_beli: r.harga_beli })));
   if (total > 0) {
     await postJournal(supabase, {
       tanggal,
@@ -218,9 +224,15 @@ export async function terimaBarang(formData: FormData) {
     });
   }
 
-  await supabase.from("purchase_orders").update({ status: "Diterima" }).eq("id", id);
+  // PO baru dianggap tuntas kalau SEMUA baris sudah datang penuh; selama masih
+  // ada sisa, statusnya tetap "Dipesan" supaya tombol Terima Barang tidak hilang
+  // dan sisa kiriman masih bisa dicatat.
+  const lengkap = rows.every((r) => r.totalTerima >= Number(r.qty));
+  await supabase.from("purchase_orders").update({ status: lengkap ? "Diterima" : "Dipesan" }).eq("id", id);
 
   revalidatePath("/pembelian");
   revalidatePath("/keuangan/hutang");
-  redirect("/pembelian?success_terima=" + encodeURIComponent(`Barang ${noPo} diterima.`));
+  redirect("/pembelian?success_terima=" + encodeURIComponent(
+    lengkap ? `Barang ${noPo} diterima lengkap.` : `Sebagian barang ${noPo} diterima — sisanya masih bisa dicatat nanti.`,
+  ));
 }

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
+import { getPajakSettings } from "@/lib/pajak";
 import { SubmitButton } from "@/components/SubmitButton";
 import { voidAndReissue } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
@@ -53,8 +54,8 @@ export default async function PembayaranPage({
     .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
-    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis").eq("invoice_id", invoice.id).order("created_at")
-    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string }[] };
+    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id").eq("invoice_id", invoice.id).order("created_at")
+    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null }[] };
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -69,9 +70,11 @@ export default async function PembayaranPage({
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
   const { data: resep } = mr
-    ? await supabase.from("prescription_items").select("nama_obat, qty, harga, jenis").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string }[] };
-  const resepRows = (resep ?? []).map((r) => ({ deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0, jenis: r.jenis ?? "obat" }));
+    ? await supabase.from("prescription_items").select("nama_obat, qty, harga, jenis, item_id").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null }[] };
+  // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
+  // saat pasien menebus, dan modalnya tidak pernah tercatat.
+  const resepRows = (resep ?? []).map((r) => ({ deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0, jenis: r.jenis ?? "obat", item_id: r.item_id ?? null }));
 
   // §6.3: tindakan berisiko wajib punya consent bertanda tangan sebelum boleh ditagih.
   const { data: kategoriRows } = mr
@@ -84,13 +87,19 @@ export default async function PembayaranPage({
   const katBerisiko = kategoriBerisiko(jasaKategori, !!inpat);
   const prefill = resepRows.length
     ? resepRows
-    : [{ deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0, jenis: "jasa" }];
+    : [{ deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null as string | null }];
+
+  // Tarif PPN yang dipakai LAYAR harus sama dengan yang dipakai server saat
+  // menyimpan. Mode PKP OFF → 0%, jadi kasir tidak menagih pajak yang tidak
+  // pernah tercatat di invoice.
+  const pajak = await getPajakSettings(supabase);
+  const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
 
   const lunas = invoice?.paid_status === "Lunas";
 
   // Split obat vs jasa dari kolom `jenis` (2 tabel gaya referensi).
   const sourceItems = invoice
-    ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat" }))
+    ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat", item_id: l.item_id ?? null }))
     : prefill;
   const initialObat = sourceItems.filter((r) => r.jenis !== "jasa");
   const initialJasa = sourceItems.filter((r) => r.jenis === "jasa");
@@ -202,6 +211,7 @@ export default async function PembayaranPage({
         <PembayaranForm
           visitId={visit.id}
           patient={patient}
+          ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}
           catatanResep={mr?.catatan_resep ?? null}
@@ -290,6 +300,7 @@ export default async function PembayaranPage({
         <PembayaranForm
           visitId={visit.id}
           patient={patient}
+          ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}
           catatanResep={mr?.catatan_resep ?? null}

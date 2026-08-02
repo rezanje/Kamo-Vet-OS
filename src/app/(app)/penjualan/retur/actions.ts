@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { formatNoRetur, sisaRetur, totalRetur } from "@/lib/retur";
-import { stockInAtBuyPrice } from "@/lib/inventory";
+import { formatNoRetur, sisaRetur, totalRetur, rasioBayar, hargaRefund, modalPerSatuan } from "@/lib/retur";
+import { stockIn } from "@/lib/inventory";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -40,7 +40,7 @@ export async function buatReturJual(formData: FormData) {
   // berlaku di situ (tidak ada kas fisik yang diterima dari channel itu di cabang manapun).
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, branch_id, sale_items(item_id, qty, harga, faktor)")
+    .select("id, no_struk, branch_id, subtotal, total, sale_items(item_id, qty, harga, faktor, hpp)")
     .eq("id", sale_id).is("channel", null).single();
   if (!sale) fail("Struk tidak ditemukan, atau merupakan order online — retur online tidak didukung di sini.");
   if (lockBranchId && sale!.branch_id !== lockBranchId) {
@@ -51,11 +51,23 @@ export async function buatReturJual(formData: FormData) {
   // satu struk bisa memuat item yang sama dalam dua satuan (1 box + 3 pcs).
   const sumber: Record<string, number> = {};
   const harga: Record<string, number> = {};
+  const modal: Record<string, number> = {};   // modal per SATUAN DASAR saat terjual
+
+  // Refund harus sebanding dengan yang benar-benar dibayar. Struk bisa kena
+  // promo, diskon golongan, voucher, dan poin — memakai harga daftar berarti
+  // pelanggan yang belanja pakai diskon lalu meretur semuanya menerima uang
+  // LEBIH BANYAK daripada yang ia keluarkan.
+  const rasio = rasioBayar(Number(sale!.subtotal), Number(sale!.total));
+
   for (const r of sale!.sale_items ?? []) {
     if (!r.item_id) continue;
     const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
-    sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty) * f;
-    harga[r.item_id] = (Number(r.harga) || 0) / f;
+    const qtyDasar = Number(r.qty) * f;
+    sumber[r.item_id] = (sumber[r.item_id] ?? 0) + qtyDasar;
+    harga[r.item_id] = hargaRefund((Number(r.harga) || 0) / f, rasio);
+    // Modal diambil dari HPP yang tercatat saat barang itu keluar (0084),
+    // bukan dari harga beli master yang bisa sudah basi.
+    modal[r.item_id] = modalPerSatuan(r.hpp, qtyDasar, 0);
   }
 
   // akumulasi retur sebelumnya utk struk ini
@@ -132,12 +144,19 @@ export async function buatReturJual(formData: FormData) {
   // Jasa (grooming, konsultasi) boleh diretur — uangnya dikembalikan — tapi TIDAK
   // punya stok. Tanpa saringan ini, membatalkan jasa malah menambah persediaan.
   const berstok = (id: string) => (nameMap.get(id)?.item_type ?? "Persediaan") === "Persediaan";
+  // Modal barang yang kembali = modal saat barang itu KELUAR. Kalau memakai
+  // harga beli master, tiap retur menambah nilai persediaan dari udara —
+  // di simulasi keluar Rp200.000 lalu masuk lagi Rp210.000.
+  const modalSatuan = (id: string) =>
+    modal[id] > 0 ? modal[id] : (Number(nameMap.get(id)?.buy_price) || 0);
+
   if (wh) {
-    // barang balik jadi layer FIFO baru @ buy_price (konsisten jurnal reversal HPP)
     for (const r of rows) {
       if (!berstok(r.item_id)) continue;
-      await stockInAtBuyPrice(supabase, {
-        warehouseId: wh.id as string, itemId: r.item_id, qty: r.qty, source: "retur-jual", ref: no_retur,
+      await stockIn(supabase, {
+        warehouseId: wh.id as string, itemId: r.item_id, qty: r.qty,
+        unitCost: modalSatuan(r.item_id),
+        source: "retur-jual", ref: no_retur,
       });
     }
   }
@@ -154,8 +173,10 @@ export async function buatReturJual(formData: FormData) {
       { code: "1101", debit: 0, credit: total },
     ],
   });
+  // Jurnal HPP balik memakai modal yang sama dengan lapisan stok yang baru
+  // dibuat di atas — buku dan stok fisik tidak boleh berbeda nilainya.
   const hpp = rows.reduce(
-    (a, r) => a + (berstok(r.item_id) ? (Number(nameMap.get(r.item_id)?.buy_price) || 0) * r.qty : 0),
+    (a, r) => a + (berstok(r.item_id) ? modalSatuan(r.item_id) * r.qty : 0),
     0,
   );
   if (hpp > 0) {

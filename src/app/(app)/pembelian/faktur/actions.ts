@@ -106,6 +106,30 @@ export async function buatFaktur(formData: FormData) {
     fail("Gagal menyimpan rincian faktur.");
   }
 
+  // Selisih harga faktur vs PO tidak cuma dijurnal ke 1301 — modal barangnya
+  // ikut disesuaikan. Kalau tidak, nilai persediaan di buku besar dan nilai stok
+  // riil pelan-pelan berpisah, dan HPP penjualan berikutnya memakai harga PO
+  // yang sudah tidak berlaku.
+  //
+  // Hanya lapisan yang MASIH ADA sisanya yang disesuaikan: barang yang telanjur
+  // terjual sebelum faktur datang sudah dibebankan dengan harga lama, dan
+  // mengubahnya berarti mengubah HPP transaksi yang sudah dibukukan.
+  for (const r of rows) {
+    const hargaPo = hargaPO[r.item_id] ?? 0;
+    if (hargaPo <= 0 || r.harga === hargaPo) continue;
+    const { data: layers } = await supabase
+      .from("stock_layers").select("id, qty_left")
+      .eq("item_id", r.item_id).eq("unit_cost", hargaPo).eq("source", "purchase")
+      .gt("qty_left", 0)
+      .order("tanggal").order("created_at");
+    let sisaSesuaikan = r.qty;
+    for (const l of layers ?? []) {
+      if (sisaSesuaikan <= 0) break;
+      await supabase.from("stock_layers").update({ unit_cost: r.harga }).eq("id", l.id);
+      sisaSesuaikan -= Number(l.qty_left);
+    }
+  }
+
   // Mode PKP: total faktur dianggap inklusif PPN → pisahkan PPN Masukan (Dr 1105).
   const { ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
   await postJournal(supabase, {

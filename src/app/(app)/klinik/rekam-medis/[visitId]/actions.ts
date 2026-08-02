@@ -129,6 +129,10 @@ export async function simpanRekamMedis(formData: FormData) {
     .map((r) => ({
       medical_record_id: mr!.id,
       nama_obat: r.nama_obat.trim(),
+      // Tautan ke master barang (migrasi 0084) — tanpa ini stok obat klinik
+      // tidak bisa dipotong dan modalnya tidak pernah tercatat.
+      // Racikan sengaja NULL: stoknya sudah dipotong lewat bahan-bahannya.
+      item_id: r.jenis === "racikan" ? null : (r.item_id ?? null),
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
       satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
       faktor: faktorDari(r),

@@ -8,8 +8,48 @@ import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
+import { stockOut } from "@/lib/inventory";
 
-type Line = { deskripsi: string; qty: number; harga: number; jenis?: string };
+type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null };
+
+// Obat klinik memotong stok gudang cabang & mencatat modalnya, sama seperti
+// penjualan di kasir. Sebelum migrasi 0084 ini tidak bisa dilakukan: baris
+// tagihan cuma menyimpan NAMA obat, jadi sistem tidak tahu barang mana.
+//
+// Jasa dan baris ketikan bebas (tanpa item_id) dilewati — memang tidak punya stok.
+async function potongStokObat(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  branchId: string | null,
+  baris: { item_id?: string | null; qty: number }[],
+  ref: string,
+): Promise<{ hppPerBaris: Map<string, number>; totalHpp: number }> {
+  const hppPerBaris = new Map<string, number>();
+  let totalHpp = 0;
+  const obat = baris.filter((l) => l.item_id && Number(l.qty) > 0);
+  if (!branchId || obat.length === 0) return { hppPerBaris, totalHpp };
+
+  const { data: wh } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true)
+    .order("type").limit(1).maybeSingle();
+  if (!wh) return { hppPerBaris, totalHpp };
+
+  for (const l of obat) {
+    try {
+      const { cost } = await stockOut(supabase, {
+        warehouseId: wh.id, itemId: l.item_id!, qty: Number(l.qty), source: "klinik", ref,
+      });
+      hppPerBaris.set(l.item_id!, (hppPerBaris.get(l.item_id!) ?? 0) + cost);
+      totalHpp += cost;
+    } catch (e) {
+      // Invoice sudah tersimpan — jangan bikin kasir crash di depan pasien.
+      // ponytail: dicatat ke log; kalau ini kejadian beneran, naikkan jadi
+      // notifikasi backoffice + antrean koreksi stok.
+      console.error(`[stok klinik] gagal potong stok ${ref} item ${l.item_id}:`, e);
+    }
+  }
+  return { hppPerBaris, totalHpp };
+}
 
 // Baris jurnal invoice klinik (dipakai posting normal + pembalikan saat edit/void).
 function invoiceJournalLines(inv: { total: number; dpp: number; tax: number; dp_amount: number; paid_status: string; metode_bayar: string }, reverse = false) {
@@ -83,7 +123,13 @@ export async function bayarVisit(formData: FormData) {
   }
   const rows = items
     .filter((l) => l.deskripsi?.trim())
-    .map((l) => ({ deskripsi: l.deskripsi.trim(), qty: Number(l.qty) > 0 ? Number(l.qty) : 1, harga: Number(l.harga) || 0, jenis: l.jenis === "jasa" ? "jasa" : "obat" }));
+    .map((l) => ({
+      deskripsi: l.deskripsi.trim(), qty: Number(l.qty) > 0 ? Number(l.qty) : 1,
+      harga: Number(l.harga) || 0, jenis: l.jenis === "jasa" ? "jasa" : "obat",
+      // Jasa tidak punya stok — item_id-nya sengaja dibuang di sini supaya
+      // tidak ada yang mencoba memotong stoknya.
+      item_id: l.jenis === "jasa" ? null : (l.item_id ?? null),
+    }));
 
   if (rows.length === 0) {
     redirect(`${back}?error=${encodeURIComponent("Minimal 1 item tagihan")}`);
@@ -192,9 +238,16 @@ export async function bayarVisit(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(invErr?.message ?? "Gagal simpan invoice")}`);
   }
 
+  // Stok obat dipotong di sini, bukan saat resep ditulis: dokter bisa mengubah
+  // resep sampai detik terakhir, dan barang baru benar-benar keluar saat ditebus.
+  const { hppPerBaris, totalHpp } = await potongStokObat(supabase, v?.branch_id ?? null, rows, invoiceNo);
+
   const { error: itErr } = await supabase
     .from("invoice_items")
-    .insert(rows.map((l) => ({ invoice_id: inv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis })));
+    .insert(rows.map((l) => ({
+      invoice_id: inv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
+      item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
+    })));
   if (itErr) {
     redirect(`${back}?error=${encodeURIComponent(itErr.message)}`);
   }
@@ -210,6 +263,22 @@ export async function bayarVisit(formData: FormData) {
     branchId: v?.branch_id ?? null,
     lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus, metode_bayar: metode }),
   });
+
+  // Beban pokok obat yang ditebus. Tanpa ini seluruh tagihan klinik terlihat
+  // sebagai laba murni — obatnya seolah didapat gratis.
+  if (totalHpp > 0) {
+    await postJournal(supabase, {
+      tanggal: todayIso(),
+      deskripsi: `HPP obat klinik ${invoiceNo}`,
+      source: "klinik-hpp",
+      sourceRef: invoiceNo,
+      branchId: v?.branch_id ?? null,
+      lines: [
+        { code: "5101", debit: totalHpp, credit: 0 },
+        { code: "1301", debit: 0, credit: totalHpp },
+      ],
+    });
+  }
 
   if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
