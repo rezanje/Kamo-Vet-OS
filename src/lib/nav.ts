@@ -217,7 +217,14 @@ export const TILES: Record<string, Tile[]> = {
     { label: "e-Faktur Legacy", icon: "ti-file-text", ...P },
   ],
   laporan: [
-    { label: "Daftar Laporan", icon: "ti-report-analytics", ...P },
+    // Laporan operasional yang diminta tim (2026-08-01) — di luar laporan
+    // keuangan standar Accurate, jadi ditaruh paling atas karena paling sering dibuka.
+    { label: "Pelanggan Teratas", icon: "ti-trophy", ...A, nw: true, href: "/laporan/pelanggan-teratas" },
+    { label: "Jadwal Anabul", icon: "ti-calendar-heart", ...A, nw: true, href: "/laporan/jadwal-anabul" },
+    { label: "Rekap Absensi", icon: "ti-clock-check", ...A, nw: true, href: "/laporan/absensi" },
+    { label: "Rekap Gaji", icon: "ti-moneybag", ...A, nw: true, href: "/laporan/gaji" },
+    { label: "Penjualan per Kasir", icon: "ti-cash-register", ...A, nw: true, href: "/laporan/penjualan-kasir" },
+    { label: "Nilai KPI Karyawan", icon: "ti-chart-dots", ...A, nw: true, href: "/laporan/kpi" },
     { label: "Laba Rugi", icon: "ti-chart-bar", ...G, href: "/keuangan/laba-rugi" },
     { label: "Neraca", icon: "ti-scale", ...G, href: "/keuangan/neraca" },
     { label: "Neraca Saldo", icon: "ti-list-check", ...G, href: "/keuangan/neraca-saldo" },
