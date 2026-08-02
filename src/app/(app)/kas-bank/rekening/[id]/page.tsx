@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { PrintButton } from "@/components/PrintButton";
 import { getAccountLedger } from "@/lib/ledger";
+import { geserHari } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -47,7 +48,7 @@ export default async function MutasiRekeningPage({
   // Saldo awal = seluruh mutasi SEBELUM tanggal "dari". Tanpa ini kolom saldo berjalan
   // mulai dari nol dan tidak nyambung dengan kartu saldo di halaman modul.
   const sebelum = dari
-    ? await getAccountLedger(supabase as never, rek.coa_code, { to: mundurSehari(dari) })
+    ? await getAccountLedger(supabase as never, rek.coa_code, { to: geserHari(dari, -1) })
     : [];
   const saldoAwal = sebelum.reduce((a, l) => a + l.debit - l.credit, 0);
 
@@ -149,10 +150,4 @@ function Kartu({ label, nilai, warna, tebal }: { label: string; nilai: string; w
       <div style={{ fontSize: 16, fontWeight: tebal ? 800 : 700, color: warna ?? "var(--sb)", marginTop: 3 }}>{nilai}</div>
     </div>
   );
-}
-
-function mundurSehari(tgl: string): string {
-  const d = new Date(`${tgl}T00:00:00`);
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
 }
