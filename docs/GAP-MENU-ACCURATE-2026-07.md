@@ -7,8 +7,8 @@ Dibandingkan dengan: `src/lib/nav.ts` + route nyata di `src/app/(app)/`.
 > sudah tutup — itu masih benar (FIFO, jurnal, tutup buku, PPN, opname 2-dokumen, dst).
 > Yang diaudit di sini beda: **kelengkapan menu & dokumen** ala Accurate. Mesinnya ada, permukaannya belum.
 
-**Skor kasar: ±34 dari 81 tile wajib = 42%.**
-_(diperbarui 2026-07-28 setelah tahap Master Data & Kategori selesai — migrasi 0066)_
+**Skor kasar: ±36 dari 81 tile wajib = 44%.**
+_(diperbarui 2026-08-03 setelah Kas & Bank, HRIS, dan Komisi/Target Penjualan selesai — migrasi 0091)_
 
 Legenda: ✅ jalan · ⚠️ ada sebagian / beda bentuk · ❌ belum ada · 🔌 halaman ada tapi tile-nya belum di-link
 
@@ -71,7 +71,7 @@ masuk satu akun Bank".
 
 Plus permintaan PDF: menu integrasi & pengaturan **payment gateway** (rules beda dari Accurate).
 
-## 5. Penjualan (10 wajib) — 2/10 ⚠️ GAP TERBESAR
+## 5. Penjualan (10 wajib) — 4/10 ⚠️ GAP TERBESAR
 
 | Tile | Status |
 |---|---|
@@ -83,8 +83,8 @@ Plus permintaan PDF: menu integrasi & pengaturan **payment gateway** (rules beda
 | Uang Muka Penjualan | ❌ |
 | Faktur Penjualan | ❌ |
 | Penerimaan Penjualan | ❌ |
-| Komisi Penjual | ❌ |
-| Target Penjualan | ❌ |
+| Komisi Penjual | ✅ `/penjualan/komisi` — aturan persen/nominal, basis omzet atau laba, cakupan berlapis, ambang cair |
+| Target Penjualan | ✅ `/penjualan/target` — per perusahaan/cabang/karyawan/kategori + monitor realisasi |
 
 Klausul tambahan dari PDF (bukan clone polos Accurate):
 - **Komisi Penjual**: insentif % dari jumlah sales karyawan · insentif tetap per produk per karyawan · insentif per kategori target. Pembuatan boleh **import Excel** (klausulnya banyak).
@@ -159,14 +159,14 @@ PDF: form SPT/Bupot *"digunakan hanya untuk unduh formulir"*.
 | Kategori Pelanggan (membership & strata) | ✅ `/crm/kategori-pelanggan` — golongan bisa dibuat sendiri + diskon persen otomatis di kasir; strata belanja tetap terpisah di `/pengaturan/tier` |
 | Retention (WA automation + history pesan) | ❌ 7 trigger sudah dispesifikasi di PDF; kode follow-up ada tapi mati karena `FONNTE_TOKEN` kosong |
 
-### HRIS (5 wajib) — 3/5
+### HRIS (5 wajib) — 5/5 ✅ SELESAI 2026-08-02
 | Sub menu | Status |
 |---|---|
 | Karyawan | ✅ `/hris/karyawan` |
-| Absensi | ✅ `/hris/absensi` |
-| Menu Karyawan (self-service) | ⚠️ `/me` — cuti, absen, KPI ada; **reimburse & kasbon belum**; absen wajib radius 500 m dari titik koordinat cabang belum ada |
-| Jadwal (shift & jam kantor) | ❌ PDF minta scheduler warna-warni per karyawan per hari |
-| Slip Gaji | ⚠️ `/hris/penggajian` ada; **komponen berjenjang belum** (contoh PDF: potongan keterlambatan Rp10rb per 5 menit, batas bawah 1 menit, batas atas 1000 menit → Rp2 jt) |
+| Absensi | ✅ `/hris/absensi` — wajib dari radius koordinat cabang |
+| Menu Karyawan (self-service) | ✅ `/me` — cuti, absen, KPI, lembur, kasbon, reimburse |
+| Jadwal (shift & jam kantor) | ✅ `/hris/shift` + `/hris/jadwal` — papan bulanan berwarna per karyawan |
+| Slip Gaji | ✅ `/hris/penggajian` — otomatis dari absensi, lembur, komponen, kasbon, komisi; potongan telat berblok dengan batas bawah & atas |
 
 ### Frontend Petshop — hampir penuh
 Mulai shift ✅ · Kasir ✅ · Pengeluaran ✅ · Pemesanan/Penerimaan ✅ · Closing ✅
@@ -205,8 +205,10 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
 2. **Modul Kas & Bank** — Pembayaran, Penerimaan, Transfer Bank. Satu modul penuh yang hilang.
 3. **Rantai dokumen Penjualan** — Penawaran → Pesanan → Pengiriman → Uang Muka → Faktur → Penerimaan.
 4. **Sisa Pembelian** — Uang Muka, Perintah Pembayaran, Penerimaan Barang jadi dokumen sendiri (terima sebagian).
-5. **Komisi & Target Penjualan** — banyak klausul, siapkan import Excel.
-6. **HRIS Jadwal + komponen gaji berjenjang + reimburse/kasbon + absen radius 500 m.**
+5. ~~**Komisi & Target Penjualan**~~ — **SELESAI 2026-08-03** (migrasi 0091). Sisa: import Excel
+   aturan/target, insentif jasa medis dokter dari invoice klinik.
+6. ~~**HRIS Jadwal + komponen gaji + reimburse/kasbon + absen radius**~~ — **SELESAI 2026-08-02**
+   (migrasi 0087–0090).
 7. **Aset Tetap lengkap** (golongan pajak fiskal, perubahan, disposisi, pindah) — kategori dasarnya sudah ada.
 8. **CRM Retensi** — begitu `FONNTE_TOKEN` masuk. Sekalian struk WA & WA rawat inap.
 9. **Anggaran, SmartLink Tax, Daftar Laporan/SPT** — paling akhir; PDF sendiri bilang belum dipakai.
