@@ -8,7 +8,7 @@ type PoRow = {
   id: string;
   no_po: string | null;
   tanggal: string;
-  suppliers: { nama: string } | null;
+  suppliers: { nama: string; termin_hari: number | null } | null;
   purchase_order_items: { item_id: string | null; qty: number; qty_terima: number | null; harga_beli: number; nama: string }[] | null;
 };
 
@@ -23,7 +23,7 @@ export default async function FakturBaruPage({
   const [{ data: pos }, { data: invs }] = await Promise.all([
     supabase
       .from("purchase_orders")
-      .select("id, no_po, tanggal, suppliers(nama), purchase_order_items(item_id, qty, qty_terima, harga_beli, nama)")
+      .select("id, no_po, tanggal, suppliers(nama, termin_hari), purchase_order_items(item_id, qty, qty_terima, harga_beli, nama)")
       .eq("status", "Diterima")
       .order("created_at", { ascending: false })
       .limit(100),
@@ -51,6 +51,7 @@ export default async function FakturBaruPage({
     return {
       id: p.id,
       label: `${p.no_po ?? p.id.slice(0, 8)} — ${p.suppliers?.nama ?? "Tanpa pemasok"} (${p.tanggal})`,
+      terminHari: Number(p.suppliers?.termin_hari ?? 30),
       items: Object.entries(sisa).map(([item_id, qty]) => ({
         item_id, sisa: qty, nama: meta[item_id]?.nama ?? "—", harga_po: meta[item_id]?.harga ?? 0,
       })),

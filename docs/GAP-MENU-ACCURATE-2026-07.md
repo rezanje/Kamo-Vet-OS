@@ -7,8 +7,9 @@ Dibandingkan dengan: `src/lib/nav.ts` + route nyata di `src/app/(app)/`.
 > sudah tutup — itu masih benar (FIFO, jurnal, tutup buku, PPN, opname 2-dokumen, dst).
 > Yang diaudit di sini beda: **kelengkapan menu & dokumen** ala Accurate. Mesinnya ada, permukaannya belum.
 
-**Skor kasar: ±49 dari 81 tile wajib = 60%.**
-_(diperbarui 2026-08-03 — Kas & Bank, HRIS, Pembelian, Aset Tetap, dan Penjualan semuanya tutup penuh; migrasi 0098)_
+**Skor kasar: ±52 dari 81 tile wajib = 64%.**
+_(diperbarui 2026-08-03 — Buku Besar, Kas & Bank, HRIS, Pembelian, Aset Tetap, dan Penjualan
+semuanya tutup penuh; migrasi 0100)_
 
 Legenda: ✅ jalan · ⚠️ ada sebagian / beda bentuk · ❌ belum ada · 🔌 halaman ada tapi tile-nya belum di-link
 
@@ -40,7 +41,7 @@ Ekstra VetOS (di luar Accurate): Pajak/Mode PKP, Konfigurasi loyalty, Cabang & g
 | Kalender | ❌ | PDF: dipakai sebagai reminder |
 | Log Aktifitas | ⚠️ | `/buku-besar/log` khusus jurnal, bukan log seluruh sistem |
 
-## 3. Buku Besar (9 wajib) — 6/9
+## 3. Buku Besar (9 wajib) — 9/9 ✅ SELESAI 2026-08-03
 
 | Tile | Status |
 |---|---|
@@ -50,11 +51,11 @@ Ekstra VetOS (di luar Accurate): Pajak/Mode PKP, Konfigurasi loyalty, Cabang & g
 | Jurnal Umum | ✅ `/keuangan/jurnal` |
 | Histori Akun | ✅ `/keuangan/buku-besar` |
 | Log Aktifitas Jurnal | ✅ `/buku-besar/log` |
-| Anggaran | ❌ |
-| Monitor Anggaran | ❌ |
-| Transfer Anggaran | ❌ |
+| Anggaran | ✅ `/buku-besar/anggaran` — per pos biaya per bulan, bisa per cabang, ada salin dari bulan lalu |
+| Monitor Anggaran | ✅ `/buku-besar/monitor-anggaran` — serapan berjalan dari jurnal, batang warna & peringatan pos yang lewat |
+| Transfer Anggaran | ✅ `/buku-besar/transfer-anggaran` — geser jatah antar pos, dibatasi sisa yang belum terpakai |
 
-PDF: *"Menu anggaran belum dipakai tapi ada rencana dimanfaatkan untuk efisiensi cost"* → prioritas rendah.
+PDF: *"Menu anggaran belum dipakai tapi ada rencana dimanfaatkan untuk efisiensi cost"* — sekarang siap dipakai.
 
 ## 4. Kas & Bank (4 wajib) — 4/4 ✅ SELESAI 2026-08-02
 
@@ -98,7 +99,7 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 | Faktur Pembelian | ✅ | `/pembelian/faktur` |
 | Pembayaran Pembelian | ✅ | `/keuangan/hutang` — bisa memotong uang muka |
 | Retur Pembelian | ✅ | `/pembelian/retur` |
-| Pemasok | ✅ | Tab di dalam `/pembelian`; field masih nama/kontak/telp/alamat (NPWP, termin, bank menyusul) |
+| Pemasok | ✅ | Tab di dalam `/pembelian` — lengkap dengan NPWP, termin, dan rekening; termin mengisi jatuh tempo faktur otomatis |
 | Penerimaan Barang | ✅ | `/pembelian/penerimaan` — dokumen bernomor TB per kiriman, terima sebagian, catat rusak/ditolak, tanda terima bisa dicetak |
 | Uang Muka Pembelian | ✅ | `/pembelian/uang-muka` — akun 1303, dipotongkan otomatis saat melunasi faktur |
 | Kategori Pemasok | ✅ | `/pembelian/kategori-pemasok` + kolom & dropdown di daftar pemasok |
@@ -213,4 +214,8 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
    (migrasi 0087–0090).
 7. ~~**Aset Tetap lengkap**~~ — **SELESAI 2026-08-03** (migrasi 0097).
 8. **CRM Retensi** — begitu `FONNTE_TOKEN` masuk. Sekalian struk WA & WA rawat inap.
-9. **Anggaran, SmartLink Tax, Daftar Laporan/SPT** — paling akhir; PDF sendiri bilang belum dipakai.
+9. ~~**Anggaran**~~ — **SELESAI 2026-08-03** (migrasi 0099), sekalian melengkapi data pemasok
+   (NPWP, termin, rekening — migrasi 0100).
+10. **SmartLink Tax & SPT** — paling akhir; PDF sendiri bilang belum dipakai.
+11. **Pengaturan yang masih tipis** — penomoran dokumen, akses grup, desain cetakan,
+    penyetuju transaksi. Belum ada yang menghalangi operasional.

@@ -37,6 +37,10 @@ type Supplier = {
   nama: string;
   kontak: string | null;
   telp: string | null;
+  npwp: string | null;
+  termin_hari: number | null;
+  bank_nama: string | null;
+  bank_rekening: string | null;
   supplier_categories: Rel<{ nama: string }>;
 };
 
@@ -56,7 +60,7 @@ export default async function PembelianPage({
       .from("purchase_orders")
       .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(qty, qty_terima, harga_beli)")
       .order("created_at", { ascending: false }),
-    supabase.from("suppliers").select("id, nama, kontak, telp, supplier_categories(nama)").order("nama"),
+    supabase.from("suppliers").select("id, nama, kontak, telp, npwp, termin_hari, bank_nama, bank_rekening, supplier_categories(nama)").order("nama"),
     supabase.from("supplier_categories").select("id, nama").eq("is_active", true).order("nama"),
   ]);
 
@@ -237,6 +241,9 @@ export default async function PembelianPage({
                     <th style={{ width: 100 }}>Kategori</th>
                     <th>Kontak</th>
                     <th>Telp</th>
+                    <th style={{ width: 130 }}>NPWP</th>
+                    <th style={{ width: 80 }}>Termin</th>
+                    <th style={{ width: 160 }}>Rekening</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -248,11 +255,16 @@ export default async function PembelianPage({
                       </td>
                       <td style={{ fontSize: 11.5 }}>{s.kontak ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
                       <td style={{ fontSize: 11.5 }}>{s.telp ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
+                      <td style={{ fontSize: 11 }}>{s.npwp ?? <span style={{ color: "var(--td)" }}>—</span>}</td>
+                      <td style={{ fontSize: 11 }}>{Number(s.termin_hari ?? 30)} hari</td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                        {s.bank_nama ? `${s.bank_nama} ${s.bank_rekening ?? ""}`.trim() : "—"}
+                      </td>
                     </tr>
                   ))}
                   {suppliers.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
+                      <td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
                         Belum ada supplier.
                       </td>
                     </tr>
@@ -288,9 +300,33 @@ export default async function PembelianPage({
                 <label className="flab">Telepon</label>
                 <input className="fi" name="telp" placeholder="08xxxxxxxx" />
               </div>
-              <div className="fg" style={{ marginBottom: 12 }}>
+              <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Alamat</label>
                 <textarea className="fi" name="alamat" rows={2} placeholder="Jl. ..." style={{ resize: "vertical" }} />
+              </div>
+              <div className="frow" style={{ marginBottom: 10 }}>
+                <div>
+                  <label className="flab">NPWP</label>
+                  <input className="fi" name="npwp" maxLength={25} placeholder="untuk faktur pajak" />
+                </div>
+                <div>
+                  <label className="flab">Termin (hari)</label>
+                  <input className="fi" name="termin_hari" type="number" min={0} defaultValue={30} />
+                </div>
+              </div>
+              <div className="frow" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="flab">Bank</label>
+                  <input className="fi" name="bank_nama" maxLength={60} placeholder="BCA" />
+                </div>
+                <div>
+                  <label className="flab">No. rekening</label>
+                  <input className="fi" name="bank_rekening" maxLength={40} placeholder="1234567890" />
+                </div>
+                <div>
+                  <label className="flab">Atas nama</label>
+                  <input className="fi" name="bank_atas_nama" maxLength={100} placeholder="PT Maju Bersama" />
+                </div>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button type="submit" className="btn-acc">

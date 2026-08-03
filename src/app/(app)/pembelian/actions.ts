@@ -102,12 +102,26 @@ export async function tambahSupplier(formData: FormData) {
   const telp = String(formData.get("telp") ?? "").trim() || null;
   const alamat = String(formData.get("alamat") ?? "").trim() || null;
   const categoryId = String(formData.get("category_id") ?? "").trim() || null;
+  const npwp = String(formData.get("npwp") ?? "").trim() || null;
+  const bankNama = String(formData.get("bank_nama") ?? "").trim() || null;
+  const bankRekening = String(formData.get("bank_rekening") ?? "").trim() || null;
+  const bankAtasNama = String(formData.get("bank_atas_nama") ?? "").trim() || null;
+
+  const terminRaw = formData.get("termin_hari");
+  const termin = terminRaw === null || String(terminRaw).trim() === "" ? 30 : Number(terminRaw);
 
   if (!nama) {
     redirect("/pembelian?error=" + encodeURIComponent("Nama supplier wajib diisi."));
   }
+  if (!Number.isFinite(termin) || termin < 0) {
+    redirect("/pembelian?error=" + encodeURIComponent("Termin pembayaran tidak valid."));
+  }
 
-  await supabase.from("suppliers").insert({ nama, kontak, telp, alamat, category_id: categoryId });
+  await supabase.from("suppliers").insert({
+    nama, kontak, telp, alamat, category_id: categoryId,
+    npwp, termin_hari: termin, bank_nama: bankNama,
+    bank_rekening: bankRekening, bank_atas_nama: bankAtasNama,
+  });
 
   revalidatePath("/pembelian");
   redirect("/pembelian?tab=supplier&success_sup=1");

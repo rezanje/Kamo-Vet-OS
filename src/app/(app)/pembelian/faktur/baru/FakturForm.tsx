@@ -7,6 +7,8 @@ import { buatFaktur } from "../actions";
 export type PoOption = {
   id: string;
   label: string;
+  /** Termin bawaan pemasoknya — jatuh tempo ikut menyesuaikan saat PO dipilih. */
+  terminHari: number;
   items: { item_id: string; nama: string; harga_po: number; sisa: number }[];
 };
 
@@ -22,6 +24,7 @@ export function FakturForm({ options }: { options: PoOption[] }) {
   const [poId, setPoId] = useState("");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [harga, setHarga] = useState<Record<string, number>>({});
+  const [tempo, setTempo] = useState(plusDays(today, 30));
 
   const po = options.find((o) => o.id === poId);
 
@@ -31,6 +34,7 @@ export function FakturForm({ options }: { options: PoOption[] }) {
     // default: fakturkan semua sisa dengan harga PO — edit yang beda dari faktur pemasok.
     setQty(Object.fromEntries((o?.items ?? []).map((it) => [it.item_id, it.sisa])));
     setHarga(Object.fromEntries((o?.items ?? []).map((it) => [it.item_id, it.harga_po])));
+    setTempo(plusDays(today, o?.terminHari ?? 30));
   };
 
   const payload = (po?.items ?? [])
@@ -68,7 +72,8 @@ export function FakturForm({ options }: { options: PoOption[] }) {
             </div>
             <div className="fg" style={{ marginBottom: 10, flex: 1 }}>
               <label className="flab">Jatuh tempo *</label>
-              <input className="fi" type="date" name="jatuh_tempo" defaultValue={plusDays(today, 30)} required />
+              <input className="fi" type="date" name="jatuh_tempo" value={tempo}
+                onChange={(e) => setTempo(e.target.value)} required />
             </div>
           </div>
           <div className="fg">
