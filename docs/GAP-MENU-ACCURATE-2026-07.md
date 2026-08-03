@@ -7,8 +7,8 @@ Dibandingkan dengan: `src/lib/nav.ts` + route nyata di `src/app/(app)/`.
 > sudah tutup — itu masih benar (FIFO, jurnal, tutup buku, PPN, opname 2-dokumen, dst).
 > Yang diaudit di sini beda: **kelengkapan menu & dokumen** ala Accurate. Mesinnya ada, permukaannya belum.
 
-**Skor kasar: ±43 dari 81 tile wajib = 53%.**
-_(diperbarui 2026-08-03 setelah Kas & Bank, HRIS, Komisi/Target Penjualan, Sisa Pembelian, dan Aset Tetap selesai — migrasi 0097)_
+**Skor kasar: ±49 dari 81 tile wajib = 60%.**
+_(diperbarui 2026-08-03 — Kas & Bank, HRIS, Pembelian, Aset Tetap, dan Penjualan semuanya tutup penuh; migrasi 0098)_
 
 Legenda: ✅ jalan · ⚠️ ada sebagian / beda bentuk · ❌ belum ada · 🔌 halaman ada tapi tile-nya belum di-link
 
@@ -71,18 +71,18 @@ masuk satu akun Bank".
 
 Plus permintaan PDF: menu integrasi & pengaturan **payment gateway** (rules beda dari Accurate).
 
-## 5. Penjualan (10 wajib) — 4/10 ⚠️ GAP TERBESAR
+## 5. Penjualan (10 wajib) — 10/10 ✅ SELESAI 2026-08-03
 
 | Tile | Status |
 |---|---|
 | Penjualan online / SmartLink e-Commerce | ✅ `/penjualan/online` |
 | Retur Penjualan | ✅ `/penjualan/retur` |
-| Penawaran Penjualan | ❌ |
-| Pesanan Penjualan | ❌ |
-| Pengiriman Pesanan | ❌ |
-| Uang Muka Penjualan | ❌ |
-| Faktur Penjualan | ❌ |
-| Penerimaan Penjualan | ❌ |
+| Penawaran Penjualan | ✅ `/penjualan/penawaran` — bisa langsung dijadikan pesanan |
+| Pesanan Penjualan | ✅ `/penjualan/pesanan` (+ halaman detail: kirim & tagih bertahap) |
+| Pengiriman Pesanan | ✅ `/penjualan/pengiriman` — stok keluar FIFO, modal diakui di sini |
+| Uang Muka Penjualan | ✅ `/penjualan/uang-muka` — akun 2103, dipotong otomatis saat faktur dilunasi |
+| Faktur Penjualan | ✅ `/penjualan/faktur` — piutang & pendapatan, PPN keluaran ikut kalau PKP |
+| Penerimaan Penjualan | ✅ Pelunasan faktur dari layar yang sama, boleh memotong uang muka |
 | Komisi Penjual | ✅ `/penjualan/komisi` — aturan persen/nominal, basis omzet atau laba, cakupan berlapis, ambang cair, dan insentif dokter dari tagihan klinik (migrasi 0092) |
 | Target Penjualan | ✅ `/penjualan/target` — per perusahaan/cabang/karyawan/kategori + monitor realisasi |
 
@@ -203,7 +203,8 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
 
 1. ~~**Master data & kategori**~~ — **SELESAI 2026-07-28** (migrasi 0066). Satuan global, Kategori Barang bertingkat, Merek, Kategori Pemasok, Kategori Pelanggan + diskon, Kategori Aset. Sisa: Kategori Aset Tetap **Pajak** — pindah ke butir 7.
 2. **Modul Kas & Bank** — Pembayaran, Penerimaan, Transfer Bank. Satu modul penuh yang hilang.
-3. **Rantai dokumen Penjualan** — Penawaran → Pesanan → Pengiriman → Uang Muka → Faktur → Penerimaan.
+3. ~~**Rantai dokumen Penjualan**~~ — **SELESAI 2026-08-03** (migrasi 0098). Penawaran → Pesanan →
+   Pengiriman → Faktur → Penerimaan, plus Uang Muka Penjualan.
 4. ~~**Sisa Pembelian**~~ — **SELESAI 2026-08-03** (migrasi 0093–0096). Penerimaan Barang jadi
    dokumen bernomor dengan catatan barang rusak, Uang Muka Pembelian, dan Perintah Pembayaran.
 5. ~~**Komisi & Target Penjualan**~~ — **SELESAI 2026-08-03** (migrasi 0091 & 0092, termasuk

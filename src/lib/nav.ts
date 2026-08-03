@@ -158,12 +158,14 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Arus Kas", icon: "ti-arrows-exchange", ...P, href: "/keuangan/arus-kas" },
   ],
   penjualan: [
-    { label: "Penawaran Penjualan", icon: "ti-file-text", ...G },
-    { label: "Pesanan Penjualan", icon: "ti-shopping-bag", ...G },
-    { label: "Pengiriman Pesanan", icon: "ti-truck", ...G },
-    { label: "Uang Muka Penjualan", icon: "ti-coin", ...G },
-    { label: "Faktur Penjualan", icon: "ti-receipt-2", ...G },
-    { label: "Penerimaan Penjualan", icon: "ti-cash-banknote", ...G },
+    { label: "Penawaran Penjualan", icon: "ti-file-text", ...G, href: "/penjualan/penawaran" },
+    { label: "Pesanan Penjualan", icon: "ti-shopping-bag", ...G, href: "/penjualan/pesanan" },
+    { label: "Pengiriman Pesanan", icon: "ti-truck", ...G, href: "/penjualan/pengiriman" },
+    { label: "Uang Muka Penjualan", icon: "ti-coin", ...G, href: "/penjualan/uang-muka" },
+    { label: "Faktur Penjualan", icon: "ti-receipt-2", ...G, href: "/penjualan/faktur" },
+    // Penerimaan dicatat dari baris fakturnya — satu layar, tidak perlu cari-cari
+    // fakturnya dua kali.
+    { label: "Penerimaan Penjualan", icon: "ti-cash-banknote", ...G, href: "/penjualan/faktur" },
     { label: "Retur Penjualan", icon: "ti-arrow-back-up", ...G, href: "/penjualan/retur" },
     { label: "Komisi Penjual", icon: "ti-percentage", ...A, href: "/penjualan/komisi" },
     { label: "Target Penjualan", icon: "ti-target", ...A, href: "/penjualan/target" },
