@@ -208,10 +208,12 @@ export const TILES: Record<string, Tile[]> = {
   "aset-tetap": [
     { label: "Aset Tetap", icon: "ti-building", ...B, href: "/keuangan/aset" },
     { label: "Kategori Aset", icon: "ti-category", ...B, href: "/keuangan/kategori-aset" },
-    { label: "Kategori Aset Tetap Pajak", icon: "ti-receipt-tax", ...B },
-    { label: "Perubahan Aset Tetap", icon: "ti-edit", ...G },
-    { label: "Disposisi Aset Tetap", icon: "ti-trash", ...G },
-    { label: "Pindah Aset", icon: "ti-arrows-transfer-down", ...G },
+    { label: "Kategori Aset Tetap Pajak", icon: "ti-receipt-tax", ...B, href: "/keuangan/kategori-aset-pajak" },
+    // Perubahan, disposisi, dan pindah aset dikerjakan dari halaman detail aset —
+    // ketiganya butuh aset yang dipilih dulu, jadi tile-nya mengarah ke daftarnya.
+    { label: "Perubahan Aset Tetap", icon: "ti-edit", ...G, href: "/keuangan/aset" },
+    { label: "Disposisi Aset Tetap", icon: "ti-trash", ...G, href: "/keuangan/aset" },
+    { label: "Pindah Aset", icon: "ti-arrows-transfer-down", ...G, href: "/keuangan/aset" },
   ],
   pajak: [
     { label: "Mode PKP & tarif PPN", icon: "ti-settings", ...B, href: "/pengaturan/pajak" },

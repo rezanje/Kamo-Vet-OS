@@ -7,8 +7,8 @@ Dibandingkan dengan: `src/lib/nav.ts` + route nyata di `src/app/(app)/`.
 > sudah tutup — itu masih benar (FIFO, jurnal, tutup buku, PPN, opname 2-dokumen, dst).
 > Yang diaudit di sini beda: **kelengkapan menu & dokumen** ala Accurate. Mesinnya ada, permukaannya belum.
 
-**Skor kasar: ±39 dari 81 tile wajib = 48%.**
-_(diperbarui 2026-08-03 setelah Kas & Bank, HRIS, Komisi/Target Penjualan, dan Sisa Pembelian selesai — migrasi 0096)_
+**Skor kasar: ±43 dari 81 tile wajib = 53%.**
+_(diperbarui 2026-08-03 setelah Kas & Bank, HRIS, Komisi/Target Penjualan, Sisa Pembelian, dan Aset Tetap selesai — migrasi 0097)_
 
 Legenda: ✅ jalan · ⚠️ ada sebagian / beda bentuk · ❌ belum ada · 🔌 halaman ada tapi tile-nya belum di-link
 
@@ -126,16 +126,16 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 PDF: *"database barang dan jasa dibuat formatnya serupa dengan accurate agar saat migrasi mudah"* →
 **4 master data terakhir itu blocker migrasi**, bukan nice-to-have.
 
-## 8. Aset Tetap (6 wajib) — 2/6
+## 8. Aset Tetap (6 wajib) — 6/6 ✅ SELESAI 2026-08-03
 
 | Tile | Status |
 |---|---|
-| Aset Tetap | ✅ `/keuangan/aset` (+ penyusutan otomatis) |
+| Aset Tetap | ✅ `/keuangan/aset` (+ penyusutan otomatis, halaman detail per aset) |
 | Kategori Aset | ✅ `/keuangan/kategori-aset` — umur & akun jurnal per kategori; jurnal penyusutan pecah per kategori |
-| Kategori Aset Tetap Pajak | ❌ |
-| Perubahan Aset Tetap | ❌ |
-| Disposisi Aset Tetap | ❌ |
-| Pindah Aset | ❌ |
+| Kategori Aset Tetap Pajak | ✅ `/keuangan/kategori-aset-pajak` — golongan fiskal UU PPh Ps.11, garis lurus & saldo menurun, tabel penyusutan fiskal per aset |
+| Perubahan Aset Tetap | ✅ Tambah nilai (perbaikan besar, berjurnal) & revisi umur ekonomis, lengkap dengan riwayat |
+| Disposisi Aset Tetap | ✅ Jual atau hapus — akumulasi penyusutan ikut dihapus, laba/rugi pelepasan masuk akun 4302/5602 |
+| Pindah Aset | ✅ Pindah cabang dengan jejak asal & tujuan (tanpa jurnal — perusahaannya sama) |
 
 ## 9. SmartLink Tax (3 wajib) — 0/3
 e-Faktur CTAS · Email Faktur Pajak · e-Faktur Legacy.
@@ -210,6 +210,6 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
    insentif dokter dari tagihan klinik). Sisa: import Excel aturan/target.
 6. ~~**HRIS Jadwal + komponen gaji + reimburse/kasbon + absen radius**~~ — **SELESAI 2026-08-02**
    (migrasi 0087–0090).
-7. **Aset Tetap lengkap** (golongan pajak fiskal, perubahan, disposisi, pindah) — kategori dasarnya sudah ada.
+7. ~~**Aset Tetap lengkap**~~ — **SELESAI 2026-08-03** (migrasi 0097).
 8. **CRM Retensi** — begitu `FONNTE_TOKEN` masuk. Sekalian struk WA & WA rawat inap.
 9. **Anggaran, SmartLink Tax, Daftar Laporan/SPT** — paling akhir; PDF sendiri bilang belum dipakai.

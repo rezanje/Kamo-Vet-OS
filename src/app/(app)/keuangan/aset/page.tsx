@@ -20,7 +20,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
   const autoRuns = await catchUpDepreciation(supabase);
 
   const [{ data: assets }, { data: deps }, { data: branches }, { data: katData }] = await Promise.all([
-    supabase.from("fixed_assets").select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, is_active").order("tanggal_perolehan"),
+    supabase.from("fixed_assets").select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, is_active, status").order("tanggal_perolehan"),
     supabase.from("asset_depreciations").select("asset_id, amount"),
     supabase.from("branches").select("id, name").order("name"),
     supabase.from("asset_categories").select("id, nama, umur_bulan").eq("is_active", true).order("nama"),
@@ -91,12 +91,16 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
             <thead>
-              <tr><th>Aset</th><th>Kategori</th><th>Perolehan</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>Susut/bln</th><th style={{ textAlign: "right" }}>Akumulasi</th><th style={{ textAlign: "right" }}>Nilai Buku</th><th>Umur</th></tr>
+              <tr><th>Aset</th><th>Kategori</th><th>Perolehan</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>Susut/bln</th><th style={{ textAlign: "right" }}>Akumulasi</th><th style={{ textAlign: "right" }}>Nilai Buku</th><th>Umur</th><th style={{ width: 90 }}>Status</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td style={{ fontSize: 12 }}>{r.nama}</td>
+                  <td style={{ fontSize: 12 }}>
+                    <Link href={`/keuangan/aset/${r.id}`} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
+                      {r.nama}
+                    </Link>
+                  </td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.kategori}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(r.tanggal_perolehan)}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(Number(r.harga_perolehan))}</td>
@@ -104,10 +108,15 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.akum)}</td>
                   <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(r.nilaiBuku)}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.umur_bulan} bln</td>
+                  <td>
+                    <span className={`bge ${r.status === "dilepas" ? "x" : "g"}`}>
+                      {r.status === "dilepas" ? "Dilepas" : "Aktif"}
+                    </span>
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada aset tetap.</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada aset tetap.</td></tr>
               )}
             </tbody>
           </table>
