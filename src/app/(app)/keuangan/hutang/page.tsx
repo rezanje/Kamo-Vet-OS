@@ -12,9 +12,11 @@ const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString
 
 type FakturRow = {
   id: string; no_faktur: string; no_faktur_pemasok: string | null; po_no: string | null;
-  tanggal: string; jatuh_tempo: string; supplier: string;
+  tanggal: string; jatuh_tempo: string; supplier: string; supplier_id: string | null;
   total: number; dibayar: number; retur: number; sisa: number; days: number; bucket: AgingBucket;
 };
+
+type UangMukaSiap = { id: string; no_um: string; sisa: number };
 
 type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: string; nilai: number };
 
@@ -28,7 +30,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const [{ data: invs }, { data: pos }, { data: rets }] = await Promise.all([
     supabase
       .from("purchase_invoices")
-      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
+      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
       .order("jatuh_tempo"),
     supabase
       .from("purchase_orders")
@@ -43,7 +45,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
 
   const rows: FakturRow[] = ((invs ?? []) as unknown as {
     id: string; no_faktur: string; no_faktur_pemasok: string | null; tanggal: string; jatuh_tempo: string;
-    total: number; po_id: string; suppliers: { nama: string } | null;
+    total: number; po_id: string; supplier_id: string | null; suppliers: { nama: string } | null;
     purchase_orders: { no_po: string | null } | null; purchase_invoice_payments: { amount: number }[] | null;
   }[])
     .map((v) => {
@@ -58,12 +60,25 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         id: v.id, no_faktur: v.no_faktur, no_faktur_pemasok: v.no_faktur_pemasok,
         po_no: v.purchase_orders?.no_po ?? null,
         tanggal: v.tanggal, jatuh_tempo: v.jatuh_tempo,
-        supplier: v.suppliers?.nama ?? "—",
+        supplier: v.suppliers?.nama ?? "—", supplier_id: v.supplier_id,
         total: Number(v.total), dibayar, retur, sisa,
         days: agingDays(v.jatuh_tempo, today), bucket: agingBucket(v.jatuh_tempo, today),
       };
     })
     .filter((r) => r.sisa > 0);
+
+  // Uang muka aktif per pemasok — ditawarkan di form bayar supaya DP yang sudah
+  // dikeluarkan tidak terlupa dan dibayar dua kali.
+  const { data: umData } = await supabase
+    .from("purchase_advances").select("id, no_um, supplier_id, jumlah, terpakai").eq("status", "aktif");
+  const umPerSupplier = new Map<string, UangMukaSiap[]>();
+  for (const u of (umData ?? []) as { id: string; no_um: string; supplier_id: string | null; jumlah: number; terpakai: number }[]) {
+    const sisa = Number(u.jumlah) - Number(u.terpakai);
+    if (!u.supplier_id || sisa <= 0) continue;
+    const arr = umPerSupplier.get(u.supplier_id) ?? [];
+    arr.push({ id: u.id, no_um: u.no_um, sisa });
+    umPerSupplier.set(u.supplier_id, arr);
+  }
 
   const totalSisa = rows.reduce((a, r) => a + r.sisa, 0);
   const perBucket = Object.fromEntries(
@@ -189,6 +204,17 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                           </select>
                         </div>
                         <PilihRekening rekening={rekening} width={150} />
+                        {(umPerSupplier.get(r.supplier_id ?? "") ?? []).length > 0 && (
+                          <div>
+                            <label className="flab">Potong uang muka</label>
+                            <select className="fi" name="advance_id" defaultValue="" style={{ width: 190 }}>
+                              <option value="">— tidak pakai —</option>
+                              {(umPerSupplier.get(r.supplier_id ?? "") ?? []).map((u) => (
+                                <option key={u.id} value={u.id}>{u.no_um} · sisa {rp(u.sisa)}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                         <div>
                           <label className="flab">Tanggal</label>
                           <input className="fi" type="date" name="tanggal" defaultValue={today} style={{ width: 140 }} />

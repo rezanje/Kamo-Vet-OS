@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adaSelisih, nilaiDiterima, qtyDiterima, qtyDiterimaPerItem } from "../penerimaan";
+import { adaSelisih, formatNoTerima, hitungBarisTerima, nilaiDiterima, qtyDiterima, qtyDiterimaPerItem } from "../penerimaan";
 
 describe("qtyDiterima", () => {
   it("pakai qty_terima kalau ada", () => {
@@ -34,6 +34,49 @@ describe("nilaiDiterima", () => {
         { qty: 2, harga_beli: 1000 },
       ]),
     ).toBe(210000);
+  });
+});
+
+describe("formatNoTerima", () => {
+  it("format TB.YYYY.MM.NNNNN", () => {
+    expect(formatNoTerima(new Date(2026, 7, 3), 1)).toBe("TB.2026.08.00001");
+    expect(formatNoTerima(new Date(2026, 11, 31), 123)).toBe("TB.2026.12.00123");
+  });
+});
+
+describe("hitungBarisTerima", () => {
+  const b = (o: Partial<Parameters<typeof hitungBarisTerima>[0]> = {}) =>
+    hitungBarisTerima({ qty: 10, sudahTerima: 0, mintaTerima: 0, mintaRusak: 0, harga: 1000, ...o });
+
+  it("terima penuh", () => {
+    expect(b({ mintaTerima: 10 })).toMatchObject({ terima: 10, rusak: 0, totalTerima: 10, nilai: 10_000 });
+  });
+
+  it("kiriman bertahap: sisa dihitung dari yang sudah pernah datang", () => {
+    expect(b({ sudahTerima: 4, mintaTerima: 6 })).toMatchObject({ sisaSebelum: 6, terima: 6, totalTerima: 10 });
+  });
+
+  it("tidak boleh terima melebihi sisa pesanan", () => {
+    expect(b({ sudahTerima: 8, mintaTerima: 5 })).toMatchObject({ terima: 2, totalTerima: 10 });
+  });
+
+  it("barang rusak tidak masuk stok dan tidak dijurnal", () => {
+    const r = b({ mintaTerima: 7, mintaRusak: 3 });
+    expect(r).toMatchObject({ terima: 7, rusak: 3, totalTerima: 7 });
+    expect(r.nilai).toBe(7_000);
+  });
+
+  it("rusak tidak mengurangi sisa pesanan — pemasok masih wajib kirim pengganti", () => {
+    const r = b({ mintaTerima: 2, mintaRusak: 3 });
+    expect(r.totalTerima).toBe(2);           // sisa yang ditunggu tetap 8, bukan 5
+  });
+
+  it("total yang datang dibatasi qty pesanan", () => {
+    expect(b({ mintaTerima: 8, mintaRusak: 5 })).toMatchObject({ terima: 8, rusak: 2 });
+  });
+
+  it("angka negatif atau sampah dianggap nol", () => {
+    expect(b({ mintaTerima: -5, mintaRusak: Number.NaN })).toMatchObject({ terima: 0, rusak: 0, nilai: 0 });
   });
 });
 

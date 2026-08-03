@@ -32,3 +32,54 @@ export function nilaiDiterima(rows: (PoiQty & { harga_beli: number })[]): number
 export function adaSelisih(rows: PoiQty[]): boolean {
   return rows.some((r) => r.qty_terima != null && Number(r.qty_terima) !== Number(r.qty));
 }
+
+// ── Dokumen penerimaan (migrasi 0093) ────────────────────────────────────────
+
+// Nomor dokumen: TB.YYYY.MM.NNNNN, seq per bulan — pola sama dgn FB/RB/RJ.
+export function formatNoTerima(date: Date, seq: number): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `TB.${y}.${m}.${String(seq).padStart(5, "0")}`;
+}
+
+export type BarisTerima = {
+  qty: number;                 // qty PO
+  sudahTerima: number;         // akumulasi yang sudah diterima baik
+  mintaTerima: number;         // input: datang & kondisinya baik
+  mintaRusak: number;          // input: datang tapi ditolak karena rusak
+  harga: number;
+};
+
+export type HasilBaris = {
+  sisaSebelum: number;
+  terima: number;
+  rusak: number;
+  totalTerima: number;         // akumulasi setelah dokumen ini
+  nilai: number;               // yang dijurnal & menambah hutang
+};
+
+/**
+ * Bagi input satu penerimaan jadi angka yang siap disimpan.
+ *
+ * Barang rusak TIDAK dipotong dari sisa pesanan: pemasok masih berhutang kiriman
+ * pengganti. Kalau rusaknya mengurangi sisa, sisa kiriman jadi hilang diam-diam
+ * dan barangnya tidak akan pernah ditagih.
+ */
+export function hitungBarisTerima(b: BarisTerima): HasilBaris {
+  const qty = Number(b.qty) || 0;
+  const sudah = Math.max(0, Number(b.sudahTerima) || 0);
+  const sisaSebelum = Math.max(0, qty - sudah);
+
+  const terima = Math.min(Math.max(0, Number(b.mintaTerima) || 0), sisaSebelum);
+  // Rusak dibatasi sisa setelah yang baik diambil — total yang datang tidak boleh
+  // melebihi yang dipesan.
+  const rusak = Math.min(Math.max(0, Number(b.mintaRusak) || 0), Math.max(0, sisaSebelum - terima));
+
+  return {
+    sisaSebelum,
+    terima,
+    rusak,
+    totalTerima: sudah + terima,
+    nilai: terima * (Number(b.harga) || 0),
+  };
+}

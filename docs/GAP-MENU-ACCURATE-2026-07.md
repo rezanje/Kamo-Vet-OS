@@ -7,8 +7,8 @@ Dibandingkan dengan: `src/lib/nav.ts` + route nyata di `src/app/(app)/`.
 > sudah tutup — itu masih benar (FIFO, jurnal, tutup buku, PPN, opname 2-dokumen, dst).
 > Yang diaudit di sini beda: **kelengkapan menu & dokumen** ala Accurate. Mesinnya ada, permukaannya belum.
 
-**Skor kasar: ±36 dari 81 tile wajib = 44%.**
-_(diperbarui 2026-08-03 setelah Kas & Bank, HRIS, dan Komisi/Target Penjualan selesai — migrasi 0091)_
+**Skor kasar: ±39 dari 81 tile wajib = 48%.**
+_(diperbarui 2026-08-03 setelah Kas & Bank, HRIS, Komisi/Target Penjualan, dan Sisa Pembelian selesai — migrasi 0096)_
 
 Legenda: ✅ jalan · ⚠️ ada sebagian / beda bentuk · ❌ belum ada · 🔌 halaman ada tapi tile-nya belum di-link
 
@@ -90,19 +90,19 @@ Klausul tambahan dari PDF (bukan clone polos Accurate):
 - **Komisi Penjual**: insentif % dari jumlah sales karyawan · insentif tetap per produk per karyawan · insentif per kategori target. Pembuatan boleh **import Excel** (klausulnya banyak).
 - **Target Penjualan**: target per kategori produk · per cabang · per karyawan.
 
-## 6. Pembelian (9 wajib) — 6/9
+## 6. Pembelian (9 wajib) — 9/9 ✅ SELESAI 2026-08-03
 
 | Tile | Status | Catatan |
 |---|---|---|
-| Pesanan Pembelian | 🔌 | `/pembelian` + `/pembelian/baru` jalan, tile-nya belum di-link |
+| Pesanan Pembelian | ✅ | `/pembelian` + `/pembelian/baru` |
 | Faktur Pembelian | ✅ | `/pembelian/faktur` |
-| Pembayaran Pembelian | ✅ | `/keuangan/hutang` |
-| Retur Pembelian | ✅ | `/pembelian/retur` (tile-nya kedobel di nav) |
-| Pemasok | 🔌 | Tab di dalam `/pembelian`; field cuma nama/kontak/telp/alamat (belum NPWP, termin, bank) |
-| Penerimaan Barang | ⚠️ | Bukan dokumen sendiri — status PO → "Diterima" langsung stok masuk + jurnal 1301/2102. Belum bisa terima sebagian, catat rusak/selisih, atau punya nomor GR |
-| Uang Muka Pembelian | ❌ | |
+| Pembayaran Pembelian | ✅ | `/keuangan/hutang` — bisa memotong uang muka |
+| Retur Pembelian | ✅ | `/pembelian/retur` |
+| Pemasok | ✅ | Tab di dalam `/pembelian`; field masih nama/kontak/telp/alamat (NPWP, termin, bank menyusul) |
+| Penerimaan Barang | ✅ | `/pembelian/penerimaan` — dokumen bernomor TB per kiriman, terima sebagian, catat rusak/ditolak, tanda terima bisa dicetak |
+| Uang Muka Pembelian | ✅ | `/pembelian/uang-muka` — akun 1303, dipotongkan otomatis saat melunasi faktur |
 | Kategori Pemasok | ✅ | `/pembelian/kategori-pemasok` + kolom & dropdown di daftar pemasok |
-| Perintah Pembayaran | ❌ | |
+| Perintah Pembayaran | ✅ | `/pembelian/perintah-bayar` — diajukan → disetujui → dibayar, faktur terkunci dari pengajuan ganda |
 
 ## 7. Persediaan (14 wajib) — 10/14
 
@@ -204,7 +204,8 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
 1. ~~**Master data & kategori**~~ — **SELESAI 2026-07-28** (migrasi 0066). Satuan global, Kategori Barang bertingkat, Merek, Kategori Pemasok, Kategori Pelanggan + diskon, Kategori Aset. Sisa: Kategori Aset Tetap **Pajak** — pindah ke butir 7.
 2. **Modul Kas & Bank** — Pembayaran, Penerimaan, Transfer Bank. Satu modul penuh yang hilang.
 3. **Rantai dokumen Penjualan** — Penawaran → Pesanan → Pengiriman → Uang Muka → Faktur → Penerimaan.
-4. **Sisa Pembelian** — Uang Muka, Perintah Pembayaran, Penerimaan Barang jadi dokumen sendiri (terima sebagian).
+4. ~~**Sisa Pembelian**~~ — **SELESAI 2026-08-03** (migrasi 0093–0096). Penerimaan Barang jadi
+   dokumen bernomor dengan catatan barang rusak, Uang Muka Pembelian, dan Perintah Pembayaran.
 5. ~~**Komisi & Target Penjualan**~~ — **SELESAI 2026-08-03** (migrasi 0091 & 0092, termasuk
    insentif dokter dari tagihan klinik). Sisa: import Excel aturan/target.
 6. ~~**HRIS Jadwal + komponen gaji + reimburse/kasbon + absen radius**~~ — **SELESAI 2026-08-02**

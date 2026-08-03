@@ -9,6 +9,7 @@ import { buildFakturLines, formatNoFaktur, sisaFakturable } from "@/lib/faktur-b
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { qtyDiterima } from "@/lib/penerimaan";
 import { totalRetur } from "@/lib/retur";
+import { jurnalBayarHutang, pakaiUangMuka } from "@/lib/uang-muka";
 
 type ItemInput = { item_id: string; qty: number; harga: number };
 
@@ -164,7 +165,7 @@ export async function bayarFaktur(formData: FormData) {
 
   const { data: inv } = await supabase
     .from("purchase_invoices")
-    .select("id, no_faktur, total, po_id, purchase_orders(branch_id)")
+    .select("id, no_faktur, total, po_id, supplier_id, purchase_orders(branch_id)")
     .eq("id", invoiceId).maybeSingle();
   if (!inv) fail("Faktur tidak ditemukan.");
 
@@ -175,24 +176,49 @@ export async function bayarFaktur(formData: FormData) {
   if (sisa <= 0) fail("Faktur ini sudah lunas.");
   if (amount > sisa) fail(`Nominal melebihi sisa faktur (maks Rp ${Math.round(sisa).toLocaleString("id-ID")}).`);
 
+  // Uang muka yang dipilih dipotongkan lebih dulu — uangnya sudah keluar waktu DP
+  // dibayar, jadi porsi itu tidak boleh keluar lagi dari kas.
+  const advanceId = String(formData.get("advance_id") ?? "").trim() || null;
+  let dariUangMuka = 0;
+  type Advance = { id: string; jumlah: number; terpakai: number; supplier_id: string | null; status: string };
+  let advance: Advance | null = null;
+
+  if (advanceId) {
+    const { data: um } = await supabase
+      .from("purchase_advances").select("id, jumlah, terpakai, supplier_id, status").eq("id", advanceId).maybeSingle();
+    if (!um) fail("Uang muka tidak ditemukan.");
+    if (um!.status !== "aktif") fail("Uang muka itu sudah dibatalkan.");
+    if (um!.supplier_id && inv!.supplier_id && um!.supplier_id !== inv!.supplier_id) {
+      fail("Uang muka itu milik pemasok lain.");
+    }
+    advance = um as Advance;
+    dariUangMuka = pakaiUangMuka(Number(um!.jumlah) - Number(um!.terpakai), amount);
+    if (dariUangMuka <= 0) fail("Uang muka itu sudah habis terpakai.");
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
   const { error: payErr } = await supabase.from("purchase_invoice_payments").insert({
     invoice_id: invoiceId, tanggal, amount, metode, catatan, created_by: user?.id ?? null,
+    advance_id: advance?.id ?? null, dari_uang_muka: dariUangMuka,
   });
   if (payErr) fail(payErr.message);
+
+  if (advance) {
+    await supabase.from("purchase_advances")
+      .update({ terpakai: Number(advance.terpakai) + dariUangMuka }).eq("id", advance.id);
+  }
 
   const po = inv!.purchase_orders as unknown as { branch_id: string | null } | null;
   const kasCode = await kodeAkunBayar(supabase, metode, po?.branch_id ?? null, accountId);
   await postJournal(supabase, {
     tanggal,
-    deskripsi: `Pembayaran faktur ${inv!.no_faktur}`,
+    deskripsi: dariUangMuka > 0
+      ? `Pembayaran faktur ${inv!.no_faktur} (pakai uang muka)`
+      : `Pembayaran faktur ${inv!.no_faktur}`,
     source: "purchase-pay",
     sourceRef: inv!.no_faktur,
     branchId: po?.branch_id ?? null,
-    lines: [
-      { code: "2101", debit: amount, credit: 0 },
-      { code: kasCode, debit: 0, credit: amount },
-    ],
+    lines: jurnalBayarHutang(kasCode, amount, dariUangMuka),
   });
 
   revalidatePath(back);
