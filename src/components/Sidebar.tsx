@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MODULES, allowedModules } from "@/lib/nav";
+import { MODULES } from "@/lib/nav";
+import { modulDiizinkan, type AturanTersimpan } from "@/lib/akses";
 import { logout } from "@/app/login/actions";
 
 type Props = {
   branches: { code: string; name: string }[];
   fullName: string;
   role: string;
+  /** Aturan Akses Grup; kosong = peran ini masih pakai bawaan. */
+  aksesModul?: AturanTersimpan;
 };
 
 function activeModule(pathname: string): string {
@@ -16,7 +19,7 @@ function activeModule(pathname: string): string {
   return pathname.split("/")[1] || "dashboard";
 }
 
-export function Sidebar({ branches, fullName, role }: Props) {
+export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
   const pathname = usePathname();
   const active = activeModule(pathname);
   const initials = fullName
@@ -53,7 +56,7 @@ export function Sidebar({ branches, fullName, role }: Props) {
 
       <div className="sb-nav">
         {(() => {
-          const allow = allowedModules(role);
+          const allow = modulDiizinkan(role, aksesModul);
           return allow ? MODULES.filter((m) => allow.includes(m.id)) : MODULES;
         })().map((m) => {
           const href = m.id === "dashboard" ? "/" : `/${m.id}`;

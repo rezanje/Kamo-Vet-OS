@@ -7,7 +7,7 @@ Dibandingkan dengan: `src/lib/nav.ts` + route nyata di `src/app/(app)/`.
 > sudah tutup — itu masih benar (FIFO, jurnal, tutup buku, PPN, opname 2-dokumen, dst).
 > Yang diaudit di sini beda: **kelengkapan menu & dokumen** ala Accurate. Mesinnya ada, permukaannya belum.
 
-**Skor kasar: ±52 dari 81 tile wajib = 64%.**
+**Skor kasar: ±53 dari 81 tile wajib = 65%.**
 _(diperbarui 2026-08-03 — Buku Besar, Kas & Bank, HRIS, Pembelian, Aset Tetap, dan Penjualan
 semuanya tutup penuh; migrasi 0100)_
 
@@ -15,13 +15,13 @@ Legenda: ✅ jalan · ⚠️ ada sebagian / beda bentuk · ❌ belum ada · 🔌
 
 ---
 
-## 1. Pengaturan (6 wajib) — 1/6
+## 1. Pengaturan (6 wajib) — 2/6
 PDF: *"menu pengaturan umumnya mengikuti aturan dari pihak developer"* → paling longgar, boleh beda.
 
 | Tile | Status | Catatan |
 |---|---|---|
 | Preferensi | ❌ | |
-| Akses Grup | ⚠️ | Role hardcoded di `allowedModules()`, bukan editor grup |
+| Akses Grup | ✅ | `/pengaturan/akses-grup` — centang modul per peran, ditegakkan di sidebar DAN middleware. Hanya OWNER yang boleh mengubah (RLS + guard aksi); OWNER sendiri tidak pernah bisa dibatasi |
 | Pengguna | ✅ | `/pengaturan/pengguna` |
 | Penomoran | ❌ | Nomor dokumen masih hardcoded pola per modul |
 | Desain Cetakan | ❌ | |
@@ -217,5 +217,6 @@ Angka gap di atas **tidak berubah** — yang berubah cuma penggolongan & label, 
 9. ~~**Anggaran**~~ — **SELESAI 2026-08-03** (migrasi 0099), sekalian melengkapi data pemasok
    (NPWP, termin, rekening — migrasi 0100).
 10. **SmartLink Tax & SPT** — paling akhir; PDF sendiri bilang belum dipakai.
-11. **Pengaturan yang masih tipis** — penomoran dokumen, akses grup, desain cetakan,
-    penyetuju transaksi. Belum ada yang menghalangi operasional.
+11. **Pengaturan yang masih tipis** — ~~akses grup~~ (**SELESAI 2026-08-03**, migrasi 0101),
+    sisanya penomoran dokumen, desain cetakan, penyetuju transaksi. Belum ada yang
+    menghalangi operasional.

@@ -31,11 +31,12 @@ export default async function AppLayout({
   }
 
   // branches: master ref, readable by any authenticated user (RLS).
-  const { data: branches } = await supabase
-    .from("branches")
-    .select("code, name")
-    .eq("is_active", true)
-    .order("name");
+  // Aturan Akses Grup dibaca sekali di sini supaya sidebar menampilkan modul yang
+  // benar-benar bisa dibuka — daftar yang sama dipakai middleware.
+  const [{ data: branches }, { data: aksesModul }] = await Promise.all([
+    supabase.from("branches").select("code, name").eq("is_active", true).order("name"),
+    supabase.from("role_modules").select("role, module_id"),
+  ]);
 
   // STAFF cuma masuk (app) lewat alur kasir klinik (/klinik/shift & seterusnya) —
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
@@ -49,6 +50,7 @@ export default async function AppLayout({
           branches={branches ?? []}
           fullName={profile?.full_name ?? user.email ?? "Pengguna"}
           role={profile?.role ?? "—"}
+          aksesModul={aksesModul ?? []}
         />
       )}
       <div className="main">

@@ -53,17 +53,9 @@ export const MODULE_LABEL: Record<string, string> = {
   ...Object.fromEntries(MODULES.map((m) => [m.id, m.label])),
 };
 
-// FINANCE hanya pegang dunia keuangan — sidebar & akses URL dibatasi ke modul ini.
-// Piutang/hutang hidup di Kas & Bank (ala Accurate), jadi FINANCE tetap kebagian.
-export const FINANCE_MODULES = [
-  "dashboard", "buku-besar", "kas-bank", "aset-tetap", "pajak", "laporan",
-];
-
-// Modul yang boleh diakses per role. Undefined = semua (OWNER/ADMIN).
-export function allowedModules(role: string): string[] | null {
-  if (role === "FINANCE") return FINANCE_MODULES;
-  return null; // full akses
-}
+// Hak akses per peran pindah ke `lib/akses.ts` (migrasi 0101) supaya sidebar dan
+// middleware memakai satu aturan yang sama, dan pemilik bisa mengubahnya lewat
+// layar Akses Grup tanpa ganti kode.
 
 const G = { bg: "#e8f5ee", fg: "#16a34a" }; // green  — transaksi
 const B = { bg: "#eff6ff", fg: "#2563eb" }; // blue   — master data
@@ -110,7 +102,7 @@ export const TILES: Record<string, Tile[]> = {
   // ── 10 modul Accurate ───────────────────────────────────────────────────────
   pengaturan: [
     { label: "Preferensi", icon: "ti-adjustments", ...A },
-    { label: "Akses Grup", icon: "ti-users-plus", ...A },
+    { label: "Akses Grup", icon: "ti-users-plus", ...A, href: "/pengaturan/akses-grup" },
     { label: "Pengguna", icon: "ti-shield", ...A, href: "/pengaturan/pengguna" },
     { label: "Penomoran", icon: "ti-list-numbers", ...A },
     { label: "Desain Cetakan", icon: "ti-printer", ...A },
