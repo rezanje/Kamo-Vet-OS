@@ -4,8 +4,11 @@
 // Keluaran: per karyawan — omzet, laba, komisi, dan rincian per aturan supaya angkanya
 // bisa ditelusuri, bukan cuma satu total yang harus dipercaya begitu saja.
 
-/** kasir = struk POS & penjualan online · klinik = tagihan kunjungan yang sudah lunas. */
-export type SumberJual = "kasir" | "klinik";
+/**
+ * kasir = struk POS & penjualan online · klinik = tagihan kunjungan yang sudah lunas ·
+ * reseller = faktur penjualan B2B dari rantai dokumen (migrasi 0098).
+ */
+export type SumberJual = "kasir" | "klinik" | "reseller";
 
 export type BarisJual = {
   tanggal: string;              // YYYY-MM-DD

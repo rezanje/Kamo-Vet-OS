@@ -31,11 +31,15 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   }
   const awal7 = hari7[0];
 
-  const [balances, salesRows, invRows, invPays, poRows, poPays, cashLines] = await Promise.all([
+  const [balances, salesRows, invRows, invPays, fjRows, fjReceipts, poRows, poPays, cashLines] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
     supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status"),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
     supabase.from("invoice_payments").select("invoice_id, amount"),
+    // Faktur penjualan reseller (rantai dokumen, migrasi 0098) — aliran pendapatan
+    // ketiga di samping struk kasir dan tagihan klinik.
+    supabase.from("sales_invoices").select("id, total, tanggal").neq("status", "batal").gte("tanggal", awalTahun).lte("tanggal", today),
+    supabase.from("sales_receipts").select("invoice_id, jumlah"),
     supabase.from("purchase_orders").select("id, total, status, tanggal").eq("status", "Diterima"),
     supabase.from("po_payments").select("po_id, amount"),
     // baris jurnal kas/bank 7 hari terakhir untuk arus kas harian.
@@ -75,7 +79,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   }
   const arusKas = hari7.map((t) => ({ tanggal: t, ...cashByDay.get(t)! }));
 
-  // ── Penjualan (tahun ini): POS + Online sales + invoice klinik, lunas vs belum ──
+  // ── Penjualan (tahun ini): POS + Online + invoice klinik + faktur reseller, lunas vs belum ──
   const salesRowsThisYear = (salesRows.data ?? []).filter((s: { created_at: string }) => s.created_at >= awalTahun);
   const salesTotal = salesRowsThisYear.reduce((a: number, s: { total: number }) => a + Number(s.total), 0);
 
@@ -94,8 +98,19 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   const salesBelumLunas = salesRowsThisYear
     .filter((s: { marketplace_status: string | null }) => s.marketplace_status === "piutang")
     .reduce((a: number, s: { total: number }) => a + Number(s.total), 0);
-  const penjTotal = salesTotal + invTotal;
-  const belumLunas = invBelum + salesBelumLunas;
+  // Faktur reseller: yang sudah masuk = penerimaan penjualan (termasuk porsi uang muka).
+  const fjPaid = new Map<string, number>();
+  for (const r of (fjReceipts.data ?? []) as { invoice_id: string; jumlah: number }[]) {
+    fjPaid.set(r.invoice_id, (fjPaid.get(r.invoice_id) ?? 0) + Number(r.jumlah));
+  }
+  let fjTotal = 0, fjBelum = 0;
+  for (const f of (fjRows.data ?? []) as { id: string; total: number }[]) {
+    fjTotal += Number(f.total);
+    fjBelum += Math.max(0, Number(f.total) - (fjPaid.get(f.id) ?? 0));
+  }
+
+  const penjTotal = salesTotal + invTotal + fjTotal;
+  const belumLunas = invBelum + salesBelumLunas + fjBelum;
   const penjualan = { total: penjTotal, lunas: penjTotal - belumLunas, belumLunas };
 
   // ── Pembelian (PO Diterima), lunas vs belum ──
@@ -114,6 +129,9 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   for (const s of (salesRows.data ?? []) as { total: number; created_at: string }[]) {
     const t = s.created_at.slice(0, 10);
     if (trenMap.has(t)) trenMap.set(t, trenMap.get(t)! + Number(s.total));
+  }
+  for (const f of (fjRows.data ?? []) as { total: number; tanggal: string }[]) {
+    if (trenMap.has(f.tanggal)) trenMap.set(f.tanggal, trenMap.get(f.tanggal)! + Number(f.total));
   }
   const trenPenjualan = hari7.map((t) => ({ tanggal: t, total: trenMap.get(t)! }));
 

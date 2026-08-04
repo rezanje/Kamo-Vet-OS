@@ -49,6 +49,15 @@ type InvoiceRow = {
   invoice_items: { item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
 };
 
+type FakturJualRow = {
+  id: string;
+  tanggal: string;
+  dpp: number;
+  branch_id: string | null;
+  created_by: string | null;
+  sales_invoice_items: { order_item_id: string | null; item_id: string | null; qty: number; harga: number }[] | null;
+};
+
 export type DataKomisi = {
   baris: BarisJual[];
   /** Omzet yang tidak bisa dibagikan ke siapa pun (kasir/dokternya belum terhubung ke data karyawan). */
@@ -214,7 +223,82 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     }
   }
 
+  // ── Reseller: faktur penjualan dari rantai dokumen (migrasi 0098) ─────────────
+  // Dipatok pada tanggal faktur, bukan tanggal pelunasan seperti klinik: di sini
+  // pendapatan diakui saat faktur terbit (Dr 1201 / Cr 4101), jadi omzet komisi,
+  // realisasi target, dan omzet dashboard menunjuk angka yang sama. Faktur batal
+  // tidak ikut. Yang dianggap penjualnya = pembuat faktur.
+  const { data: fjData } = await supabase
+    .from("sales_invoices")
+    .select("id, tanggal, dpp, branch_id, created_by, sales_invoice_items(order_item_id, item_id, qty, harga)")
+    .neq("status", "batal")
+    .gte("tanggal", awal).lte("tanggal", akhir);
+
+  const fakturs = (fjData ?? []) as FakturJualRow[];
+  const hppPerOrderItem = await hppPengiriman(
+    supabase,
+    fakturs.flatMap((f) => (f.sales_invoice_items ?? []).map((it) => it.order_item_id).filter((x): x is string => !!x)),
+  );
+
+  for (const f of fakturs) {
+    const employeeId = f.created_by ? empPerProfile.get(f.created_by) ?? null : null;
+    const items = f.sales_invoice_items ?? [];
+
+    // Baris faktur tidak punya diskon sendiri; potongan kepala faktur (kalau ada)
+    // dibagi proporsional. Dasarnya DPP, bukan total — PPN bukan omzet penjual.
+    const kotorPer = items.map((it) => Number(it.qty) * Number(it.harga));
+    const jumlahBaris = kotorPer.reduce((a, x) => a + x, 0);
+    const potongan = Math.max(0, jumlahBaris - Number(f.dpp));
+
+    for (const [idx, it] of items.entries()) {
+      const qty = Number(it.qty);
+      const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
+      if (!employeeId) omzetTanpaPenjual += omzet;
+
+      const hppUnit = it.order_item_id ? hppPerOrderItem.get(it.order_item_id) : undefined;
+      baris.push({
+        tanggal: f.tanggal,
+        sumber: "reseller",
+        employeeId,
+        branchId: f.branch_id,
+        itemId: it.item_id,
+        kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
+        qty,
+        omzet,
+        // Jasa (tanpa master barang) tidak punya modal — labanya utuh.
+        laba: it.item_id === null ? omzet : hppUnit === undefined ? null : omzet - hppUnit * qty,
+      });
+    }
+  }
+
   return { baris, omzetTanpaPenjual };
+}
+
+/**
+ * Modal per unit tiap baris pesanan, diambil dari pengiriman yang sudah terjadi.
+ * Faktur penjualan tidak menyimpan HPP — barangnya keluar di dokumen pengiriman,
+ * dan di situlah modal FIFO-nya dicatat.
+ */
+async function hppPengiriman(supabase: AnyClient, orderItemIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const ids = [...new Set(orderItemIds)];
+  if (ids.length === 0) return out;
+
+  const { data } = await supabase
+    .from("sales_delivery_items")
+    .select("order_item_id, qty, hpp")
+    .in("order_item_id", ids);
+
+  const akum = new Map<string, { qty: number; hpp: number }>();
+  for (const d of (data ?? []) as { order_item_id: string | null; qty: number; hpp: number | null }[]) {
+    if (!d.order_item_id || d.hpp === null) continue;
+    const a = akum.get(d.order_item_id) ?? { qty: 0, hpp: 0 };
+    a.qty += Number(d.qty);
+    a.hpp += Number(d.hpp);
+    akum.set(d.order_item_id, a);
+  }
+  for (const [id, a] of akum) if (a.qty > 0) out.set(id, a.hpp / a.qty);
+  return out;
 }
 
 async function infoStrukLuarPeriode(

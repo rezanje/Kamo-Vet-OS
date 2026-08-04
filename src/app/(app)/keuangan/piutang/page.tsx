@@ -11,6 +11,8 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { da
 type Row = {
   id: string; invoice_no: string | null; tanggal: string; customer: string;
   total: number; dibayar: number; sisa: number; days: number; bucket: AgingBucket;
+  /** klinik = tagihan kunjungan (dilunasi di layar ini) · reseller = faktur penjualan B2B. */
+  sumber: "klinik" | "reseller";
 };
 
 export default async function PiutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
@@ -20,12 +22,23 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   const rekening = await loadRekeningAktif(supabase);
 
   // Invoice aktif yang belum lunas + pembayaran yang sudah masuk.
-  const { data: invs } = await supabase
-    .from("invoices")
-    .select("id, invoice_no, total, dp_amount, paid_status, created_at, visits(customers(name))")
-    .is("voided_at", null)
-    .neq("paid_status", "Lunas")
-    .order("created_at");
+  // Faktur penjualan reseller (rantai dokumen, migrasi 0098) ikut ditarik: piutangnya
+  // masuk akun 1201 yang sama, jadi kalau tidak dijumlah di sini umur piutang perusahaan
+  // terbaca lebih kecil dari yang sebenarnya.
+  const [{ data: invs }, { data: fjs }, { data: rcs }] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select("id, invoice_no, total, dp_amount, paid_status, created_at, visits(customers(name))")
+      .is("voided_at", null)
+      .neq("paid_status", "Lunas")
+      .order("created_at"),
+    supabase
+      .from("sales_invoices")
+      .select("id, no_faktur, tanggal, total, customers(name)")
+      .neq("status", "batal")
+      .order("tanggal"),
+    supabase.from("sales_receipts").select("invoice_id, jumlah"),
+  ]);
 
   const ids = (invs ?? []).map((i) => i.id);
   const { data: pays } = ids.length
@@ -35,8 +48,30 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   const paidMap = new Map<string, number>();
   for (const p of pays ?? []) paidMap.set(p.invoice_id, (paidMap.get(p.invoice_id) ?? 0) + Number(p.amount));
 
-  const rows: Row[] = (invs ?? [])
-    .map((i) => {
+  const fjPaid = new Map<string, number>();
+  for (const r of (rcs ?? []) as { invoice_id: string; jumlah: number }[]) {
+    fjPaid.set(r.invoice_id, (fjPaid.get(r.invoice_id) ?? 0) + Number(r.jumlah));
+  }
+
+  const barisReseller: Row[] = ((fjs ?? []) as unknown as {
+    id: string; no_faktur: string; tanggal: string; total: number;
+    customers: { name: string } | { name: string }[] | null;
+  }[])
+    .map((f) => {
+      const cust = Array.isArray(f.customers) ? f.customers[0] : f.customers;
+      const dibayar = fjPaid.get(f.id) ?? 0;
+      return {
+        id: f.id, invoice_no: f.no_faktur, tanggal: f.tanggal,
+        customer: cust?.name ?? "—",
+        total: Number(f.total), dibayar, sisa: Math.max(0, Number(f.total) - dibayar),
+        days: agingDays(f.tanggal, today), bucket: agingBucket(f.tanggal, today),
+        sumber: "reseller" as const,
+      };
+    })
+    .filter((r) => r.sisa > 0);
+
+  const barisKlinik: Row[] = (invs ?? [])
+    .map((i): Row => {
       const visit = Array.isArray(i.visits) ? i.visits[0] : i.visits;
       const cust = visit && (Array.isArray(visit.customers) ? visit.customers[0] : visit.customers);
       const tanggal = String(i.created_at).slice(0, 10);
@@ -47,11 +82,15 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
         customer: cust?.name ?? "—",
         total: Number(i.total), dibayar, sisa,
         days: agingDays(tanggal, today), bucket: agingBucket(tanggal, today),
+        sumber: "klinik",
       };
     })
     .filter((r) => r.sisa > 0);
 
+  const rows: Row[] = [...barisKlinik, ...barisReseller].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+
   const totalSisa = rows.reduce((a, r) => a + r.sisa, 0);
+  const sisaReseller = barisReseller.reduce((a, r) => a + r.sisa, 0);
   const perBucket = Object.fromEntries(AGING_BUCKETS.map((b) => [b, rows.filter((r) => r.bucket === b).reduce((a, r) => a + r.sisa, 0)])) as Record<AgingBucket, number>;
 
   return (
@@ -90,16 +129,24 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="crm-sec">
-        <SecHeader num="02" title="DAFTAR PIUTANG & PELUNASAN" desc="Terima pembayaran sisa tagihan — jurnal kas & piutang otomatis." />
+        <SecHeader
+          num="02" title="DAFTAR PIUTANG & PELUNASAN"
+          desc={
+            sisaReseller > 0
+              ? `Terima pembayaran sisa tagihan — jurnal kas & piutang otomatis. Termasuk ${rp(sisaReseller)} piutang reseller (dilunasi di layar Faktur Penjualan).`
+              : "Terima pembayaran sisa tagihan — jurnal kas & piutang otomatis."
+          }
+        />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 680 }}>
             <thead>
-              <tr><th>Invoice</th><th>Tanggal</th><th>Pelanggan</th><th style={{ textAlign: "right" }}>Total</th><th style={{ textAlign: "right" }}>Dibayar</th><th style={{ textAlign: "right" }}>Sisa</th><th>Umur</th><th /></tr>
+              <tr><th>Invoice</th><th>Sumber</th><th>Tanggal</th><th>Pelanggan</th><th style={{ textAlign: "right" }}>Total</th><th style={{ textAlign: "right" }}>Dibayar</th><th style={{ textAlign: "right" }}>Sisa</th><th>Umur</th><th /></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{r.invoice_no ?? "—"}</td>
+                  <td><span className={`bge ${r.sumber === "reseller" ? "b" : ""}`}>{r.sumber === "reseller" ? "Reseller" : "Klinik"}</span></td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(r.tanggal)}</td>
                   <td style={{ fontSize: 12 }}>{r.customer}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.total)}</td>
@@ -107,6 +154,13 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                   <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(r.sisa)}</td>
                   <td><span className={`bge ${r.bucket === "current" || r.bucket === "d1_30" ? "g" : "r"}`}>{r.days} hari</span></td>
                   <td>
+                    {/* Faktur reseller dilunasi di layar Faktur Penjualan — di sana pelunasan
+                        bisa memotong uang muka pelanggan, yang form ini tidak tahu. */}
+                    {r.sumber === "reseller" ? (
+                      <Link href="/penjualan/faktur" className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, display: "inline-block" }}>
+                        Terima bayar <i className="ti ti-arrow-right" />
+                      </Link>
+                    ) : (
                     <details>
                       <summary className="btn-def" style={{ cursor: "pointer", padding: "3px 9px", fontSize: 10.5, listStyle: "none", display: "inline-block" }}>Terima bayar</summary>
                       <form action={terimaPelunasan} style={{ display: "flex", gap: 6, alignItems: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
@@ -129,11 +183,12 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                         <button type="submit" className="pay-btn" style={{ padding: "7px 12px", fontSize: 11 }}>Simpan</button>
                       </form>
                     </details>
+                    )}
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada piutang — semua invoice lunas. 🎉</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada piutang — semua invoice lunas. 🎉</td></tr>
               )}
             </tbody>
           </table>

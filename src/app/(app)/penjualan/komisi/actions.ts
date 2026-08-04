@@ -27,7 +27,7 @@ export async function simpanAturanKomisi(formData: FormData) {
   if (!nama) gagal("Nama aturan wajib diisi");
   if (tipe !== "persen" && tipe !== "nominal") gagal("Jenis aturan tidak dikenal");
   if (basis !== "omzet" && basis !== "laba") gagal("Basis komisi tidak dikenal");
-  if (!["semua", "kasir", "klinik"].includes(sumber)) gagal("Sumber transaksi tidak dikenal");
+  if (!["semua", "kasir", "klinik", "reseller"].includes(sumber)) gagal("Sumber transaksi tidak dikenal");
   if (tipe === "persen" && (persen <= 0 || persen > 100)) gagal("Persen komisi harus di antara 0 dan 100");
   if (tipe === "nominal" && nominal <= 0) gagal("Nominal per unit harus lebih dari 0");
   if (minOmzet < 0) gagal("Ambang tidak boleh negatif");

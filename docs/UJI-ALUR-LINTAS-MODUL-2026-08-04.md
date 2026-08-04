@@ -36,7 +36,22 @@ kembali persis ke angka semula).
 - **Jurnal seimbang di setiap langkah** (total debit = total kredit sepanjang uji).
 - **Monitor Anggaran menangkap HPP** dari penjualan reseller sebagai realisasi berjalan.
 
-## Temuan: yang BELUM nyambung
+## Status temuan: SUDAH DIPERBAIKI 2026-08-04 (migrasi 0102)
+
+Ketiga temuan di bawah sudah ditutup dan diuji ulang di lingkungan pengembangan dengan faktur
+reseller Rp 3.000.000 (data uji dihapus lagi; total jurnal kembali persis ke angka semula):
+
+| Temuan | Sesudah perbaikan |
+|---|---|
+| 1. Komisi & target | Realisasi target perusahaan naik Rp 280.000 → **Rp 3.280.000**. Aturan komisi punya sumber baru **Reseller (B2B)**; uji 1% membayar **Rp 30.000** ke pembuat faktur. |
+| 2. Omzet Dashboard | Penjualan tahun berjalan Rp 280.000 → **Rp 3.280.000**, "belum lunas" Rp 3.000.000, dan faktur reseller ikut di grafik tren 7 hari. |
+| 3. Piutang reseller | Muncul di `/keuangan/piutang` dengan kolom **Sumber** (Klinik / Reseller) dan ikut umur piutang. Pelunasannya tetap diarahkan ke layar Faktur Penjualan — di sana pelunasan bisa memotong uang muka pelanggan. |
+
+Catatan teknis: omzet reseller dipatok pada **tanggal faktur** (bukan tanggal pelunasan seperti
+klinik), supaya omzet dashboard, realisasi target, dan pendapatan di buku besar menunjuk angka
+yang sama. Modal (HPP) barisnya diambil dari dokumen pengiriman, karena di situ modal FIFO dicatat.
+
+## Temuan asli (arsip) — yang BELUM nyambung saat uji 2026-08-04
 
 Rantai dokumen penjualan (migrasi 0098) adalah aliran pendapatan **ketiga**, di samping struk
 kasir (`sales`) dan tagihan klinik (`invoices`). Layar-layar lama hanya membaca dua yang lama.

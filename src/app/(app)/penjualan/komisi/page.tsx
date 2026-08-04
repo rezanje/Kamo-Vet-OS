@@ -10,9 +10,10 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const periodeSekarang = () => new Date().toISOString().slice(0, 7);
 
 const LABEL_SUMBER: Record<string, string> = {
-  semua: "Kasir & klinik",
+  semua: "Semua penjualan",
   kasir: "Kasir / petshop",
   klinik: "Klinik",
+  reseller: "Reseller (B2B)",
 };
 
 type Aturan = {
@@ -109,9 +110,10 @@ export default async function KomisiPage({
               <div>
                 <label className="flab">Sumber transaksi *</label>
                 <select className="fi" name="sumber" defaultValue="semua" required>
-                  <option value="semua">Kasir &amp; klinik</option>
+                  <option value="semua">Semua penjualan</option>
                   <option value="kasir">Kasir / petshop saja</option>
                   <option value="klinik">Klinik saja (insentif dokter)</option>
+                  <option value="reseller">Reseller / B2B saja (faktur penjualan)</option>
                 </select>
               </div>
             </div>
@@ -251,7 +253,7 @@ export default async function KomisiPage({
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader
           num="02" title="HITUNGAN PER KARYAWAN"
-          desc="Angka hidup dari struk kasir, retur, dan tagihan klinik yang lunas bulan itu. Masuk slip gaji saat penggajian dihitung."
+          desc="Angka hidup dari struk kasir, retur, tagihan klinik yang lunas, dan faktur penjualan reseller bulan itu. Masuk slip gaji saat penggajian dihitung."
           action={
             <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input className="fi" type="month" name="periode" defaultValue={periode} style={{ fontSize: 11, height: 30, width: 150 }} />
@@ -268,7 +270,8 @@ export default async function KomisiPage({
         {hitungan.omzetTanpaPenjual !== 0 && (
           <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
             <i className="ti ti-alert-triangle" /> {rp(hitungan.omzetTanpaPenjual)} penjualan tidak punya penerima komisi —
-            kasirnya belum terhubung ke data karyawan, atau kunjungan kliniknya belum dipilih dokternya.
+            kasirnya belum terhubung ke data karyawan, kunjungan kliniknya belum dipilih dokternya, atau pembuat faktur
+            resellernya bukan karyawan terdaftar.
           </div>
         )}
         {adaAturanLaba && tanpaHpp > 0 && (

@@ -129,6 +129,22 @@ describe("hitungKomisi", () => {
     expect(satu([kasir, klinik], [aturan()]).komisi).toBe(4_000);
   });
 
+  it("penjualan reseller punya sumbernya sendiri dan ikut terjaring 'semua'", () => {
+    const reseller = baris({ sumber: "reseller", omzet: 3_000_000, laba: 900_000 });
+
+    expect(satu([reseller], [aturan({ sumber: "reseller", persen: 1 })]).komisi).toBe(30_000);
+    expect(satu([reseller], [aturan({ sumber: "kasir" })]).rincian).toHaveLength(0);
+    expect(satu([baris()], [aturan({ sumber: "reseller" })]).rincian).toHaveLength(0);
+    // 'semua' = kasir + klinik + reseller: 2% × (100rb + 3jt).
+    expect(satu([baris(), reseller], [aturan()]).komisi).toBe(62_000);
+  });
+
+  it("realisasi target menghitung penjualan reseller", () => {
+    const t: TargetPenjualan = { id: "t1", employeeId: "emp1", branchId: null, categoryId: null, basis: "omzet", target: 5_000_000 };
+    const b = [baris({ omzet: 280_000 }), baris({ sumber: "reseller", omzet: 3_000_000 })];
+    expect(realisasiTarget(b, t).realisasi).toBe(3_280_000);
+  });
+
   it("baris tanpa penjual tidak dapat komisi", () => {
     expect(hitungKomisi([baris({ employeeId: null })], [aturan()])).toHaveLength(0);
   });
