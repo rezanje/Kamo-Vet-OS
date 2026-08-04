@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
 
 // ponytail: server action untuk catat jurnal umum manual double-entry.
 // Guard ketat: tolak jika tidak balance, total 0, atau < 2 baris valid.
@@ -47,29 +48,38 @@ export async function jurnalManual(formData: FormData) {
         )
     );
 
-  // Generate no_jurnal: JRN-YYYYMM-NNNN. Pakai string slice (bukan new Date) supaya
-  // bulan tidak bergeser akibat timezone server non-UTC.
-  const prefix = `JRN-${tanggal.slice(0, 7).replace("-", "")}`;
-  const { count } = await supabase
-    .from("journal_entries")
-    .select("*", { count: "exact", head: true })
-    .like("no_jurnal", `${prefix}-%`);
-  const noJurnal = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+  // Nomor jurnal diambil dari nomor tertinggi bulan itu (lihat nextSeqJurnal) — sama
+  // seperti jurnal otomatis, supaya lubang penomoran tidak mematikan layar ini.
+  const prefix = prefixJurnal(tanggal);
+  const seq = await nextSeqJurnal(supabase, tanggal);
 
-  const { data: entry, error: entryErr } = await supabase
-    .from("journal_entries")
-    .insert({
-      no_jurnal: noJurnal,
-      tanggal,
-      deskripsi,
-      source: "manual",
-      source_ref: null,
-      branch_id: branchId,
-    })
-    .select("id")
-    .single();
+  // Dua pengguna menyimpan bersamaan bisa dapat nomor sama; unique constraint jadi
+  // backstop, jadi coba nomor berikutnya sebelum menyerah.
+  let entry: { id: string } | null = null;
+  let entryErr: { message?: string } | null = null;
+  for (const noJurnal of [
+    `${prefix}-${String(seq).padStart(4, "0")}`,
+    `${prefix}-${String(seq + 1).padStart(4, "0")}`,
+    `${prefix}-${String(seq).padStart(4, "0")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+  ]) {
+    const { data, error } = await supabase
+      .from("journal_entries")
+      .insert({
+        no_jurnal: noJurnal,
+        tanggal,
+        deskripsi,
+        source: "manual",
+        source_ref: null,
+        branch_id: branchId,
+      })
+      .select("id")
+      .single();
+    if (data) { entry = data; entryErr = null; break; }
+    entryErr = error;
+    if (error?.code !== "23505") break;
+  }
 
-  if (entryErr || !entry)
+  if (!entry)
     redirect(
       "/keuangan/jurnal?error=" +
         encodeURIComponent(entryErr?.message ?? "Gagal menyimpan jurnal")

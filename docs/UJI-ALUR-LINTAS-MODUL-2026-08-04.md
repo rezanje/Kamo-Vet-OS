@@ -69,5 +69,17 @@ dapat komisi.
 ## Temuan lama (bukan dari pekerjaan ini)
 
 Stok `Collar Kucing S` di WH CIAW **minus 8**, dari struk `POS-20260802-0001` (2 Agustus):
-barang terjual padahal stoknya tidak pernah dicatat masuk. Perlu penyesuaian persediaan atau
-pencatatan stok awal.
+barang terjual padahal stoknya tidak pernah dicatat masuk.
+
+**Beres 2026-08-04.** Diputuskan sebagai stok awal yang lupa dicatat (bukan pembelian
+berhutang), jadi dikoreksi lewat jurnal manual `JRN-202608-0007`: Dr 1301 / Cr 5902
+Rp 160.000, stok jadi 0, dan lapisan FIFO dicatat masuk-lalu-habis supaya nilai persediaan
+tidak jadi hantu. Saldo akun 1301 kembali 0 dan tidak ada lagi stok minus di seluruh gudang.
+
+### Bug ikutan yang ketahuan saat mengoreksi
+
+Penomoran jurnal memakai **jumlah entri + 1**, bukan nomor tertinggi. Begitu ada satu lubang
+di penomoran (entri dibatalkan/dihapus), nomor yang dihasilkan menabrak entri lama dan
+**seluruh pencatatan jurnal bulan itu berhenti** — jurnal umum manual gagal total, jurnal
+otomatis diam-diam tidak tercatat. Sudah diperbaiki: nomor sekarang dilanjutkan dari nomor
+tertinggi bulan itu, dan layar jurnal manual ikut punya percobaan ulang saat bentrok.

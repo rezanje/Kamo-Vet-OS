@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { postJournal } from "../posting";
+import { postJournal, prefixJurnal, seqBerikutnya } from "../posting";
 
 // Mock supabase minimal: rekam insert; coa_accounts kenal 1101 & 4101 saja.
 function makeClient() {
@@ -17,7 +17,8 @@ function makeClient() {
               ].filter(() => table === "coa_accounts"),
               error: null,
             }),
-            like: async () => ({ count: 0 }),
+            // nomor jurnal dibaca dari entri tertinggi bulan itu, bukan dari count
+            like: () => ({ order: () => ({ limit: async () => ({ data: [] }) }) }),
           };
           return chain;
         },
@@ -92,5 +93,33 @@ describe("postJournal guards", () => {
         { code: "4101", debit: 0, credit: 1 },
       ],
     })).resolves.toBeUndefined();
+  });
+});
+
+describe("penomoran jurnal", () => {
+  const P = "JRN-202608";
+
+  it("prefix diambil dari string tanggal, bukan objek Date (tidak geser timezone)", () => {
+    expect(prefixJurnal("2026-08-04")).toBe("JRN-202608");
+    expect(prefixJurnal("2026-01-01")).toBe("JRN-202601");
+  });
+
+  it("bulan kosong mulai dari 1", () => {
+    expect(seqBerikutnya(P, null)).toBe(1);
+  });
+
+  it("lanjut dari nomor tertinggi, bukan dari jumlah entri", () => {
+    // Inti bug 2026-08-04: 5 entri tersisa tapi nomor terakhir 0006 (0002 & 0007
+    // sudah terhapus). count+1 menghasilkan 0006 → menabrak entri lama, dan SEMUA
+    // pencatatan jurnal bulan itu berhenti.
+    expect(seqBerikutnya(P, `${P}-0006`)).toBe(7);
+  });
+
+  it("nomor bersuffix acak tetap terbaca", () => {
+    expect(seqBerikutnya(P, `${P}-0012-AB12`)).toBe(13);
+  });
+
+  it("nomor rusak tidak bikin NaN", () => {
+    expect(seqBerikutnya(P, `${P}-xxxx`)).toBe(1);
   });
 });
