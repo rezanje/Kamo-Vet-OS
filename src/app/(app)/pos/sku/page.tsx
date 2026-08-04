@@ -82,14 +82,20 @@ export default async function BarangJasaPage({
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Daftar obat, barang & jasa yang boleh dipakai di POS dan rekam medis</div>
         </div>
         {bolehKelola && (
-          <Link href="/pos/sku/baru" className="btn-acc" style={{ background: "#2563eb", textDecoration: "none" }}>
-            <i className="ti ti-plus" /> Barang Baru
-          </Link>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <Link href="/pos/sku/impor" className="btn-def" style={{ textDecoration: "none" }}>
+              <i className="ti ti-file-spreadsheet" /> Impor CSV
+            </Link>
+            <Link href="/pos/sku/baru" className="btn-acc" style={{ background: "#2563eb", textDecoration: "none" }}>
+              <i className="ti ti-plus" /> Barang Baru
+            </Link>
+          </div>
         )}
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Barang tersimpan.</div>}
+      {/* Impor massal mengirim ringkasannya sendiri (berapa masuk, berapa dilewati). */}
+      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "1" ? "Barang tersimpan." : success}</div>}
       {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah master barang. Kamu bisa melihat daftarnya saja.</div>}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>

@@ -1,0 +1,50 @@
+import Link from "next/link";
+import { bolehKelolaMaster } from "@/lib/master-guard";
+import { ImporForm } from "./ImporForm";
+
+export default async function ImporBarangPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  const boleh = await bolehKelolaMaster();
+
+  return (
+    <>
+      <div style={{ marginBottom: 4 }}>
+        <Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang &amp; Jasa</Link>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <i className="ti ti-file-spreadsheet" style={{ fontSize: 22, color: "#2563eb" }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>IMPOR BARANG</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Masukkan banyak barang sekaligus dari file CSV</div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+
+      {!boleh ? (
+        <div className="p2ban">
+          <i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang boleh mengimpor barang.
+        </div>
+      ) : (
+        <>
+          <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "#1e40af" }}>
+            <i className="ti ti-bulb" /> Dari Excel: <b>File → Save As → CSV</b>, lalu pilih filenya di bawah.
+            Baris yang bermasalah dilewati dan dilaporkan — sisanya tetap masuk.
+          </div>
+          <ImporForm />
+        </>
+      )}
+    </>
+  );
+}
