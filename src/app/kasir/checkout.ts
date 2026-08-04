@@ -15,6 +15,7 @@ import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
 import { hitungPromoKeranjang, loadPromoAktif } from "@/lib/promo-hitung";
+import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
@@ -162,8 +163,10 @@ export async function checkoutKasir(formData: FormData) {
 
   const now = new Date();
   const prefix = `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const { count } = await supabase.from("sales").select("*", { count: "exact", head: true }).like("no_struk", `${prefix}-%`);
-  const noStruk = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+  const seqStruk = await urutanBerikutnya(supabase, {
+    table: "sales", column: "no_struk", prefix: `${prefix}-`, pad: 4,
+  });
+  const noStruk = formatNomor(`${prefix}-`, seqStruk, 4);
 
   // Poin ikut golongan pelanggan (migrasi 0078); golongan tanpa pengaturan
   // sendiri tetap Rp1.000 = 1 poin seperti sebelumnya.

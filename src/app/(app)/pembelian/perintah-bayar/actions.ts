@@ -6,6 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { formatNoPerintahBayar, sisaFakturBayar } from "@/lib/perintah-bayar";
+import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 
 const BASE = "/pembelian/perintah-bayar";
 // Membuat perintah bayar = mengajukan, bukan mengeluarkan uang — FINANCE ikut boleh.
@@ -20,11 +21,11 @@ type Db = any;
 
 async function nextNoPP(supabase: Db): Promise<string> {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from("payment_orders").select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoPerintahBayar(now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table: "payment_orders", column: "no_pp",
+    prefix: prefixBulanan("PP", ymDari(now)), pad: 5,
+  });
+  return formatNoPerintahBayar(now, seq);
 }
 
 /** Sisa hutang tiap faktur, sudah dikurangi pembayaran & perintah bayar yang masih menunggu. */

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
+import { urutanBerikutnya } from "@/lib/no-dokumen";
 
 const BACK = "/pos/stok-minimum";
 
@@ -50,10 +51,10 @@ export async function buatPOdariUsulan(formData: FormData) {
 
   const tanggal = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const ymd = tanggal.replace(/-/g, "");
-  const { count } = await supabase
-    .from("purchase_orders").select("id", { count: "exact", head: true })
-    .gte("created_at", `${tanggal}T00:00:00.000Z`);
-  let seq = (count ?? 0);
+  const prefixPo = `PO-${ymd}-`;
+  let seq = await urutanBerikutnya(supabase, {
+    table: "purchase_orders", column: "no_po", prefix: prefixPo, pad: 4,
+  }) - 1;
   let dibuat = 0;
 
   for (const [supplierKey, rows] of perPemasok) {

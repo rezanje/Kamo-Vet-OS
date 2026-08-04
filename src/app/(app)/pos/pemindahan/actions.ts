@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatNoPemindahan, hitungStatusKirim, sisaTransit } from "@/lib/pemindahan";
 import { transferStock } from "@/lib/inventory";
+import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -34,12 +35,11 @@ async function getTransitWarehouse(supabase: Db, fallbackBranchId: string): Prom
 // ponytail: nomor via count bulan berjalan +1 — pola existing (pos/permintaan); counter table kalau kelak sering tabrakan.
 async function nextNoPemindahan(supabase: Db): Promise<string> {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from("stock_transfers")
-    .select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoPemindahan(now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table: "stock_transfers", column: "no_pemindahan",
+    prefix: prefixBulanan("IT", ymDari(now)), pad: 5,
+  });
+  return formatNoPemindahan(now, seq);
 }
 
 // ================= Kirim Barang =================

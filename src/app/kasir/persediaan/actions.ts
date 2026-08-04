@@ -8,6 +8,7 @@ import { receiptSummary } from "@/lib/stock-recon";
 import { transferStock } from "@/lib/inventory";
 import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
 import { toBaseQty } from "@/lib/satuan";
+import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 // Buat permintaan barang dari dunia kasir — cabang asal otomatis dari shift terbuka.
 export async function buatPermintaanKasir(formData: FormData) {
@@ -37,15 +38,10 @@ export async function buatPermintaanKasir(formData: FormData) {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
-  const ymd = `${y}${m}${d}`;
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const { count } = await supabase
-    .from("stock_requests")
-    .select("id", { count: "exact", head: true })
-    .gte("created_at", startOfDay.toISOString());
-  const seq = String((count ?? 0) + 1).padStart(4, "0");
-  const no_request = `PRM-${ymd}-${seq}`;
+  const prefixPrm = `PRM-${y}${m}${d}-`;
+  const no_request = formatNomor(prefixPrm, await urutanBerikutnya(supabase, {
+    table: "stock_requests", column: "no_request", prefix: prefixPrm, pad: 4,
+  }), 4);
 
   const { data: req, error: reqErr } = await supabase
     .from("stock_requests")
@@ -147,10 +143,10 @@ export async function terimaBarang(formData: FormData) {
   // dokumen penerimaan TRM-YYMMDD-NNN (§5).
   const now = new Date();
   const ymd = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const { count } = await supabase
-    .from("stock_receipts").select("id", { count: "exact", head: true })
-    .like("receipt_number", `TRM-${ymd}-%`);
-  const receiptNumber = `TRM-${ymd}-${String((count ?? 0) + 1).padStart(3, "0")}`;
+  const prefixTrm = `TRM-${ymd}-`;
+  const receiptNumber = formatNomor(prefixTrm, await urutanBerikutnya(supabase, {
+    table: "stock_receipts", column: "receipt_number", prefix: prefixTrm, pad: 3,
+  }), 3);
 
   const { data: receipt, error: recErr } = await supabase
     .from("stock_receipts")

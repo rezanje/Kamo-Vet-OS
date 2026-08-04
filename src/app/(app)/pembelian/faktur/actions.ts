@@ -10,6 +10,7 @@ import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { qtyDiterima } from "@/lib/penerimaan";
 import { totalRetur } from "@/lib/retur";
 import { jurnalBayarHutang, pakaiUangMuka } from "@/lib/uang-muka";
+import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 
 type ItemInput = { item_id: string; qty: number; harga: number };
 
@@ -18,11 +19,11 @@ type Db = Awaited<ReturnType<typeof createClient>>;
 // ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan/retur).
 async function nextNoFaktur(supabase: Db) {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from("purchase_invoices").select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoFaktur(now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table: "purchase_invoices", column: "no_faktur",
+    prefix: prefixBulanan("FB", ymDari(now)), pad: 5,
+  });
+  return formatNoFaktur(now, seq);
 }
 
 // Buat Faktur Pembelian dari PO Diterima. Harga/qty boleh beda dari PO (faktur pemasok).

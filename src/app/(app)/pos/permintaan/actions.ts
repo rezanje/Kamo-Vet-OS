@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
 import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
+import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 export async function buatPermintaan(formData: FormData) {
   const supabase = await createClient();
@@ -23,20 +24,15 @@ export async function buatPermintaan(formData: FormData) {
   const { rows: baris, error: barisErr } = siapkanBaris(input, master);
   if (barisErr) redirect("/pos/permintaan/baru?error=" + encodeURIComponent(barisErr));
 
-  // no_request = PRM-YYYYMMDD-NNNN (urutan hari ini +1, padded 4). Today 2026-07-01.
+  // no_request = PRM-YYYYMMDD-NNNN, dilanjutkan dari nomor tertinggi hari itu.
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
-  const ymd = `${y}${m}${d}`;
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const { count } = await supabase
-    .from("stock_requests")
-    .select("id", { count: "exact", head: true })
-    .gte("created_at", startOfDay.toISOString());
-  const seq = String((count ?? 0) + 1).padStart(4, "0");
-  const no_request = `PRM-${ymd}-${seq}`;
+  const prefixPrm = `PRM-${y}${m}${d}-`;
+  const no_request = formatNomor(prefixPrm, await urutanBerikutnya(supabase, {
+    table: "stock_requests", column: "no_request", prefix: prefixPrm, pad: 4,
+  }), 4);
 
   const { data: req, error: reqErr } = await supabase
     .from("stock_requests")

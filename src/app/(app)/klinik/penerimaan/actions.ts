@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { receiptSummary } from "@/lib/stock-recon";
 import { stockInAtBuyPrice } from "@/lib/inventory";
+import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 type TerimaRow = { id: string; item_id: string | null; nama: string; qty_diminta: number; qty_diterima: number; kondisi: string; notes?: string };
 
@@ -25,8 +26,10 @@ export async function terimaBarangKlinik(formData: FormData) {
 
   const now = new Date();
   const ymd = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const { count } = await supabase.from("stock_receipts").select("id", { count: "exact", head: true }).like("receipt_number", `TRM-${ymd}-%`);
-  const receiptNumber = `TRM-${ymd}-${String((count ?? 0) + 1).padStart(3, "0")}`;
+  const prefixTrm = `TRM-${ymd}-`;
+  const receiptNumber = formatNomor(prefixTrm, await urutanBerikutnya(supabase, {
+    table: "stock_receipts", column: "receipt_number", prefix: prefixTrm, pad: 3,
+  }), 3);
 
   const { data: receipt, error: recErr } = await supabase
     .from("stock_receipts")

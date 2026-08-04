@@ -1,4 +1,6 @@
 // ponytail: app-level posting; a hardened version would use a DB trigger/RPC in one transaction.
+import { acakSuffix, kandidatNomor, urutanBerikutnya } from "./no-dokumen";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
@@ -16,30 +18,14 @@ type PostOpts = {
  *  tidak bergeser akibat timezone server non-UTC. */
 export const prefixJurnal = (tanggal: string) => `JRN-${tanggal.slice(0, 7).replace("-", "")}`;
 
-/**
- * Urutan berikutnya diambil dari nomor TERTINGGI yang sudah ada, bukan dari jumlah baris.
- * Menghitung `count + 1` gagal permanen begitu ada satu lubang di penomoran — entri yang
- * dihapus/dibatalkan bikin jumlah baris lebih kecil dari nomor terakhir, jadi nomor yang
- * dihasilkan menabrak entri lama dan seluruh pencatatan jurnal bulan itu mati.
- */
+/** Urutan jurnal berikutnya — lihat lib/no-dokumen untuk kenapa bukan count+1. */
 export async function nextSeqJurnal(supabase: AnyClient, tanggal: string): Promise<number> {
-  const prefix = prefixJurnal(tanggal);
-  const { data } = await supabase
-    .from("journal_entries")
-    .select("no_jurnal")
-    .like("no_jurnal", `${prefix}-%`)
-    .order("no_jurnal", { ascending: false })
-    .limit(1);
-
-  return seqBerikutnya(prefix, (data as { no_jurnal: string }[] | null)?.[0]?.no_jurnal ?? null);
-}
-
-/** Bagian murni dari nextSeqJurnal — dites di __tests__/posting.test.ts. */
-export function seqBerikutnya(prefix: string, noTerakhir: string | null): number {
-  if (!noTerakhir) return 1;
-  // Nomor bisa bersuffix acak (JRN-202608-0006-AB12) — ambil 4 digit setelah prefix saja.
-  const seq = Number(noTerakhir.slice(prefix.length + 1, prefix.length + 5));
-  return (Number.isFinite(seq) ? seq : 0) + 1;
+  return urutanBerikutnya(supabase, {
+    table: "journal_entries",
+    column: "no_jurnal",
+    prefix: `${prefixJurnal(tanggal)}-`,
+    pad: 4,
+  });
 }
 
 /**
@@ -83,11 +69,7 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
     // Nomor berikutnya bisa race di request paralel; unique constraint jadi backstop —
     // kalau tabrakan (23505), coba ulang dengan nomor berikutnya lalu suffix acak.
     const seq = await nextSeqJurnal(supabase, tanggal);
-    const candidates = [
-      `${prefix}-${String(seq).padStart(4, "0")}`,
-      `${prefix}-${String(seq + 1).padStart(4, "0")}`,
-      `${prefix}-${String(seq).padStart(4, "0")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-    ];
+    const candidates = kandidatNomor(`${prefix}-`, seq, 4, acakSuffix());
     let entry: { id: string } | null = null;
     for (const noJurnal of candidates) {
       const { data, error: entryErr } = await supabase

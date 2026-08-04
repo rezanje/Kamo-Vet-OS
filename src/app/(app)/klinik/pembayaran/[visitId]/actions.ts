@@ -10,6 +10,7 @@ import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { stockOut } from "@/lib/inventory";
+import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null };
 
@@ -73,12 +74,13 @@ const todayIso = () => {
 };
 
 async function nextInvoiceNo(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
-  // ponytail: count+1 bisa race di concurrency tinggi; unique constraint jadi backstop.
+  // Nomor dilanjutkan dari yang tertinggi; race antar kasir masih dijaga unique constraint.
   const now = new Date();
-  const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const { count } = await supabase
-    .from("invoices").select("*", { count: "exact", head: true }).like("invoice_no", `${prefix}-%`);
-  return `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+  const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}-`;
+  const seq = await urutanBerikutnya(supabase, {
+    table: "invoices", column: "invoice_no", prefix, pad: 4,
+  });
+  return formatNomor(prefix, seq, 4);
 }
 
 export async function bayarVisit(formData: FormData) {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { postJournal, prefixJurnal, seqBerikutnya } from "../posting";
+import { postJournal, prefixJurnal } from "../posting";
+import { kandidatNomor, prefixBulanan, seqDariNomor, ymDari } from "../no-dokumen";
 
 // Mock supabase minimal: rekam insert; coa_accounts kenal 1101 & 4101 saja.
 function makeClient() {
@@ -96,30 +97,49 @@ describe("postJournal guards", () => {
   });
 });
 
-describe("penomoran jurnal", () => {
-  const P = "JRN-202608";
+describe("penomoran dokumen", () => {
+  const P = "JRN-202608-";
 
-  it("prefix diambil dari string tanggal, bukan objek Date (tidak geser timezone)", () => {
+  it("prefix jurnal diambil dari string tanggal, bukan objek Date (tidak geser timezone)", () => {
     expect(prefixJurnal("2026-08-04")).toBe("JRN-202608");
     expect(prefixJurnal("2026-01-01")).toBe("JRN-202601");
   });
 
   it("bulan kosong mulai dari 1", () => {
-    expect(seqBerikutnya(P, null)).toBe(1);
+    expect(seqDariNomor(null, P, 4) + 1).toBe(1);
   });
 
   it("lanjut dari nomor tertinggi, bukan dari jumlah entri", () => {
     // Inti bug 2026-08-04: 5 entri tersisa tapi nomor terakhir 0006 (0002 & 0007
     // sudah terhapus). count+1 menghasilkan 0006 → menabrak entri lama, dan SEMUA
     // pencatatan jurnal bulan itu berhenti.
-    expect(seqBerikutnya(P, `${P}-0006`)).toBe(7);
+    expect(seqDariNomor(`${P}0006`, P, 4) + 1).toBe(7);
   });
 
   it("nomor bersuffix acak tetap terbaca", () => {
-    expect(seqBerikutnya(P, `${P}-0012-AB12`)).toBe(13);
+    expect(seqDariNomor(`${P}0012-AB12`, P, 4) + 1).toBe(13);
   });
 
   it("nomor rusak tidak bikin NaN", () => {
-    expect(seqBerikutnya(P, `${P}-xxxx`)).toBe(1);
+    expect(seqDariNomor(`${P}xxxx`, P, 4) + 1).toBe(1);
+  });
+
+  it("prefix bulanan pola Accurate & pembacaan baliknya cocok", () => {
+    const pre = prefixBulanan("FJ", "2026-08");
+    expect(pre).toBe("FJ.2026.08.");
+    expect(seqDariNomor(`${pre}00042`, pre, 5) + 1).toBe(43);
+  });
+
+  it("ymDari tidak lewat UTC (tanggal 1 jam 00:00 lokal tetap bulan itu)", () => {
+    expect(ymDari(new Date(2026, 7, 1))).toBe("2026-08");
+    expect(ymDari(new Date(2026, 0, 1))).toBe("2026-01");
+  });
+
+  it("kandidat nomor: dua beruntun lalu suffix acak", () => {
+    expect(kandidatNomor("TB.2026.08.", 7, 5, "AB12")).toEqual([
+      "TB.2026.08.00007",
+      "TB.2026.08.00008",
+      "TB.2026.08.00007-AB12",
+    ]);
   });
 });

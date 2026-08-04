@@ -2,7 +2,8 @@
 // Dipisah dari server action supaya penomoran & pembacaan baris tidak ditulis ulang
 // di enam layar berbeda.
 
-import { formatNoDokumen, type PrefixDokumen } from "./penjualan-dokumen";
+import { formatNoDokumen, prefixNoDokumen, type PrefixDokumen } from "./penjualan-dokumen";
+import { urutanBerikutnya } from "./no-dokumen";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -16,14 +17,25 @@ const TABEL: Record<PrefixDokumen, string> = {
   UJ: "sales_advances",
 };
 
+const KOLOM: Record<PrefixDokumen, string> = {
+  SQ: "no_penawaran",
+  SO: "no_pesanan",
+  DO: "no_kirim",
+  FJ: "no_faktur",
+  RC: "no_terima",
+  UJ: "no_um",
+};
+
 /** Nomor dokumen berikutnya, urut per bulan. */
 export async function nextNoDokumen(supabase: AnyClient, prefix: PrefixDokumen): Promise<string> {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from(TABEL[prefix]).select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoDokumen(prefix, now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table: TABEL[prefix],
+    column: KOLOM[prefix],
+    prefix: prefixNoDokumen(prefix, now),
+    pad: 5,
+  });
+  return formatNoDokumen(prefix, now, seq);
 }
 
 export type BarisInput = {

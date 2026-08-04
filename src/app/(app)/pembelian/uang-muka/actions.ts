@@ -6,6 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { formatNoUangMuka, jurnalUangMuka } from "@/lib/uang-muka";
+import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 
 const BASE = "/pembelian/uang-muka";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -14,11 +15,11 @@ const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURICompone
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function nextNoUangMuka(supabase: any): Promise<string> {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from("purchase_advances").select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoUangMuka(now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table: "purchase_advances", column: "no_um",
+    prefix: prefixBulanan("UM", ymDari(now)), pad: 5,
+  });
+  return formatNoUangMuka(now, seq);
 }
 
 export async function bayarUangMuka(formData: FormData) {

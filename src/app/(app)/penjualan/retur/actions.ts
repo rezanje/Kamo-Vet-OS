@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { formatNoRetur, sisaRetur, totalRetur, rasioBayar, hargaRefund, modalPerSatuan } from "@/lib/retur";
 import { stockIn } from "@/lib/inventory";
+import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -200,11 +201,11 @@ export async function buatReturJual(formData: FormData) {
 // ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan).
 async function nextNoRetur(supabase: Db) {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from("sales_returns").select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoRetur("RJ", now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table: "sales_returns", column: "no_retur",
+    prefix: prefixBulanan("RJ", ymDari(now)), pad: 5,
+  });
+  return formatNoRetur("RJ", now, seq);
 }
 
 // Cari struk utk form (dipakai via query param, bukan action) — lihat baru/page.tsx.

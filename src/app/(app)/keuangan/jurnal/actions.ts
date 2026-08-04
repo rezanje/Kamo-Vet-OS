@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
+import { acakSuffix, kandidatNomor } from "@/lib/no-dokumen";
 
 // ponytail: server action untuk catat jurnal umum manual double-entry.
 // Guard ketat: tolak jika tidak balance, total 0, atau < 2 baris valid.
@@ -57,11 +58,7 @@ export async function jurnalManual(formData: FormData) {
   // backstop, jadi coba nomor berikutnya sebelum menyerah.
   let entry: { id: string } | null = null;
   let entryErr: { message?: string } | null = null;
-  for (const noJurnal of [
-    `${prefix}-${String(seq).padStart(4, "0")}`,
-    `${prefix}-${String(seq + 1).padStart(4, "0")}`,
-    `${prefix}-${String(seq).padStart(4, "0")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-  ]) {
+  for (const noJurnal of kandidatNomor(`${prefix}-`, seq, 4, acakSuffix())) {
     const { data, error } = await supabase
       .from("journal_entries")
       .insert({

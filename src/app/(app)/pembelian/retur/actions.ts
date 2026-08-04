@@ -8,6 +8,7 @@ import { formatNoRetur, sisaRetur, totalRetur } from "@/lib/retur";
 import { stockOut } from "@/lib/inventory";
 import { nilaiDiterima, qtyDiterima } from "@/lib/penerimaan";
 import { toBaseCost, toBaseQty } from "@/lib/satuan";
+import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -16,11 +17,11 @@ type Db = Awaited<ReturnType<typeof createClient>>;
 // ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan).
 async function nextNoRetur(supabase: Db, table: "purchase_returns" | "sales_returns", jenis: "RB" | "RJ") {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from(table).select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoRetur(jenis, now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table, column: "no_retur",
+    prefix: prefixBulanan(jenis, ymDari(now)), pad: 5,
+  });
+  return formatNoRetur(jenis, now, seq);
 }
 
 // Retur Pembelian: barang keluar ke pemasok, potong hutang PO.

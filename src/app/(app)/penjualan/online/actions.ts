@@ -16,6 +16,7 @@ import {
   prefixNoOnline,
   totalOnline,
 } from "@/lib/online";
+import { urutanBerikutnya } from "@/lib/no-dokumen";
 
 const BACK = "/penjualan/online";
 const POIN_PER_RUPIAH = 1000; // earn: 1 poin / Rp1.000 (sama dengan POS)
@@ -113,18 +114,17 @@ export async function buatPenjualanOnline(formData: FormData) {
   const total = totalOnline(items);
   if (total <= 0) fail("Total order harus lebih dari nol.");
 
-  const { count } = await supabase
-    .from("sales").select("*", { count: "exact", head: true })
-    .like("no_struk", `${prefixNoOnline(d)}-%`);
+  const seq = await urutanBerikutnya(supabase, {
+    table: "sales", column: "no_struk", prefix: `${prefixNoOnline(d)}-`, pad: 4,
+  });
 
   const marketplace = isMarketplace(channel);
   const poinEarned = customerId ? Math.floor(total / POIN_PER_RUPIAH) : 0;
 
-  // no_struk count+1 bisa race di request paralel; unique constraint jadi backstop —
+  // Nomor tetap bisa race di request paralel; unique constraint jadi backstop —
   // kalau tabrakan (23505), coba lagi dengan nomor berikutnya, sama seperti postJournal.
-  const seq = (count ?? 0) + 1;
-  // MAX_NO_STRUK_ATTEMPTS - 1 nomor berurutan (count+1, count+2, ...), lalu last resort
-  // dengan suffix acak — total persis MAX_NO_STRUK_ATTEMPTS percobaan (M2).
+  // MAX_NO_STRUK_ATTEMPTS - 1 nomor berurutan, lalu last resort dengan suffix acak —
+  // total persis MAX_NO_STRUK_ATTEMPTS percobaan (M2).
   const noStrukCandidates = Array.from(
     { length: MAX_NO_STRUK_ATTEMPTS - 1 },
     (_, i) => formatNoOnline(d, seq + i),

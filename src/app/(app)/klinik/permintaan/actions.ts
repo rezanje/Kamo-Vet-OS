@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 type ItemInput = { nama: string; qty_diminta: number };
 
@@ -26,12 +27,13 @@ export async function buatPermintaanKlinik(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent("Gudang tujuan & minimal 1 item wajib diisi")}`);
   }
 
-  // no_request = PRM-YYYYMMDD-NNNN (urutan hari ini).
+  // no_request = PRM-YYYYMMDD-NNNN, dilanjutkan dari nomor tertinggi hari itu.
   const now = new Date();
   const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
-  const { count } = await supabase.from("stock_requests").select("id", { count: "exact", head: true }).gte("created_at", startOfDay.toISOString());
-  const no_request = `PRM-${ymd}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+  const prefixPrm = `PRM-${ymd}-`;
+  const no_request = formatNomor(prefixPrm, await urutanBerikutnya(supabase, {
+    table: "stock_requests", column: "no_request", prefix: prefixPrm, pad: 4,
+  }), 4);
 
   const { data: req, error } = await supabase
     .from("stock_requests")

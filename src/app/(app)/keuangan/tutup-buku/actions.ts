@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAccountBalances } from "@/lib/ledger";
 import { buildClosingLines } from "@/lib/tutup-buku";
+import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
+import { formatNomor } from "@/lib/no-dokumen";
 
 const BACK = "/keuangan/tutup-buku";
 
@@ -43,11 +45,8 @@ export async function tutupBuku(formData: FormData) {
   const codeToId = new Map((accounts ?? []).map((a) => [a.code as string, a.id as string]));
   for (const l of lines) if (!codeToId.has(l.code)) fail(`Akun ${l.code} tidak ditemukan di COA.`);
 
-  const prefix = `JRN-${tanggal.slice(0, 7).replace("-", "")}`;
-  const { count } = await supabase
-    .from("journal_entries").select("*", { count: "exact", head: true })
-    .like("no_jurnal", `${prefix}-%`);
-  const no_jurnal = `${prefix}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+  const prefix = `${prefixJurnal(tanggal)}-`;
+  const no_jurnal = formatNomor(prefix, await nextSeqJurnal(supabase, tanggal), 4);
 
   const { data: entry, error: entryErr } = await supabase
     .from("journal_entries")

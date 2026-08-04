@@ -12,10 +12,15 @@ export const AKUN_UANG_MUKA_JUAL = "2103";
 
 export type PrefixDokumen = "SQ" | "SO" | "DO" | "FJ" | "RC" | "UJ";
 
-export function formatNoDokumen(prefix: PrefixDokumen, date: Date, seq: number): string {
+/** Awalan sebelum digit urutan — dipakai juga untuk mencari nomor tertinggi bulan itu. */
+export function prefixNoDokumen(prefix: PrefixDokumen, date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${prefix}.${y}.${m}.${String(seq).padStart(5, "0")}`;
+  return `${prefix}.${y}.${m}.`;
+}
+
+export function formatNoDokumen(prefix: PrefixDokumen, date: Date, seq: number): string {
+  return `${prefixNoDokumen(prefix, date)}${String(seq).padStart(5, "0")}`;
 }
 
 export type BarisPesanan = {

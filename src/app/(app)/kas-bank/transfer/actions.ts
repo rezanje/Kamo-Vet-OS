@@ -6,6 +6,7 @@ import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { validasiTransfer, jurnalTransfer, jurnalBalik, nomorTransfer } from "@/lib/transfer-kas";
 import { hariIniWIB } from "@/lib/followup";
 import { postJournal } from "@/lib/posting";
+import { prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
 
 const BACK = "/kas-bank/transfer";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -42,18 +43,12 @@ export async function buatTransfer(formData: FormData) {
   if (!dari || !ke) gagal("Rekening tidak ditemukan");
   if (!dari!.is_active || !ke!.is_active) gagal("Rekening yang dipilih sudah nonaktif");
 
-  // Nomor per bulan (pola IT/RB/RJ/FB): count+1 atas transfer di bulan yang sama.
-  // Batas atas = tanggal 1 bulan BERIKUTNYA. Jangan pakai "-32" sebagai batas:
-  // Postgres menolaknya sebagai tanggal tidak valid, bukan menganggapnya akhir bulan.
-  const [thn, bln] = tanggal.slice(0, 7).split("-").map(Number);
-  const awalBulan = `${tanggal.slice(0, 7)}-01`;
-  const awalBulanDepan = bln === 12
-    ? `${thn + 1}-01-01`
-    : `${thn}-${String(bln + 1).padStart(2, "0")}-01`;
-  const { count } = await supabase
-    .from("cash_transfers").select("*", { count: "exact", head: true })
-    .gte("tanggal", awalBulan).lt("tanggal", awalBulanDepan);
-  const noTransfer = nomorTransfer(tanggal, count ?? 0);
+  // Nomor per bulan (pola IT/RB/RJ/FB), dilanjutkan dari nomor tertinggi bulan itu.
+  const seq = await urutanBerikutnya(supabase, {
+    table: "cash_transfers", column: "no_transfer",
+    prefix: prefixBulanan("TF", tanggal.slice(0, 7)), pad: 5,
+  });
+  const noTransfer = nomorTransfer(tanggal, seq - 1);
 
   const { data: { user } } = await supabase.auth.getUser();
 

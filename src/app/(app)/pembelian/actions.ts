@@ -9,15 +9,16 @@ import { postJournal } from "@/lib/posting";
 import { stockIn } from "@/lib/inventory";
 import { formatNoTerima, hitungBarisTerima, nilaiDiterima } from "@/lib/penerimaan";
 import { loadUnitOptions, pickUnit, toBaseCost, toBaseQty } from "@/lib/satuan";
+import { formatNomor, prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function nextNoTerima(supabase: any): Promise<string> {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const { count } = await supabase
-    .from("goods_receipts").select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString());
-  return formatNoTerima(now, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table: "goods_receipts", column: "no_terima",
+    prefix: prefixBulanan("TB", ymDari(now)), pad: 5,
+  });
+  return formatNoTerima(now, seq);
 }
 
 type ItemInput = {
@@ -47,15 +48,11 @@ export async function buatPO(formData: FormData) {
     redirect("/pembelian/baru?error=" + encodeURIComponent("Gudang, cabang, dan minimal 1 item wajib diisi."));
   }
 
-  // no_po = PO-YYYYMMDD-NNNN (count today +1 padded 4)
-  const ymd = tanggal.replace(/-/g, "");
-  const startOfDay = `${tanggal}T00:00:00.000Z`;
-  const { count } = await supabase
-    .from("purchase_orders")
-    .select("id", { count: "exact", head: true })
-    .gte("created_at", startOfDay);
-  const seq = String((count ?? 0) + 1).padStart(4, "0");
-  const no_po = `PO-${ymd}-${seq}`;
+  // no_po = PO-YYYYMMDD-NNNN, dilanjutkan dari nomor tertinggi hari itu.
+  const prefixPo = `PO-${tanggal.replace(/-/g, "")}-`;
+  const no_po = formatNomor(prefixPo, await urutanBerikutnya(supabase, {
+    table: "purchase_orders", column: "no_po", prefix: prefixPo, pad: 4,
+  }), 4);
 
   // compute total
   const total = items.reduce((acc, it) => acc + (Number(it.qty) || 0) * (Number(it.harga_beli) || 0), 0);

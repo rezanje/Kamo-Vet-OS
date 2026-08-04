@@ -6,13 +6,17 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { formatNoOpname } from "@/lib/opname";
 import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
+import { urutanBerikutnya } from "@/lib/no-dokumen";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
-// ponytail: nomor via count total +1 — seq global persis format Accurate (OPO.00385).
+// Seq global persis format Accurate (OPO.00385), dilanjutkan dari nomor tertinggi.
 async function nextNo(supabase: Db, table: "opname_orders" | "opname_results", prefix: "OPO" | "OPR") {
-  const { count } = await supabase.from(table).select("id", { count: "exact", head: true });
-  return formatNoOpname(prefix, (count ?? 0) + 1);
+  const seq = await urutanBerikutnya(supabase, {
+    table, column: table === "opname_orders" ? "no_opname" : "no_hasil",
+    prefix: `${prefix}.`, pad: 5,
+  });
+  return formatNoOpname(prefix, seq);
 }
 
 // ================= Perintah Stok Opname =================

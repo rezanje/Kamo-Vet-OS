@@ -8,6 +8,7 @@ import { akunLawanTerlarang, hrefKas, jurnalKasEntry, nomorKasEntry, validasiKas
 import { parseLampiran } from "@/lib/dokumen";
 import { hariIniWIB } from "@/lib/followup";
 import { postJournal } from "@/lib/posting";
+import { prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
 
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
 
@@ -57,17 +58,13 @@ export async function simpanKasEntry(formData: FormData) {
     gagal("Akun lawan tidak boleh rekening kas/bank — pakai menu Transfer Bank.");
   }
 
-  // Nomor per bulan. Batas atas = tanggal 1 bulan BERIKUTNYA (bukan "-32", yang
-  // ditolak Postgres sebagai tanggal tidak valid).
-  const [thn, bln] = tanggal.slice(0, 7).split("-").map(Number);
-  const awalBulan = `${tanggal.slice(0, 7)}-01`;
-  const awalBulanDepan = bln === 12
-    ? `${thn + 1}-01-01`
-    : `${thn}-${String(bln + 1).padStart(2, "0")}-01`;
-  const { count } = await supabase
-    .from("cash_entries").select("*", { count: "exact", head: true })
-    .eq("jenis", jenis).gte("tanggal", awalBulan).lt("tanggal", awalBulanDepan);
-  const noBukti = nomorKasEntry(jenis, tanggal, count ?? 0);
+  // Nomor per bulan, dilanjutkan dari nomor tertinggi bulan itu. Awalannya sudah
+  // memisahkan Masuk (KM) dari Keluar (KK), jadi tidak perlu saringan jenis lagi.
+  const seq = await urutanBerikutnya(supabase, {
+    table: "cash_entries", column: "no_bukti",
+    prefix: prefixBulanan(jenis === "Masuk" ? "KM" : "KK", tanggal.slice(0, 7)), pad: 5,
+  });
+  const noBukti = nomorKasEntry(jenis, tanggal, seq - 1);
 
   const { data: { user } } = await supabase.auth.getUser();
 
