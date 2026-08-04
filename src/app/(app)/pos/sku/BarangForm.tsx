@@ -62,8 +62,21 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
     if (v !== "Jasa" && baseUnit === "tindakan") setBaseUnit("pcs");
   };
 
+  // Isian wajib yang sedang berada di tab tersembunyi bikin tombol Simpan MATI TOTAL:
+  // browser menolak submit, lalu gagal menampilkan peringatannya karena field-nya
+  // display:none — jadi diklik berkali-kali pun tidak ada reaksi apa pun. Di sini
+  // tabnya dipindah dulu ke field yang bermasalah, baru peringatannya dimunculkan.
+  const keTabYangBermasalah = (e: React.FormEvent<HTMLFormElement>) => {
+    const el = e.target as HTMLInputElement;
+    const tujuan = el.closest<HTMLElement>("[data-tab]")?.dataset.tab as Tab | undefined;
+    if (!tujuan || tujuan === tab) return; // sudah kelihatan — biarkan browser yang bicara
+    setTab(tujuan);
+    // Panggilan kedua ini tidak berulang: setelah tab pindah, syarat di atas gagal.
+    requestAnimationFrame(() => el.reportValidity?.());
+  };
+
   return (
-    <form action={simpanBarang} className="crm-sec">
+    <form action={simpanBarang} className="crm-sec" onInvalid={keTabYangBermasalah}>
       <input type="hidden" name="id" value={editing?.id ?? ""} />
       <input type="hidden" name="item_type" value={itemType} />
       <input type="hidden" name="units" value={JSON.stringify(isJasa ? [] : units)} />
@@ -77,7 +90,7 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
       </div>
 
       {/* ── Umum ───────────────────────────────────────────────────────────── */}
-      <div style={{ display: tab === "Umum" ? "block" : "none" }}>
+      <div data-tab="Umum" style={{ display: tab === "Umum" ? "block" : "none" }}>
         <div className="frow">
           <div>
             <label className="flab">Nama barang *</label>
@@ -154,7 +167,7 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
       </div>
 
       {/* ── Penjualan / Pembelian ───────────────────────────────────────────── */}
-      <div style={{ display: tab === "Penjualan / Pembelian" ? "block" : "none" }}>
+      <div data-tab="Penjualan / Pembelian" style={{ display: tab === "Penjualan / Pembelian" ? "block" : "none" }}>
         <div className="frow">
           <div>
             <label className="flab">Harga jual * <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
