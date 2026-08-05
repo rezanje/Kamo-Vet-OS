@@ -90,7 +90,8 @@ export async function checkoutKasir(formData: FormData) {
   // layar kasir yang sudah lama terbuka bisa memegang promo yang sudah dicabut,
   // dan angka dari klien tidak boleh menentukan potongan uang.
   const promoAktif = await loadPromoAktif(supabase, branchId);
-  for (const h of hitungPromoKeranjang(promoAktif, rows)) {
+  const potonganPromo = hitungPromoKeranjang(promoAktif, rows);
+  for (const h of potonganPromo) {
     const baris = rows.find((l) => l.item_id === h.item_id);
     if (baris) baris.promo_discount = h.potongan;
   }
@@ -105,12 +106,18 @@ export async function checkoutKasir(formData: FormData) {
   let voucherVal = 0;
   if (voucherCode) {
     const { data: v } = await supabase
-      .from("vouchers").select("code, tipe, nilai, is_active, valid_from, valid_until")
+      .from("vouchers")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
       .eq("code", voucherCode).maybeSingle();
     const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-    const tolak = pesanVoucherDitolak((v ?? null) as VoucherRow | null, wibToday);
+    // Syarat keranjang (minimal belanja & larangan gabung promo) ikut diperiksa di
+    // sini, bukan cuma di layar: keranjang yang dikirim klien tidak dipercaya.
+    const tolak = pesanVoucherDitolak((v ?? null) as VoucherRow | null, wibToday, {
+      dasar: afterItems,
+      adaPromoOtomatis: potonganPromo.length > 0,
+    });
     if (tolak) redirect(`/kasir?error=${encodeURIComponent(tolak)}`);
-    voucherVal = potonganVoucher(afterItems, v!.tipe, Number(v!.nilai));
+    voucherVal = potonganVoucher(afterItems, v as VoucherRow);
   }
 
   // poin divalidasi terhadap saldo pelanggan sebenarnya. Golongan pelanggan

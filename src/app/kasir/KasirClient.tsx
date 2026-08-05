@@ -7,7 +7,7 @@ import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
-import { normalizeKode, potonganVoucher } from "@/lib/voucher";
+import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
 
 export type ItemRow = {
@@ -22,7 +22,9 @@ export type CustRow = {
   rupiahPerPoin?: number;     // belanja sebesar ini = 1 poin
   golonganId?: string | null; // kunci ke pengecualian diskon per produk (0082)
 };
-export type VoucherRow = { code: string; tipe: string; nilai: number };
+// Bentuknya sama persis dengan lib/voucher — layar kasir perlu syarat lengkapnya
+// (plafon, minimal belanja, boleh gabung promo) untuk menolak SEBELUM bayar.
+export type { VoucherRow } from "@/lib/voucher";
 export type PromoRow = Promo & {
   valid_from?: string | null; valid_until?: string | null;
   auto_apply?: boolean;
@@ -44,10 +46,10 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 };
 
 export function KasirClient({
-  branchName, items, customers, vouchers, promos = [], promoHitung = [],
+  branchName, items, customers, vouchers, hariIni, promos = [], promoHitung = [],
   aturanDiskon = {}, infoBarang = {}, error,
 }: {
-  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[];
+  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
@@ -163,8 +165,14 @@ export function KasirClient({
     [cart, cust, aturanDiskon, infoMap],
   );
   const v = vouchers.find((x) => x.code === normalizeKode(voucher));
-  const voucherVal = v ? potonganVoucher(afterItems, v.tipe, Number(v.nilai)) : 0;
-  const voucherInvalid = voucher.trim() !== "" && !v;
+  // Syarat keranjang diperiksa di layar juga supaya kasir tahu SEBELUM menekan
+  // bayar — kalau hanya di server, pelanggan sudah terlanjur diberi tahu totalnya.
+  const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(v ?? null, hariIni, {
+    dasar: afterItems,
+    adaPromoOtomatis: potonganPromo.length > 0,
+  });
+  const voucherVal = v && !tolakVoucher ? potonganVoucher(afterItems, v) : 0;
+  const voucherInvalid = tolakVoucher !== null;
   const totals = computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, 0);
   const maxPoin = cust ? Math.min(cust.points, totals.afterItems - totals.txnLevel) : 0;
   const poinUsed = Math.min(poin, maxPoin);
@@ -441,7 +449,7 @@ export function KasirClient({
                 style={{ width: 110, padding: "3px 7px", fontSize: 11, textTransform: "uppercase", borderColor: voucherInvalid ? "#fca5a5" : undefined }} />
             </div>
             {voucherVal > 0 && <Row k="" v={`- ${rp(voucherVal)}`} red />}
-            {voucherInvalid && <div style={{ fontSize: 9.5, color: "#b91c1c", textAlign: "right" }}>Kode tidak dikenal</div>}
+            {tolakVoucher && <div style={{ fontSize: 9.5, color: "#b91c1c", textAlign: "right", lineHeight: 1.5 }}>{tolakVoucher}</div>}
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0", paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: "var(--posb)" }}>TOTAL</span>

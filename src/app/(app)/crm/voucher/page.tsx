@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { voucherStatus, type VoucherRow } from "@/lib/voucher";
+import { ringkasSyarat, voucherStatus, type VoucherRow } from "@/lib/voucher";
 import { simpanVoucher, toggleVoucher } from "./actions";
 
 const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
@@ -30,10 +30,15 @@ export default async function VoucherPage({
 
   const { data } = await supabase
     .from("vouchers")
-    .select("id, code, tipe, nilai, is_active, valid_from, valid_until, created_at")
+    .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, created_at")
     .order("created_at", { ascending: false });
 
-  const rows = ((data ?? []) as unknown as Row[]).map((v) => ({ ...v, nilai: Number(v.nilai) }));
+  const rows = ((data ?? []) as unknown as Row[]).map((v) => ({
+    ...v,
+    nilai: Number(v.nilai),
+    max_potongan: v.max_potongan === null ? null : Number(v.max_potongan),
+    min_belanja: Number(v.min_belanja) || 0,
+  }));
   const editing = edit ? rows.find((v) => v.id === edit) ?? null : null;
   const aktifCount = rows.filter((v) => voucherStatus(v, today) === "aktif").length;
 
@@ -43,6 +48,17 @@ export default async function VoucherPage({
         <Link href="/crm" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Kode Voucher</span>
+      </div>
+
+      {/* Promo & voucher dua-duanya "potongan yang dikelola pusat" — dipasangkan
+          di sini supaya tidak perlu balik ke menu CRM buat pindah antar keduanya. */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 11 }}>
+        <Link href="/crm/promo" className="back-btn" style={tabAktif(false)}>
+          <i className="ti ti-speakerphone" /> Promo
+        </Link>
+        <Link href="/crm/voucher" className="back-btn" style={tabAktif(true)}>
+          <i className="ti ti-ticket" /> Kode Voucher
+        </Link>
       </div>
 
       {error && (
@@ -96,6 +112,35 @@ export default async function VoucherPage({
               <label className="flab">Berlaku s/d</label>
               <input className="fi" name="valid_until" type="date" defaultValue={editing?.valid_until ?? ""} />
             </div>
+
+            {/* Pagar nilai potongan — terutama untuk voucher persen. */}
+            <div>
+              <label className="flab">Maks. potongan (Rp)</label>
+              <input className="fi" name="max_potongan" type="number" min={1} step="any"
+                defaultValue={editing?.max_potongan ?? ""} placeholder="kosong = tanpa batas" />
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Diskon 10% dengan batas Rp 10.000 hanya memotong Rp 10.000 sebesar apa pun tagihannya.
+              </div>
+            </div>
+            <div>
+              <label className="flab">Min. belanja (Rp)</label>
+              <input className="fi" name="min_belanja" type="number" min={0} step="any"
+                defaultValue={editing?.min_belanja || ""} placeholder="0 = bebas" />
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Dihitung setelah diskon per barang.
+              </div>
+            </div>
+            <div style={{ gridColumn: "span 3", background: "#f8fafc", border: ".5px solid var(--bd)", borderRadius: 7, padding: "9px 11px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700 }}>
+                <input type="checkbox" name="boleh_gabung_promo" value="1"
+                  defaultChecked={editing ? editing.boleh_gabung_promo : true} /> Boleh digabung dengan promo
+              </label>
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Kalau tidak dicentang, voucher ditolak saat keranjang sudah kena promo potong otomatis.
+                Promo yang menang — potongannya sudah terlihat di layar sebelum kasir mengetik kode.
+              </div>
+            </div>
+
             <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
               <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
                 {editing ? "Simpan perubahan" : "Buat voucher"}
@@ -113,7 +158,7 @@ export default async function VoucherPage({
             <thead>
               <tr>
                 <th style={{ width: 30 }}>No.</th><th>Kode</th><th>Jenis</th>
-                <th style={{ textAlign: "right" }}>Nilai</th><th>Berlaku</th><th>Status</th>
+                <th style={{ textAlign: "right" }}>Nilai</th><th>Syarat</th><th>Berlaku</th><th>Status</th>
                 {bolehKelola && <th style={{ width: 160 }}>Aksi</th>}
               </tr>
             </thead>
@@ -131,6 +176,7 @@ export default async function VoucherPage({
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
                       {v.tipe === "persen" ? `${v.nilai}%` : rp(v.nilai)}
                     </td>
+                    <td style={{ fontSize: 10, color: "var(--tm)" }}>{ringkasSyarat(v)}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{masa}</td>
                     <td><span className={`bge ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span></td>
                     {bolehKelola && (
@@ -153,7 +199,7 @@ export default async function VoucherPage({
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={bolehKelola ? 7 : 6} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  <td colSpan={bolehKelola ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     Belum ada kode voucher.
                   </td>
                 </tr>
@@ -164,4 +210,11 @@ export default async function VoucherPage({
       </div>
     </>
   );
+}
+
+// Penanda halaman aktif untuk pasangan tab Promo / Kode Voucher.
+function tabAktif(active: boolean): React.CSSProperties {
+  return active
+    ? { background: "#eff6ff", color: "#2563eb", borderColor: "#bfdbfe", fontWeight: 700 }
+    : {};
 }

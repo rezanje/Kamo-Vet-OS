@@ -29,6 +29,11 @@ export async function simpanVoucher(formData: FormData) {
   const validFrom = String(formData.get("valid_from") ?? "").trim() || null;
   const validUntil = String(formData.get("valid_until") ?? "").trim() || null;
 
+  const maxRaw = String(formData.get("max_potongan") ?? "").trim();
+  const maxPotongan = maxRaw ? Number(maxRaw) : null;
+  const minBelanja = Number(formData.get("min_belanja") ?? 0) || 0;
+  const bolehGabung = String(formData.get("boleh_gabung_promo") ?? "") === "1";
+
   if (!code) redirect(`${BACK}?error=${encodeURIComponent("Kode voucher wajib diisi")}`);
   if (!Number.isFinite(nilai) || nilai <= 0) {
     redirect(`${BACK}?error=${encodeURIComponent("Nilai voucher harus lebih dari 0")}`);
@@ -40,8 +45,22 @@ export async function simpanVoucher(formData: FormData) {
   if (validFrom && validUntil && validUntil < validFrom) {
     redirect(`${BACK}?error=${encodeURIComponent("Tanggal berakhir lebih awal dari tanggal mulai")}`);
   }
+  if (maxPotongan !== null && (!Number.isFinite(maxPotongan) || maxPotongan <= 0)) {
+    redirect(`${BACK}?error=${encodeURIComponent("Maks. potongan harus lebih dari 0, atau kosongkan kalau tanpa batas")}`);
+  }
+  if (minBelanja < 0) {
+    redirect(`${BACK}?error=${encodeURIComponent("Min. belanja tidak boleh negatif")}`);
+  }
+  // Plafon di bawah nilai voucher nominal berarti nilainya tidak pernah tercapai —
+  // ditolak di sini supaya tidak jadi voucher yang membingungkan di kasir.
+  if (maxPotongan !== null && tipe === "nominal" && maxPotongan < nilai) {
+    redirect(`${BACK}?error=${encodeURIComponent("Maks. potongan lebih kecil dari nilai voucher — naikkan batasnya atau turunkan nilainya")}`);
+  }
 
-  const row = { code, tipe, nilai, valid_from: validFrom, valid_until: validUntil };
+  const row = {
+    code, tipe, nilai, valid_from: validFrom, valid_until: validUntil,
+    max_potongan: maxPotongan, min_belanja: minBelanja, boleh_gabung_promo: bolehGabung,
+  };
   const { error } = id
     ? await supabase.from("vouchers").update(row).eq("id", id)
     : await supabase.from("vouchers").insert({ ...row, is_active: true });

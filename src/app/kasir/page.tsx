@@ -40,7 +40,9 @@ export default async function KasirPage({
       .select("total, visits!inner(customer_id)")
       .eq("paid_status", "Lunas")
       .is("voided_at", null),
-    supabase.from("vouchers").select("code, tipe, nilai, is_active, valid_from, valid_until").eq("is_active", true),
+    supabase.from("vouchers")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
+      .eq("is_active", true),
     supabase.from("promos")
       .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
       .eq("is_active", true),
@@ -160,6 +162,7 @@ export default async function KasirPage({
       items={itemRows}
       customers={custRows}
       vouchers={vouchersAktif as unknown as VoucherRow[]}
+      hariIni={wibToday}
       promos={promosActive as unknown as PromoRow[]}
       promoHitung={promoHitung}
       aturanDiskon={aturanPerGolongan}

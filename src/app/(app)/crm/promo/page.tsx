@@ -68,6 +68,17 @@ export default async function PromoAdminPage({
         <span style={{ fontSize: 13, fontWeight: 500 }}>Promo — Konfigurasi Pusat</span>
       </div>
 
+      {/* Promo & voucher dua-duanya "potongan yang dikelola pusat" — dipasangkan
+          di sini supaya tidak perlu balik ke menu CRM buat pindah antar keduanya. */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 11 }}>
+        <Link href="/crm/promo" className="back-btn" style={tabAktif(true)}>
+          <i className="ti ti-speakerphone" /> Promo
+        </Link>
+        <Link href="/crm/voucher" className="back-btn" style={tabAktif(false)}>
+          <i className="ti ti-ticket" /> Kode Voucher
+        </Link>
+      </div>
+
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Promo baru dibuat.</div>}
 
@@ -231,4 +242,11 @@ export default async function PromoAdminPage({
       </div>
     </>
   );
+}
+
+// Penanda halaman aktif untuk pasangan tab Promo / Kode Voucher.
+function tabAktif(active: boolean): React.CSSProperties {
+  return active
+    ? { background: "#eff6ff", color: "#2563eb", borderColor: "#bfdbfe", fontWeight: 700 }
+    : {};
 }
