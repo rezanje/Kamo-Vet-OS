@@ -7,6 +7,8 @@ import { getPajakSettings } from "@/lib/pajak";
 import { SubmitButton } from "@/components/SubmitButton";
 import { voidAndReissue } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
+import { bacaRombongan } from "@/lib/rombongan-server";
+import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -48,6 +50,14 @@ export default async function PembayaranPage({
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const activeStep = STEP_BY_STATUS[visit.status] ?? 3;
+
+  // Satu pemilik bisa datang membawa beberapa hewan; tagihannya tetap terpisah per
+  // kunjungan, tapi kasir perlu melihat semuanya sekaligus supaya tidak ada yang
+  // tertinggal dan pemiliknya tidak dipanggil dua kali.
+  const rombongan = await bacaRombongan(supabase, visitId);
+  const adaRombongan = (rombongan?.baris.length ?? 0) > 1;
+  const ringkasan = rombongan ? ringkasTagihanRombongan(rombongan.baris) : null;
+  const berikutnya = rombongan ? berikutnyaBelumSelesai(rombongan.baris, visitId) : null;
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
@@ -192,6 +202,65 @@ export default async function PembayaranPage({
             <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
             <Field label="Poli" value={visit.poli} />
             {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
+          </div>
+        </div>
+      )}
+
+
+      {/* Panel rombongan: muncul hanya kalau pemilik ini memang bawa lebih dari satu hewan. */}
+      {adaRombongan && rombongan && ringkasan && (
+        <div className="card" style={{ marginBottom: 12, borderColor: "#bfdbfe", background: "#f8fbff" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#1e40af" }}>
+              <i className="ti ti-paw" /> {rombongan.customerName} membawa {ringkasan.jumlahPasien} pasien hari ini
+            </div>
+            <div style={{ fontSize: 11, color: "var(--tm)" }}>
+              Total {rp(ringkasan.totalTagihan)} · sisa <b style={{ color: ringkasan.sisa > 0 ? "#b91c1c" : "#15803d" }}>{rp(ringkasan.sisa)}</b>
+            </div>
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ minWidth: 520 }}>
+              <thead>
+                <tr><th>Pasien</th><th>No. Tagihan</th><th style={{ textAlign: "right" }}>Total</th><th>Status</th><th /></tr>
+              </thead>
+              <tbody>
+                {rombongan.baris.map((b) => (
+                  <tr key={b.visitId} style={{ background: b.visitId === visitId ? "#eff6ff" : undefined }}>
+                    <td style={{ fontSize: 11.5, fontWeight: b.visitId === visitId ? 700 : 500 }}>
+                      {b.hewan}{b.visitId === visitId ? " · sedang dibuka" : ""}
+                    </td>
+                    <td style={{ fontSize: 10.5, fontFamily: "monospace", color: "var(--tm)" }}>{b.invoiceNo ?? "—"}</td>
+                    <td style={{ textAlign: "right", fontSize: 11 }}>{rp(b.total)}</td>
+                    <td><span className={`bge ${b.paidStatus === "Lunas" ? "g" : b.invoiceNo === null ? "" : "r"}`}>{labelStatus(b)}</span></td>
+                    <td>
+                      {b.visitId !== visitId && (
+                        <Link href={`/klinik/pembayaran/${b.visitId}`} className="btn-def"
+                          style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Buka</Link>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
+            {berikutnya && (
+              <Link href={`/klinik/pembayaran/${berikutnya.visitId}`} className="btn-acc"
+                style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+                Lanjut ke {berikutnya.hewan} <i className="ti ti-arrow-right" />
+              </Link>
+            )}
+            <Link href={`/klinik/pembayaran/${visitId}/struk-rombongan`} className="btn-def"
+              style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+              <i className="ti ti-receipt" /> Struk gabungan
+            </Link>
+            {ringkasan.adaBelumDitagih && (
+              <span style={{ fontSize: 10, color: "#b45309", alignSelf: "center" }}>
+                <i className="ti ti-alert-triangle" /> Ada pasien yang tagihannya belum dibuat.
+              </span>
+            )}
           </div>
         </div>
       )}
