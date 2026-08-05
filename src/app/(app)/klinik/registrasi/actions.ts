@@ -6,11 +6,18 @@ import { nextQueueNumber } from "@/lib/queue";
 import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 import { resolveDokter } from "@/lib/dokter";
+import { bacaPets, susunKeluhan } from "@/lib/rombongan";
 
-// Inti registrasi: buat/reuse pelanggan, simpan anabul, buat visit + nomor antrian.
-// Return visitId supaya caller bisa arahkan ke antrian atau langsung pembayaran.
-// Melempar redirect(error) sendiri kalau ada kegagalan.
-async function daftar(formData: FormData): Promise<string> {
+// Inti registrasi: buat/reuse pelanggan, simpan tiap anabul, buat satu kunjungan
+// per hewan lengkap dengan nomor antrian berurutan.
+//
+// Satu pemilik boleh membawa beberapa hewan sekaligus. Kunjungannya tetap dipisah
+// per hewan — rekam medis, insentif dokter, dan laporan per pasien bergantung pada
+// pemisahan itu. Yang digabung cuma pengalamannya: data pemilik diisi sekali dan
+// nomor antriannya beruntun supaya dokter bisa menangani berturut-turut.
+//
+// Return daftar visitId urut sesuai hewannya. Melempar redirect(error) sendiri.
+async function daftar(formData: FormData): Promise<string[]> {
   const supabase = await createClient();
 
   const phone = String(formData.get("phone") ?? "").trim();
@@ -20,22 +27,6 @@ async function daftar(formData: FormData): Promise<string> {
   const address = String(formData.get("address") ?? "") || null;
   const catatan = String(formData.get("catatan") ?? "") || null;
 
-  const petName = String(formData.get("petName") ?? "").trim();
-  const species = String(formData.get("species") ?? "");
-  const breed = String(formData.get("breed") ?? "") || null;
-  const warna = String(formData.get("warna") ?? "") || null;
-  const petDob = String(formData.get("petDob") ?? "") || null;
-  const gender = String(formData.get("gender") ?? "");
-  const weightRaw = formData.get("weight");
-  const weight = weightRaw ? Number(weightRaw) : null;
-  const sterilisasi = String(formData.get("sterilisasi") ?? "") || null;
-  const microchip = String(formData.get("microchip") ?? "") || null;
-  const alergi = String(formData.get("alergi") ?? "") || null;
-  const kondisi_khusus = String(formData.get("kondisi_khusus") ?? "") || null;
-  const golongan_darah = String(formData.get("golongan_darah") ?? "") || null;
-  const petId = String(formData.get("petId") ?? "").trim() || null;
-  const photoUrl = String(formData.get("photoUrl") ?? "").trim() || null;
-
   const poli = String(formData.get("poli") ?? "Poli Umum");
   // Dokter dipilih dari daftar karyawan; namanya diambil dari master, bukan dari
   // form, supaya nama di dokumen cetak tidak pernah beda dari orang yang dibayar.
@@ -43,13 +34,15 @@ async function daftar(formData: FormData): Promise<string> {
   const branchId = String(formData.get("branchId") ?? "");
   const kontrol = String(formData.get("kontrol") ?? "baru");
   const tujuanKontrol = String(formData.get("tujuanKontrol") ?? "").trim();
-  let keluhan = String(formData.get("keluhan") ?? "") || null;
-  if (kontrol === "ulang" && tujuanKontrol) {
-    keluhan = `${keluhan ? keluhan + " " : ""}[Kontrol: ${tujuanKontrol}]`;
-  }
 
-  if (!phone || !name || !petName || !branchId) {
-    redirect(`/klinik/registrasi?error=${encodeURIComponent("Lengkapi data wajib (HP, nama, hewan, cabang)")}`);
+  const dibaca = bacaPets(formData.get("pets"));
+  if (!dibaca.ok) {
+    redirect(`/klinik/registrasi?error=${encodeURIComponent(dibaca.pesan)}`);
+  }
+  const pets = dibaca.ok ? dibaca.pets : [];
+
+  if (!phone || !name || !branchId) {
+    redirect(`/klinik/registrasi?error=${encodeURIComponent("Lengkapi data wajib (HP, nama, cabang)")}`);
   }
 
   // No. HP dipakai di bawah untuk mengenali pelanggan lama — nomor asal ("0")
@@ -74,54 +67,77 @@ async function daftar(formData: FormData): Promise<string> {
     customerId = created!.id;
   }
 
-  // petId diisi kalau staff pilih "anabul existing" dari lookup no. HP — reuse
-  // pet itu, cuma update berat & foto (data master lain jangan ketimpa diam-diam).
-  //
-  // Kalau staff TIDAK memilih dari daftar tapi mengetik nama yang sudah ada di
-  // pemilik ini, itu tetap maksudnya hewan yang sama — jadi kartunya dipakai
-  // ulang, bukan ditolak. Menolak di sini cuma bikin staff mengarang nama baru
-  // ("Michi 2") dan riwayat medisnya tetap terpecah.
-  const senama = petId ? null : await cariAnabulSenama(supabase, customerId, petName);
-  const reuseId = petId ?? senama?.id ?? null;
-
-  let finalPetId: string;
-  if (reuseId) {
-    const patch: Record<string, unknown> = {};
-    if (weight != null) patch.weight = weight;
-    if (photoUrl) patch.photo_url = photoUrl;
-    if (Object.keys(patch).length) await supabase.from("pets").update(patch).eq("id", reuseId);
-    finalPetId = reuseId;
-  } else {
-    const { data: pet, error: petErr } = await supabase
-      .from("pets")
-      .insert({ customer_id: customerId, name: petName, species, breed, warna, dob: petDob, gender, weight, sterilisasi, microchip, alergi, kondisi_khusus, golongan_darah, photo_url: photoUrl })
-      .select("id").single();
-    if (petErr || !pet) {
-      // Balapan dua staff menyimpan bersamaan: index yang menahan, bukan cek di atas.
-      const pesan = errorAnabulKembar(petErr?.message)
-        ? pesanAnabulKembar(petName)
-        : petErr?.message ?? "Gagal simpan data hewan";
-      redirect(`/klinik/registrasi?error=${encodeURIComponent(pesan)}`);
-    }
-    finalPetId = pet!.id;
-  }
-
-  // Addendum §4: nomor antrian [Huruf][3 digit] per cabang per hari, reset tiap hari.
+  // Nomor antrian [Huruf][3 digit] per cabang per hari (Addendum §4). Dibaca SEKALI
+  // lalu ditambah di memori: kalau dibaca ulang tiap hewan, tiga kunjungan yang
+  // dibuat dalam hitungan milidetik bisa dapat nomor yang sama.
   const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
   const { data: todayQ } = await supabase
     .from("visits").select("queue_number")
     .eq("branch_id", branchId).gte("created_at", startOfDay.toISOString());
-  const queueNumber = nextQueueNumber(poli, (todayQ ?? []).map((v) => v.queue_number));
+  const nomorTerpakai = (todayQ ?? []).map((v) => v.queue_number as string);
 
-  const { data: visit, error: visitErr } = await supabase
-    .from("visits")
-    .insert({ branch_id: branchId, customer_id: customerId, pet_id: finalPetId, poli, dokter, doctor_id: doctorId, keluhan, status: "Menunggu", queue_number: queueNumber })
-    .select("id").single();
-  if (visitErr || !visit) {
-    redirect(`/klinik/registrasi?error=${encodeURIComponent(visitErr?.message ?? "Gagal buat kunjungan")}`);
+  const visitIds: string[] = [];
+
+  for (const p of pets) {
+    // p.id diisi kalau staf memilih "anabul terdaftar" dari lookup no. HP — kartu
+    // itu dipakai ulang, cuma berat & foto yang diperbarui (data master lain jangan
+    // ketimpa diam-diam).
+    //
+    // Kalau staf TIDAK memilih dari daftar tapi mengetik nama yang sudah ada di
+    // pemilik ini, itu tetap maksudnya hewan yang sama — kartunya dipakai ulang,
+    // bukan ditolak. Menolak cuma bikin staf mengarang nama baru ("Michi 2") dan
+    // riwayat medisnya tetap terpecah.
+    const senama = p.id ? null : await cariAnabulSenama(supabase, customerId, p.name);
+    const reuseId = p.id || senama?.id || null;
+
+    let finalPetId: string;
+    if (reuseId) {
+      const patch: Record<string, unknown> = {};
+      if (p.weight != null) patch.weight = p.weight;
+      if (p.photo_url) patch.photo_url = p.photo_url;
+      if (Object.keys(patch).length) await supabase.from("pets").update(patch).eq("id", reuseId);
+      finalPetId = reuseId;
+    } else {
+      const { data: pet, error: petErr } = await supabase
+        .from("pets")
+        .insert({
+          customer_id: customerId, name: p.name, species: p.species,
+          breed: p.breed || null, warna: p.warna || null, dob: p.dob || null,
+          gender: p.gender, weight: p.weight, sterilisasi: p.sterilisasi,
+          microchip: p.microchip || null, alergi: p.alergi || null,
+          kondisi_khusus: p.kondisi_khusus || null, golongan_darah: p.golongan_darah || null,
+          photo_url: p.photo_url || null,
+        })
+        .select("id").single();
+      if (petErr || !pet) {
+        // Balapan dua staf menyimpan bersamaan: index DB yang menahan, bukan cek di atas.
+        const pesan = errorAnabulKembar(petErr?.message)
+          ? pesanAnabulKembar(p.name)
+          : petErr?.message ?? "Gagal simpan data hewan";
+        redirect(`/klinik/registrasi?error=${encodeURIComponent(pesan)}`);
+      }
+      finalPetId = pet!.id;
+    }
+
+    const queueNumber = nextQueueNumber(poli, nomorTerpakai);
+    nomorTerpakai.push(queueNumber);
+
+    const { data: visit, error: visitErr } = await supabase
+      .from("visits")
+      .insert({
+        branch_id: branchId, customer_id: customerId, pet_id: finalPetId,
+        poli, dokter, doctor_id: doctorId,
+        keluhan: susunKeluhan(p.keluhan, kontrol, tujuanKontrol),
+        status: "Menunggu", queue_number: queueNumber,
+      })
+      .select("id").single();
+    if (visitErr || !visit) {
+      redirect(`/klinik/registrasi?error=${encodeURIComponent(visitErr?.message ?? "Gagal buat kunjungan")}`);
+    }
+    visitIds.push(visit!.id);
   }
 
-  return visit!.id;
+  return visitIds;
 }
 
 export type PetLite = {
@@ -154,12 +170,13 @@ export async function lookupPetsByPhone(phone: string): Promise<{ customer: Cust
 }
 
 export async function registrasiPasien(formData: FormData) {
-  await daftar(formData);
-  redirect("/klinik/antrian?success=1");
+  const ids = await daftar(formData);
+  redirect(`/klinik/antrian?success=${ids.length}`);
 }
 
-// "Simpan dan Pembayaran": daftar lalu langsung ke kasir pembayaran visit ini.
+// "Simpan dan Pembayaran": daftar lalu langsung ke kasir. Rombongan diarahkan ke
+// kunjungan pertama; kunjungan saudaranya muncul di layar pembayaran itu.
 export async function registrasiDanBayar(formData: FormData) {
-  const visitId = await daftar(formData);
-  redirect(`/klinik/pembayaran/${visitId}`);
+  const ids = await daftar(formData);
+  redirect(`/klinik/pembayaran/${ids[0]}`);
 }

@@ -117,7 +117,9 @@ export default async function AntrianPage({
           <i className="ti ti-circle-check" />{" "}
           {success === "bayar"
             ? "Pembayaran selesai, kunjungan ditutup."
-            : "Pasien berhasil didaftarkan, masuk antrian."}
+            : Number(success) > 1
+              ? `${success} pasien berhasil didaftarkan, nomor antriannya berurutan.`
+              : "Pasien berhasil didaftarkan, masuk antrian."}
         </div>
       )}
 

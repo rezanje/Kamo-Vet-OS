@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createClient } from "@/lib/supabase/client";
+import { petKosong, MAKS_HEWAN, type PetDraft } from "@/lib/rombongan";
 import { registrasiPasien, registrasiDanBayar, lookupPetsByPhone, type PetLite, type CustomerLite } from "./actions";
 
 function SubHead({ icon, title, color, tint }: { icon: string; title: string; color: string; tint: string }) {
@@ -19,10 +20,26 @@ function SubHead({ icon, title, color, tint }: { icon: string; title: string; co
 }
 
 const req = <span style={{ color: "#dc2626" }}>*</span>;
-const emptyPet: PetLite = {
-  id: "", name: "", species: "Anjing", breed: "", warna: "", dob: "", gender: "Jantan", weight: null,
-  sterilisasi: "Utuh", microchip: "", alergi: "", kondisi_khusus: "", golongan_darah: "", photo_url: "",
-};
+
+// Anabul lama dari lookup no. HP → draft siap diisi (keluhan selalu mulai kosong,
+// itu milik kunjungan hari ini, bukan data hewannya).
+const dariPetLama = (p: PetLite): PetDraft => ({
+  ...petKosong(),
+  id: p.id,
+  name: p.name,
+  species: p.species ?? "Anjing",
+  breed: p.breed ?? "",
+  warna: p.warna ?? "",
+  dob: p.dob ?? "",
+  gender: p.gender ?? "Jantan",
+  weight: p.weight,
+  sterilisasi: p.sterilisasi ?? "Utuh",
+  microchip: p.microchip ?? "",
+  alergi: p.alergi ?? "",
+  kondisi_khusus: p.kondisi_khusus ?? "",
+  golongan_darah: p.golongan_darah ?? "",
+  photo_url: p.photo_url ?? "",
+});
 
 export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
   branches: { id: string; name: string }[];
@@ -33,10 +50,30 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
   const [looking, setLooking] = useState(false);
   const [customer, setCustomer] = useState<CustomerLite | null>(null);
   const [existingPets, setExistingPets] = useState<PetLite[]>([]);
-  const [pet, setPet] = useState<PetLite>(emptyPet);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  // Satu pemilik boleh membawa beberapa hewan sekaligus; tiap hewan satu tab.
+  const [pets, setPets] = useState<PetDraft[]>([petKosong()]);
+  const [aktif, setAktif] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
+
+  const pet = pets[aktif] ?? petKosong();
+  const setPet = (patch: Partial<PetDraft>) =>
+    setPets((ps) => ps.map((p, i) => (i === aktif ? { ...p, ...patch } : p)));
+
+  // Anabul yang sudah dipilih di tab lain tidak ditawarkan lagi — memilihnya dua
+  // kali berarti dua kunjungan menumpuk di satu hewan.
+  const sudahDipilih = new Set(pets.map((p, i) => (i === aktif ? "" : p.id)).filter(Boolean));
+
+  const tambahHewan = () => {
+    setPets((ps) => [...ps, petKosong()]);
+    setAktif(pets.length);
+  };
+
+  const hapusHewan = (i: number) => {
+    if (pets.length <= 1) return;
+    setPets((ps) => ps.filter((_, j) => j !== i));
+    setAktif((a) => (a >= i && a > 0 ? a - 1 : a));
+  };
 
   async function onPhoneBlur() {
     const p = phone.trim();
@@ -53,21 +90,18 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
 
   function pickExistingPet(id: string) {
     if (!id) {
-      setPet(emptyPet);
-      setPhotoPreview(null);
+      setPet(petKosong());
       return;
     }
     const found = existingPets.find((p) => p.id === id);
-    if (found) {
-      setPet(found);
-      setPhotoPreview(found.photo_url || null);
-    }
+    if (found) setPet(dariPetLama(found));
   }
 
   async function onPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPhotoPreview(URL.createObjectURL(file));
+    const sementara = URL.createObjectURL(file);
+    setPet({ photo_url: sementara });
     setUploading(true);
     setUploadErr("");
     try {
@@ -76,8 +110,10 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
       const { error } = await supabase.storage.from("pet-photos").upload(path, file, { upsert: true });
       if (error) throw error;
       const { data } = supabase.storage.from("pet-photos").getPublicUrl(path);
-      setPet((p) => ({ ...p, photo_url: data.publicUrl }));
+      setPet({ photo_url: data.publicUrl });
     } catch (err) {
+      // Pratinjau sementara tidak boleh ikut tersimpan — URL blob mati begitu halaman ditutup.
+      setPet({ photo_url: "" });
       setUploadErr(err instanceof Error ? err.message : "Gagal upload foto");
     } finally {
       setUploading(false);
@@ -86,8 +122,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
 
   return (
     <form action={registrasiPasien}>
-      <input type="hidden" name="petId" value={pet.id} />
-      <input type="hidden" name="photoUrl" value={pet.photo_url ?? ""} />
+      <input type="hidden" name="pets" value={JSON.stringify(pets)} />
 
       <div className="grid2">
         {/* ================= KIRI: pemilik + kunjungan + keluhan ================= */}
@@ -180,26 +215,60 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
           </div>
 
           <div style={{ borderTop: ".5px dashed var(--bd)", margin: "14px 0 0", paddingTop: 4 }} />
-          <SubHead icon="ti-clipboard-text" title="KELUHAN UTAMA" color="#7c3aed" tint="#f3f0ff" />
-          <div>
-            <textarea className="fi" name="keluhan" rows={2} placeholder="Batuk, nafsu makan turun" style={{ resize: "vertical" }} />
+          <div style={{ fontSize: 10, color: "var(--td)", lineHeight: 1.7 }}>
+            <i className="ti ti-info-circle" /> Cabang, poli, dokter, dan jenis kunjungan berlaku
+            untuk semua hewan yang didaftarkan. Keluhan diisi per hewan di panel sebelah.
           </div>
         </div>
 
         {/* ================= KANAN: anabul + riwayat + catatan ================= */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <SecHeader num="02" title="DATA PASIEN (HEWAN)" desc="Data hewan peliharaan yang akan diperiksa." />
+          <SecHeader
+            num="02" title="DATA PASIEN (HEWAN)"
+            desc={pets.length > 1
+              ? `${pets.length} hewan didaftarkan sekaligus — tiap hewan dapat nomor antrian & rekam medis sendiri.`
+              : "Data hewan peliharaan yang akan diperiksa."}
+          />
+
+          {/* Satu tab per hewan. Kunjungan tetap dipisah di belakang layar; yang
+              digabung cuma pendaftarannya supaya data pemilik diisi sekali. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", marginBottom: 12, borderBottom: ".5px solid var(--bd)", paddingBottom: 8 }}>
+            {pets.map((p, i) => (
+              <div key={i} style={tabHewan(i === aktif)}>
+                <button type="button" onClick={() => setAktif(i)}
+                  style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer" }}>
+                  <i className="ti ti-paw" style={{ marginRight: 4, fontSize: 12 }} />
+                  {p.name.trim() || `Hewan ${i + 1}`}
+                </button>
+                {pets.length > 1 && (
+                  <button type="button" onClick={() => hapusHewan(i)} title="Hapus hewan ini"
+                    style={{ background: "none", border: "none", padding: "0 0 0 6px", cursor: "pointer", color: "inherit", opacity: 0.6, font: "inherit" }}>
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+            {pets.length < MAKS_HEWAN && (
+              <button type="button" onClick={tambahHewan} className="btn-def"
+                style={{ padding: "4px 10px", fontSize: 11 }} title="Tambah hewan lain milik pemilik yang sama">
+                <i className="ti ti-plus" /> Tambah hewan
+              </button>
+            )}
+          </div>
 
           {existingPets.length > 0 && (
             <div className="fg">
               <label className="flab">Anabul terdaftar</label>
-              <select className="fi" onChange={(e) => pickExistingPet(e.target.value)} defaultValue="">
+              <select className="fi" onChange={(e) => pickExistingPet(e.target.value)} value={pet.id}>
                 <option value="">+ Anabul baru</option>
-                {existingPets.map((p) => (
+                {existingPets.filter((p) => !sudahDipilih.has(p.id)).map((p) => (
                   <option key={p.id} value={p.id}>{p.name} — {p.species}{p.breed ? ` (${p.breed})` : ""}</option>
                 ))}
               </select>
-              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Pilih buat panggil data anabul lama, atau daftarkan anabul baru untuk pelanggan ini.</div>
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Pilih buat panggil data anabul lama, atau daftarkan anabul baru untuk pelanggan ini.
+                Anabul yang sudah dipilih di tab lain tidak muncul di sini.
+              </div>
             </div>
           )}
 
@@ -208,8 +277,8 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
               width: 64, height: 64, borderRadius: 10, background: "var(--sf1)", border: ".5px solid var(--bd)",
               display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0,
             }}>
-              {photoPreview
-                ? <img src={photoPreview} alt="Foto anabul" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              {pet.photo_url
+                ? <img src={pet.photo_url} alt="Foto anabul" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 : <i className="ti ti-paw" style={{ fontSize: 24, color: "var(--td)" }} />}
             </div>
             <div>
@@ -226,11 +295,11 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
           <div className="frow">
             <div>
               <label className="flab">Nama hewan {req}</label>
-              <input className="fi" name="petName" placeholder="Choco" value={pet.name} onChange={(e) => setPet({ ...pet, name: e.target.value })} required />
+              <input className="fi" placeholder="Choco" value={pet.name} onChange={(e) => setPet({ name: e.target.value })} />
             </div>
             <div>
               <label className="flab">Jenis hewan {req}</label>
-              <select className="fi" name="species" value={pet.species ?? "Anjing"} onChange={(e) => setPet({ ...pet, species: e.target.value })} required>
+              <select className="fi" value={pet.species} onChange={(e) => setPet({ species: e.target.value })}>
                 <option>Anjing</option>
                 <option>Kucing</option>
                 <option>Kelinci</option>
@@ -242,34 +311,34 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
           <div className="frow">
             <div>
               <label className="flab">Ras</label>
-              <input className="fi" name="breed" placeholder="Golden Retriever" value={pet.breed ?? ""} onChange={(e) => setPet({ ...pet, breed: e.target.value })} />
+              <input className="fi" placeholder="Golden Retriever" value={pet.breed} onChange={(e) => setPet({ breed: e.target.value })} />
             </div>
             <div>
               <label className="flab">Warna / ciri-ciri</label>
-              <input className="fi" name="warna" placeholder="Cokelat keemasan" value={pet.warna ?? ""} onChange={(e) => setPet({ ...pet, warna: e.target.value })} />
+              <input className="fi" placeholder="Cokelat keemasan" value={pet.warna} onChange={(e) => setPet({ warna: e.target.value })} />
             </div>
           </div>
           <div className="frow">
             <div>
               <label className="flab">Jenis kelamin</label>
-              <select className="fi" name="gender" value={pet.gender ?? "Jantan"} onChange={(e) => setPet({ ...pet, gender: e.target.value })}>
+              <select className="fi" value={pet.gender} onChange={(e) => setPet({ gender: e.target.value })}>
                 <option>Jantan</option>
                 <option>Betina</option>
               </select>
             </div>
             <div>
               <label className="flab">Berat badan (kg)</label>
-              <input className="fi" name="weight" type="number" step="0.1" placeholder="12.5" value={pet.weight ?? ""} onChange={(e) => setPet({ ...pet, weight: e.target.value ? Number(e.target.value) : null })} />
+              <input className="fi" type="number" step="0.1" min={0} placeholder="12.5" value={pet.weight ?? ""} onChange={(e) => setPet({ weight: e.target.value ? Number(e.target.value) : null })} />
             </div>
           </div>
           <div className="frow">
             <div>
               <label className="flab">Tgl lahir</label>
-              <input className="fi" name="petDob" type="date" value={pet.dob ?? ""} onChange={(e) => setPet({ ...pet, dob: e.target.value })} />
+              <input className="fi" type="date" value={pet.dob} onChange={(e) => setPet({ dob: e.target.value })} />
             </div>
             <div>
               <label className="flab">Status reproduksi</label>
-              <select className="fi" name="sterilisasi" value={pet.sterilisasi ?? "Utuh"} onChange={(e) => setPet({ ...pet, sterilisasi: e.target.value })}>
+              <select className="fi" value={pet.sterilisasi} onChange={(e) => setPet({ sterilisasi: e.target.value })}>
                 <option>Utuh</option>
                 <option>Steril</option>
               </select>
@@ -278,11 +347,11 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
           <div className="frow">
             <div>
               <label className="flab">No. microchip (jika ada)</label>
-              <input className="fi" name="microchip" placeholder="—" value={pet.microchip ?? ""} onChange={(e) => setPet({ ...pet, microchip: e.target.value })} />
+              <input className="fi" placeholder="—" value={pet.microchip} onChange={(e) => setPet({ microchip: e.target.value })} />
             </div>
             <div>
               <label className="flab">Golongan darah</label>
-              <input className="fi" name="golongan_darah" placeholder="DEA 1.1" value={pet.golongan_darah ?? ""} onChange={(e) => setPet({ ...pet, golongan_darah: e.target.value })} />
+              <input className="fi" placeholder="DEA 1.1" value={pet.golongan_darah} onChange={(e) => setPet({ golongan_darah: e.target.value })} />
             </div>
           </div>
 
@@ -291,12 +360,24 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
             <div className="frow">
               <div>
                 <label className="flab">Alergi</label>
-                <input className="fi" name="alergi" placeholder="Tidak ada" value={pet.alergi ?? ""} onChange={(e) => setPet({ ...pet, alergi: e.target.value })} />
+                <input className="fi" placeholder="Tidak ada" value={pet.alergi} onChange={(e) => setPet({ alergi: e.target.value })} />
               </div>
               <div>
                 <label className="flab">Penyakit / kondisi khusus</label>
-                <input className="fi" name="kondisi_khusus" placeholder="—" value={pet.kondisi_khusus ?? ""} onChange={(e) => setPet({ ...pet, kondisi_khusus: e.target.value })} />
+                <input className="fi" placeholder="—" value={pet.kondisi_khusus} onChange={(e) => setPet({ kondisi_khusus: e.target.value })} />
               </div>
+            </div>
+          </div>
+
+          {/* Keluhan dipegang per hewan: tiga kucing satu pemilik bisa datang
+              dengan tiga masalah yang sama sekali berbeda. */}
+          <div style={{ background: "#f3f0ff", border: ".5px solid #ddd6fe", borderRadius: 10, padding: 12, marginTop: 12 }}>
+            <SubHead icon="ti-clipboard-text" title="KELUHAN UTAMA" color="#7c3aed" tint="#ede9fe" />
+            <textarea className="fi" rows={2} placeholder="Batuk, nafsu makan turun"
+              value={pet.keluhan} onChange={(e) => setPet({ keluhan: e.target.value })}
+              style={{ resize: "vertical" }} />
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+              Keluhan {pet.name.trim() || `hewan ${aktif + 1}`}, bukan keluhan seluruh rombongan.
             </div>
           </div>
 
@@ -308,10 +389,25 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 12 }}>
+        {pets.length > 1 && (
+          <span style={{ fontSize: 11, color: "var(--tm)", marginRight: "auto" }}>
+            <i className="ti ti-paw" /> {pets.length} hewan akan didaftarkan — nomor antriannya berurutan.
+          </span>
+        )}
         <Link href="/klinik" className="btn-def">Batal</Link>
         <SubmitButton className="btn-acc" style={{ fontWeight: 600 }} pendingText="Menyimpan…">Simpan pendaftaran</SubmitButton>
         <SubmitButton className="btn-acc" icon="ti-cash" formAction={registrasiDanBayar} pendingText="Memproses…">Simpan &amp; pembayaran</SubmitButton>
       </div>
     </form>
   );
+}
+
+function tabHewan(active: boolean): React.CSSProperties {
+  return {
+    display: "inline-flex", alignItems: "center",
+    padding: "5px 10px", borderRadius: 7, fontSize: 11.5, fontWeight: 600,
+    background: active ? "#eff6ff" : "var(--sf1)",
+    color: active ? "#2563eb" : "var(--tm)",
+    border: `.5px solid ${active ? "#bfdbfe" : "var(--bd)"}`,
+  };
 }
