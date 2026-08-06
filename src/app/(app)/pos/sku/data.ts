@@ -4,7 +4,7 @@ import { loadItemUnits } from "@/lib/satuan";
 import type { BarangRow } from "./BarangForm";
 
 export const BARANG_FIELDS =
-  "id, name, code, unit, upc, category_id, brand_id, item_type, sell_price, buy_price, min_stock, is_active, tindakan_kategori, supplier_id, buy_unit, min_buy, min_sell_qty, default_discount, substitute_item_id";
+  "id, name, code, unit, upc, category_id, brand_id, item_type, sell_price, buy_price, min_stock, track_expiry, is_active, tindakan_kategori, supplier_id, buy_unit, min_buy, min_sell_qty, default_discount, substitute_item_id";
 
 // Guard + isi dropdown yang sama untuk halaman baru & edit.
 export async function siapkanFormBarang() {

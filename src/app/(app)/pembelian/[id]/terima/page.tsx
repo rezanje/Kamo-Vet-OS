@@ -15,7 +15,7 @@ type PoItem = {
   qty_terima: number | null;   // sudah pernah diterima (penerimaan bertahap)
   harga_beli: number;
   satuan: string | null;   // satuan yang dipilih saat PO (bisa box/sak)
-  items: Rel<{ unit: string }>;
+  items: Rel<{ unit: string; track_expiry: boolean | null }>;
 };
 
 export default async function TerimaBarangPage({
@@ -31,7 +31,7 @@ export default async function TerimaBarangPage({
 
   const { data: po } = await supabase
     .from("purchase_orders")
-    .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(id, nama, qty, qty_terima, satuan, harga_beli, items(unit))")
+    .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(id, nama, qty, qty_terima, satuan, harga_beli, items(unit, track_expiry))")
     .eq("id", id)
     .maybeSingle();
 
@@ -49,6 +49,10 @@ export default async function TerimaBarangPage({
       qty: Math.max(0, (Number(r.qty) || 0) - (Number(r.qty_terima) || 0)),
       harga_beli: Number(r.harga_beli) || 0,
       satuan: r.satuan || one(r.items)?.unit || "",
+      // Kolom kadaluarsa hanya muncul untuk barang yang memang punya masa simpan
+      // (ditandai di master barang) — kolom kosong di semua baris cuma bikin
+      // orang gudang mengabaikannya.
+      trackExpiry: Boolean(one(r.items)?.track_expiry),
     }))
     .filter((r) => r.qty > 0);
 

@@ -83,6 +83,9 @@ export async function simpanBarang(formData: FormData) {
     substitute_item_id: punyaStok && substituteId && substituteId !== id ? substituteId : null,
     min_sell_qty: minSellQty,
     default_discount: defaultDiscount,
+    // Jasa & non-persediaan tidak pernah kadaluarsa — flagnya dipaksa mati supaya
+    // tidak nyangkut kalau jenis barangnya diubah belakangan.
+    track_expiry: punyaStok && String(formData.get("track_expiry") ?? "") === "1",
   };
 
   const { data: saved, error } = id

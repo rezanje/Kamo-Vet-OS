@@ -81,6 +81,8 @@ async function punyaStok(supabase: AnyClient, itemId: string): Promise<boolean> 
 export type StockInOpts = {
   warehouseId: string; itemId: string; qty: number; unitCost: number;
   source: string; ref?: string | null; tanggal?: string;
+  /** Kadaluarsa kiriman ini (migrasi 0104) — menempel di lapisan, bukan di barang. */
+  expDate?: string | null;
 };
 
 // Stok masuk: buat layer baru + naikkan qty.
@@ -92,6 +94,7 @@ export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void
     tanggal: o.tanggal ?? new Date().toISOString().slice(0, 10),
     qty_in: o.qty, qty_left: o.qty, unit_cost: o.unitCost,
     source: o.source, source_ref: o.ref ?? null,
+    exp_date: o.expDate || null,
   });
   orThrow(error, "catat lapisan stok masuk");
   await adjustStockQty(supabase, o.warehouseId, o.itemId, o.qty);

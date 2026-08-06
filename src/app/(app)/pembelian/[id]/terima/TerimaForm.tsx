@@ -15,6 +15,8 @@ export type BarisPO = {
   qty: number;
   harga_beli: number;
   satuan: string;
+  /** Barang dengan masa kadaluarsa (flag master) — hanya ini yang diminta tanggalnya. */
+  trackExpiry?: boolean;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -39,6 +41,8 @@ export function TerimaForm({
   );
   const [rusak, setRusak] = useState<Record<string, number>>({});
   const [catatan, setCatatan] = useState<Record<string, string>>({});
+  const [exp, setExp] = useState<Record<string, string>>({});
+  const adaExpiry = rows.some((r) => r.trackExpiry);
 
   const qtyOf = (r: BarisPO) => Math.min(Math.max(0, Number(terima[r.id]) || 0), r.qty);
   const rusakOf = (r: BarisPO) => Math.min(Math.max(0, Number(rusak[r.id]) || 0), Math.max(0, r.qty - qtyOf(r)));
@@ -53,6 +57,7 @@ export function TerimaForm({
     qty_terima: qtyOf(r),
     qty_rusak: rusakOf(r),
     catatan: catatan[r.id] ?? "",
+    exp_date: r.trackExpiry ? (exp[r.id] ?? "") : "",
   }));
 
   return (
@@ -93,6 +98,7 @@ export function TerimaForm({
                 <th style={{ width: 70 }}>Satuan</th>
                 <th style={{ textAlign: "right", width: 110 }}>Harga</th>
                 <th style={{ textAlign: "right", width: 120 }}>Subtotal</th>
+                {adaExpiry && <th style={{ width: 130 }}>Kadaluarsa</th>}
                 <th style={{ width: 150 }}>Keterangan</th>
               </tr>
             </thead>
@@ -139,6 +145,21 @@ export function TerimaForm({
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.satuan || "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(r.harga_beli)}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(q * r.harga_beli)}</td>
+                    {adaExpiry && (
+                      <td>
+                        {r.trackExpiry ? (
+                          <input
+                            className="fi"
+                            type="date"
+                            value={exp[r.id] ?? ""}
+                            onChange={(e) => setExp((x) => ({ ...x, [r.id]: e.target.value }))}
+                            style={{ width: 125, height: 26, fontSize: 10.5 }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 10, color: "var(--td)" }}>—</span>
+                        )}
+                      </td>
+                    )}
                     <td>
                       <input
                         className="fi"
@@ -179,6 +200,13 @@ export function TerimaForm({
           <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", marginTop: 10 }}>
             <i className="ti ti-alert-triangle" /> {rp(nilaiRusak)} barang rusak ditolak — tidak masuk stok dan tidak
             menambah hutang. Sisa pesanannya tetap ditagih ke pemasok.
+          </div>
+        )}
+
+        {adaExpiry && (
+          <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
+            Tanggal kadaluarsa menempel ke kiriman ini saja — kiriman berikutnya diisi sendiri.
+            Boleh dikosongkan, tapi barangnya tidak akan muncul di Monitor Expired.
           </div>
         )}
 

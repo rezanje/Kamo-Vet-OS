@@ -161,7 +161,7 @@ export async function updatePOStatus(formData: FormData) {
 
 // ─── Terima Barang (qty diterima boleh ≠ qty PO) ──────────────────────────────
 
-type TerimaInput = { id: string; qty_terima: number; qty_rusak?: number; catatan?: string };
+type TerimaInput = { id: string; qty_terima: number; qty_rusak?: number; catatan?: string; exp_date?: string };
 
 export async function terimaBarang(formData: FormData) {
   const supabase = await createClient();
@@ -210,7 +210,13 @@ export async function terimaBarang(formData: FormData) {
       mintaRusak: dari ? Number(dari.qty_rusak ?? 0) : 0,
       harga: Number(r.harga_beli) || 0,
     });
-    return { ...r, ...h, kaliIni: h.terima, catatan: dari?.catatan?.trim() || null };
+    // Kadaluarsa dicatat per baris: satu kiriman bisa berisi obat dengan masa
+    // simpan berbeda-beda.
+    const exp = (dari?.exp_date ?? "").trim();
+    return {
+      ...r, ...h, kaliIni: h.terima, catatan: dari?.catatan?.trim() || null,
+      expDate: /^\d{4}-\d{2}-\d{2}$/.test(exp) ? exp : null,
+    };
   });
 
   if (rows.every((r) => r.terima <= 0 && r.rusak <= 0)) {
@@ -251,6 +257,7 @@ export async function terimaBarang(formData: FormData) {
         qty_rusak: r.rusak,
         harga: Number(r.harga_beli) || 0,
         catatan: r.catatan,
+        exp_date: r.expDate,
       })),
     );
   }
@@ -265,7 +272,7 @@ export async function terimaBarang(formData: FormData) {
       await stockIn(supabase, {
         warehouseId, itemId: r.item_id, qty: toBaseQty(r.kaliIni, r.faktor ?? 1),
         unitCost: toBaseCost(Number(r.harga_beli) || 0, r.faktor ?? 1),
-        source: "purchase", ref: noPo,
+        source: "purchase", ref: noPo, expDate: r.expDate,
       });
     }
   }

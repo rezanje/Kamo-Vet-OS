@@ -12,7 +12,7 @@ import { simpanBarang } from "./actions";
 export type BarangRow = {
   id: string; name: string; code: string | null; unit: string; upc: string | null;
   category_id: string | null; brand_id: string | null; item_type: ItemType;
-  sell_price: number; buy_price: number; min_stock: number;
+  sell_price: number; buy_price: number; min_stock: number; track_expiry?: boolean;
   is_active: boolean; tindakan_kategori: string | null;
   supplier_id: string | null; buy_unit: string | null; min_buy: number;
   min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
@@ -161,6 +161,17 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
             <input className="fi" name="min_stock" type="number" min={0} step="any" defaultValue={editing?.min_stock ?? 0} />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
               Batas bawah sebelum barang dianggap perlu dipesan lagi.
+            </div>
+          </div>
+          <div style={{ display: punyaStok ? "block" : "none" }}>
+            <label className="flab">Masa kadaluarsa</label>
+            <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, height: 34 }}>
+              <input type="checkbox" name="track_expiry" value="1" defaultChecked={editing?.track_expiry ?? false} />
+              Barang ini punya tanggal kadaluarsa
+            </label>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+              Kalau dicentang, petugas diminta mengisi tanggalnya saat barang datang, dan barangnya diawasi di{" "}
+              <Link href="/pos/expired" style={{ color: "#2563eb" }}>Monitor Expired</Link>.
             </div>
           </div>
         </div>
