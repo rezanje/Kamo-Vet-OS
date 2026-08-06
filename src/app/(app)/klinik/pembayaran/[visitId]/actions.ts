@@ -11,6 +11,7 @@ import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { stockOut } from "@/lib/inventory";
 import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { bacaRombongan } from "@/lib/rombongan-server";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null };
 
@@ -295,6 +296,153 @@ export async function bayarVisit(formData: FormData) {
   if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
   redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
+}
+
+/**
+ * Baris tagihan sebuah kunjungan, diambil dari resep/tindakan yang diinput dokter.
+ * Sama dengan prefill di layar pembayaran; kalau dokter tidak menginput apa pun,
+ * jatuh ke jasa konsultasi poli supaya kunjungan tidak ditagih Rp 0 diam-diam.
+ */
+async function barisTagihanVisit(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  visitId: string,
+  poli: string,
+): Promise<Line[]> {
+  const { data: mr } = await supabase
+    .from("medical_records").select("id").eq("visit_id", visitId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data: resep } = mr
+    ? await supabase.from("prescription_items")
+        .select("nama_obat, qty, harga, jenis, item_id").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null }[] };
+
+  const rows = (resep ?? []).map((r) => ({
+    deskripsi: String(r.nama_obat ?? "").trim(),
+    qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
+    harga: Number(r.harga) || 0,
+    jenis: r.jenis === "jasa" ? "jasa" : "obat",
+    item_id: r.jenis === "jasa" ? null : (r.item_id ?? null),
+  })).filter((l) => l.deskripsi);
+
+  return rows.length ? rows : [{ deskripsi: `Jasa Konsultasi ${poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null }];
+}
+
+/**
+ * Bayar sekaligus seluruh kunjungan satu pemilik pada hari itu (satu kedatangan,
+ * beberapa hewan). Pemilik cukup membayar sekali; catatannya tetap terpisah per
+ * hewan supaya rekam medis, insentif dokter, dan pembukuan tidak tercampur.
+ *
+ * Yang diproses hanya kunjungan yang tagihannya BELUM dibuat. Kunjungan yang sudah
+ * punya invoice (DP, sebagian dibayar, atau perlu diedit) sengaja dilewati dan
+ * dilaporkan — jalur pelunasannya punya jurnal sendiri dan tidak boleh ditebak
+ * dari layar ini.
+ */
+export async function bayarRombongan(formData: FormData) {
+  const supabase = await createClient();
+
+  const visitId = String(formData.get("visitId") ?? "");
+  if (!visitId) redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
+  const back = `/klinik/pembayaran/${visitId}`;
+  const metode = String(formData.get("metode_bayar") ?? "Tunai");
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const klinikShift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;
+  if (!klinikShift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
+
+  const rombongan = await bacaRombongan(supabase, visitId);
+  const belum = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);
+  if (!rombongan || rombongan.baris.length < 2) {
+    redirect(`${back}?error=${encodeURIComponent("Pemilik ini hanya punya satu kunjungan hari ini")}`);
+  }
+  if (belum.length === 0) {
+    redirect(`${back}?error=${encodeURIComponent("Semua tagihan sudah dibuat — selesaikan lewat masing-masing kunjungan")}`);
+  }
+
+  const pajakSettings = await getPajakSettings(supabase);
+  const dilewati: string[] = [];
+  let jumlahLunas = 0;
+
+  for (const b of belum) {
+    const { data: v } = await supabase
+      .from("visits").select("branch_id, customer_id, poli").eq("id", b.visitId).maybeSingle();
+    if (!v) { dilewati.push(b.hewan); continue; }
+
+    // §6.3: tindakan berisiko wajib punya persetujuan bertanda tangan. Berlaku per
+    // hewan — satu hewan yang belum menandatangani tidak boleh ikut terbayar diam-diam.
+    const { data: mrGate } = await supabase
+      .from("medical_records").select("id").eq("visit_id", b.visitId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const [{ data: jasaRows }, { data: inpatRow }, { data: consentRows }] = await Promise.all([
+      mrGate
+        ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mrGate.id)
+        : Promise.resolve({ data: [] as { jenis: string; kategori: string | null }[] }),
+      supabase.from("inpatient_records").select("id").eq("visit_id", b.visitId).limit(1).maybeSingle(),
+      supabase.from("consents").select("status").eq("visit_id", b.visitId),
+    ]);
+    if (!bolehBayar(
+      (jasaRows ?? []) as { jenis: string; kategori: string | null }[],
+      !!inpatRow,
+      (consentRows ?? []) as { status: string }[],
+    )) {
+      dilewati.push(b.hewan);
+      continue;
+    }
+
+    const rows = await barisTagihanVisit(supabase, b.visitId, String(v.poli ?? "Poli Umum"));
+    const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+    const { tax, total } = tambahPpn(subtotal, pajakSettings);
+
+    const invoiceNo = await nextInvoiceNo(supabase);
+    const { data: inv, error: invErr } = await supabase
+      .from("invoices")
+      .insert({
+        visit_id: b.visitId, invoice_no: invoiceNo, subtotal, discount: 0, tax, total,
+        dp_amount: 0, dp_date: null, paid_status: "Lunas", metode_bayar: metode,
+        paid_at: new Date().toISOString(), shift_id: klinikShift.id,
+      })
+      .select("id").single();
+    if (invErr || !inv) {
+      // Hewan yang gagal tidak menggagalkan yang lain — sisanya tetap terbayar,
+      // yang ini dilaporkan supaya kasir menyelesaikannya satu per satu.
+      dilewati.push(b.hewan);
+      continue;
+    }
+
+    const { hppPerBaris, totalHpp } = await potongStokObat(supabase, v.branch_id ?? null, rows, invoiceNo);
+    await supabase.from("invoice_items").insert(rows.map((l) => ({
+      invoice_id: inv.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
+      item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
+    })));
+
+    await supabase.from("visits").update({ status: "Selesai" }).eq("id", b.visitId);
+
+    // Rekening kas mengikuti peta metode bayar CABANG kunjungan itu — bukan bawaan
+    // global; uang tunai cabang A tidak boleh mendarat di rekening cabang B.
+    await postJournal(supabase, {
+      tanggal: todayIso(), deskripsi: `Pendapatan jasa klinik ${invoiceNo}`, source: "klinik",
+      sourceRef: invoiceNo, branchId: v.branch_id ?? null,
+      lines: invoiceJournalLines(
+        { total, dpp: subtotal, tax, dp_amount: 0, paid_status: "Lunas" },
+        await kodeAkunBayar(supabase, metode, v.branch_id ?? null),
+      ),
+    });
+    if (totalHpp > 0) {
+      await postJournal(supabase, {
+        tanggal: todayIso(), deskripsi: `HPP obat klinik ${invoiceNo}`, source: "klinik-hpp",
+        sourceRef: invoiceNo, branchId: v.branch_id ?? null,
+        lines: [{ code: "5101", debit: totalHpp, credit: 0 }, { code: "1301", debit: 0, credit: totalHpp }],
+      });
+    }
+    jumlahLunas++;
+  }
+
+  if (rombongan.customerId) await recomputeCustomerTier(supabase, rombongan.customerId);
+
+  if (jumlahLunas === 0) {
+    redirect(`${back}?error=${encodeURIComponent(`Tidak ada tagihan yang bisa diselesaikan sekaligus (${dilewati.join(", ")}) — buka satu per satu`)}`);
+  }
+  const sisa = dilewati.length ? `&dilewati=${encodeURIComponent(dilewati.join(", "))}` : "";
+  redirect(`${back}?success=rombongan&lunas=${jumlahLunas}${sisa}`);
 }
 
 // Addendum §7: invoice Lunas → Void & Reissue (standar akuntansi, bukan edit diam-diam).

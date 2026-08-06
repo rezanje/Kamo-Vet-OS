@@ -5,7 +5,7 @@ import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
 import { getPajakSettings } from "@/lib/pajak";
 import { SubmitButton } from "@/components/SubmitButton";
-import { voidAndReissue } from "./actions";
+import { voidAndReissue, bayarRombongan } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
@@ -24,10 +24,10 @@ export default async function PembayaranPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; lunas?: string; dilewati?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, success } = await searchParams;
+  const { error, success, lunas: lunasParam, dilewati } = await searchParams;
   const supabase = await createClient();
 
   const { data: visit } = await supabase
@@ -58,6 +58,7 @@ export default async function PembayaranPage({
   const adaRombongan = (rombongan?.baris.length ?? 0) > 1;
   const ringkasan = rombongan ? ringkasTagihanRombongan(rombongan.baris) : null;
   const berikutnya = rombongan ? berikutnyaBelumSelesai(rombongan.baris, visitId) : null;
+  const belumDitagih = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
@@ -164,6 +165,12 @@ export default async function PembayaranPage({
           <i className="ti ti-circle-check" /> Invoice diperbarui — perubahan tercatat di riwayat audit.
         </div>
       )}
+      {success === "rombongan" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> {lunasParam ?? ""} tagihan diselesaikan sekaligus — cetak struk gabungan di panel bawah.
+          {dilewati && <b style={{ marginLeft: 6, color: "#b45309" }}>Belum termasuk: {dilewati} — selesaikan satu per satu.</b>}
+        </div>
+      )}
       {success === "reissue" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Invoice lama di-void, invoice baru diterbitkan (Belum Lunas).
@@ -244,6 +251,25 @@ export default async function PembayaranPage({
               </tbody>
             </table>
           </div>
+
+          {/* Sekali bayar untuk semua hewan: pemilik tidak dipanggil berkali-kali.
+              Hanya untuk kunjungan yang tagihannya belum dibuat — yang sudah punya
+              invoice (DP/sebagian bayar) punya jalur pelunasan sendiri. */}
+          {belumDitagih.length >= 2 && (
+            <form action={bayarRombongan} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 9, borderTop: ".5px solid #bfdbfe" }}>
+              <input type="hidden" name="visitId" value={visitId} />
+              <span style={{ fontSize: 11, color: "var(--tm)" }}>Bayar sekaligus {belumDitagih.length} pasien dengan</span>
+              <select name="metode_bayar" className="inp" style={{ width: 130, fontSize: 11, padding: "3px 7px" }}>
+                {["Tunai", "Transfer", "Kartu", "QRIS", "E-Wallet"].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <SubmitButton className="btn-acc" style={{ padding: "4px 12px", fontSize: 11 }} pendingText="Memproses...">
+                <i className="ti ti-cash" /> Lunasi semua
+              </SubmitButton>
+              <span style={{ fontSize: 10, color: "var(--td)" }}>
+                Tagihan tiap hewan dibuat dari resep &amp; tindakan dokter. Perlu ubah item/diskon? Buka hewan itu satu per satu.
+              </span>
+            </form>
+          )}
 
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
             {berikutnya && (
