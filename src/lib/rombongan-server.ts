@@ -35,6 +35,49 @@ function rentangHariWIB(iso: string): { dari: string; sampai: string; tanggal: s
  * Mengembalikan null kalau pemiliknya tidak diketahui — tanpa pemilik tidak ada
  * dasar untuk menyatakan dua kunjungan datang bersama.
  */
+export type SaudaraKunjungan = {
+  visitId: string;
+  hewan: string;
+  /** Status kunjungan: Menunggu | Diperiksa | Pembayaran | Selesai */
+  status: string;
+};
+
+/**
+ * Versi ringan untuk layar dokter: cukup "hewan siapa saja yang datang bareng"
+ * tanpa menarik tagihan. Rekam medis dibuka puluhan kali sehari — tidak perlu
+ * ikut membaca invoice & pembayaran yang tidak dipakai di sana.
+ *
+ * Mengembalikan daftar kosong kalau pemiliknya tidak diketahui atau hanya satu
+ * hewan; layar tinggal menyembunyikan tabnya.
+ */
+export async function bacaSaudaraKunjungan(supabase: AnyClient, visitId: string): Promise<SaudaraKunjungan[]> {
+  const { data: acuan } = await supabase
+    .from("visits")
+    .select("customer_id, branch_id, created_at")
+    .eq("id", visitId).maybeSingle();
+  if (!acuan?.customer_id) return [];
+
+  const { dari, sampai } = rentangHariWIB(acuan.created_at as string);
+
+  const { data: visits } = await supabase
+    .from("visits")
+    .select("id, status, pets(name)")
+    .eq("customer_id", acuan.customer_id)
+    .eq("branch_id", acuan.branch_id)
+    .gte("created_at", dari).lt("created_at", sampai)
+    .order("created_at");
+
+  type Row = { id: string; status: string; pets: Rel<{ name: string }> };
+  const rows = (visits ?? []) as Row[];
+  if (rows.length <= 1) return [];
+
+  return rows.map((v) => ({
+    visitId: v.id,
+    hewan: one(v.pets)?.name ?? "—",
+    status: v.status ?? "",
+  }));
+}
+
 export async function bacaRombongan(supabase: AnyClient, visitId: string): Promise<Rombongan | null> {
   const { data: acuan } = await supabase
     .from("visits")

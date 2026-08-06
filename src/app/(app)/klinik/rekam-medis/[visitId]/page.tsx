@@ -10,6 +10,7 @@ import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/Cons
 import { templatesForBranch } from "@/lib/consent";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -172,6 +173,10 @@ export default async function RekamMedisPage({
     (visit.branch_id as string) ?? null,
   );
 
+  // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
+  // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
+  const saudara = await bacaSaudaraKunjungan(supabase, visitId);
+
   const petIdCode = pet
     ? `RM-${new Date(visit.created_at as string).toISOString().slice(2, 10).replace(/-/g, "")}-${(visit.id as string).slice(0, 4).toUpperCase()}`
     : "—";
@@ -186,6 +191,27 @@ export default async function RekamMedisPage({
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Rekam Medis</span>
       </div>
+
+      {/* Tab per hewan — muncul hanya kalau pemilik ini datang membawa lebih dari
+          satu hewan hari ini. Tiap tab kunjungan tersendiri: rekam medis, resep,
+          dan racikannya tidak tercampur. */}
+      {saudara.length > 1 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 11, flexWrap: "wrap", alignItems: "center" }}>
+          {saudara.map((s, i) => {
+            const aktif = s.visitId === visitId;
+            const beres = s.status === "Pembayaran" || s.status === "Selesai";
+            return (
+              <Link key={s.visitId} href={`/klinik/rekam-medis/${s.visitId}`} style={tabHewan(aktif)}>
+                <i className={`ti ${beres ? "ti-circle-check" : "ti-paw"}`} style={{ marginRight: 5 }} />
+                {s.hewan || `Hewan ${i + 1}`}
+              </Link>
+            );
+          })}
+          <span style={{ fontSize: 11, color: "var(--td)" }}>
+            {cust?.name ?? "Pemilik ini"} membawa {saudara.length} hewan hari ini — rekam medis & obat diisi per hewan.
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
@@ -427,6 +453,18 @@ export default async function RekamMedisPage({
       )}
     </>
   );
+}
+
+// Bentuk tab disamakan dengan tab hewan di layar registrasi — dokter melihat
+// pola yang sama di dua layar yang berurutan.
+function tabHewan(active: boolean): React.CSSProperties {
+  return {
+    display: "inline-flex", alignItems: "center",
+    padding: "5px 10px", borderRadius: 7, fontSize: 11.5, fontWeight: 600,
+    background: active ? "#eff6ff" : "var(--sf1)",
+    color: active ? "#2563eb" : "var(--tm)",
+    border: `.5px solid ${active ? "#bfdbfe" : "var(--bd)"}`,
+  };
 }
 
 function Field({ label, value }: { label: string; value: string }) {
