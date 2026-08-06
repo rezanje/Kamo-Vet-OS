@@ -41,17 +41,26 @@ const dariPetLama = (p: PetLite): PetDraft => ({
   photo_url: p.photo_url ?? "",
 });
 
-export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
+export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal }: {
   branches: { id: string; name: string }[];
   dokter?: { id: string; nama: string; jabatan: string | null; jaga?: boolean }[];
   lockBranch?: boolean;
+  /** Isian awal dari booking online — staf tinggal melengkapi, tidak mengetik ulang. */
+  awal?: {
+    bookingId: string; phone: string; nama: string; branchId: string; poli: string;
+    namaHewan: string; jenisHewan: string; keluhan: string;
+  };
 }) {
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(awal?.phone ?? "");
   const [looking, setLooking] = useState(false);
   const [customer, setCustomer] = useState<CustomerLite | null>(null);
   const [existingPets, setExistingPets] = useState<PetLite[]>([]);
   // Satu pemilik boleh membawa beberapa hewan sekaligus; tiap hewan satu tab.
-  const [pets, setPets] = useState<PetDraft[]>([petKosong()]);
+  const [pets, setPets] = useState<PetDraft[]>([
+    awal
+      ? { ...petKosong(), name: awal.namaHewan, species: awal.jenisHewan, keluhan: awal.keluhan }
+      : petKosong(),
+  ]);
   const [aktif, setAktif] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
@@ -123,6 +132,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
   return (
     <form action={registrasiPasien}>
       <input type="hidden" name="pets" value={JSON.stringify(pets)} />
+      {awal && <input type="hidden" name="bookingId" value={awal.bookingId} />}
 
       <div className="grid2">
         {/* ================= KIRI: pemilik + kunjungan + keluhan ================= */}
@@ -143,7 +153,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
           <div className="frow">
             <div>
               <label className="flab">Nama lengkap {req}</label>
-              <input className="fi" name="name" placeholder="Susi" defaultValue={customer?.name ?? ""} key={customer?.id ?? "new"} required />
+              <input className="fi" name="name" placeholder="Susi" defaultValue={customer?.name ?? awal?.nama ?? ""} key={customer?.id ?? "new"} required />
             </div>
             <div>
               <label className="flab">
@@ -172,7 +182,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
                   <input type="hidden" name="branchId" value={branches[0].id} />
                 </>
               ) : (
-                <select className="fi" name="branchId" required defaultValue="">
+                <select className="fi" name="branchId" required defaultValue={awal?.branchId ?? ""}>
                   <option value="" disabled>Pilih cabang</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
@@ -182,7 +192,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
             </div>
             <div>
               <label className="flab">Poli tujuan {req}</label>
-              <select className="fi" name="poli">
+              <select className="fi" name="poli" defaultValue={awal?.poli ?? "Poli Umum"}>
                 <option>Poli Umum</option>
                 <option>Poli Gigi</option>
                 <option>Poli Kulit</option>

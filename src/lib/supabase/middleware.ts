@@ -31,8 +31,14 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Halaman booking sengaja terbuka tanpa login — pemilik hewan memesan jadwal
+  // dari luar sistem. Yang boleh dilakukannya dipagari RLS (migrasi 0105):
+  // hanya menulis booking baru, tidak bisa membaca data siapa pun.
+  const publik = request.nextUrl.pathname.startsWith("/booking");
+
   if (
     !user &&
+    !publik &&
     !request.nextUrl.pathname.startsWith("/login") &&
     !request.nextUrl.pathname.startsWith("/auth")
   ) {

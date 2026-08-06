@@ -39,7 +39,9 @@ export const MODULE_PATHS: Record<string, string[]> = {
 };
 
 /** Halaman yang tidak pernah diblokir: login, dashboard pribadi, dan pemilih shift. */
-export const SELALU_BOLEH = ["/me", "/mulai", "/login", "/auth"];
+// `/booking` = formulir publik pemilik hewan; karyawan yang sedang login pun
+// boleh membukanya (mis. mendaftarkan pelanggan lewat telepon).
+export const SELALU_BOLEH = ["/me", "/mulai", "/login", "/auth", "/booking"];
 
 /**
  * Jalur non-modul yang melekat pada peran tertentu dan TIDAK diatur lewat layar

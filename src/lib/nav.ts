@@ -75,7 +75,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Follow up", icon: "ti-calendar-event", ...A, href: "/klinik/follow-up" },
     { label: "Bahan baku klinik", icon: "ti-flask-2", ...B, href: "/klinik/bahan-baku" },
     { label: "Jadwal dokter", icon: "ti-calendar-event", ...B, nw: true, href: "/klinik/jadwal-dokter" },
-    { label: "Booking online", icon: "ti-calendar-plus", ...P },
+    { label: "Booking online", icon: "ti-calendar-plus", ...G, nw: true, href: "/klinik/booking" },
   ],
   crm: [
     // Kode voucher tidak lagi berdiri sendiri di menu — pintunya lewat Promo,

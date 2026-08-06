@@ -9,9 +9,9 @@ import { RegistrasiForm } from "./RegistrasiForm";
 export default async function RegistrasiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; booking?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, booking } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -34,6 +34,27 @@ export default async function RegistrasiPage({
   // dokter yang ternyata libur, dan baru ketahuan saat pasien sudah menunggu.
   const dokter = await daftarDokter(supabase, { tanggal: hariIniWIB() });
 
+  // Datang dari booking online: isian awal diambil dari pesanan pelanggan supaya
+  // staf tidak mengetik ulang. Booking yang sudah dipakai mendaftar tidak boleh
+  // dibuka lagi — kalau tidak, satu pesanan bisa jadi dua kunjungan.
+  const { data: bookingRow } = booking
+    ? await supabase.from("bookings")
+        .select("id, branch_id, poli, nama_pemilik, phone, nama_hewan, jenis_hewan, keluhan, visit_id")
+        .eq("id", booking).maybeSingle()
+    : { data: null };
+  const awal = bookingRow && !bookingRow.visit_id
+    ? {
+        bookingId: bookingRow.id as string,
+        phone: (bookingRow.phone as string) ?? "",
+        nama: (bookingRow.nama_pemilik as string) ?? "",
+        branchId: (bookingRow.branch_id as string) ?? "",
+        poli: (bookingRow.poli as string) ?? "Poli Umum",
+        namaHewan: (bookingRow.nama_hewan as string) ?? "",
+        jenisHewan: (bookingRow.jenis_hewan as string) ?? "Anjing",
+        keluhan: (bookingRow.keluhan as string) ?? "",
+      }
+    : undefined;
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -50,7 +71,7 @@ export default async function RegistrasiPage({
         </div>
       )}
 
-      <RegistrasiForm branches={branches ?? []} dokter={dokter} lockBranch={!!shift} />
+      <RegistrasiForm branches={branches ?? []} dokter={dokter} lockBranch={!!shift} awal={awal} />
     </>
   );
 }

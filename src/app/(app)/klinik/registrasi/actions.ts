@@ -137,6 +137,15 @@ async function daftar(formData: FormData): Promise<string[]> {
     visitIds.push(visit!.id);
   }
 
+  // Booking online yang jadi kunjungan ditandai di sini — supaya satu booking
+  // tidak bisa didaftarkan dua kali dan staf tahu mana pesanan yang sudah datang.
+  const bookingId = String(formData.get("bookingId") ?? "").trim();
+  if (bookingId && visitIds.length) {
+    await supabase.from("bookings").update({
+      status: "dikonfirmasi", visit_id: visitIds[0], handled_at: new Date().toISOString(),
+    }).eq("id", bookingId).is("visit_id", null);
+  }
+
   return visitIds;
 }
 
