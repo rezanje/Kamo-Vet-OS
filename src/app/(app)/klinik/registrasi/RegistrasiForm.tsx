@@ -43,7 +43,7 @@ const dariPetLama = (p: PetLite): PetDraft => ({
 
 export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
   branches: { id: string; name: string }[];
-  dokter?: { id: string; nama: string; jabatan: string | null }[];
+  dokter?: { id: string; nama: string; jabatan: string | null; jaga?: boolean }[];
   lockBranch?: boolean;
 }) {
   const [phone, setPhone] = useState("");
@@ -197,7 +197,9 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false }: {
               <select className="fi" name="doctor_id" defaultValue="">
                 <option value="">— belum ditentukan —</option>
                 {dokter.map((d) => (
-                  <option key={d.id} value={d.id}>{d.nama}{d.jabatan ? ` · ${d.jabatan}` : ""}</option>
+                  <option key={d.id} value={d.id}>
+                    {d.nama}{d.jabatan ? ` · ${d.jabatan}` : ""}{d.jaga ? " · jaga hari ini" : ""}
+                  </option>
                 ))}
               </select>
             </div>

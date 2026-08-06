@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { daftarDokter } from "@/lib/dokter";
+import { hariIniWIB } from "@/lib/followup";
 import { RegistrasiForm } from "./RegistrasiForm";
 
 export default async function RegistrasiPage({
@@ -29,7 +30,9 @@ export default async function RegistrasiPage({
     ? { data: [{ id: shift.branch_id, code: "", name: shift.branchName }] }
     : await supabase.from("branches").select("id, code, name").order("name");
 
-  const dokter = await daftarDokter(supabase);
+  // Ditandai siapa yang memang jaga hari ini — pendaftaran sering menugaskan
+  // dokter yang ternyata libur, dan baru ketahuan saat pasien sudah menunggu.
+  const dokter = await daftarDokter(supabase, { tanggal: hariIniWIB() });
 
   return (
     <>
