@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import {
   susunMonitor, ringkasMonitor, LABEL_STATUS, WARNA_STATUS,
   type LapisanStok, type StatusExp,

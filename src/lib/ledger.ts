@@ -16,6 +16,22 @@ export type AccountBalance = {
 
 const TYPE_ORDER = ["ASET", "LIABILITAS", "EKUITAS", "PENDAPATAN", "BEBAN"];
 
+// Sisi normal "alami" tiap kelompok akun di neraca/laba rugi.
+const SISI_SEKSI: Record<string, "D" | "K"> = {
+  ASET: "D", LIABILITAS: "K", EKUITAS: "K", PENDAPATAN: "K", BEBAN: "D",
+};
+
+// Nilai sebuah akun DILIHAT DARI kelompoknya, bukan dari sisi normal akunnya sendiri.
+//
+// Perlu karena ada akun kontra: Akumulasi Penyusutan (1509) bertipe ASET tapi bersaldo
+// normal Kredit. Kalau saldonya dijumlahkan apa adanya, akumulasi penyusutan malah
+// MENAMBAH total aktiva. Aturan ini membuatnya otomatis jadi pengurang, tanpa perlu
+// daftar kode akun kontra yang harus dirawat manual.
+export function nilaiSeksi(b: { type: string; normal: string; saldo: number }): number {
+  const sisi = SISI_SEKSI[b.type] ?? "D";
+  return b.normal === sisi ? b.saldo : -b.saldo;
+}
+
 type RawLine = {
   account_id: string; debit: number; credit: number;
   journal_entries: { tanggal: string; branch_id: string | null; source: string; no_jurnal: string | null; deskripsi: string | null } | null;
@@ -67,6 +83,34 @@ export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter):
 }
 
 export type LedgerLine = { tanggal: string; no_jurnal: string; deskripsi: string; source: string; debit: number; credit: number };
+
+// Tanggal sehari sebelum `tanggal` — dipakai untuk memotong "posisi sebelum periode".
+// String-math, bukan new Date(), supaya tidak bergeser di server non-WIB.
+function hariSebelum(tanggal: string): string {
+  const d = new Date(`${tanggal}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// Saldo satu akun SEBELUM tanggal `from` (mengikuti sisi saldo normal).
+// Tanpa ini kolom "saldo berjalan" di Buku Besar mulai dari nol setiap kali periode
+// difilter — angkanya jadi bukan saldo akun, cuma jumlah mutasi dalam rentang.
+export async function getAccountOpening(supabase: AnyClient, code: string, f?: LedgerFilter): Promise<number> {
+  if (!f?.from) return 0;
+  const { data: accs } = (await supabase.from("coa_accounts").select("id, normal_balance").eq("code", code)) as
+    { data: { id: string; normal_balance: string }[] | null };
+  const acc = accs?.[0];
+  if (!acc) return 0;
+
+  const lines = await fetchLines(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds });
+  let debit = 0, credit = 0;
+  for (const l of lines) {
+    if (l.account_id !== acc.id) continue;
+    debit += Number(l.debit);
+    credit += Number(l.credit);
+  }
+  return acc.normal_balance === "D" ? debit - credit : credit - debit;
+}
 
 // Mutasi satu akun (untuk buku besar detail), urut tanggal — saldo berjalan dihitung di page.
 export async function getAccountLedger(supabase: AnyClient, code: string, f?: LedgerFilter): Promise<LedgerLine[]> {
@@ -125,10 +169,9 @@ export async function getCashMovements(
   // saldo kas sebelum periode (kalau ada batas bawah).
   let saldoAwal = 0;
   if (f?.from) {
-    const prevDay = new Date(f.from + "T00:00:00");
-    prevDay.setDate(prevDay.getDate() - 1);
-    const to = prevDay.toISOString().slice(0, 10);
-    const before = await fetchLines(supabase, { to, branchId: f.branchId });
+    // Filter cabang harus IKUT dibawa (termasuk branchIds/preset unit) — kalau tidak,
+    // saldo awal dihitung se-perusahaan sementara mutasinya per cabang.
+    const before = await fetchLines(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds });
     for (const l of before) {
       if (!cashIds.has(l.account_id)) continue;
       saldoAwal += Number(l.debit) - Number(l.credit);

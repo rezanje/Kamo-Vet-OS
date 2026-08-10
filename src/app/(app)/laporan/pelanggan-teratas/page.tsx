@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
-import { tanggalIndo, hariIniWIB } from "@/lib/followup";
+import { tanggalIndo } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);

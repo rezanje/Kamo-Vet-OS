@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { daftarDokter } from "@/lib/dokter";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { RegistrasiForm } from "./RegistrasiForm";
 
 export default async function RegistrasiPage({

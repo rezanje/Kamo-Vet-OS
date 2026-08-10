@@ -7,6 +7,7 @@ import { bolehKelolaMaster, bolehTransaksiKas } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
 import { sisaFakturBayar } from "@/lib/perintah-bayar";
 import { batalkanPerintahBayar, bayarPerintahBayar, buatPerintahBayar, setujuiPerintahBayar } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -189,7 +190,7 @@ export default async function PerintahBayarPage({
                             {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
                           </select>
                           <PilihRekening rekening={rekening} label="" width={140} />
-                          <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)}
+                          <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()}
                             style={{ width: 130, height: 26, fontSize: 10.5 }} />
                           <SubmitButton className="btn-acc" style={{ padding: "3px 9px", fontSize: 10.5, background: "#16a34a" }} pendingText="…">
                             Bayar

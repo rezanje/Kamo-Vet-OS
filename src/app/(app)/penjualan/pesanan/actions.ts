@@ -8,6 +8,7 @@ import { cekPeriode } from "@/lib/jurnal-guard";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
 import { jurnalFakturJual, jurnalPengiriman, pesananSelesai, sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const LIST = "/penjualan/pesanan";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
@@ -49,7 +50,7 @@ export async function buatPesanan(formData: FormData) {
   const customerId = String(formData.get("customer_id") ?? "").trim() || null;
   const branchId = String(formData.get("branch_id") ?? "").trim() || null;
   const warehouseId = String(formData.get("warehouse_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const rencana = String(formData.get("rencana_kirim") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
@@ -106,7 +107,7 @@ export async function buatPengiriman(formData: FormData) {
   const gagal = (msg: string): never => redirect(`${detail(id)}?error=${encodeURIComponent(msg)}`);
   const supabase = await assertRole(detail(id), "pengiriman pesanan", BOLEH);
 
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const ekspedisi = String(formData.get("ekspedisi") ?? "").trim() || null;
   const noResi = String(formData.get("no_resi") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
@@ -187,7 +188,7 @@ export async function buatFakturJual(formData: FormData) {
   const gagal = (msg: string): never => redirect(`${detail(id)}?error=${encodeURIComponent(msg)}`);
   const supabase = await assertRole(detail(id), "faktur penjualan", BOLEH);
 
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const jatuhTempo = String(formData.get("jatuh_tempo") ?? "").trim() || tanggal;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 

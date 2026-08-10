@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { LABEL_STATUS_BOOKING, BADGE_STATUS_BOOKING } from "@/lib/booking";
 import { konfirmasiBooking, tolakBooking, batalkanBooking } from "./actions";
 

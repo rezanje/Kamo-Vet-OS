@@ -133,6 +133,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Histori Akun", icon: "ti-history", ...P, href: "/keuangan/buku-besar" },
     { label: "Log Aktifitas Jurnal", icon: "ti-file-search", ...P, href: "/buku-besar/log" },
     { label: "Jurnal Berulang", icon: "ti-repeat", ...G, href: "/keuangan/jurnal-berulang" },
+    { label: "Saldo Awal", icon: "ti-flag", ...G, href: "/keuangan/saldo-awal" },
     { label: "Tutup Buku", icon: "ti-lock", ...G, href: "/keuangan/tutup-buku" },
     { label: "Sinkronisasi Jurnal", icon: "ti-refresh-dot", ...A, href: "/keuangan/sinkron" },
   ],

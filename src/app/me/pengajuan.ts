@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyEmployee } from "@/lib/employee";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/me";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { simpanHasil } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Row = { item_id: string; code: string; name: string; unit: string; qty_sistem: number };
 
@@ -91,7 +92,7 @@ export function HasilForm({ orderId, rows }: { orderId: string; rows: Row[] }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, flexWrap: "wrap", gap: 8 }}>
           <div className="fg" style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
             <label className="flab" style={{ margin: 0 }}>Tanggal hasil</label>
-            <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} style={{ width: 150 }} />
+            <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} style={{ width: 150 }} />
           </div>
           <button type="submit" className="btn-acc" disabled={rows.length === 0}>
             <i className="ti ti-clipboard-check" /> Simpan hasil & sesuaikan stok

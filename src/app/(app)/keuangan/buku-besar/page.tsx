@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { getAccountBalances, getAccountLedger } from "@/lib/ledger";
+import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/ledger";
 import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -19,6 +19,8 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
 
   const selected = akun ? balances.find((b) => b.code === akun) : null;
   const ledger = selected ? await getAccountLedger(supabase as never, selected.code, filter) : [];
+  // Saldo akun sebelum tanggal awal filter — titik mulai kolom saldo berjalan.
+  const saldoAwal = selected ? await getAccountOpening(supabase as never, selected.code, filter) : 0;
   const qs = (extra: string) => {
     const parts = [dari ? `dari=${dari}` : "", sampai ? `sampai=${sampai}` : "", extra].filter(Boolean);
     return parts.length ? `?${parts.join("&")}` : "";
@@ -26,7 +28,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
 
   // saldo berjalan untuk akun terpilih
   const ledgerRows = ledger.reduce<(typeof ledger[number] & { saldo: number })[]>((acc, l) => {
-    const prev = acc.length ? acc[acc.length - 1].saldo : 0;
+    const prev = acc.length ? acc[acc.length - 1].saldo : saldoAwal;
     const delta = selected!.normal === "D" ? l.debit - l.credit : l.credit - l.debit;
     acc.push({ ...l, saldo: prev + delta });
     return acc;
@@ -85,6 +87,12 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                 <tr><th>Tanggal</th><th>No. Jurnal</th><th>Keterangan</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>Saldo</th></tr>
               </thead>
               <tbody>
+                {dari && (
+                  <tr>
+                    <td colSpan={5} style={{ fontSize: 11, fontStyle: "italic", color: "var(--tm)" }}>Saldo awal per {fmtDate(dari)}</td>
+                    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--tm)" }}>{rp(saldoAwal)}</td>
+                  </tr>
+                )}
                 {ledgerRows.map((l, i) => (
                   <tr key={i}>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(l.tanggal)}</td>

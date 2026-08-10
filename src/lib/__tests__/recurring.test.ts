@@ -16,4 +16,18 @@ describe("periodeTertinggal", () => {
   it("lintas tahun", () => {
     expect(periodeTertinggal("2025-11", new Date(2026, 0, 5))).toEqual(["2025-12", "2026-01"]);
   });
+
+  // Tanggal jatuhnya jurnal belum lewat -> bulan berjalan belum boleh diposting,
+  // kalau tidak jurnalnya bertanggal masa depan.
+  it("tanggal jatuh tempo belum lewat -> bulan berjalan dilewati", () => {
+    expect(periodeTertinggal("2026-06", JUL, 25)).toEqual([]);
+    expect(periodeTertinggal("2026-05", JUL, 25)).toEqual(["2026-06"]);
+  });
+  it("tanggal jatuh tempo sudah lewat -> bulan berjalan ikut", () => {
+    expect(periodeTertinggal("2026-05", JUL, 23)).toEqual(["2026-06", "2026-07"]);
+    expect(periodeTertinggal("2026-05", JUL, 10)).toEqual(["2026-06", "2026-07"]);
+  });
+  it("belum pernah posting + tanggal belum lewat -> kosong", () => {
+    expect(periodeTertinggal(null, JUL, 25)).toEqual([]);
+  });
 });

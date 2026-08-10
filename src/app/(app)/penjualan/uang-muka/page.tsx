@@ -6,6 +6,7 @@ import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
 import { batalkanUangMukaJual, terimaUangMukaJual } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
@@ -78,7 +79,7 @@ export default async function UangMukaJualPage({
               </div>
               <div>
                 <label className="flab">Tanggal</label>
-                <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} />
+                <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} />
               </div>
             </div>
 

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { getAccountBalances } from "@/lib/ledger";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { buatTransfer, batalkanTransfer } from "./actions";
 
 type Rel<T> = T | T[] | null;

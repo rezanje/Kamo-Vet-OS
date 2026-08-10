@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/penjualan/penawaran";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
@@ -13,7 +14,7 @@ export async function buatPenawaran(formData: FormData) {
 
   const customerId = String(formData.get("customer_id") ?? "").trim() || null;
   const branchId = String(formData.get("branch_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const berlaku = String(formData.get("berlaku_sampai") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 

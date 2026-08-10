@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { simpanExpense } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -32,9 +33,11 @@ export default async function ExpensePage({
   const { error, success } = await searchParams;
   const supabase = await createClient();
 
-  const today = "2026-07-01";
-  const monthStart = "2026-07-01";
-  const yearStart = "2026-01-01";
+  // Sebelumnya tanggal ini dipaku mati, jadi kartu "hari ini"/"bulan ini" berhenti
+  // di 1 Juli 2026 selamanya.
+  const today = hariIniWIB();
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const yearStart = `${today.slice(0, 4)}-01-01`;
 
   const { data: branches } = await supabase.from("branches").select("id, name").eq("is_active", true).order("name");
 

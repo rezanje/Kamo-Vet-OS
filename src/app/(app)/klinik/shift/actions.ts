@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "@/lib/shift-calc";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 // Shift klinik (Addendum §1: shift_type 'klinik' — gate modul pembayaran klinik).
 export async function mulaiShiftKlinik(formData: FormData) {
@@ -44,6 +46,10 @@ export async function tutupShiftKlinik(formData: FormData) {
     .from("cashier_shifts").select("opening_balance, branch_id, status").eq("id", shiftId).single();
   if (shift?.status !== "open") redirect(`/klinik/shift?error=${encodeURIComponent("Shift sudah ditutup")}`);
 
+  // Selisih kas wajib punya jurnal — shift jangan ditutup kalau periodenya terkunci.
+  const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
+  if (pesanPeriode) redirect(`/klinik/shift?error=${encodeURIComponent(pesanPeriode)}`);
+
   const { data: invoices } = await supabase
     .from("invoices").select("total, dp_amount, paid_status, metode_bayar").eq("shift_id", shiftId);
   const { data: expenses } = await supabase
@@ -62,7 +68,7 @@ export async function tutupShiftKlinik(formData: FormData) {
     .eq("id", shiftId);
 
   if (selisih !== 0) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hariIniWIB();
     const abs = Math.abs(selisih);
     await postJournal(supabase, {
       tanggal: today, deskripsi: "Selisih kas tutup shift klinik", source: "shift", sourceRef: shiftId,

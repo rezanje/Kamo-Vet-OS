@@ -6,6 +6,8 @@ import { postJournal } from "@/lib/posting";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 export type NewCustResult =
   | { ok: true; customer: { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number } }
@@ -83,6 +85,10 @@ export async function tutupShiftKasir(formData: FormData) {
     .from("cashier_shifts").select("opening_balance, branch_id, status").eq("id", shiftId).single();
   if (shift?.status !== "open") redirect(`/kasir/mulai?error=${encodeURIComponent("Shift sudah ditutup")}`);
 
+  // Selisih kas wajib punya jurnal — shift jangan ditutup kalau periodenya terkunci.
+  const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
+  if (pesanPeriode) redirect(`/kasir/tutup?error=${encodeURIComponent(pesanPeriode)}`);
+
   // Addendum §1: breakdown per metode bayar, kas fisik vs sistem.
   const { data: sales } = await supabase
     .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
@@ -103,7 +109,7 @@ export async function tutupShiftKasir(formData: FormData) {
     .eq("id", shiftId);
 
   if (selisih !== 0) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hariIniWIB();
     const absSelisih = Math.abs(selisih);
     await postJournal(supabase, {
       tanggal: today,

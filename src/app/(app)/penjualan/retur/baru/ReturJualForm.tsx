@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatReturJual } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Row = { item_id: string; nama: string; harga: number; sisa: number };
 
@@ -35,7 +36,7 @@ export function ReturJualForm({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(160px, 220px))", gap: 10, marginBottom: 10 }}>
           <div className="fg">
             <label className="flab">Tanggal retur *</label>
-            <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} required />
+            <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} required />
           </div>
           <div className="fg">
             <label className="flab">Keterangan</label>

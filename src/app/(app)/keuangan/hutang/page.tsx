@@ -6,6 +6,7 @@ import { sisaFakturable } from "@/lib/faktur-beli";
 import { qtyDiterima } from "@/lib/penerimaan";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bayarFaktur } from "../../pembelian/faktur/actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -23,7 +24,7 @@ type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: st
 export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
 
   // Hutang usaha (2101) lahir dari Faktur Pembelian; umur dihitung dari JATUH TEMPO (ala Accurate).

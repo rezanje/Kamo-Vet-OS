@@ -8,6 +8,7 @@ import { METODE_BAYAR } from "@/lib/kas-akun";
 import { agingBucket, agingDays, AGING_LABEL } from "@/lib/aging";
 import { sisaTagihan } from "@/lib/penjualan-dokumen";
 import { terimaPembayaranJual } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
@@ -31,7 +32,7 @@ export default async function FakturJualPage({
   const sp = await searchParams;
   const supabase = await createClient();
   const boleh = await bolehTransaksiKas();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
 
   const [{ data: invData }, { data: umData }, rekening] = await Promise.all([
     supabase.from("sales_invoices")

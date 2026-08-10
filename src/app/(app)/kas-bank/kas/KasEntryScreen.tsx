@@ -4,7 +4,7 @@ import { bolehTransaksiKas } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { getAccountBalances } from "@/lib/ledger";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { akunLawanTerlarang, type JenisKas } from "@/lib/kas-entry";
 import { simpanKasEntry, batalkanKasEntry } from "./actions";
 

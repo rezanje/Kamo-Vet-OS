@@ -6,6 +6,8 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseLampiran } from "@/lib/dokumen";
 import { KATEGORI_BEBAN } from "./kategori";
+import { cekPeriode } from "@/lib/jurnal-guard";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const back = "/buku-besar/beban";
 
@@ -14,7 +16,7 @@ export async function catatBeban(formData: FormData) {
   const supabase = await createClient();
 
   const branchId = String(formData.get("branch_id") ?? "").trim();
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const kategori = String(formData.get("kategori") ?? "");
   const deskripsi = String(formData.get("deskripsi") ?? "").trim();
   const jumlah = Number(formData.get("jumlah")) || 0;
@@ -23,6 +25,9 @@ export async function catatBeban(formData: FormData) {
   if (!branchId) redirect(`${back}?error=${encodeURIComponent("Pilih cabang")}`);
   if (!kategori) redirect(`${back}?error=${encodeURIComponent("Pilih kategori beban")}`);
   if (jumlah <= 0) redirect(`${back}?error=${encodeURIComponent("Nominal harus lebih dari 0")}`);
+
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
   // Aturan sama dgn Pengeluaran di modul Persediaan: kas keluar tanpa bukti tidak
   // bisa diaudit. Kalau jalur ini dibiarkan bebas, aturannya cuma jadi hiasan.

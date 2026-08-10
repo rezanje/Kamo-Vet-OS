@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { urutanBerikutnya } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/pos/stok-minimum";
 
@@ -49,7 +50,7 @@ export async function buatPOdariUsulan(formData: FormData) {
     perPemasok.set(k, [...(perPemasok.get(k) ?? []), b]);
   }
 
-  const tanggal = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const tanggal = hariIniWIB();
   const ymd = tanggal.replace(/-/g, "");
   const prefixPo = `PO-${ymd}-`;
   let seq = await urutanBerikutnya(supabase, {

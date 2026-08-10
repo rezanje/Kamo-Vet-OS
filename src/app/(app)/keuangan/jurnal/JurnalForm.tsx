@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { jurnalManual } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 // ponytail: form jurnal umum manual — dynamic rows, live balance indicator.
 
@@ -20,7 +21,7 @@ export function JurnalForm({
   accounts: Account[];
   branches: Branch[];
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
   const [tanggal, setTanggal] = useState(today);
   const [deskripsi, setDeskripsi] = useState("");
   const [branchId, setBranchId] = useState("");

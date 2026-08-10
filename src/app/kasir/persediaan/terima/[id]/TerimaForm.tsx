@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { terimaBarang } from "../../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { receiptSummary } from "@/lib/stock-recon";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type ItemIn = {
   id: string; item_id: string | null; nama: string; qty_diminta: number;
@@ -19,7 +20,7 @@ const KONDISI = [
   { v: "kurang", label: "Kurang" },
 ];
 
-const today = "2026-07-01";
+const today = hariIniWIB();
 
 // Penerimaan barang (Addendum §5, mockup petshop): dipesan vs diterima, kondisi per item,
 // ringkasan footer, scan barcode auto-isi qty. Layout mengikuti mockup PENERIMAAN BARANG.

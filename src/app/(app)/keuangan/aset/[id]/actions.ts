@@ -6,6 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { jurnalPelepasan, jurnalTambahNilai, nilaiBuku } from "@/lib/aset";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
 const back = (id: string) => `/keuangan/aset/${id}`;
@@ -54,7 +55,7 @@ export async function tambahNilaiAset(formData: FormData) {
   const supabase = await assertRole(back(id), "perubahan aset tetap", BOLEH);
 
   const tambahan = Number(formData.get("tambahan")) || 0;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const metode = String(formData.get("metode") ?? "Transfer");
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
@@ -97,7 +98,7 @@ export async function ubahUmurAset(formData: FormData) {
   const supabase = await assertRole(back(id), "perubahan aset tetap", BOLEH);
 
   const umurBaru = Number(formData.get("umur_bulan")) || 0;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
   const aset = await muatAset(supabase, id);
@@ -124,7 +125,7 @@ export async function disposisiAset(formData: FormData) {
 
   const jenis = String(formData.get("jenis") ?? "jual").trim();
   const hargaJual = jenis === "jual" ? Number(formData.get("harga_jual")) || 0 : 0;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const metode = String(formData.get("metode") ?? "Transfer");
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
@@ -178,7 +179,7 @@ export async function pindahAset(formData: FormData) {
   const supabase = await assertRole(back(id), "pindah aset", BOLEH);
 
   const keBranch = String(formData.get("ke_branch_id") ?? "").trim();
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
   const aset = await muatAset(supabase, id);

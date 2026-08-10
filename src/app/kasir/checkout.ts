@@ -16,6 +16,8 @@ import {
 } from "@/lib/harga-golongan";
 import { hitungPromoKeranjang, loadPromoAktif } from "@/lib/promo-hitung";
 import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
@@ -56,6 +58,11 @@ export async function checkoutKasir(formData: FormData) {
   }
   const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
   if (rows.length === 0) redirect(`/kasir?error=${encodeURIComponent("Keranjang kosong")}`);
+
+  // Struk boleh tersimpan hanya kalau jurnalnya juga bisa. Kalau periodenya terkunci,
+  // penjualan akan tercatat di kasir tapi hilang dari buku besar tanpa peringatan.
+  const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
+  if (pesanPeriode) redirect(`/kasir?error=${encodeURIComponent(pesanPeriode)}`);
 
   // Harga ditetapkan ULANG di server: harga jual sekarang bisa beda per cabang
   // (migrasi 0073), jadi layar kasir yang sudah lama terbuka tidak boleh menentukan
@@ -109,7 +116,7 @@ export async function checkoutKasir(formData: FormData) {
       .from("vouchers")
       .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
       .eq("code", voucherCode).maybeSingle();
-    const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    const wibToday = hariIniWIB();
     // Syarat keranjang (minimal belanja & larangan gabung promo) ikut diperiksa di
     // sini, bukan cuma di layar: keranjang yang dikirim klien tidak dipercaya.
     const tolak = pesanVoucherDitolak((v ?? null) as VoucherRow | null, wibToday, {
@@ -245,7 +252,7 @@ export async function checkoutKasir(formData: FormData) {
   // Jurnal: pendapatan (PPN-inklusif, dipisah) + HPP. Total sudah net semua potongan.
   const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   const { dpp, ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
-  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayIso = hariIniWIB();
   if (total > 0) {
     await postJournal(supabase, {
       tanggal: todayIso, deskripsi: `Penjualan POS ${noStruk}`, source: "sale", sourceRef: noStruk, branchId,

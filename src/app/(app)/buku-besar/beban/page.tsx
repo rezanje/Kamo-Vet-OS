@@ -5,6 +5,7 @@ import { LampiranPicker } from "@/components/LampiranPicker";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { catatBeban } from "./actions";
 import { KATEGORI_BEBAN } from "./kategori";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -46,7 +47,7 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Tanggal</label>
-              <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} />
+              <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} />
             </div>
             <div>
               <label className="flab">Cabang</label>

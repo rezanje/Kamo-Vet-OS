@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { CHANNELS } from "@/lib/online";
 import { buatPenjualanOnline } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Warehouse = { id: string; name: string; branch_name: string };
 type Item = { id: string; code: string; name: string; sell_price: number };
@@ -56,7 +57,7 @@ export function OnlineForm({
 
   // WIB (UTC+7), bukan UTC — samakan dengan todayJakarta() di actions.ts. Server Vercel
   // jalan di UTC; tanpa offset ini, order pagi WIB (00:00–07:00) prefill tanggal kemarin (I2).
-  const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = hariIniWIB();
   // Baris tanpa item_id (kosong / teks bebas tak match SKU) di-drop sebelum kirim — server
   // menolak SELURUH submit kalau ada satu saja baris tanpa item_id (I3). Kalau hasilnya
   // nol baris, tetap kirim apa adanya (array kosong) supaya pesan server "Minimal 1 barang"

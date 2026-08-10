@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { kodeAkunBerikutnya, AKUN_MODAL } from "@/lib/transfer-kas";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { postJournal } from "@/lib/posting";
 
 const BACK = "/kas-bank/rekening";

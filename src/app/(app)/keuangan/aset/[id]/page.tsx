@@ -9,6 +9,7 @@ import { METODE_BAYAR } from "@/lib/kas-akun";
 import { depreciationPerMonth } from "@/lib/aging";
 import { akumulasiFiskal, nilaiBuku, penyusutanFiskalTahunKe, tahunBerjalan, type GolonganPajak } from "@/lib/aset";
 import { disposisiAset, pindahAset, setGolonganPajak, tambahNilaiAset, ubahUmurAset } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -59,7 +60,7 @@ export default async function DetailAsetPage({
   const fiskal: GolonganPajak | null = pajakRel
     ? { umurBulan: pajakRel.umur_bulan, metode: pajakRel.metode as GolonganPajak["metode"], tarifPersen: Number(pajakRel.tarif_persen) }
     : null;
-  const tahunIni = tahunBerjalan(aset.tanggal_perolehan, new Date().toISOString().slice(0, 10));
+  const tahunIni = tahunBerjalan(aset.tanggal_perolehan, hariIniWIB());
   const tahunFiskal = fiskal ? Math.ceil(fiskal.umurBulan / 12) : 0;
 
   return (
@@ -183,7 +184,7 @@ export default async function DetailAsetPage({
               <div className="fg"><label className="flab">Nilai tambahan (Rp) *</label>
                 <input className="fi" name="tambahan" type="number" min={1} step="any" required /></div>
               <div className="fg"><label className="flab">Tanggal</label>
-                <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} /></div>
+                <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} /></div>
               <div className="fg"><label className="flab">Dibayar dengan</label>
                 <select className="fi" name="metode" defaultValue="Transfer">
                   {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -200,7 +201,7 @@ export default async function DetailAsetPage({
               <div className="fg"><label className="flab">Umur baru (bulan) *</label>
                 <input className="fi" name="umur_bulan" type="number" min={1} defaultValue={aset.umur_bulan} required /></div>
               <div className="fg"><label className="flab">Tanggal</label>
-                <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} /></div>
+                <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} /></div>
               <div className="fg"><label className="flab">Alasan</label>
                 <input className="fi" name="keterangan" placeholder="mis. dipakai lebih lama" /></div>
               <SubmitButton className="btn-def" icon="ti-edit" pendingText="Menyimpan…">Simpan umur</SubmitButton>
@@ -215,7 +216,7 @@ export default async function DetailAsetPage({
                   {cabang.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select></div>
               <div className="fg"><label className="flab">Tanggal</label>
-                <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} /></div>
+                <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} /></div>
               <div className="fg"><label className="flab">Keterangan</label>
                 <input className="fi" name="keterangan" placeholder="opsional" /></div>
               <SubmitButton className="btn-def" icon="ti-arrows-transfer-down" pendingText="Memindahkan…">Pindahkan</SubmitButton>
@@ -232,7 +233,7 @@ export default async function DetailAsetPage({
               <div className="fg"><label className="flab">Harga jual (Rp)</label>
                 <input className="fi" name="harga_jual" type="number" min={0} step="any" placeholder={`nilai buku ${rp(buku)}`} /></div>
               <div className="fg"><label className="flab">Tanggal</label>
-                <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} /></div>
+                <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} /></div>
               <div className="fg"><label className="flab">Uang masuk ke</label>
                 <select className="fi" name="metode" defaultValue="Transfer">
                   {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}

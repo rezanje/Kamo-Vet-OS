@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances } from "@/lib/ledger";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { RekonForm, type RekeningRekon } from "./RekonForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");

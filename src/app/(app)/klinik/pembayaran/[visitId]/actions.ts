@@ -9,8 +9,10 @@ import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
-import { stockOut } from "@/lib/inventory";
+import { stockIn, stockOut } from "@/lib/inventory";
 import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null };
@@ -54,6 +56,42 @@ async function potongStokObat(
   return { hppPerBaris, totalHpp };
 }
 
+// Kebalikan potongStokObat: kembalikan obat baris invoice LAMA ke gudang saat invoice
+// diedit. Modalnya diambil dari hpp yang tercatat di barisnya, bukan dari harga beli
+// master — kalau tidak, tiap edit menambah/mengurangi nilai persediaan dari udara.
+// Mengembalikan total HPP lama supaya jurnalnya bisa dibalik dengan angka yang sama.
+async function kembalikanStokObat(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  branchId: string | null,
+  baris: { item_id?: string | null; qty: number; hpp?: number | null }[],
+  ref: string,
+): Promise<number> {
+  const obat = baris.filter((l) => l.item_id && Number(l.qty) > 0 && Number(l.hpp) > 0);
+  if (!branchId || obat.length === 0) return 0;
+
+  const { data: wh } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true)
+    .order("type").limit(1).maybeSingle();
+  if (!wh) return 0;
+
+  let total = 0;
+  for (const l of obat) {
+    const qty = Number(l.qty);
+    const hpp = Number(l.hpp);
+    try {
+      await stockIn(supabase, {
+        warehouseId: wh.id, itemId: l.item_id!, qty,
+        unitCost: hpp / qty, source: "klinik-edit", ref,
+      });
+      total += hpp;
+    } catch (e) {
+      console.error(`[stok klinik] gagal kembalikan stok ${ref} item ${l.item_id}:`, e);
+    }
+  }
+  return total;
+}
+
 // Baris jurnal invoice klinik (dipakai posting normal + pembalikan saat edit/void).
 // kasCode diserahkan pemanggil: posting baru memakai peta rekening, pembalikan memakai
 // akun yang dipakai jurnal aslinya.
@@ -69,10 +107,7 @@ function invoiceJournalLines(inv: { total: number; dpp: number; tax: number; dp_
   return reverse ? lines.map((l) => ({ code: l.code, debit: l.credit, credit: l.debit })) : lines;
 }
 
-const todayIso = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-};
+const todayIso = () => hariIniWIB();
 
 async function nextInvoiceNo(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   // Nomor dilanjutkan dari yang tertinggi; race antar kasir masih dijaga unique constraint.
@@ -140,6 +175,11 @@ export async function bayarVisit(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent("Minimal 1 item tagihan")}`);
   }
 
+  // Invoice + potong stok obat + jurnal harus jalan bareng. Periode terkunci =
+  // obat keluar gudang tapi pendapatannya tidak pernah masuk buku besar.
+  const pesanPeriode = await cekPeriode(supabase, todayIso());
+  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
+
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
   const discount = Number(formData.get("discount")) || 0;
   const dpp = Math.max(0, subtotal - discount);
@@ -178,8 +218,10 @@ export async function bayarVisit(formData: FormData) {
       redirect(`${back}?error=${encodeURIComponent("Invoice sudah menerima pelunasan piutang — gunakan Void & Terbitkan Ulang")}`);
     }
 
+    // item_id & hpp ikut dibaca: baris obat yang diganti harus dikembalikan stoknya
+    // dengan modal yang persis sama seperti saat keluar.
     const { data: oldItems } = await supabase
-      .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", existing.id).order("created_at");
+      .from("invoice_items").select("deskripsi, qty, harga, item_id, hpp").eq("invoice_id", existing.id).order("created_at");
 
     const oldSnap: InvoiceSnapshot = {
       subtotal: Number(existing.subtotal), discount: Number(existing.discount), tax: Number(existing.tax),
@@ -208,10 +250,22 @@ export async function bayarVisit(formData: FormData) {
       .eq("id", existing.id);
     if (upErr) redirect(`${back}?error=${encodeURIComponent(upErr.message)}`);
 
+    // Stok obat ikut disinkronkan. Tanpa ini, mengganti/menghapus baris obat pada
+    // invoice yang sudah terbit membuat persediaan dan HPP salah PERMANEN: obat lama
+    // sudah keluar dari gudang dan tidak pernah kembali, obat baru tidak pernah keluar.
+    const hppLama = await kembalikanStokObat(supabase, v?.branch_id ?? null, oldItems ?? [], existing.invoice_no);
+    const { hppPerBaris: hppBaru, totalHpp: hppTotalBaru } =
+      await potongStokObat(supabase, v?.branch_id ?? null, rows, existing.invoice_no);
+
     await supabase.from("invoice_items").delete().eq("invoice_id", existing.id);
     const { error: itErr } = await supabase
       .from("invoice_items")
-      .insert(rows.map((l) => ({ invoice_id: existing.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis })));
+      // item_id & hpp sebelumnya hilang di jalur edit — baris hasil edit jadi tidak
+      // terhubung ke barang, sehingga retur/laporan modal tidak bisa menilainya.
+      .insert(rows.map((l) => ({
+        invoice_id: existing.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
+        item_id: l.item_id, hpp: l.item_id ? (hppBaru.get(l.item_id) ?? 0) : null,
+      })));
     if (itErr) redirect(`${back}?error=${encodeURIComponent(itErr.message)}`);
 
     // §7 edge case: buku besar wajib re-sync — balikkan jurnal lama, posting ulang yang baru.
@@ -231,6 +285,23 @@ export async function bayarVisit(formData: FormData) {
       sourceRef: existing.invoice_no, branchId: v?.branch_id ?? null,
       lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus }, kasBaru),
     });
+
+    // Jurnal HPP juga wajib ikut re-sync — kalau hanya pendapatannya yang dibalik,
+    // beban pokok obat lama tetap menempel di Laba Rugi selamanya.
+    if (hppLama > 0) {
+      await postJournal(supabase, {
+        tanggal: todayIso(), deskripsi: `Pembalikan HPP obat ${existing.invoice_no} (edit)`,
+        source: "klinik-hpp-edit", sourceRef: existing.invoice_no, branchId: v?.branch_id ?? null,
+        lines: [{ code: "1301", debit: hppLama, credit: 0 }, { code: "5101", debit: 0, credit: hppLama }],
+      });
+    }
+    if (hppTotalBaru > 0) {
+      await postJournal(supabase, {
+        tanggal: todayIso(), deskripsi: `HPP obat ${existing.invoice_no} (edit)`,
+        source: "klinik-hpp-edit", sourceRef: existing.invoice_no, branchId: v?.branch_id ?? null,
+        lines: [{ code: "5101", debit: hppTotalBaru, credit: 0 }, { code: "1301", debit: 0, credit: hppTotalBaru }],
+      });
+    }
 
     await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
     if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
@@ -470,7 +541,7 @@ export async function voidAndReissue(formData: FormData) {
   }
 
   const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, jenis").eq("invoice_id", inv!.id).order("created_at");
+    .from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, hpp").eq("invoice_id", inv!.id).order("created_at");
 
   // 1) void invoice lama + log.
   const { error: voidErr } = await supabase
@@ -524,8 +595,14 @@ export async function voidAndReissue(formData: FormData) {
     .select("id").single();
   if (newErr || !newInv) redirect(`${back}?error=${encodeURIComponent(newErr?.message ?? "Gagal terbitkan ulang")}`);
 
+  // Barangnya tidak keluar ulang dari gudang (obat sudah terlanjur ditebus), jadi
+  // item_id & hpp diwariskan apa adanya — bukan di-nol-kan seperti sebelumnya, yang
+  // membuat invoice hasil terbit-ulang tidak bisa diretur atau dinilai modalnya.
   await supabase.from("invoice_items").insert(
-    (items ?? []).map((l) => ({ invoice_id: newInv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis })),
+    (items ?? []).map((l) => ({
+      invoice_id: newInv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
+      item_id: l.item_id, hpp: l.hpp,
+    })),
   );
 
   await supabase.from("invoice_edit_log").insert({

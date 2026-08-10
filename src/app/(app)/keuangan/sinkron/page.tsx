@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { findDrift, perbaikiDrift } from "./actions";
+import { findDrift, findDriftLain, perbaikiDrift } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -9,7 +9,10 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { da
 export default async function SinkronPage({ searchParams }: { searchParams: Promise<{ success?: string }> }) {
   const { success } = await searchParams;
   const supabase = await createClient();
-  const { invoices, sales, salesOnline } = await findDrift(supabase);
+  const [{ invoices, sales, salesOnline }, lain] = await Promise.all([
+    findDrift(supabase),
+    findDriftLain(supabase),
+  ]);
   const totalDrift = invoices.length + sales.length + salesOnline.length;
 
   return (
@@ -74,6 +77,37 @@ export default async function SinkronPage({ searchParams }: { searchParams: Prom
               ))}
               {totalDrift === 0 && (
                 <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada — semuanya sudah terjurnal. ✓</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="crm-sec">
+        <SecHeader
+          num="02"
+          title="DOKUMEN LAIN TANPA JURNAL"
+          desc="Pembelian, gaji, kas, dan retur yang tidak tercatat di buku besar. Tidak diposting ulang otomatis — akun lawannya tergantung isi dokumen, jadi buka dokumennya dan simpan ulang."
+        />
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 620 }}>
+            <thead>
+              <tr><th>Jenis</th><th>Referensi</th><th>Tanggal</th><th style={{ textAlign: "right" }}>Nilai</th><th /></tr>
+            </thead>
+            <tbody>
+              {lain.map((d) => (
+                <tr key={`${d.jenis}-${d.ref}`}>
+                  <td><span className="bge x">{d.jenis}</span></td>
+                  <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{d.ref}</td>
+                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(d.tanggal)}</td>
+                  <td style={{ textAlign: "right", fontSize: 11 }}>{rp(d.nilai)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <Link href={d.layar} className="back-btn" style={{ fontSize: 10.5 }}>Buka</Link>
+                  </td>
+                </tr>
+              ))}
+              {lain.length === 0 && (
+                <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada — semuanya sudah terjurnal. ✓</td></tr>
               )}
             </tbody>
           </table>

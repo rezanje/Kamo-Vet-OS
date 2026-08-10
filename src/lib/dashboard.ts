@@ -31,7 +31,9 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   }
   const awal7 = hari7[0];
 
-  const [balances, salesRows, invRows, invPays, fjRows, fjReceipts, poRows, poPays, cashLines] = await Promise.all([
+  const kodeRekening = await kodeSemuaRekening(supabase);
+
+  const [balances, salesRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
     supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status"),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
@@ -41,12 +43,16 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     supabase.from("sales_invoices").select("id, total, tanggal").neq("status", "batal").gte("tanggal", awalTahun).lte("tanggal", today),
     supabase.from("sales_receipts").select("invoice_id, jumlah"),
     supabase.from("purchase_orders").select("id, total, status, tanggal").eq("status", "Diterima"),
-    supabase.from("po_payments").select("po_id, amount"),
+    // Pelunasan pembelian hidup di purchase_invoice_payments (lewat Faktur Pembelian).
+    // Tabel po_payments sudah tidak ditulis layar mana pun — membacanya bikin dashboard
+    // selalu melaporkan seluruh PO sebagai belum dibayar.
+    supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_payments(amount)"),
+    supabase.from("purchase_returns").select("po_id, total"),
     // baris jurnal kas/bank 7 hari terakhir untuk arus kas harian.
     supabase
       .from("journal_lines")
       .select("debit, credit, coa_accounts!inner(code), journal_entries!inner(tanggal)")
-      .in("coa_accounts.code", await kodeSemuaRekening(supabase))
+      .in("coa_accounts.code", kodeRekening)
       .gte("journal_entries.tanggal", awal7)
       .lte("journal_entries.tanggal", today),
   ]);
@@ -114,8 +120,16 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   const penjualan = { total: penjTotal, lunas: penjTotal - belumLunas, belumLunas };
 
   // ── Pembelian (PO Diterima), lunas vs belum ──
+  // Dibayar per PO = pelunasan faktur pembelian + retur (retur mengurangi hutang pemasok).
   const poPaid = new Map<string, number>();
-  for (const p of (poPays.data ?? []) as { po_id: string; amount: number }[]) poPaid.set(p.po_id, (poPaid.get(p.po_id) ?? 0) + Number(p.amount));
+  const tambahPaid = (poId: string | null, nilai: number) => {
+    if (!poId) return;
+    poPaid.set(poId, (poPaid.get(poId) ?? 0) + nilai);
+  };
+  for (const f of (poFaktur.data ?? []) as { po_id: string | null; purchase_invoice_payments: { amount: number }[] | null }[]) {
+    tambahPaid(f.po_id, (f.purchase_invoice_payments ?? []).reduce((a, p) => a + Number(p.amount), 0));
+  }
+  for (const r of (poRetur.data ?? []) as { po_id: string | null; total: number }[]) tambahPaid(r.po_id, Number(r.total));
   let pembTotal = 0, pembBelum = 0;
   for (const po of (poRows.data ?? []) as { id: string; total: number }[]) {
     pembTotal += Number(po.total);
@@ -135,7 +149,10 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   }
   const trenPenjualan = hari7.map((t) => ({ tanggal: t, total: trenMap.get(t)! }));
 
-  const saldoKas = bal.filter((b) => b.code === "1101" || b.code === "1102").reduce((a, b) => a + b.saldo, 0);
+  // Semua rekening kas/bank dari master — bukan daftar mati 1101/1102, supaya kartu ini
+  // sama angkanya dengan laporan Arus Kas ketika ada rekening QRIS/e-wallet/bank baru.
+  const setRekening = new Set(kodeRekening);
+  const saldoKas = bal.filter((b) => setRekening.has(b.code)).reduce((a, b) => a + b.saldo, 0);
 
   return { labaRugi: { pendapatan, hpp, pengeluaran, laba }, beban, arusKas, penjualan, pembelian, trenPenjualan, saldoKas };
 }

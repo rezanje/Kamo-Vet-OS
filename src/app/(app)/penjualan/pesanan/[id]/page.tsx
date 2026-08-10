@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
 import { batalPesanan, buatFakturJual, buatPengiriman } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -56,7 +57,7 @@ export default async function DetailPesananPage({
   const bisaKirim = spek.some((b) => b.sisaKirim > 0);
   const bisaFaktur = spek.some((b) => b.sisaFaktur > 0);
   const aktif = so.status !== "batal";
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
   const tempo = new Date(`${today}T00:00:00Z`);
   tempo.setUTCDate(tempo.getUTCDate() + 30);
   const tempo30 = tempo.toISOString().slice(0, 10);

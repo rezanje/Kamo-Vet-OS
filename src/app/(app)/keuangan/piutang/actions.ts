@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 // Terima pelunasan piutang atas invoice klinik (DP / Belum Lunas).
 // Jurnal: Dr Kas/Bank, Cr Piutang Usaha (1201). Lunas penuh → invoice Lunas, visit Selesai.
@@ -14,13 +16,18 @@ export async function terimaPelunasan(formData: FormData) {
   const invoiceId = String(formData.get("invoice_id") ?? "");
   const amount = Number(formData.get("amount")) || 0;
   const metode = String(formData.get("metode") ?? "Tunai");
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
 
   if (!invoiceId || amount <= 0) {
     redirect(`${back}?error=${encodeURIComponent("Nominal pelunasan tidak valid")}`);
   }
+
+  // Uang masuk tanpa jurnal = piutang terlihat lunas tapi kas tidak pernah bertambah
+  // di buku besar. Dicek sebelum baris pelunasan ditulis, bukan sesudah.
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
   const { data: inv } = await supabase
     .from("invoices")

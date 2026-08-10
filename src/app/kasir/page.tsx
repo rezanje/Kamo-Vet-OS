@@ -7,6 +7,7 @@ import type { PromoHitung } from "@/lib/promo-hitung";
 import { loadInfoBarang, type AturanDiskon } from "@/lib/harga-golongan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -49,7 +50,7 @@ export default async function KasirPage({
   ]);
 
   // Addendum: promo yang aktif hari ini untuk cabang shift (branch + tanggal).
-  const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const wibToday = hariIniWIB();
   const promosActive = ((promos ?? []) as unknown as PromoFull[]).filter((p) => promoActiveFor(p, shift.branch_id, wibToday));
 
   // Barang yang kena tiap promo (migrasi 0079). Promo tanpa baris di sini

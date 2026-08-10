@@ -11,6 +11,8 @@ import { qtyDiterima } from "@/lib/penerimaan";
 import { totalRetur } from "@/lib/retur";
 import { jurnalBayarHutang, pakaiUangMuka } from "@/lib/uang-muka";
 import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 type ItemInput = { item_id: string; qty: number; harga: number };
 
@@ -33,7 +35,7 @@ export async function buatFaktur(formData: FormData) {
 
   const po_id = String(formData.get("po_id") ?? "");
   const no_faktur_pemasok = String(formData.get("no_faktur_pemasok") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const jatuh_tempo = String(formData.get("jatuh_tempo") ?? "") || tanggal;
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
@@ -44,6 +46,9 @@ export async function buatFaktur(formData: FormData) {
   const fail = (msg: string) => redirect("/pembelian/faktur/baru?error=" + encodeURIComponent(msg));
 
   if (!po_id || items.length === 0) fail("Pilih PO dan minimal 1 barang.");
+
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) fail(pesanPeriode);
 
   const { data: po } = await supabase
     .from("purchase_orders")
@@ -157,12 +162,15 @@ export async function bayarFaktur(formData: FormData) {
   const invoiceId = String(formData.get("invoice_id") ?? "");
   const amount = Number(formData.get("amount")) || 0;
   const metode = String(formData.get("metode") ?? "Transfer");
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
 
   const fail = (msg: string) => redirect(`${back}?error=${encodeURIComponent(msg)}`);
   if (!invoiceId || amount <= 0) fail("Nominal pembayaran tidak valid.");
+
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) fail(pesanPeriode);
 
   const { data: inv } = await supabase
     .from("purchase_invoices")

@@ -6,12 +6,13 @@ import { buatPermintaanKasir } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit } from "@/lib/satuan";
 import type { KatalogItem } from "@/lib/permintaan";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Warehouse = { id: string; name: string };
 type Item = KatalogItem & { stok: number };
 type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: string };
 
-const today = "2026-07-01";
+const today = hariIniWIB();
 
 export function PersediaanBaruForm({
   branchName, warehouses, items, userName,

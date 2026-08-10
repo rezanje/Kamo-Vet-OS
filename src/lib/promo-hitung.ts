@@ -1,3 +1,4 @@
+import { hariIniWIB } from "./tanggal";
 // Perhitungan potongan promo — pure, dipakai KLIEN (tampilan kasir) dan SERVER
 // (angka yang benar-benar disimpan). Dipisah dari lib/promo.ts karena file itu
 // hanya soal "promo ini aktif hari ini di cabang mana", bukan soal uang.
@@ -115,7 +116,7 @@ type AnyClient = any;
 // Promo yang aktif hari ini di cabang ini, siap dipakai hitungPromoKeranjang.
 // Dipakai SERVER saat checkout — angka promo dari keranjang tidak dipercaya.
 export async function loadPromoAktif(supabase: AnyClient, branchId: string): Promise<PromoHitung[]> {
-  const wibToday = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const wibToday = hariIniWIB();
 
   const { data } = await supabase
     .from("promos")

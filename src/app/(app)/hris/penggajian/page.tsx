@@ -4,7 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { getAturanGaji } from "@/lib/payroll-aturan";
 import { hitungPenggajian, sahkanPenggajian, simpanKoreksi } from "./actions";
 

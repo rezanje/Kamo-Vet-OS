@@ -7,6 +7,10 @@ import { postJournal } from "@/lib/posting";
 import { formatNoRetur, sisaRetur, totalRetur, rasioBayar, hargaRefund, modalPerSatuan } from "@/lib/retur";
 import { stockIn } from "@/lib/inventory";
 import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { kodeAkunBayar, kodeKasJurnalAsal } from "@/lib/kas-akun";
+import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
+import { cekPeriode } from "@/lib/jurnal-guard";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -19,7 +23,7 @@ export async function buatReturJual(formData: FormData) {
   const supabase = await createClient();
 
   const sale_id = String(formData.get("sale_id") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
   // Dipakai dua dunia: backoffice (/penjualan/retur) & layar kasir (/kasir/retur).
@@ -37,11 +41,16 @@ export async function buatReturJual(formData: FormData) {
 
   if (!sale_id || items.length === 0) fail("Pilih struk dan minimal 1 barang.");
 
+  // Periode terkunci dicek DULU: trigger DB melempar error dan postJournal menelannya,
+  // jadi tanpa ini dokumen retur + refund kasir tersimpan tanpa jurnal apa pun.
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) fail(pesanPeriode);
+
   // channel bukan null = order online (Shopee/Tokopedia/TikTok/WA) — retur kasir tunai tidak
   // berlaku di situ (tidak ada kas fisik yang diterima dari channel itu di cabang manapun).
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, branch_id, subtotal, total, sale_items(item_id, qty, harga, faktor, hpp)")
+    .select("id, no_struk, branch_id, subtotal, total, metode_bayar, sale_items(item_id, qty, harga, faktor, hpp)")
     .eq("id", sale_id).is("channel", null).single();
   if (!sale) fail("Struk tidak ditemukan, atau merupakan order online — retur online tidak didukung di sini.");
   if (lockBranchId && sale!.branch_id !== lockBranchId) {
@@ -115,18 +124,22 @@ export async function buatReturJual(formData: FormData) {
     fail("Gagal menyimpan rincian retur.");
   }
 
-  // refund tunai → expenses (shift open di cabang itu bila ada, biar kepotong di tutup shift)
-  const { data: shift } = await supabase
-    .from("cashier_shifts").select("id")
-    .eq("branch_id", sale!.branch_id).eq("status", "open")
-    .order("opened_at", { ascending: false }).limit(1).maybeSingle();
+  // Refund dikembalikan lewat jalur yang sama dengan pembayarannya. Struk transfer/QRIS
+  // tidak mengurangi laci kasir, jadi hanya refund TUNAI yang ditempel ke shift.
+  const metodeRefund = String(sale!.metode_bayar ?? "Tunai");
+  const { data: shift } = metodeRefund === "Tunai"
+    ? await supabase
+        .from("cashier_shifts").select("id")
+        .eq("branch_id", sale!.branch_id).eq("status", "open")
+        .order("opened_at", { ascending: false }).limit(1).maybeSingle()
+    : { data: null as { id: string } | null };
   const { error: expErr } = await supabase.from("expenses").insert({
     branch_id: sale!.branch_id,
     tanggal,
     kategori: "Retur Penjualan",
     deskripsi: `Refund retur ${no_retur} (struk ${sale!.no_struk ?? sale_id})`,
     jumlah: total,
-    metode_bayar: "Tunai",
+    metode_bayar: metodeRefund,
     shift_id: shift?.id ?? null,
     created_by: user?.id ?? null,
   });
@@ -162,7 +175,15 @@ export async function buatReturJual(formData: FormData) {
     }
   }
 
-  // jurnal refund (balik pendapatan) + stok balik (balik HPP, nilai buy_price)
+  // Jurnal refund = kebalikan persis jurnal penjualannya:
+  //  - uang keluar dari rekening yang DIPAKAI jurnal aslinya (bukan selalu 1101 Kas —
+  //    struk transfer/QRIS dulu masuk ke bank, refundnya harus keluar dari sana juga);
+  //  - kalau mode PKP aktif, PPN Keluaran ikut dibalik, bukan cuma pendapatannya.
+  const kasCode = await kodeKasJurnalAsal(
+    supabase, "sale", sale!.no_struk ?? sale_id,
+    await kodeAkunBayar(supabase, metodeRefund, sale!.branch_id ?? null),
+  );
+  const { dpp: dppRetur, ppn: ppnRetur } = splitPpnInklusif(total, await getPajakSettings(supabase));
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Retur penjualan ${no_retur} (${sale!.no_struk ?? sale_id})`,
@@ -170,8 +191,9 @@ export async function buatReturJual(formData: FormData) {
     sourceRef: no_retur,
     branchId: sale!.branch_id,
     lines: [
-      { code: "4101", debit: total, credit: 0 },
-      { code: "1101", debit: 0, credit: total },
+      { code: "4101", debit: dppRetur, credit: 0 },
+      ...(ppnRetur > 0 ? [{ code: "2201", debit: ppnRetur, credit: 0 }] : []),
+      { code: kasCode, debit: 0, credit: total },
     ],
   });
   // Jurnal HPP balik memakai modal yang sama dengan lapisan stok yang baru

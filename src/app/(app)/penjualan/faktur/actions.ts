@@ -7,6 +7,7 @@ import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { jurnalPenerimaan, sisaTagihan } from "@/lib/penjualan-dokumen";
 import { nextNoDokumen } from "@/lib/penjualan-server";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/penjualan/faktur";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -20,7 +21,7 @@ export async function terimaPembayaranJual(formData: FormData) {
   const jumlah = Number(formData.get("jumlah")) || 0;
   const metode = String(formData.get("metode") ?? "Transfer");
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const advanceId = String(formData.get("advance_id") ?? "").trim() || null;
 

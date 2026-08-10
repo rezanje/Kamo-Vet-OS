@@ -5,6 +5,7 @@
 // yang tidak memuat alias tsconfig. Sama pola dgn barang.ts → ./tindakan.
 import { depreciationPerMonth, monthsElapsed } from "./aging";
 import { postJournal } from "./posting";
+import { hariIniWIB } from "./tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -15,6 +16,16 @@ export const AKUN_BEBAN_DEFAULT = "5601";
 export const AKUN_AKUM_DEFAULT = "1509";
 
 export type DepEntry = { amount: number; akunBeban: string | null; akunAkumulasi: string | null };
+
+// Penyusutan sebulan penuh baru boleh diakui setelah bulannya BENAR-BENAR lewat.
+// Sebelum perbaikan ini, menjalankan catch-up tanggal 10 langsung memposting jurnal
+// bertanggal 28 bulan yang sama — beban masa depan masuk ke Laba Rugi hari ini.
+export function periodeBelumSelesai(periode: string, hariIni: string): boolean {
+  return periode >= hariIni.slice(0, 7);
+}
+
+// Tanggal jurnal penyusutan: akhir periode (pakai 28 supaya aman untuk Februari).
+export const tanggalJurnalPenyusutan = (periode: string) => `${periode}-28`;
 
 // Baris jurnal penyusutan dikelompokkan per pasangan akun kategori. Satu jurnal,
 // beberapa pasang baris — jadi laporan penyusutan rinci per jenis aset tanpa
@@ -42,7 +53,12 @@ export function groupDepreciationLines(entries: DepEntry[]): { code: string; deb
 
 // Jalankan penyusutan untuk satu periode YYYY-MM. Aman diulang (aset yang sudah
 // disusutkan periode itu ditolak unique constraint → skip).
-export async function runDepreciationPeriod(supabase: AnyClient, periode: string): Promise<DepreciationRun> {
+export async function runDepreciationPeriod(supabase: AnyClient, periode: string, hariIni?: string): Promise<DepreciationRun> {
+  // Satu-satunya penjaga untuk cron, catch-up, dan tombol manual sekaligus.
+  if (periodeBelumSelesai(periode, hariIni ?? hariIniWIB())) {
+    return { periode, total: 0, jumlahAset: 0 };
+  }
+
   const { data: assets } = await supabase
     .from("fixed_assets")
     .select("id, nama, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, asset_categories(akun_beban, akun_akumulasi)")
@@ -79,7 +95,7 @@ export async function runDepreciationPeriod(supabase: AnyClient, periode: string
 
   if (total > 0) {
     await postJournal(supabase, {
-      tanggal: `${periode}-28`,
+      tanggal: tanggalJurnalPenyusutan(periode),
       deskripsi: `Penyusutan aset tetap periode ${periode} (${jumlahAset} aset)`,
       source: "depreciation",
       sourceRef: periode,
@@ -104,7 +120,9 @@ export async function catchUpDepreciation(supabase: AnyClient): Promise<Deprecia
     .maybeSingle();
   if (!oldest) return [];
 
-  const now = new Date();
+  // Bulan berjalan ditentukan menurut WIB, bukan zona server (Vercel = UTC).
+  const hariIni = hariIniWIB();
+  const now = new Date(`${hariIni}T00:00:00`);
   const start = new Date(oldest.tanggal_perolehan + "T00:00:00");
   const results: DepreciationRun[] = [];
   const cursor = new Date(Math.max(
@@ -113,10 +131,11 @@ export async function catchUpDepreciation(supabase: AnyClient): Promise<Deprecia
   ));
   cursor.setDate(1);
 
+  // Berhenti di bulan LALU: bulan berjalan belum selesai, jadi belum boleh disusutkan.
   while (cursor.getFullYear() < now.getFullYear() ||
-         (cursor.getFullYear() === now.getFullYear() && cursor.getMonth() <= now.getMonth())) {
+         (cursor.getFullYear() === now.getFullYear() && cursor.getMonth() < now.getMonth())) {
     const periode = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
-    const run = await runDepreciationPeriod(supabase, periode);
+    const run = await runDepreciationPeriod(supabase, periode, hariIni);
     if (run.total > 0) results.push(run);
     cursor.setMonth(cursor.getMonth() + 1);
   }

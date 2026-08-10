@@ -3,6 +3,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
+import { cekPeriode } from "@/lib/jurnal-guard";
+import { hariIniWIB } from "@/lib/tanggal";
 
 // Rekonsiliasi bank (saldo-level) PER REKENING: bandingkan saldo buku rekening terpilih
 // dengan saldo rekening korannya, catat biaya adm / bunga sbg jurnal penyesuaian.
@@ -12,13 +14,16 @@ export async function prosesRekonsiliasi(formData: FormData) {
   const gagal = (msg: string) => redirect(`${back}?error=${encodeURIComponent(msg)}`);
 
   const accountId = String(formData.get("account_id") ?? "").trim();
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const saldoBank = Number(formData.get("saldo_bank")) || 0;
   const biayaAdm = Number(formData.get("biaya_adm")) || 0;
   const bunga = Number(formData.get("bunga")) || 0;
   const catatan = String(formData.get("catatan") ?? "") || null;
 
   if (!accountId) gagal("Pilih rekening yang direkonsiliasi");
+
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) gagal(pesanPeriode);
 
   const { data: rek } = await supabase
     .from("cash_accounts").select("id, nama, coa_code").eq("id", accountId).maybeSingle();
@@ -29,7 +34,14 @@ export async function prosesRekonsiliasi(formData: FormData) {
     .from("coa_accounts").select("id").eq("code", rek!.coa_code).maybeSingle();
   let saldoBuku = 0;
   if (acc) {
-    const { data: lines } = await supabase.from("journal_lines").select("debit, credit").eq("account_id", acc.id);
+    // Dibatasi S/D tanggal rekonsiliasi. Tanpa batas ini, saldo buku selalu posisi
+    // HARI INI sementara saldo rekening korannya posisi tanggal tertentu — rekonsiliasi
+    // untuk tanggal lampau pasti melaporkan selisih palsu.
+    const { data: lines } = await supabase
+      .from("journal_lines")
+      .select("debit, credit, journal_entries!inner(tanggal)")
+      .eq("account_id", acc.id)
+      .lte("journal_entries.tanggal", tanggal);
     saldoBuku = (lines ?? []).reduce((a, l) => a + Number(l.debit) - Number(l.credit), 0);
   }
   const adjusted = saldoBuku + bunga - biayaAdm;

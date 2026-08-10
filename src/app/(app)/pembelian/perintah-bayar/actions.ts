@@ -7,6 +7,7 @@ import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { formatNoPerintahBayar, sisaFakturBayar } from "@/lib/perintah-bayar";
 import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/pembelian/perintah-bayar";
 // Membuat perintah bayar = mengajukan, bukan mengeluarkan uang — FINANCE ikut boleh.
@@ -134,7 +135,7 @@ export async function bayarPerintahBayar(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   const metode = String(formData.get("metode") ?? "Transfer");
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   if (!id) gagal("Perintah bayar tidak valid");
 
   const pesanPeriode = await cekPeriode(supabase, tanggal);

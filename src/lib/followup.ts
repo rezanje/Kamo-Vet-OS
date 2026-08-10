@@ -36,7 +36,5 @@ export function tanggalIndo(iso: string) {
   return `${d} ${bulan[m - 1]} ${y}`;
 }
 
-// Hari ini di zona WIB — server Vercel jalan di UTC, jadi jangan pakai toISOString() lokal.
-export function hariIniWIB() {
-  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-}
+// hariIniWIB pindah ke lib/tanggal (rumah semua helper tanggal) — dulu tinggal di sini
+// dan bikin dua sumber kebenaran untuk "hari ini".

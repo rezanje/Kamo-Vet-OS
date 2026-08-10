@@ -1,3 +1,4 @@
+import { hariIniWIB } from "./tanggal";
 // Inventori FIFO — SATU pintu untuk semua mutasi stok (PRD §10.2).
 // consumeLayers = pure (dites); stockIn/stockOut/transfer = wrapper supabase.
 // ponytail: mutasi JS read-then-update mengikuti pola existing repo; kalau race
@@ -46,7 +47,7 @@ async function catatMutasi(
   o: { warehouseId: string; itemId: string; qty: number; unitCost: number; source: string; ref?: string | null; tanggal?: string },
 ) {
   const { error } = await supabase.from("stock_moves").insert({
-    tanggal: o.tanggal ?? new Date().toISOString().slice(0, 10),
+    tanggal: o.tanggal ?? hariIniWIB(),
     warehouse_id: o.warehouseId, item_id: o.itemId, qty: o.qty,
     unit_cost: o.unitCost, source: o.source, source_ref: o.ref ?? null,
   });
@@ -91,7 +92,7 @@ export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void
   if (!(await punyaStok(supabase, o.itemId))) return;
   const { error } = await supabase.from("stock_layers").insert({
     warehouse_id: o.warehouseId, item_id: o.itemId,
-    tanggal: o.tanggal ?? new Date().toISOString().slice(0, 10),
+    tanggal: o.tanggal ?? hariIniWIB(),
     qty_in: o.qty, qty_left: o.qty, unit_cost: o.unitCost,
     source: o.source, source_ref: o.ref ?? null,
     exp_date: o.expDate || null,

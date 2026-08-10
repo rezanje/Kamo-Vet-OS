@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 export async function openShift(formData: FormData) {
   const supabase = await createClient();
@@ -33,6 +35,11 @@ export async function closeShift(formData: FormData) {
     .from("cashier_shifts").select("opening_balance, branch_id, status").eq("id", shiftId).single();
   if (shift?.status !== "open") redirect(`/pos/shift?error=${encodeURIComponent("Shift sudah ditutup")}`);
 
+  // Selisih kas wajib punya jurnal. Kalau periode terkunci, shift jangan ditutup dulu —
+  // status "closed" tanpa jurnal selisih bikin kas buku besar beda dgn kas fisik selamanya.
+  const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
+  if (pesanPeriode) redirect(`/pos/shift?error=${encodeURIComponent(pesanPeriode)}`);
+
   // Addendum §1: breakdown per metode disimpan untuk laporan shift.
   const { data: sales } = await supabase
     .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
@@ -52,7 +59,7 @@ export async function closeShift(formData: FormData) {
 
   // Accounting: post selisih kas only when non-zero.
   if (selisih !== 0) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hariIniWIB();
     const absSelisih = Math.abs(selisih);
     // selisih < 0 = kurang: Dr Selisih Kas, Cr Kas.
     // selisih > 0 = lebih:  Dr Kas, Cr Selisih Kas.

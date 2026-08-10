@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
@@ -40,6 +42,10 @@ export async function checkoutSale(formData: FormData) {
   }
   const rawRows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
   if (rawRows.length === 0) redirect(`/pos/transaksi?error=${encodeURIComponent("Keranjang kosong")}`);
+
+  // Periode terkunci = struk tersimpan tapi jurnal pendapatannya hilang diam-diam.
+  const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
+  if (pesanPeriode) redirect(`/pos/transaksi?error=${encodeURIComponent(pesanPeriode)}`);
 
   // Faktor satuan diambil ulang dari master — nilai dari keranjang cuma petunjuk
   // satuan mana yang dipilih, bukan sumber kebenaran konversi stok.
@@ -171,7 +177,7 @@ export async function checkoutSale(formData: FormData) {
   // Harga POS = PPN-inklusif (standar retail).
   const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   const { dpp: dppPos, ppn: ppnPos } = splitPpnInklusif(total, await getPajakSettings(supabase));
-  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayIso = hariIniWIB();
   await postJournal(supabase, {
     tanggal: todayIso,
     deskripsi: `Penjualan POS ${noStruk}`,

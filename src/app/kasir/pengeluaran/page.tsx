@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { simpanPengeluaranKasir } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtTgl = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
@@ -39,8 +40,9 @@ export default async function PengeluaranKasirPage({
   const shift = await getOpenShift(supabase as never, user.id);
   if (!shift) redirect("/kasir/mulai");
 
-  const today = "2026-07-01";
-  const monthStart = "2026-07-01";
+  // Tanggal ini dulu dipaku mati — ringkasan pengeluaran kasir berhenti di 1 Juli 2026.
+  const today = hariIniWIB();
+  const monthStart = `${today.slice(0, 7)}-01`;
 
   // Ringkasan bulan berjalan untuk cabang shift ini (mencakup hari ini).
   const { data: summaryRaw } = await supabase

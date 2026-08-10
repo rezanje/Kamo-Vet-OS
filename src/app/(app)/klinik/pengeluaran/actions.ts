@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 const kategoriToCode: Record<string, string> = {
   "Listrik & Air": "5301", "Perlengkapan": "5302", "Transportasi": "5303",
@@ -13,7 +15,7 @@ const kategoriToCode: Record<string, string> = {
 export async function simpanPengeluaranKlinik(formData: FormData) {
   const supabase = await createClient();
   const branchId = String(formData.get("branchId") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "");
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const kategori = String(formData.get("kategori") ?? "");
   const deskripsi = String(formData.get("deskripsi") ?? "");
   const jumlah = Number(formData.get("jumlah")) || 0;
@@ -24,6 +26,9 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
   if (!kategori) redirect(`${back}?error=${encodeURIComponent("Pilih kategori dulu")}`);
   if (jumlah <= 0) redirect(`${back}?error=${encodeURIComponent("Jumlah harus lebih dari 0")}`);
 
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
+
   const { data: { user } } = await supabase.auth.getUser();
 
   // Tempel ke shift klinik berjalan biar pengeluaran tunai ikut ngurangin kas seharusnya saat tutup shift.
@@ -32,7 +37,7 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
     .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "klinik").maybeSingle();
 
   const { error } = await supabase.from("expenses").insert({
-    branch_id: branchId, tanggal: tanggal || undefined, kategori,
+    branch_id: branchId, tanggal, kategori,
     deskripsi: deskripsi || null, jumlah, metode_bayar: metode, bukti_url: null,
     shift_id: shift?.id ?? null, created_by: user?.id ?? null,
   });
@@ -41,7 +46,7 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
   const bebanCode = kategoriToCode[kategori] ?? "5401";
   const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   await postJournal(supabase, {
-    tanggal: tanggal || new Date().toISOString().slice(0, 10),
+    tanggal,
     deskripsi: `Pengeluaran klinik: ${deskripsi || kategori}`, source: "expense", sourceRef: null, branchId,
     lines: [{ code: bebanCode, debit: jumlah, credit: 0 }, { code: kasCode, debit: 0, credit: jumlah }],
   });

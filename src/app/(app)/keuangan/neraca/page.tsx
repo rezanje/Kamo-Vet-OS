@@ -1,22 +1,26 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { getAccountBalances } from "@/lib/ledger";
+import { getAccountBalances, nilaiSeksi } from "@/lib/ledger";
 import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function NeracaPage({ searchParams }: { searchParams: Promise<{ sampai?: string }> }) {
-  const { sampai } = await searchParams;
+export default async function NeracaPage({ searchParams }: { searchParams: Promise<{ sampai?: string; cabang?: string }> }) {
+  const { sampai, cabang } = await searchParams;
   const supabase = await createClient();
+  const { data: branches } = await supabase.from("branches").select("id, name").order("name");
   // Neraca = posisi kumulatif s/d tanggal (bukan rentang) — laba berjalan ikut terpotong otomatis.
-  const balances = await getAccountBalances(supabase as never, { to: sampai || undefined });
+  const balances = await getAccountBalances(supabase as never, { to: sampai || undefined, branchId: cabang || undefined });
 
-  const aset = balances.filter((b) => b.type === "ASET" && b.saldo !== 0);
-  const liabilitas = balances.filter((b) => b.type === "LIABILITAS" && b.saldo !== 0);
-  const ekuitas = balances.filter((b) => b.type === "EKUITAS" && b.saldo !== 0);
-  const pendapatan = balances.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + b.saldo, 0);
-  const beban = balances.filter((b) => b.type === "BEBAN").reduce((a, b) => a + b.saldo, 0);
+  // nilaiSeksi: akun kontra (mis. Akumulasi Penyusutan) otomatis jadi PENGURANG
+  // kelompoknya, bukan penambah.
+  const pakai = (b: (typeof balances)[number]) => ({ ...b, saldo: nilaiSeksi(b) });
+  const aset = balances.filter((b) => b.type === "ASET" && b.saldo !== 0).map(pakai);
+  const liabilitas = balances.filter((b) => b.type === "LIABILITAS" && b.saldo !== 0).map(pakai);
+  const ekuitas = balances.filter((b) => b.type === "EKUITAS" && b.saldo !== 0).map(pakai);
+  const pendapatan = balances.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + nilaiSeksi(b), 0);
+  const beban = balances.filter((b) => b.type === "BEBAN").reduce((a, b) => a + nilaiSeksi(b), 0);
   const labaBerjalan = pendapatan - beban; // belum di-closing ke ekuitas
 
   const totalAset = aset.reduce((a, b) => a + b.saldo, 0);
@@ -33,7 +37,7 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
         <span style={{ fontSize: 13, fontWeight: 500 }}>Neraca</span>
       </div>
 
-      <PeriodFilter basePath="/keuangan/neraca" sampai={sampai} tanggalOnly />
+      <PeriodFilter basePath="/keuangan/neraca" sampai={sampai} cabang={cabang} branches={branches ?? []} tanggalOnly />
 
       <div className={`p2ban`} style={{ background: seimbang ? "#e8f5ee" : "#fef2f2", border: `.5px solid ${seimbang ? "#86efac" : "#fca5a5"}`, color: seimbang ? "#15803d" : "#b91c1c" }}>
         <i className={`ti ti-${seimbang ? "circle-check" : "alert-triangle"}`} /> {seimbang ? `Neraca seimbang — Aktiva = Pasiva = ${rp(totalAset)}` : "Neraca TIDAK seimbang — ada kesalahan posting!"}

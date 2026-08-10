@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { susunKartuStok, labelSource, type Mutasi } from "@/lib/kartu-stok";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -10,7 +11,7 @@ function one<T>(r: Rel<T>): T | null {
 
 // Tanggal WIB (server Vercel jalan di UTC) — samakan dengan halaman lain.
 function todayWib() {
-  return new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  return hariIniWIB();
 }
 function awalBulanWib() {
   return todayWib().slice(0, 8) + "01";

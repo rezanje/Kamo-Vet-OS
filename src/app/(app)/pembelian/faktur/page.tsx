@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Row = {
   id: string;
@@ -32,7 +33,7 @@ export default async function FakturBeliPage({
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
 
   return (
     <>

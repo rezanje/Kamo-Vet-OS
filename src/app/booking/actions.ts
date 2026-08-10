@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validasiBooking, normalPhone, type BookingDraft } from "@/lib/booking";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 
 /**
  * Kiriman formulir publik. Semua isian diperiksa ulang di sini (dan sekali lagi

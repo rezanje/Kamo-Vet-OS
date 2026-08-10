@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { JAM_BUKA, JENIS_HEWAN, POLI_BOOKING, MAKS_HARI_KE_DEPAN } from "@/lib/booking";
 import { kirimBooking } from "./actions";
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatFaktur } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export type PoOption = {
   id: string;
@@ -20,7 +21,7 @@ const plusDays = (iso: string, days: number) => {
 };
 
 export function FakturForm({ options }: { options: PoOption[] }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
   const [poId, setPoId] = useState("");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [harga, setHarga] = useState<Record<string, number>>({});

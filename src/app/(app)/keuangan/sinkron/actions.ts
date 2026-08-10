@@ -94,6 +94,72 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
   return { invoices, sales, salesOnline };
 }
 
+export type DriftLain = { jenis: string; ref: string; tanggal: string; nilai: number; layar: string };
+
+// Dokumen di luar POS/klinik/online yang kehilangan jurnalnya.
+//
+// Sengaja DETEKSI SAJA, tanpa tombol posting ulang: memilih akun lawan untuk faktur
+// pembelian, gaji, atau kas keluar butuh konteks dokumennya (rekening mana, akun beban
+// mana). Menebaknya di sini justru menghasilkan jurnal yang salah tapi terlihat beres.
+// Yang dibutuhkan pemakai adalah TAHU dokumen mana yang bolong, lalu membukanya lagi.
+export async function findDriftLain(supabase: Awaited<ReturnType<typeof createClient>>): Promise<DriftLain[]> {
+  const { data: refs } = await supabase.from("journal_entries").select("source, source_ref").not("source_ref", "is", null);
+  const punya = (source: string, ref: string) =>
+    (refs ?? []).some((r) => r.source === source && r.source_ref === ref);
+
+  const [faktur, bayar, gaji, kas, transfer, returJual, returBeli] = await Promise.all([
+    supabase.from("purchase_invoices").select("no_faktur, tanggal, total"),
+    supabase.from("purchase_invoice_payments").select("amount, tanggal, purchase_invoices(no_faktur)"),
+    // Hanya slip yang SUDAH disahkan yang punya jurnal; yang masih draft memang belum.
+    supabase.from("payrolls").select("periode, total").eq("status", "final"),
+    supabase.from("cash_entries").select("no_bukti, tanggal, jumlah").is("voided_at", null),
+    supabase.from("cash_transfers").select("no_transfer, tanggal, jumlah").is("voided_at", null),
+    supabase.from("sales_returns").select("no_retur, tanggal, total"),
+    supabase.from("purchase_returns").select("no_retur, tanggal, total"),
+  ]);
+
+  const out: DriftLain[] = [];
+  const tambah = (ok: boolean, d: DriftLain) => { if (!ok) out.push(d); };
+
+  for (const f of (faktur.data ?? []) as { no_faktur: string; tanggal: string; total: number }[]) {
+    tambah(punya("purchase-invoice", f.no_faktur),
+      { jenis: "Faktur Pembelian", ref: f.no_faktur, tanggal: f.tanggal, nilai: Number(f.total), layar: "/pembelian/faktur" });
+  }
+  for (const p of (bayar.data ?? []) as { amount: number; tanggal: string; purchase_invoices: { no_faktur: string } | { no_faktur: string }[] | null }[]) {
+    const inv = Array.isArray(p.purchase_invoices) ? p.purchase_invoices[0] : p.purchase_invoices;
+    if (!inv?.no_faktur) continue;
+    tambah(punya("purchase-pay", inv.no_faktur),
+      { jenis: "Pembayaran Hutang", ref: inv.no_faktur, tanggal: p.tanggal, nilai: Number(p.amount), layar: "/keuangan/hutang" });
+  }
+  // payrolls = satu baris per KARYAWAN; jurnalnya satu per periode → dijumlahkan dulu.
+  const perPeriode = new Map<string, number>();
+  for (const g of (gaji.data ?? []) as { periode: string; total: number }[]) {
+    perPeriode.set(g.periode, (perPeriode.get(g.periode) ?? 0) + Number(g.total));
+  }
+  for (const [periode, nilai] of perPeriode) {
+    tambah(punya("payroll", periode),
+      { jenis: "Penggajian", ref: periode, tanggal: `${periode}-01`, nilai, layar: "/hris/penggajian" });
+  }
+  for (const k of (kas.data ?? []) as { no_bukti: string; tanggal: string; jumlah: number }[]) {
+    tambah(punya("kas-entry", k.no_bukti),
+      { jenis: "Kas Masuk/Keluar", ref: k.no_bukti, tanggal: k.tanggal, nilai: Number(k.jumlah), layar: "/kas-bank/kas" });
+  }
+  for (const t of (transfer.data ?? []) as { no_transfer: string; tanggal: string; jumlah: number }[]) {
+    tambah(punya("transfer", t.no_transfer),
+      { jenis: "Transfer Rekening", ref: t.no_transfer, tanggal: t.tanggal, nilai: Number(t.jumlah), layar: "/kas-bank/transfer" });
+  }
+  for (const r of (returJual.data ?? []) as { no_retur: string; tanggal: string; total: number }[]) {
+    tambah(punya("sales-return", r.no_retur),
+      { jenis: "Retur Penjualan", ref: r.no_retur, tanggal: r.tanggal, nilai: Number(r.total), layar: "/penjualan/retur" });
+  }
+  for (const r of (returBeli.data ?? []) as { no_retur: string; tanggal: string; total: number }[]) {
+    tambah(punya("purchase-return", r.no_retur),
+      { jenis: "Retur Pembelian", ref: r.no_retur, tanggal: r.tanggal, nilai: Number(r.total), layar: "/pembelian/retur" });
+  }
+
+  return out.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+}
+
 // Posting ulang jurnal yang hilang. Idempotent: hanya memproses yang masih hilang saat dijalankan.
 export async function perbaikiDrift() {
   const supabase = await createClient();

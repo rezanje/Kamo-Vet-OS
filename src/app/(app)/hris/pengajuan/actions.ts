@@ -6,7 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { AKUN_PIUTANG_KARYAWAN } from "@/lib/kasbon";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/hris/pengajuan";
 const BOLEH = ["OWNER", "ADMIN"];

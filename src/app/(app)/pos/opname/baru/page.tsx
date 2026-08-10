@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { buatPerintah } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export default async function OpnameBaruPage({
   searchParams,
@@ -42,7 +43,7 @@ export default async function OpnameBaruPage({
           </div>
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Tanggal mulai *</label>
-            <input className="fi" type="date" name="tanggal_mulai" defaultValue={new Date().toISOString().slice(0, 10)} required />
+            <input className="fi" type="date" name="tanggal_mulai" defaultValue={hariIniWIB()} required />
           </div>
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Penanggung jawab *</label>

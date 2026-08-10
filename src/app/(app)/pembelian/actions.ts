@@ -10,6 +10,8 @@ import { stockIn } from "@/lib/inventory";
 import { formatNoTerima, hitungBarisTerima, nilaiDiterima } from "@/lib/penerimaan";
 import { loadUnitOptions, pickUnit, toBaseCost, toBaseQty } from "@/lib/satuan";
 import { formatNomor, prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function nextNoTerima(supabase: any): Promise<string> {
@@ -34,7 +36,7 @@ export async function buatPO(formData: FormData) {
   const supplier_id = String(formData.get("supplier_id") ?? "").trim() || null;
   const to_warehouse_id = String(formData.get("to_warehouse_id") ?? "").trim() || null;
   const branch_id = String(formData.get("branch_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
 
   let items: ItemInput[] = [];
   try {
@@ -166,12 +168,15 @@ type TerimaInput = { id: string; qty_terima: number; qty_rusak?: number; catatan
 export async function terimaBarang(formData: FormData) {
   const supabase = await createClient();
   const id = String(formData.get("id") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const suratJalan = String(formData.get("surat_jalan") ?? "").trim() || null;
   const catatanDok = String(formData.get("catatan") ?? "").trim() || null;
 
   const fail = (msg: string) =>
     redirect(`/pembelian/${id}/terima?error=` + encodeURIComponent(msg));
+
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) fail(pesanPeriode);
 
   let input: TerimaInput[] = [];
   try {

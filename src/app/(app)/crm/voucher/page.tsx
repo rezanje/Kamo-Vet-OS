@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { ringkasSyarat, voucherStatus, type VoucherRow } from "@/lib/voucher";
 import { simpanVoucher, toggleVoucher } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
 const STATUS_LABEL: Record<string, string> = {
@@ -26,7 +27,7 @@ export default async function VoucherPage({
 
   // WIB: tanggal server bisa masih "kemarin" dalam UTC — voucher yang mulai
   // berlaku hari ini harus sudah terbaca aktif oleh kasir di Indonesia.
-  const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = hariIniWIB();
 
   const { data } = await supabase
     .from("vouchers")

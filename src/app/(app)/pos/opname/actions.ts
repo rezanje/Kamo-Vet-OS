@@ -7,6 +7,8 @@ import { postJournal } from "@/lib/posting";
 import { formatNoOpname } from "@/lib/opname";
 import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
 import { urutanBerikutnya } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -24,7 +26,7 @@ export async function buatPerintah(formData: FormData) {
   const supabase = await createClient();
 
   const warehouse_id = String(formData.get("warehouse_id") ?? "");
-  const tanggal_mulai = String(formData.get("tanggal_mulai") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal_mulai = String(formData.get("tanggal_mulai") ?? "") || hariIniWIB();
   const penanggung_jawab = String(formData.get("penanggung_jawab") ?? "").trim();
   const dikerjakan_oleh = String(formData.get("dikerjakan_oleh") ?? "").trim() || null;
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
@@ -52,7 +54,7 @@ export async function simpanHasil(formData: FormData) {
   const supabase = await createClient();
 
   const order_id = String(formData.get("order_id") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
 
   let fisik: Record<string, number> = {};
   try { fisik = JSON.parse(String(formData.get("fisik") ?? "{}")) as Record<string, number>; } catch { fisik = {}; }
@@ -60,6 +62,9 @@ export async function simpanHasil(formData: FormData) {
   const fail = (msg: string) => redirect(`/pos/opname/${order_id}?error=` + encodeURIComponent(msg));
 
   if (!order_id || Object.keys(fisik).length === 0) fail("Tidak ada data hitungan fisik.");
+
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) fail(pesanPeriode);
 
   const { data: order } = await supabase
     .from("opname_orders")

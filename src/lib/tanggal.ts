@@ -10,6 +10,16 @@ export function tanggalLokal(d: Date): string {
   return `${d.getFullYear()}-${bln}-${hari}`;
 }
 
+// "Hari ini" menurut WIB, apa pun zona waktu servernya.
+//
+// Fungsi Vercel jalan di UTC. `new Date().toISOString().slice(0,10)` karenanya
+// menghasilkan tanggal KEMARIN untuk transaksi jam 00:00–07:00 WIB — struk, jurnal,
+// dan saldo shift jadi jatuh di hari yang salah. Jangan pakai toISOString mentah
+// untuk "hari ini"; pakai fungsi ini.
+export function hariIniWIB(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
 export function geserHari(tanggal: string, jumlahHari: number): string {
   const d = new Date(`${tanggal}T00:00:00`);
   d.setDate(d.getDate() + jumlahHari);

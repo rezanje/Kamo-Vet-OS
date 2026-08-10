@@ -6,7 +6,7 @@ import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { jurnalBalik } from "@/lib/transfer-kas";
 import { akunLawanTerlarang, hrefKas, jurnalKasEntry, nomorKasEntry, validasiKasEntry, type JenisKas } from "@/lib/kas-entry";
 import { parseLampiran } from "@/lib/dokumen";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { postJournal } from "@/lib/posting";
 import { prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
 

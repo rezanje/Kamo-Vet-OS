@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getAccountBalances } from "../ledger";
+import { getAccountBalances, nilaiSeksi } from "../ledger";
 
 // Mock supabase minimal: coa_accounts tetap, journal_lines difilter oleh chain gte/lte/eq/in
 // persis seperti fetchLines() memanggilnya (query-builder chainable + thenable).
@@ -57,5 +57,34 @@ describe("getAccountBalances — filter branchIds", () => {
     const c = makeClient(accounts, lines);
     const bal = await getAccountBalances(c, { branchIds: ["b1"] });
     expect(bal.find((b) => b.code === "4101")?.saldo).toBe(100_000);
+  });
+});
+
+describe("nilaiSeksi — akun kontra jadi pengurang kelompoknya", () => {
+  it("aset biasa (saldo normal D) tetap positif", () => {
+    expect(nilaiSeksi({ type: "ASET", normal: "D", saldo: 1_000_000 })).toBe(1_000_000);
+  });
+
+  // Akumulasi Penyusutan: bertipe ASET tapi saldo normal Kredit. Kalau ini positif,
+  // penyusutan malah MENAMBAH total aktiva.
+  it("akumulasi penyusutan (ASET saldo normal K) mengurangi total aktiva", () => {
+    expect(nilaiSeksi({ type: "ASET", normal: "K", saldo: 822_083 })).toBe(-822_083);
+  });
+
+  it("liabilitas & ekuitas normal K tetap positif; potongan bersaldo D jadi negatif", () => {
+    expect(nilaiSeksi({ type: "LIABILITAS", normal: "K", saldo: 500_000 })).toBe(500_000);
+    expect(nilaiSeksi({ type: "EKUITAS", normal: "D", saldo: 250_000 })).toBe(-250_000);
+  });
+
+  it("neraca tetap seimbang setelah aturan ini diterapkan", () => {
+    const akun = [
+      { type: "ASET", normal: "D", saldo: 1_415_000 },       // kas & bank
+      { type: "ASET", normal: "K", saldo: 822_083 },          // akumulasi penyusutan
+      { type: "ASET", normal: "D", saldo: 1_000_000 },        // aset tetap
+      { type: "LIABILITAS", normal: "K", saldo: 180_000 },
+      { type: "EKUITAS", normal: "K", saldo: 1_412_917 },
+    ];
+    const sisi = (t: string) => akun.filter((a) => a.type === t).reduce((s, a) => s + nilaiSeksi(a), 0);
+    expect(sisi("ASET")).toBe(sisi("LIABILITAS") + sisi("EKUITAS"));
   });
 });

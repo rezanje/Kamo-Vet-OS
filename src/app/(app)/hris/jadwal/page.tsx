@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { jamRingkas } from "@/lib/shift-master";
 import { JadwalBoard, type KaryawanBaris, type ShiftOpsi } from "./JadwalBoard";
 

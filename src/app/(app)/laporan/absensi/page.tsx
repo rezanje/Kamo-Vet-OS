@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { rekapAbsensi, jamMenit, JAM_KERJA_DEFAULT, type BarisAbsensi, type JamKerja } from "@/lib/laporan-hris";
 
 type Rel<T> = T | T[] | null;

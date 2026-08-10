@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
-import { hariIniWIB, pesanReminder, tanggalIndo, waLink } from "@/lib/followup";
+import { pesanReminder, tanggalIndo, waLink } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { tandaiFollowUp } from "./actions";
 import { WaButton } from "./WaButton";
 

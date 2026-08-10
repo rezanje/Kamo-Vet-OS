@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { jamRingkas } from "@/lib/shift-master";
 import { isTenagaMedis, rentangTujuhHari, jumlahJaga, type BarisJadwal } from "@/lib/jadwal-dokter";
 

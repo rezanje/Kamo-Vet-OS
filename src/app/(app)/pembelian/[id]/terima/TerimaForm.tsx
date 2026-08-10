@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { terimaBarang } from "../../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export type BarisPO = {
   id: string;
@@ -50,7 +51,7 @@ export function TerimaForm({
   const totalTerima = rows.reduce((a, r) => a + qtyOf(r) * r.harga_beli, 0);
   const nilaiRusak = rows.reduce((a, r) => a + rusakOf(r) * r.harga_beli, 0);
   const selisih = totalTerima - totalPO;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
 
   const payload = rows.map((r) => ({
     id: r.id,

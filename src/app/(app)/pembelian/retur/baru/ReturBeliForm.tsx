@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatReturBeli } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export type PoOption = {
   id: string;
@@ -40,7 +41,7 @@ export function ReturBeliForm({ options }: { options: PoOption[] }) {
           </div>
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Tanggal *</label>
-            <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} required />
+            <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} required />
           </div>
           <div className="fg">
             <label className="flab">Keterangan</label>

@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances } from "@/lib/ledger";
 import { buildClosingLines } from "@/lib/tutup-buku";
 import { setKunci, tutupBuku } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtD = (d: string) =>
@@ -17,7 +18,7 @@ export default async function TutupBukuPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
   const [{ data: lock }, balances] = await Promise.all([
     supabase.from("accounting_locks").select("closed_until, updated_at").eq("id", true).maybeSingle(),
     getAccountBalances(supabase as never, { to: today }),

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bayarVisit } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Line = { deskripsi: string; qty: number; harga: number; item_id?: string | null };
 type Patient = {
@@ -91,7 +92,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, cat
     ...obat.map((r) => ({ ...r, jenis: "obat" })),
     ...jasa.map((r) => ({ ...r, jenis: "jasa" })),
   ].filter((r) => r.deskripsi.trim()));
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
 
   return (
     <form action={bayarVisit}>

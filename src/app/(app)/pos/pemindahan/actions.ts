@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatNoPemindahan, hitungStatusKirim, sisaTransit } from "@/lib/pemindahan";
 import { transferStock } from "@/lib/inventory";
 import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -48,7 +49,7 @@ export async function buatKirim(formData: FormData) {
 
   const from_warehouse_id = String(formData.get("from_warehouse_id") ?? "");
   const to_warehouse_id = String(formData.get("to_warehouse_id") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
   let items: ItemInput[] = [];
@@ -115,7 +116,7 @@ export async function terimaBarang(formData: FormData) {
   const supabase = await createClient();
 
   const source_transfer_id = String(formData.get("source_transfer_id") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
 
   let items: ItemInput[] = [];
   try { items = JSON.parse(String(formData.get("items") ?? "[]")) as ItemInput[]; } catch { items = []; }

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
 import { createPromo, togglePromo } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
 
@@ -37,7 +38,7 @@ export default async function PromoAdminPage({
 }) {
   const { error, success } = await searchParams;
   const supabase = await createClient();
-  const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = hariIniWIB();
 
   const [{ data: promos }, { data: branches }, { data: items }, { data: promoItems }] = await Promise.all([
     supabase.from("promos")

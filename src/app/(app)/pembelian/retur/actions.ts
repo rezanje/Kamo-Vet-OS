@@ -9,6 +9,8 @@ import { stockOut } from "@/lib/inventory";
 import { nilaiDiterima, qtyDiterima } from "@/lib/penerimaan";
 import { toBaseCost, toBaseQty } from "@/lib/satuan";
 import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeriode } from "@/lib/jurnal-guard";
 
 type ItemInput = { item_id: string; qty: number };
 
@@ -30,7 +32,7 @@ export async function buatReturBeli(formData: FormData) {
   const supabase = await createClient();
 
   const po_id = String(formData.get("po_id") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "") || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
   let items: ItemInput[] = [];
@@ -40,6 +42,9 @@ export async function buatReturBeli(formData: FormData) {
   const fail = (msg: string) => redirect("/pembelian/retur/baru?error=" + encodeURIComponent(msg));
 
   if (!po_id || items.length === 0) fail("Pilih PO dan minimal 1 barang.");
+
+  const pesanPeriode = await cekPeriode(supabase, tanggal);
+  if (pesanPeriode) fail(pesanPeriode);
 
   const { data: po } = await supabase
     .from("purchase_orders")
@@ -78,9 +83,18 @@ export async function buatReturBeli(formData: FormData) {
   const rows = items.map((it) => ({ item_id: it.item_id, qty: Number(it.qty), harga: harga[it.item_id] ?? 0 }));
   const total = totalRetur(rows);
 
-  // guard: retur potong hutang — tidak boleh melebihi sisa hutang
-  const { data: pays } = await supabase.from("po_payments").select("amount").eq("po_id", po_id);
-  const dibayar = (pays ?? []).reduce((a, p) => a + Number(p.amount), 0);
+  // guard: retur potong hutang — tidak boleh melebihi sisa hutang.
+  // Pelunasan pembelian dicatat di purchase_invoice_payments (lewat Faktur Pembelian);
+  // tabel po_payments sudah tidak ditulis layar mana pun, jadi membacanya membuat guard
+  // ini menganggap PO yang sudah lunas masih berhutang penuh.
+  const { data: pays } = await supabase
+    .from("purchase_invoices")
+    .select("purchase_invoice_payments(amount)")
+    .eq("po_id", po_id);
+  const dibayar = (pays ?? []).reduce(
+    (a, f) => a + ((f.purchase_invoice_payments ?? []) as { amount: number }[]).reduce((s, p) => s + Number(p.amount), 0),
+    0,
+  );
   const returSebelum = (prev ?? []).length
     ? (await supabase.from("purchase_returns").select("total").eq("po_id", po_id)).data?.reduce((a, r) => a + Number(r.total), 0) ?? 0
     : 0;

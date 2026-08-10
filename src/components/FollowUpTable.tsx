@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FOLLOWUP_JENIS, hariIniWIB, tanggalIndo } from "@/lib/followup";
+import { FOLLOWUP_JENIS, tanggalIndo } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
 

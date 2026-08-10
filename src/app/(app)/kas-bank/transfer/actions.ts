@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { validasiTransfer, jurnalTransfer, jurnalBalik, nomorTransfer } from "@/lib/transfer-kas";
-import { hariIniWIB } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { postJournal } from "@/lib/posting";
 import { prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
 

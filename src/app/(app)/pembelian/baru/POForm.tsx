@@ -7,6 +7,7 @@ import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { buatPO } from "../actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Supplier = { id: string; nama: string };
 type Warehouse = { id: string; name: string };
@@ -62,7 +63,7 @@ export function POForm({
     0
   );
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
 
   return (
     <form action={buatPO}>

@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { terimaPelunasan } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -18,7 +19,7 @@ type Row = {
 export default async function PiutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
 
   // Invoice aktif yang belum lunas + pembayaran yang sudah masuk.
@@ -167,7 +168,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                         <input type="hidden" name="invoice_id" value={r.id} />
                         <div>
                           <label className="flab">Tanggal</label>
-                          <input className="fi" type="date" name="tanggal" defaultValue={new Date().toISOString().slice(0, 10)} style={{ width: 130 }} />
+                          <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} style={{ width: 130 }} />
                         </div>
                         <div>
                           <label className="flab">Nominal (maks {rp(r.sisa)})</label>

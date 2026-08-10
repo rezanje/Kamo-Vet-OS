@@ -7,6 +7,7 @@ import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { jurnalUangMukaJual } from "@/lib/penjualan-dokumen";
 import { nextNoDokumen } from "@/lib/penjualan-server";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/penjualan/uang-muka";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -20,7 +21,7 @@ export async function terimaUangMukaJual(formData: FormData) {
   const jumlah = Number(formData.get("jumlah")) || 0;
   const metode = String(formData.get("metode") ?? "Transfer");
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
   if (!customerId) gagal("Pilih pelanggan yang menyetor uang muka");
@@ -73,7 +74,7 @@ export async function batalkanUangMukaJual(formData: FormData) {
   if (um!.status === "batal") gagal("Uang muka ini sudah dibatalkan");
   if (Number(um!.terpakai) > 0) gagal("Uang muka sudah dipakai melunasi faktur — tidak bisa dibatalkan");
 
-  const tanggal = new Date().toISOString().slice(0, 10);
+  const tanggal = hariIniWIB();
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) gagal(pesanPeriode);
 
