@@ -115,9 +115,11 @@ dan berhenti di periode pertama yang gagal.
 68 tempat memakai `new Date().toISOString()` sebagai "hari ini" → transaksi 00:00–07:00 WIB
 tercatat mundur sehari.
 
-**Perbaikan:** helper tunggal `hariIniWIB()` di `lib/tanggal.ts`, dipakai di **60 file**;
-`TZ=Asia/Jakarta` ditambahkan di `vercel.json`. Sekalian: `hariIniWIB` yang dulu numpang
-di `lib/followup.ts` dipindah ke `lib/tanggal.ts` supaya tidak ada dua sumber kebenaran.
+**Perbaikan:** helper tunggal `hariIniWIB()` di `lib/tanggal.ts`, dipakai di **60 file**.
+Offset dihitung di kode, BUKAN lewat env `TZ` — `TZ` nama yang dikunci Vercel dan deploy
+ditolak kalau diset di `vercel.json` (ketahuan saat deploy pertama). Sekalian: `hariIniWIB`
+yang dulu numpang di `lib/followup.ts` dipindah ke `lib/tanggal.ts` supaya tidak ada dua
+sumber kebenaran.
 
 ### T12 — Tidak ada kunci anti-jurnal-dobel ✅
 **Perbaikan:** unique index **parsial** `journal_entries_sekali_saja` pada

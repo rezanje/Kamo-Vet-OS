@@ -1,6 +1,5 @@
 {
   "regions": ["sin1"],
-  "env": { "TZ": "Asia/Jakarta" },
   "crons": [
     { "path": "/api/cron/depreciation", "schedule": "0 1 1 * *" }
   ]

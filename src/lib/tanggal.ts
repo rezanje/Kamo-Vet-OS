@@ -16,6 +16,10 @@ export function tanggalLokal(d: Date): string {
 // menghasilkan tanggal KEMARIN untuk transaksi jam 00:00–07:00 WIB — struk, jurnal,
 // dan saldo shift jadi jatuh di hari yang salah. Jangan pakai toISOString mentah
 // untuk "hari ini"; pakai fungsi ini.
+//
+// Offsetnya sengaja dihitung di sini, BUKAN lewat env TZ: `TZ` adalah nama yang
+// dikunci Vercel (deploy ditolak kalau diset di vercel.json), dan mengandalkan zona
+// waktu server berarti hasilnya berubah tergantung tempat kodenya jalan.
 export function hariIniWIB(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
