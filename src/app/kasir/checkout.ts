@@ -6,7 +6,8 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
-import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
+import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
+import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
 import { computeTotals, lineDiscount } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
@@ -23,6 +24,7 @@ type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
   promo_discount?: number | null;   // diisi server dari master, bukan dari klien
+  satuan?: string; faktor?: number; // ditetapkan ulang dari master di bawah
 };
 
 // Earning sekarang ikut golongan pelanggan (lib/harga-golongan → poinDidapat).
@@ -69,9 +71,12 @@ export async function checkoutKasir(formData: FormData) {
   // harga sendiri. Baris tanpa item_id (ketikan manual) tetap pakai harga yang diisi.
   const cartIds = [...new Set(rows.map((l) => l.item_id).filter(Boolean))];
   if (cartIds.length > 0) {
-    const [{ data: itemsHarga }, hargaMap] = await Promise.all([
+    const [{ data: itemsHarga }, hargaMap, unitMap] = await Promise.all([
       supabase.from("items").select("id, nama:name, unit, sell_price, min_sell_qty").in("id", cartIds),
       loadHargaCabang(supabase, branchId, cartIds),
+      // Faktor satuan WAJIB dari master: faktor palsu dari klien = stok terpotong
+      // lebih sedikit daripada barang yang benar-benar keluar dari rak.
+      loadUnitOptions(supabase, cartIds),
     ]);
     const pusat = new Map(
       ((itemsHarga ?? []) as { id: string; nama: string; unit: string; sell_price: number; min_sell_qty: number }[])
@@ -79,14 +84,28 @@ export async function checkoutKasir(formData: FormData) {
     );
     for (const l of rows) {
       const p = l.item_id ? pusat.get(l.item_id) : undefined;
-      if (p) l.harga = hargaCabang(hargaMap, l.item_id, p.unit, Number(p.sell_price));
+      if (!p) continue;
+      const opsi = applyHargaCabang(unitMap.get(l.item_id) ?? [], l.item_id, hargaMap);
+      if (opsi.length > 0) {
+        // Satuan yang dikirim klien hanya dipakai untuk MEMILIH dari daftar resmi;
+        // kalau tidak dikenal, pickUnit jatuh ke satuan dasar.
+        const u = pickUnit(opsi, l.satuan);
+        l.satuan = u.unit;
+        l.faktor = u.factor;
+        l.harga = u.sell_price;
+      } else {
+        l.satuan = p.unit;
+        l.faktor = 1;
+        l.harga = hargaCabang(hargaMap, l.item_id, p.unit, Number(p.sell_price));
+      }
     }
 
     // Minimum jual ditegakkan di server juga — kalau hanya di layar, kasir bisa
     // menembusnya lewat halaman yang sudah lama terbuka atau submit langsung.
+    // Dibandingkan dalam satuan dasar, karena min_sell_qty juga satuan dasar.
     const kurangMin = rows
       .map((l) => ({ l, p: l.item_id ? pusat.get(l.item_id) : undefined }))
-      .filter(({ l, p }) => p && Number(p.min_sell_qty) > 0 && l.qty < Number(p.min_sell_qty));
+      .filter(({ l, p }) => p && Number(p.min_sell_qty) > 0 && toBaseQty(l.qty, l.faktor ?? 1) < Number(p.min_sell_qty));
     if (kurangMin.length > 0) {
       const pesan = kurangMin.map(({ p }) => `${p!.nama} minimal ${Number(p!.min_sell_qty)}`).join(", ");
       redirect(`/kasir?error=${encodeURIComponent(`Di bawah minimum jual: ${pesan}`)}`);
@@ -209,8 +228,10 @@ export async function checkoutKasir(formData: FormData) {
     for (const r of rows) {
       if (!r.item_id) continue;
       try {
+        // Stok SELALU dipotong dalam satuan dasar: jual 1 dus isi 12 = keluar 12 pcs.
         const { cost } = await stockOut(supabase, {
-          warehouseId: wh.id, itemId: r.item_id, qty: r.qty, source: "sale", ref: noStruk,
+          warehouseId: wh.id, itemId: r.item_id, qty: toBaseQty(r.qty, r.faktor ?? 1),
+          source: "sale", ref: noStruk,
         });
         hppFifo += cost;
         hppBaris.set(r.item_id, (hppBaris.get(r.item_id) ?? 0) + cost);
@@ -226,6 +247,7 @@ export async function checkoutKasir(formData: FormData) {
   const { error: itErr } = await supabase.from("sale_items").insert(
     rows.map((l) => ({
       sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
+      satuan: l.satuan ?? null, faktor: l.faktor ?? 1,
       target_species: l.target_species ?? "Universal",
       item_discount_type: l.item_discount_type ?? null,
       item_discount_value: Math.max(0, Number(l.item_discount_value) || 0),

@@ -9,11 +9,14 @@ import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
+import type { ItemUnit } from "@/lib/satuan";
 
 export type ItemRow = {
   id: string; code: string; name: string; harga: number; kategori: string; stok: number;
   // Aturan jual dari master barang (migrasi 0075).
   minJual?: number; diskonDefault?: number; substitusi?: string | null;
+  // Satuan berjenjang; hanya diisi kalau barangnya punya lebih dari satu satuan.
+  satuan?: ItemUnit[];
 };
 export type CustRow = {
   id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
@@ -33,9 +36,15 @@ type CartLine = {
   item_id: string; nama: string; qty: number; harga: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
   minJual?: number;
+  // Satuan yang dipilih kasir + faktornya ke satuan dasar. Barang yang sama boleh
+  // muncul dua baris (1 dus + 3 pcs), makanya kunci baris bukan item_id saja.
+  satuan?: string; faktor?: number; opsiSatuan?: ItemUnit[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+
+// Kunci baris keranjang: barang + satuan.
+const kunciBaris = (l: { item_id: string; satuan?: string }) => `${l.item_id}|${l.satuan ?? ""}`;
 
 const TIER_BADGE: Record<string, { bg: string; color: string }> = {
   New: { bg: "#f1f5f9", color: "#475569" },
@@ -113,22 +122,46 @@ export function KasirClient({
   // minimum jual, dan diskon default terpasang sebagai persen (0 = tanpa diskon).
   const add = (it: ItemRow) =>
     setCart((c) => {
-      const ex = c.find((l) => l.item_id === it.id);
-      if (ex) return c.map((l) => (l.item_id === it.id ? { ...l, qty: l.qty + 1 } : l));
-      const minJual = Math.max(1, Number(it.minJual) || 0);
+      // Barang masuk dengan satuan DASAR (opsi pertama) — kasir tinggal menggantinya
+      // di keranjang kalau menjual per dus.
+      const dasar = it.satuan?.[0];
+      const baris: CartLine = {
+        item_id: it.id, nama: it.name, qty: 0, harga: dasar?.sell_price ?? it.harga,
+        minJual: Math.max(1, Number(it.minJual) || 0),
+        satuan: dasar?.unit, faktor: dasar?.factor ?? 1, opsiSatuan: it.satuan,
+      };
+      const k = kunciBaris(baris);
+      const ex = c.find((l) => kunciBaris(l) === k);
+      if (ex) return c.map((l) => (kunciBaris(l) === k ? { ...l, qty: l.qty + 1 } : l));
       const disk = Number(it.diskonDefault) || 0;
       return [...c, {
-        item_id: it.id, nama: it.name, qty: minJual, harga: it.harga, minJual,
+        ...baris, qty: baris.minJual!,
         ...(disk > 0 ? { item_discount_type: "percent" as const, item_discount_value: disk } : {}),
       }];
     });
-  const setQty = (id: string, d: number) =>
-    setCart((c) => c.flatMap((l) => (l.item_id === id ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
-  const removeLine = (id: string) => setCart((c) => c.filter((l) => l.item_id !== id));
-  const setPot = (id: string, val: number) =>
-    setCart((c) => c.map((l) => (l.item_id === id ? { ...l, item_discount_value: Math.max(0, val), item_discount_type: l.item_discount_type ?? "nominal" } : l)));
-  const togglePotType = (id: string) =>
-    setCart((c) => c.map((l) => (l.item_id === id ? { ...l, item_discount_type: l.item_discount_type === "percent" ? "nominal" : "percent" } : l)));
+  const setQty = (k: string, d: number) =>
+    setCart((c) => c.flatMap((l) => (kunciBaris(l) === k ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
+  const removeLine = (k: string) => setCart((c) => c.filter((l) => kunciBaris(l) !== k));
+  const setPot = (k: string, val: number) =>
+    setCart((c) => c.map((l) => (kunciBaris(l) === k ? { ...l, item_discount_value: Math.max(0, val), item_discount_type: l.item_discount_type ?? "nominal" } : l)));
+  const togglePotType = (k: string) =>
+    setCart((c) => c.map((l) => (kunciBaris(l) === k ? { ...l, item_discount_type: l.item_discount_type === "percent" ? "nominal" : "percent" } : l)));
+
+  // Ganti satuan: harga ikut satuan yang dipilih. Kalau satuan tujuan sudah ada
+  // barisnya, qty-nya digabung supaya tidak ada dua baris identik.
+  const setSatuan = (k: string, unit: string) =>
+    setCart((c) => {
+      const baris = c.find((l) => kunciBaris(l) === k);
+      const opsi = baris?.opsiSatuan?.find((o) => o.unit === unit);
+      if (!baris || !opsi) return c;
+      const baru = { ...baris, satuan: opsi.unit, faktor: opsi.factor, harga: opsi.sell_price };
+      const kBaru = kunciBaris(baru);
+      const lain = c.filter((l) => kunciBaris(l) !== k);
+      const bentrok = lain.find((l) => kunciBaris(l) === kBaru);
+      return bentrok
+        ? lain.map((l) => (kunciBaris(l) === kBaru ? { ...l, qty: l.qty + baru.qty } : l))
+        : c.map((l) => (kunciBaris(l) === k ? baru : l));
+    });
 
   // Promo otomatis (migrasi 0079): dihitung ulang tiap isi keranjang berubah.
   // Angka di sini cuma untuk DITAMPILKAN — server menghitung ulang saat bayar.
@@ -180,7 +213,9 @@ export function KasirClient({
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
   // Minimum jual dari master: kasir tidak boleh menjual di bawahnya.
-  const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty < (l.minJual ?? 0));
+  // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
+  // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
+  const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
   const canPay = cart.length > 0 && !!metode && !kurang && !voucherInvalid && !!cust && dibawahMin.length === 0;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
@@ -370,36 +405,60 @@ export function KasirClient({
                 <tbody>
                   {cart.map((l, i) => {
                     const disc = lineDiscount(l);
+                    const k = kunciBaris(l);
                     return (
-                      <tr key={l.item_id}>
+                      <tr key={k}>
                         <td style={{ fontSize: 10, color: "var(--tm)" }}>{i + 1}</td>
                         <td style={{ fontSize: 10.5 }}>
                           {l.nama}
-                          <div style={{ fontSize: 9, color: "var(--td)" }}>{rp(l.harga)}</div>
+                          <div style={{ fontSize: 9, color: "var(--td)" }}>
+                            {rp(l.harga)}{l.satuan ? ` / ${l.satuan}` : ""}
+                          </div>
+                          {/* Satuan berjenjang: muncul hanya untuk barang yang punya
+                              lebih dari satu satuan. Ganti satuan = ganti harga. */}
+                          {l.opsiSatuan && l.opsiSatuan.length > 1 && (
+                            <select
+                              className="fi" value={l.satuan ?? ""}
+                              onChange={(e) => setSatuan(k, e.target.value)}
+                              style={{ marginTop: 2, padding: "1px 4px", fontSize: 9, width: "100%", maxWidth: 130 }}
+                            >
+                              {l.opsiSatuan.map((o) => (
+                                <option key={o.unit} value={o.unit}>
+                                  {o.unit} — {rp(o.sell_price)}
+                                  {o.factor > 1 ? ` (isi ${o.factor})` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                           {/* Addendum §6: potongan per item (nominal / persen) */}
                           <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
                             <span style={{ fontSize: 8.5, color: "var(--td)" }}>Pot.</span>
                             <input className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
-                              onChange={(e) => setPot(l.item_id, Number(e.target.value))}
+                              onChange={(e) => setPot(k, Number(e.target.value))}
                               style={{ width: 52, padding: "1px 4px", fontSize: 9, textAlign: "right" }} />
-                            <button type="button" onClick={() => togglePotType(l.item_id)} className="btn-def" style={{ padding: "0px 5px", fontSize: 8.5 }}>
+                            <button type="button" onClick={() => togglePotType(k)} className="btn-def" style={{ padding: "0px 5px", fontSize: 8.5 }}>
                               {l.item_discount_type === "percent" ? "%" : "Rp"}
                             </button>
                           </div>
                         </td>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                            <button type="button" onClick={() => setQty(l.item_id, -1)} className="kpos-qtybtn"><i className="ti ti-minus" /></button>
+                            <button type="button" onClick={() => setQty(k, -1)} className="kpos-qtybtn"><i className="ti ti-minus" /></button>
                             <span style={{ fontSize: 10.5, minWidth: 14, textAlign: "center" }}>{l.qty}</span>
-                            <button type="button" onClick={() => setQty(l.item_id, 1)} className="kpos-qtybtn"><i className="ti ti-plus" /></button>
+                            <button type="button" onClick={() => setQty(k, 1)} className="kpos-qtybtn"><i className="ti ti-plus" /></button>
                           </div>
+                          {(l.faktor ?? 1) > 1 && (
+                            <div style={{ fontSize: 8.5, color: "var(--td)", textAlign: "center", marginTop: 1 }}>
+                              = {l.qty * (l.faktor ?? 1)} pcs
+                            </div>
+                          )}
                         </td>
                         <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 500 }}>
                           {rp(l.qty * l.harga - disc)}
                           {disc > 0 && <div style={{ fontSize: 8.5, color: "#b91c1c", fontWeight: 400 }}>pot. {rp(disc)}</div>}
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          <i className="ti ti-x" onClick={() => removeLine(l.item_id)}
+                          <i className="ti ti-x" onClick={() => removeLine(k)}
                             style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
                         </td>
                       </tr>

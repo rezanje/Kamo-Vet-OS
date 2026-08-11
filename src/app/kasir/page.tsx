@@ -5,7 +5,8 @@ import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
 import type { PromoHitung } from "@/lib/promo-hitung";
 import { loadInfoBarang, type AturanDiskon } from "@/lib/harga-golongan";
-import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
+import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
+import { loadUnitOptions } from "@/lib/satuan";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -115,14 +116,26 @@ export default async function KasirPage({
   // Nama barang substitusi diambil dari daftar yang sama — tidak perlu query lagi.
   const namaById = new Map(itemsRaw.map((i) => [i.id, i.name]));
 
-  const itemRows: ItemRow[] = itemsRaw.map((i) => ({
-    id: i.id, code: i.code, name: i.name, harga: hargaCabang(harga, i.id, i.unit, Number(i.sell_price)),
-    kategori: one(i.item_categories)?.name ?? "Lainnya",
-    stok: stockMap[i.id] ?? 0,
-    minJual: Number(i.min_sell_qty) || 0,
-    diskonDefault: Number(i.default_discount) || 0,
-    substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
-  }));
+  // Satuan berjenjang (dus/renteng/pcs) ikut dikirim ke layar. Sebelum ini layar
+  // kasir sama sekali tidak membaca item_units, jadi satuan yang sudah dibuat di
+  // master tidak bisa dipilih saat jualan (dilaporkan tim 2026-08-11).
+  const unitMap = await loadUnitOptions(supabase, itemsRaw.map((i) => i.id));
+
+  const itemRows: ItemRow[] = itemsRaw.map((i) => {
+    const satuan = applyHargaCabang(unitMap.get(i.id) ?? [], i.id, harga);
+    return {
+      id: i.id, code: i.code, name: i.name,
+      harga: hargaCabang(harga, i.id, i.unit, Number(i.sell_price)),
+      kategori: one(i.item_categories)?.name ?? "Lainnya",
+      stok: stockMap[i.id] ?? 0,
+      minJual: Number(i.min_sell_qty) || 0,
+      diskonDefault: Number(i.default_discount) || 0,
+      substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
+      // Hanya kirim kalau benar-benar berjenjang — barang bersatuan tunggal tidak
+      // perlu dropdown yang isinya satu pilihan.
+      satuan: satuan.length > 1 ? satuan : undefined,
+    };
+  });
 
   type CustRaw = {
     id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
