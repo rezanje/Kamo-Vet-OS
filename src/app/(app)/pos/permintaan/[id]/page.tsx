@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { setujuiPermintaan, updateRequestStatus } from "../actions";
+import { setujuiPermintaan, terimaDariBackoffice, updateRequestStatus } from "../actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -35,10 +35,10 @@ export default async function PermintaanDetailPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; trm?: string }>;
 }) {
   const { id } = await params;
-  const { success, error } = await searchParams;
+  const { success, error, trm } = await searchParams;
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -52,6 +52,7 @@ export default async function PermintaanDetailPage({
 
   const items = req.stock_request_items ?? [];
   const menunggu = req.status === "Menunggu Persetujuan";
+  const dikirim = req.status === "Dikirim";
 
   return (
     <>
@@ -65,7 +66,10 @@ export default async function PermintaanDetailPage({
 
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Permintaan disetujui dengan jumlah yang kamu tetapkan.
+          <i className="ti ti-circle-check" />{" "}
+          {success === "terima"
+            ? `Barang diterima${trm ? ` (${trm})` : ""} — stok cabang sudah bertambah.`
+            : "Permintaan disetujui dengan jumlah yang kamu tetapkan."}
         </div>
       )}
       {error && (
@@ -161,6 +165,69 @@ export default async function PermintaanDetailPage({
           <button type="submit" className="btn-def" style={{ color: "#b91c1c" }}>
             <i className="ti ti-x" /> Tolak permintaan
           </button>
+        </form>
+      )}
+
+      {/* Penerimaan: satu-satunya cara permintaan jadi "Selesai", karena di sinilah
+          stok benar-benar berpindah dari gudang pengirim ke gudang cabang. */}
+      {dikirim && (
+        <form action={terimaDariBackoffice}>
+          <input type="hidden" name="id" value={req.id} />
+          <div className="crm-sec">
+            <SecHeader
+              num="02"
+              title="TERIMA BARANG"
+              desc="Isi jumlah yang BENAR-BENAR sampai. Stok cabang bertambah sesuai angka ini, dan selisihnya jadi dasar klaim ke gudang pengirim."
+            />
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl" style={{ minWidth: 620 }}>
+                <thead>
+                  <tr>
+                    <th>Nama Barang</th>
+                    <th style={{ width: 90 }}>Satuan</th>
+                    <th style={{ width: 90, textAlign: "center" }}>Dikirim</th>
+                    <th style={{ width: 120, textAlign: "center" }}>Qty Diterima</th>
+                    <th style={{ width: 140 }}>Kondisi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it) => (
+                    <tr key={it.id}>
+                      <td style={{ fontSize: 11.5, fontWeight: 500 }}>{it.nama}</td>
+                      <td style={{ fontSize: 11, color: "var(--tm)" }}>{it.satuan ?? "—"}</td>
+                      <td style={{ textAlign: "center", fontSize: 11.5 }}>
+                        {Number(it.qty_disetujui ?? it.qty_diminta)}
+                      </td>
+                      <td>
+                        <input
+                          className="fi" type="number" min={0} step="any"
+                          name={`qty_${it.id}`}
+                          defaultValue={Number(it.qty_disetujui ?? it.qty_diminta)}
+                          style={{ textAlign: "center" }}
+                        />
+                      </td>
+                      <td>
+                        <select className="fi" name={`kondisi_${it.id}`} defaultValue="baik">
+                          <option value="baik">Baik</option>
+                          <option value="rusak">Rusak</option>
+                          <option value="kurang">Kurang</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--td)", margin: "8px 0 0" }}>
+              Hanya barang berkondisi <b>Baik</b> yang masuk stok jual. Rusak &amp; kurang tetap
+              tercatat penuh di dokumen penerimaan.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <button type="submit" className="btn-acc">
+                <i className="ti ti-circle-check" /> Terima barang &amp; tambah stok cabang
+              </button>
+            </div>
+          </div>
         </form>
       )}
     </>

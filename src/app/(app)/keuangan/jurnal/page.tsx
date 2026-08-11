@@ -9,7 +9,8 @@ import { postRecurringCatchUp } from "@/lib/recurring";
 type CoaAccount = { id: string; code: string; name: string };
 type Branch = { id: string; code: string; name: string };
 
-type JournalLine = { debit: number; credit: number };
+type Akun = { code: string; name: string };
+type JournalLine = { debit: number; credit: number; coa_accounts: Akun | Akun[] | null };
 type JournalEntry = {
   id: string;
   no_jurnal: string;
@@ -18,6 +19,9 @@ type JournalEntry = {
   source: string;
   journal_lines: JournalLine[];
 };
+
+const akunDari = (l: JournalLine): Akun | null =>
+  Array.isArray(l.coa_accounts) ? (l.coa_accounts[0] ?? null) : l.coa_accounts;
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -70,7 +74,7 @@ export default async function JurnalPage({
       .order("name"),
     supabase
       .from("journal_entries")
-      .select("id, no_jurnal, tanggal, deskripsi, source, journal_lines(debit, credit)")
+      .select("id, no_jurnal, tanggal, deskripsi, source, journal_lines(debit, credit, coa_accounts(code, name))")
       .order("tanggal", { ascending: false })
       .limit(30),
   ]);
@@ -130,7 +134,7 @@ export default async function JurnalPage({
         <SecHeader
           num="02"
           title="RIWAYAT JURNAL"
-          desc="30 entri terbaru — semua sumber (manual, sale, expense, shift)."
+          desc="30 entri terbaru — semua sumber (manual, sale, expense, shift). Klik nomor jurnalnya untuk melihat akun yang kena."
         />
 
         {entries.length === 0 ? (
@@ -165,8 +169,40 @@ export default async function JurnalPage({
                   const tgl = e.tanggal ? new Date(e.tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
                   return (
                     <tr key={e.id}>
+                      {/* Rinciannya dibuka pakai <details> bawaan browser — tidak perlu
+                          halaman baru maupun JavaScript. Sebelum ini layar jurnal hanya
+                          menampilkan total, jadi akun yang kena tidak kelihatan di mana pun
+                          selain Buku Besar (dilaporkan tim 2026-08-11). */}
                       <td style={{ fontFamily: "monospace", fontSize: 10.5, fontWeight: 600 }}>
-                        {e.no_jurnal}
+                        <details>
+                          <summary style={{ cursor: "pointer", listStyle: "none" }}>
+                            <i className="ti ti-chevron-right" style={{ fontSize: 11, verticalAlign: "-1px" }} />
+                            {e.no_jurnal}
+                          </summary>
+                          <div style={{ margin: "6px 0 2px", fontFamily: "var(--font, inherit)" }}>
+                            {lines.map((l, i) => {
+                              const akun = akunDari(l);
+                              const debit = Number(l.debit) > 0;
+                              return (
+                                <div key={i} style={{
+                                  display: "flex", justifyContent: "space-between", gap: 10,
+                                  fontSize: 10.5, padding: "2px 0", whiteSpace: "nowrap",
+                                  paddingLeft: debit ? 0 : 14,
+                                }}>
+                                  <span style={{ color: "var(--tm)" }}>
+                                    <span style={{ fontFamily: "monospace", color: "var(--td)", marginRight: 5 }}>
+                                      {akun?.code ?? "—"}
+                                    </span>
+                                    {akun?.name ?? "(akun terhapus)"}
+                                  </span>
+                                  <span style={{ fontFamily: "monospace", color: debit ? "#2563eb" : "#16a34a" }}>
+                                    {debit ? rp(Number(l.debit)) : rp(Number(l.credit))}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </details>
                       </td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{tgl}</td>
                       <td style={{ fontSize: 11, maxWidth: 200 }}>{e.deskripsi}</td>

@@ -131,14 +131,15 @@ export default async function PermintaanPage({
                             </button>
                           </form>
                         )}
+                        {/* "Selesai" TIDAK bisa ditekan dari sini. Dulu bisa, dan itu cuma
+                            mengganti label: stok DC tidak berkurang, stok cabang tidak
+                            bertambah. Yang menutup permintaan adalah dokumen penerimaan
+                            di cabang penerima — di situ qty yang benar-benar sampai dicatat
+                            dan stoknya baru berpindah. */}
                         {r.status === "Dikirim" && (
-                          <form action={updateRequestStatus}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <input type="hidden" name="status" value="Selesai" />
-                            <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>
-                              <i className="ti ti-circle-check" /> Terima / Selesai
-                            </button>
-                          </form>
+                          <span style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                            <i className="ti ti-clock" /> Menunggu cabang menerima
+                          </span>
                         )}
                         {(r.status === "Selesai" || r.status === "Ditolak") && (
                           <span style={{ fontSize: 10.5, color: "var(--td)" }}>—</span>

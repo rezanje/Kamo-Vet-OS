@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StockError, consumeLayers, stockIn, transferStock } from "../inventory";
+import { StockError, consumeLayers, lapisanPindahan, stockIn, transferStock } from "../inventory";
 
 // Supabase palsu seadanya: cukup untuk chain yang dipakai inventory.ts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,7 +55,8 @@ function makeClient(db: FakeDb, failTable?: string) {
   };
 }
 
-const L = (id: string, qty_left: number, unit_cost: number) => ({ id, qty_left, unit_cost });
+const L = (id: string, qty_left: number, unit_cost: number, exp_date: string | null = null) =>
+  ({ id, qty_left, unit_cost, exp_date });
 
 describe("consumeLayers (FIFO)", () => {
   it("habiskan layer tertua dulu, cost campuran benar", () => {
@@ -64,8 +65,8 @@ describe("consumeLayers (FIFO)", () => {
     expect(cost).toBe(9000);
     expect(shortfall).toBe(0);
     expect(takes).toEqual([
-      { id: "a", qty: 5, unit_cost: 1000 },
-      { id: "b", qty: 2, unit_cost: 2000 },
+      { id: "a", qty: 5, unit_cost: 1000, exp_date: null },
+      { id: "b", qty: 2, unit_cost: 2000, exp_date: null },
     ]);
   });
 
@@ -87,7 +88,53 @@ describe("consumeLayers (FIFO)", () => {
 
   it("layer kosong (qty_left 0) dilewati", () => {
     const { takes } = consumeLayers([L("a", 0, 1000), L("b", 5, 2000)], 2);
-    expect(takes).toEqual([{ id: "b", qty: 2, unit_cost: 2000 }]);
+    expect(takes).toEqual([{ id: "b", qty: 2, unit_cost: 2000, exp_date: null }]);
+  });
+
+  it("kadaluarsa lapisan ikut terbawa di takes", () => {
+    const { takes } = consumeLayers([L("a", 5, 1000, "2026-09-30")], 3);
+    expect(takes[0].exp_date).toBe("2026-09-30");
+  });
+});
+
+describe("lapisanPindahan", () => {
+  it("satu lapisan per tanggal kadaluarsa, bukan dilebur jadi satu", () => {
+    const hasil = lapisanPindahan(
+      [
+        { id: "a", qty: 4, unit_cost: 1000, exp_date: "2026-09-30" },
+        { id: "b", qty: 6, unit_cost: 2000, exp_date: "2026-12-31" },
+      ],
+      0, 0,
+    );
+    expect(hasil).toEqual([
+      { qty: 4, unitCost: 1000, expDate: "2026-09-30" },
+      { qty: 6, unitCost: 2000, expDate: "2026-12-31" },
+    ]);
+  });
+
+  it("lapisan bertanggal sama digabung, harga rata-rata tertimbang", () => {
+    const hasil = lapisanPindahan(
+      [
+        { id: "a", qty: 2, unit_cost: 1000, exp_date: "2026-09-30" },
+        { id: "b", qty: 2, unit_cost: 3000, exp_date: "2026-09-30" },
+      ],
+      0, 0,
+    );
+    expect(hasil).toEqual([{ qty: 4, unitCost: 2000, expDate: "2026-09-30" }]);
+  });
+
+  it("qty tanpa lapisan ikut pindah tanpa tanggal, dihargai harga beli", () => {
+    const hasil = lapisanPindahan([], 3, 1500);
+    expect(hasil).toEqual([{ qty: 3, unitCost: 1500, expDate: null }]);
+  });
+
+  it("total qty yang pindah selalu sama dengan yang keluar", () => {
+    const takes = [
+      { id: "a", qty: 4, unit_cost: 1000, exp_date: "2026-09-30" },
+      { id: "b", qty: 1, unit_cost: 2000, exp_date: null },
+    ];
+    const total = lapisanPindahan(takes, 2, 500).reduce((a, g) => a + g.qty, 0);
+    expect(total).toBe(4 + 1 + 2);
   });
 });
 
@@ -102,6 +149,41 @@ describe("transferStock (penerimaan permintaan barang)", () => {
     });
     expect(db.stock["dc|itm"]).toBe(6);
     expect(db.stock["toko|itm"]).toBe(4);
+  });
+
+  // Laporan tim 2026-08-11: barang dikirim DC → cabang, tapi tanggal kadaluarsanya
+  // tertinggal di DC sehingga di cabang tidak pernah muncul di Monitor Kadaluarsa.
+  it("tanggal kadaluarsa ikut pindah ke gudang tujuan", async () => {
+    const db: FakeDb = {
+      stock: { "dc|itm": 10 },
+      layers: [{ id: "L0", warehouse_id: "dc", item_id: "itm", qty_left: 10, unit_cost: 5000, exp_date: "2026-09-30" }],
+    };
+    await transferStock(makeClient(db), {
+      fromWarehouseId: "dc", toWarehouseId: "toko", itemId: "itm", qty: 4, source: "terima-permintaan",
+    });
+    const masuk = db.layers.filter((l) => l.warehouse_id === "toko");
+    expect(masuk).toHaveLength(1);
+    expect(masuk[0].exp_date).toBe("2026-09-30");
+    expect(Number(masuk[0].qty_in)).toBe(4);
+  });
+
+  it("kiriman dari dua lapisan beda tanggal jadi dua lapisan di tujuan", async () => {
+    const db: FakeDb = {
+      stock: { "dc|itm": 10 },
+      layers: [
+        { id: "L0", warehouse_id: "dc", item_id: "itm", qty_left: 4, unit_cost: 5000, exp_date: "2026-09-30" },
+        { id: "L1", warehouse_id: "dc", item_id: "itm", qty_left: 6, unit_cost: 5000, exp_date: "2026-12-31" },
+      ],
+    };
+    await transferStock(makeClient(db), {
+      fromWarehouseId: "dc", toWarehouseId: "toko", itemId: "itm", qty: 7, source: "terima-permintaan",
+    });
+    const masuk = db.layers.filter((l) => l.warehouse_id === "toko");
+    expect(masuk.map((l) => [l.exp_date, Number(l.qty_in)])).toEqual([
+      ["2026-09-30", 4],
+      ["2026-12-31", 3],
+    ]);
+    expect(db.stock["toko|itm"]).toBe(7);
   });
 });
 

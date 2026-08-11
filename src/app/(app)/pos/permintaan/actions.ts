@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
 import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
+import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
 import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 export async function buatPermintaan(formData: FormData) {
@@ -89,6 +90,67 @@ export async function setujuiPermintaan(formData: FormData) {
   redirect(`${kembali}?success=setuju`);
 }
 
+/**
+ * Terima barang dari backoffice, atas nama cabang peminta.
+ *
+ * Layar penerimaan yang lama cuma ada di dunia kasir (`/kasir/persediaan`) dan
+ * klinik — dua-duanya butuh shift terbuka, jadi admin/gudang pusat tidak punya
+ * jalan sama sekali untuk menutup permintaan. Itu sebabnya orang memakai tombol
+ * "Selesai" yang tidak memindahkan stok. Cabang penerimanya diambil dari
+ * permintaan (from_branch_id), bukan dari shift.
+ */
+export async function terimaDariBackoffice(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "");
+  const kembali = `/pos/permintaan/${id}`;
+
+  const { data: req } = await supabase
+    .from("stock_requests")
+    .select("status, from_branch_id, stock_request_items(id, nama, qty_diminta, qty_disetujui)")
+    .eq("id", id).maybeSingle();
+  if (!req) redirect(`/pos/permintaan?error=${encodeURIComponent("Permintaan tidak ditemukan")}`);
+  if (req!.status !== "Dikirim") {
+    redirect(`${kembali}?error=${encodeURIComponent(`Hanya permintaan berstatus Dikirim yang bisa diterima (sekarang ${req!.status}).`)}`);
+  }
+  if (!req!.from_branch_id) {
+    redirect(`${kembali}?error=${encodeURIComponent("Permintaan ini tidak punya cabang peminta — stok tidak tahu harus masuk ke mana.")}`);
+  }
+
+  // Qty & kondisi dibaca per baris milik permintaan ini saja.
+  type Baris = { id: string; nama: string; qty_diminta: number; qty_disetujui: number | null };
+  const rows: BarisTerima[] = ((req!.stock_request_items ?? []) as Baris[]).map((b) => {
+    const bawaan = Number(b.qty_disetujui ?? b.qty_diminta) || 0;
+    const raw = formData.get(`qty_${b.id}`);
+    return {
+      id: b.id,
+      item_id: null, // diisi di bawah dari master baris
+      nama: b.nama,
+      qty_diminta: Number(b.qty_diminta) || 0,
+      qty_diterima: raw == null ? bawaan : Math.max(0, Number(raw) || 0),
+      kondisi: String(formData.get(`kondisi_${b.id}`) ?? "baik"),
+    };
+  });
+
+  // item_id tidak ikut di select atas (kolomnya ada di baris) — ambil terpisah
+  // supaya tidak ada baris yang dipindahkan tanpa barang yang jelas.
+  const { data: itemIds } = await supabase
+    .from("stock_request_items").select("id, item_id").eq("request_id", id);
+  const petaItem = new Map(((itemIds ?? []) as { id: string; item_id: string | null }[]).map((r) => [r.id, r.item_id]));
+  for (const r of rows) r.item_id = petaItem.get(r.id) ?? null;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const hasil = await prosesTerimaPermintaan(supabase, {
+    requestId: id,
+    branchId: req!.from_branch_id as string,
+    receivedBy: user?.id ?? null,
+    rows,
+  });
+  if (!hasil.ok) redirect(`${kembali}?error=${encodeURIComponent(hasil.error)}`);
+
+  revalidatePath("/pos/permintaan");
+  redirect(`${kembali}?success=terima&trm=${hasil.receiptNumber}`);
+}
+
 export async function updateRequestStatus(formData: FormData) {
   const supabase = await createClient();
   const id = String(formData.get("id"));
@@ -96,6 +158,17 @@ export async function updateRequestStatus(formData: FormData) {
 
   const { data: req } = await supabase.from("stock_requests").select("status").eq("id", id).single();
   if (!req) redirect(`/pos/permintaan?error=${encodeURIComponent("Permintaan tidak ditemukan")}`);
+
+  // "Selesai" hanya boleh lahir dari dokumen penerimaan (lib/terima-permintaan),
+  // karena di situlah stok benar-benar berpindah dan qty yang sampai dicatat.
+  // Sebelum penjagaan ini ada, tombol "Terima / Selesai" di backoffice cuma
+  // mengganti label: permintaan tampak beres padahal stok cabang tidak bertambah
+  // sama sekali (dilaporkan tim 2026-08-11).
+  if (status === "Selesai") {
+    redirect(`/pos/permintaan?error=${encodeURIComponent(
+      "Permintaan ditutup lewat penerimaan barang di cabang penerima, bukan dari sini — supaya stoknya ikut berpindah.",
+    )}`);
+  }
 
   // Addendum §5: flow linear — Menunggu → Disetujui → Dikirim → Selesai / Ditolak (terminal).
   if (!canTransitionRequest(req!.status, status)) {

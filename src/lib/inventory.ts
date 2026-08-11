@@ -7,9 +7,9 @@ import { hariIniWIB } from "./tanggal";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
-export type Layer = { id: string; qty_left: number; unit_cost: number };
+export type Layer = { id: string; qty_left: number; unit_cost: number; exp_date?: string | null };
 export type Consumption = {
-  takes: { id: string; qty: number; unit_cost: number }[];
+  takes: { id: string; qty: number; unit_cost: number; exp_date?: string | null }[];
   cost: number;       // total nilai yang terkonsumsi dari layer
   shortfall: number;  // qty yang tidak tercover layer (stok pra-FIFO / minus)
 };
@@ -23,11 +23,47 @@ export function consumeLayers(layers: Layer[], qty: number): Consumption {
     if (sisa <= 0) break;
     const ambil = Math.min(Number(l.qty_left), sisa);
     if (ambil <= 0) continue;
-    takes.push({ id: l.id, qty: ambil, unit_cost: Number(l.unit_cost) });
+    takes.push({ id: l.id, qty: ambil, unit_cost: Number(l.unit_cost), exp_date: l.exp_date ?? null });
     cost += ambil * Number(l.unit_cost);
     sisa -= ambil;
   }
   return { takes, cost, shortfall: Math.max(0, sisa) };
+}
+
+/**
+ * Lapisan yang harus dibuat di gudang tujuan saat barang dipindah.
+ *
+ * Kadaluarsa menempel di LAPISAN, bukan di barang — jadi satu pengiriman bisa
+ * mengambil dari dua lapisan bertanggal beda, dan gudang tujuan harus menerima
+ * dua lapisan juga. Kalau semuanya dilebur jadi satu lapisan tanpa tanggal
+ * (perilaku lama), barang yang pindah ke cabang hilang dari Monitor Kadaluarsa
+ * dan bisa terjual lewat tanggal tanpa peringatan.
+ */
+export function lapisanPindahan(
+  takes: Consumption["takes"],
+  shortfall: number,
+  hargaBeliCadangan: number,
+): { qty: number; unitCost: number; expDate: string | null }[] {
+  const perTanggal = new Map<string, { qty: number; nilai: number; expDate: string | null }>();
+  for (const t of takes) {
+    const exp = t.exp_date ?? null;
+    const kunci = exp ?? "";
+    const cur = perTanggal.get(kunci) ?? { qty: 0, nilai: 0, expDate: exp };
+    cur.qty += t.qty;
+    cur.nilai += t.qty * Number(t.unit_cost);
+    perTanggal.set(kunci, cur);
+  }
+  // Qty tanpa lapisan (stok pra-FIFO) ikut pindah tanpa tanggal — nilainya
+  // memakai harga beli master, sama seperti perhitungan cost di stockOut.
+  if (shortfall > 0) {
+    const cur = perTanggal.get("") ?? { qty: 0, nilai: 0, expDate: null };
+    cur.qty += shortfall;
+    cur.nilai += shortfall * hargaBeliCadangan;
+    perTanggal.set("", cur);
+  }
+  return [...perTanggal.values()]
+    .filter((g) => g.qty > 0)
+    .map((g) => ({ qty: g.qty, unitCost: g.nilai / g.qty, expDate: g.expDate }));
 }
 
 // Kegagalan tulis stok WAJIB meledak, bukan didiamkan: dokumen penerimaan yang
@@ -109,14 +145,19 @@ export type StockOutOpts = {
 
 // Stok keluar: konsumsi layer FIFO, turunkan qty, kembalikan total cost (HPP riil).
 // Shortfall (layer tidak cukup) dihargai items.buy_price — tidak membuat layer negatif.
-export async function stockOut(supabase: AnyClient, o: StockOutOpts): Promise<{ cost: number }> {
-  if (o.qty <= 0) return { cost: 0 };
+// `takes` & `shortfall` dikembalikan supaya pemanggil yang memindahkan barang bisa
+// membangun ulang lapisan (beserta kadaluarsanya) di gudang tujuan.
+export async function stockOut(
+  supabase: AnyClient,
+  o: StockOutOpts,
+): Promise<{ cost: number; takes: Consumption["takes"]; shortfall: number; hargaBeli: number }> {
+  if (o.qty <= 0) return { cost: 0, takes: [], shortfall: 0, hargaBeli: 0 };
   // Jasa tidak mengurangi stok DAN tidak punya HPP persediaan — cost 0, bukan error.
-  if (!(await punyaStok(supabase, o.itemId))) return { cost: 0 };
+  if (!(await punyaStok(supabase, o.itemId))) return { cost: 0, takes: [], shortfall: 0, hargaBeli: 0 };
 
   const { data: layersRaw, error: layerErr } = await supabase
     .from("stock_layers")
-    .select("id, qty_left, unit_cost")
+    .select("id, qty_left, unit_cost, exp_date")
     .eq("warehouse_id", o.warehouseId).eq("item_id", o.itemId)
     .gt("qty_left", 0)
     .order("tanggal", { ascending: true })
@@ -134,9 +175,11 @@ export async function stockOut(supabase: AnyClient, o: StockOutOpts): Promise<{ 
   }
 
   let extra = 0;
+  let hargaBeli = 0;
   if (shortfall > 0) {
     const { data: item } = await supabase.from("items").select("buy_price").eq("id", o.itemId).maybeSingle();
-    extra = shortfall * (Number(item?.buy_price) || 0);
+    hargaBeli = Number(item?.buy_price) || 0;
+    extra = shortfall * hargaBeli;
   }
 
   await adjustStockQty(supabase, o.warehouseId, o.itemId, -o.qty);
@@ -144,7 +187,7 @@ export async function stockOut(supabase: AnyClient, o: StockOutOpts): Promise<{ 
     ...o, qty: -o.qty,
     unitCost: o.qty > 0 ? (cost + extra) / o.qty : 0,
   });
-  return { cost: cost + extra };
+  return { cost: cost + extra, takes, shortfall, hargaBeli };
 }
 
 // Stok masuk dgn cost = items.buy_price (penerimaan internal / penyesuaian manual).
@@ -157,18 +200,21 @@ export async function stockInAtBuyPrice(
   await stockIn(supabase, { ...o, unitCost: Number(item?.buy_price) || 0 });
 }
 
-// Pindah gudang: cost FIFO ikut barang (keluar asal → masuk tujuan dgn cost rata konsumsi).
+// Pindah gudang: cost FIFO DAN tanggal kadaluarsa ikut barang. Satu lapisan dibuat
+// di gudang tujuan untuk tiap tanggal kadaluarsa yang terkonsumsi di gudang asal.
 export async function transferStock(
   supabase: AnyClient,
   o: { fromWarehouseId: string; toWarehouseId: string; itemId: string; qty: number; source: string; ref?: string | null; tanggal?: string },
 ): Promise<void> {
   if (o.qty <= 0) return;
-  const { cost } = await stockOut(supabase, {
+  const { takes, shortfall, hargaBeli } = await stockOut(supabase, {
     warehouseId: o.fromWarehouseId, itemId: o.itemId, qty: o.qty, source: o.source, ref: o.ref,
   });
-  await stockIn(supabase, {
-    warehouseId: o.toWarehouseId, itemId: o.itemId, qty: o.qty,
-    unitCost: o.qty > 0 ? cost / o.qty : 0,
-    source: o.source, ref: o.ref, tanggal: o.tanggal,
-  });
+  for (const g of lapisanPindahan(takes, shortfall, hargaBeli)) {
+    await stockIn(supabase, {
+      warehouseId: o.toWarehouseId, itemId: o.itemId, qty: g.qty,
+      unitCost: g.unitCost, expDate: g.expDate,
+      source: o.source, ref: o.ref, tanggal: o.tanggal,
+    });
+  }
 }

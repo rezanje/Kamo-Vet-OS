@@ -4,13 +4,14 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { receiptSummary } from "@/lib/stock-recon";
-import { stockInAtBuyPrice } from "@/lib/inventory";
-import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
 
-type TerimaRow = { id: string; item_id: string | null; nama: string; qty_diminta: number; qty_diterima: number; kondisi: string; notes?: string };
-
-// Penerimaan barang klinik (mirror kasir/persediaan.terimaBarang, scope shift klinik).
+// Penerimaan barang klinik — aturannya sama persis dengan penerimaan petshop,
+// jadi dua-duanya memakai lib/terima-permintaan.
+//
+// Versi lama di sini memakai stockIn (menambah stok klinik) TANPA mengurangi
+// gudang pengirim, jadi tiap penerimaan menggandakan barang. Juga mengabaikan
+// faktor satuan, jadi 1 dus masuk sebagai 1 pcs.
 export async function terimaBarangKlinik(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -21,48 +22,16 @@ export async function terimaBarangKlinik(formData: FormData) {
   const requestId = String(formData.get("request_id") ?? "");
   if (!requestId) redirect("/klinik/penerimaan");
 
-  let rows: TerimaRow[] = [];
+  let rows: BarisTerima[] = [];
   try { rows = JSON.parse(String(formData.get("items") ?? "[]")); } catch { rows = []; }
 
-  const now = new Date();
-  const ymd = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const prefixTrm = `TRM-${ymd}-`;
-  const receiptNumber = formatNomor(prefixTrm, await urutanBerikutnya(supabase, {
-    table: "stock_receipts", column: "receipt_number", prefix: prefixTrm, pad: 3,
-  }), 3);
-
-  const { data: receipt, error: recErr } = await supabase
-    .from("stock_receipts")
-    .insert({ receipt_number: receiptNumber, stock_request_id: requestId, received_by: user.id })
-    .select("id").single();
-  if (recErr || !receipt) redirect(`/klinik/penerimaan?error=${encodeURIComponent(recErr?.message ?? "Gagal buat dokumen penerimaan")}`);
-
-  await supabase.from("stock_receipt_items").insert(
-    rows.map((r) => ({
-      stock_receipt_id: receipt!.id, item_id: r.item_id, nama: String(r.nama ?? "").slice(0, 160) || "—",
-      qty_ordered: Number(r.qty_diminta) || 0, qty_received: Number(r.qty_diterima) || 0,
-      condition: (r.kondisi || "baik").toLowerCase(), notes: (r.notes ?? "").trim() || null,
-    })),
-  );
-  for (const row of rows) {
-    await supabase.from("stock_request_items").update({ qty_diterima: Number(row.qty_diterima) || 0, kondisi: row.kondisi || null }).eq("id", row.id);
-  }
-  await supabase.from("stock_requests").update({ status: "Selesai" }).eq("id", requestId);
-
-  // Stok gudang cabang klinik bertambah (hanya kondisi baik).
-  const { data: wh } = await supabase
-    .from("warehouses").select("id").eq("branch_id", shift.branch_id).eq("is_active", true).order("code").limit(1).maybeSingle();
-  if (wh) {
-    for (const row of rows) {
-      if (!row.item_id || (row.kondisi || "baik").toLowerCase() !== "baik") continue;
-      const qty = Number(row.qty_diterima) || 0;
-      if (qty <= 0) continue;
-      // layer FIFO baru @ buy_price (penerimaan internal dari permintaan barang)
-      await stockInAtBuyPrice(supabase, { warehouseId: wh.id, itemId: row.item_id, qty, source: "terima-permintaan" });
-    }
+  const hasil = await prosesTerimaPermintaan(supabase, {
+    requestId, branchId: shift.branch_id, receivedBy: user.id, rows,
+  });
+  if (!hasil.ok) {
+    redirect(`/klinik/penerimaan?error=${encodeURIComponent(hasil.error)}`);
   }
 
-  const summary = receiptSummary(rows.map((r) => ({ qty_ordered: Number(r.qty_diminta) || 0, qty_received: Number(r.qty_diterima) || 0 })));
   revalidatePath("/klinik/penerimaan");
-  redirect(`/klinik/penerimaan?success=terima&trm=${receiptNumber}&selisih=${summary.selisih}`);
+  redirect(`/klinik/penerimaan?success=terima&trm=${hasil.receiptNumber}&selisih=${hasil.selisih}`);
 }

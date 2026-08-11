@@ -45,6 +45,10 @@ const HERO: Hero[] = [
 // Kartu "Lain-lain" = fitur klinik sisanya. href kalau sudah ada halaman.
 const LAINLAIN: { label: string; href?: string }[] = [
   { label: "Racik obat", href: "/klinik/racik" },
+  // Booking online sudah jalan sejak migrasi 0105, tapi tidak pernah ditautkan dari
+  // sini — staf harus hafal URL-nya. Dilaporkan tim 2026-08-11.
+  { label: "Booking online", href: "/klinik/booking" },
+  { label: "Jadwal dokter", href: "/klinik/jadwal-dokter" },
   { label: "Pengeluaran", href: "/klinik/pengeluaran" },
   { label: "Permintaan barang", href: "/klinik/permintaan" },
   { label: "Penerimaan barang", href: "/klinik/penerimaan" },
