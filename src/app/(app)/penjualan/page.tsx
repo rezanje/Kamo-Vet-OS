@@ -188,6 +188,11 @@ export default async function PenjualanPage({
           num="01"
           title="RINGKASAN PENJUALAN"
           desc={dari || sampai ? `Perbandingan omzet POS, Online, dan Klinik, periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Perbandingan omzet POS retail, Online, dan Klinik (seluruh periode)."}
+          action={
+            <Link href="/laporan/penjualan-rinci" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+              <i className="ti ti-list-details" /> Lihat per transaksi
+            </Link>
+          }
         />
         <table className="tbl" style={{ width: "100%" }}>
           <thead>
