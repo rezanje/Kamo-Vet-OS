@@ -55,6 +55,7 @@ const UNIQUE_MSG: Record<string, string> = {
   supplier_categories_nama_key: "Kategori pemasok dengan nama itu sudah ada",
   asset_categories_nama_key: "Kategori aset dengan nama itu sudah ada",
   customer_categories_nama_key: "Golongan pelanggan dengan nama itu sudah ada",
+  coa_accounts_code_key: "Kode akun itu sudah dipakai akun lain",
 };
 
 export function pesanSimpanGagal(raw: string): string {
