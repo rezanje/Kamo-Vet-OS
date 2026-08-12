@@ -44,6 +44,10 @@ export default async function OpnameDetailPage({
   if (!orderRaw) notFound();
   const order = orderRaw as unknown as Order;
 
+  const { count } = await supabase
+    .from("opname_order_items").select("*", { count: "exact", head: true }).eq("order_id", id);
+  const jumlahLingkup = count ?? 0;
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -67,7 +71,7 @@ export default async function OpnameDetailPage({
       )}
 
       <div className="crm-sec">
-        <SecHeader num="01" title="PERINTAH STOK OPNAME" desc={order.keterangan ?? "Hitung fisik seluruh barang di gudang."} />
+        <SecHeader num="01" title="PERINTAH STOK OPNAME" desc={order.keterangan ?? (jumlahLingkup ? "Hitung fisik sebagian barang di gudang." : "Hitung fisik seluruh barang di gudang.")} />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(140px, 1fr))", gap: 10 }}>
           <div>
             <div className="flab">Tanggal mulai</div>
@@ -76,6 +80,14 @@ export default async function OpnameDetailPage({
           <div>
             <div className="flab">Gudang</div>
             <div style={{ fontSize: 12 }}>{order.warehouses?.name ?? "—"}</div>
+          </div>
+          <div>
+            <div className="flab">Lingkup</div>
+            <div style={{ fontSize: 12 }}>
+              {jumlahLingkup > 0
+                ? <><span className="bge o">Sebagian</span> {jumlahLingkup} barang</>
+                : <><span className="bge b">Penuh</span> seluruh gudang</>}
+            </div>
           </div>
           <div>
             <div className="flab">Penanggung jawab</div>
@@ -98,12 +110,20 @@ export default async function OpnameDetailPage({
 }
 
 // Terbuka: form input hitungan fisik dari stok gudang saat ini.
+// Opname parsial hanya menampilkan barang yang masuk lingkup perintah — barang di
+// luar lingkup tidak boleh ikut disesuaikan, itu inti "parsial"-nya.
 async function OpenForm({ orderId, warehouseId }: { orderId: string; warehouseId: string }) {
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data: lingkupRows } = await supabase
+    .from("opname_order_items").select("item_id").eq("order_id", orderId);
+  const lingkup = (lingkupRows ?? []).map((r) => r.item_id as string);
+
+  let q = supabase
     .from("stock")
     .select("item_id, qty, items(code, name, unit)")
     .eq("warehouse_id", warehouseId);
+  if (lingkup.length > 0) q = q.in("item_id", lingkup);
+  const { data } = await q;
 
   const rows = ((data ?? []) as unknown as { item_id: string; qty: number; items: { code: string; name: string; unit: string } | null }[])
     .map((s) => ({

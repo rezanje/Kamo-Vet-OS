@@ -11,6 +11,8 @@ type Row = {
   status: string;
   warehouses: { name: string } | null;
   opname_results: { no_hasil: string }[] | null;
+  /** Kosong / null = opname penuh; berisi = lingkup barang opname parsial. */
+  opname_order_items: { item_id: string }[] | null;
 };
 
 const fmtD = (d: string) =>
@@ -26,7 +28,7 @@ export default async function OpnamePage({
 
   let q = supabase
     .from("opname_orders")
-    .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, warehouses(name), opname_results(no_hasil)")
+    .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, warehouses(name), opname_results(no_hasil), opname_order_items(item_id)")
     .order("created_at", { ascending: false })
     .limit(200);
   if (status) q = q.eq("status", status);
@@ -97,7 +99,12 @@ export default async function OpnamePage({
                     <Link href={`/pos/opname/${r.id}`} style={{ color: "var(--ac)" }}>{r.no_opname}</Link>
                   </td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtD(r.tanggal_mulai)}</td>
-                  <td style={{ fontSize: 11.5 }}>{r.warehouses?.name ?? "—"}</td>
+                  <td style={{ fontSize: 11.5 }}>
+                    {r.warehouses?.name ?? "—"}
+                    {(r.opname_order_items?.length ?? 0) > 0 && (
+                      <span className="bge o" style={{ marginLeft: 5 }}>Sebagian · {r.opname_order_items!.length}</span>
+                    )}
+                  </td>
                   <td style={{ fontSize: 11.5 }}>{r.penanggung_jawab}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? ""}</td>
                   <td style={{ fontSize: 11.5 }}>{r.opname_results?.[0]?.no_hasil ?? "—"}</td>

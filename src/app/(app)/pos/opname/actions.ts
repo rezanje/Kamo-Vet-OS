@@ -38,11 +38,27 @@ export async function buatPerintah(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   const no_opname = await nextNo(supabase, "opname_orders", "OPO");
 
+  // Opname parsial: daftar barang yang dihitung. Kosong = seluruh gudang, jadi
+  // perintah lama (dan pilihan "Seluruh gudang") tetap berarti hitung penuh.
+  const lingkup = String(formData.get("lingkup_items") ?? "")
+    .split(",").map((x) => x.trim()).filter(Boolean);
+
   const { data: doc, error } = await supabase
     .from("opname_orders")
     .insert({ no_opname, warehouse_id, tanggal_mulai, penanggung_jawab, dikerjakan_oleh, keterangan, created_by: user?.id ?? null })
     .select("id").single();
   if (error || !doc) fail("Gagal menyimpan perintah opname.");
+
+  if (lingkup.length > 0) {
+    const { error: lErr } = await supabase.from("opname_order_items")
+      .insert(lingkup.map((item_id) => ({ order_id: doc!.id, item_id })));
+    if (lErr) {
+      // Perintah tanpa lingkupnya berbahaya: layar hitung akan menampilkan SELURUH
+      // gudang, padahal petugas cuma disuruh menghitung satu rak.
+      await supabase.from("opname_orders").delete().eq("id", doc!.id);
+      fail("Gagal menyimpan lingkup barang opname.");
+    }
+  }
 
   revalidatePath("/pos/opname");
   redirect(`/pos/opname/${doc!.id}?success=` + encodeURIComponent(`Perintah ${no_opname} tersimpan.`));
@@ -73,8 +89,15 @@ export async function simpanHasil(formData: FormData) {
   if (!order) fail("Perintah opname tidak ditemukan.");
   if (order!.status === "Selesai") fail("Perintah ini sudah selesai diopname.");
 
+  // Lingkup ditegakkan di server juga: barang di luar perintah opname parsial tidak
+  // boleh ikut disesuaikan, walaupun ikut terkirim dari layar yang sudah lama terbuka.
+  const { data: lingkupRows } = await supabase
+    .from("opname_order_items").select("item_id").eq("order_id", order_id);
+  const lingkup = new Set((lingkupRows ?? []).map((r) => r.item_id as string));
+
   // qty sistem dibaca ULANG saat submit (race-safe), bukan snapshot form.
-  const itemIds = Object.keys(fisik);
+  const itemIds = Object.keys(fisik).filter((id) => lingkup.size === 0 || lingkup.has(id));
+  if (itemIds.length === 0) fail("Tidak ada barang dalam lingkup opname ini.");
   const [{ data: stocks }, { data: itemRows }] = await Promise.all([
     supabase.from("stock").select("item_id, qty").eq("warehouse_id", order!.warehouse_id).in("item_id", itemIds),
     supabase.from("items").select("id, buy_price").in("id", itemIds),

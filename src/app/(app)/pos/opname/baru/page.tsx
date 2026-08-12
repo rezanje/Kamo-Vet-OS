@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { buatPerintah } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { LingkupPicker, type ItemPilihan } from "./LingkupPicker";
 
 export default async function OpnameBaruPage({
   searchParams,
@@ -12,8 +13,18 @@ export default async function OpnameBaruPage({
   const { error } = await searchParams;
   const supabase = await createClient();
 
-  const { data: whs } = await supabase
-    .from("warehouses").select("id, name").eq("is_active", true).neq("type", "TRANSIT").order("name");
+  const [{ data: whs }, { data: itemRows }] = await Promise.all([
+    supabase.from("warehouses").select("id, name").eq("is_active", true).neq("type", "TRANSIT").order("name"),
+    supabase.from("items").select("id, code, name, item_categories(name)")
+      .eq("is_active", true).eq("item_type", "Persediaan").order("name"),
+  ]);
+
+  // Hanya barang berpersediaan yang bisa dihitung fisik — jasa tidak punya stok.
+  type ItemRow = { id: string; code: string; name: string; item_categories: { name: string } | { name: string }[] | null };
+  const items: ItemPilihan[] = ((itemRows ?? []) as unknown as ItemRow[]).map((i) => {
+    const kat = Array.isArray(i.item_categories) ? i.item_categories[0] : i.item_categories;
+    return { id: i.id, code: i.code, name: i.name, kategori: kat?.name ?? "Tanpa kategori" };
+  });
 
   return (
     <>
@@ -33,7 +44,7 @@ export default async function OpnameBaruPage({
 
       <form action={buatPerintah}>
         <div className="crm-sec" style={{ maxWidth: 560 }}>
-          <SecHeader num="01" title="PERINTAH STOK OPNAME" desc="Surat tugas hitung fisik untuk satu gudang." />
+          <SecHeader num="01" title="PERINTAH STOK OPNAME" desc="Surat tugas hitung fisik — seluruh gudang atau sebagian barang saja." />
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Gudang *</label>
             <select className="fi" name="warehouse_id" required>
@@ -53,6 +64,7 @@ export default async function OpnameBaruPage({
             <label className="flab">Dikerjakan oleh</label>
             <input className="fi" name="dikerjakan_oleh" placeholder="Nama / email petugas hitung (opsional)" />
           </div>
+          <LingkupPicker items={items} />
           <div className="fg">
             <label className="flab">Keterangan</label>
             <textarea className="fi" name="keterangan" rows={3}
