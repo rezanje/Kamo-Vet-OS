@@ -211,6 +211,12 @@ export default async function StokPage({
               <label className="flab">Gudang</label>
               <input className="fi" value={selectedWh.name} disabled readOnly />
             </div>
+            {/* Alasan ikut ke deskripsi jurnalnya — koreksi stok tanpa keterangan
+                mustahil ditelusuri lagi beberapa bulan kemudian. */}
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label className="flab">Alasan koreksi</label>
+              <input className="fi" name="catatan" maxLength={80} placeholder="mis. stok awal belum tercatat" />
+            </div>
             <button type="submit" className="btn-acc"><i className="ti ti-plus" /> Tambah Stok</button>
           </form>
         )}
