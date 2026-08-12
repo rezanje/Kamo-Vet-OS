@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { formatNoRetur, sisaRetur, totalRetur } from "../retur";
+import {
+  formatNoRetur, sisaRetur, totalRetur,
+  modalPerBarang, bolehMasukStok, pisahModalRetur,
+} from "../retur";
 
 describe("formatNoRetur", () => {
   it("format RB/RJ.YYYY.MM.NNNNN", () => {
@@ -68,5 +71,70 @@ describe("modalPerSatuan", () => {
   it("struk lama tanpa HPP jatuh ke harga beli master", () => {
     expect(modalPerSatuan(null, 3, 210_000)).toBe(210_000);
     expect(modalPerSatuan(0, 3, 210_000)).toBe(210_000);
+  });
+});
+
+// ── Kondisi barang retur (laporan tim 2026-08-12) ─────────────────────────────
+
+describe("modalPerBarang", () => {
+  it("satu barang di dua satuan dijumlahkan, bukan saling menimpa", () => {
+    // 1 box isi 12 (HPP 240.000) + 3 pcs (HPP 60.000) = 15 pcs, modal 300.000
+    // → modal per pcs 20.000. Kalau per baris & saling menimpa, hasilnya 60.000/3.
+    const modal = modalPerBarang([
+      { item_id: "a", qtyDasar: 12, hpp: 240_000 },
+      { item_id: "a", qtyDasar: 3, hpp: 60_000 },
+    ]);
+    expect(modal.a).toBe(20_000);
+  });
+
+  it("baris tanpa item / qty nol diabaikan", () => {
+    expect(modalPerBarang([{ item_id: null, qtyDasar: 5, hpp: 100 }])).toEqual({});
+    expect(modalPerBarang([{ item_id: "a", qtyDasar: 0, hpp: 100 }])).toEqual({});
+  });
+
+  it("struk tanpa HPP tersimpan jatuh ke 0 (pemanggil pakai harga beli master)", () => {
+    expect(modalPerBarang([{ item_id: "a", qtyDasar: 2, hpp: null }]).a).toBe(0);
+  });
+});
+
+describe("bolehMasukStok", () => {
+  it("hanya kondisi rusak yang ditahan", () => {
+    expect(bolehMasukStok("baik")).toBe(true);
+    expect(bolehMasukStok(undefined)).toBe(true);   // baris retur lama
+    expect(bolehMasukStok("RUSAK")).toBe(false);
+  });
+});
+
+describe("pisahModalRetur", () => {
+  const modal = (id: string) => ({ a: 10_000, b: 5_000 }[id] ?? 0);
+  const semuaBerstok = () => true;
+
+  it("barang baik masuk persediaan, barang rusak jadi kerugian", () => {
+    const hasil = pisahModalRetur(
+      [
+        { item_id: "a", qty: 2, kondisi: "baik" },
+        { item_id: "b", qty: 3, kondisi: "rusak" },
+      ],
+      modal, semuaBerstok,
+    );
+    expect(hasil).toEqual({ baik: 20_000, rusak: 15_000, total: 35_000 });
+  });
+
+  it("jasa tidak punya modal persediaan sama sekali", () => {
+    const hasil = pisahModalRetur(
+      [{ item_id: "a", qty: 2, kondisi: "baik" }],
+      modal, () => false,
+    );
+    expect(hasil).toEqual({ baik: 0, rusak: 0, total: 0 });
+  });
+
+  it("total selalu sama dengan HPP yang dibalik, apa pun kondisinya", () => {
+    const baris = [
+      { item_id: "a", qty: 1, kondisi: "baik" },
+      { item_id: "a", qty: 1, kondisi: "rusak" },
+    ];
+    const h = pisahModalRetur(baris, modal, semuaBerstok);
+    expect(h.baik + h.rusak).toBe(h.total);
+    expect(h.total).toBe(20_000);
   });
 });

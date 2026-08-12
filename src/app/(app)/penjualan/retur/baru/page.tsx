@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { sisaRetur, rasioBayar, hargaRefund } from "@/lib/retur";
+import { sisaRetur, rasioBayar, hargaRefund, infoBarangRetur } from "@/lib/retur";
 import { ReturJualForm } from "./ReturJualForm";
 
 type SaleRow = {
@@ -23,7 +23,7 @@ export default async function ReturJualBaruPage({
   const supabase = await createClient();
 
   let sale: SaleRow | null = null;
-  let rows: { item_id: string; nama: string; harga: number; sisa: number }[] = [];
+  let rows: { item_id: string; nama: string; harga: number; sisa: number; berstok?: boolean; trackExpiry?: boolean }[] = [];
   let notFoundMsg: string | null = null;
 
   if (struk?.trim()) {
@@ -60,8 +60,10 @@ export default async function ReturJualBaruPage({
         for (const r of d.sales_return_items ?? [])
           if (r.item_id) sudah[r.item_id] = (sudah[r.item_id] ?? 0) + Number(r.qty);
       const sisa = sisaRetur(sumber, sudah);
+      const info = await infoBarangRetur(supabase, Object.keys(sisa));
       rows = Object.entries(sisa).map(([item_id, qty]) => ({
         item_id, sisa: qty, nama: meta[item_id]?.nama ?? "—", harga: meta[item_id]?.harga ?? 0,
+        ...(info.get(item_id) ?? { berstok: true, trackExpiry: false }),
       }));
       if (rows.length === 0) notFoundMsg = `Semua barang di struk ${sale.no_struk} sudah diretur.`;
     }

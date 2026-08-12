@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { formatNoRetur, sisaRetur, totalRetur, rasioBayar, hargaRefund, modalPerSatuan } from "@/lib/retur";
+import {
+  formatNoRetur, sisaRetur, totalRetur, rasioBayar, hargaRefund,
+  modalPerBarang, pisahModalRetur, bolehMasukStok,
+} from "@/lib/retur";
 import { stockIn } from "@/lib/inventory";
 import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 import { kodeAkunBayar, kodeKasJurnalAsal } from "@/lib/kas-akun";
@@ -12,7 +15,7 @@ import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 
-type ItemInput = { item_id: string; qty: number };
+type ItemInput = { item_id: string; qty: number; kondisi?: string; exp_date?: string };
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -35,7 +38,20 @@ export async function buatReturJual(formData: FormData) {
 
   let items: ItemInput[] = [];
   try { items = JSON.parse(String(formData.get("items") ?? "[]")) as ItemInput[]; } catch { items = []; }
-  items = items.filter((it) => it.item_id && Number(it.qty) > 0);
+  // Kondisi & tanggal dari klien dibersihkan di sini: kondisi hanya boleh dua nilai,
+  // dan tanggal harus benar-benar berbentuk tanggal (pola sama dengan penerimaan
+  // pembelian) — kalau tidak, nilai sembarang bisa masuk kolom dan lolos ke stok.
+  items = items
+    .filter((it) => it.item_id && Number(it.qty) > 0)
+    .map((it) => {
+      const exp = String(it.exp_date ?? "").trim();
+      return {
+        item_id: it.item_id,
+        qty: Number(it.qty),
+        kondisi: String(it.kondisi ?? "baik").toLowerCase() === "rusak" ? "rusak" : "baik",
+        exp_date: /^\d{4}-\d{2}-\d{2}$/.test(exp) ? exp : undefined,
+      };
+    });
 
   const fail = (msg: string) => redirect(`${formHref}?error=` + encodeURIComponent(msg));
 
@@ -75,10 +91,19 @@ export async function buatReturJual(formData: FormData) {
     const qtyDasar = Number(r.qty) * f;
     sumber[r.item_id] = (sumber[r.item_id] ?? 0) + qtyDasar;
     harga[r.item_id] = hargaRefund((Number(r.harga) || 0) / f, rasio);
-    // Modal diambil dari HPP yang tercatat saat barang itu keluar (0084),
-    // bukan dari harga beli master yang bisa sudah basi.
-    modal[r.item_id] = modalPerSatuan(r.hpp, qtyDasar, 0);
   }
+  // Modal diambil dari HPP yang tercatat saat barang itu keluar (0084), bukan dari
+  // harga beli master yang bisa sudah basi — dan dijumlahkan dulu PER BARANG.
+  // Sejak satuan berjenjang ada, "1 box + 3 pcs" barang yang sama itu dua baris;
+  // menghitungnya per baris membuat baris terakhir menimpa yang lain dan modalnya
+  // meleset berkali-kali lipat.
+  Object.assign(modal, modalPerBarang(
+    (sale!.sale_items ?? []).map((r) => ({
+      item_id: r.item_id,
+      qtyDasar: Number(r.qty) * (Number(r.faktor) > 0 ? Number(r.faktor) : 1),
+      hpp: r.hpp,
+    })),
+  ));
 
   // akumulasi retur sebelumnya utk struk ini
   const { data: prev } = await supabase
@@ -103,7 +128,12 @@ export async function buatReturJual(formData: FormData) {
     }
   }
 
-  const rows = items.map((it) => ({ item_id: it.item_id, qty: Number(it.qty), harga: harga[it.item_id] ?? 0 }));
+  // Refund TIDAK dipengaruhi kondisi barang: pelanggan tetap menerima uangnya penuh
+  // walau barangnya rusak. Yang berbeda cuma nasib barangnya di gudang kita.
+  const rows = items.map((it) => ({
+    item_id: it.item_id, qty: Number(it.qty), harga: harga[it.item_id] ?? 0,
+    kondisi: it.kondisi ?? "baik", exp_date: it.exp_date ?? null,
+  }));
   const total = totalRetur(rows);
   if (total <= 0) fail("Nilai retur nol.");
 
@@ -125,6 +155,7 @@ export async function buatReturJual(formData: FormData) {
       return_id: doc!.id, item_id: r.item_id,
       nama: (nameMap.get(r.item_id)?.name ?? "").slice(0, 160) || "—",
       qty: r.qty, harga: r.harga,
+      kondisi: r.kondisi, exp_date: r.exp_date,
     })),
   );
   if (itemsErr) {
@@ -173,15 +204,40 @@ export async function buatReturJual(formData: FormData) {
   const modalSatuan = (id: string) =>
     modal[id] > 0 ? modal[id] : (Number(nameMap.get(id)?.buy_price) || 0);
 
-  if (wh) {
+  // Cabang tanpa gudang aktif = barangnya tidak punya tempat pulang. Kalau tetap
+  // dilanjutkan, jurnal HPP di bawah akan menambah nilai Persediaan yang secara
+  // fisik tidak pernah masuk — buku dan gudang langsung berbeda.
+  if (!wh) {
+    await supabase.from("sales_returns").delete().eq("id", doc!.id);
+    fail("Cabang ini belum punya gudang aktif — barang retur tidak bisa diterima. Hubungi admin.");
+  }
+
+  // HANYA barang berkondisi "baik" yang kembali jadi stok jualan. Barang rusak /
+  // kadaluarsa sengaja TIDAK dimasukkan: kalau dimasukkan, barang basi berdiri
+  // sebagai stok normal dan bisa terjual lagi (dilaporkan tim 2026-08-12).
+  //
+  // Kadaluarsa diisi manual dari form — tidak bisa dipulihkan otomatis karena
+  // sale_items tidak menyimpan exp_date lapisan yang dulu terpakai.
+  try {
     for (const r of rows) {
       if (!berstok(r.item_id)) continue;
+      if (!bolehMasukStok(r.kondisi)) continue;
       await stockIn(supabase, {
-        warehouseId: wh.id as string, itemId: r.item_id, qty: r.qty,
+        warehouseId: wh!.id as string, itemId: r.item_id, qty: r.qty,
         unitCost: modalSatuan(r.item_id),
         source: "retur-jual", ref: no_retur,
+        tanggal,          // lapisan & kartu stok ikut tanggal retur, bukan hari ini
+        expDate: r.exp_date,
       });
     }
+  } catch (e) {
+    // Stok gagal ditulis = dokumen tidak boleh berdiri. Refund yang sudah tercatat
+    // ikut dibersihkan supaya tidak ada uang keluar tanpa barang masuk.
+    console.error("retur jual: gagal kembalikan stok", e);
+    await supabase.from("expenses").delete()
+      .eq("deskripsi", `Refund retur ${no_retur} (struk ${sale!.no_struk ?? sale_id})`);
+    await supabase.from("sales_returns").delete().eq("id", doc!.id);
+    fail(`Retur dibatalkan — stok gagal diperbarui (${e instanceof Error ? e.message : "gagal"}).`);
   }
 
   // Jurnal refund = kebalikan persis jurnal penjualannya:
@@ -205,13 +261,22 @@ export async function buatReturJual(formData: FormData) {
       { code: kasCode, debit: 0, credit: total },
     ],
   });
-  // Jurnal HPP balik memakai modal yang sama dengan lapisan stok yang baru
-  // dibuat di atas — buku dan stok fisik tidak boleh berbeda nilainya.
-  const hpp = rows.reduce(
-    (a, r) => a + (berstok(r.item_id) ? modalSatuan(r.item_id) * r.qty : 0),
-    0,
-  );
-  if (hpp > 0) {
+  // Jurnal HPP balik memakai modal yang sama dengan lapisan stok yang baru dibuat
+  // di atas — buku dan stok fisik tidak boleh berbeda nilainya.
+  //
+  // Barang baik  → nilainya kembali ke Persediaan (1301).
+  // Barang rusak → barangnya tidak kembali ke rak, jadi nilainya bukan persediaan
+  //   melainkan kerugian (5902 Selisih Persediaan, akun yang sama dipakai koreksi
+  //   opname). Dua-duanya tetap membalik HPP: beban pokok penjualan hanya boleh
+  //   menempel pada barang yang benar-benar terjual dan tidak kembali.
+  //
+  // WAJIB satu postJournal saja: sejak migrasi 0106 ada unique index parsial pada
+  // (source, source_ref) yang mencakup 'sales-return-hpp'. Dua kali posting dengan
+  // source yang sama membuat yang kedua ditolak DB — dan postJournal menelan error,
+  // jadi jurnalnya hilang tanpa jejak.
+  const { baik: hppBaik, rusak: hppRusak, total: hppTotal } =
+    pisahModalRetur(rows, modalSatuan, berstok);
+  if (hppTotal > 0) {
     await postJournal(supabase, {
       tanggal,
       deskripsi: `HPP retur penjualan ${no_retur}`,
@@ -219,8 +284,9 @@ export async function buatReturJual(formData: FormData) {
       sourceRef: no_retur,
       branchId: sale!.branch_id,
       lines: [
-        { code: "1301", debit: hpp, credit: 0 },
-        { code: "5101", debit: 0, credit: hpp },
+        ...(hppBaik > 0 ? [{ code: "1301", debit: hppBaik, credit: 0 }] : []),
+        ...(hppRusak > 0 ? [{ code: "5902", debit: hppRusak, credit: 0 }] : []),
+        { code: "5101", debit: 0, credit: hppTotal },
       ],
     });
   }

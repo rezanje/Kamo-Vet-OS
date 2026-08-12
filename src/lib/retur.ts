@@ -64,3 +64,89 @@ export function modalPerSatuan(
   if (Number.isFinite(hpp) && hpp > 0 && Number.isFinite(qty) && qty > 0) return hpp / qty;
   return Number(buyPriceMaster) || 0;
 }
+
+/**
+ * Modal per satuan untuk SEMUA baris struk, dijumlahkan dulu per barang.
+ *
+ * Satu barang bisa muncul beberapa kali dalam satu struk — sejak satuan berjenjang
+ * ada, "1 box + 3 pcs" barang yang sama itu dua baris. Kalau tiap baris dihitung
+ * sendiri lalu saling menimpa, modal yang dipakai adalah modal baris TERAKHIR
+ * dibagi qty baris itu saja; retur box yang modalnya dihitung dari 3 pcs bisa
+ * meleset berkali-kali lipat.
+ *
+ * Dijumlahkan lebih dulu (total modal ÷ total qty dasar) supaya hasilnya modal
+ * rata-rata tertimbang yang benar berapa pun cara barangnya dipecah.
+ */
+export function modalPerBarang(
+  baris: { item_id: string | null; qtyDasar: number; hpp?: number | null }[],
+): Record<string, number> {
+  const akum = new Map<string, { hpp: number; qty: number }>();
+  for (const b of baris) {
+    if (!b.item_id) continue;
+    const qty = Number(b.qtyDasar) || 0;
+    if (qty <= 0) continue;
+    const cur = akum.get(b.item_id) ?? { hpp: 0, qty: 0 };
+    cur.hpp += Number(b.hpp) || 0;
+    cur.qty += qty;
+    akum.set(b.item_id, cur);
+  }
+  const out: Record<string, number> = {};
+  for (const [id, v] of akum) out[id] = modalPerSatuan(v.hpp, v.qty, 0);
+  return out;
+}
+
+export type KondisiRetur = "baik" | "rusak";
+
+/**
+ * Sifat barang yang dibutuhkan layar retur: punya stok atau tidak, dan apakah
+ * kadaluarsanya dipantau. Dipakai dua layar (backoffice & kasir) supaya
+ * dropdown kondisi tidak muncul untuk jasa, dan isian tanggal kadaluarsa hanya
+ * muncul untuk barang yang memang dipantau.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function infoBarangRetur(supabase: any, itemIds: string[]) {
+  const ids = [...new Set(itemIds.filter(Boolean))];
+  const peta = new Map<string, { berstok: boolean; trackExpiry: boolean }>();
+  if (ids.length === 0) return peta;
+  const { data } = await supabase
+    .from("items").select("id, item_type, track_expiry").in("id", ids);
+  for (const r of (data ?? []) as { id: string; item_type: string | null; track_expiry: boolean | null }[]) {
+    peta.set(r.id, {
+      berstok: (r.item_type ?? "Persediaan") === "Persediaan",
+      trackExpiry: !!r.track_expiry,
+    });
+  }
+  return peta;
+}
+
+/** Hanya barang berkondisi "baik" yang boleh masuk kembali ke stok jualan. */
+export function bolehMasukStok(kondisi: string | null | undefined): boolean {
+  return (kondisi ?? "baik").toLowerCase() !== "rusak";
+}
+
+/**
+ * Modal barang yang kembali, dipecah menurut nasibnya.
+ *
+ * - `baik`  → nilainya masuk lagi ke Persediaan (1301)
+ * - `rusak` → barangnya tidak bisa dijual lagi, nilainya jadi kerugian (5902),
+ *   bukan menambah persediaan
+ *
+ * Dua-duanya sama-sama membalik HPP (5101), karena beban pokok penjualan hanya
+ * boleh menempel pada barang yang benar-benar terjual dan tidak kembali.
+ */
+export function pisahModalRetur(
+  rows: { item_id: string; qty: number; kondisi?: string | null }[],
+  modalSatuan: (itemId: string) => number,
+  berstok: (itemId: string) => boolean,
+): { baik: number; rusak: number; total: number } {
+  let baik = 0;
+  let rusak = 0;
+  for (const r of rows) {
+    if (!berstok(r.item_id)) continue; // jasa tidak punya modal persediaan
+    const nilai = modalSatuan(r.item_id) * (Number(r.qty) || 0);
+    if (nilai <= 0) continue;
+    if (bolehMasukStok(r.kondisi)) baik += nilai;
+    else rusak += nilai;
+  }
+  return { baik, rusak, total: baik + rusak };
+}

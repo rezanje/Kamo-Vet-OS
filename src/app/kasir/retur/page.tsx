@@ -2,13 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { sisaRetur } from "@/lib/retur";
+import { sisaRetur, rasioBayar, hargaRefund, infoBarangRetur } from "@/lib/retur";
 import { ReturJualForm } from "@/app/(app)/penjualan/retur/baru/ReturJualForm";
 
 type SaleRow = {
   id: string;
   no_struk: string | null;
   branch_id: string;
+  subtotal: number;
   total: number;
   created_at: string;
   customers: { name: string } | null;
@@ -42,13 +43,13 @@ export default async function ReturKasirPage({
   if (!shift) redirect("/kasir/mulai");
 
   let sale: SaleRow | null = null;
-  let rows: { item_id: string; nama: string; harga: number; sisa: number }[] = [];
+  let rows: { item_id: string; nama: string; harga: number; sisa: number; berstok?: boolean; trackExpiry?: boolean }[] = [];
   let pesan: string | null = null;
 
   if (struk?.trim()) {
     const { data } = await supabase
       .from("sales")
-      .select("id, no_struk, branch_id, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, faktor)")
+      .select("id, no_struk, branch_id, subtotal, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, faktor)")
       .eq("no_struk", struk.trim())
       .is("channel", null)
       .maybeSingle();
@@ -64,11 +65,16 @@ export default async function ReturKasirPage({
       // item yang sama dalam dua satuan: 1 box + 3 pcs).
       const sumber: Record<string, number> = {};
       const meta: Record<string, { nama: string; harga: number }> = {};
+      // Harga yang DITAMPILKAN wajib sama dengan yang nanti dibayar server: sebanding
+      // dengan yang benar-benar dikeluarkan pelanggan, bukan harga daftar sebelum
+      // promo/diskon/voucher/poin. Layar ini dulu melewatkan rasio itu, jadi struk
+      // berdiskon terlihat menjanjikan refund lebih besar daripada yang cair.
+      const rasio = rasioBayar(Number(sale.subtotal), Number(sale.total));
       for (const r of sale.sale_items ?? []) {
         if (!r.item_id) continue;
         const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
         sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty) * f;
-        meta[r.item_id] = { nama: r.nama, harga: (Number(r.harga) || 0) / f };
+        meta[r.item_id] = { nama: r.nama, harga: hargaRefund((Number(r.harga) || 0) / f, rasio) };
       }
       const { data: prev } = await supabase
         .from("sales_returns").select("sales_return_items(item_id, qty)").eq("sale_id", sale.id);
@@ -77,8 +83,11 @@ export default async function ReturKasirPage({
         for (const r of d.sales_return_items ?? [])
           if (r.item_id) sudah[r.item_id] = (sudah[r.item_id] ?? 0) + Number(r.qty);
 
-      rows = Object.entries(sisaRetur(sumber, sudah)).map(([item_id, qty]) => ({
+      const sisaMap = sisaRetur(sumber, sudah);
+      const info = await infoBarangRetur(supabase, Object.keys(sisaMap));
+      rows = Object.entries(sisaMap).map(([item_id, qty]) => ({
         item_id, sisa: qty, nama: meta[item_id]?.nama ?? "—", harga: meta[item_id]?.harga ?? 0,
+        ...(info.get(item_id) ?? { berstok: true, trackExpiry: false }),
       }));
       if (rows.length === 0) pesan = `Semua barang di struk ${sale.no_struk} sudah diretur.`;
     }
