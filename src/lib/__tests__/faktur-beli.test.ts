@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFakturLines, formatNoFaktur, sisaFakturable } from "../faktur-beli";
+import { buildFakturLangsungLines, buildFakturLines, formatNoFaktur, sisaFakturable } from "../faktur-beli";
 
 describe("formatNoFaktur", () => {
   it("format FB.YYYY.MM.NNNNN", () => {
@@ -52,5 +52,49 @@ describe("buildFakturLines", () => {
 describe("sisaFakturable", () => {
   it("kurangi yang sudah difakturkan", () => {
     expect(sisaFakturable({ a: 5, b: 2 }, { a: 3, b: 2 })).toEqual({ a: 2 });
+  });
+});
+
+// ── Faktur pembelian LANGSUNG (tanpa PO) ─────────────────────────────────────
+
+describe("buildFakturLangsungLines", () => {
+  it("tanpa PPN: persediaan bertambah sebesar total, utang sebesar total", () => {
+    expect(buildFakturLangsungLines(1_000_000, 0)).toEqual([
+      { code: "1301", debit: 1_000_000, credit: 0 },
+      { code: "2101", debit: 0, credit: 1_000_000 },
+    ]);
+  });
+
+  it("mode PKP: persediaan dinilai DPP, PPN masuk 1105, utang tetap total", () => {
+    // PPN bisa dikreditkan, jadi ia bukan bagian harga pokok barang.
+    expect(buildFakturLangsungLines(1_110_000, 110_000)).toEqual([
+      { code: "1301", debit: 1_000_000, credit: 0 },
+      { code: "1105", debit: 110_000, credit: 0 },
+      { code: "2101", debit: 0, credit: 1_110_000 },
+    ]);
+  });
+
+  it("selalu seimbang", () => {
+    for (const [total, ppn] of [[500_000, 0], [1_110_000, 110_000], [99_999, 9_090]]) {
+      const l = buildFakturLangsungLines(total, ppn);
+      const d = l.reduce((a, x) => a + x.debit, 0);
+      const k = l.reduce((a, x) => a + x.credit, 0);
+      expect(d).toBe(k);
+    }
+  });
+
+  it("tidak pernah memakai 2102 — barangnya belum pernah lewat GRNI", () => {
+    expect(buildFakturLangsungLines(1_000_000, 0).some((l) => l.code === "2102")).toBe(false);
+  });
+
+  it("nilai nol/negatif tidak menghasilkan jurnal", () => {
+    expect(buildFakturLangsungLines(0, 0)).toEqual([]);
+    expect(buildFakturLangsungLines(-5, 0)).toEqual([]);
+  });
+
+  it("PPN yang melebihi total dijepit, jurnal tetap seimbang", () => {
+    const l = buildFakturLangsungLines(100_000, 999_999);
+    expect(l.reduce((a, x) => a + x.debit, 0)).toBe(100_000);
+    expect(l.reduce((a, x) => a + x.credit, 0)).toBe(100_000);
   });
 });

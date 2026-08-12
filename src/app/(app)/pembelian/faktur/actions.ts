@@ -114,6 +114,12 @@ export async function buatFaktur(formData: FormData) {
     fail("Gagal menyimpan rincian faktur.");
   }
 
+  // Gudang PO dipakai menyaring lapisan yang boleh disesuaikan harganya.
+  const { data: whPO } = await supabase
+    .from("warehouses").select("id").eq("branch_id", po!.branch_id ?? "")
+    .eq("is_active", true).order("code").limit(1).maybeSingle();
+  const gudangPO = whPO?.id as string | undefined;
+
   // Selisih harga faktur vs PO tidak cuma dijurnal ke 1301 — modal barangnya
   // ikut disesuaikan. Kalau tidak, nilai persediaan di buku besar dan nilai stok
   // riil pelan-pelan berpisah, dan HPP penjualan berikutnya memakai harga PO
@@ -125,11 +131,14 @@ export async function buatFaktur(formData: FormData) {
   for (const r of rows) {
     const hargaPo = hargaPO[r.item_id] ?? 0;
     if (hargaPo <= 0 || r.harga === hargaPo) continue;
-    const { data: layers } = await supabase
+    // Gudangnya ikut disaring: tanpa itu, faktur PO cabang A bisa me-repricing
+    // lapisan cabang B yang kebetulan berharga sama.
+    let q = supabase
       .from("stock_layers").select("id, qty_left")
       .eq("item_id", r.item_id).eq("unit_cost", hargaPo).eq("source", "purchase")
-      .gt("qty_left", 0)
-      .order("tanggal").order("created_at");
+      .gt("qty_left", 0);
+    if (gudangPO) q = q.eq("warehouse_id", gudangPO);
+    const { data: layers } = await q.order("tanggal").order("created_at");
     let sisaSesuaikan = r.qty;
     for (const l of layers ?? []) {
       if (sisaSesuaikan <= 0) break;
@@ -174,7 +183,7 @@ export async function bayarFaktur(formData: FormData) {
 
   const { data: inv } = await supabase
     .from("purchase_invoices")
-    .select("id, no_faktur, total, po_id, supplier_id, purchase_orders(branch_id)")
+    .select("id, no_faktur, total, po_id, supplier_id, branch_id, purchase_orders(branch_id)")
     .eq("id", invoiceId).maybeSingle();
   if (!inv) fail("Faktur tidak ditemukan.");
 
@@ -217,8 +226,10 @@ export async function bayarFaktur(formData: FormData) {
       .update({ terpakai: Number(advance.terpakai) + dariUangMuka }).eq("id", advance.id);
   }
 
+  // Faktur langsung tidak punya PO, jadi cabangnya disimpan di fakturnya sendiri.
   const po = inv!.purchase_orders as unknown as { branch_id: string | null } | null;
-  const kasCode = await kodeAkunBayar(supabase, metode, po?.branch_id ?? null, accountId);
+  const cabang = (inv as { branch_id?: string | null }).branch_id ?? po?.branch_id ?? null;
+  const kasCode = await kodeAkunBayar(supabase, metode, cabang, accountId);
   await postJournal(supabase, {
     tanggal,
     deskripsi: dariUangMuka > 0
@@ -226,7 +237,7 @@ export async function bayarFaktur(formData: FormData) {
       : `Pembayaran faktur ${inv!.no_faktur}`,
     source: "purchase-pay",
     sourceRef: inv!.no_faktur,
-    branchId: po?.branch_id ?? null,
+    branchId: cabang,
     lines: jurnalBayarHutang(kasCode, amount, dariUangMuka),
   });
 

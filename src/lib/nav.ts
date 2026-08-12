@@ -170,6 +170,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Penerimaan Barang", icon: "ti-package-import", ...G, href: "/pembelian/penerimaan" },
     { label: "Uang Muka Pembelian", icon: "ti-cash-banknote", ...G, href: "/pembelian/uang-muka" },
     { label: "Faktur Pembelian", icon: "ti-receipt", ...G, href: "/pembelian/faktur" },
+    { label: "Faktur Langsung (tanpa PO)", icon: "ti-receipt-2", ...G, nw: true, href: "/pembelian/faktur/langsung" },
     { label: "Pembayaran Pembelian", icon: "ti-cash", ...G, href: "/keuangan/hutang" },
     { label: "Retur Pembelian", icon: "ti-truck-return", ...G, href: "/pembelian/retur" },
     { label: "Kategori Pemasok", icon: "ti-tag", ...B, href: "/pembelian/kategori-pemasok" },

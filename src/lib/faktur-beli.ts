@@ -24,6 +24,34 @@ export function buildFakturLines(nilaiPO: number, nilaiFaktur: number, ppn = 0):
   return lines.filter((l) => l.debit > 0 || l.credit > 0);
 }
 
+/**
+ * Jurnal faktur pembelian LANGSUNG (tanpa PO, barang masuk di dokumen yang sama).
+ *
+ * Barangnya belum pernah lewat 2102 Hutang Belum Difakturkan — tidak ada
+ * penerimaan terpisah — jadi tidak ada saldo GRNI untuk dilawan. Satu dokumen
+ * menggabungkan "barang masuk" dan "utang timbul":
+ *
+ *   Dr 1301 Persediaan   = DPP
+ *   Dr 1105 PPN Masukan  = PPN (kalau mode PKP aktif)
+ *   Cr 2101 Hutang Usaha = total faktur
+ *
+ * Persediaan dinilai sebesar DPP, bukan total: PPN Masukan bisa dikreditkan, jadi
+ * ia bukan bagian dari harga pokok barang. Nilai lapisan stok WAJIB memakai dasar
+ * yang sama — kalau tidak, saldo 1301 di buku besar dan nilai stok berpisah sejak
+ * faktur pertama. Saat mode PKP mati, dpp = total sehingga tidak ada bedanya.
+ */
+export function buildFakturLangsungLines(total: number, ppn = 0): JurnalLine[] {
+  const nilai = Number(total) || 0;
+  if (nilai <= 0) return [];
+  const pajak = Math.max(0, Math.min(Number(ppn) || 0, nilai));
+  const dpp = nilai - pajak;
+  return [
+    ...(dpp > 0 ? [{ code: "1301", debit: dpp, credit: 0 }] : []),
+    ...(pajak > 0 ? [{ code: "1105", debit: pajak, credit: 0 }] : []),
+    { code: "2101", debit: 0, credit: nilai },
+  ];
+}
+
 // Sisa qty PO yang masih boleh difakturkan per item (reuse pola sisaRetur).
 export function sisaFakturable(
   qtyPO: Record<string, number>,

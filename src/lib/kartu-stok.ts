@@ -26,6 +26,8 @@ export const LABEL_SOURCE: Record<string, string> = {
   opname: "Stok Opname",
   "retur-jual": "Retur Penjualan",
   "retur-beli": "Retur Pembelian",
+  "faktur-langsung": "Faktur Pembelian Langsung",
+  "terima-permintaan": "Penerimaan Permintaan Barang",
   manual: "Penyesuaian Manual",
 };
 
