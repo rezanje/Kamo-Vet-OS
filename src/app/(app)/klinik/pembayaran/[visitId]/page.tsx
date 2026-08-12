@@ -115,6 +115,20 @@ export default async function PembayaranPage({
   const initialObat = sourceItems.filter((r) => r.jenis !== "jasa");
   const initialJasa = sourceItems.filter((r) => r.jenis === "jasa");
 
+  // Baris tambahan di kasir klinik wajib bisa dipilih dari master, bukan diketik
+  // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
+  // terjual tapi persediaan tidak pernah berkurang.
+  const { data: masterRows } = await supabase
+    .from("items").select("id, code, name, unit, sell_price, item_type")
+    .eq("is_active", true).order("name");
+  const master = (masterRows ?? []).map((it) => ({
+    id: it.id as string, code: it.code as string, name: it.name as string,
+    unit: (it.unit as string) ?? "", harga: Number(it.sell_price) || 0,
+    jasa: it.item_type === "Jasa",
+  }));
+  const masterObat = master.filter((it) => !it.jasa);
+  const masterJasa = master.filter((it) => it.jasa);
+
   const patient = {
     photo: pet?.photo_url ?? null,
     name: pet?.name ?? "—",
@@ -259,7 +273,9 @@ export default async function PembayaranPage({
             <form action={bayarRombongan} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 9, borderTop: ".5px solid #bfdbfe" }}>
               <input type="hidden" name="visitId" value={visitId} />
               <span style={{ fontSize: 11, color: "var(--tm)" }}>Bayar sekaligus {belumDitagih.length} pasien dengan</span>
-              <select name="metode_bayar" className="inp" style={{ width: 130, fontSize: 11, padding: "3px 7px" }}>
+              {/* Kelas `inp` tidak pernah ada di globals.css — dropdown ini tampil polos
+                  tanpa border, jadi kasir mengira metode pembayaran tidak disediakan. */}
+              <select name="metode_bayar" className="fi" style={{ width: 140, fontSize: 11, padding: "4px 8px" }}>
                 {["Tunai", "Transfer", "Kartu", "QRIS", "E-Wallet"].map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
               <SubmitButton className="btn-acc" style={{ padding: "4px 12px", fontSize: 11 }} pendingText="Memproses...">
@@ -309,6 +325,8 @@ export default async function PembayaranPage({
           ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}
+          masterObat={masterObat}
+          masterJasa={masterJasa}
           catatanResep={mr?.catatan_resep ?? null}
           initialDiscount={Number(invoice.discount)}
           initialDpAmount={Number(invoice.dp_amount)}
@@ -398,6 +416,8 @@ export default async function PembayaranPage({
           ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}
+          masterObat={masterObat}
+          masterJasa={masterJasa}
           catatanResep={mr?.catatan_resep ?? null}
         />
       )}

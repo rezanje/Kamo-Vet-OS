@@ -7,6 +7,7 @@ import { bayarVisit } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type Line = { deskripsi: string; qty: number; harga: number; item_id?: string | null };
+export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number };
 type Patient = {
   photo: string | null; name: string; species: string; owner: string; phone: string; address: string;
   dokter: string; jenisLayanan: string; noInvoice: string; tanggal: string;
@@ -21,13 +22,29 @@ const METODE = [
   { m: "E-Wallet", ic: "ti-wallet", desc: "Bayar menggunakan e-wallet" },
 ];
 
-function ItemTable({ title, icon, color, rows, setRows }: {
+const labelMaster = (it: MasterItem) => `${it.code} — ${it.name}`;
+
+function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
+  master: MasterItem[]; listId: string;
 }) {
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const add = () => setRows([...rows, { deskripsi: "", qty: 1, harga: 0 }]);
+  const add = () => setRows([...rows, { deskripsi: "", qty: 1, harga: 0, item_id: null }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
   const subtotal = rows.reduce((a, r) => a + r.qty * r.harga, 0);
+
+  // Cocokkan ketikan ke master SKU. Kalau kena, item_id + harga jual ikut terisi
+  // supaya baris ini memotong stok saat disimpan; kalau tidak kena, item_id
+  // dikosongkan lagi — baris lama yang namanya diedit tidak boleh menyeret
+  // item_id barang yang berbeda.
+  const byLabel = new Map(master.map((it) => [labelMaster(it), it]));
+  const byName = new Map(master.map((it) => [it.name.toLowerCase(), it]));
+  const setNama = (i: number, v: string) => {
+    const it = byLabel.get(v) ?? byName.get(v.trim().toLowerCase());
+    set(i, it
+      ? { deskripsi: it.name, item_id: it.id, harga: it.harga }
+      : { deskripsi: v, item_id: null });
+  };
 
   return (
     <div style={{ border: ".5px solid var(--bd)", borderRadius: 10, padding: 12, marginBottom: 12 }}>
@@ -37,13 +54,23 @@ function ItemTable({ title, icon, color, rows, setRows }: {
         </div>
         <button type="button" onClick={add} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }}><i className="ti ti-plus" /> Tambah</button>
       </div>
+      <datalist id={listId}>
+        {master.map((it) => <option key={it.id} value={labelMaster(it)} />)}
+      </datalist>
       <table className="tbl">
         <thead><tr><th style={{ width: 26 }}>No.</th><th>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th><th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
               <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-              <td><input className="fi" value={r.deskripsi} placeholder="Nama item" onChange={(e) => set(i, { deskripsi: e.target.value })} /></td>
+              <td>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input className="fi" list={listId} value={r.deskripsi} placeholder="Ketik / pilih dari master" onChange={(e) => setNama(i, e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+                  {r.deskripsi.trim() && !r.item_id && (
+                    <i className="ti ti-alert-triangle" title="Bukan dari master — stok tidak akan berkurang" style={{ color: "#d97706", fontSize: 13, flexShrink: 0 }} />
+                  )}
+                </div>
+              </td>
               <td><input className="fi" type="number" min={1} value={r.qty} onChange={(e) => set(i, { qty: Number(e.target.value) })} style={{ textAlign: "center" }} /></td>
               <td><input className="fi" type="number" min={0} step="any" value={r.harga} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(r.qty * r.harga)}</td>
@@ -61,8 +88,9 @@ function ItemTable({ title, icon, color, rows, setRows }: {
   );
 }
 
-export function PembayaranForm({ visitId, patient, initialObat, initialJasa, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
+export function PembayaranForm({ visitId, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
   visitId: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
+  masterObat?: MasterItem[]; masterJasa?: MasterItem[];
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialDpDate?: string | null; editMode?: boolean;
 }) {
@@ -137,8 +165,8 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, cat
           </div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
-          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="#2563eb" rows={jasa} setRows={setJasa} />
+          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="#2563eb" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12 }}>
