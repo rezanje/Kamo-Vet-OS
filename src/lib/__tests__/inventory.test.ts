@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StockError, consumeLayers, lapisanPindahan, stockIn, transferStock } from "../inventory";
+import { StockError, consumeLayers, lapisanPindahan, porsiPenutupMinus, stockIn, transferStock } from "../inventory";
 
 // Supabase palsu seadanya: cukup untuk chain yang dipakai inventory.ts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -196,5 +196,48 @@ describe("stok gagal ditulis", () => {
       }),
     ).rejects.toBeInstanceOf(StockError);
     expect(db.stock["toko|itm"]).toBeUndefined();
+  });
+});
+
+describe("porsiPenutupMinus", () => {
+  it("stok normal: semua yang masuk jadi lapisan", () => {
+    expect(porsiPenutupMinus(10, 5)).toEqual({ menutup: 0, jadiLapisan: 5 });
+    expect(porsiPenutupMinus(0, 5)).toEqual({ menutup: 0, jadiLapisan: 5 });
+  });
+
+  it("stok minus dan barang masuk pas: tidak ada lapisan baru", () => {
+    // Barangnya memang sudah keluar dari rak — kalau tetap jadi lapisan,
+    // FIFO bisa menjual barang yang fisiknya sudah habis.
+    expect(porsiPenutupMinus(-11, 11)).toEqual({ menutup: 11, jadiLapisan: 0 });
+  });
+
+  it("stok minus lalu masuk lebih banyak: sisanya jadi lapisan", () => {
+    expect(porsiPenutupMinus(-11, 15)).toEqual({ menutup: 11, jadiLapisan: 4 });
+  });
+
+  it("stok minus lalu masuk sebagian: belum ada lapisan", () => {
+    expect(porsiPenutupMinus(-11, 4)).toEqual({ menutup: 4, jadiLapisan: 0 });
+  });
+});
+
+describe("stockIn saat stok minus", () => {
+  it("tidak membuat lapisan hantu", async () => {
+    const db: FakeDb = { stock: { "toko|itm": -3 }, layers: [] };
+    await stockIn(makeClient(db), {
+      warehouseId: "toko", itemId: "itm", qty: 3, unitCost: 1000, source: "manual",
+    });
+    expect(db.stock["toko|itm"]).toBe(0);
+    expect(db.layers.filter((l) => l.warehouse_id === "toko")).toHaveLength(0);
+  });
+
+  it("kelebihannya tetap jadi lapisan siap jual", async () => {
+    const db: FakeDb = { stock: { "toko|itm": -3 }, layers: [] };
+    await stockIn(makeClient(db), {
+      warehouseId: "toko", itemId: "itm", qty: 10, unitCost: 1000, source: "manual",
+    });
+    expect(db.stock["toko|itm"]).toBe(7);
+    const masuk = db.layers.filter((l) => l.warehouse_id === "toko");
+    expect(masuk).toHaveLength(1);
+    expect(Number(masuk[0].qty_in)).toBe(7);
   });
 });

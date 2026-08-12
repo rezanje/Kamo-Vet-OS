@@ -122,18 +122,48 @@ export type StockInOpts = {
   expDate?: string | null;
 };
 
+/**
+ * Berapa unit dari barang masuk yang habis untuk MENUTUP stok minus lebih dulu.
+ *
+ * Stok bisa minus karena barang terjual padahal saldonya kosong: `stockOut`
+ * menurunkan `stock.qty` tapi tidak punya lapisan untuk dikonsumsi. Barangnya
+ * memang sudah keluar dari rak — jadi begitu kedatangannya dicatat belakangan,
+ * unit sebanyak itu TIDAK boleh berdiri lagi sebagai lapisan siap jual, karena
+ * fisiknya sudah tidak ada.
+ *
+ * Tanpa aturan ini, tabel lapisan menyimpan barang hantu: `stock.qty` benar
+ * tetapi lapisannya kelebihan, dan FIFO bisa menjual sesuatu yang sudah habis.
+ */
+export function porsiPenutupMinus(stokSekarang: number, qtyMasuk: number): { menutup: number; jadiLapisan: number } {
+  const minus = Math.max(0, -(Number(stokSekarang) || 0));
+  const masuk = Math.max(0, Number(qtyMasuk) || 0);
+  const menutup = Math.min(minus, masuk);
+  return { menutup, jadiLapisan: masuk - menutup };
+}
+
 // Stok masuk: buat layer baru + naikkan qty.
 export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void> {
   if (o.qty <= 0) return;
   if (!(await punyaStok(supabase, o.itemId))) return;
-  const { error } = await supabase.from("stock_layers").insert({
-    warehouse_id: o.warehouseId, item_id: o.itemId,
-    tanggal: o.tanggal ?? hariIniWIB(),
-    qty_in: o.qty, qty_left: o.qty, unit_cost: o.unitCost,
-    source: o.source, source_ref: o.ref ?? null,
-    exp_date: o.expDate || null,
-  });
-  orThrow(error, "catat lapisan stok masuk");
+
+  // Stok minus ditutup DULU; sisanya baru jadi lapisan siap jual.
+  const { data: st } = await supabase
+    .from("stock").select("qty")
+    .eq("warehouse_id", o.warehouseId).eq("item_id", o.itemId).maybeSingle();
+  const { jadiLapisan } = porsiPenutupMinus(Number(st?.qty) || 0, o.qty);
+
+  if (jadiLapisan > 0) {
+    const { error } = await supabase.from("stock_layers").insert({
+      warehouse_id: o.warehouseId, item_id: o.itemId,
+      tanggal: o.tanggal ?? hariIniWIB(),
+      qty_in: jadiLapisan, qty_left: jadiLapisan, unit_cost: o.unitCost,
+      source: o.source, source_ref: o.ref ?? null,
+      exp_date: o.expDate || null,
+    });
+    orThrow(error, "catat lapisan stok masuk");
+  }
+  // Saldo tetap naik sebanyak yang datang — porsi penutup minus mengangkat
+  // saldonya dari negatif ke nol, bukan menghilang.
   await adjustStockQty(supabase, o.warehouseId, o.itemId, o.qty);
   await catatMutasi(supabase, { ...o, qty: o.qty });
 }
