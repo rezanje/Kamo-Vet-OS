@@ -82,16 +82,25 @@ export async function buatReturJual(formData: FormData) {
 
   // akumulasi retur sebelumnya utk struk ini
   const { data: prev } = await supabase
-    .from("sales_returns").select("sales_return_items(item_id, qty)").eq("sale_id", sale_id);
+    .from("sales_returns").select("no_retur, sales_return_items(item_id, qty)").eq("sale_id", sale_id);
   const sudah: Record<string, number> = {};
   for (const d of prev ?? [])
     for (const r of d.sales_return_items ?? [])
       if (r.item_id) sudah[r.item_id] = (sudah[r.item_id] ?? 0) + Number(r.qty);
 
   const sisa = sisaRetur(sumber, sudah);
+  // Sisa 0 hampir selalu berarti "struk ini sudah pernah diretur", bukan salah ketik
+  // qty. Pesan lama ("melebihi sisa yang bisa diretur (sisa 0)") membuat orang mengira
+  // returnya gagal padahal yang pertama berhasil — nomor returnya disebut supaya jelas.
+  const noReturSebelumnya = ((prev ?? []) as { no_retur?: string }[])
+    .map((d) => d.no_retur).filter(Boolean).join(", ");
   for (const it of items) {
-    if ((sisa[it.item_id] ?? 0) < Number(it.qty))
-      fail(`Qty retur melebihi sisa yang bisa diretur (sisa ${sisa[it.item_id] ?? 0}).`);
+    const sisaIni = sisa[it.item_id] ?? 0;
+    if (sisaIni < Number(it.qty)) {
+      fail(sisaIni === 0
+        ? `Struk ini sudah diretur seluruhnya${noReturSebelumnya ? ` lewat ${noReturSebelumnya}` : ""} — tidak ada lagi yang bisa dikembalikan.`
+        : `Qty retur melebihi sisa yang bisa diretur (sisa ${sisaIni}).`);
+    }
   }
 
   const rows = items.map((it) => ({ item_id: it.item_id, qty: Number(it.qty), harga: harga[it.item_id] ?? 0 }));
