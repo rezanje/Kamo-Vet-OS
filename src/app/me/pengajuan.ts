@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyEmployee } from "@/lib/employee";
 import { hariIniWIB } from "@/lib/tanggal";
+import { ALASAN_SELISIH_KAS } from "@/lib/kasbon";
 
 const BACK = "/me";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
@@ -51,10 +52,17 @@ export async function ajukanKasbon(formData: FormData) {
 
   // Kasbon berjalan yang belum lunas dibatasi satu supaya potongan gaji tidak
   // menumpuk tanpa disadari.
+  //
+  // Utang selisih kas TIDAK ikut dihitung di sini: itu bukan kasbon yang karyawan
+  // ajukan, dan kalau ikut menghalangi, satu selisih kas kecil bisa memblokir hak
+  // karyawan mengajukan kasbon selama sebulan penuh.
   const { data: berjalan } = await supabase
-    .from("cash_advances").select("id")
-    .eq("employee_id", emp.id).in("status", ["Menunggu", "Disetujui"]).limit(1);
-  if ((berjalan ?? []).length > 0) gagal("Masih ada kasbon yang belum lunas — selesaikan dulu sebelum mengajukan lagi");
+    .from("cash_advances").select("id, alasan")
+    .eq("employee_id", emp.id).in("status", ["Menunggu", "Disetujui"]);
+  const kasbonSendiri = (berjalan ?? []).filter(
+    (k) => !String(k.alasan ?? "").startsWith(ALASAN_SELISIH_KAS),
+  );
+  if (kasbonSendiri.length > 0) gagal("Masih ada kasbon yang belum lunas — selesaikan dulu sebelum mengajukan lagi");
 
   const { error } = await supabase.from("cash_advances")
     .insert({ employee_id: emp.id, tanggal: hariIniWIB(), jumlah, tenor_bulan: tenor, alasan });

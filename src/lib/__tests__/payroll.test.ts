@@ -31,7 +31,7 @@ const dasar: InputGaji = {
   komponen: [],
   reimburse: 0,
   komisi: 0,
-  kasbon: null,
+  kasbon: [],
   penyesuaian: 0,
   aturan,
 };
@@ -87,7 +87,7 @@ describe("hitungGaji", () => {
         { tipe: "potongan", nominal: 50_000 },
       ],
       reimburse: 75_000,
-      kasbon: { jumlah: 3_000_000, tenor: 3, sudahDibayar: 0 },
+      kasbon: [{ jumlah: 3_000_000, tenor: 3, sudahDibayar: 0 }],
     });
     expect(r.upahLembur).toBe(60_000);
     expect(r.tunjangan).toBe(500_000);
@@ -102,7 +102,7 @@ describe("hitungGaji", () => {
   });
 
   it("gaji bersih tidak pernah negatif", () => {
-    const r = hitungGaji({ ...dasar, gajiPokok: 500_000, kasbon: { jumlah: 3_000_000, tenor: 1, sudahDibayar: 0 } });
+    const r = hitungGaji({ ...dasar, gajiPokok: 500_000, kasbon: [{ jumlah: 3_000_000, tenor: 1, sudahDibayar: 0 }] });
     expect(r.total).toBe(0);
   });
 });

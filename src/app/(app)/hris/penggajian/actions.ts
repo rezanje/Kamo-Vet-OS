@@ -125,22 +125,27 @@ export async function sahkanPenggajian(formData: FormData) {
   const kasCode = await kodeAkunBayar(supabase, "Transfer", null, accountId);
 
   // 1) Cicilan kasbon: satu baris per kasbon per periode (unik), lalu tandai lunas.
+  //    Satu karyawan bisa punya lebih dari satu utang berjalan — kasbon yang ia
+  //    ajukan sendiri, plus utang selisih kas dari tutup shift. Angka yang dipakai
+  //    adalah cicilan yang BENAR-BENAR tertutup gaji periode ini; kalau gajinya
+  //    tidak cukup, sisanya tetap jadi utang dan tidak boleh ditandai lunas.
   for (const s of slip) {
-    const cicilan = Number(s.cicilan_kasbon);
-    if (cicilan <= 0) continue;
+    if (Number(s.cicilan_kasbon) <= 0) continue;
     const b = perKaryawan.get(s.employee_id);
-    if (!b?.kasbonId) continue;
+    for (const c of b?.cicilanKasbon ?? []) {
+      if (!c.id || c.jumlah <= 0) continue;
 
-    await supabase.from("cash_advance_installments")
-      .upsert({ advance_id: b.kasbonId, periode, jumlah: cicilan }, { onConflict: "advance_id,periode" });
+      await supabase.from("cash_advance_installments")
+        .upsert({ advance_id: c.id, periode, jumlah: c.jumlah }, { onConflict: "advance_id,periode" });
 
-    const { data: adv } = await supabase
-      .from("cash_advances").select("jumlah, cash_advance_installments(jumlah)").eq("id", b.kasbonId).maybeSingle();
-    if (adv) {
-      const dibayar = ((adv.cash_advance_installments ?? []) as { jumlah: number }[])
-        .reduce((a, i) => a + Number(i.jumlah), 0);
-      if (dibayar >= Number(adv.jumlah)) {
-        await supabase.from("cash_advances").update({ status: "Lunas" }).eq("id", b.kasbonId);
+      const { data: adv } = await supabase
+        .from("cash_advances").select("jumlah, cash_advance_installments(jumlah)").eq("id", c.id).maybeSingle();
+      if (adv) {
+        const dibayar = ((adv.cash_advance_installments ?? []) as { jumlah: number }[])
+          .reduce((a, i) => a + Number(i.jumlah), 0);
+        if (dibayar >= Number(adv.jumlah)) {
+          await supabase.from("cash_advances").update({ status: "Lunas" }).eq("id", c.id);
+        }
       }
     }
   }

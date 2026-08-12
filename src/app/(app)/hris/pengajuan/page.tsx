@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { ALASAN_SELISIH_KAS } from "@/lib/kasbon";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster } from "@/lib/master-guard";
@@ -41,10 +42,28 @@ export default async function PengajuanPage({
     getAturanGaji(supabase),
   ]);
 
+  // Utang berjalan yang SUDAH disetujui — termasuk utang selisih kas yang lahir
+  // otomatis saat tutup shift. Tanpa daftar ini, utang itu tidak terlihat oleh HR
+  // maupun keuangan sama sekali: satu-satunya yang bisa melihatnya adalah
+  // karyawannya sendiri di layar /me.
+  const { data: berjalanData } = await supabase
+    .from("cash_advances")
+    .select("id, tanggal, jumlah, tenor_bulan, alasan, employees(nama, jabatan), cash_advance_installments(jumlah)")
+    .eq("status", "Disetujui").order("tanggal", { ascending: false });
+
   const lembur = (lemburData ?? []) as unknown as { id: string; tanggal: string; jam: number; alasan: string | null; employees: Rel<Emp> }[];
   const kasbon = (kasbonData ?? []) as unknown as { id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null; employees: Rel<Emp> }[];
   const reimburse = (reimData ?? []) as unknown as { id: string; tanggal: string; kategori: string; jumlah: number; keterangan: string | null; employees: Rel<Emp> }[];
   const total = lembur.length + kasbon.length + reimburse.length;
+
+  const berjalan = ((berjalanData ?? []) as unknown as {
+    id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null;
+    employees: Rel<Emp>; cash_advance_installments: { jumlah: number }[] | null;
+  }[]).map((k) => {
+    const dibayar = (k.cash_advance_installments ?? []).reduce((a, i) => a + Number(i.jumlah), 0);
+    return { ...k, dibayar, sisa: Math.max(0, Number(k.jumlah) - dibayar) };
+  }).filter((k) => k.sisa > 0);
+  const totalSisa = berjalan.reduce((a, k) => a + k.sisa, 0);
 
   return (
     <>
@@ -151,6 +170,63 @@ export default async function PengajuanPage({
             <Tombol bolehKelola={bolehKelola} tolak={tolakReimburse} />
           </form>
         ))}
+      </div>
+
+      {/* ── Utang berjalan ─────────────────────────────────────── */}
+      <div className="crm-sec" style={{ marginBottom: 0, marginTop: 14 }}>
+        <SecHeader
+          num="04" title="UTANG KARYAWAN BERJALAN"
+          desc="Kasbon & selisih kas yang belum lunas. Dipotong otomatis dari gaji periode berikutnya."
+        />
+        {berjalan.length === 0 ? (
+          <Kosong teks="Tidak ada utang karyawan yang berjalan." />
+        ) : (
+          <>
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl" style={{ minWidth: 640 }}>
+                <thead>
+                  <tr>
+                    <th>Karyawan</th>
+                    <th style={{ width: 96 }}>Tanggal</th>
+                    <th>Asal</th>
+                    <th style={{ width: 110, textAlign: "right" }}>Jumlah</th>
+                    <th style={{ width: 110, textAlign: "right" }}>Sudah dibayar</th>
+                    <th style={{ width: 110, textAlign: "right" }}>Sisa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {berjalan.map((k) => {
+                    const dariSelisih = String(k.alasan ?? "").startsWith(ALASAN_SELISIH_KAS);
+                    return (
+                      <tr key={k.id}>
+                        <td style={{ fontSize: 11.5, fontWeight: 600 }}>{one(k.employees)?.nama ?? "—"}</td>
+                        <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{tgl(k.tanggal)}</td>
+                        <td style={{ fontSize: 10.5 }}>
+                          <span className={`bge ${dariSelisih ? "o" : "b"}`} style={{ fontSize: 9 }}>
+                            {dariSelisih ? "Selisih kas" : "Kasbon"}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: "right", fontSize: 11 }}>{rp(Number(k.jumlah))}</td>
+                        <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>{rp(k.dibayar)}</td>
+                        <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 700 }}>{rp(k.sisa)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={5} style={{ fontSize: 11.5, fontWeight: 800 }}>TOTAL SISA</td>
+                    <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 800 }}>{rp(totalSisa)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
+              Utang bertanda <b>Selisih kas</b> lahir otomatis saat tutup shift dan tidak
+              menghalangi karyawan mengajukan kasbon sendiri.
+            </div>
+          </>
+        )}
       </div>
     </>
   );

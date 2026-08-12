@@ -4,7 +4,7 @@
 // lembur disetujui, komponen gaji, cicilan kasbon, dan reimburse disetujui.
 
 import { potonganTelat, menitTelat, type AturanGaji } from "./payroll-aturan";
-import { cicilanPeriode } from "./kasbon";
+import { cicilanSemuaKasbon, cicilanTertutupGaji, type KasbonBerjalan } from "./kasbon";
 
 export type HariJadwal = {
   tanggal: string;
@@ -28,7 +28,9 @@ export type InputGaji = {
   komponen: KomponenDipakai[];
   reimburse: number;            // reimburse disetujui yang dibayar periode ini
   komisi: number;               // komisi penjualan periode ini (migrasi 0091)
-  kasbon: { jumlah: number; tenor: number; sudahDibayar: number } | null;
+  // Bisa lebih dari satu: kasbon yang diajukan sendiri + utang selisih kas dari
+  // tutup shift. Dulu tipenya tunggal, jadi utang kedua tidak pernah dipotong.
+  kasbon: KasbonBerjalan[];
   penyesuaian: number;          // koreksi manual pemilik (boleh negatif)
   aturan: AturanGaji;
 };
@@ -43,6 +45,8 @@ export type RincianGaji = {
   potonganTelat: number;
   potonganBolos: number;
   cicilanKasbon: number;
+  /** Rincian per kasbon — pengesahan gaji butuh tahu cicilan mana untuk utang mana. */
+  cicilanPerKasbon: { id?: string; jumlah: number }[];
   penyesuaian: number;
   total: number;
   hariKerja: number;
@@ -85,15 +89,19 @@ export function hitungGaji(i: InputGaji): RincianGaji {
 
   const upahLembur = Math.round(Number(i.jamLembur) * i.aturan.lembur_per_jam);
   const potBolos = Math.round(bolos * i.aturan.bolos_per_hari);
-  const cicilan = i.kasbon
-    ? cicilanPeriode(i.kasbon.jumlah, i.kasbon.tenor, i.kasbon.sudahDibayar)
-    : 0;
-
   const komisi = Math.round(Number(i.komisi) || 0);
 
-  const total =
+  // Gaji sebelum cicilan = batas atas yang bisa dipotong untuk utang.
+  const sebelumCicilan =
     Number(i.gajiPokok) + tunjangan + upahLembur + Number(i.reimburse) + komisi + Number(i.penyesuaian)
-    - potonganTetap - potTelat - potBolos - cicilan;
+    - potonganTetap - potTelat - potBolos;
+
+  // Yang dilaporkan adalah cicilan yang BENAR-BENAR tertutup gaji. Kalau utangnya
+  // lebih besar dari gaji bersih, sisanya tetap jadi utang — bukan dianggap lunas.
+  const cicilanPerKasbon = cicilanTertutupGaji(cicilanSemuaKasbon(i.kasbon ?? []), sebelumCicilan);
+  const cicilan = cicilanPerKasbon.reduce((a, c) => a + c.jumlah, 0);
+
+  const total = sebelumCicilan - cicilan;
 
   return {
     gajiPokok: Number(i.gajiPokok),
@@ -105,6 +113,7 @@ export function hitungGaji(i: InputGaji): RincianGaji {
     potonganTelat: potTelat,
     potonganBolos: potBolos,
     cicilanKasbon: cicilan,
+    cicilanPerKasbon,
     penyesuaian: Number(i.penyesuaian),
     // Gaji bersih tidak boleh negatif: potongan yang melebihi gaji ditahan, bukan
     // ditagihkan diam-diam lewat slip.

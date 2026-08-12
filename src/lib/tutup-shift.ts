@@ -17,6 +17,8 @@
 // Semua rumusnya sekarang di sini, dan jenis shift menentukan sumber angkanya.
 
 import { kodeAkunBayar } from "./kas-akun";
+import { AKUN_PIUTANG_KARYAWAN, ALASAN_SELISIH_KAS } from "./kasbon";
+import { jurnalTersimpan } from "./jurnal-guard";
 import { postJournal } from "./posting";
 import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "./shift-calc";
 import { hariIniWIB } from "./tanggal";
@@ -36,7 +38,9 @@ export type ShiftTutup = {
 };
 
 export type HasilTutup =
-  | { ok: true; expected: number; selisih: number; breakdown: Record<string, number> }
+  | { ok: true; expected: number; selisih: number; breakdown: Record<string, number>;
+      /** Nama kasir kalau selisih kurang dibebankan sebagai piutangnya. */
+      dibebankanKe: string | null }
   | { ok: false; error: string };
 
 /** Uang masuk shift ini, dari sumber yang benar menurut jenis shiftnya. */
@@ -122,24 +126,67 @@ export async function tutupShift(
     return { ok: false, error: "Shift sudah ditutup barusan — tidak ditutup dua kali." };
   }
 
+  let dibebankanKe: string | null = null;
   if (selisih !== 0) {
     // Kas cabang bisa dipetakan ke rekening lain; jangan paksa ke 1101 pusat.
     const kas = await kodeAkunBayar(supabase, "Tunai", shift.branch_id ?? null);
     const abs = Math.abs(selisih);
-    await postJournal(supabase, {
-      tanggal: hariIniWIB(),
-      deskripsi: shift.shift_type === "klinik" ? "Selisih kas tutup shift klinik" : "Selisih kas tutup shift",
-      source: "shift",
-      sourceRef: shift.id,
-      branchId: shift.branch_id ?? null,
-      // kurang: Dr Selisih Kas / Cr Kas · lebih: Dr Kas / Cr Selisih Kas
-      lines: selisih < 0
-        ? [{ code: AKUN_SELISIH_KAS, debit: abs, credit: 0 }, { code: kas, debit: 0, credit: abs }]
-        : [{ code: kas, debit: abs, credit: 0 }, { code: AKUN_SELISIH_KAS, debit: 0, credit: abs }],
-    });
+
+    // KAS KURANG → jadi piutang kasir kalau kasirnya bisa dikenali sebagai karyawan.
+    // Utangnya ditulis sebagai kasbon berstatus Disetujui supaya ikut terpotong
+    // otomatis dari gaji berikutnya — kalau cuma dijurnal ke 1203 tanpa dokumen,
+    // tagihannya jadi hantu yang tidak pernah bisa ditagih sistem.
+    const karyawan = selisih < 0 ? await karyawanShift(supabase, shift.opened_by) : null;
+
+    if (selisih < 0 && karyawan) {
+      const { data: adv, error } = await supabase.from("cash_advances").insert({
+        employee_id: karyawan.id,
+        tanggal: hariIniWIB(),
+        jumlah: abs,
+        tenor_bulan: 1,
+        status: "Disetujui",
+        alasan: `${ALASAN_SELISIH_KAS} ${shift.id.slice(0, 8)}`,
+        disbursed_at: new Date().toISOString(),
+      }).select("id").single();
+
+      if (!error && adv) {
+        await postJournal(supabase, {
+          tanggal: hariIniWIB(),
+          deskripsi: `Selisih kas kurang — ditanggung ${karyawan.nama}`,
+          source: "shift", sourceRef: shift.id, branchId: shift.branch_id ?? null,
+          lines: [
+            { code: AKUN_PIUTANG_KARYAWAN, debit: abs, credit: 0 },
+            { code: kas, debit: 0, credit: abs },
+          ],
+        });
+        // postJournal menelan error. Utang tanpa jurnal lebih buruk daripada gagal
+        // terang-terangan, jadi dokumennya dibatalkan kalau jurnalnya tidak ada.
+        if (await jurnalTersimpan(supabase, "shift", shift.id)) {
+          dibebankanKe = karyawan.nama;
+        } else {
+          await supabase.from("cash_advances").delete().eq("id", adv.id);
+        }
+      }
+    }
+
+    if (!dibebankanKe) {
+      // Kas LEBIH, atau kasirnya belum tertaut ke data karyawan. Tetap dijurnal ke
+      // Selisih Kas — kalau dilewati, kas buku besar berbeda dari kas fisik selamanya.
+      await postJournal(supabase, {
+        tanggal: hariIniWIB(),
+        deskripsi: shift.shift_type === "klinik" ? "Selisih kas tutup shift klinik" : "Selisih kas tutup shift",
+        source: "shift",
+        sourceRef: shift.id,
+        branchId: shift.branch_id ?? null,
+        // kurang: Dr Selisih Kas / Cr Kas · lebih: Dr Kas / Cr Selisih Kas
+        lines: selisih < 0
+          ? [{ code: AKUN_SELISIH_KAS, debit: abs, credit: 0 }, { code: kas, debit: 0, credit: abs }]
+          : [{ code: kas, debit: abs, credit: 0 }, { code: AKUN_SELISIH_KAS, debit: 0, credit: abs }],
+      });
+    }
   }
 
-  return { ok: true, expected, selisih, breakdown };
+  return { ok: true, expected, selisih, breakdown, dibebankanKe };
 }
 
 const KOLOM_SHIFT = "id, shift_type, opening_balance, branch_id, opened_by, status";
@@ -152,4 +199,19 @@ export async function bacaShift(
   if (jenis) q = q.eq("shift_type", jenis);
   const { data } = await q.maybeSingle();
   return (data ?? null) as ShiftTutup | null;
+}
+
+/**
+ * Kasir shift sebagai KARYAWAN. Tidak semua akun login punya kartu karyawan
+ * (`employees.profile_id` boleh kosong) — kalau tidak tertaut, selisihnya tidak
+ * bisa dibebankan ke siapa pun dan tetap masuk Selisih Kas.
+ */
+async function karyawanShift(
+  supabase: AnyClient, openedBy: string | null,
+): Promise<{ id: string; nama: string } | null> {
+  if (!openedBy) return null;
+  const { data } = await supabase
+    .from("employees").select("id, nama")
+    .eq("profile_id", openedBy).eq("status", "Aktif").maybeSingle();
+  return (data ?? null) as { id: string; nama: string } | null;
 }

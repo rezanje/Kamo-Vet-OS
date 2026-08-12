@@ -16,7 +16,8 @@ export type BarisGaji = {
   nama: string;
   jabatan: string | null;
   rincian: RincianGaji;
-  kasbonId: string | null;
+  /** Cicilan periode ini per kasbon — satu karyawan bisa punya lebih dari satu utang. */
+  cicilanKasbon: { id?: string; jumlah: number }[];
   reimburseIds: string[];
 };
 
@@ -113,17 +114,22 @@ export async function kumpulkanDataGaji(
     kompPer.set(k.employee_id, arr);
   }
 
-  const kasbonPer = new Map<string, { id: string; jumlah: number; tenor: number; sudahDibayar: number }>();
+  // SEMUA kasbon berjalan per karyawan, bukan satu. Dulu memakai `set` di dalam
+  // loop sehingga hanya kasbon terakhir yang terbaca — utang lainnya diam-diam
+  // tidak pernah dipotong dari gaji.
+  const kasbonPer = new Map<string, { id: string; jumlah: number; tenor: number; sudahDibayar: number }[]>();
   for (const k of (kasbonData ?? []) as {
     id: string; employee_id: string; jumlah: number; tenor_bulan: number;
     cash_advance_installments: { jumlah: number }[] | null;
   }[]) {
-    kasbonPer.set(k.employee_id, {
+    const arr = kasbonPer.get(k.employee_id) ?? [];
+    arr.push({
       id: k.id,
       jumlah: Number(k.jumlah),
       tenor: k.tenor_bulan,
       sudahDibayar: (k.cash_advance_installments ?? []).reduce((a, i) => a + Number(i.jumlah), 0),
     });
+    kasbonPer.set(k.employee_id, arr);
   }
 
   const reimPer = new Map<string, { ids: string[]; total: number }>();
@@ -135,7 +141,7 @@ export async function kumpulkanDataGaji(
   }
 
   return karyawan.map((k) => {
-    const kasbon = kasbonPer.get(k.id) ?? null;
+    const kasbon = kasbonPer.get(k.id) ?? [];
     const reim = reimPer.get(k.id) ?? { ids: [], total: 0 };
     const input: InputGaji = {
       gajiPokok: Number(k.gaji_pokok),
@@ -146,16 +152,17 @@ export async function kumpulkanDataGaji(
       komponen: kompPer.get(k.id) ?? [],
       reimburse: reim.total,
       komisi: komisiPer.get(k.id) ?? 0,
-      kasbon: kasbon ? { jumlah: kasbon.jumlah, tenor: kasbon.tenor, sudahDibayar: kasbon.sudahDibayar } : null,
+      kasbon,
       penyesuaian: penyesuaianPer.get(k.id) ?? 0,
       aturan,
     };
+    const rincian = hitungGaji(input);
     return {
       employeeId: k.id,
       nama: k.nama,
       jabatan: k.jabatan,
-      rincian: hitungGaji(input),
-      kasbonId: kasbon?.id ?? null,
+      rincian,
+      cicilanKasbon: rincian.cicilanPerKasbon,
       reimburseIds: reim.ids,
     };
   });

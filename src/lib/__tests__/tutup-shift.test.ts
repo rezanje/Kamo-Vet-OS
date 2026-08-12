@@ -16,10 +16,17 @@ type Db = {
   /** Shift yang boleh ditutup — dikosongkan untuk mensimulasikan "sudah ditutup duluan". */
   shiftTerbuka?: boolean;
   journal?: Any[];
+  employees?: Any[];
+  cash_advances_inserted?: Any[];
+  journalLines?: Any[];
 };
 
 function makeClient(db: Db) {
   db.journal ??= [];
+  // postJournal mencari akun lewat kodenya; tanpa daftar ini ia berhenti diam-diam.
+  db.coa_accounts ??= [
+    { id: "a1101", code: "1101" }, { id: "a1203", code: "1203" }, { id: "a5901", code: "5901" },
+  ];
   return {
     from(table: string) {
       const f: Record<string, Any> = {};
@@ -30,7 +37,9 @@ function makeClient(db: Db) {
         select: () => (mode === "update" ? self : ((mode = "select"), self)),
         insert: (v: Any) => {
           if (table === "journal_entries") db.journal!.push(v);
-          return { select: () => ({ single: async () => ({ data: { id: `J${db.journal!.length}` }, error: null }) }) };
+          if (table === "cash_advances") (db.cash_advances_inserted ??= []).push(v);
+          if (table === "journal_lines") (db.journalLines ??= []).push(...(Array.isArray(v) ? v : [v]));
+          return { select: () => ({ single: async () => ({ data: { id: `X${db.journal!.length}` }, error: null }) }) };
         },
         update: () => ((mode = "update"), self),
         eq: (k: string, v: Any) => ((f[k] = v), self),
@@ -39,7 +48,12 @@ function makeClient(db: Db) {
         not: () => self,
         order: () => self,
         limit: () => self,
-        maybeSingle: async () => ({ data: null, error: null }),
+        like: () => self,
+        maybeSingle: async () => {
+          if (table === "employees") return { data: (db.employees ?? [])[0] ?? null, error: null };
+          if (table === "journal_entries") return { data: db.journal!.length ? { id: "J1" } : null, error: null };
+          return { data: null, error: null };
+        },
         single: async () => ({ data: null, error: null }),
         then: (res: Any, rej: Any) => {
           let data: Any = [];
@@ -146,5 +160,41 @@ describe("tutupShift", () => {
     const db: Db = { sales: [{ total: 200_000, metode_bayar: "Tunai" }], expenses: [] };
     const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 250_000 });
     expect(hasil).toMatchObject({ ok: true, expected: 300_000, selisih: -50_000 });
+  });
+});
+
+describe("selisih kas kurang jadi piutang kasir", () => {
+  const dbDasar = (): Db => ({
+    sales: [{ total: 200_000, metode_bayar: "Tunai" }],
+    expenses: [],
+    employees: [{ id: "E1", nama: "Siti" }],
+  });
+
+  it("kasir yang punya kartu karyawan: utangnya tercatat atas namanya", async () => {
+    const db = dbDasar();
+    const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 250_000 });
+    expect(hasil).toMatchObject({ ok: true, selisih: -50_000, dibebankanKe: "Siti" });
+    expect(db.cash_advances_inserted).toHaveLength(1);
+    expect(db.cash_advances_inserted![0]).toMatchObject({ employee_id: "E1", jumlah: 50_000, status: "Disetujui" });
+    // Jurnalnya ke Piutang Karyawan, bukan Selisih Kas.
+    const akun = (db.journalLines ?? []).map((l: Any) => l.account_id);
+    expect(akun).toContain("a1203");
+    expect(akun).not.toContain("a5901");
+  });
+
+  it("kasir tanpa kartu karyawan: tetap ke Selisih Kas, tidak hilang", async () => {
+    const db = { ...dbDasar(), employees: [] };
+    const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 250_000 });
+    expect(hasil).toMatchObject({ ok: true, dibebankanKe: null });
+    expect(db.cash_advances_inserted ?? []).toHaveLength(0);
+    expect((db.journalLines ?? []).map((l: Any) => l.account_id)).toContain("a5901");
+  });
+
+  it("kas LEBIH tidak pernah jadi piutang siapa pun", async () => {
+    const db = dbDasar();
+    const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 400_000 });
+    expect(hasil).toMatchObject({ ok: true, selisih: 100_000, dibebankanKe: null });
+    expect(db.cash_advances_inserted ?? []).toHaveLength(0);
+    expect((db.journalLines ?? []).map((l: Any) => l.account_id)).toContain("a5901");
   });
 });
