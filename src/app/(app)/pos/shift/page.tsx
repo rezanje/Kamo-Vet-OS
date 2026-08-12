@@ -24,6 +24,10 @@ export default async function ShiftPage({
     .select("id, opening_balance, opened_at, branch_id, branches(name)")
     .eq("opened_by", user?.id ?? "")
     .eq("status", "open")
+    // Layar ini membuka form tutup shift PETSHOP. Tanpa saringan jenis, shift klinik
+    // milik orang yang sama ikut terambil (index uniknya per jenis, jadi dua shift
+    // terbuka itu sah) dan ditutup dengan rumus yang salah.
+    .eq("shift_type", "petshop")
     .order("opened_at", { ascending: false })
     .maybeSingle();
 

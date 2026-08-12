@@ -166,11 +166,19 @@ export async function buatReturJual(formData: FormData) {
 
   // Refund dikembalikan lewat jalur yang sama dengan pembayarannya. Struk transfer/QRIS
   // tidak mengurangi laci kasir, jadi hanya refund TUNAI yang ditempel ke shift.
+  // Refund tunai ditempel ke laci ORANG YANG MENGERJAKANNYA, bukan ke sembarang
+  // shift yang kebetulan terbuka di cabang itu. Versi lama membebani kasir yang
+  // sedang jaga atas refund yang diproses orang backoffice — kasir itu lalu kena
+  // selisih kurang atas uang yang tidak pernah keluar dari lacinya.
+  //
+  // Kalau yang memproses tidak punya shift terbuka, uangnya memang tidak keluar
+  // dari laci mana pun (dibayar dari meja keuangan), jadi tidak ditempel ke shift.
   const metodeRefund = String(sale!.metode_bayar ?? "Tunai");
-  const { data: shift } = metodeRefund === "Tunai"
+  const { data: shift } = metodeRefund === "Tunai" && user?.id
     ? await supabase
         .from("cashier_shifts").select("id")
         .eq("branch_id", sale!.branch_id).eq("status", "open")
+        .eq("opened_by", user.id).eq("shift_type", "petshop")
         .order("opened_at", { ascending: false }).limit(1).maybeSingle()
     : { data: null as { id: string } | null };
   const { error: expErr } = await supabase.from("expenses").insert({

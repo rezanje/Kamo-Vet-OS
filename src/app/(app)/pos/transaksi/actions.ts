@@ -116,7 +116,12 @@ export async function checkoutSale(formData: FormData) {
   // §2.1: tautkan ke shift kasir yang sedang terbuka (kalau ada) untuk rekonsiliasi kas.
   const { data: openShift } = await supabase
     .from("cashier_shifts").select("id")
-    .eq("branch_id", branchId).eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+    .eq("branch_id", branchId).eq("opened_by", user?.id ?? "").eq("status", "open")
+    // Satu orang boleh punya shift petshop DAN klinik terbuka bersamaan (index unik
+    // per jenis). Tanpa saringan ini kueri mengembalikan dua baris, maybeSingle gagal,
+    // dan penjualan tersimpan dengan shift_id kosong — uangnya masuk laci tapi tidak
+    // pernah ikut dihitung saat tutup shift, jadi selisih kurang palsu.
+    .eq("shift_type", "petshop").maybeSingle();
 
   const now = new Date();
   const prefix = `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;

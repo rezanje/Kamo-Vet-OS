@@ -47,7 +47,8 @@ export default async function TransaksiPage({
 
   const { data: { user } } = await supabase.auth.getUser();
   const { data: openShift } = await supabase
-    .from("cashier_shifts").select("id").eq("opened_by", user?.id ?? "").eq("status", "open").maybeSingle();
+    .from("cashier_shifts").select("id").eq("opened_by", user?.id ?? "").eq("status", "open")
+    .eq("shift_type", "petshop").maybeSingle();
 
   return (
     <>

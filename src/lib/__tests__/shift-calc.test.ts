@@ -55,6 +55,30 @@ describe("invoiceCashRows", () => {
     expect(rows.map((r) => r.total)).toEqual([100000, 50000, 0]);
     expect(rows[2].metode_bayar).toBe("QRIS");
   });
+
+  // Kebocoran nyata: invoice DP yang belakangan dilunasi lewat layar Piutang
+  // (uangnya masuk bank, bukan laci) berubah jadi "Lunas". Kalau shift aslinya
+  // masih terbuka, target kas kasir ikut melonjak sebesar SELURUH tagihan.
+  it("pelunasan susulan tidak menaikkan kas shift yang menerbitkan", () => {
+    const rows = invoiceCashRows([
+      { total: 500000, dp_amount: 100000, paid_status: "Lunas", metode_bayar: "Tunai", dibayarSusulan: 400000 },
+    ]);
+    expect(rows[0].total).toBe(100000); // hanya DP-nya, bukan 500.000
+  });
+
+  it("Lunas tanpa pelunasan susulan = dibayar penuh di meja", () => {
+    const rows = invoiceCashRows([
+      { total: 500000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai", dibayarSusulan: 0 },
+    ]);
+    expect(rows[0].total).toBe(500000);
+  });
+
+  it("baris lama tanpa info pelunasan tetap terbaca seperti sebelumnya", () => {
+    const rows = invoiceCashRows([
+      { total: 500000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai" },
+    ]);
+    expect(rows[0].total).toBe(500000);
+  });
 });
 
 describe("cashVariance", () => {

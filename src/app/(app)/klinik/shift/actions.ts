@@ -2,9 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
-import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "@/lib/shift-calc";
+import { bacaShift, tutupShift } from "@/lib/tutup-shift";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
@@ -42,42 +41,15 @@ export async function tutupShiftKlinik(formData: FormData) {
   const closing = Number(formData.get("closing_balance")) || 0;
   if (!shiftId) redirect(`/klinik/shift?error=${encodeURIComponent("Shift tidak valid")}`);
 
-  const { data: shift } = await supabase
-    .from("cashier_shifts").select("opening_balance, branch_id, status").eq("id", shiftId).single();
-  if (shift?.status !== "open") redirect(`/klinik/shift?error=${encodeURIComponent("Shift sudah ditutup")}`);
+  const shift = await bacaShift(supabase, shiftId, "klinik");
+  if (!shift) redirect(`/klinik/shift?error=${encodeURIComponent("Shift klinik tidak ditemukan")}`);
 
   // Selisih kas wajib punya jurnal — shift jangan ditutup kalau periodenya terkunci.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
   if (pesanPeriode) redirect(`/klinik/shift?error=${encodeURIComponent(pesanPeriode)}`);
 
-  const { data: invoices } = await supabase
-    .from("invoices").select("total, dp_amount, paid_status, metode_bayar").eq("shift_id", shiftId);
-  const { data: expenses } = await supabase
-    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
-  const breakdown = methodBreakdown(invoiceCashRows(invoices ?? []));
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, cashExpenseTotal(expenses ?? []));
-  const selisih = cashVariance(closing, expected);
-
-  await supabase
-    .from("cashier_shifts")
-    .update({
-      closing_balance: closing, expected_cash: expected, selisih,
-      closing_breakdown: breakdown,
-      closed_at: new Date().toISOString(), status: "closed",
-    })
-    .eq("id", shiftId);
-
-  if (selisih !== 0) {
-    const today = hariIniWIB();
-    const abs = Math.abs(selisih);
-    await postJournal(supabase, {
-      tanggal: today, deskripsi: "Selisih kas tutup shift klinik", source: "shift", sourceRef: shiftId,
-      branchId: shift?.branch_id ?? null,
-      lines: selisih < 0
-        ? [{ code: "5901", debit: abs, credit: 0 }, { code: "1101", debit: 0, credit: abs }]
-        : [{ code: "1101", debit: abs, credit: 0 }, { code: "5901", debit: 0, credit: abs }],
-    });
-  }
+  const hasil = await tutupShift(supabase, { shift: shift!, closing });
+  if (!hasil.ok) redirect(`/klinik/shift?error=${encodeURIComponent(hasil.error)}`);
 
   // Kasir buta cuma berlaku SEBELUM submit; setelah kas fisik terkunci breakdown boleh dilihat.
   redirect(`/klinik/shift/${shiftId}`);

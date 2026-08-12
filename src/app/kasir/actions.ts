@@ -2,9 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
-import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
+import { bacaShift, tutupShift } from "@/lib/tutup-shift";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -81,53 +80,16 @@ export async function tutupShiftKasir(formData: FormData) {
   const closing = Number(formData.get("closing_balance")) || 0;
   if (!shiftId) redirect(`/kasir/tutup?error=${encodeURIComponent("Shift tidak valid")}`);
 
-  const { data: shift } = await supabase
-    .from("cashier_shifts").select("opening_balance, branch_id, status").eq("id", shiftId).single();
-  if (shift?.status !== "open") redirect(`/kasir/mulai?error=${encodeURIComponent("Shift sudah ditutup")}`);
+  // Layar kasir hanya boleh menutup shift petshop miliknya sendiri.
+  const shift = await bacaShift(supabase, shiftId, "petshop");
+  if (!shift) redirect(`/kasir/mulai?error=${encodeURIComponent("Shift tidak ditemukan")}`);
 
   // Selisih kas wajib punya jurnal — shift jangan ditutup kalau periodenya terkunci.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
   if (pesanPeriode) redirect(`/kasir/tutup?error=${encodeURIComponent(pesanPeriode)}`);
 
-  // Addendum §1: breakdown per metode bayar, kas fisik vs sistem.
-  const { data: sales } = await supabase
-    .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
-  const { data: expenses } = await supabase
-    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
-  const breakdown = methodBreakdown(sales ?? []);
-  const kasKeluar = cashExpenseTotal(expenses ?? []);
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, kasKeluar);
-  const selisih = cashVariance(closing, expected);
-
-  await supabase
-    .from("cashier_shifts")
-    .update({
-      closing_balance: closing, expected_cash: expected, selisih,
-      closing_breakdown: breakdown,
-      closed_at: new Date().toISOString(), status: "closed",
-    })
-    .eq("id", shiftId);
-
-  if (selisih !== 0) {
-    const today = hariIniWIB();
-    const absSelisih = Math.abs(selisih);
-    await postJournal(supabase, {
-      tanggal: today,
-      deskripsi: "Selisih kas tutup shift",
-      source: "shift",
-      sourceRef: shiftId,
-      branchId: shift?.branch_id ?? null,
-      lines: selisih < 0
-        ? [
-            { code: "5901", debit: absSelisih, credit: 0 },
-            { code: "1101", debit: 0, credit: absSelisih },
-          ]
-        : [
-            { code: "1101", debit: absSelisih, credit: 0 },
-            { code: "5901", debit: 0, credit: absSelisih },
-          ],
-    });
-  }
+  const hasil = await tutupShift(supabase, { shift: shift!, closing });
+  if (!hasil.ok) redirect(`/kasir/tutup?error=${encodeURIComponent(hasil.error)}`);
 
   // Kasir buta cuma berlaku SEBELUM submit (biar kas fisik dihitung independen).
   // Setelah kas fisik terkunci, kasir boleh lihat breakdown-nya sendiri.

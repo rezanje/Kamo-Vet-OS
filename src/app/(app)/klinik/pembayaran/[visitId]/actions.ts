@@ -244,9 +244,12 @@ export async function bayarVisit(formData: FormData) {
     );
     if (logErr) redirect(`${back}?error=${encodeURIComponent("Gagal tulis audit log: " + logErr.message)}`);
 
+    // shift_id SENGAJA tidak ikut diubah. Invoice milik shift yang MENERBITKANNYA;
+    // memindahkannya ke shift yang sedang mengedit membuat uang mukanya dihitung dua
+    // kali — sekali saat shift asal ditutup, sekali lagi di shift yang baru.
     const { error: upErr } = await supabase
       .from("invoices")
-      .update({ subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, shift_id: klinikShift.id })
+      .update({ subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt })
       .eq("id", existing.id);
     if (upErr) redirect(`${back}?error=${encodeURIComponent(upErr.message)}`);
 

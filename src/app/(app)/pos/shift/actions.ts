@@ -2,8 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { cashExpenseTotal, cashVariance, expectedCash, methodBreakdown } from "@/lib/shift-calc";
+import { bacaShift, tutupShift } from "@/lib/tutup-shift";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
@@ -31,55 +30,20 @@ export async function closeShift(formData: FormData) {
   const closing = Number(formData.get("closing_balance")) || 0;
   if (!shiftId) redirect(`/pos/shift?error=${encodeURIComponent("Shift tidak valid")}`);
 
-  const { data: shift } = await supabase
-    .from("cashier_shifts").select("opening_balance, branch_id, status").eq("id", shiftId).single();
-  if (shift?.status !== "open") redirect(`/pos/shift?error=${encodeURIComponent("Shift sudah ditutup")}`);
+  // Jenis shift TIDAK dikunci di sini: layar ini memang dipakai backoffice untuk
+  // menutup shift petshop maupun klinik. Yang penting rumusnya ikut jenis shiftnya,
+  // dan itu diurus lib/tutup-shift — dulu layar ini selalu memakai rumus petshop
+  // sehingga shift klinik yang ditutup dari sini selisihnya sebesar kas sehari.
+  const shift = await bacaShift(supabase, shiftId);
+  if (!shift) redirect(`/pos/shift?error=${encodeURIComponent("Shift tidak ditemukan")}`);
 
   // Selisih kas wajib punya jurnal. Kalau periode terkunci, shift jangan ditutup dulu —
   // status "closed" tanpa jurnal selisih bikin kas buku besar beda dgn kas fisik selamanya.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
   if (pesanPeriode) redirect(`/pos/shift?error=${encodeURIComponent(pesanPeriode)}`);
 
-  // Addendum §1: breakdown per metode disimpan untuk laporan shift.
-  const { data: sales } = await supabase
-    .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
-  const { data: expenses } = await supabase
-    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
-  const breakdown = methodBreakdown(sales ?? []);
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, cashExpenseTotal(expenses ?? []));
-  const selisih = cashVariance(closing, expected);
-
-  await supabase
-    .from("cashier_shifts")
-    .update({
-      closing_balance: closing, expected_cash: expected, selisih, closing_breakdown: breakdown,
-      closed_at: new Date().toISOString(), status: "closed",
-    })
-    .eq("id", shiftId);
-
-  // Accounting: post selisih kas only when non-zero.
-  if (selisih !== 0) {
-    const today = hariIniWIB();
-    const absSelisih = Math.abs(selisih);
-    // selisih < 0 = kurang: Dr Selisih Kas, Cr Kas.
-    // selisih > 0 = lebih:  Dr Kas, Cr Selisih Kas.
-    await postJournal(supabase, {
-      tanggal: today,
-      deskripsi: "Selisih kas tutup shift",
-      source: "shift",
-      sourceRef: shiftId,
-      branchId: shift?.branch_id ?? null,
-      lines: selisih < 0
-        ? [
-            { code: "5901", debit: absSelisih, credit: 0 },
-            { code: "1101", debit: 0, credit: absSelisih },
-          ]
-        : [
-            { code: "1101", debit: absSelisih, credit: 0 },
-            { code: "5901", debit: 0, credit: absSelisih },
-          ],
-    });
-  }
+  const hasil = await tutupShift(supabase, { shift: shift!, closing });
+  if (!hasil.ok) redirect(`/pos/shift?error=${encodeURIComponent(hasil.error)}`);
 
   redirect("/pos/shift?success=close");
 }
@@ -96,29 +60,20 @@ export async function forceCloseShift(formData: FormData) {
     redirect(`/pos/shift?error=${encodeURIComponent("Hanya manajer/owner yang bisa force-close shift")}`);
   }
 
-  const { data: shift } = await supabase
-    .from("cashier_shifts").select("opening_balance, branch_id, status, opened_at").eq("id", shiftId).single();
-  if (shift?.status !== "open") redirect(`/pos/shift?error=${encodeURIComponent("Shift sudah ditutup")}`);
-  const ageMs = Date.now() - new Date(shift.opened_at).getTime();
+  const shift = await bacaShift(supabase, shiftId);
+  if (!shift) redirect(`/pos/shift?error=${encodeURIComponent("Shift tidak ditemukan")}`);
+  const { data: waktu } = await supabase
+    .from("cashier_shifts").select("opened_at").eq("id", shiftId).single();
+  const ageMs = Date.now() - new Date(waktu!.opened_at).getTime();
   if (ageMs < 24 * 60 * 60 * 1000) {
     redirect(`/pos/shift?error=${encodeURIComponent("Force-close hanya untuk shift yang open lebih dari 24 jam")}`);
   }
 
-  // tutup tanpa hitung fisik: closing = expected (selisih 0), ditandai force-close.
-  const { data: sales } = await supabase
-    .from("sales").select("total, metode_bayar").eq("shift_id", shiftId);
-  const { data: expenses } = await supabase
-    .from("expenses").select("jumlah, metode_bayar").eq("shift_id", shiftId);
-  const breakdown = methodBreakdown(sales ?? []);
-  const expected = expectedCash(Number(shift?.opening_balance) || 0, breakdown, cashExpenseTotal(expenses ?? []));
-
-  await supabase
-    .from("cashier_shifts")
-    .update({
-      closing_balance: expected, expected_cash: expected, selisih: 0, closing_breakdown: breakdown,
-      closed_at: new Date().toISOString(), status: "closed",
-    })
-    .eq("id", shiftId);
+  // Tutup tanpa hitung fisik: closing = expected, selisih 0, tanpa jurnal —
+  // tidak ada kas fisik yang benar-benar dihitung, jadi tidak ada selisih yang
+  // boleh dibebankan ke siapa pun. Rumus targetnya tetap ikut jenis shift.
+  const hasil = await tutupShift(supabase, { shift: shift!, closing: null });
+  if (!hasil.ok) redirect(`/pos/shift?error=${encodeURIComponent(hasil.error)}`);
 
   redirect(`/pos/shift?success=force`);
 }
