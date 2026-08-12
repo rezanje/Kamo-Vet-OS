@@ -3,11 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
+import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
 import { SubmitButton } from "@/components/SubmitButton";
-import { voidAndReissue, bayarRombongan } from "./actions";
+import { voidAndReissue } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaRombongan } from "@/lib/rombongan-server";
+import { perkiraanTagihan, bekalPotonganKlinik } from "@/lib/tagihan-klinik";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 
 type Rel<T> = T | T[] | null;
@@ -32,7 +34,7 @@ export default async function PembayaranPage({
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, status, poli, dokter, created_at, pets(name, species, weight, photo_url), customers(name, phone, address)")
+    .select("id, status, poli, dokter, created_at, branch_id, customer_id, pets(name, species, weight, photo_url), customers(name, phone, address)")
     .eq("id", visitId)
     .maybeSingle();
   if (!visit) notFound();
@@ -108,6 +110,15 @@ export default async function PembayaranPage({
 
   const lunas = invoice?.paid_status === "Lunas";
 
+  // Kasir menyebut angka ke pemilik SEBELUM memilih metode bayar. Kunjungan yang
+  // invoicenya belum dibuat tidak punya total tersimpan, jadi dihitung di sini
+  // dengan rumus yang sama persis dengan aksi bayar rombongan.
+  const perkiraan = await perkiraanTagihan(supabase, belumDitagih.map((b) => b.visitId), pajak);
+  const totalAkanDitagih = belumDitagih
+    .filter((b) => perkiraan.get(b.visitId)?.bisaDibayar)
+    .reduce((a, b) => a + (perkiraan.get(b.visitId)?.total ?? 0), 0);
+  const tertahanConsent = belumDitagih.filter((b) => perkiraan.get(b.visitId)?.bisaDibayar === false);
+
   // Split obat vs jasa dari kolom `jenis` (2 tabel gaya referensi).
   const sourceItems = invoice
     ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat", item_id: l.item_id ?? null }))
@@ -128,6 +139,12 @@ export default async function PembayaranPage({
   }));
   const masterObat = master.filter((it) => !it.jasa);
   const masterJasa = master.filter((it) => it.jasa);
+
+  // Bahan promo/voucher/diskon golongan untuk layar. Servernya tetap menghitung
+  // ulang saat menyimpan — ini supaya kasir melihat angkanya lebih dulu.
+  const bekal = await bekalPotonganKlinik(
+    supabase, visit.branch_id ?? null, visit.customer_id ?? null, master.map((it) => it.id),
+  );
 
   const patient = {
     photo: pet?.photo_url ?? null,
@@ -236,7 +253,7 @@ export default async function PembayaranPage({
               <i className="ti ti-paw" /> {rombongan.customerName} membawa {ringkasan.jumlahPasien} pasien hari ini
             </div>
             <div style={{ fontSize: 11, color: "var(--tm)" }}>
-              Total {rp(ringkasan.totalTagihan)} · sisa <b style={{ color: ringkasan.sisa > 0 ? "#b91c1c" : "#15803d" }}>{rp(ringkasan.sisa)}</b>
+              Total {rp(ringkasan.totalTagihan + totalAkanDitagih)} · sisa <b style={{ color: ringkasan.sisa + totalAkanDitagih > 0 ? "#b91c1c" : "#15803d" }}>{rp(ringkasan.sisa + totalAkanDitagih)}</b>
             </div>
           </div>
 
@@ -252,7 +269,14 @@ export default async function PembayaranPage({
                       {b.hewan}{b.visitId === visitId ? " · sedang dibuka" : ""}
                     </td>
                     <td style={{ fontSize: 10.5, fontFamily: "monospace", color: "var(--tm)" }}>{b.invoiceNo ?? "—"}</td>
-                    <td style={{ textAlign: "right", fontSize: 11 }}>{rp(b.total)}</td>
+                    <td style={{ textAlign: "right", fontSize: 11 }}>
+                      {b.invoiceNo === null && perkiraan.has(b.visitId) ? (
+                        <>
+                          {rp(perkiraan.get(b.visitId)!.total)}
+                          <div style={{ fontSize: 9.5, color: "var(--td)" }}>perkiraan</div>
+                        </>
+                      ) : rp(b.total)}
+                    </td>
                     <td><span className={`bge ${b.paidStatus === "Lunas" ? "g" : b.invoiceNo === null ? "" : "r"}`}>{labelStatus(b)}</span></td>
                     <td>
                       {b.visitId !== visitId && (
@@ -270,21 +294,12 @@ export default async function PembayaranPage({
               Hanya untuk kunjungan yang tagihannya belum dibuat — yang sudah punya
               invoice (DP/sebagian bayar) punya jalur pelunasan sendiri. */}
           {belumDitagih.length >= 2 && (
-            <form action={bayarRombongan} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 9, borderTop: ".5px solid #bfdbfe" }}>
-              <input type="hidden" name="visitId" value={visitId} />
-              <span style={{ fontSize: 11, color: "var(--tm)" }}>Bayar sekaligus {belumDitagih.length} pasien dengan</span>
-              {/* Kelas `inp` tidak pernah ada di globals.css — dropdown ini tampil polos
-                  tanpa border, jadi kasir mengira metode pembayaran tidak disediakan. */}
-              <select name="metode_bayar" className="fi" style={{ width: 140, fontSize: 11, padding: "4px 8px" }}>
-                {["Tunai", "Transfer", "Kartu", "QRIS", "E-Wallet"].map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <SubmitButton className="btn-acc" style={{ padding: "4px 12px", fontSize: 11 }} pendingText="Memproses...">
-                <i className="ti ti-cash" /> Lunasi semua
-              </SubmitButton>
-              <span style={{ fontSize: 10, color: "var(--td)" }}>
-                Tagihan tiap hewan dibuat dari resep &amp; tindakan dokter. Perlu ubah item/diskon? Buka hewan itu satu per satu.
-              </span>
-            </form>
+            <LunasiRombonganForm
+              visitId={visitId}
+              jumlahPasien={belumDitagih.length - tertahanConsent.length}
+              total={totalAkanDitagih}
+              tertahan={tertahanConsent.map((b) => b.hewan)}
+            />
           )}
 
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
@@ -327,6 +342,7 @@ export default async function PembayaranPage({
           initialJasa={initialJasa}
           masterObat={masterObat}
           masterJasa={masterJasa}
+          bekal={bekal}
           catatanResep={mr?.catatan_resep ?? null}
           initialDiscount={Number(invoice.discount)}
           initialDpAmount={Number(invoice.dp_amount)}
@@ -418,6 +434,7 @@ export default async function PembayaranPage({
           initialJasa={initialJasa}
           masterObat={masterObat}
           masterJasa={masterJasa}
+          bekal={bekal}
           catatanResep={mr?.catatan_resep ?? null}
         />
       )}

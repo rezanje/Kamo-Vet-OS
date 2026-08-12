@@ -14,6 +14,8 @@ import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
+import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan } from "@/lib/tagihan-klinik";
+import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null };
 
@@ -21,17 +23,19 @@ type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; ite
 // penjualan di kasir. Sebelum migrasi 0084 ini tidak bisa dilakukan: baris
 // tagihan cuma menyimpan NAMA obat, jadi sistem tidak tahu barang mana.
 //
-// Jasa dan baris ketikan bebas (tanpa item_id) dilewati — memang tidak punya stok.
+// Jasa dan baris ketikan bebas dilewati — memang tidak punya stok. Jasa dikenali
+// dari kolom `jenis`, BUKAN dari item_id kosong: sejak promo klinik, baris jasa
+// tetap membawa item_id supaya promo bisa mengenali tindakannya.
 async function potongStokObat(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   branchId: string | null,
-  baris: { item_id?: string | null; qty: number }[],
+  baris: { item_id?: string | null; qty: number; jenis?: string }[],
   ref: string,
 ): Promise<{ hppPerBaris: Map<string, number>; totalHpp: number }> {
   const hppPerBaris = new Map<string, number>();
   let totalHpp = 0;
-  const obat = baris.filter((l) => l.item_id && Number(l.qty) > 0);
+  const obat = baris.filter((l) => l.item_id && Number(l.qty) > 0 && l.jenis !== "jasa");
   if (!branchId || obat.length === 0) return { hppPerBaris, totalHpp };
 
   const { data: wh } = await supabase
@@ -64,10 +68,10 @@ async function kembalikanStokObat(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   branchId: string | null,
-  baris: { item_id?: string | null; qty: number; hpp?: number | null }[],
+  baris: { item_id?: string | null; qty: number; hpp?: number | null; jenis?: string }[],
   ref: string,
 ): Promise<number> {
-  const obat = baris.filter((l) => l.item_id && Number(l.qty) > 0 && Number(l.hpp) > 0);
+  const obat = baris.filter((l) => l.item_id && Number(l.qty) > 0 && Number(l.hpp) > 0 && l.jenis !== "jasa");
   if (!branchId || obat.length === 0) return 0;
 
   const { data: wh } = await supabase
@@ -166,9 +170,11 @@ export async function bayarVisit(formData: FormData) {
     .map((l) => ({
       deskripsi: l.deskripsi.trim(), qty: Number(l.qty) > 0 ? Number(l.qty) : 1,
       harga: Number(l.harga) || 0, jenis: l.jenis === "jasa" ? "jasa" : "obat",
-      // Jasa tidak punya stok — item_id-nya sengaja dibuang di sini supaya
-      // tidak ada yang mencoba memotong stoknya.
-      item_id: l.jenis === "jasa" ? null : (l.item_id ?? null),
+      // item_id jasa IKUT DISIMPAN sejak promo klinik (2026-08-12): promo boleh
+      // mengenai tindakan, dan tanpa item_id promo tidak punya pegangan tindakan
+      // apa yang didiskon. Yang menjaga stok bukan lagi item_id kosong, tapi
+      // filter `jenis` di potongStokObat — jasa memang tidak punya lapisan stok.
+      item_id: l.item_id ?? null,
     }));
 
   if (rows.length === 0) {
@@ -180,8 +186,22 @@ export async function bayarVisit(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, todayIso());
   if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
+  const { data: v } = await supabase.from("visits").select("branch_id, customer_id").eq("id", visitId).maybeSingle();
+
   const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
-  const discount = Number(formData.get("discount")) || 0;
+  const diskonManual = Number(formData.get("discount")) || 0;
+  const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
+
+  // Promo, voucher, dan diskon golongan DIHITUNG ULANG di server dari master —
+  // angka dari layar tidak menentukan uang. Layar kasir yang sudah lama terbuka
+  // bisa memegang promo yang sudah dicabut.
+  const potongan = await hitungPotonganKlinik(supabase, {
+    branchId: v?.branch_id ?? null, customerId: v?.customer_id ?? null,
+    rows, voucherCode,
+  });
+  if (potongan.tolakVoucher) redirect(`${back}?error=${encodeURIComponent(potongan.tolakVoucher)}`);
+
+  const discount = Math.min(subtotal, diskonManual + potongan.total);
   const dpp = Math.max(0, subtotal - discount);
   // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
   const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
@@ -202,8 +222,6 @@ export async function bayarVisit(formData: FormData) {
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
-
-  const { data: v } = await supabase.from("visits").select("branch_id, customer_id").eq("id", visitId).maybeSingle();
 
   if (existing) {
     // §7: invoice Lunas tidak boleh diedit langsung — wajib Void & Reissue.
@@ -249,7 +267,7 @@ export async function bayarVisit(formData: FormData) {
     // kali — sekali saat shift asal ditutup, sekali lagi di shift yang baru.
     const { error: upErr } = await supabase
       .from("invoices")
-      .update({ subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt })
+      .update({ subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, voucher_code: voucherCode })
       .eq("id", existing.id);
     if (upErr) redirect(`${back}?error=${encodeURIComponent(upErr.message)}`);
 
@@ -316,7 +334,7 @@ export async function bayarVisit(formData: FormData) {
 
   const { data: inv, error: invErr } = await supabase
     .from("invoices")
-    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, shift_id: klinikShift.id })
+    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, shift_id: klinikShift.id, voucher_code: voucherCode })
     .select("id").single();
   if (invErr || !inv) {
     redirect(`${back}?error=${encodeURIComponent(invErr?.message ?? "Gagal simpan invoice")}`);
@@ -372,34 +390,6 @@ export async function bayarVisit(formData: FormData) {
   redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
 }
 
-/**
- * Baris tagihan sebuah kunjungan, diambil dari resep/tindakan yang diinput dokter.
- * Sama dengan prefill di layar pembayaran; kalau dokter tidak menginput apa pun,
- * jatuh ke jasa konsultasi poli supaya kunjungan tidak ditagih Rp 0 diam-diam.
- */
-async function barisTagihanVisit(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  visitId: string,
-  poli: string,
-): Promise<Line[]> {
-  const { data: mr } = await supabase
-    .from("medical_records").select("id").eq("visit_id", visitId)
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
-  const { data: resep } = mr
-    ? await supabase.from("prescription_items")
-        .select("nama_obat, qty, harga, jenis, item_id").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null }[] };
-
-  const rows = (resep ?? []).map((r) => ({
-    deskripsi: String(r.nama_obat ?? "").trim(),
-    qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
-    harga: Number(r.harga) || 0,
-    jenis: r.jenis === "jasa" ? "jasa" : "obat",
-    item_id: r.jenis === "jasa" ? null : (r.item_id ?? null),
-  })).filter((l) => l.deskripsi);
-
-  return rows.length ? rows : [{ deskripsi: `Jasa Konsultasi ${poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null }];
-}
 
 /**
  * Bayar sekaligus seluruh kunjungan satu pemilik pada hari itu (satu kedatangan,
@@ -418,6 +408,7 @@ export async function bayarRombongan(formData: FormData) {
   if (!visitId) redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
   const back = `/klinik/pembayaran/${visitId}`;
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
+  const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
 
   const { data: { user } } = await supabase.auth.getUser();
   const klinikShift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;
@@ -435,6 +426,20 @@ export async function bayarRombongan(formData: FormData) {
   const pajakSettings = await getPajakSettings(supabase);
   const dilewati: string[] = [];
   let jumlahLunas = 0;
+
+  // TAHAP 1 — kumpulkan dulu tagihan tiap hewan beserta promo & diskon golongannya.
+  // Voucher baru bisa dibagi setelah semua porsi diketahui: kodenya berlaku sekali
+  // untuk satu kedatangan, tapi potongannya menempel proporsional di tiap nota
+  // (kesepakatan 2026-08-12) — kalau ditumpuk ke satu hewan, insentif dokter yang
+  // menangani hewan itu ambles padahal bukan porsinya.
+  type Siap = {
+    b: typeof belum[number];
+    branchId: string | null;
+    rows: Awaited<ReturnType<typeof barisTagihanVisit>>;
+    subtotal: number;
+    potonganNonVoucher: number;
+  };
+  const siap: Siap[] = [];
 
   for (const b of belum) {
     const { data: v } = await supabase
@@ -464,15 +469,45 @@ export async function bayarRombongan(formData: FormData) {
 
     const rows = await barisTagihanVisit(supabase, b.visitId, String(v.poli ?? "Poli Umum"));
     const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
-    const { tax, total } = tambahPpn(subtotal, pajakSettings);
+    const potonganPet = await hitungPotonganKlinik(supabase, {
+      branchId: v.branch_id ?? null, customerId: v.customer_id ?? null, rows,
+    });
+    siap.push({ b, branchId: v.branch_id ?? null, rows, subtotal, potonganNonVoucher: potonganPet.total });
+  }
+
+  // Voucher dihitung dari GABUNGAN tagihan seluruh hewan (setelah promo & golongan),
+  // lalu dibagi proporsional. Satu kedatangan = satu kali pakai kode.
+  const dasarPerPet = siap.map((s) => Math.max(0, s.subtotal - s.potonganNonVoucher));
+  let voucherTotal = 0;
+  if (voucherCode && dasarPerPet.some((d) => d > 0)) {
+    const { data: vRow } = await supabase
+      .from("vouchers")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
+      .eq("code", voucherCode).maybeSingle();
+    const tolak = pesanVoucherDitolak((vRow ?? null) as VoucherRow | null, hariIniWIB(), {
+      dasar: dasarPerPet.reduce((a, d) => a + d, 0),
+      adaPromoOtomatis: siap.some((s) => s.potonganNonVoucher > 0),
+    });
+    if (tolak) redirect(`${back}?error=${encodeURIComponent(tolak)}`);
+    voucherTotal = potonganVoucher(dasarPerPet.reduce((a, d) => a + d, 0), vRow as VoucherRow);
+  }
+  const voucherPerPet = bagiPotongan(dasarPerPet, voucherTotal);
+
+  // TAHAP 2 — terbitkan notanya satu per satu.
+  for (const [idx, s] of siap.entries()) {
+    const { b, rows, subtotal, branchId } = s;
+    const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx]);
+    const dpp = Math.max(0, subtotal - discount);
+    const { tax, total } = tambahPpn(dpp, pajakSettings);
 
     const invoiceNo = await nextInvoiceNo(supabase);
     const { data: inv, error: invErr } = await supabase
       .from("invoices")
       .insert({
-        visit_id: b.visitId, invoice_no: invoiceNo, subtotal, discount: 0, tax, total,
+        visit_id: b.visitId, invoice_no: invoiceNo, subtotal, discount, tax, total,
         dp_amount: 0, dp_date: null, paid_status: "Lunas", metode_bayar: metode,
         paid_at: new Date().toISOString(), shift_id: klinikShift.id,
+        voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null,
       })
       .select("id").single();
     if (invErr || !inv) {
@@ -482,7 +517,7 @@ export async function bayarRombongan(formData: FormData) {
       continue;
     }
 
-    const { hppPerBaris, totalHpp } = await potongStokObat(supabase, v.branch_id ?? null, rows, invoiceNo);
+    const { hppPerBaris, totalHpp } = await potongStokObat(supabase, branchId, rows, invoiceNo);
     await supabase.from("invoice_items").insert(rows.map((l) => ({
       invoice_id: inv.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
       item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
@@ -494,16 +529,16 @@ export async function bayarRombongan(formData: FormData) {
     // global; uang tunai cabang A tidak boleh mendarat di rekening cabang B.
     await postJournal(supabase, {
       tanggal: todayIso(), deskripsi: `Pendapatan jasa klinik ${invoiceNo}`, source: "klinik",
-      sourceRef: invoiceNo, branchId: v.branch_id ?? null,
+      sourceRef: invoiceNo, branchId: branchId,
       lines: invoiceJournalLines(
-        { total, dpp: subtotal, tax, dp_amount: 0, paid_status: "Lunas" },
-        await kodeAkunBayar(supabase, metode, v.branch_id ?? null),
+        { total, dpp, tax, dp_amount: 0, paid_status: "Lunas" },
+        await kodeAkunBayar(supabase, metode, branchId),
       ),
     });
     if (totalHpp > 0) {
       await postJournal(supabase, {
         tanggal: todayIso(), deskripsi: `HPP obat klinik ${invoiceNo}`, source: "klinik-hpp",
-        sourceRef: invoiceNo, branchId: v.branch_id ?? null,
+        sourceRef: invoiceNo, branchId: branchId,
         lines: [{ code: "5101", debit: totalHpp, credit: 0 }, { code: "1301", debit: 0, credit: totalHpp }],
       });
     }

@@ -5,6 +5,11 @@ import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bayarVisit } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { METODE_BAYAR } from "@/lib/metode-bayar";
+import { hitungPromoKeranjang } from "@/lib/promo-hitung";
+import { diskonGolonganKeranjang } from "@/lib/harga-golongan";
+import { normalizeKode, pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
+import type { BekalPotongan } from "@/lib/tagihan-klinik";
 
 type Line = { deskripsi: string; qty: number; harga: number; item_id?: string | null };
 export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number };
@@ -14,13 +19,6 @@ type Patient = {
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const METODE = [
-  { m: "Tunai", ic: "ti-cash", desc: "Bayar dengan uang tunai" },
-  { m: "Transfer", ic: "ti-building-bank", desc: "Bayar melalui transfer bank" },
-  { m: "Kartu", ic: "ti-credit-card", desc: "Bayar dengan kartu debit atau kredit" },
-  { m: "QRIS", ic: "ti-qrcode", desc: "Bayar menggunakan QRIS" },
-  { m: "E-Wallet", ic: "ti-wallet", desc: "Bayar menggunakan e-wallet" },
-];
 
 const labelMaster = (it: MasterItem) => `${it.code} — ${it.name}`;
 
@@ -88,9 +86,9 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   );
 }
 
-export function PembayaranForm({ visitId, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
+export function PembayaranForm({ visitId, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
   visitId: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
-  masterObat?: MasterItem[]; masterJasa?: MasterItem[];
+  masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialDpDate?: string | null; editMode?: boolean;
 }) {
@@ -99,9 +97,28 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
   const [discount, setDiscount] = useState(initialDiscount);
   const [metode, setMetode] = useState("Tunai");
   const [reason, setReason] = useState("");
+  const [voucher, setVoucher] = useState("");
 
-  const subtotal = [...obat, ...jasa].reduce((a, r) => a + r.qty * r.harga, 0);
-  const dpp = Math.max(0, subtotal - discount);
+  const barisSemua = [...obat, ...jasa].filter((r) => r.deskripsi.trim() && r.qty > 0);
+  const subtotal = barisSemua.reduce((a, r) => a + r.qty * r.harga, 0);
+
+  // Potongan ditampilkan di layar dengan rumus yang sama dengan server. Server
+  // tetap menghitung ulang saat menyimpan — ini supaya kasir bisa menyebut angka
+  // ke pemilik SEBELUM menekan bayar, bukan supaya layar menentukan uang.
+  const barisPotongan = barisSemua.map((r) => ({ item_id: r.item_id ?? "", qty: r.qty, harga: r.harga }));
+  const promoVal = hitungPromoKeranjang(bekal.promos, barisPotongan).reduce((a, p) => a + p.potongan, 0);
+  const golonganVal = diskonGolonganKeranjang(
+    barisPotongan, bekal.aturanDiskon, bekal.golonganPersen, new Map(Object.entries(bekal.infoBarang)),
+  );
+  const dasarVoucher = Math.max(0, subtotal - promoVal);
+  const voucherRow = bekal.vouchers.find((v) => v.code === normalizeKode(voucher));
+  const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
+    dasar: dasarVoucher, adaPromoOtomatis: promoVal > 0,
+  });
+  const voucherVal = voucherRow && !tolakVoucher ? potonganVoucher(dasarVoucher, voucherRow) : 0;
+  const potonganOtomatis = Math.min(subtotal, promoVal + golonganVal + voucherVal);
+
+  const dpp = Math.max(0, subtotal - discount - potonganOtomatis);
   // Tarif PPN datang dari pengaturan Mode PKP, BUKAN dipatok 11% di sini.
   // Dulu angkanya hardcoded sementara server sudah benar → layar menagih
   // Rp11.330 lebih besar dari yang tersimpan di invoice.
@@ -127,6 +144,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="items" value={items} />
       <input type="hidden" name="discount" value={discount} />
+      <input type="hidden" name="voucherCode" value={voucher} />
       <input type="hidden" name="paid_status" value={paidStatus} />
       <input type="hidden" name="metode_bayar" value={metode} />
       <input type="hidden" name="dp_amount" value={totalDiterima} />
@@ -179,6 +197,21 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
                 <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
                 <input className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
               </div>
+              {promoVal > 0 && <SumRow label="Promo otomatis" value={`- ${rp(promoVal)}`} />}
+              {golonganVal > 0 && <SumRow label="Diskon golongan pelanggan" value={`- ${rp(golonganVal)}`} />}
+
+              {/* Kode voucher: mesin & syaratnya sama dengan kasir petshop. */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", gap: 8 }}>
+                <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Kode voucher</span>
+                <input className="fi" value={voucher} placeholder="opsional"
+                  onChange={(e) => setVoucher(e.target.value)}
+                  style={{ width: 120, textAlign: "right", textTransform: "uppercase", borderColor: tolakVoucher ? "#fca5a5" : undefined }} />
+              </div>
+              {tolakVoucher && (
+                <div style={{ fontSize: 10, color: "#b91c1c", textAlign: "right", marginTop: -2 }}>{tolakVoucher}</div>
+              )}
+              {voucherVal > 0 && <SumRow label="Potongan voucher" value={`- ${rp(voucherVal)}`} />}
+
               <SumRow label={`PPN ${ppnRate}%`} value={rp(tax)} />
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1.5px solid var(--bd)" }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)" }}>TOTAL TAGIHAN</span>
@@ -239,7 +272,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
           <div className="card">
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "#2563eb", marginBottom: 8 }}>PILIH METODE PEMBAYARAN</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {METODE.map(({ m, ic, desc }) => (
+              {METODE_BAYAR.map(({ m, ic, desc }) => (
                 <button key={m} type="button" onClick={() => setMetode(m)} style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", textAlign: "left",
                   border: `1.5px solid ${metode === m ? "var(--posb)" : "var(--bd)"}`, background: metode === m ? "#eff4ff" : "#fff",
