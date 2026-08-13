@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances, nilaiSeksi } from "@/lib/ledger";
 import { PeriodFilter } from "../PeriodFilter";
+import { AkunGroup, PetunjukKlikAkun, bikinHrefAkun } from "../AkunGroup";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -28,6 +29,8 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
   const totalEkuitas = ekuitas.reduce((a, b) => a + b.saldo, 0) + labaBerjalan;
   const totalPasiva = totalLiabilitas + totalEkuitas;
   const seimbang = Math.round(totalAset) === Math.round(totalPasiva);
+  // Neraca posisi s/d tanggal — tautan buku besarnya ikut tanpa tanggal awal.
+  const hrefAkun = bikinHrefAkun({ sampai, cabang });
 
   return (
     <>
@@ -46,16 +49,17 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
       <div className="grid2" style={{ alignItems: "start" }}>
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <SecHeader num="01" title="AKTIVA" desc="Aset perusahaan." />
-          <Group rows={aset} />
+          <PetunjukKlikAkun />
+          <AkunGroup rows={aset} hrefAkun={hrefAkun} />
           <TotalRow label="TOTAL AKTIVA" value={totalAset} />
         </div>
 
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <SecHeader num="02" title="PASIVA" desc="Liabilitas + Ekuitas." />
           <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", margin: "4px 0 6px" }}>LIABILITAS</div>
-          <Group rows={liabilitas} />
+          <AkunGroup rows={liabilitas} hrefAkun={hrefAkun} />
           <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", margin: "10px 0 6px" }}>EKUITAS</div>
-          <Group rows={ekuitas} />
+          <AkunGroup rows={ekuitas} hrefAkun={hrefAkun} />
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, borderBottom: ".5px solid var(--bd)", fontStyle: "italic", color: "var(--tm)" }}>
             <span>Laba berjalan (belum ditutup)</span><span>{rp(labaBerjalan)}</span>
           </div>
@@ -66,19 +70,6 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
   );
 }
 
-function Group({ rows }: { rows: { code: string; name: string; saldo: number }[] }) {
-  if (rows.length === 0) return <div style={{ fontSize: 11, color: "var(--td)", padding: "2px 0" }}>—</div>;
-  return (
-    <>
-      {rows.map((r) => (
-        <div key={r.code} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, borderBottom: ".5px solid var(--bd)" }}>
-          <span><span style={{ color: "var(--td)", fontFamily: "monospace", fontSize: 10, marginRight: 6 }}>{r.code}</span>{r.name}</span>
-          <span>{rp(r.saldo)}</span>
-        </div>
-      ))}
-    </>
-  );
-}
 function TotalRow({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", marginTop: 6, borderTop: "2px solid #16213e", fontSize: 13, fontWeight: 700 }}>

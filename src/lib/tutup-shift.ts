@@ -27,6 +27,11 @@ import { hariIniWIB } from "./tanggal";
 type AnyClient = any;
 
 export const AKUN_SELISIH_KAS = "5901";
+// Kas LEBIH bukan penghematan beban. Kalau dikreditkan ke 5901 (akun BEBAN), Laba
+// Rugi menampilkannya sebagai beban minus dan laba bersih bisa melebihi laba kotor
+// — pembacanya mengira toko untung besar padahal itu kas lebih yang belum jelas
+// asalnya. Kas KURANG tetap beban/piutang kasir; itu memang kerugian perusahaan.
+export const AKUN_KAS_LEBIH = "4303";
 
 export type ShiftTutup = {
   id: string;
@@ -174,14 +179,15 @@ export async function tutupShift(
       // Selisih Kas — kalau dilewati, kas buku besar berbeda dari kas fisik selamanya.
       await postJournal(supabase, {
         tanggal: hariIniWIB(),
-        deskripsi: shift.shift_type === "klinik" ? "Selisih kas tutup shift klinik" : "Selisih kas tutup shift",
+        deskripsi: (selisih > 0 ? "Kelebihan kas tutup shift" : "Selisih kas tutup shift")
+          + (shift.shift_type === "klinik" ? " klinik" : ""),
         source: "shift",
         sourceRef: shift.id,
         branchId: shift.branch_id ?? null,
-        // kurang: Dr Selisih Kas / Cr Kas · lebih: Dr Kas / Cr Selisih Kas
+        // kurang: Dr Selisih Kas / Cr Kas · lebih: Dr Kas / Cr Pendapatan Lain-lain
         lines: selisih < 0
           ? [{ code: AKUN_SELISIH_KAS, debit: abs, credit: 0 }, { code: kas, debit: 0, credit: abs }]
-          : [{ code: kas, debit: abs, credit: 0 }, { code: AKUN_SELISIH_KAS, debit: 0, credit: abs }],
+          : [{ code: kas, debit: abs, credit: 0 }, { code: AKUN_KAS_LEBIH, debit: 0, credit: abs }],
       });
     }
   }

@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances } from "@/lib/ledger";
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
+import { AkunGroup, PetunjukKlikAkun, bikinHrefAkun } from "../AkunGroup";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -33,14 +34,7 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
   const bebanOperasional = beban.filter((b) => b.code !== "5101");
   const totalBebanOps = bebanOperasional.reduce((a, b) => a + b.saldo, 0);
   const labaKotor = totalPendapatan - hpp;
-  // Tautan ke buku besar membawa periode & cabang yang sedang dilihat.
-  const hrefAkun = (code: string) => {
-    const q = new URLSearchParams({ akun: code });
-    if (dari) q.set("dari", dari);
-    if (sampai) q.set("sampai", sampai);
-    if (cabang) q.set("cabang", cabang);
-    return `/keuangan/buku-besar?${q.toString()}`;
-  };
+  const hrefAkun = bikinHrefAkun({ dari, sampai, cabang });
   const labaBersih = labaKotor - totalBebanOps;
 
   return (
@@ -55,19 +49,17 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
         <SecHeader num="01" title="LABA RUGI" desc={dari || sampai ? `Periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Pendapatan dikurangi beban (seluruh periode)."} />
         <PeriodFilter basePath="/keuangan/laba-rugi" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets />
 
-        <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 8 }}>
-          <i className="ti ti-info-circle" /> Klik nama akun untuk melihat rincian mutasinya di buku besar.
-        </div>
+        <PetunjukKlikAkun />
 
-        <Group title="PENDAPATAN" rows={pendapatan} hrefAkun={hrefAkun} />
+        <AkunGroup title="PENDAPATAN" rows={pendapatan} hrefAkun={hrefAkun} />
         <TotalRow label="Total Pendapatan" value={totalPendapatan} />
 
         <div style={{ height: 14 }} />
-        <Group title="HARGA POKOK PENJUALAN" rows={beban.filter((b) => b.code === "5101")} hrefAkun={hrefAkun} />
+        <AkunGroup title="HARGA POKOK PENJUALAN" rows={beban.filter((b) => b.code === "5101")} hrefAkun={hrefAkun} />
         <SubRow label="Laba Kotor" value={labaKotor} strong />
 
         <div style={{ height: 14 }} />
-        <Group title="BEBAN OPERASIONAL" rows={bebanOperasional} hrefAkun={hrefAkun} />
+        <AkunGroup title="BEBAN OPERASIONAL" rows={bebanOperasional} hrefAkun={hrefAkun} />
         <TotalRow label="Total Beban Operasional" value={totalBebanOps} />
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "2px solid #16213e" }}>
@@ -79,36 +71,6 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
   );
 }
 
-// Tiap akun menautkan ke buku besarnya sendiri, membawa periode & cabang yang
-// sedang dipakai — angka di laporan dan rincian mutasinya dijamin sama, jadi
-// pertanyaan "Rp 428 ribu ini dari mana?" cukup satu klik.
-function Group({ title, rows, hrefAkun }: {
-  title: string;
-  rows: { code: string; name: string; saldo: number }[];
-  hrefAkun: (code: string) => string;
-}) {
-  return (
-    <div>
-      <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", margin: "4px 0 6px" }}>{title}</div>
-      {rows.length === 0 ? (
-        <div style={{ fontSize: 11, color: "var(--td)", padding: "2px 0" }}>—</div>
-      ) : (
-        rows.map((r) => (
-          <Link key={r.code} href={hrefAkun(r.code)}
-            title={`Lihat mutasi ${r.code} ${r.name} di buku besar`}
-            style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12, borderBottom: ".5px solid var(--bd)", color: "inherit", textDecoration: "none" }}>
-            <span>
-              <span style={{ color: "var(--td)", fontFamily: "monospace", fontSize: 10, marginRight: 6 }}>{r.code}</span>
-              <span style={{ borderBottom: "1px dotted var(--td)" }}>{r.name}</span>
-              <i className="ti ti-external-link" style={{ fontSize: 11, color: "var(--td)", marginLeft: 5 }} />
-            </span>
-            <span>{rp(r.saldo)}</span>
-          </Link>
-        ))
-      )}
-    </div>
-  );
-}
 function TotalRow({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>

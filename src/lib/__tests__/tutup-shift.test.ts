@@ -25,7 +25,7 @@ function makeClient(db: Db) {
   db.journal ??= [];
   // postJournal mencari akun lewat kodenya; tanpa daftar ini ia berhenti diam-diam.
   db.coa_accounts ??= [
-    { id: "a1101", code: "1101" }, { id: "a1203", code: "1203" }, { id: "a5901", code: "5901" },
+    { id: "a1101", code: "1101" }, { id: "a1203", code: "1203" }, { id: "a5901", code: "5901" }, { id: "a4303", code: "4303" },
   ];
   return {
     from(table: string) {
@@ -195,6 +195,24 @@ describe("selisih kas kurang jadi piutang kasir", () => {
     const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 400_000 });
     expect(hasil).toMatchObject({ ok: true, selisih: 100_000, dibebankanKe: null });
     expect(db.cash_advances_inserted ?? []).toHaveLength(0);
-    expect((db.journalLines ?? []).map((l: Any) => l.account_id)).toContain("a5901");
+    expect((db.journalLines ?? []).map((l: Any) => l.account_id)).toContain("a4303");
+  });
+
+  // Kalau kas lebih dikreditkan ke akun BEBAN (5901), Laba Rugi menampilkannya
+  // sebagai beban minus dan laba bersih bisa melebihi laba kotor.
+  it("kas LEBIH masuk Pendapatan Lain-lain, BUKAN mengurangi beban", async () => {
+    const db = dbDasar();
+    await tutupShift(makeClient(db), { shift: shift(), closing: 400_000 });
+    const akun = (db.journalLines ?? []).map((l: Any) => l.account_id);
+    expect(akun).toContain("a4303");
+    expect(akun).not.toContain("a5901");
+  });
+
+  it("kas KURANG tetap ke Selisih Kas — itu memang kerugian perusahaan", async () => {
+    const db = { ...dbDasar(), employees: [] };
+    await tutupShift(makeClient(db), { shift: shift(), closing: 250_000 });
+    const akun = (db.journalLines ?? []).map((l: Any) => l.account_id);
+    expect(akun).toContain("a5901");
+    expect(akun).not.toContain("a4303");
   });
 });

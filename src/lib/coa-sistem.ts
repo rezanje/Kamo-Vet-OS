@@ -63,6 +63,7 @@ export const KODE_SISTEM: Record<string, string> = {
   "4201": "pendapatan jasa klinik",
   "4301": "pendapatan bunga bank (rekonsiliasi)",
   "4302": "laba pelepasan aset tetap",
+  "4303": "pendapatan lain-lain (kelebihan kas tutup shift)",
   "5101": "beban pokok penjualan — juga penanda HPP di Laba Rugi & dashboard",
   "5201": "beban gaji",
   "5301": "beban listrik & air (kategori pengeluaran)",
