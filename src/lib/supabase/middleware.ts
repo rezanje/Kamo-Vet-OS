@@ -44,7 +44,15 @@ export async function updateSession(request: NextRequest) {
   ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    // 303, BUKAN 307 bawaan. 307 mempertahankan metode & badan permintaan, jadi
+    // sesi yang kedaluwarsa saat orang menekan Simpan membuat isi formulir
+    // ikut dikirim ulang ke /login — halaman login menerimanya sebagai percobaan
+    // masuk dan membalas "missing email or phone". Di depan pelanggan itu
+    // terlihat seperti aplikasi rusak, padahal cuma perlu login lagi.
+    if (request.method !== "GET") {
+      url.searchParams.set("error", "Sesi kamu berakhir. Masuk lagi, lalu ulangi simpan.");
+    }
+    return NextResponse.redirect(url, { status: 303 });
   }
 
   // Sidebar disembunyikan per peran di (app)/layout.tsx, tapi itu cuma UI —

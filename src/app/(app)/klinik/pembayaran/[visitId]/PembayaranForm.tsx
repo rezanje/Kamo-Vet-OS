@@ -55,8 +55,11 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
       <datalist id={listId}>
         {master.map((it) => <option key={it.id} value={labelMaster(it)} />)}
       </datalist>
-      <table className="tbl">
-        <thead><tr><th style={{ width: 26 }}>No.</th><th>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th><th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
+      {/* Tabel ikut menyempit di layar kecil sampai kolom Nama tidak terbaca —
+          diberi lebar minimum lalu digeser mendatar, sama seperti tabel lain. */}
+      <div style={{ overflowX: "auto" }}>
+      <table className="tbl" style={{ minWidth: 520 }}>
+        <thead><tr><th style={{ width: 26 }}>No.</th><th style={{ minWidth: 180 }}>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th><th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
@@ -78,6 +81,7 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
           {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", fontSize: 10.5, padding: "10px 0" }}>Belum ada item.</td></tr>}
         </tbody>
       </table>
+      </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 6, fontSize: 11.5 }}>
         <span style={{ fontWeight: 600, color: "var(--tm)" }}>Subtotal {title.split(" ")[0]}</span>
         <span style={{ fontWeight: 700 }}>{rp(subtotal)}</span>
