@@ -28,9 +28,9 @@ type Row = {
 export default async function BarangJasaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; kat?: string; jenis?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kat?: string; jenis?: string; cari?: string }>;
 }) {
-  const { error, success, kat, jenis } = await searchParams;
+  const { error, success, kat, jenis, cari } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -48,6 +48,9 @@ export default async function BarangJasaPage({
   let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name)`).order("name").limit(500);
   if (kat) q = q.eq("category_id", kat);
   if (jenis) q = q.eq("item_type", jenis);
+  // `cari` datang dari pencarian global di topbar — layar langsung terbuka
+  // menyorot barang yang dicari, bukan 500 baris yang harus ditelusuri lagi.
+  if (cari) q = q.or(`name.ilike.%${cari}%,code.ilike.%${cari}%`);
 
   const { data: items } = await q;
   const baseRows = (items ?? []) as unknown as Row[];

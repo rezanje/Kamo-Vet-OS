@@ -6,7 +6,12 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-export default async function PelangganPage() {
+export default async function PelangganPage({ searchParams }: {
+  searchParams: Promise<{ cari?: string }>;
+}) {
+  // `cari` datang dari pencarian global di topbar — layar terbuka langsung
+  // menyorot pelanggannya, bukan daftar penuh yang harus ditelusuri lagi.
+  const { cari } = await searchParams;
   const supabase = await createClient();
   const { data: custData } = await supabase
     .from("customers")
@@ -93,5 +98,5 @@ export default async function PelangganPage() {
     .from("customer_categories").select("id, nama, diskon_persen").eq("is_active", true).order("nama");
   const categories = (katData ?? []).map((k) => ({ ...k, diskon_persen: Number(k.diskon_persen) }));
 
-  return <PelangganClient customers={enriched} isAdmin={isAdmin} categories={categories} />;
+  return <PelangganClient cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin} categories={categories} />;
 }

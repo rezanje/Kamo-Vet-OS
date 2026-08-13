@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { PageTabs } from "@/components/PageTabs";
 import { Clock } from "@/components/Clock";
+import { CariGlobal } from "@/components/CariGlobal";
 import { KlinikTopbar } from "@/components/KlinikTopbar";
 import { getOpenShift } from "@/lib/shift";
 
@@ -61,6 +62,9 @@ export default async function AppLayout({
             <PageTabs />
             <div className="topbar">
               <Breadcrumb />
+              {/* Menu aplikasi ini banyak; tanpa kotak cari orang menghabiskan
+                  waktu menelusuri sidebar untuk layar yang sudah dia tahu namanya. */}
+              <CariGlobal role={profile?.role ?? "STAFF"} aturan={aksesModul ?? []} />
               <Clock />
             </div>
           </>

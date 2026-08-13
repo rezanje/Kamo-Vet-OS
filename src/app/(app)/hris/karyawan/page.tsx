@@ -25,9 +25,9 @@ const STATUS_LIST = ["Aktif", "Nonaktif"];
 export default async function KaryawanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; cari?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, cari } = await searchParams;
   const supabase = await createClient();
 
   const { data: branches } = await supabase
@@ -40,6 +40,8 @@ export default async function KaryawanPage({
   const { data: rowsRaw } = await supabase
     .from("employees")
     .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branches(name)")
+    // `cari` datang dari pencarian global di topbar.
+    .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
     .order("nama");
   const rows = (rowsRaw ?? []) as unknown as EmployeeRow[];
 

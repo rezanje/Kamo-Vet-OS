@@ -127,14 +127,20 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, categories }: {
+export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" }: {
   customers: CustomerRow[];
   isAdmin: boolean;
   categories: { id: string; nama: string; diskon_persen: number }[];
+  /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
+  cariAwal?: string;
 }) {
-  const [selId, setSelId] = useState<string | null>(customers[0]?.id ?? null);
+  const awal = cariAwal.trim().toLowerCase();
+  const [selId, setSelId] = useState<string | null>(
+    (awal ? customers.find((c) => c.name.toLowerCase().includes(awal)) : null)?.id
+      ?? customers[0]?.id ?? null,
+  );
   const [tab, setTab] = useState<DetailTab>("pembelian");
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(cariAwal);
 
   const agg = useMemo(() => {
     const total = customers.length;
