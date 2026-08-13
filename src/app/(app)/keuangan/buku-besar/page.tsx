@@ -2,15 +2,31 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/ledger";
+import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string }> }) {
-  const { akun, dari, sampai } = await searchParams;
+export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string; cabang?: string }> }) {
+  const { akun, dari, sampai, cabang } = await searchParams;
   const supabase = await createClient();
-  const filter = { from: dari || undefined, to: sampai || undefined };
+  const { data: branches } = await supabase.from("branches").select("id, name, type").order("name");
+
+  // Cabang ikut disaring supaya angka di sini sama persis dengan baris laporan
+  // yang mengantar ke sini (Laba Rugi/Neraca punya filter cabang). Kalau tidak,
+  // orang klik akun bernilai 5 juta lalu melihat mutasi seluruh cabang.
+  const unitTypes = resolveUnitTypes(cabang);
+  const branchIds = unitTypes
+    ? (branches ?? []).filter((b) => unitTypes.includes(b.type as string)).map((b) => b.id as string)
+    : undefined;
+
+  const filter = {
+    from: dari || undefined,
+    to: sampai || undefined,
+    branchId: unitTypes ? undefined : cabang || undefined,
+    branchIds,
+  };
   const balances = await getAccountBalances(supabase as never, filter);
 
   const totalDebit = balances.reduce((a, b) => a + b.debit, 0);
@@ -22,7 +38,12 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
   // Saldo akun sebelum tanggal awal filter — titik mulai kolom saldo berjalan.
   const saldoAwal = selected ? await getAccountOpening(supabase as never, selected.code, filter) : 0;
   const qs = (extra: string) => {
-    const parts = [dari ? `dari=${dari}` : "", sampai ? `sampai=${sampai}` : "", extra].filter(Boolean);
+    const parts = [
+      dari ? `dari=${dari}` : "",
+      sampai ? `sampai=${sampai}` : "",
+      cabang ? `cabang=${encodeURIComponent(cabang)}` : "",
+      extra,
+    ].filter(Boolean);
     return parts.length ? `?${parts.join("&")}` : "";
   };
 
@@ -44,7 +65,8 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
 
       <div className="crm-sec">
         <SecHeader num="01" title="RINGKASAN BUKU BESAR" desc="Saldo seluruh akun (neraca saldo / trial balance)." />
-        <PeriodFilter basePath="/keuangan/buku-besar" dari={dari} sampai={sampai} />
+        <PeriodFilter basePath="/keuangan/buku-besar" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets
+          hidden={akun ? { akun } : undefined} />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 560 }}>
             <thead>
