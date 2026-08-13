@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { TIPE_AKUN, akunSistem, KODE_SISTEM } from "@/lib/coa-sistem";
 import { simpanAkun, toggleAkun } from "./actions";
+import { susunPohon, ratakan, type AkunPohon } from "@/lib/coa-pohon";
 
 // Bagan Akun: dikelompokkan per tipe, urut ASET→LIABILITAS→EKUITAS→PENDAPATAN→BEBAN.
 // OWNER/ADMIN bisa menambah & mengubah; peran lain tetap boleh melihat daftarnya.
@@ -16,6 +17,8 @@ type CoaAccount = {
   type: string;
   normal_balance: string;
   is_active: boolean;
+  parent_id: string | null;
+  is_header: boolean;
 };
 
 const TYPE_ORDER = ["ASET", "LIABILITAS", "EKUITAS", "PENDAPATAN", "BEBAN"] as const;
@@ -43,7 +46,7 @@ export default async function CoaPage({
   const bolehKelola = await bolehKelolaMaster();
 
   const [{ data, error }, { data: lineData }] = await Promise.all([
-    supabase.from("coa_accounts").select("id, code, name, type, normal_balance, is_active").order("code"),
+    supabase.from("coa_accounts").select("id, code, name, type, normal_balance, is_active, parent_id, is_header").order("code"),
     // Jumlah baris jurnal per akun — dipakai kolom "Dipakai" supaya orang tahu
     // sebelum menekan tombol nonaktif, dan untuk mengunci kelompok/saldo normal.
     supabase.from("journal_lines").select("account_id"),
@@ -56,6 +59,11 @@ export default async function CoaPage({
   }
 
   const sedangEdit = edit ? accounts.find((a) => a.id === edit) ?? null : null;
+
+  // Hanya akun induk yang boleh jadi pilihan induk, dan akun tidak boleh memilih
+  // dirinya sendiri. Pengecekan lengkapnya (sekelompok, tidak melingkar) di server.
+  const calonInduk = accounts.filter((a) => a.is_header && a.id !== sedangEdit?.id);
+  const punyaAnak = new Set(accounts.map((a) => a.parent_id).filter(Boolean) as string[]);
 
   // Akun ber-tipe di luar 5 kelompok yang dikenal akan hilang dari semua laporan.
   // Ditampilkan terpisah supaya bisa diperbaiki dari layar ini juga.
@@ -133,6 +141,27 @@ export default async function CoaPage({
                   <option value="K">Kredit</option>
                 </select>
               </div>
+              <div className="fg">
+                <label className="flab">Jenis akun *</label>
+                <select className="fi" name="is_header" defaultValue={sedangEdit?.is_header ? "1" : "0"}>
+                  <option value="0">Detail — dipakai memposting</option>
+                  <option value="1">Induk — hanya menjumlahkan</option>
+                </select>
+              </div>
+              <div className="fg" style={{ gridColumn: "span 2" }}>
+                <label className="flab">Induk akun</label>
+                <select className="fi" name="parent_id" defaultValue={sedangEdit?.parent_id ?? ""}>
+                  <option value="">— Tanpa induk (tingkat atas) —</option>
+                  {calonInduk.map((a) => (
+                    <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
+              Akun <b>induk</b> tidak bisa dipakai memposting jurnal — dia hanya menjumlahkan
+              akun rincian di bawahnya, dan angkanya muncul sebagai subtotal di Laba Rugi &amp; Neraca.
+              Induk harus sekelompok dengan rinciannya.
             </div>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
               Kode 1103–1199 dipesan untuk rekening kas/bank yang dibuat otomatis dari
@@ -156,7 +185,7 @@ export default async function CoaPage({
         <Grup
           num="!!" judul="KELOMPOK TIDAK DIKENAL"
           desc="Akun ini tidak masuk kelompok mana pun, jadi tidak muncul di laporan. Perbaiki kelompoknya."
-          rows={asing} pakaiJurnal={pakaiJurnal} bolehKelola={bolehKelola}
+          rows={asing} pakaiJurnal={pakaiJurnal} bolehKelola={bolehKelola} punyaAnak={punyaAnak}
         />
       )}
 
@@ -167,7 +196,7 @@ export default async function CoaPage({
           <Grup
             key={type} num={String(idx + 1).padStart(2, "0")}
             judul={`${type} — ${TYPE_LABELS[type]}`} desc={TYPE_DESC[type]}
-            rows={rows} pakaiJurnal={pakaiJurnal} bolehKelola={bolehKelola}
+            rows={rows} pakaiJurnal={pakaiJurnal} bolehKelola={bolehKelola} punyaAnak={punyaAnak}
           />
         );
       })}
@@ -176,11 +205,14 @@ export default async function CoaPage({
 }
 
 function Grup({
-  num, judul, desc, rows, pakaiJurnal, bolehKelola,
+  num, judul, desc, rows, pakaiJurnal, bolehKelola, punyaAnak,
 }: {
   num: string; judul: string; desc: string;
   rows: CoaAccount[]; pakaiJurnal: Map<string, number>; bolehKelola: boolean;
+  punyaAnak: Set<string>;
 }) {
+  // Ditampilkan bertingkat: akun rincian menjorok di bawah induknya.
+  const simpul = ratakan(susunPohon(rows as unknown as (AkunPohon & CoaAccount)[]));
   return (
     <div className="crm-sec" style={{ marginBottom: 14 }}>
       <SecHeader num={num} title={judul} desc={desc} />
@@ -197,16 +229,21 @@ function Grup({
             </tr>
           </thead>
           <tbody>
-            {rows.map((acc) => {
+            {simpul.map(({ akun: acc, level }) => {
               const n = pakaiJurnal.get(acc.id) ?? 0;
               const sistem = akunSistem(acc.code);
               return (
-                <tr key={acc.id}>
-                  <td style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "var(--tm)" }}>
+                <tr key={acc.id} style={acc.is_header ? { background: "var(--sf1, #f8fafc)" } : undefined}>
+                  <td style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "var(--tm)", paddingLeft: 6 + level * 16 }}>
                     {acc.code}
                   </td>
-                  <td style={{ fontSize: 12 }}>
+                  <td style={{ fontSize: 12, fontWeight: acc.is_header ? 700 : 400 }}>
                     {acc.name}
+                    {acc.is_header && (
+                      <span className="bge o" style={{ fontSize: 8.5, marginLeft: 6 }} title="Akun penjumlahan — tidak bisa dijurnal">
+                        induk
+                      </span>
+                    )}
                     {sistem && (
                       <span className="bge b" style={{ fontSize: 8.5, marginLeft: 6 }} title={KODE_SISTEM[acc.code]}>
                         akun sistem
@@ -219,7 +256,9 @@ function Grup({
                     </span>
                   </td>
                   <td style={{ textAlign: "center", fontSize: 10.5, color: n ? "var(--tm)" : "var(--td)" }}>
-                    {n ? `${n} jurnal` : "—"}
+                    {acc.is_header
+                      ? <span style={{ color: "var(--td)" }}>{punyaAnak.has(acc.id) ? "induk" : "induk kosong"}</span>
+                      : n ? `${n} jurnal` : "—"}
                   </td>
                   <td style={{ textAlign: "center" }}>
                     <span className={`bge ${acc.is_active ? "g" : "x"}`} style={{ fontSize: 9 }}>

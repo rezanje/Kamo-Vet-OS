@@ -49,12 +49,19 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
     const codes = [...new Set(active.map((l) => l.code))];
     const { data: accounts, error: accErr } = await supabase
       .from("coa_accounts")
-      .select("id, code")
+      .select("id, code, is_header")
       .in("code", codes);
     if (accErr || !accounts) return;
 
     const codeToId: Record<string, string> = {};
-    for (const row of accounts as { id: string; code: string }[]) {
+    for (const row of accounts as { id: string; code: string; is_header?: boolean }[]) {
+      // Akun induk cuma menjumlahkan rinciannya. Kalau ikut diposting, angkanya
+      // dihitung dua kali di laporan — sekali sebagai saldonya sendiri, sekali
+      // lagi lewat penjumlahan anaknya.
+      if (row.is_header) {
+        console.error(`[jurnal] akun ${row.code} adalah akun induk — tidak boleh dijurnal`);
+        return;
+      }
       codeToId[row.code] = row.id;
     }
 

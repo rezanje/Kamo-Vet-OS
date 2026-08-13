@@ -10,8 +10,11 @@ type AnyClient = any;
 export type LedgerFilter = { from?: string; to?: string; branchId?: string; branchIds?: string[] };
 
 export type AccountBalance = {
+  id: string;
   code: string; name: string; type: string; normal: string;
   debit: number; credit: number; saldo: number;
+  /** Struktur induk–rincian (migrasi 0113). */
+  parent_id: string | null; is_header: boolean;
 };
 
 const TYPE_ORDER = ["ASET", "LIABILITAS", "EKUITAS", "PENDAPATAN", "BEBAN"];
@@ -61,7 +64,7 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
 
 export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter): Promise<AccountBalance[]> {
   const [{ data: accs }, lines] = await Promise.all([
-    supabase.from("coa_accounts").select("id, code, name, type, normal_balance") as Promise<{ data: { id: string; code: string; name: string; type: string; normal_balance: string }[] | null }>,
+    supabase.from("coa_accounts").select("id, code, name, type, normal_balance, parent_id, is_header") as Promise<{ data: { id: string; code: string; name: string; type: string; normal_balance: string; parent_id: string | null; is_header: boolean }[] | null }>,
     fetchLines(supabase, f),
   ]);
 
@@ -77,7 +80,11 @@ export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter):
     .map((a) => {
       const m = agg.get(a.id) ?? { debit: 0, credit: 0 };
       const saldo = a.normal_balance === "D" ? m.debit - m.credit : m.credit - m.debit;
-      return { code: a.code, name: a.name, type: a.type, normal: a.normal_balance, debit: m.debit, credit: m.credit, saldo };
+      return {
+        id: a.id, code: a.code, name: a.name, type: a.type, normal: a.normal_balance,
+        debit: m.debit, credit: m.credit, saldo,
+        parent_id: a.parent_id ?? null, is_header: !!a.is_header,
+      };
     })
     .sort((x, y) => (TYPE_ORDER.indexOf(x.type) - TYPE_ORDER.indexOf(y.type)) || x.code.localeCompare(y.code));
 }

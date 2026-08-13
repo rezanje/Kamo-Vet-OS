@@ -26,13 +26,24 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
     branchIds,
   });
 
-  const pendapatan = balances.filter((b) => b.type === "PENDAPATAN" && b.saldo !== 0);
-  const beban = balances.filter((b) => b.type === "BEBAN" && b.saldo !== 0);
+  // Akun induk ikut dikirim ke tampilan supaya subtotalnya muncul, tapi TIDAK ikut
+  // dijumlah — saldonya penjumlahan rinciannya, kalau ikut ditambah jadi dobel.
+  const isi = (tipe: string) => balances.filter((b) => b.type === tipe && (b.saldo !== 0 || b.is_header));
+  const totalDetail = (rows: typeof balances) =>
+    rows.filter((b) => !b.is_header).reduce((a, b) => a + b.saldo, 0);
 
-  const totalPendapatan = pendapatan.reduce((a, b) => a + b.saldo, 0);
-  const hpp = beban.filter((b) => b.code === "5101").reduce((a, b) => a + b.saldo, 0);
-  const bebanOperasional = beban.filter((b) => b.code !== "5101");
-  const totalBebanOps = bebanOperasional.reduce((a, b) => a + b.saldo, 0);
+  const pendapatan = isi("PENDAPATAN");
+  const beban = isi("BEBAN");
+
+  const totalPendapatan = totalDetail(pendapatan);
+  // HPP dikenali dari akun 5101 beserta rinciannya kalau nanti dipecah jadi sub-akun.
+  const idHpp = new Set(balances.filter((b) => b.code === "5101").map((b) => b.id));
+  const keturunanHpp = (b: (typeof balances)[number]) =>
+    idHpp.has(b.id) || (!!b.parent_id && idHpp.has(b.parent_id));
+  const barisHpp = beban.filter(keturunanHpp);
+  const hpp = totalDetail(barisHpp);
+  const bebanOperasional = beban.filter((b) => !keturunanHpp(b));
+  const totalBebanOps = totalDetail(bebanOperasional);
   const labaKotor = totalPendapatan - hpp;
   const hrefAkun = bikinHrefAkun({ dari, sampai, cabang });
   const labaBersih = labaKotor - totalBebanOps;
@@ -55,7 +66,7 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
         <TotalRow label="Total Pendapatan" value={totalPendapatan} />
 
         <div style={{ height: 14 }} />
-        <AkunGroup title="HARGA POKOK PENJUALAN" rows={beban.filter((b) => b.code === "5101")} hrefAkun={hrefAkun} />
+        <AkunGroup title="HARGA POKOK PENJUALAN" rows={barisHpp} hrefAkun={hrefAkun} />
         <SubRow label="Laba Kotor" value={labaKotor} strong />
 
         <div style={{ height: 14 }} />

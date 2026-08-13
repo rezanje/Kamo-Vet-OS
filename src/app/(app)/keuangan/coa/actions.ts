@@ -8,6 +8,7 @@ import {
   alasanTakBolehNonaktif, validasiAkunBaru, validasiUbahAkun,
   type PemakaiAkun,
 } from "@/lib/coa-sistem";
+import { validasiIndukAkun, type AkunPohon } from "@/lib/coa-pohon";
 
 const BACK = "/keuangan/coa";
 const gagal: (msg: string) => never = (msg) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
@@ -22,6 +23,13 @@ export async function simpanAkun(formData: FormData) {
     type: String(formData.get("type") ?? "").trim().toUpperCase(),
     normal_balance: String(formData.get("normal_balance") ?? "").trim().toUpperCase(),
   };
+  const parentId = String(formData.get("parent_id") ?? "").trim() || null;
+  const isHeader = String(formData.get("is_header") ?? "") === "1";
+
+  // Struktur induk–rincian: akun induk cuma menjumlahkan, tidak boleh dijurnal.
+  const { data: semuaAkun } = await supabase
+    .from("coa_accounts").select("id, code, name, type, parent_id, is_header");
+  const semua = (semuaAkun ?? []) as unknown as AkunPohon[];
 
   if (id) {
     const { data: lama } = await supabase
@@ -36,6 +44,12 @@ export async function simpanAkun(formData: FormData) {
     const pesan = validasiUbahAkun(draft, lama!, (count ?? 0) > 0);
     if (pesan) gagal(pesan);
 
+    const pesanInduk = validasiIndukAkun(
+      { id, type: draft.type, parent_id: parentId, is_header: isHeader }, semua,
+      { punyaJurnal: (count ?? 0) > 0, punyaAnak: semua.some((a) => a.parent_id === id) },
+    );
+    if (pesanInduk) gagal(pesanInduk);
+
     // Nama akun rekening kas/bank ikut dirawat di cash_accounts — kalau hanya salah
     // satu yang diubah, nama di Buku Besar dan di daftar rekening jadi berbeda.
     const { data: rek } = await supabase
@@ -43,7 +57,7 @@ export async function simpanAkun(formData: FormData) {
 
     const { error } = await supabase
       .from("coa_accounts")
-      .update({ name: draft.name, type: draft.type, normal_balance: draft.normal_balance })
+      .update({ name: draft.name, type: draft.type, normal_balance: draft.normal_balance, parent_id: parentId, is_header: isHeader })
       .eq("id", id);
     if (error) gagal(pesanSimpanGagal(error.message));
     if (rek) await supabase.from("cash_accounts").update({ nama: draft.name }).eq("id", rek.id);
@@ -51,9 +65,16 @@ export async function simpanAkun(formData: FormData) {
     const pesan = validasiAkunBaru(draft);
     if (pesan) gagal(pesan);
 
+    const pesanInduk = validasiIndukAkun(
+      { type: draft.type, parent_id: parentId, is_header: isHeader }, semua,
+      { punyaJurnal: false, punyaAnak: false },
+    );
+    if (pesanInduk) gagal(pesanInduk);
+
     const { error } = await supabase.from("coa_accounts").insert({
       code: draft.code, name: draft.name, type: draft.type,
       normal_balance: draft.normal_balance, is_active: true,
+      parent_id: parentId, is_header: isHeader,
     });
     if (error) gagal(pesanSimpanGagal(error.message));
   }

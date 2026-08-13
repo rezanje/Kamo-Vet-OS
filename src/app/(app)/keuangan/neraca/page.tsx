@@ -17,16 +17,22 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
   // nilaiSeksi: akun kontra (mis. Akumulasi Penyusutan) otomatis jadi PENGURANG
   // kelompoknya, bukan penambah.
   const pakai = (b: (typeof balances)[number]) => ({ ...b, saldo: nilaiSeksi(b) });
-  const aset = balances.filter((b) => b.type === "ASET" && b.saldo !== 0).map(pakai);
-  const liabilitas = balances.filter((b) => b.type === "LIABILITAS" && b.saldo !== 0).map(pakai);
-  const ekuitas = balances.filter((b) => b.type === "EKUITAS" && b.saldo !== 0).map(pakai);
+  // Akun induk ikut dikirim supaya subtotalnya muncul, tapi tidak ikut dijumlah.
+  const isi = (tipe: string) =>
+    balances.filter((b) => b.type === tipe && (b.saldo !== 0 || b.is_header)).map(pakai);
+  const totalDetail = (rows: { saldo: number; is_header: boolean }[]) =>
+    rows.filter((b) => !b.is_header).reduce((a, b) => a + b.saldo, 0);
+
+  const aset = isi("ASET");
+  const liabilitas = isi("LIABILITAS");
+  const ekuitas = isi("EKUITAS");
   const pendapatan = balances.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + nilaiSeksi(b), 0);
   const beban = balances.filter((b) => b.type === "BEBAN").reduce((a, b) => a + nilaiSeksi(b), 0);
   const labaBerjalan = pendapatan - beban; // belum di-closing ke ekuitas
 
-  const totalAset = aset.reduce((a, b) => a + b.saldo, 0);
-  const totalLiabilitas = liabilitas.reduce((a, b) => a + b.saldo, 0);
-  const totalEkuitas = ekuitas.reduce((a, b) => a + b.saldo, 0) + labaBerjalan;
+  const totalAset = totalDetail(aset);
+  const totalLiabilitas = totalDetail(liabilitas);
+  const totalEkuitas = totalDetail(ekuitas) + labaBerjalan;
   const totalPasiva = totalLiabilitas + totalEkuitas;
   const seimbang = Math.round(totalAset) === Math.round(totalPasiva);
   // Neraca posisi s/d tanggal — tautan buku besarnya ikut tanpa tanggal awal.
