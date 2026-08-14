@@ -40,7 +40,7 @@ export function PosNav({ branchName, userName, hasShift, notifications }: { bran
             {TABS.map((t) => {
               const on = t.exact ? pathname === t.href : pathname.startsWith(t.href);
               return (
-                <Link key={t.href} href={t.href} className={`pos-tab ${on ? "on" : ""}`}>
+                <Link key={t.href} href={t.href} className={`pos-tab ${on ? "on" : ""}`} style={{ whiteSpace: "nowrap" }}>
                   <i className={`ti ${t.icon}`} style={{ fontSize: 14 }} /> {t.label}
                 </Link>
               );
