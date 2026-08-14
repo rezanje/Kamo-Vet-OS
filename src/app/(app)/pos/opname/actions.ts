@@ -9,8 +9,41 @@ import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
 import { urutanBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
+import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
+import { getOpenShift } from "@/lib/shift";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
+
+// Opname dibuka dari dua dunia: modul Persediaan (/pos/opname) dan layar kasir
+// (/kasir/opname). Kasir tidak boleh dilempar ke halaman yang diblokir untuknya.
+const basisKembali = (formData: FormData) =>
+  String(formData.get("kembali") ?? "") === "kasir" ? "/kasir/opname" : "/pos/opname";
+
+/**
+ * Boleh menyentuh stok gudang ini?
+ *
+ * Petugas gudang lewat modul Persediaan; kasir lewat layar POS dan HANYA untuk
+ * gudang cabang shift-nya sendiri. Tanpa cek ini satu POST dari layar kasir bisa
+ * menyesuaikan stok cabang lain — layar boleh dibatasi, tapi yang menentukan
+ * tetap server.
+ */
+async function bolehGudang(supabase: Db, warehouseId: string): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const [{ data: profile }, { data: aturan }] = await Promise.all([
+    supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+    supabase.from("role_modules").select("role, module_id"),
+  ]);
+  const role = profile?.role ?? "";
+  if (role && bolehBukaPath(role, "/pos/opname", (aturan ?? []) as AturanTersimpan)) return true;
+
+  const shift = await getOpenShift(supabase as never, user.id);
+  if (!shift) return false;
+  const { data: wh } = await supabase
+    .from("warehouses").select("branch_id").eq("id", warehouseId).maybeSingle();
+  return !!wh && wh.branch_id === shift.branch_id;
+}
 
 // Seq global persis format Accurate (OPO.00385), dilanjutkan dari nomor tertinggi.
 async function nextNo(supabase: Db, table: "opname_orders" | "opname_results", prefix: "OPO" | "OPR") {
@@ -31,9 +64,11 @@ export async function buatPerintah(formData: FormData) {
   const dikerjakan_oleh = String(formData.get("dikerjakan_oleh") ?? "").trim() || null;
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
-  const fail = (msg: string) => redirect("/pos/opname/baru?error=" + encodeURIComponent(msg));
+  const basis = basisKembali(formData);
+  const fail = (msg: string) => redirect(`${basis}/baru?error=` + encodeURIComponent(msg));
 
   if (!warehouse_id || !penanggung_jawab) fail("Gudang dan penanggung jawab wajib diisi.");
+  if (!(await bolehGudang(supabase, warehouse_id))) fail("Kamu tidak berhak menghitung stok gudang ini.");
 
   const { data: { user } } = await supabase.auth.getUser();
   const no_opname = await nextNo(supabase, "opname_orders", "OPO");
@@ -61,7 +96,8 @@ export async function buatPerintah(formData: FormData) {
   }
 
   revalidatePath("/pos/opname");
-  redirect(`/pos/opname/${doc!.id}?success=` + encodeURIComponent(`Perintah ${no_opname} tersimpan.`));
+  revalidatePath("/kasir/opname");
+  redirect(`${basis}/${doc!.id}?success=` + encodeURIComponent(`Perintah ${no_opname} tersimpan.`));
 }
 
 // ================= Hasil Stok Opname =================
@@ -75,7 +111,8 @@ export async function simpanHasil(formData: FormData) {
   let fisik: Record<string, number> = {};
   try { fisik = JSON.parse(String(formData.get("fisik") ?? "{}")) as Record<string, number>; } catch { fisik = {}; }
 
-  const fail = (msg: string) => redirect(`/pos/opname/${order_id}?error=` + encodeURIComponent(msg));
+  const basis = basisKembali(formData);
+  const fail = (msg: string) => redirect(`${basis}/${order_id}?error=` + encodeURIComponent(msg));
 
   if (!order_id || Object.keys(fisik).length === 0) fail("Tidak ada data hitungan fisik.");
 
@@ -88,6 +125,7 @@ export async function simpanHasil(formData: FormData) {
     .eq("id", order_id).single();
   if (!order) fail("Perintah opname tidak ditemukan.");
   if (order!.status === "Selesai") fail("Perintah ini sudah selesai diopname.");
+  if (!(await bolehGudang(supabase, order!.warehouse_id))) fail("Kamu tidak berhak menghitung stok gudang ini.");
 
   // Lingkup ditegakkan di server juga: barang di luar perintah opname parsial tidak
   // boleh ikut disesuaikan, walaupun ikut terkirim dari layar yang sudah lama terbuka.
@@ -171,5 +209,6 @@ export async function simpanHasil(formData: FormData) {
   await supabase.from("opname_orders").update({ status: "Selesai" }).eq("id", order_id);
 
   revalidatePath("/pos/opname");
-  redirect(`/pos/opname/${order_id}?success=` + encodeURIComponent(`Hasil ${no_hasil} tersimpan, stok disesuaikan.`));
+  revalidatePath("/kasir/opname");
+  redirect(`${basis}/${order_id}?success=` + encodeURIComponent(`Hasil ${no_hasil} tersimpan, stok disesuaikan.`));
 }

@@ -1,26 +1,28 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getOpenShift } from "@/lib/shift";
 import { SecHeader } from "@/components/SecHeader";
-import { HasilView } from "./HasilView";
-import { OpenForm } from "./OpenForm";
+import { OpenForm } from "@/app/(app)/pos/opname/[id]/OpenForm";
+import { HasilView } from "@/app/(app)/pos/opname/[id]/HasilView";
+import { gudangCabang } from "../gudang";
 
 type Order = {
   id: string;
   no_opname: string;
   tanggal_mulai: string;
   penanggung_jawab: string;
-  dikerjakan_oleh: string | null;
   keterangan: string | null;
   status: string;
   warehouse_id: string;
-  warehouses: { name: string } | null;
 };
 
 const fmtD = (d: string) =>
   new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
 
-export default async function OpnameDetailPage({
+// Kasir hanya boleh membuka opname gudang cabangnya sendiri. Layar ini menutup
+// pintunya; `simpanHasil` mengecek ulang di server sebelum stok disentuh.
+export default async function OpnameKasirDetailPage({
   params,
   searchParams,
 }: {
@@ -30,13 +32,22 @@ export default async function OpnameDetailPage({
   const { id } = await params;
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const shift = await getOpenShift(supabase as never, user.id);
+  if (!shift) redirect("/kasir/mulai");
 
   const { data: orderRaw } = await supabase
     .from("opname_orders")
-    .select("id, no_opname, tanggal_mulai, penanggung_jawab, dikerjakan_oleh, keterangan, status, warehouse_id, warehouses(name)")
+    .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, warehouse_id")
     .eq("id", id).maybeSingle();
-  if (!orderRaw) notFound();
-  const order = orderRaw as unknown as Order;
+  const order = orderRaw as unknown as Order | null;
+
+  const wh = await gudangCabang(supabase, shift.branch_id);
+  if (!order || !wh || order.warehouse_id !== wh.id) {
+    redirect("/kasir/opname?error=" + encodeURIComponent("Hitungan stok itu bukan milik cabang ini."));
+  }
 
   const { count } = await supabase
     .from("opname_order_items").select("*", { count: "exact", head: true }).eq("order_id", id);
@@ -44,13 +55,13 @@ export default async function OpnameDetailPage({
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/pos/opname" className="back-btn">
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <Link href="/kasir/opname" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{order.no_opname}</span>
-        <span className={`bge ${order.status === "Selesai" ? "g" : "o"}`}>{order.status}</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{order!.no_opname}</span>
+        <span className={`bge ${order!.status === "Selesai" ? "g" : "o"}`}>{order!.status}</span>
       </div>
 
       {success && (
@@ -65,15 +76,19 @@ export default async function OpnameDetailPage({
       )}
 
       <div className="crm-sec">
-        <SecHeader num="01" title="PERINTAH STOK OPNAME" desc={order.keterangan ?? (jumlahLingkup ? "Hitung fisik sebagian barang di gudang." : "Hitung fisik seluruh barang di gudang.")} />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(140px, 1fr))", gap: 10 }}>
+        <SecHeader
+          num="01"
+          title="HITUNG STOK"
+          desc={order!.keterangan ?? (jumlahLingkup ? "Hitung fisik sebagian rak." : "Hitung fisik seluruh gudang cabang.")}
+        />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <div>
-            <div className="flab">Tanggal mulai</div>
-            <div style={{ fontSize: 12 }}>{fmtD(order.tanggal_mulai)}</div>
+            <div className="flab">Tanggal</div>
+            <div style={{ fontSize: 12 }}>{fmtD(order!.tanggal_mulai)}</div>
           </div>
           <div>
             <div className="flab">Gudang</div>
-            <div style={{ fontSize: 12 }}>{order.warehouses?.name ?? "—"}</div>
+            <div style={{ fontSize: 12 }}>{wh!.name}</div>
           </div>
           <div>
             <div className="flab">Lingkup</div>
@@ -85,19 +100,15 @@ export default async function OpnameDetailPage({
           </div>
           <div>
             <div className="flab">Penanggung jawab</div>
-            <div style={{ fontSize: 12 }}>{order.penanggung_jawab}</div>
-          </div>
-          <div>
-            <div className="flab">Dikerjakan oleh</div>
-            <div style={{ fontSize: 12 }}>{order.dikerjakan_oleh ?? "—"}</div>
+            <div style={{ fontSize: 12 }}>{order!.penanggung_jawab}</div>
           </div>
         </div>
       </div>
 
-      {order.status === "Terbuka" ? (
-        <OpenForm orderId={order.id} warehouseId={order.warehouse_id} />
+      {order!.status === "Terbuka" ? (
+        <OpenForm orderId={order!.id} warehouseId={order!.warehouse_id} kembali="kasir" />
       ) : (
-        <HasilView orderId={order.id} />
+        <HasilView orderId={order!.id} />
       )}
     </>
   );

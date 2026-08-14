@@ -7,7 +7,9 @@ import { hariIniWIB } from "@/lib/tanggal";
 
 type Row = { item_id: string; code: string; name: string; unit: string; qty_sistem: number };
 
-export function HasilForm({ orderId, rows }: { orderId: string; rows: Row[] }) {
+// `kembali` menentukan halaman tujuan setelah simpan — kasir tidak boleh
+// dilempar ke modul Persediaan yang diblokir untuk perannya.
+export function HasilForm({ orderId, rows, kembali }: { orderId: string; rows: Row[]; kembali?: "kasir" }) {
   // default fisik = sistem — petugas cukup edit barang yang beda hitungannya.
   const [fisik, setFisik] = useState<Record<string, number>>(
     () => Object.fromEntries(rows.map((r) => [r.item_id, r.qty_sistem])),
@@ -26,6 +28,7 @@ export function HasilForm({ orderId, rows }: { orderId: string; rows: Row[] }) {
     <form action={simpanHasil}>
       <input type="hidden" name="order_id" value={orderId} />
       <input type="hidden" name="fisik" value={JSON.stringify(fisik)} />
+      {kembali && <input type="hidden" name="kembali" value={kembali} />}
 
       <div className="crm-sec">
         <SecHeader
