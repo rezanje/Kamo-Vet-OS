@@ -1,6 +1,9 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getDashboard } from "@/lib/dashboard";
 import { Donut, LineChart, CashFlowChart } from "@/components/Charts";
+import { bacaSudut, LABEL_SUDUT, SUDUT, type Sudut } from "@/lib/dashboard-peran";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const rpJt = (n: number) => {
@@ -12,10 +15,27 @@ const rpJt = (n: number) => {
 
 const BEBAN_COLORS = ["#2563eb", "#d97706", "#16a34a", "#7c3aed", "#dc2626", "#94a3b8"];
 
-export default async function Dashboard() {
+export default async function Dashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ sudut?: string }>;
+}) {
+  const { sudut: sudutParam } = await searchParams;
   const supabase = await createClient();
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  // Sudut pandang menyesuaikan peran (meeting 14 Agustus): orang operasional tidak
+  // butuh laba-rugi tahunan, dan orang marketing butuh promo — bukan arus kas.
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = await supabase
+    .from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const sudut = bacaSudut(sudutParam, profile?.role ?? null);
+
+  if (sudut !== "keuangan") {
+    return <DashboardLain sudut={sudut} />;
+  }
+
   const d = await getDashboard(supabase as never, today);
 
   const lr = d.labaRugi;
@@ -26,6 +46,7 @@ export default async function Dashboard() {
     <>
       <div className="pg-hd">Dashboard</div>
       <div className="pg-sub">PT Kamo Group · Semua Cabang · Tahun {tahun}</div>
+      <PilihSudut aktif={sudut} />
 
       {/* KPI ringkas */}
       <div className="kgrid">
@@ -148,4 +169,135 @@ function SummaryCard({ title, icon, total, lunas, belum, lunasLabel, belumLabel 
 
 function Empty({ text }: { text: string }) {
   return <div style={{ fontSize: 11, color: "var(--td)", padding: "24px 0", textAlign: "center" }}>{text}</div>;
+}
+
+/** Tombol pindah sudut pandang — sama di semua tampilan. */
+function PilihSudut({ aktif }: { aktif: Sudut }) {
+  return (
+    <div style={{ display: "flex", gap: 6, margin: "10px 0 14px", flexWrap: "wrap" }}>
+      {SUDUT.map((s) => (
+        <Link key={s} href={`/?sudut=${s}`} className="back-btn" style={{
+          padding: "5px 12px", borderRadius: 7, textDecoration: "none",
+          border: ".5px solid var(--bd)",
+          background: aktif === s ? "#2563eb" : "#fff",
+          color: aktif === s ? "#fff" : "var(--tm)",
+        }}>
+          {LABEL_SUDUT[s]}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Tampilan operasional & marketing.
+ *
+ * Angkanya sengaja HARI INI / BULAN INI, bukan setahun: yang dipakai orang
+ * lapangan adalah "hari ini sudah berapa", bukan akumulasi tahunan.
+ */
+async function DashboardLain({ sudut }: { sudut: Sudut }) {
+  const supabase = await createClient();
+  const hariIni = hariIniWIB();
+  const mulai = `${hariIni}T00:00:00+07:00`;
+  const akhir = `${hariIni}T23:59:59+07:00`;
+  const awalBulan = `${hariIni.slice(0, 8)}01`;
+
+  if (sudut === "operasional") {
+    const [
+      { data: visits }, { count: menunggu }, { data: sales }, { data: stok },
+    ] = await Promise.all([
+      supabase.from("visits").select("poli").gte("created_at", mulai).lte("created_at", akhir),
+      supabase.from("visits").select("*", { count: "exact", head: true })
+        .eq("status", "Menunggu").gte("created_at", mulai).lte("created_at", akhir),
+      supabase.from("sales").select("total").gte("created_at", mulai).lte("created_at", akhir),
+      supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),
+    ]);
+
+    const kunjungan = (visits ?? []) as { poli: string | null }[];
+    const grooming = kunjungan.filter((v) => (v.poli ?? "").toLowerCase().includes("grooming")).length;
+    const struk = (sales ?? []) as { total: number }[];
+    const omzet = struk.reduce((a, s) => a + Number(s.total), 0);
+    type StokRow = { qty: number; items: { name: string; min_stock: number } | { name: string; min_stock: number }[] | null };
+    const menipis = ((stok ?? []) as unknown as StokRow[]).filter((r) => {
+      const it = Array.isArray(r.items) ? r.items[0] : r.items;
+      return it && Number(r.qty) <= Number(it.min_stock);
+    });
+
+    return (
+      <>
+        <div className="pg-hd">Dashboard</div>
+        <div className="pg-sub">Operasional hari ini · {hariIni}</div>
+        <PilihSudut aktif={sudut} />
+
+        <div className="kgrid">
+          <Kpi label="Kunjungan klinik hari ini" value={`${kunjungan.length}`} tone="b" />
+          <Kpi label="Grooming hari ini" value={`${grooming}`} tone="g" />
+          <Kpi label="Sedang menunggu antrian" value={`${menunggu ?? 0}`} tone={(menunggu ?? 0) > 0 ? "o" : "g"} />
+          <Kpi label="Transaksi kasir hari ini" value={`${struk.length}`} tone="b" />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11, marginBottom: 13 }}>
+          <div className="card">
+            <div className="card-hd"><i className="ti ti-cash-register" style={{ color: "var(--acc)" }} /> Omzet kasir hari ini</div>
+            <div style={{ fontSize: 20, fontWeight: 800 }}>{rp(omzet)}</div>
+            <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 4 }}>
+              Rata-rata {struk.length ? rp(omzet / struk.length) : rp(0)} per struk.
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-hd"><i className="ti ti-alert-triangle" style={{ color: "#d97706" }} /> Stok menipis</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: menipis.length ? "#b45309" : "#15803d" }}>{menipis.length}</div>
+            <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 4 }}>
+              Barang yang stoknya sudah menyentuh batas minimum.{" "}
+              <Link href="/pos/stok-minimum" style={{ color: "#2563eb" }}>Lihat daftarnya</Link>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Marketing
+  const [{ count: promo }, { count: voucher }, { count: pelangganBaru }, { data: poin }, { data: laku }] =
+    await Promise.all([
+      supabase.from("promos").select("*", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("customers").select("*", { count: "exact", head: true }).gte("created_at", `${awalBulan}T00:00:00+07:00`),
+      supabase.from("customers").select("points").gt("points", 0),
+      supabase.from("sale_items").select("nama, qty, sales!inner(created_at)")
+        .gte("sales.created_at", `${awalBulan}T00:00:00+07:00`),
+    ]);
+
+  const poinBeredar = ((poin ?? []) as { points: number }[]).reduce((a, c) => a + Number(c.points), 0);
+  const perProduk = new Map<string, number>();
+  for (const r of (laku ?? []) as unknown as { nama: string; qty: number }[]) {
+    perProduk.set(r.nama, (perProduk.get(r.nama) ?? 0) + Number(r.qty));
+  }
+  const teratas = [...perProduk.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  return (
+    <>
+      <div className="pg-hd">Dashboard</div>
+      <div className="pg-sub">Marketing · bulan berjalan</div>
+      <PilihSudut aktif={sudut} />
+
+      <div className="kgrid">
+        <Kpi label="Promo aktif" value={`${promo ?? 0}`} tone="g" />
+        <Kpi label="Voucher aktif" value={`${voucher ?? 0}`} tone="b" />
+        <Kpi label="Pelanggan baru bulan ini" value={`${pelangganBaru ?? 0}`} tone="g" />
+        <Kpi label="Poin beredar" value={poinBeredar.toLocaleString("id-ID")} tone="o" />
+      </div>
+
+      <div className="card">
+        <div className="card-hd"><i className="ti ti-flame" style={{ color: "var(--acc)" }} /> Produk terlaris bulan ini</div>
+        {teratas.length === 0 ? (
+          <Empty text="Belum ada penjualan bulan ini." />
+        ) : (
+          teratas.map(([nama, qty]) => (
+            <LegendRow key={nama} color="#2563eb" label={nama} value={`${qty.toLocaleString("id-ID")} terjual`} />
+          ))
+        )}
+      </div>
+    </>
+  );
 }
