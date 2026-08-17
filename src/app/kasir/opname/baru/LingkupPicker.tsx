@@ -1,15 +1,24 @@
 "use client";
 
-// Lingkup opname: seluruh gudang, atau sebagian barang saja (opname parsial).
-// Toko tidak selalu sanggup menutup lapak untuk hitung penuh — yang sering
-// dibutuhkan cuma satu rak, tapi hasilnya tetap harus menyesuaikan stok.
+// Lingkup opname: daftar otomatis, seluruh gudang, atau sebagian barang saja.
+//
+// Bawaannya DAFTAR OTOMATIS (keputusan meeting 14 Agustus): 20 barang terlaris +
+// 10 acak. Barang cepat laku paling rawan selisih; yang acak menangkap barang
+// hilang yang tidak laku. Toko tidak sanggup menutup lapak untuk hitung penuh
+// tiap hari, tapi 30 barang sehari bisa.
 
 import { useMemo, useState } from "react";
 
 export type ItemPilihan = { id: string; code: string; name: string; kategori: string };
 
+type Mode = "auto" | "penuh" | "parsial";
+
+const TERLARIS = 20;
+const ACAK = 10;
+
 export function LingkupPicker({ items }: { items: ItemPilihan[] }) {
-  const [parsial, setParsial] = useState(false);
+  const [mode, setMode] = useState<Mode>("auto");
+  const parsial = mode === "parsial";
   const [pilih, setPilih] = useState<Set<string>>(new Set());
   const [cari, setCari] = useState("");
   const [kategori, setKategori] = useState("");
@@ -43,24 +52,35 @@ export function LingkupPicker({ items }: { items: ItemPilihan[] }) {
   return (
     <div className="fg" style={{ marginBottom: 10 }}>
       <label className="flab">Lingkup hitung</label>
-      {/* Kosong = seluruh gudang; server memperlakukan daftar kosong sebagai opname penuh. */}
+      {/* Kosong = seluruh gudang; server memperlakukan daftar kosong sebagai opname penuh.
+          Mode "auto" membiarkan server yang menyusun daftarnya. */}
       <input type="hidden" name="lingkup_items" value={parsial ? [...pilih].join(",") : ""} />
+      <input type="hidden" name="lingkup_mode" value={mode === "auto" ? "auto" : ""} />
+      <input type="hidden" name="auto_terlaris" value={TERLARIS} />
+      <input type="hidden" name="auto_acak" value={ACAK} />
 
-      <div style={{ display: "flex", gap: 6, marginBottom: parsial ? 8 : 0 }}>
-        {[
-          { v: false, label: "Seluruh gudang", desc: "Semua barang dihitung" },
-          { v: true, label: "Sebagian barang", desc: "Sisanya tidak tersentuh" },
-        ].map((o) => (
-          <button key={String(o.v)} type="button" onClick={() => setParsial(o.v)} style={{
-            flex: 1, textAlign: "left", padding: "8px 10px", borderRadius: 8, cursor: "pointer",
-            border: `1.5px solid ${parsial === o.v ? "var(--posb)" : "var(--bd)"}`,
-            background: parsial === o.v ? "#eff4ff" : "#fff",
+      <div style={{ display: "flex", gap: 6, marginBottom: parsial ? 8 : 0, flexWrap: "wrap" }}>
+        {([
+          { v: "auto", label: `${TERLARIS + ACAK} barang otomatis`, desc: `${TERLARIS} terlaris + ${ACAK} acak` },
+          { v: "penuh", label: "Seluruh gudang", desc: "Semua barang dihitung" },
+          { v: "parsial", label: "Pilih sendiri", desc: "Sisanya tidak tersentuh" },
+        ] as { v: Mode; label: string; desc: string }[]).map((o) => (
+          <button key={o.v} type="button" onClick={() => setMode(o.v)} style={{
+            flex: "1 1 150px", textAlign: "left", padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+            border: `1.5px solid ${mode === o.v ? "var(--posb)" : "var(--bd)"}`,
+            background: mode === o.v ? "#eff4ff" : "#fff",
           }}>
             <div style={{ fontSize: 12, fontWeight: 600 }}>{o.label}</div>
             <div style={{ fontSize: 9.5, color: "var(--tm)" }}>{o.desc}</div>
           </button>
         ))}
       </div>
+
+      {mode === "auto" && (
+        <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 6 }}>
+          Daftar disusun sistem saat tombol mulai ditekan — petugas tidak bisa memilih barang yang dihitung.
+        </div>
+      )}
 
       {parsial && (
         <>

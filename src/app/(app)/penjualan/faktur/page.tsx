@@ -19,6 +19,8 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 type Faktur = {
   id: string; no_faktur: string; tanggal: string; jatuh_tempo: string;
   dpp: number; ppn: number; total: number; status: string; customer_id: string | null;
+  kategori: string | null;
+  catatan: string | null;
   customers: Rel<{ name: string }>;
   sales_orders: Rel<{ no_pesanan: string }>;
   sales_receipts: { jumlah: number }[] | null;
@@ -36,7 +38,7 @@ export default async function FakturJualPage({
 
   const [{ data: invData }, { data: umData }, rekening] = await Promise.all([
     supabase.from("sales_invoices")
-      .select("id, no_faktur, tanggal, jatuh_tempo, dpp, ppn, total, status, customer_id, customers(name), sales_orders(no_pesanan), sales_receipts(jumlah)")
+      .select("id, no_faktur, tanggal, jatuh_tempo, dpp, ppn, total, status, customer_id, kategori, catatan, customers(name), sales_orders(no_pesanan), sales_receipts(jumlah)")
       .order("jatuh_tempo"),
     supabase.from("sales_advances").select("id, no_um, customer_id, jumlah, terpakai").eq("status", "aktif"),
     loadRekeningAktif(supabase),
@@ -96,6 +98,11 @@ export default async function FakturJualPage({
                   <tr key={f.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                       {f.no_faktur}
+                      {/* Faktur selisih stok lahir otomatis dari hasil opname, bukan dari
+                          pesanan pelanggan — dibedakan supaya tidak dibaca sebagai penjualan. */}
+                      {f.kategori === "selisih_stok" && (
+                        <span className="bge o" style={{ marginLeft: 5 }}>Selisih stok</span>
+                      )}
                       {Number(f.ppn) > 0 && (
                         <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>
                           DPP {rp(Number(f.dpp))} + PPN {rp(Number(f.ppn))}

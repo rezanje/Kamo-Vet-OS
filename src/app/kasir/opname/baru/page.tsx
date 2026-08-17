@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { SecHeader } from "@/components/SecHeader";
 import { buatPerintah } from "@/app/(app)/pos/opname/actions";
-import { LingkupPicker, type ItemPilihan } from "@/app/(app)/pos/opname/baru/LingkupPicker";
+import { LingkupPicker, type ItemPilihan } from "./LingkupPicker";
 import { hariIniWIB } from "@/lib/tanggal";
 import { gudangCabang } from "../gudang";
 

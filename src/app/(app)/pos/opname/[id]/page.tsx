@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { HasilView } from "./HasilView";
-import { OpenForm } from "./OpenForm";
 
 type Order = {
   id: string;
@@ -94,8 +93,16 @@ export default async function OpnameDetailPage({
         </div>
       </div>
 
+      {/* Menghitung stok hanya dari layar kasir (keputusan meeting 14 Agustus) —
+          satu pintu, supaya tidak ada dua cara menghitung barang yang sama. */}
       {order.status === "Terbuka" ? (
-        <OpenForm orderId={order.id} warehouseId={order.warehouse_id} />
+        <div className="crm-sec">
+          <SecHeader num="02" title="HITUNGAN BELUM MASUK" desc="Perintah ini masih menunggu hitungan fisik." />
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
+            Hitung fisik dikerjakan dari layar kasir cabang bersangkutan. Halaman ini hanya menampilkan
+            hasil dan riwayatnya.
+          </div>
+        </div>
       ) : (
         <HasilView orderId={order.id} />
       )}

@@ -11,19 +11,28 @@ type ResultItem = {
   items: { code: string; name: string; unit: string } | null;
 };
 
+type Faktur = { no_faktur: string; total: number };
+
 export async function HasilView({ orderId }: { orderId: string }) {
   const supabase = await createClient();
   const { data: result } = await supabase
     .from("opname_results")
-    .select("no_hasil, tanggal, opname_result_items(qty_sistem, qty_fisik, selisih, items(code, name, unit))")
+    .select("no_hasil, tanggal, sales_invoices(no_faktur, total), opname_result_items(qty_sistem, qty_fisik, selisih, items(code, name, unit))")
     .eq("order_id", orderId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
+  // Selisih terbesar di atas — yang perlu ditindak kantor pusat itu barang yang
+  // hilang paling banyak, bukan barang yang kebetulan huruf depannya A.
   const items = ((result?.opname_result_items ?? []) as unknown as ResultItem[])
-    .sort((a, b) => (a.items?.name ?? "").localeCompare(b.items?.name ?? ""));
+    .sort((a, b) =>
+      Math.abs(Number(b.selisih)) - Math.abs(Number(a.selisih)) ||
+      (a.items?.name ?? "").localeCompare(b.items?.name ?? ""));
   const beda = items.filter((r) => Number(r.selisih) !== 0);
+
+  const invRaw = (result as unknown as { sales_invoices: Faktur | Faktur[] | null } | null)?.sales_invoices;
+  const faktur = Array.isArray(invRaw) ? invRaw[0] ?? null : invRaw ?? null;
 
   return (
     <div className="crm-sec">
@@ -32,6 +41,13 @@ export async function HasilView({ orderId }: { orderId: string }) {
         title={`HASIL ${result?.no_hasil ?? ""}`}
         desc={`${items.length} barang dihitung, ${beda.length} barang selisih. Stok sudah disesuaikan.`}
       />
+
+      {faktur && (
+        <div className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309" }}>
+          <i className="ti ti-file-invoice" /> Selisih kurang ditagihkan lewat faktur{" "}
+          <b>{faktur.no_faktur}</b> senilai Rp {Math.round(Number(faktur.total)).toLocaleString("id-ID")} (harga jual).
+        </div>
+      )}
       <div style={{ overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 640 }}>
           <thead>

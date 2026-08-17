@@ -60,12 +60,7 @@ export default async function OpnamePage({
         <SecHeader
           num="01"
           title="PERINTAH STOK OPNAME"
-          desc="Surat tugas hitung fisik per gudang → input hasil → stok & jurnal menyesuaikan (pola Accurate)."
-          action={
-            <Link href="/pos/opname/baru" className="btn-acc" style={{ textDecoration: "none" }}>
-              + Perintah opname
-            </Link>
-          }
+          desc="Riwayat hitung stok seluruh cabang. Menghitungnya dikerjakan dari layar kasir; halaman ini untuk memantau hasil & selisihnya."
         />
 
         <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10 }}>

@@ -10,7 +10,9 @@ export const AKUN_HPP = "5101";
 export const AKUN_PERSEDIAAN = "1301";
 export const AKUN_UANG_MUKA_JUAL = "2103";
 
-export type PrefixDokumen = "SQ" | "SO" | "DO" | "FJ" | "RC" | "UJ";
+// FJS = faktur selisih stok opname. Serinya sengaja dipisah dari FJ supaya tagihan
+// ke kepala toko tidak tercampur nomornya dengan penjualan ke pelanggan.
+export type PrefixDokumen = "SQ" | "SO" | "DO" | "FJ" | "FJS" | "RC" | "UJ";
 
 /** Awalan sebelum digit urutan — dipakai juga untuk mencari nomor tertinggi bulan itu. */
 export function prefixNoDokumen(prefix: PrefixDokumen, date: Date): string {

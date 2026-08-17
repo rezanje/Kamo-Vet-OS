@@ -13,6 +13,7 @@ const TABEL: Record<PrefixDokumen, string> = {
   SO: "sales_orders",
   DO: "sales_deliveries",
   FJ: "sales_invoices",
+  FJS: "sales_invoices",
   RC: "sales_receipts",
   UJ: "sales_advances",
 };
@@ -22,6 +23,7 @@ const KOLOM: Record<PrefixDokumen, string> = {
   SO: "no_pesanan",
   DO: "no_kirim",
   FJ: "no_faktur",
+  FJS: "no_faktur",
   RC: "no_terima",
   UJ: "no_um",
 };

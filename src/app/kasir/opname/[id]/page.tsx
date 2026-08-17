@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { SecHeader } from "@/components/SecHeader";
-import { OpenForm } from "@/app/(app)/pos/opname/[id]/OpenForm";
 import { HasilView } from "@/app/(app)/pos/opname/[id]/HasilView";
+import { DaftarHitung } from "./DaftarHitung";
 import { gudangCabang } from "../gudang";
 
 type Order = {
@@ -106,7 +106,7 @@ export default async function OpnameKasirDetailPage({
       </div>
 
       {order!.status === "Terbuka" ? (
-        <OpenForm orderId={order!.id} warehouseId={order!.warehouse_id} kembali="kasir" />
+        <DaftarHitung orderId={order!.id} warehouseId={order!.warehouse_id} />
       ) : (
         <HasilView orderId={order!.id} />
       )}
