@@ -23,8 +23,8 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 36 / 42 · sisa: produksi own brand, AI WhatsApp, 4 nunggu klien |
-| Sisa pekerjaan pra-meeting | 0 / 10 |
+| Permintaan meeting 14 Agustus selesai | 37 / 42 · sisa: AI WhatsApp + 4 yang nunggu klien |
+| Sisa pekerjaan pra-meeting | 1 / 10 · produksi own brand tuntas |
 | Nunggu jawaban klien | 3 hal |
 
 ---
@@ -62,7 +62,7 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 | M15 | Pesanan penjualan belum bisa pilih satuan | P2 | ✅ | 18 Agu 2026 |
 | M16 | Pembelian langsung tanpa PO: tambah lampiran surat jalan | P2 | ✅ | 18 Agu 2026 |
 | M17 | Struk POS toko: tampilkan satuan, bukan cuma jumlah | P2 | ✅ | 18 Agu 2026 |
-| M18 | Produksi own brand (bahan baku → barang jadi), terpisah dari resep obat klinik | P3 | ⬜ | sama dengan S1 |
+| M18 | Produksi own brand (bahan baku → barang jadi), terpisah dari resep obat klinik | P3 | ✅ | 18 Agu 2026 · sekaligus menutup S1 |
 
 ### A3. Klinik
 
@@ -124,7 +124,7 @@ Dari papan progres 14 Agustus, belum tersentuh permintaan meeting.
 
 | # | Pekerjaan | Modul | Kenapa perlu | Status |
 |---|---|---|---|---|
-| S1 | Produksi own brand: resep produksi · perintah produksi · penyelesaian | Persediaan | SKU gabungan masih dihitung manual, harga pokok barang jadi belum terbentuk | ⬜ |
+| S1 | Produksi own brand: resep produksi · perintah produksi · penyelesaian | Persediaan | SKU gabungan masih dihitung manual, harga pokok barang jadi belum terbentuk | ✅ 18 Agu 2026 |
 | S2 | Penyesuaian persediaan jadi dokumen bernomor + alasan wajib | Persediaan | Koreksi stok belum meninggalkan jejak audit | ⬜ |
 | S3 | WhatsApp otomatis: struk · retensi 7 pemicu · laporan rawat inap | CRM, Kasir, Klinik | Pelanggan dapat struk & pengingat vaksin langsung | ⏸ nunggu token |
 | S4 | Desain cetakan: kop, logo, catatan kaki di 6 layar cetak | Pengaturan | Dokumen keluar ke pihak lain tanpa identitas perusahaan | ⏸ nunggu logo/alamat/NPWP |
