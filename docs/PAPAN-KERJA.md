@@ -23,7 +23,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 30 / 42 · P1, keuangan, klinik, persediaan tuntas |
+| Permintaan meeting 14 Agustus selesai | 35 / 42 · sisa: dashboard peran, produksi own brand, AI WhatsApp |
 | Sisa pekerjaan pra-meeting | 0 / 10 |
 | Nunggu jawaban klien | 3 hal |
 
@@ -81,9 +81,9 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 
 | # | Pekerjaan | Prioritas | Status | Beres |
 |---|---|---|---|---|
-| M27 | Voucher bisa diikat ke pelanggan tertentu atau golongan, bukan cuma cabang | P2 | ⬜ | |
-| M28 | Pengingat aktivasi voucher muncul di layar admin klinik | P3 | ⬜ | |
-| M29 | Loyalty: belanja dapat poin + tutup poin akhir tahun | P3 | ⬜ | |
+| M27 | Voucher bisa diikat ke pelanggan tertentu atau golongan, bukan cuma cabang | P2 | ✅ | 18 Agu 2026 |
+| M28 | Pengingat aktivasi voucher muncul di layar admin klinik | P3 | ✅ | 18 Agu 2026 · di layar antrian |
+| M29 | Loyalty: belanja dapat poin + tutup poin akhir tahun | P3 | ✅ | 18 Agu 2026 · tutup poin per tahun, khusus OWNER |
 
 Latar: Pak Aldi mau menggiring pelanggan klinik ke petshop lewat voucher yang hanya berlaku
 hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher kertas.
@@ -105,8 +105,8 @@ hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher k
 | # | Pekerjaan | Prioritas | Status | Beres |
 |---|---|---|---|---|
 | M37 | Dashboard menyesuaikan peran (operasional, marketing) — sekarang condong ke keuangan | P3 | ⬜ | |
-| M38 | Peringatan saat stok kosong tapi tetap diinput | P3 | ⬜ | |
-| M39 | Peringatan saat diskon membuat harga di bawah modal — boleh dilanjut | P3 | ⬜ | |
+| M38 | Peringatan saat stok kosong tapi tetap diinput | P3 | ✅ | 18 Agu 2026 |
+| M39 | Peringatan saat diskon membuat harga di bawah modal — boleh dilanjut | P3 | ✅ | 18 Agu 2026 |
 | M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | ⏸ | nunggu daftar laporan dari klien |
 
 ### A7. WhatsApp & AI
