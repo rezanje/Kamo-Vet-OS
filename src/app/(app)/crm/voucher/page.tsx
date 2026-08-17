@@ -12,7 +12,13 @@ const STATUS_LABEL: Record<string, string> = {
   aktif: "Aktif hari ini", terjadwal: "Terjadwal", kadaluarsa: "Kadaluarsa", nonaktif: "Nonaktif",
 };
 
-type Row = VoucherRow & { id: string; created_at: string };
+type Row = VoucherRow & {
+  id: string; created_at: string;
+  customers?: { name: string } | { name: string }[] | null;
+  customer_categories?: { nama: string } | { nama: string }[] | null;
+};
+
+const satu = <T,>(r: T | T[] | null | undefined): T | null => (Array.isArray(r) ? r[0] ?? null : r ?? null);
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -29,10 +35,16 @@ export default async function VoucherPage({
   // berlaku hari ini harus sudah terbaca aktif oleh kasir di Indonesia.
   const today = hariIniWIB();
 
-  const { data } = await supabase
+  const [{ data }, { data: custData }, { data: golData }] = await Promise.all([
+    supabase
     .from("vouchers")
-    .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, created_at")
-    .order("created_at", { ascending: false });
+    .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id, created_at, customers(name), customer_categories(nama)")
+    .order("created_at", { ascending: false }),
+    supabase.from("customers").select("id, name").order("name").limit(500),
+    supabase.from("customer_categories").select("id, nama").eq("is_active", true).order("nama"),
+  ]);
+  const pelanggan = (custData ?? []) as { id: string; name: string }[];
+  const golongan = (golData ?? []) as { id: string; nama: string }[];
 
   const rows = ((data ?? []) as unknown as Row[]).map((v) => ({
     ...v,
@@ -131,6 +143,25 @@ export default async function VoucherPage({
                 Dihitung setelah diskon per barang.
               </div>
             </div>
+            {/* Sasaran voucher (permintaan Pak Aldi, meeting 14 Agustus): voucher
+                yang menempel di orangnya tidak bisa ditiru seperti voucher kertas. */}
+            <div>
+              <label className="flab">Khusus pelanggan</label>
+              <select className="fi" name="customer_id" defaultValue={editing?.customer_id ?? ""}>
+                <option value="">— siapa pun —</option>
+                {pelanggan.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="flab">Khusus golongan</label>
+              <select className="fi" name="category_id" defaultValue={editing?.category_id ?? ""}>
+                <option value="">— semua golongan —</option>
+                {golongan.map((g) => <option key={g.id} value={g.id}>{g.nama}</option>)}
+              </select>
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Isi salah satu saja. Kode yang bocor ke orang lain otomatis ditolak kasir.
+              </div>
+            </div>
             <div style={{ gridColumn: "span 3", background: "#f8fafc", border: ".5px solid var(--bd)", borderRadius: 7, padding: "9px 11px" }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700 }}>
                 <input type="checkbox" name="boleh_gabung_promo" value="1"
@@ -177,7 +208,7 @@ export default async function VoucherPage({
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
                       {v.tipe === "persen" ? `${v.nilai}%` : rp(v.nilai)}
                     </td>
-                    <td style={{ fontSize: 10, color: "var(--tm)" }}>{ringkasSyarat(v)}</td>
+                    <td style={{ fontSize: 10, color: "var(--tm)" }}>{ringkasSyarat(v, satu(v.customers)?.name ?? satu(v.customer_categories)?.nama ?? null)}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{masa}</td>
                     <td><span className={`bge ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span></td>
                     {bolehKelola && (

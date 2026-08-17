@@ -33,6 +33,9 @@ export async function simpanVoucher(formData: FormData) {
   const maxPotongan = maxRaw ? Number(maxRaw) : null;
   const minBelanja = Number(formData.get("min_belanja") ?? 0) || 0;
   const bolehGabung = String(formData.get("boleh_gabung_promo") ?? "") === "1";
+  // Sasaran voucher (meeting 14 Agustus): kosong = terbuka untuk siapa pun.
+  const customerId = String(formData.get("customer_id") ?? "").trim() || null;
+  const categoryId = String(formData.get("category_id") ?? "").trim() || null;
 
   if (!code) redirect(`${BACK}?error=${encodeURIComponent("Kode voucher wajib diisi")}`);
   if (!Number.isFinite(nilai) || nilai <= 0) {
@@ -57,9 +60,16 @@ export async function simpanVoucher(formData: FormData) {
     redirect(`${BACK}?error=${encodeURIComponent("Maks. potongan lebih kecil dari nilai voucher — naikkan batasnya atau turunkan nilainya")}`);
   }
 
+  // Dua sasaran sekaligus bikin aturannya tidak jelas dibaca kasir — dan pada
+  // praktiknya pelanggan tertentu SUDAH punya golongan.
+  if (customerId && categoryId) {
+    redirect(`${BACK}?error=${encodeURIComponent("Pilih salah satu: pelanggan tertentu ATAU golongan pelanggan")}`);
+  }
+
   const row = {
     code, tipe, nilai, valid_from: validFrom, valid_until: validUntil,
     max_potongan: maxPotongan, min_belanja: minBelanja, boleh_gabung_promo: bolehGabung,
+    customer_id: customerId, category_id: categoryId,
   };
   const { error } = id
     ? await supabase.from("vouchers").update(row).eq("id", id)

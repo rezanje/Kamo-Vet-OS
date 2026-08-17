@@ -30,7 +30,7 @@ export default async function KasirPage({
   if (!shift) redirect("/kasir/mulai");
 
   const [{ data: items }, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
-    supabase.from("items").select("id, code, name, unit, sell_price, target_species, min_sell_qty, default_discount, substitute_item_id, item_categories(name)").eq("is_active", true).order("name"),
+    supabase.from("items").select("id, code, name, unit, sell_price, buy_price, target_species, min_sell_qty, default_discount, substitute_item_id, item_categories(name)").eq("is_active", true).order("name"),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
     supabase.from("customers")
@@ -43,7 +43,7 @@ export default async function KasirPage({
       .eq("paid_status", "Lunas")
       .is("voided_at", null),
     supabase.from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
       .eq("is_active", true),
     supabase.from("promos")
       .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
@@ -108,7 +108,7 @@ export default async function KasirPage({
   const harga = await loadHargaCabang(supabase, shift.branch_id);
 
   type ItemRaw = {
-    id: string; code: string; name: string; unit: string; sell_price: number; target_species: string;
+    id: string; code: string; name: string; unit: string; sell_price: number; buy_price: number; target_species: string;
     min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
     item_categories: Rel<{ name: string }>;
   };
@@ -143,6 +143,9 @@ export default async function KasirPage({
       diskonDefault: Number(i.default_discount) || 0,
       substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
       tiers: tierMap.get(i.id) ?? [],
+      // Modal dikirim HANYA sebagai bahan peringatan "jual di bawah modal";
+      // layar kasir tidak pernah menampilkan angkanya.
+      modal: Number(i.buy_price) || 0,
       // Hanya kirim kalau benar-benar berjenjang — barang bersatuan tunggal tidak
       // perlu dropdown yang isinya satu pilihan.
       satuan: satuan.length > 1 ? satuan : undefined,

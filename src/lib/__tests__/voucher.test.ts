@@ -128,3 +128,33 @@ describe("ringkasSyarat", () => {
       .toBe("maks Rp 10.000 · min belanja Rp 100.000 · tidak digabung promo");
   });
 });
+
+describe("voucher bersasaran (meeting 14 Agustus)", () => {
+  const dasar = { dasar: 100_000, adaPromoOtomatis: false };
+  const vPelanggan = { ...v(), customer_id: "cust-1" };
+  const vGolongan = { ...v(), category_id: "gol-1" };
+
+  it("voucher milik pelanggan lain ditolak", () => {
+    expect(pesanVoucherDitolak(vPelanggan, "2026-08-01", { ...dasar, customerId: "cust-2" }))
+      .toMatch(/bukan milik pelanggan ini/);
+  });
+
+  it("voucher milik pelanggan itu sendiri diterima", () => {
+    expect(pesanVoucherDitolak(vPelanggan, "2026-08-01", { ...dasar, customerId: "cust-1" })).toBeNull();
+  });
+
+  it("tanpa pelanggan dipilih, voucher bersasaran ditolak", () => {
+    expect(pesanVoucherDitolak(vPelanggan, "2026-08-01", { ...dasar, customerId: null }))
+      .toMatch(/pilih pelanggannya dulu/i);
+  });
+
+  it("voucher golongan hanya untuk golongan itu", () => {
+    expect(pesanVoucherDitolak(vGolongan, "2026-08-01", { ...dasar, customerId: "c", categoryId: "gol-1" })).toBeNull();
+    expect(pesanVoucherDitolak(vGolongan, "2026-08-01", { ...dasar, customerId: "c", categoryId: "gol-2" }))
+      .toMatch(/golongan pelanggan ini/);
+  });
+
+  it("voucher tanpa sasaran tetap terbuka untuk siapa pun", () => {
+    expect(pesanVoucherDitolak(v(), "2026-08-01", { ...dasar, customerId: null })).toBeNull();
+  });
+});

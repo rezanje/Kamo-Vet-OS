@@ -161,14 +161,21 @@ export async function checkoutKasir(formData: FormData) {
   if (voucherCode) {
     const { data: v } = await supabase
       .from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
       .eq("code", voucherCode).maybeSingle();
     const wibToday = hariIniWIB();
     // Syarat keranjang (minimal belanja & larangan gabung promo) ikut diperiksa di
     // sini, bukan cuma di layar: keranjang yang dikirim klien tidak dipercaya.
+    // Voucher bersasaran diperiksa terhadap pelanggan transaksi ini — kode yang
+    // bocor ke orang lain harus ditolak di server, bukan cuma disembunyikan di layar.
+    const { data: custVoucher } = customerId
+      ? await supabase.from("customers").select("category_id").eq("id", customerId).maybeSingle()
+      : { data: null };
     const tolak = pesanVoucherDitolak((v ?? null) as VoucherRow | null, wibToday, {
       dasar: afterItems,
       adaPromoOtomatis: potonganPromo.length > 0,
+      customerId,
+      categoryId: custVoucher?.category_id ?? null,
     });
     if (tolak) redirect(`/kasir?error=${encodeURIComponent(tolak)}`);
     voucherVal = potonganVoucher(afterItems, v as VoucherRow);

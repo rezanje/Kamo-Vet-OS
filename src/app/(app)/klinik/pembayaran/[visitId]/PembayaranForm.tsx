@@ -135,6 +135,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
   const voucherRow = bekal.vouchers.find((v) => v.code === normalizeKode(voucher));
   const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
     dasar: dasarVoucher, adaPromoOtomatis: promoVal > 0,
+    customerId: bekal.customerId, categoryId: bekal.categoryId,
   });
   const voucherVal = voucherRow && !tolakVoucher ? potonganVoucher(dasarVoucher, voucherRow) : 0;
   const potonganOtomatis = Math.min(subtotal, promoVal + golonganVal + voucherVal);

@@ -20,6 +20,9 @@ export type ItemRow = {
   satuan?: ItemUnit[];
   /** Harga jual bertingkat menurut jumlah beli (meeting 14 Agustus). */
   tiers?: Tingkat[];
+  /** Modal per satuan dasar — dipakai HANYA untuk peringatan jual di bawah modal;
+   *  angkanya tidak pernah ditampilkan ke kasir. */
+  modal?: number;
 };
 export type CustRow = {
   id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
@@ -45,6 +48,9 @@ type CartLine = {
   /** Harga normal per satuan baris — dipakai saat qty turun di bawah tingkat lagi. */
   hargaNormal?: number;
   tiers?: Tingkat[];
+  /** Stok saat barang dimasukkan & modal per satuan dasar — bahan peringatan. */
+  stok?: number;
+  modal?: number;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -137,6 +143,7 @@ export function KasirClient({
         minJual: Math.max(1, Number(it.minJual) || 0),
         satuan: dasar?.unit, faktor: dasar?.factor ?? 1, opsiSatuan: it.satuan,
         tiers: it.tiers ?? [],
+        stok: Number(it.stok) || 0, modal: Number(it.modal) || 0,
       };
       const k = kunciBaris(baris);
       const ex = c.find((l) => kunciBaris(l) === k);
@@ -197,6 +204,25 @@ export function KasirClient({
     [cart, promoPerItem],
   );
 
+  // Peringatan kasir (permintaan Pak Andri, meeting 14 Agustus). Dua-duanya
+  // MENGINGATKAN saja — transaksi tetap boleh dilanjutkan, karena stok sistem bisa
+  // tertinggal dari rak dan diskon di bawah modal kadang memang keputusan owner.
+  const peringatan = useMemo(() => {
+    const stokKurang = cartHitung.filter((l) => {
+      const stok = Number(l.stok);
+      if (!Number.isFinite(stok)) return false;
+      return l.qty * (Number(l.faktor) || 1) > stok;
+    });
+    const dibawahModal = cartHitung.filter((l) => {
+      const modal = Number(l.modal) || 0;
+      if (modal <= 0) return false;
+      const faktor = Number(l.faktor) || 1;
+      const bersih = (l.qty * l.harga - lineDiscount(l)) / Math.max(1, l.qty * faktor);
+      return bersih < modal;
+    });
+    return { stokKurang, dibawahModal };
+  }, [cartHitung]);
+
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lihat lib/pos-calc).
   const subtotal = cartHitung.reduce((a, l) => a + l.qty * l.harga, 0);
   const itemDiscTotal = cartHitung.reduce((a, l) => a + lineDiscount(l), 0);
@@ -224,6 +250,8 @@ export function KasirClient({
   const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(v ?? null, hariIni, {
     dasar: afterItems,
     adaPromoOtomatis: potonganPromo.length > 0,
+    customerId: cust?.id ?? null,
+    categoryId: cust?.golonganId ?? null,
   });
   const voucherVal = v && !tolakVoucher ? potonganVoucher(afterItems, v) : 0;
   const voucherInvalid = tolakVoucher !== null;
@@ -491,6 +519,20 @@ export function KasirClient({
           </div>
 
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
+            {/* Peringatan, bukan larangan (permintaan Pak Andri, meeting 14 Agustus). */}
+            {peringatan.stokKurang.length > 0 && (
+              <div style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>
+                <i className="ti ti-alert-triangle" /> Stok sistem tidak cukup untuk{" "}
+                {peringatan.stokKurang.map((l) => l.nama).join(", ")}. Boleh dilanjut kalau barangnya memang ada di rak —
+                catat selisihnya lewat Stok Opname.
+              </div>
+            )}
+            {peringatan.dibawahModal.length > 0 && (
+              <div style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>
+                <i className="ti ti-alert-circle" /> Harga setelah diskon di bawah modal:{" "}
+                {peringatan.dibawahModal.map((l) => l.nama).join(", ")}. Transaksi tetap bisa dilanjut.
+              </div>
+            )}
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />
             {itemDiscTotal > 0 && <Row k="Pot. per item" v={`- ${rp(itemDiscTotal)}`} red />}

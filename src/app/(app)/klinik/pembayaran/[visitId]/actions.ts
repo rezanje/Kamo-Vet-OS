@@ -514,11 +514,17 @@ export async function bayarRombongan(formData: FormData) {
   if (voucherCode && dasarPerPet.some((d) => d > 0)) {
     const { data: vRow } = await supabase
       .from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
       .eq("code", voucherCode).maybeSingle();
+    // Voucher bersasaran ikut diperiksa terhadap pemilik rombongan ini.
+    const { data: custRomb } = rombongan.customerId
+      ? await supabase.from("customers").select("category_id").eq("id", rombongan.customerId).maybeSingle()
+      : { data: null };
     const tolak = pesanVoucherDitolak((vRow ?? null) as VoucherRow | null, hariIniWIB(), {
       dasar: dasarPerPet.reduce((a, d) => a + d, 0),
       adaPromoOtomatis: siap.some((s) => s.potonganNonVoucher > 0),
+      customerId: rombongan.customerId ?? null,
+      categoryId: (custRomb?.category_id as string | null) ?? null,
     });
     if (tolak) redirect(`${back}?error=${encodeURIComponent(tolak)}`);
     voucherTotal = potonganVoucher(dasarPerPet.reduce((a, d) => a + d, 0), vRow as VoucherRow);

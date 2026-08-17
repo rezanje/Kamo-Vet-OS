@@ -173,10 +173,12 @@ export async function hitungPotonganKlinik(
 
   // Diskon golongan pelanggan — persennya dari master, BUKAN dari form.
   let golongan = 0;
+  let categoryId: string | null = null;
   if (opts.customerId) {
     const { data: cust } = await supabase
       .from("customers").select("category_id, customer_categories(diskon_persen, is_active)")
       .eq("id", opts.customerId).maybeSingle();
+    categoryId = (cust?.category_id as string | null) ?? null;
     const rel = cust?.customer_categories as
       | { diskon_persen: number; is_active: boolean }
       | { diskon_persen: number; is_active: boolean }[] | null | undefined;
@@ -199,9 +201,11 @@ export async function hitungPotonganKlinik(
   if (kode) {
     const { data: v } = await supabase
       .from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
       .eq("code", kode).maybeSingle();
     tolakVoucher = pesanVoucherDitolak((v ?? null) as VoucherRow | null, hariIniWIB(), {
+      customerId: opts.customerId ?? null,
+      categoryId: categoryId ?? null,
       dasar: afterPromo,
       adaPromoOtomatis: potonganPromo.length > 0,
     });
@@ -225,6 +229,9 @@ export type BekalPotongan = {
    *  (permintaan Pak Aldi, meeting 14 Agustus). */
   poinSaldo: number;
   rupiahPerPoin: number | null;
+  /** Identitas pelanggan — dipakai layar untuk menolak voucher bersasaran. */
+  customerId: string | null;
+  categoryId: string | null;
 };
 
 /**
@@ -246,7 +253,7 @@ export async function bekalPotonganKlinik(
   const [promos, { data: vouchers }, cust] = await Promise.all([
     branchId ? loadPromoAktif(supabase, branchId) : Promise.resolve([]),
     supabase.from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
       .eq("is_active", true),
     customerId
       ? supabase.from("customers")
@@ -277,6 +284,8 @@ export async function bekalPotonganKlinik(
     hariIni,
     poinSaldo: Number(cust?.data?.points) || 0,
     rupiahPerPoin: kat?.is_active ? Number(kat.rupiah_per_poin) : null,
+    customerId,
+    categoryId: (cust?.data?.category_id as string | null) ?? null,
   };
 }
 

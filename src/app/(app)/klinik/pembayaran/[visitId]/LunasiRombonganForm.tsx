@@ -37,6 +37,7 @@ export function LunasiRombonganForm({ visitId, jumlahPasien, total, tertahan, be
   const voucherRow = bekal.vouchers.find((v) => v.code === normalizeKode(voucher));
   const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
     dasar: total, adaPromoOtomatis: promoTotal > 0,
+    customerId: bekal.customerId, categoryId: bekal.categoryId,
   });
   const voucherVal = voucherRow && !tolakVoucher ? potonganVoucher(total, voucherRow) : 0;
 

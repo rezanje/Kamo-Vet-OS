@@ -12,6 +12,9 @@ export type VoucherRow = {
   max_potongan: number | null; // plafon rupiah; null = tanpa batas
   min_belanja: number;         // 0 = bebas
   boleh_gabung_promo: boolean;
+  /** Sasaran voucher (meeting 14 Agustus): null = terbuka untuk siapa pun. */
+  customer_id?: string | null;
+  category_id?: string | null;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -66,6 +69,10 @@ export type KonteksVoucher = {
   dasar: number;
   /** Keranjang sudah kena promo yang memotong otomatis. */
   adaPromoOtomatis: boolean;
+  /** Pelanggan transaksi ini — voucher bersasaran butuh ini. */
+  customerId?: string | null;
+  /** Golongan pelanggan transaksi ini. */
+  categoryId?: string | null;
 };
 
 // Pesan penolakan dibedakan supaya kasir tahu harus bilang apa ke pelanggan:
@@ -89,6 +96,17 @@ export function pesanVoucherDitolak(
     return `Voucher ${v.code} butuh belanja minimal ${rp(min)} (sekarang ${rp(konteks.dasar)})`;
   }
 
+  // Voucher bersasaran: menempel di orangnya, bukan di kodenya. Kode yang bocor ke
+  // pelanggan lain harus ditolak — itu inti permintaannya (meeting 14 Agustus).
+  if (v.customer_id) {
+    if (!konteks.customerId) return `Voucher ${v.code} khusus pelanggan tertentu — pilih pelanggannya dulu`;
+    if (konteks.customerId !== v.customer_id) return `Voucher ${v.code} bukan milik pelanggan ini`;
+  }
+  if (v.category_id) {
+    if (!konteks.categoryId) return `Voucher ${v.code} khusus golongan pelanggan tertentu — pilih pelanggannya dulu`;
+    if (konteks.categoryId !== v.category_id) return `Voucher ${v.code} tidak berlaku untuk golongan pelanggan ini`;
+  }
+
   // Promo otomatis yang menang: potongannya sudah muncul di layar sebelum kasir
   // mengetik voucher. Membatalkan promo di detik terakhir mengubah angka di depan
   // pelanggan — itu yang bikin ribut di kasir, bukan voucher yang ditolak.
@@ -100,8 +118,9 @@ export function pesanVoucherDitolak(
 }
 
 /** Ringkasan syarat voucher untuk layar pengelola. */
-export function ringkasSyarat(v: VoucherRow): string {
+export function ringkasSyarat(v: VoucherRow, namaSasaran?: string | null): string {
   const bagian: string[] = [];
+  if (v.customer_id || v.category_id) bagian.push(namaSasaran ? `khusus ${namaSasaran}` : "khusus sasaran tertentu");
   if (v.max_potongan) bagian.push(`maks ${rp(v.max_potongan)}`);
   if (v.min_belanja > 0) bagian.push(`min belanja ${rp(v.min_belanja)}`);
   if (!v.boleh_gabung_promo) bagian.push("tidak digabung promo");
