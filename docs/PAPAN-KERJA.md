@@ -23,7 +23,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 24 / 42 · P1, keuangan, klinik tuntas |
+| Permintaan meeting 14 Agustus selesai | 30 / 42 · P1, keuangan, klinik, persediaan tuntas |
 | Sisa pekerjaan pra-meeting | 0 / 10 |
 | Nunggu jawaban klien | 3 hal |
 
@@ -56,12 +56,12 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 | # | Pekerjaan | Prioritas | Status | Beres |
 |---|---|---|---|---|
 | M11 | Kartu stok dilengkapi — retur belum mengurangi penjualan | P1 | ✅ | 17 Agu 2026 · omzet bersih di 2 laporan penjualan |
-| M12 | Satu barang beberapa tanggal kedaluwarsa: isi jumlah per tanggal saat terima barang | P2 | ⬜ | |
-| M13 | Penjualan otomatis mengambil stok yang kedaluwarsanya paling dekat | P2 | ⬜ | |
-| M14 | Data barang: tingkatan jumlah + harga jual bertingkat (seperti Accurate) | P2 | ⬜ | |
-| M15 | Pesanan penjualan belum bisa pilih satuan | P2 | ⬜ | |
-| M16 | Pembelian langsung tanpa PO: tambah lampiran surat jalan | P2 | ⬜ | |
-| M17 | Struk POS toko: tampilkan satuan, bukan cuma jumlah | P2 | ⬜ | |
+| M12 | Satu barang beberapa tanggal kedaluwarsa: isi jumlah per tanggal saat terima barang | P2 | ✅ | 18 Agu 2026 |
+| M13 | Penjualan otomatis mengambil stok yang kedaluwarsanya paling dekat | P2 | ✅ | 18 Agu 2026 · FEFO |
+| M14 | Data barang: tingkatan jumlah + harga jual bertingkat (seperti Accurate) | P2 | ✅ | 18 Agu 2026 |
+| M15 | Pesanan penjualan belum bisa pilih satuan | P2 | ✅ | 18 Agu 2026 |
+| M16 | Pembelian langsung tanpa PO: tambah lampiran surat jalan | P2 | ✅ | 18 Agu 2026 |
+| M17 | Struk POS toko: tampilkan satuan, bukan cuma jumlah | P2 | ✅ | 18 Agu 2026 |
 | M18 | Produksi own brand (bahan baku → barang jadi), terpisah dari resep obat klinik | P3 | ⬜ | sama dengan S1 |
 
 ### A3. Klinik
