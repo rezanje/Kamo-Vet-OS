@@ -23,7 +23,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 35 / 42 · sisa: dashboard peran, produksi own brand, AI WhatsApp |
+| Permintaan meeting 14 Agustus selesai | 36 / 42 · sisa: produksi own brand, AI WhatsApp, 4 nunggu klien |
 | Sisa pekerjaan pra-meeting | 0 / 10 |
 | Nunggu jawaban klien | 3 hal |
 
@@ -104,7 +104,7 @@ hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher k
 
 | # | Pekerjaan | Prioritas | Status | Beres |
 |---|---|---|---|---|
-| M37 | Dashboard menyesuaikan peran (operasional, marketing) — sekarang condong ke keuangan | P3 | ⬜ | |
+| M37 | Dashboard menyesuaikan peran (operasional, marketing) — sekarang condong ke keuangan | P3 | ✅ | 18 Agu 2026 · 3 sudut pandang |
 | M38 | Peringatan saat stok kosong tapi tetap diinput | P3 | ✅ | 18 Agu 2026 |
 | M39 | Peringatan saat diskon membuat harga di bawah modal — boleh dilanjut | P3 | ✅ | 18 Agu 2026 |
 | M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | ⏸ | nunggu daftar laporan dari klien |
