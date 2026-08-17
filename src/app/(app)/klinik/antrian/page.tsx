@@ -83,12 +83,32 @@ export default async function AntrianPage({
     .gte("created_at", mulaiHari).lte("created_at", akhirHari);
   if (cabang) qHari = qHari.eq("branch_id", cabang);
 
-  const [{ data: visits }, { data: allWaiting }, { data: today }, { data: cabangList }] = await Promise.all([
-    query,
-    qWaiting,
-    qHari,
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-  ]);
+  const [{ data: visits }, { data: allWaiting }, { data: today }, { data: cabangList }, { data: voucherAktif }] =
+    await Promise.all([
+      query,
+      qWaiting,
+      qHari,
+      supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+      // Pengingat voucher untuk admin klinik (permintaan Pak Aldi, meeting 14
+      // Agustus): voucher hari-ini-saja tidak ada gunanya kalau petugas depan
+      // tidak tahu harus menawarkannya.
+      supabase.from("vouchers")
+        .select("code, tipe, nilai, valid_from, valid_until, customer_id, category_id, customers(name), customer_categories(nama)")
+        .eq("is_active", true),
+    ]);
+
+  type VoucherIngat = {
+    code: string; tipe: string; nilai: number;
+    valid_from: string | null; valid_until: string | null;
+    customer_id: string | null; category_id: string | null;
+    customers: Rel<{ name: string }>; customer_categories: Rel<{ nama: string }>;
+  };
+  const hariIni = hariIniWIB();
+  // Yang diingatkan: voucher yang MULAI hari ini (perlu ditawarkan) dan yang
+  // BERAKHIR hari ini (kesempatan terakhir). Sisanya tidak perlu mengganggu layar.
+  const ingatVoucher = ((voucherAktif ?? []) as unknown as VoucherIngat[]).filter(
+    (v) => v.valid_from === hariIni || v.valid_until === hariIni,
+  );
 
   const nextUp = (allWaiting ?? [])[0];
   const poliCounts = new Map<string, number>();
@@ -139,6 +159,18 @@ export default async function AntrianPage({
             : Number(success) > 1
               ? `${success} pasien berhasil didaftarkan, nomor antriannya berurutan.`
               : "Pasien berhasil didaftarkan, masuk antrian."}
+        </div>
+      )}
+
+      {ingatVoucher.length > 0 && (
+        <div className="p2ban" style={{ background: "#f5f3ff", border: ".5px solid #c4b5fd", color: "#6d28d9" }}>
+          <i className="ti ti-ticket" /> Voucher yang perlu ditawarkan hari ini:{" "}
+          {ingatVoucher.map((v) => {
+            const sasaran = one(v.customers)?.name ?? one(v.customer_categories)?.nama ?? null;
+            const nilai = v.tipe === "persen" ? `${Number(v.nilai)}%` : `Rp ${Math.round(Number(v.nilai)).toLocaleString("id-ID")}`;
+            const akhir = v.valid_until === hariIni ? " · terakhir hari ini" : "";
+            return `${v.code} (${nilai}${sasaran ? ` · khusus ${sasaran}` : ""}${akhir})`;
+          }).join(", ")}.
         </div>
       )}
 
