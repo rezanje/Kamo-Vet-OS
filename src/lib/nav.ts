@@ -124,7 +124,8 @@ export const TILES: Record<string, Tile[]> = {
   ],
   "buku-besar": [
     { label: "Akun Perkiraan", icon: "ti-clipboard-list", ...B, href: "/keuangan/coa" },
-    { label: "Pencatatan Beban", icon: "ti-receipt-2", ...G, href: "/buku-besar/beban" },
+    // "Pencatatan Beban" dihapus dari menu (meeting 14 Agustus): fungsinya sama
+    // dengan Kas Keluar / Petty Cash. Riwayat bebannya digabung ke layar itu.
     { label: "Pencatatan Gaji", icon: "ti-cash", ...G, href: "/hris/penggajian" },
     { label: "Jurnal Umum", icon: "ti-table", ...G, href: "/keuangan/jurnal" },
     { label: "Monitor Anggaran", icon: "ti-device-desktop-analytics", ...P, href: "/buku-besar/monitor-anggaran" },
@@ -132,7 +133,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Anggaran", icon: "ti-chart-arrows-vertical", ...A, href: "/buku-besar/anggaran" },
     { label: "Histori Akun", icon: "ti-history", ...P, href: "/keuangan/buku-besar" },
     { label: "Log Aktifitas Jurnal", icon: "ti-file-search", ...P, href: "/buku-besar/log" },
-    { label: "Jurnal Berulang", icon: "ti-repeat", ...G, href: "/keuangan/jurnal-berulang" },
+    // "Jurnal Berulang" dihapus dari menu (meeting 14 Agustus): layar yang sama
+    // sudah berdiri sebagai "Transaksi Berulang" di modul Perusahaan.
     { label: "Saldo Awal", icon: "ti-flag", ...G, href: "/keuangan/saldo-awal" },
     { label: "Tutup Buku", icon: "ti-lock", ...G, href: "/keuangan/tutup-buku" },
     { label: "Sinkronisasi Jurnal", icon: "ti-refresh-dot", ...A, href: "/keuangan/sinkron" },

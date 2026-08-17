@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatNoDokumen, jurnalFakturJual, jurnalPengiriman, jurnalPenerimaan, jurnalUangMukaJual,
-  pesananSelesai, sisaFaktur, sisaKirim, sisaTagihan, type BarisPesanan,
+  pesananSelesai, prefixFakturJual, sisaFaktur, sisaKirim, sisaTagihan, type BarisPesanan,
 } from "../penjualan-dokumen";
 
 const seimbang = (l: { debit: number; credit: number }[]) =>
@@ -15,6 +15,18 @@ describe("formatNoDokumen", () => {
   it("prefix per jenis dokumen", () => {
     expect(formatNoDokumen("SO", new Date(2026, 7, 3), 12)).toBe("SO.2026.08.00012");
     expect(formatNoDokumen("FJ", new Date(2026, 0, 1), 1)).toBe("FJ.2026.01.00001");
+  });
+});
+
+describe("prefixFakturJual", () => {
+  it("cabang klinik pakai seri sendiri", () => {
+    expect(prefixFakturJual("KLINIK")).toBe("FJK");
+    expect(prefixFakturJual("klinik")).toBe("FJK");
+  });
+  it("selain klinik tetap FJ", () => {
+    expect(prefixFakturJual("PETSHOP")).toBe("FJ");
+    expect(prefixFakturJual("BOTH")).toBe("FJ");
+    expect(prefixFakturJual(null)).toBe("FJ");
   });
 });
 

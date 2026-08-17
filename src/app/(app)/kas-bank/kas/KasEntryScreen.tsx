@@ -34,9 +34,12 @@ export async function KasEntryScreen({
   jenis, searchParams,
 }: {
   jenis: JenisKas;
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{
+    error?: string; success?: string;
+    cari?: string; cabang?: string; akun?: string; urut?: string;
+  }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal" } = await searchParams;
   const supabase = await createClient();
   const boleh = await bolehTransaksiKas();
   const keluar = jenis === "Keluar";
@@ -55,7 +58,28 @@ export async function KasEntryScreen({
 
   const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string }[];
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
-  const daftar = (rows ?? []) as unknown as Baris[];
+
+  // Pengeluaran kasir cabang tercatat di tabel beban, bukan di kas entries. Sejak
+  // menu "Pencatatan Beban" dihapus (menu kembar, keputusan meeting 14 Agustus),
+  // riwayatnya digabung ke sini supaya kantor tetap melihat semua uang keluar
+  // dalam satu layar.
+  const { data: bebanRows } = keluar
+    ? await supabase
+        .from("expenses")
+        .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, branches(name)")
+        .order("tanggal", { ascending: false }).limit(100)
+    : { data: [] };
+
+  type BebanRow = {
+    id: string; tanggal: string; kategori: string | null; deskripsi: string | null;
+    jumlah: number; metode_bayar: string | null; branches: Rel<{ name: string }>;
+  };
+
+  type BarisGabung = {
+    key: string; no: string; tanggal: string; rekening: string; akun: string;
+    keterangan: string | null; jumlah: number; cabang: string;
+    dibatalkan: boolean; asal: "kas" | "beban"; id: string;
+  };
 
   // Rekening kas/bank dikeluarkan dari pilihan akun lawan — pindah antar rekening
   // punya menunya sendiri (Transfer Bank).
@@ -68,6 +92,39 @@ export async function KasEntryScreen({
       return ia === ib ? a.code.localeCompare(b.code) : ia - ib;
     });
   const namaAkun = new Map(coa.map((a) => [a.code, a.name]));
+
+  const dariKas: BarisGabung[] = ((rows ?? []) as unknown as Baris[]).map((t) => ({
+    key: `kas-${t.id}`, id: t.id, no: t.no_bukti, tanggal: t.tanggal,
+    rekening: one(t.rekening)?.nama ?? "—",
+    akun: `${t.lawan_code} — ${namaAkun.get(t.lawan_code) ?? "—"}`,
+    keterangan: t.keterangan, jumlah: Number(t.jumlah),
+    cabang: one(t.branches)?.name ?? "Pusat",
+    dibatalkan: !!t.voided_at, asal: "kas",
+  }));
+
+  const dariBeban: BarisGabung[] = ((bebanRows ?? []) as unknown as BebanRow[]).map((b) => ({
+    key: `beban-${b.id}`, id: b.id, no: "—", tanggal: b.tanggal,
+    rekening: b.metode_bayar === "Tunai" ? "Kas (tunai)" : "Bank (transfer)",
+    akun: b.kategori ?? "Beban lain",
+    keterangan: b.deskripsi, jumlah: Number(b.jumlah),
+    cabang: one(b.branches)?.name ?? "Pusat",
+    dibatalkan: false, asal: "beban",
+  }));
+
+  const q = cari.trim().toLowerCase();
+  const daftar = [...dariKas, ...dariBeban]
+    .filter((t) => (!cabang || t.cabang === cabang))
+    .filter((t) => (!akun || t.akun === akun))
+    .filter((t) => !q ||
+      t.no.toLowerCase().includes(q) ||
+      t.akun.toLowerCase().includes(q) ||
+      (t.keterangan ?? "").toLowerCase().includes(q))
+    .sort((a, b) => urut === "nominal"
+      ? b.jumlah - a.jumlah
+      : b.tanggal.localeCompare(a.tanggal));
+
+  const daftarAkun = [...new Set([...dariKas, ...dariBeban].map((t) => t.akun))].sort();
+  const totalTampil = daftar.filter((t) => !t.dibatalkan).reduce((a, t) => a + t.jumlah, 0);
 
   return (
     <>
@@ -179,14 +236,49 @@ export async function KasEntryScreen({
       )}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
+        {/* Saringan & pencarian riwayat (permintaan Bu Nisa, meeting 14 Agustus). */}
+        <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 170 }}>
+            <label className="flab">Cari</label>
+            <input className="fi" name="cari" defaultValue={cari} placeholder="No. bukti, akun, atau keterangan" />
+          </div>
+          <div style={{ minWidth: 165 }}>
+            <label className="flab">Kategori / akun</label>
+            <select className="fi" name="akun" defaultValue={akun}>
+              <option value="">Semua kategori</option>
+              {daftarAkun.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div style={{ minWidth: 155 }}>
+            <label className="flab">Cabang</label>
+            <select className="fi" name="cabang" defaultValue={cabang}>
+              <option value="">Semua cabang</option>
+              <option value="Pusat">Pusat</option>
+              {(branches ?? []).map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 140 }}>
+            <label className="flab">Urutkan</label>
+            <select className="fi" name="urut" defaultValue={urut}>
+              <option value="tanggal">Terbaru</option>
+              <option value="nominal">Nominal terbesar</option>
+            </select>
+          </div>
+          <SubmitButton className="btn-def" icon="ti-filter" pendingText="Memuat…">Tampilkan</SubmitButton>
+        </form>
+
+        <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
+          {daftar.length} transaksi · total {rp(totalTampil)}
+        </div>
+
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 820 }}>
+          <table className="tbl" style={{ minWidth: 880 }}>
             <thead>
               <tr>
                 <th style={{ width: 140 }}>No.</th>
                 <th style={{ width: 100 }}>Tanggal</th>
                 <th style={{ width: 150 }}>Rekening</th>
-                <th>Akun lawan</th>
+                <th>Akun / kategori</th>
                 <th style={{ width: 120, textAlign: "right" }}>Jumlah</th>
                 <th style={{ width: 120 }}>Cabang</th>
                 <th style={{ width: 90 }}>Status</th>
@@ -195,22 +287,28 @@ export async function KasEntryScreen({
             </thead>
             <tbody>
               {daftar.map((t) => (
-                <tr key={t.id} style={t.voided_at ? { opacity: 0.55 } : undefined}>
-                  <td style={{ fontSize: 10.5, fontWeight: 600 }}>{t.no_bukti}</td>
+                <tr key={t.key} style={t.dibatalkan ? { opacity: 0.55 } : undefined}>
+                  <td style={{ fontSize: 10.5, fontWeight: 600 }}>
+                    {t.asal === "beban"
+                      ? <Link href={`/buku-besar/beban/${t.id}`} style={{ color: "#2563eb" }}>Pengeluaran kasir</Link>
+                      : t.no}
+                  </td>
                   <td style={{ fontSize: 10.5 }}>{fmtTgl(t.tanggal)}</td>
-                  <td style={{ fontSize: 11 }}>{one(t.rekening)?.nama ?? "—"}</td>
+                  <td style={{ fontSize: 11 }}>{t.rekening}</td>
                   <td style={{ fontSize: 11 }}>
-                    {t.lawan_code} — {namaAkun.get(t.lawan_code) ?? "—"}
+                    {t.akun}
                     {t.keterangan && <div style={{ fontSize: 9.5, color: "var(--td)" }}>{t.keterangan}</div>}
                   </td>
-                  <td style={{ fontSize: 11, textAlign: "right", fontWeight: 600 }}>{rp(Number(t.jumlah))}</td>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{one(t.branches)?.name ?? "Pusat"}</td>
+                  <td style={{ fontSize: 11, textAlign: "right", fontWeight: 600 }}>{rp(t.jumlah)}</td>
+                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{t.cabang}</td>
                   <td>
-                    <span className={`bge ${t.voided_at ? "x" : "g"}`}>{t.voided_at ? "Dibatalkan" : "Aktif"}</span>
+                    <span className={`bge ${t.dibatalkan ? "x" : "g"}`}>{t.dibatalkan ? "Dibatalkan" : "Aktif"}</span>
                   </td>
                   {boleh && (
                     <td>
-                      {!t.voided_at && (
+                      {/* Pengeluaran kasir dibatalkan dari layar kasirnya sendiri — di sini
+                          cuma ditampilkan, supaya satu dokumen tidak punya dua tombol batal. */}
+                      {!t.dibatalkan && t.asal === "kas" && (
                         <form action={batalkanKasEntry}>
                           <input type="hidden" name="id" value={t.id} />
                           <input type="hidden" name="jenis" value={jenis} />
@@ -225,7 +323,7 @@ export async function KasEntryScreen({
               ))}
               {daftar.length === 0 && (
                 <tr><td colSpan={boleh ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                  Belum ada kas {keluar ? "keluar" : "masuk"}.
+                  {cari || cabang || akun ? "Tidak ada transaksi cocok saringan." : `Belum ada kas ${keluar ? "keluar" : "masuk"}.`}
                 </td></tr>
               )}
             </tbody>
@@ -236,6 +334,7 @@ export async function KasEntryScreen({
       <div style={{ fontSize: 10, color: "var(--td)", marginTop: 10 }}>
         Transaksi tidak bisa dihapus — dibatalkan dengan jurnal balik bertanggal sama, supaya laporan
         bulan mana pun tidak ikut bergeser.
+        {keluar && " Daftar ini sudah termasuk pengeluaran yang dicatat kasir cabang."}
       </div>
     </>
   );

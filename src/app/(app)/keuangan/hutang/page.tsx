@@ -5,6 +5,7 @@ import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } 
 import { sisaFakturable } from "@/lib/faktur-beli";
 import { qtyDiterima } from "@/lib/penerimaan";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
+import { NoDok } from "@/components/NoDok";
 import { bayarFaktur } from "../../pembelian/faktur/actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -12,7 +13,7 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type FakturRow = {
-  id: string; no_faktur: string; no_faktur_pemasok: string | null; po_no: string | null;
+  id: string; no_faktur: string; no_faktur_pemasok: string | null; po_no: string | null; po_id: string | null;
   tanggal: string; jatuh_tempo: string; supplier: string; supplier_id: string | null;
   total: number; dibayar: number; retur: number; sisa: number; days: number; bucket: AgingBucket;
 };
@@ -59,7 +60,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
       sisa -= retur;
       return {
         id: v.id, no_faktur: v.no_faktur, no_faktur_pemasok: v.no_faktur_pemasok,
-        po_no: v.purchase_orders?.no_po ?? null,
+        po_no: v.purchase_orders?.no_po ?? null, po_id: v.po_id ?? null,
         tanggal: v.tanggal, jatuh_tempo: v.jatuh_tempo,
         supplier: v.suppliers?.nama ?? "—", supplier_id: v.supplier_id,
         total: Number(v.total), dibayar, retur, sisa,
@@ -172,11 +173,17 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
+                  {/* Nomor faktur & PO bisa diklik ke dokumen pembelian aslinya
+                      (permintaan Bu Nisa, meeting 14 Agustus). */}
                   <td style={{ fontWeight: 500, fontSize: 11.5 }}>
-                    {r.no_faktur}
+                    <NoDok nomor={r.no_faktur} />
                     {r.no_faktur_pemasok && <div style={{ fontSize: 9.5, color: "var(--td)" }}>{r.no_faktur_pemasok}</div>}
                   </td>
-                  <td style={{ fontSize: 11 }}>{r.po_no ?? "—"}</td>
+                  <td style={{ fontSize: 11 }}>
+                    {r.po_id
+                      ? <Link href={`/pembelian/${r.po_id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{r.po_no ?? "Lihat PO"}</Link>
+                      : (r.po_no ?? "—")}
+                  </td>
                   <td style={{ fontSize: 11.5 }}>{r.supplier}</td>
                   <td style={{ fontSize: 11, color: r.days > 0 ? "#b91c1c" : "var(--tm)", fontWeight: r.days > 0 ? 700 : 400 }}>
                     {fmtDate(r.jatuh_tempo)}
@@ -259,7 +266,11 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
             <tbody>
               {belumFaktur.map((p) => (
                 <tr key={p.id}>
-                  <td style={{ fontSize: 11.5, fontWeight: 500 }}>{p.no_po ?? "—"}</td>
+                  <td style={{ fontSize: 11.5, fontWeight: 500 }}>
+                    <Link href={`/pembelian/${p.id}`} style={{ color: "#2563eb", textDecoration: "none" }}>
+                      {p.no_po ?? "Lihat PO"}
+                    </Link>
+                  </td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(p.tanggal)}</td>
                   <td style={{ fontSize: 11.5 }}>{p.supplier}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(p.nilai)}</td>

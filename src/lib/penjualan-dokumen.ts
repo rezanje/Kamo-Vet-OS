@@ -12,7 +12,14 @@ export const AKUN_UANG_MUKA_JUAL = "2103";
 
 // FJS = faktur selisih stok opname. Serinya sengaja dipisah dari FJ supaya tagihan
 // ke kepala toko tidak tercampur nomornya dengan penjualan ke pelanggan.
-export type PrefixDokumen = "SQ" | "SO" | "DO" | "FJ" | "FJS" | "RC" | "UJ";
+// FJK = faktur penjualan cabang KLINIK (permintaan Bu Nisa, meeting 14 Agustus):
+// penjualan klinik dan petshop harus dibedakan sejak nomornya, bukan cuma di laporan.
+export type PrefixDokumen = "SQ" | "SO" | "DO" | "FJ" | "FJK" | "FJS" | "RC" | "UJ";
+
+/** Seri nomor faktur penjualan menurut unit bisnis cabangnya. */
+export function prefixFakturJual(branchType: string | null | undefined): "FJ" | "FJK" {
+  return (branchType ?? "").toUpperCase() === "KLINIK" ? "FJK" : "FJ";
+}
 
 /** Awalan sebelum digit urutan — dipakai juga untuk mencari nomor tertinggi bulan itu. */
 export function prefixNoDokumen(prefix: PrefixDokumen, date: Date): string {

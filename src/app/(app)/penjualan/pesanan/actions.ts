@@ -7,7 +7,7 @@ import { stockOut } from "@/lib/inventory";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
-import { jurnalFakturJual, jurnalPengiriman, pesananSelesai, sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
+import { jurnalFakturJual, jurnalPengiriman, pesananSelesai, prefixFakturJual, sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const LIST = "/penjualan/pesanan";
@@ -215,7 +215,14 @@ export async function buatFakturJual(formData: FormData) {
   const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
 
   const { data: { user } } = await supabase.auth.getUser();
-  const no = await nextNoDokumen(supabase, "FJ");
+
+  // Seri nomor dipisah per unit bisnis: FJ untuk petshop, FJK untuk klinik
+  // (permintaan Bu Nisa, meeting 14 Agustus) — supaya penjualan dua lini itu
+  // tidak tercampur nomornya di buku penjualan.
+  const { data: cab } = so!.branch_id
+    ? await supabase.from("branches").select("type").eq("id", so!.branch_id).maybeSingle()
+    : { data: null };
+  const no = await nextNoDokumen(supabase, prefixFakturJual(cab?.type ?? null));
   const { data: inv, error } = await supabase.from("sales_invoices").insert({
     no_faktur: no, order_id: id, customer_id: so!.customer_id, branch_id: so!.branch_id,
     tanggal, jatuh_tempo: jatuhTempo, dpp, ppn: tax, total, catatan, created_by: user?.id ?? null,

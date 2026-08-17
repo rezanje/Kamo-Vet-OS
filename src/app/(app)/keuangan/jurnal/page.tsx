@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { JurnalForm } from "./JurnalForm";
+import { NoDok } from "@/components/NoDok";
 import { postRecurringCatchUp } from "@/lib/recurring";
 
 // ponytail: jurnal umum — catat + riwayat. Real data dari journal_entries + journal_lines.
@@ -17,6 +18,8 @@ type JournalEntry = {
   tanggal: string;
   deskripsi: string;
   source: string;
+  source_ref: string | null;
+  branches: { name: string } | { name: string }[] | null;
   journal_lines: JournalLine[];
 };
 
@@ -54,13 +57,33 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
 export default async function JurnalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{
+    success?: string; error?: string;
+    cari?: string; cabang?: string; sumber?: string; dari?: string; sampai?: string;
+  }>;
 }) {
-  const { success, error } = await searchParams;
+  const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "" } = await searchParams;
   const supabase = await createClient();
 
   // Jurnal berulang: catch-up bulan tertinggal (idempotent via last_posted).
   const recurringPosted = await postRecurringCatchUp(supabase);
+
+  // Saringan dikerjakan di database (bukan memotong 30 baris terakhir di layar),
+  // supaya mencari jurnal bulan lalu tidak perlu menggulir ratusan baris.
+  let qEntries = supabase
+    .from("journal_entries")
+    .select("id, no_jurnal, tanggal, deskripsi, source, source_ref, branch_id, branches(name), journal_lines(debit, credit, coa_accounts(code, name))")
+    .order("tanggal", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (cabang) qEntries = qEntries.eq("branch_id", cabang);
+  if (sumber) qEntries = qEntries.eq("source", sumber);
+  if (dari) qEntries = qEntries.gte("tanggal", dari);
+  if (sampai) qEntries = qEntries.lte("tanggal", sampai);
+  if (cari.trim()) {
+    const q = cari.trim();
+    qEntries = qEntries.or(`no_jurnal.ilike.%${q}%,deskripsi.ilike.%${q}%,source_ref.ilike.%${q}%`);
+  }
 
   const [{ data: accData }, { data: branchData }, { data: entryData }] = await Promise.all([
     supabase
@@ -72,16 +95,13 @@ export default async function JurnalPage({
       .from("branches")
       .select("id, code, name")
       .order("name"),
-    supabase
-      .from("journal_entries")
-      .select("id, no_jurnal, tanggal, deskripsi, source, journal_lines(debit, credit, coa_accounts(code, name))")
-      .order("tanggal", { ascending: false })
-      .limit(30),
+    qEntries,
   ]);
 
   const accounts = (accData ?? []) as unknown as CoaAccount[];
   const branches = (branchData ?? []) as unknown as Branch[];
   const entries  = (entryData  ?? []) as unknown as JournalEntry[];
+  const adaSaringan = !!(cari || cabang || sumber || dari || sampai);
 
   return (
     <>
@@ -134,8 +154,45 @@ export default async function JurnalPage({
         <SecHeader
           num="02"
           title="RIWAYAT JURNAL"
-          desc="30 entri terbaru — semua sumber (manual, sale, expense, shift). Klik nomor jurnalnya untuk melihat akun yang kena."
+          desc="Klik nomor jurnalnya untuk melihat akun yang kena; nomor dokumen sumber bisa diklik ke dokumen aslinya."
         />
+
+        {/* Saringan (permintaan Bu Nisa, meeting 14 Agustus) — dulu layar ini hanya
+            menampilkan 30 entri terbaru tanpa cara mencari. */}
+        <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label className="flab">Cari</label>
+            <input className="fi" name="cari" defaultValue={cari} placeholder="No. jurnal, dokumen, atau keterangan" />
+          </div>
+          <div style={{ minWidth: 165 }}>
+            <label className="flab">Cabang</label>
+            <select className="fi" name="cabang" defaultValue={cabang}>
+              <option value="">Semua cabang</option>
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div style={{ minWidth: 150 }}>
+            <label className="flab">Sumber</label>
+            <select className="fi" name="sumber" defaultValue={sumber}>
+              <option value="">Semua sumber</option>
+              {Object.entries(SOURCE_BADGE).map(([kode, b]) => <option key={kode} value={kode}>{b.label}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 135 }}>
+            <label className="flab">Dari</label>
+            <input className="fi" type="date" name="dari" defaultValue={dari} />
+          </div>
+          <div style={{ width: 135 }}>
+            <label className="flab">Sampai</label>
+            <input className="fi" type="date" name="sampai" defaultValue={sampai} />
+          </div>
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+
+        <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
+          {entries.length} entri {adaSaringan ? "cocok saringan" : "terbaru"}
+          {entries.length === 200 && " (dibatasi 200 — persempit saringannya)"}
+        </div>
 
         {entries.length === 0 ? (
           <div
@@ -145,7 +202,7 @@ export default async function JurnalPage({
               className="ti ti-notebook"
               style={{ fontSize: 26, display: "block", marginBottom: 8, opacity: 0.35 }}
             />
-            Belum ada jurnal tercatat.
+            {adaSaringan ? "Tidak ada jurnal cocok saringan." : "Belum ada jurnal tercatat."}
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -155,6 +212,8 @@ export default async function JurnalPage({
                   <th>No. Jurnal</th>
                   <th style={{ width: 90 }}>Tanggal</th>
                   <th>Deskripsi</th>
+                  <th style={{ width: 120 }}>Cabang</th>
+                  <th style={{ width: 130 }}>No. Dokumen</th>
                   <th style={{ width: 80, textAlign: "center" }}>Sumber</th>
                   <th style={{ width: 120, textAlign: "right" }}>Total Debit</th>
                   <th style={{ width: 120, textAlign: "right" }}>Total Kredit</th>
@@ -206,6 +265,12 @@ export default async function JurnalPage({
                       </td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{tgl}</td>
                       <td style={{ fontSize: 11, maxWidth: 200 }}>{e.deskripsi}</td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                        {(Array.isArray(e.branches) ? e.branches[0] : e.branches)?.name ?? "Pusat"}
+                      </td>
+                      <td style={{ fontFamily: "monospace", fontSize: 10 }}>
+                        <NoDok nomor={e.source_ref} />
+                      </td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`bge ${badge.cls}`} style={{ fontSize: 9 }}>
                           {badge.label}
