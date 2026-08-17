@@ -10,6 +10,7 @@ import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
 import type { ItemUnit } from "@/lib/satuan";
+import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
 
 export type ItemRow = {
   id: string; code: string; name: string; harga: number; kategori: string; stok: number;
@@ -17,6 +18,8 @@ export type ItemRow = {
   minJual?: number; diskonDefault?: number; substitusi?: string | null;
   // Satuan berjenjang; hanya diisi kalau barangnya punya lebih dari satu satuan.
   satuan?: ItemUnit[];
+  /** Harga jual bertingkat menurut jumlah beli (meeting 14 Agustus). */
+  tiers?: Tingkat[];
 };
 export type CustRow = {
   id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
@@ -39,6 +42,9 @@ type CartLine = {
   // Satuan yang dipilih kasir + faktornya ke satuan dasar. Barang yang sama boleh
   // muncul dua baris (1 dus + 3 pcs), makanya kunci baris bukan item_id saja.
   satuan?: string; faktor?: number; opsiSatuan?: ItemUnit[];
+  /** Harga normal per satuan baris — dipakai saat qty turun di bawah tingkat lagi. */
+  hargaNormal?: number;
+  tiers?: Tingkat[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -68,7 +74,7 @@ export function KasirClient({
   const [kat, setKat] = useState("Semua");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 8;
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cartRaw, setCart] = useState<CartLine[]>([]);
   const [custQ, setCustQ] = useState("");
   const [cust, setCust] = useState<CustRow | null>(null);
   const [diskon, setDiskon] = useState(0);
@@ -127,8 +133,10 @@ export function KasirClient({
       const dasar = it.satuan?.[0];
       const baris: CartLine = {
         item_id: it.id, nama: it.name, qty: 0, harga: dasar?.sell_price ?? it.harga,
+        hargaNormal: dasar?.sell_price ?? it.harga,
         minJual: Math.max(1, Number(it.minJual) || 0),
         satuan: dasar?.unit, faktor: dasar?.factor ?? 1, opsiSatuan: it.satuan,
+        tiers: it.tiers ?? [],
       };
       const k = kunciBaris(baris);
       const ex = c.find((l) => kunciBaris(l) === k);
@@ -154,7 +162,7 @@ export function KasirClient({
       const baris = c.find((l) => kunciBaris(l) === k);
       const opsi = baris?.opsiSatuan?.find((o) => o.unit === unit);
       if (!baris || !opsi) return c;
-      const baru = { ...baris, satuan: opsi.unit, faktor: opsi.factor, harga: opsi.sell_price };
+      const baru = { ...baris, satuan: opsi.unit, faktor: opsi.factor, harga: opsi.sell_price, hargaNormal: opsi.sell_price };
       const kBaru = kunciBaris(baru);
       const lain = c.filter((l) => kunciBaris(l) !== k);
       const bentrok = lain.find((l) => kunciBaris(l) === kBaru);
@@ -162,6 +170,19 @@ export function KasirClient({
         ? lain.map((l) => (kunciBaris(l) === kBaru ? { ...l, qty: l.qty + baru.qty } : l))
         : c.map((l) => (kunciBaris(l) === k ? baru : l));
     });
+
+  // Harga bertingkat: harga baris TURUNAN dari qty — begitu jumlahnya menyentuh
+  // tingkat berikutnya, harganya ikut turun (permintaan Bu Nisa, meeting 14
+  // Agustus). Sengaja diturunkan, bukan disimpan di state, supaya tidak ada dua
+  // sumber kebenaran harga di keranjang. Server tetap menghitung ulang saat bayar.
+  const cart = useMemo(() => cartRaw.map((l) => {
+    if (!l.tiers?.length) return l;
+    const faktor = Number(l.faktor) || 1;
+    const normal = Number(l.hargaNormal ?? l.harga) || 0;
+    const perDasar = hargaTingkat(l.qty * faktor, l.tiers, normal / faktor);
+    const hargaTier = Math.round(perDasar * faktor);
+    return hargaTier < Math.round(normal) ? { ...l, harga: hargaTier } : l;
+  }), [cartRaw]);
 
   // Promo otomatis (migrasi 0079): dihitung ulang tiap isi keranjang berubah.
   // Angka di sini cuma untuk DITAMPILKAN — server menghitung ulang saat bayar.

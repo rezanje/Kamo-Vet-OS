@@ -121,6 +121,17 @@ export default async function KasirPage({
   // master tidak bisa dipilih saat jualan (dilaporkan tim 2026-08-11).
   const unitMap = await loadUnitOptions(supabase, itemsRaw.map((i) => i.id));
 
+  // Harga bertingkat per jumlah beli (meeting 14 Agustus) — dikirim bersama
+  // barangnya supaya harga di keranjang ikut turun begitu qty-nya cukup.
+  const { data: tierRows } = await supabase
+    .from("item_price_tiers").select("item_id, min_qty, harga").order("min_qty");
+  const tierMap = new Map<string, { min_qty: number; harga: number }[]>();
+  for (const t of (tierRows ?? []) as { item_id: string; min_qty: number; harga: number }[]) {
+    const arr = tierMap.get(t.item_id) ?? [];
+    arr.push({ min_qty: Number(t.min_qty), harga: Number(t.harga) });
+    tierMap.set(t.item_id, arr);
+  }
+
   const itemRows: ItemRow[] = itemsRaw.map((i) => {
     const satuan = applyHargaCabang(unitMap.get(i.id) ?? [], i.id, harga);
     return {
@@ -131,6 +142,7 @@ export default async function KasirPage({
       minJual: Number(i.min_sell_qty) || 0,
       diskonDefault: Number(i.default_discount) || 0,
       substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
+      tiers: tierMap.get(i.id) ?? [],
       // Hanya kirim kalau benar-benar berjenjang — barang bersatuan tunggal tidak
       // perlu dropdown yang isinya satu pilihan.
       satuan: satuan.length > 1 ? satuan : undefined,

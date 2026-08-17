@@ -7,6 +7,7 @@ import { stockOut } from "@/lib/inventory";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
+import { toBaseQty } from "@/lib/satuan";
 import { jurnalFakturJual, jurnalPengiriman, pesananSelesai, prefixFakturJual, sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -18,14 +19,14 @@ const detail = (id: string) => `${LIST}/${id}`;
 type Db = any;
 
 type BarisSO = {
-  id: string; item_id: string | null; nama: string; satuan: string | null;
+  id: string; item_id: string | null; nama: string; satuan: string | null; faktor: number | null;
   qty: number; harga: number; qty_kirim: number; qty_faktur: number;
 };
 
 async function muatPesanan(supabase: Db, id: string) {
   const { data } = await supabase
     .from("sales_orders")
-    .select("id, no_pesanan, customer_id, branch_id, warehouse_id, status, sales_order_items(id, item_id, nama, satuan, qty, harga, qty_kirim, qty_faktur)")
+    .select("id, no_pesanan, customer_id, branch_id, warehouse_id, status, sales_order_items(id, item_id, nama, satuan, faktor, qty, harga, qty_kirim, qty_faktur)")
     .eq("id", id).maybeSingle();
   return data as (null | {
     id: string; no_pesanan: string; customer_id: string | null; branch_id: string | null;
@@ -70,7 +71,7 @@ export async function buatPesanan(formData: FormData) {
   const { error: itemErr } = await supabase.from("sales_order_items").insert(
     baris.map((b) => ({
       order_id: so!.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, qty: b.qty, harga: b.harga,
+      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.qty, harga: b.harga,
     })),
   );
   if (itemErr) {
@@ -148,7 +149,8 @@ export async function buatPengiriman(formData: FormData) {
     if (b.item_id && gudang) {
       try {
         const { cost } = await stockOut(supabase, {
-          warehouseId: gudang, itemId: b.item_id, qty: b.kali_ini,
+          // Stok selalu dalam satuan dasar: kirim 2 dus isi 12 = keluar 24 pcs.
+          warehouseId: gudang, itemId: b.item_id, qty: toBaseQty(b.kali_ini, b.faktor ?? 1),
           source: "sales-delivery", ref: no,
         });
         hpp = cost;
@@ -160,7 +162,7 @@ export async function buatPengiriman(formData: FormData) {
 
     await supabase.from("sales_delivery_items").insert({
       delivery_id: doc!.id, order_item_id: b.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, qty: b.kali_ini, hpp,
+      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.kali_ini, hpp,
     });
     await supabase.from("sales_order_items")
       .update({ qty_kirim: Number(b.qty_kirim) + b.kali_ini }).eq("id", b.id);
@@ -232,7 +234,7 @@ export async function buatFakturJual(formData: FormData) {
   for (const b of tagih) {
     await supabase.from("sales_invoice_items").insert({
       invoice_id: inv!.id, order_item_id: b.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, qty: b.kali_ini, harga: b.harga,
+      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.kali_ini, harga: b.harga,
     });
     await supabase.from("sales_order_items")
       .update({ qty_faktur: Number(b.qty_faktur) + b.kali_ini }).eq("id", b.id);

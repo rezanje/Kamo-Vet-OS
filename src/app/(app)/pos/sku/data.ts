@@ -37,6 +37,14 @@ export async function siapkanFormBarang() {
 export async function loadBarang(supabase: any, id: string): Promise<BarangRow | null> {
   const { data } = await supabase.from("items").select(BARANG_FIELDS).eq("id", id).maybeSingle();
   if (!data) return null;
-  const units = await loadItemUnits(supabase, [id]);
-  return { ...(data as BarangRow), units: units.get(id) ?? [] };
+  const [units, { data: tiers }] = await Promise.all([
+    loadItemUnits(supabase, [id]),
+    supabase.from("item_price_tiers").select("min_qty, harga").eq("item_id", id).order("min_qty"),
+  ]);
+  return {
+    ...(data as BarangRow),
+    units: units.get(id) ?? [],
+    tiers: ((tiers ?? []) as { min_qty: number; harga: number }[])
+      .map((t) => ({ min_qty: Number(t.min_qty), harga: Number(t.harga) })),
+  };
 }

@@ -35,7 +35,7 @@ export async function buatPenawaran(formData: FormData) {
   const { error: itemErr } = await supabase.from("sales_quotation_items").insert(
     baris.map((b) => ({
       quotation_id: doc!.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, qty: b.qty, harga: b.harga,
+      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.qty, harga: b.harga,
     })),
   );
   if (itemErr) {
@@ -66,7 +66,7 @@ export async function jadikanPesanan(formData: FormData) {
 
   const { data: q } = await supabase
     .from("sales_quotations")
-    .select("id, no_penawaran, customer_id, branch_id, total, catatan, sales_quotation_items(item_id, nama, satuan, qty, harga)")
+    .select("id, no_penawaran, customer_id, branch_id, total, catatan, sales_quotation_items(item_id, nama, satuan, faktor, qty, harga)")
     .eq("id", id).maybeSingle();
   if (!q) gagal("Penawaran tidak ditemukan");
 
@@ -75,7 +75,7 @@ export async function jadikanPesanan(formData: FormData) {
   if (sudah) gagal(`Penawaran ini sudah jadi pesanan ${sudah.no_pesanan}`);
 
   const baris = (q!.sales_quotation_items ?? []) as
-    { item_id: string | null; nama: string; satuan: string | null; qty: number; harga: number }[];
+    { item_id: string | null; nama: string; satuan: string | null; faktor: number | null; qty: number; harga: number }[];
   if (baris.length === 0) gagal("Penawaran ini tidak punya baris");
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -90,7 +90,7 @@ export async function jadikanPesanan(formData: FormData) {
   await supabase.from("sales_order_items").insert(
     baris.map((b) => ({
       order_id: so!.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, qty: b.qty, harga: b.harga,
+      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.qty, harga: b.harga,
     })),
   );
   await supabase.from("sales_quotations").update({ status: "diterima" }).eq("id", id);

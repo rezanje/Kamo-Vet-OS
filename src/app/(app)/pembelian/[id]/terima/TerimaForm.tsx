@@ -9,6 +9,7 @@ import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { terimaBarang } from "../../actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { sisaBelumDijatah, type BatchInput } from "@/lib/kadaluarsa-batch";
 
 export type BarisPO = {
   id: string;
@@ -43,7 +44,20 @@ export function TerimaForm({
   const [rusak, setRusak] = useState<Record<string, number>>({});
   const [catatan, setCatatan] = useState<Record<string, string>>({});
   const [exp, setExp] = useState<Record<string, string>>({});
+  // Kadaluarsa bertingkat: satu barang boleh datang dengan beberapa tanggal
+  // sekaligus (permintaan Pak Faisal, meeting 14 Agustus). Baris tambahan hanya
+  // muncul kalau petugas menekan "Tanggal lain" — kiriman satu tanggal tetap
+  // seringkas dulu.
+  const [batch, setBatch] = useState<Record<string, BatchInput[]>>({});
   const adaExpiry = rows.some((r) => r.trackExpiry);
+
+  const batchOf = (id: string) => batch[id] ?? [];
+  const tambahBatch = (id: string) =>
+    setBatch((b) => ({ ...b, [id]: [...(b[id] ?? []), { qty: 0, exp_date: "" }] }));
+  const ubahBatch = (id: string, i: number, patch: Partial<BatchInput>) =>
+    setBatch((b) => ({ ...b, [id]: (b[id] ?? []).map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
+  const hapusBatch = (id: string, i: number) =>
+    setBatch((b) => ({ ...b, [id]: (b[id] ?? []).filter((_, j) => j !== i) }));
 
   const qtyOf = (r: BarisPO) => Math.min(Math.max(0, Number(terima[r.id]) || 0), r.qty);
   const rusakOf = (r: BarisPO) => Math.min(Math.max(0, Number(rusak[r.id]) || 0), Math.max(0, r.qty - qtyOf(r)));
@@ -53,12 +67,25 @@ export function TerimaForm({
   const selisih = totalTerima - totalPO;
   const today = hariIniWIB();
 
+  // Tanggal utama tetap dikirim sebagai batch pertama supaya server tidak perlu
+  // tahu bedanya "satu tanggal" dan "beberapa tanggal".
+  const batchLengkap = (r: BarisPO): BatchInput[] => {
+    if (!r.trackExpiry) return [];
+    const utama = (exp[r.id] ?? "").trim();
+    const lain = batchOf(r.id).filter((b) => String(b.exp_date ?? "").trim());
+    const sisaUtama = utama
+      ? [{ qty: qtyOf(r) - lain.reduce((a, b) => a + (Number(b.qty) || 0), 0), exp_date: utama }]
+      : [];
+    return [...sisaUtama.filter((b) => Number(b.qty) > 0), ...lain];
+  };
+
   const payload = rows.map((r) => ({
     id: r.id,
     qty_terima: qtyOf(r),
     qty_rusak: rusakOf(r),
     catatan: catatan[r.id] ?? "",
     exp_date: r.trackExpiry ? (exp[r.id] ?? "") : "",
+    batches: batchLengkap(r),
   }));
 
   return (
@@ -149,13 +176,38 @@ export function TerimaForm({
                     {adaExpiry && (
                       <td>
                         {r.trackExpiry ? (
-                          <input
-                            className="fi"
-                            type="date"
-                            value={exp[r.id] ?? ""}
-                            onChange={(e) => setExp((x) => ({ ...x, [r.id]: e.target.value }))}
-                            style={{ width: 125, height: 26, fontSize: 10.5 }}
-                          />
+                          <>
+                            <input
+                              className="fi"
+                              type="date"
+                              value={exp[r.id] ?? ""}
+                              onChange={(e) => setExp((x) => ({ ...x, [r.id]: e.target.value }))}
+                              style={{ width: 125, height: 26, fontSize: 10.5 }}
+                            />
+                            {batchOf(r.id).map((b, i) => (
+                              <div key={i} style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
+                                <input className="fi" type="number" min={0} step="any"
+                                  value={String(b.qty ?? "")} placeholder="jml"
+                                  onChange={(e) => ubahBatch(r.id, i, { qty: Number(e.target.value) })}
+                                  style={{ width: 48, height: 26, fontSize: 10.5, textAlign: "right" }} />
+                                <input className="fi" type="date"
+                                  value={String(b.exp_date ?? "")}
+                                  onChange={(e) => ubahBatch(r.id, i, { exp_date: e.target.value })}
+                                  style={{ width: 118, height: 26, fontSize: 10.5 }} />
+                                <i className="ti ti-x" onClick={() => hapusBatch(r.id, i)}
+                                  style={{ cursor: "pointer", color: "#dc2626", fontSize: 12 }} />
+                              </div>
+                            ))}
+                            <button type="button" onClick={() => tambahBatch(r.id)} className="btn-def"
+                              style={{ padding: "1px 7px", fontSize: 9.5, marginTop: 4 }}>
+                              <i className="ti ti-plus" /> Tanggal lain
+                            </button>
+                            {batchOf(r.id).length > 0 && (
+                              <div style={{ fontSize: 9, color: "var(--tm)", marginTop: 3 }}>
+                                {sisaBelumDijatah(qtyOf(r), batchLengkap(r))} {r.satuan} pakai tanggal utama
+                              </div>
+                            )}
+                          </>
                         ) : (
                           <span style={{ fontSize: 10, color: "var(--td)" }}>—</span>
                         )}
@@ -207,7 +259,9 @@ export function TerimaForm({
         {adaExpiry && (
           <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
             Tanggal kadaluarsa menempel ke kiriman ini saja — kiriman berikutnya diisi sendiri.
-            Boleh dikosongkan, tapi barangnya tidak akan muncul di Monitor Expired.
+            Boleh dikosongkan, tapi barangnya tidak akan muncul di Monitor Expired. Kalau satu barang
+            datang dengan beberapa masa simpan, tekan &quot;Tanggal lain&quot; lalu isi jumlah per tanggalnya;
+            sisanya otomatis ikut tanggal utama.
           </div>
         )}
 

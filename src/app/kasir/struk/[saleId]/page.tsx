@@ -23,7 +23,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: items } = await supabase
     .from("sale_items")
-    .select("nama, qty, harga, item_discount_type, item_discount_value, promos(name)")
+    .select("nama, qty, satuan, harga, item_discount_type, item_discount_value, promos(name)")
     .eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers);
@@ -58,7 +58,9 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
             <div key={i} style={{ marginBottom: 3 }}>
               <div>{it.nama}</div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>{it.qty} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
+                {/* Satuan ikut tercetak (permintaan Bu Nisa, meeting 14 Agustus):
+                    "2 x 35.000" tidak memberi tahu 2 botol atau 2 dus. */}
+                <span>{it.qty} {it.satuan || "pcs"} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
               </div>
               {disc > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>

@@ -45,6 +45,8 @@ export async function nextNoDokumen(supabase: AnyClient, prefix: PrefixDokumen):
 export type BarisInput = {
   nama: string; qty: number; harga: number;
   item_id?: string | null; satuan?: string | null;
+  /** Isi per satuan pilihan (1 dus = 12 pcs → 12). Stok dipotong qty × faktor. */
+  faktor?: number;
 };
 
 /**
@@ -66,12 +68,14 @@ export function bacaBaris(raw: FormDataEntryValue | null): BarisInput[] {
     const qty = Number(row.qty) || 0;
     const harga = Number(row.harga) || 0;
     if (!nama || qty <= 0) return [];
+    const faktor = Number(row.faktor);
     return [{
       nama: nama.slice(0, 160),
       qty,
       harga: Math.max(0, harga),
       item_id: row.item_id ?? null,
       satuan: row.satuan ?? null,
+      faktor: Number.isFinite(faktor) && faktor > 0 ? faktor : 1,
     }];
   });
 }

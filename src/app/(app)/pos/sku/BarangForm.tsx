@@ -7,6 +7,7 @@ import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
 import { ITEM_TYPES, ITEM_TYPE_HINT, type ItemType } from "@/lib/barang";
 import { flatOptions, type KategoriRow } from "@/lib/kategori";
 import type { ItemUnit } from "@/lib/satuan";
+import { rapikanTingkat, type Tingkat } from "@/lib/harga-tingkat";
 import { simpanBarang } from "./actions";
 
 export type BarangRow = {
@@ -17,6 +18,8 @@ export type BarangRow = {
   supplier_id: string | null; buy_unit: string | null; min_buy: number;
   min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
   units?: ItemUnit[];
+  /** Harga jual bertingkat menurut jumlah beli (meeting 14 Agustus). */
+  tiers?: Tingkat[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -45,6 +48,13 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
   const [baseUnit, setBaseUnit] = useState(editing?.unit ?? "pcs");
   const [baseSell, setBaseSell] = useState<number>(Number(editing?.sell_price) || 0);
   const [units, setUnits] = useState<ItemUnit[]>(editing?.units ?? []);
+  // Harga bertingkat: "beli minimal sekian → harga sekian". Beda dari satuan
+  // berjenjang yang mengurus kemasan; ini mengurus volume dalam satuan yang sama.
+  const [tiers, setTiers] = useState<Tingkat[]>(editing?.tiers ?? []);
+  const addTier = () => setTiers((t) => [...t, { min_qty: 0, harga: 0 }]);
+  const setTier = (i: number, patch: Partial<Tingkat>) =>
+    setTiers((t) => t.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const delTier = (i: number) => setTiers((t) => t.filter((_, j) => j !== i));
 
   const isJasa = itemType === "Jasa";
   const punyaStok = itemType === "Persediaan";
@@ -80,6 +90,7 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
       <input type="hidden" name="id" value={editing?.id ?? ""} />
       <input type="hidden" name="item_type" value={itemType} />
       <input type="hidden" name="units" value={JSON.stringify(isJasa ? [] : units)} />
+      <input type="hidden" name="tiers" value={JSON.stringify(isJasa ? [] : rapikanTingkat(tiers))} />
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14, borderBottom: ".5px solid var(--bd)" }}>
         {TABS.map((t) => (
@@ -192,6 +203,51 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
         </div>
 
         {/* Satuan berjenjang — tidak relevan untuk jasa (tidak punya stok/kemasan). */}
+        {!isJasa && (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: ".5px solid var(--bd)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+              <div>
+                <div style={{ fontSize: 11.5, fontWeight: 700 }}><i className="ti ti-discount-2" /> Harga bertingkat (beli banyak)</div>
+                <div style={{ fontSize: 9.5, color: "var(--td)" }}>
+                  Harga per {dasar} kalau belinya minimal sekian. Yang dipakai tingkat tertinggi yang tercapai;
+                  di bawah semua tingkat berarti harga normal {rp(baseSell)}.
+                </div>
+              </div>
+              <button type="button" onClick={addTier} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
+                + Tambah tingkat
+              </button>
+            </div>
+
+            {tiers.length === 0 && (
+              <div style={{ fontSize: 10.5, color: "var(--td)", padding: "6px 0" }}>
+                Belum ada. Semua jumlah pakai harga normal.
+              </div>
+            )}
+
+            {tiers.map((t, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 6 }}>
+                <div style={{ width: 150 }}>
+                  {i === 0 && <label className="flab">Beli minimal ({dasar})</label>}
+                  <input className="fi" type="number" min={1} step="any" value={t.min_qty || ""}
+                    onChange={(e) => setTier(i, { min_qty: Number(e.target.value) })} placeholder="12" />
+                </div>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  {i === 0 && <label className="flab">Harga per {dasar}</label>}
+                  <input className="fi" type="number" min={0} step="any" value={t.harga || ""}
+                    onChange={(e) => setTier(i, { harga: Number(e.target.value) })} placeholder="0" />
+                  {baseSell > 0 && Number(t.harga) > 0 && Number(t.harga) < baseSell && (
+                    <div style={{ fontSize: 9, color: "#15803d", marginTop: 2 }}>
+                      lebih murah {rp(baseSell - Number(t.harga))}/{dasar}
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => delTier(i)} className="btn-def"
+                  style={{ padding: "4px 9px", fontSize: 10.5, color: "#b91c1c" }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {!isJasa && (
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: ".5px solid var(--bd)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>

@@ -18,6 +18,7 @@ import {
 import { hitungPromoKeranjang, loadPromoAktif } from "@/lib/promo-hitung";
 import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
 type CartLine = {
@@ -109,6 +110,33 @@ export async function checkoutKasir(formData: FormData) {
     if (kurangMin.length > 0) {
       const pesan = kurangMin.map(({ p }) => `${p!.nama} minimal ${Number(p!.min_sell_qty)}`).join(", ");
       redirect(`/kasir?error=${encodeURIComponent(`Di bawah minimum jual: ${pesan}`)}`);
+    }
+  }
+
+  // Harga bertingkat juga dihitung ULANG di server: harga yang dikirim layar
+  // tidak menentukan uang, dan kasir tidak boleh kehilangan harga grosir hanya
+  // karena layarnya sudah lama terbuka saat tingkatnya baru dipasang.
+  {
+    const ids = rows.map((l) => l.item_id).filter((x): x is string => !!x);
+    if (ids.length) {
+      const { data: tierRows } = await supabase
+        .from("item_price_tiers").select("item_id, min_qty, harga").in("item_id", ids);
+      const perItem = new Map<string, { min_qty: number; harga: number }[]>();
+      for (const t of (tierRows ?? []) as { item_id: string; min_qty: number; harga: number }[]) {
+        const arr = perItem.get(t.item_id) ?? [];
+        arr.push({ min_qty: Number(t.min_qty), harga: Number(t.harga) });
+        perItem.set(t.item_id, arr);
+      }
+      for (const l of rows) {
+        const tiers = l.item_id ? perItem.get(l.item_id) : undefined;
+        if (!tiers?.length) continue;
+        const faktor = Number(l.faktor) || 1;
+        const perDasar = hargaTingkat(toBaseQty(l.qty, faktor), tiers, Number(l.harga) / faktor);
+        const hargaTier = Math.round(perDasar * faktor);
+        // Hanya menurunkan: harga khusus yang sudah diberi kasir (mis. nego) tidak
+        // boleh naik lagi gara-gara tingkat harga.
+        if (hargaTier < Number(l.harga)) l.harga = hargaTier;
+      }
     }
   }
 

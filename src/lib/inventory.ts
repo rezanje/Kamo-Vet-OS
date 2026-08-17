@@ -1,4 +1,5 @@
 import { hariIniWIB } from "./tanggal";
+import { urutFefo, type LapisanFefo } from "./kadaluarsa-batch";
 // Inventori FIFO — SATU pintu untuk semua mutasi stok (PRD §10.2).
 // consumeLayers = pure (dites); stockIn/stockOut/transfer = wrapper supabase.
 // ponytail: mutasi JS read-then-update mengikuti pola existing repo; kalau race
@@ -187,17 +188,23 @@ export async function stockOut(
 
   const { data: layersRaw, error: layerErr } = await supabase
     .from("stock_layers")
-    .select("id, qty_left, unit_cost, exp_date")
+    .select("id, qty_left, unit_cost, exp_date, tanggal, created_at")
     .eq("warehouse_id", o.warehouseId).eq("item_id", o.itemId)
     .gt("qty_left", 0)
     .order("tanggal", { ascending: true })
     .order("created_at", { ascending: true });
   orThrow(layerErr, "baca lapisan stok");
 
-  const { takes, cost, shortfall } = consumeLayers((layersRaw ?? []) as Layer[], o.qty);
+  // FEFO: yang paling dekat kadaluarsa keluar duluan (permintaan Pak Faisal,
+  // meeting 14 Agustus). Tanpa ini barang bertanggal dekat mengendap di gudang
+  // sampai basi, sementara kiriman baru yang masih lama justru terjual.
+  // Lapisan tanpa tanggal tetap urut masuk-duluan seperti FIFO lama.
+  const layers = urutFefo((layersRaw ?? []) as (Layer & LapisanFefo)[]);
+
+  const { takes, cost, shortfall } = consumeLayers(layers as Layer[], o.qty);
 
   for (const t of takes) {
-    const layer = (layersRaw ?? []).find((l: Layer) => l.id === t.id);
+    const layer = layers.find((l: Layer) => l.id === t.id);
     const { error } = await supabase.from("stock_layers")
       .update({ qty_left: Number(layer?.qty_left ?? 0) - t.qty })
       .eq("id", t.id);

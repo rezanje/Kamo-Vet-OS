@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
+import { LampiranPicker } from "@/components/LampiranPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB, geserHari } from "@/lib/tanggal";
 import { buatFakturLangsung } from "./actions";
@@ -101,6 +102,13 @@ export function FakturLangsungForm({
             <label className="flab">No. faktur pemasok</label>
             <input className="fi" name="no_faktur_pemasok" placeholder="Nomor di kertas fakturnya" />
           </div>
+          {/* Surat jalan (permintaan Bu Nisa, meeting 14 Agustus): pembelian lewat PO
+              menyimpannya di dokumen penerimaan, pembelian langsung dulu tidak punya
+              tempat sama sekali. */}
+          <div className="fg">
+            <label className="flab">No. surat jalan</label>
+            <input className="fi" name="surat_jalan" maxLength={60} placeholder="Nomor di surat jalannya" />
+          </div>
           <div className="fg">
             <label className="flab">Tanggal faktur *</label>
             <input className="fi" type="date" name="tanggal" required value={tanggal}
@@ -114,6 +122,10 @@ export function FakturLangsungForm({
           <div className="fg" style={{ gridColumn: "span 2" }}>
             <label className="flab">Keterangan</label>
             <input className="fi" name="keterangan" placeholder="Opsional" />
+          </div>
+          <div className="fg" style={{ gridColumn: "span 2" }}>
+            <label className="flab">Lampiran surat jalan / nota</label>
+            <LampiranPicker folder="pembelian" />
           </div>
         </div>
       </div>

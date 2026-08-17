@@ -5,6 +5,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { BarisJualForm, type ItemJual } from "../BarisJualForm";
+import { loadItemUnits } from "@/lib/satuan";
 import { buatPesanan } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -48,7 +49,10 @@ export default async function PesananPage({
   const pelanggan = (custData ?? []) as { id: string; name: string; phone: string }[];
   const cabang = (cabData ?? []) as { id: string; name: string }[];
   const gudang = (gudangData ?? []) as { id: string; name: string }[];
-  const items = (itemData ?? []) as ItemJual[];
+  // Satuan turunan ikut dikirim supaya baris pesanan bisa memilih dus/box, bukan
+  // cuma satuan dasar (permintaan Bu Nisa, meeting 14 Agustus).
+  const unitMap = await loadItemUnits(supabase);
+  const items = ((itemData ?? []) as ItemJual[]).map((it) => ({ ...it, units: unitMap.get(it.id) ?? [] }));
 
   const progres = (p: Pesanan) => {
     const b = p.sales_order_items ?? [];

@@ -7,6 +7,7 @@ type Row = {
   id: string;
   no_faktur: string;
   no_faktur_pemasok: string | null;
+  surat_jalan: string | null;
   tanggal: string;
   jatuh_tempo: string;
   total: number;
@@ -29,7 +30,7 @@ export default async function FakturBeliPage({
 
   const { data } = await supabase
     .from("purchase_invoices")
-    .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
+    .select("id, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
@@ -89,7 +90,10 @@ export default async function FakturBeliPage({
                 return (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 500, fontSize: 11.5 }}>{r.no_faktur}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.no_faktur_pemasok ?? "—"}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>
+                      {r.no_faktur_pemasok ?? "—"}
+                      {r.surat_jalan && <div style={{ fontSize: 9.5, color: "var(--td)" }}>SJ {r.surat_jalan}</div>}
+                    </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtD(r.tanggal)}</td>
                     <td style={{ fontSize: 11, color: telat ? "#b91c1c" : "var(--tm)", fontWeight: telat ? 700 : 400 }}>
                       {fmtD(r.jatuh_tempo)}{telat ? " !" : ""}

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseUnitDrafts } from "@/lib/satuan";
+import { rapikanTingkat } from "@/lib/harga-tingkat";
 import { pickItemType, validasiBarang, pesanSimpanGagal } from "@/lib/barang";
 
 const LIST = "/pos/sku";
@@ -98,6 +99,19 @@ export async function simpanBarang(formData: FormData) {
   // satuan lama tetap bisa dipilih di POS dgn faktor yang sudah tidak berlaku.
   const itemId = id || saved?.id;
   if (itemId) {
+    // Harga bertingkat ikut pola replace-all yang sama dengan satuan berjenjang:
+    // tingkat yang dihapus di layar harus benar-benar hilang, kalau tidak kasir
+    // masih bisa kena harga grosir yang sudah dicabut.
+    let tiers: { min_qty: number; harga: number }[] = [];
+    try { tiers = rapikanTingkat(JSON.parse(String(formData.get("tiers") ?? "[]"))); } catch { tiers = []; }
+    await supabase.from("item_price_tiers").delete().eq("item_id", itemId);
+    if (punyaStok && tiers.length) {
+      const { error: tErr } = await supabase.from("item_price_tiers").insert(
+        tiers.map((t) => ({ item_id: itemId, min_qty: t.min_qty, harga: t.harga })),
+      );
+      if (tErr) gagal(pesanSimpanGagal(tErr.message));
+    }
+
     await supabase.from("item_units").delete().eq("item_id", itemId);
     if (units.length) {
       const { error: uErr } = await supabase.from("item_units").insert(

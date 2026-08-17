@@ -10,6 +10,7 @@ import { stockIn } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty, toBaseCost } from "@/lib/satuan";
 import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import { parseLampiran } from "@/lib/dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { jurnalTersimpan } from "@/lib/jurnal-guard";
 
@@ -39,6 +40,8 @@ export async function buatFakturLangsung(formData: FormData) {
   const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const jatuh_tempo = String(formData.get("jatuh_tempo") ?? "").trim() || tanggal;
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
+  const surat_jalan = String(formData.get("surat_jalan") ?? "").trim().slice(0, 60) || null;
+  const lampiran = parseLampiran(formData.get("lampiran"));
 
   if (!supplier_id) gagal("Pilih pemasok dulu.");
   if (!warehouse_id) gagal("Pilih gudang tujuan — barangnya harus masuk ke suatu tempat.");
@@ -97,7 +100,7 @@ export async function buatFakturLangsung(formData: FormData) {
     .from("purchase_invoices")
     .insert({
       no_faktur, no_faktur_pemasok, po_id: null, supplier_id,
-      branch_id: gudang.branch_id, warehouse_id,
+      branch_id: gudang.branch_id, warehouse_id, surat_jalan,
       tanggal, jatuh_tempo, total, keterangan, created_by: user?.id ?? null,
     })
     .select("id").single();
@@ -112,6 +115,13 @@ export async function buatFakturLangsung(formData: FormData) {
   if (itemsErr) {
     await supabase.from("purchase_invoices").delete().eq("id", doc!.id);
     gagal("Gagal menyimpan rincian faktur.");
+  }
+
+  // Berkas surat jalan / nota pemasok menempel ke fakturnya.
+  if (lampiran.length) {
+    await supabase.from("document_attachments").insert(
+      lampiran.map((l) => ({ ...l, modul: "pembelian", ref_id: doc!.id, uploaded_by: user?.id ?? null })),
+    );
   }
 
   // Persediaan dinilai sebesar DPP — PPN Masukan bisa dikreditkan, jadi bukan bagian

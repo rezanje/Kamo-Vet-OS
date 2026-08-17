@@ -4,12 +4,17 @@
 // ponytail: baris dinamis diserialisasi ke satu input hidden JSON, pola sama dgn POForm.
 
 import { useState } from "react";
+import { unitOptions, type ItemUnit } from "@/lib/satuan";
 
-export type ItemJual = { id: string; code: string; name: string; unit: string; sell_price: number };
-type Row = { nama: string; qty: number; harga: number; item_id: string | null; satuan: string };
+export type ItemJual = {
+  id: string; code: string; name: string; unit: string; sell_price: number;
+  /** Satuan turunan (dus/box) — pesanan boleh memilihnya, meeting 14 Agustus. */
+  units?: ItemUnit[];
+};
+type Row = { nama: string; qty: number; harga: number; item_id: string | null; satuan: string; faktor: number };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const blank: Row = { nama: "", qty: 1, harga: 0, item_id: null, satuan: "" };
+const blank: Row = { nama: "", qty: 1, harga: 0, item_id: null, satuan: "", faktor: 1 };
 const label = (it: ItemJual) => `${it.code} — ${it.name}`;
 
 export function BarisJualForm({ items, listId }: { items: ItemJual[]; listId: string }) {
@@ -21,11 +26,25 @@ export function BarisJualForm({ items, listId }: { items: ItemJual[]; listId: st
 
   // Pilih dari master SKU → harga jual ikut terisi; teks bebas tetap boleh (item_id null,
   // tidak memotong stok saat dikirim).
+  const opsiSatuan = (item_id: string | null): ItemUnit[] => {
+    const it = items.find((x) => x.id === item_id);
+    return it ? unitOptions({ unit: it.unit, sell_price: it.sell_price }, it.units ?? []) : [];
+  };
+
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v);
     set(i, it
-      ? { nama: v, item_id: it.id, harga: Number(it.sell_price) || 0, satuan: it.unit ?? "" }
-      : { nama: v, item_id: null, satuan: "" });
+      ? { nama: v, item_id: it.id, harga: Number(it.sell_price) || 0, satuan: it.unit ?? "", faktor: 1 }
+      : { nama: v, item_id: null, satuan: "", faktor: 1 });
+  };
+
+  // Ganti satuan = ganti harga & faktornya sekaligus. Kalau cuma satuannya yang
+  // ganti, "2 dus" tercatat sebagai 2 pcs dan stoknya salah potong saat dikirim.
+  const setSatuan = (i: number, r: Row, unit: string) => {
+    const opsi = opsiSatuan(r.item_id).find((o) => o.unit === unit);
+    set(i, opsi
+      ? { satuan: opsi.unit, faktor: opsi.factor, harga: Number(opsi.sell_price) || r.harga }
+      : { satuan: unit, faktor: 1 });
   };
 
   const total = rows.reduce((a, r) => a + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0);
@@ -62,7 +81,19 @@ export function BarisJualForm({ items, listId }: { items: ItemJual[]; listId: st
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 80, textAlign: "right" }} />
                 </td>
-                <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.satuan || "—"}</td>
+                <td>
+                  {opsiSatuan(r.item_id).length > 1 ? (
+                    <select className="fi" value={r.satuan}
+                      onChange={(e) => setSatuan(i, r, e.target.value)}
+                      style={{ width: 84, fontSize: 11 }}>
+                      {opsiSatuan(r.item_id).map((o) => (
+                        <option key={o.unit} value={o.unit}>{o.unit}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: 11, color: "var(--tm)" }}>{r.satuan || "—"}</span>
+                  )}
+                </td>
                 <td>
                   <input className="fi" type="number" min={0} step="any" value={r.harga}
                     onChange={(e) => set(i, { harga: Number(e.target.value) })}
