@@ -9,15 +9,16 @@ import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
+import { bacaPoinPelanggan, catatPoinKlinik, poinTerpakai, RUPIAH_PER_POIN } from "@/lib/poin-klinik";
 import { stockIn, stockOut } from "@/lib/inventory";
 import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
-import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan } from "@/lib/tagihan-klinik";
+import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 
-type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null };
+type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null; diskon_persen?: number };
 
 // Obat klinik memotong stok gudang cabang & mencatat modalnya, sama seperti
 // penjualan di kasir. Sebelum migrasi 0084 ini tidak bisa dilakukan: baris
@@ -170,6 +171,9 @@ export async function bayarVisit(formData: FormData) {
     .map((l) => ({
       deskripsi: l.deskripsi.trim(), qty: Number(l.qty) > 0 ? Number(l.qty) : 1,
       harga: Number(l.harga) || 0, jenis: l.jenis === "jasa" ? "jasa" : "obat",
+      // Diskon per baris (meeting 14 Agustus) dibatasi 0–100 di server juga:
+      // layar boleh dipercaya untuk tampilan, tidak untuk uang.
+      diskon_persen: Math.min(100, Math.max(0, Number(l.diskon_persen) || 0)),
       // item_id jasa IKUT DISIMPAN sejak promo klinik (2026-08-12): promo boleh
       // mengenai tindakan, dan tanpa item_id promo tidak punya pegangan tindakan
       // apa yang didiskon. Yang menjaga stok bukan lagi item_id kosong, tapi
@@ -188,7 +192,7 @@ export async function bayarVisit(formData: FormData) {
 
   const { data: v } = await supabase.from("visits").select("branch_id, customer_id").eq("id", visitId).maybeSingle();
 
-  const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+  const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
   const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
 
@@ -197,18 +201,33 @@ export async function bayarVisit(formData: FormData) {
   // bisa memegang promo yang sudah dicabut.
   const potongan = await hitungPotonganKlinik(supabase, {
     branchId: v?.branch_id ?? null, customerId: v?.customer_id ?? null,
-    rows, voucherCode,
+    // Promo & voucher menghitung dari harga yang SUDAH kena diskon baris.
+    rows: rows.map((l) => ({ item_id: l.item_id ?? null, qty: l.qty, harga: hargaNetto(l) })),
+    voucherCode,
   });
   if (potongan.tolakVoucher) redirect(`${back}?error=${encodeURIComponent(potongan.tolakVoucher)}`);
-
-  const discount = Math.min(subtotal, diskonManual + potongan.total);
-  const dpp = Math.max(0, subtotal - discount);
-  // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
-  const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
 
   // "Bayar & Selesai" memaksa lunas; "Simpan" pakai status turunan dari jumlah bayar.
   const finalize = String(formData.get("finalize") ?? "") === "1";
   const paidStatus = finalize ? "Lunas" : String(formData.get("paid_status") ?? "Belum Lunas");
+
+  // Poin pelanggan dipakai setelah promo/voucher/diskon golongan, persis urutan
+  // kasir petshop (permintaan Pak Aldi, meeting 14 Agustus).
+  //
+  // Hanya berlaku saat tagihan LUNAS: saldo poin baru dipotong di situ, dan
+  // memberi potongan tanpa memotong saldo berarti poin yang sama bisa dipakai
+  // berkali-kali lewat tombol Simpan.
+  const poin = await bacaPoinPelanggan(supabase, v?.customer_id ?? null);
+  const sebelumPoin = Math.min(subtotal, diskonManual + potongan.total);
+  const poinDipakai = paidStatus === "Lunas"
+    ? poinTerpakai(Number(formData.get("poinDigunakan")) || 0, poin.saldo, subtotal - sebelumPoin)
+    : 0;
+  const potonganPoin = poinDipakai * RUPIAH_PER_POIN;
+
+  const discount = Math.min(subtotal, sebelumPoin + potonganPoin);
+  const dpp = Math.max(0, subtotal - discount);
+  // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
+  const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
   const dpAmount = paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
@@ -285,6 +304,7 @@ export async function bayarVisit(formData: FormData) {
       // terhubung ke barang, sehingga retur/laporan modal tidak bisa menilainya.
       .insert(rows.map((l) => ({
         invoice_id: existing.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
+        diskon_persen: l.diskon_persen ?? 0,
         item_id: l.item_id, hpp: l.item_id ? (hppBaru.get(l.item_id) ?? 0) : null,
       })));
     if (itErr) redirect(`${back}?error=${encodeURIComponent(itErr.message)}`);
@@ -348,6 +368,7 @@ export async function bayarVisit(formData: FormData) {
     .from("invoice_items")
     .insert(rows.map((l) => ({
       invoice_id: inv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
+      diskon_persen: l.diskon_persen ?? 0,
       item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
     })));
   if (itErr) {
@@ -385,6 +406,16 @@ export async function bayarVisit(formData: FormData) {
     });
   }
 
+  // Poin: dipakai & didapat dicatat saat tagihan benar-benar LUNAS. Kalau dicatat
+  // saat DP, pelanggan sudah dapat poin atas uang yang belum masuk.
+  if (paidStatus === "Lunas") {
+    await catatPoinKlinik(supabase, {
+      customerId: v?.customer_id ?? null, ref: invoiceNo,
+      dipakai: poinDipakai, totalDibayar: total,
+      rupiahPerPoin: poin.rupiahPerPoin, saldoAwal: poin.saldo,
+    });
+  }
+
   if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
   redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
@@ -409,6 +440,7 @@ export async function bayarRombongan(formData: FormData) {
   const back = `/klinik/pembayaran/${visitId}`;
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
   const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
+  const poinDiminta = Number(formData.get("poinDigunakan")) || 0;
 
   const { data: { user } } = await supabase.auth.getUser();
   const klinikShift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;
@@ -468,7 +500,7 @@ export async function bayarRombongan(formData: FormData) {
     }
 
     const rows = await barisTagihanVisit(supabase, b.visitId, String(v.poli ?? "Poli Umum"));
-    const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+    const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
     const potonganPet = await hitungPotonganKlinik(supabase, {
       branchId: v.branch_id ?? null, customerId: v.customer_id ?? null, rows,
     });
@@ -493,10 +525,22 @@ export async function bayarRombongan(formData: FormData) {
   }
   const voucherPerPet = bagiPotongan(dasarPerPet, voucherTotal);
 
+  // Poin dipakai untuk SATU kedatangan, lalu dibagi proporsional ke nota tiap hewan
+  // — perlakuannya persis voucher (permintaan Pak Aldi: poin di klinik harus sama
+  // seperti di petshop).
+  const poin = await bacaPoinPelanggan(supabase, rombongan.customerId ?? null);
+  const dasarSetelahVoucher = dasarPerPet.map((d, i) => Math.max(0, d - voucherPerPet[i]));
+  const poinDipakai = poinTerpakai(
+    poinDiminta, poin.saldo, dasarSetelahVoucher.reduce((a, d) => a + d, 0),
+  );
+  const poinPerPet = bagiPotongan(dasarSetelahVoucher, poinDipakai * RUPIAH_PER_POIN);
+
   // TAHAP 2 — terbitkan notanya satu per satu.
+  let poinTerpakaiRupiah = 0;
+  let totalDibayarRombongan = 0;
   for (const [idx, s] of siap.entries()) {
     const { b, rows, subtotal, branchId } = s;
-    const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx]);
+    const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
     const dpp = Math.max(0, subtotal - discount);
     const { tax, total } = tambahPpn(dpp, pajakSettings);
 
@@ -520,6 +564,7 @@ export async function bayarRombongan(formData: FormData) {
     const { hppPerBaris, totalHpp } = await potongStokObat(supabase, branchId, rows, invoiceNo);
     await supabase.from("invoice_items").insert(rows.map((l) => ({
       invoice_id: inv.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
+      diskon_persen: l.diskon_persen ?? 0,
       item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
     })));
 
@@ -542,7 +587,22 @@ export async function bayarRombongan(formData: FormData) {
         lines: [{ code: "5101", debit: totalHpp, credit: 0 }, { code: "1301", debit: 0, credit: totalHpp }],
       });
     }
+    // Poin yang benar-benar terpakai dihitung dari nota yang BERHASIL terbit —
+    // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan.
+    poinTerpakaiRupiah += poinPerPet[idx];
+    totalDibayarRombongan += total;
     jumlahLunas++;
+  }
+
+  if (jumlahLunas > 0) {
+    await catatPoinKlinik(supabase, {
+      customerId: rombongan.customerId ?? null,
+      ref: `Rombongan ${rombongan.customerName ?? ""}`.trim(),
+      dipakai: Math.floor(poinTerpakaiRupiah / RUPIAH_PER_POIN),
+      totalDibayar: totalDibayarRombongan,
+      rupiahPerPoin: poin.rupiahPerPoin,
+      saldoAwal: poin.saldo,
+    });
   }
 
   if (rombongan.customerId) await recomputeCustomerTier(supabase, rombongan.customerId);

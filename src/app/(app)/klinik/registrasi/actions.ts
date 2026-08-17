@@ -67,14 +67,18 @@ async function daftar(formData: FormData): Promise<string[]> {
     customerId = created!.id;
   }
 
-  // Nomor antrian [Huruf][3 digit] per cabang per hari (Addendum §4). Dibaca SEKALI
-  // lalu ditambah di memori: kalau dibaca ulang tiap hewan, tiga kunjungan yang
-  // dibuat dalam hitungan milidetik bisa dapat nomor yang sama.
+  // Nomor antrian <KODE CABANG>-<Huruf><3 digit> per cabang per hari (Addendum §4 +
+  // keputusan meeting 14 Agustus). Dibaca SEKALI lalu ditambah di memori: kalau
+  // dibaca ulang tiap hewan, tiga kunjungan yang dibuat dalam hitungan milidetik
+  // bisa dapat nomor yang sama.
   const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
-  const { data: todayQ } = await supabase
-    .from("visits").select("queue_number")
-    .eq("branch_id", branchId).gte("created_at", startOfDay.toISOString());
+  const [{ data: todayQ }, { data: cabang }] = await Promise.all([
+    supabase.from("visits").select("queue_number")
+      .eq("branch_id", branchId).gte("created_at", startOfDay.toISOString()),
+    supabase.from("branches").select("code").eq("id", branchId).maybeSingle(),
+  ]);
   const nomorTerpakai = (todayQ ?? []).map((v) => v.queue_number as string);
+  const kodeCabang = cabang?.code ?? null;
 
   const visitIds: string[] = [];
 
@@ -119,7 +123,7 @@ async function daftar(formData: FormData): Promise<string[]> {
       finalPetId = pet!.id;
     }
 
-    const queueNumber = nextQueueNumber(poli, nomorTerpakai);
+    const queueNumber = nextQueueNumber(poli, nomorTerpakai, kodeCabang);
     nomorTerpakai.push(queueNumber);
 
     const { data: visit, error: visitErr } = await supabase

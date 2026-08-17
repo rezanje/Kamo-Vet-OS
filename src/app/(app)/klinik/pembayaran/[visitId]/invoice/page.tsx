@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { nilaiBaris } from "@/lib/tagihan-klinik";
 import { PrintButton } from "../PrintButton";
 
 type Rel<T> = T | T[] | null;
@@ -26,7 +27,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
   if (!invoice) notFound();
 
   const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at");
+    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen").eq("invoice_id", invoice.id).order("created_at");
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
@@ -82,6 +83,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
               <th style={{ width: 28 }}>No</th><th>Deskripsi</th>
               <th style={{ textAlign: "center", width: 50 }}>Qty</th>
               <th style={{ textAlign: "right", width: 110 }}>Harga</th>
+              <th style={{ textAlign: "center", width: 56 }}>Disk</th>
               <th style={{ textAlign: "right", width: 120 }}>Jumlah</th>
             </tr>
           </thead>
@@ -92,7 +94,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
                 <td style={{ fontWeight: 500 }}>{it.deskripsi}</td>
                 <td style={{ textAlign: "center" }}>{it.qty}</td>
                 <td style={{ textAlign: "right" }}>{rp(it.harga)}</td>
-                <td style={{ textAlign: "right" }}>{rp(it.qty * it.harga)}</td>
+                <td style={{ textAlign: "center" }}>{Number(it.diskon_persen) > 0 ? `${Number(it.diskon_persen)}%` : "—"}</td>
+                <td style={{ textAlign: "right" }}>{rp(nilaiBaris(it))}</td>
               </tr>
             ))}
           </tbody>

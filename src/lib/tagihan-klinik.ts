@@ -18,7 +18,30 @@ type AnyClient = any;
 
 export type BarisTagihan = {
   deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null;
+  /** Diskon per baris dalam persen (0–100). Meeting 14 Agustus. */
+  diskon_persen?: number;
 };
+
+/**
+ * Nilai satu baris tagihan setelah diskon persennya sendiri.
+ *
+ * Dipakai layar DAN server. Diskon baris berlaku SEBELUM promo/voucher/diskon
+ * golongan, sama seperti urutan di kasir petshop: potongan tingkat transaksi
+ * menghitung dari harga yang sudah didiskon per barang, bukan harga daftar.
+ */
+export function nilaiBaris(l: { qty: number; harga: number; diskon_persen?: number | null }): number {
+  const qty = Number(l.qty) || 0;
+  const harga = Number(l.harga) || 0;
+  const persen = Math.min(100, Math.max(0, Number(l.diskon_persen) || 0));
+  return qty * harga * (1 - persen / 100);
+}
+
+/** Harga satuan setelah diskon baris — dasar hitung promo & voucher. */
+export function hargaNetto(l: { harga: number; diskon_persen?: number | null }): number {
+  const harga = Number(l.harga) || 0;
+  const persen = Math.min(100, Math.max(0, Number(l.diskon_persen) || 0));
+  return harga * (1 - persen / 100);
+}
 
 /**
  * Baris tagihan satu kunjungan, diambil dari resep & tindakan yang diinput dokter.
@@ -87,7 +110,7 @@ export async function perkiraanTagihan(
       barisTagihanVisit(supabase, visitId, poliPerVisit.get(visitId) ?? "Poli Umum"),
       gerbangConsent(supabase, visitId),
     ]);
-    const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+    const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
     const { total } = tambahPpn(subtotal, pajak);
     hasil.set(visitId, { total, bisaDibayar: gate });
   }));
@@ -198,6 +221,10 @@ export type BekalPotongan = {
   infoBarang: Record<string, import("./harga-golongan").BarangDiskon>;
   golonganPersen: number;
   hariIni: string;
+  /** Poin pelanggan — klinik memakai mesin loyalty yang sama dengan petshop
+   *  (permintaan Pak Aldi, meeting 14 Agustus). */
+  poinSaldo: number;
+  rupiahPerPoin: number | null;
 };
 
 /**
@@ -223,14 +250,14 @@ export async function bekalPotonganKlinik(
       .eq("is_active", true),
     customerId
       ? supabase.from("customers")
-          .select("category_id, customer_categories(diskon_persen, is_active)")
+          .select("points, category_id, customer_categories(diskon_persen, rupiah_per_poin, is_active)")
           .eq("id", customerId).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
 
   const rel = cust?.data?.customer_categories as
-    | { diskon_persen: number; is_active: boolean }
-    | { diskon_persen: number; is_active: boolean }[] | null | undefined;
+    | { diskon_persen: number; rupiah_per_poin: number; is_active: boolean }
+    | { diskon_persen: number; rupiah_per_poin: number; is_active: boolean }[] | null | undefined;
   const kat = Array.isArray(rel) ? rel[0] : rel;
 
   const [aturanDiskon, infoMap] = kat?.is_active
@@ -248,6 +275,8 @@ export async function bekalPotonganKlinik(
     infoBarang: Object.fromEntries(infoMap),
     golonganPersen: kat?.is_active ? Number(kat.diskon_persen) : 0,
     hariIni,
+    poinSaldo: Number(cust?.data?.points) || 0,
+    rupiahPerPoin: kat?.is_active ? Number(kat.rupiah_per_poin) : null,
   };
 }
 

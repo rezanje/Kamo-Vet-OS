@@ -9,7 +9,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { voidAndReissue } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaRombongan } from "@/lib/rombongan-server";
-import { perkiraanTagihan, bekalPotonganKlinik } from "@/lib/tagihan-klinik";
+import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 
 type Rel<T> = T | T[] | null;
@@ -67,8 +67,8 @@ export default async function PembayaranPage({
     .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
-    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id").eq("invoice_id", invoice.id).order("created_at")
-    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null }[] };
+    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen").eq("invoice_id", invoice.id).order("created_at")
+    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number }[] };
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -121,7 +121,7 @@ export default async function PembayaranPage({
 
   // Split obat vs jasa dari kolom `jenis` (2 tabel gaya referensi).
   const sourceItems = invoice
-    ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat", item_id: l.item_id ?? null }))
+    ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat", item_id: l.item_id ?? null, diskon_persen: Number(l.diskon_persen) || 0 }))
     : prefill;
   const initialObat = sourceItems.filter((r) => r.jenis !== "jasa");
   const initialJasa = sourceItems.filter((r) => r.jenis === "jasa");
@@ -299,6 +299,7 @@ export default async function PembayaranPage({
               jumlahPasien={belumDitagih.length - tertahanConsent.length}
               total={totalAkanDitagih}
               tertahan={tertahanConsent.map((b) => b.hewan)}
+              bekal={bekal}
             />
           )}
 
@@ -387,10 +388,16 @@ export default async function PembayaranPage({
               </span>
             </div>
             <table className="tbl">
-              <thead><tr><th>Item</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>Subtotal</th></tr></thead>
+              <thead><tr><th>Item</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "center" }}>Disk %</th><th style={{ textAlign: "right" }}>Subtotal</th></tr></thead>
               <tbody>
                 {(invItems ?? []).map((l, i) => (
-                  <tr key={i}><td style={{ fontWeight: 500 }}>{l.deskripsi}</td><td style={{ textAlign: "center" }}>{l.qty}</td><td style={{ textAlign: "right" }}>{rp(l.harga)}</td><td style={{ textAlign: "right" }}>{rp(l.qty * l.harga)}</td></tr>
+                  <tr key={i}>
+                    <td style={{ fontWeight: 500 }}>{l.deskripsi}</td>
+                    <td style={{ textAlign: "center" }}>{l.qty}</td>
+                    <td style={{ textAlign: "right" }}>{rp(l.harga)}</td>
+                    <td style={{ textAlign: "center" }}>{Number(l.diskon_persen) > 0 ? `${Number(l.diskon_persen)}%` : "—"}</td>
+                    <td style={{ textAlign: "right" }}>{rp(nilaiBaris(l))}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>

@@ -9,9 +9,13 @@ import { METODE_BAYAR } from "@/lib/metode-bayar";
 import { hitungPromoKeranjang } from "@/lib/promo-hitung";
 import { diskonGolonganKeranjang } from "@/lib/harga-golongan";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
-import type { BekalPotongan } from "@/lib/tagihan-klinik";
+import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 
-type Line = { deskripsi: string; qty: number; harga: number; item_id?: string | null };
+type Line = {
+  deskripsi: string; qty: number; harga: number; item_id?: string | null;
+  /** Diskon baris dalam persen — permintaan Pak Aldi, meeting 14 Agustus. */
+  diskon_persen?: number;
+};
 export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number };
 type Patient = {
   photo: string | null; name: string; species: string; owner: string; phone: string; address: string;
@@ -27,9 +31,9 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   master: MasterItem[]; listId: string;
 }) {
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const add = () => setRows([...rows, { deskripsi: "", qty: 1, harga: 0, item_id: null }]);
+  const add = () => setRows([...rows, { deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0 }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
-  const subtotal = rows.reduce((a, r) => a + r.qty * r.harga, 0);
+  const subtotal = rows.reduce((a, r) => a + nilaiBaris(r), 0);
 
   // Cocokkan ketikan ke master SKU. Kalau kena, item_id + harga jual ikut terisi
   // supaya baris ini memotong stok saat disimpan; kalau tidak kena, item_id
@@ -59,7 +63,7 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
           diberi lebar minimum lalu digeser mendatar, sama seperti tabel lain. */}
       <div style={{ overflowX: "auto" }}>
       <table className="tbl" style={{ minWidth: 520 }}>
-        <thead><tr><th style={{ width: 26 }}>No.</th><th style={{ minWidth: 180 }}>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th><th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
+        <thead><tr><th style={{ width: 26 }}>No.</th><th style={{ minWidth: 180 }}>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th><th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 66, textAlign: "center" }}>Disk %</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
@@ -74,11 +78,22 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
               </td>
               <td><input className="fi" type="number" min={1} value={r.qty} onChange={(e) => set(i, { qty: Number(e.target.value) })} style={{ textAlign: "center" }} /></td>
               <td><input className="fi" type="number" min={0} step="any" value={r.harga} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
-              <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(r.qty * r.harga)}</td>
+              <td>
+                <input className="fi" type="number" min={0} max={100} step="any"
+                  value={r.diskon_persen ?? 0}
+                  onChange={(e) => set(i, { diskon_persen: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
+                  style={{ textAlign: "center" }} />
+              </td>
+              <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>
+                {rp(nilaiBaris(r))}
+                {(r.diskon_persen ?? 0) > 0 && (
+                  <div style={{ fontSize: 9, color: "var(--td)", textDecoration: "line-through" }}>{rp(r.qty * r.harga)}</div>
+                )}
+              </td>
               <td style={{ textAlign: "center" }}><i className="ti ti-x" onClick={() => del(i)} style={{ cursor: "pointer", color: "#dc2626" }} /></td>
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", fontSize: 10.5, padding: "10px 0" }}>Belum ada item.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", fontSize: 10.5, padding: "10px 0" }}>Belum ada item.</td></tr>}
         </tbody>
       </table>
       </div>
@@ -104,12 +119,14 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
   const [voucher, setVoucher] = useState("");
 
   const barisSemua = [...obat, ...jasa].filter((r) => r.deskripsi.trim() && r.qty > 0);
-  const subtotal = barisSemua.reduce((a, r) => a + r.qty * r.harga, 0);
+  // Diskon per baris dipotong lebih dulu; promo/voucher/golongan menghitung dari
+  // harga yang sudah didiskon, urutannya sama dengan kasir petshop.
+  const subtotal = barisSemua.reduce((a, r) => a + nilaiBaris(r), 0);
 
   // Potongan ditampilkan di layar dengan rumus yang sama dengan server. Server
   // tetap menghitung ulang saat menyimpan — ini supaya kasir bisa menyebut angka
   // ke pemilik SEBELUM menekan bayar, bukan supaya layar menentukan uang.
-  const barisPotongan = barisSemua.map((r) => ({ item_id: r.item_id ?? "", qty: r.qty, harga: r.harga }));
+  const barisPotongan = barisSemua.map((r) => ({ item_id: r.item_id ?? "", qty: r.qty, harga: hargaNetto(r) }));
   const promoVal = hitungPromoKeranjang(bekal.promos, barisPotongan).reduce((a, p) => a + p.potongan, 0);
   const golonganVal = diskonGolonganKeranjang(
     barisPotongan, bekal.aturanDiskon, bekal.golonganPersen, new Map(Object.entries(bekal.infoBarang)),
@@ -122,7 +139,15 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
   const voucherVal = voucherRow && !tolakVoucher ? potonganVoucher(dasarVoucher, voucherRow) : 0;
   const potonganOtomatis = Math.min(subtotal, promoVal + golonganVal + voucherVal);
 
-  const dpp = Math.max(0, subtotal - discount - potonganOtomatis);
+  const dppSebelumPoin = Math.max(0, subtotal - discount - potonganOtomatis);
+
+  // Poin: mesin & batasnya sama dengan kasir petshop (1 poin = Rp1), dan hanya
+  // dipotong saat tagihan dilunasi — server menegakkan ulang batas ini.
+  const [poinPakai, setPoinPakai] = useState(0);
+  const poinMaks = Math.min(bekal.poinSaldo, dppSebelumPoin);
+  const poinDipakai = Math.min(Math.max(0, Math.floor(poinPakai)), poinMaks);
+
+  const dpp = Math.max(0, dppSebelumPoin - poinDipakai);
   // Tarif PPN datang dari pengaturan Mode PKP, BUKAN dipatok 11% di sini.
   // Dulu angkanya hardcoded sementara server sudah benar → layar menagih
   // Rp11.330 lebih besar dari yang tersimpan di invoice.
@@ -149,6 +174,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
       <input type="hidden" name="items" value={items} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="voucherCode" value={voucher} />
+      <input type="hidden" name="poinDigunakan" value={poinDipakai} />
       <input type="hidden" name="paid_status" value={paidStatus} />
       <input type="hidden" name="metode_bayar" value={metode} />
       <input type="hidden" name="dp_amount" value={totalDiterima} />
@@ -215,6 +241,21 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
                 <div style={{ fontSize: 10, color: "#b91c1c", textAlign: "right", marginTop: -2 }}>{tolakVoucher}</div>
               )}
               {voucherVal > 0 && <SumRow label="Potongan voucher" value={`- ${rp(voucherVal)}`} />}
+
+              {/* Poin loyalty — sama seperti kasir petshop: 1 poin = Rp1, hanya
+                  terpotong kalau tagihan dilunasi sekarang. */}
+              {bekal.poinSaldo > 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", gap: 8 }}>
+                  <span style={{ fontSize: 11.5, color: "var(--tm)" }}>
+                    Pakai poin <span style={{ fontSize: 9.5, color: "var(--td)" }}>(saldo {bekal.poinSaldo.toLocaleString("id-ID")})</span>
+                  </span>
+                  <input className="fi" type="number" min={0} max={poinMaks} step={1}
+                    value={poinPakai || ""} placeholder="0"
+                    onChange={(e) => setPoinPakai(Number(e.target.value))}
+                    style={{ width: 100, textAlign: "right" }} />
+                </div>
+              )}
+              {poinDipakai > 0 && <SumRow label="Potongan poin" value={`- ${rp(poinDipakai)}`} />}
 
               <SumRow label={`PPN ${ppnRate}%`} value={rp(tax)} />
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1.5px solid var(--bd)" }}>
