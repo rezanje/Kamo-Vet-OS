@@ -31,6 +31,7 @@ type Baris = {
   pelanggan: string;
   metode: string;
   total: number;
+  retur: number;
   status: string;
 };
 
@@ -57,7 +58,7 @@ export default async function PenjualanRinciPage({
   const mulai = `${dari}T00:00:00+07:00`;
   const akhir = `${sampai}T23:59:59+07:00`;
 
-  const [{ data: sales }, { data: invoices }, { data: cabangList }] = await Promise.all([
+  const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] = await Promise.all([
     supabase
       .from("sales")
       .select("id, no_struk, total, metode_bayar, channel, marketplace_status, created_at, branches(name), customers(name)")
@@ -69,8 +70,16 @@ export default async function PenjualanRinciPage({
       .is("voided_at", null)
       .gte("created_at", mulai).lte("created_at", akhir)
       .order("created_at", { ascending: false }),
+    // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
+    // dan omzet struk itu harus terlihat sudah berkurang di daftar ini.
+    supabase.from("sales_returns").select("sale_id, total"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
   ]);
+
+  const returPerStruk = new Map<string, number>();
+  for (const r of (returs ?? []) as { sale_id: string; total: number }[]) {
+    returPerStruk.set(r.sale_id, (returPerStruk.get(r.sale_id) ?? 0) + (Number(r.total) || 0));
+  }
 
   type SaleRow = {
     id: string; no_struk: string | null; total: number; metode_bayar: string | null;
@@ -93,6 +102,7 @@ export default async function PenjualanRinciPage({
     pelanggan: one(s.customers)?.name ?? "—",
     metode: s.channel ?? s.metode_bayar ?? "—",
     total: Number(s.total) || 0,
+    retur: returPerStruk.get(s.id) ?? 0,
     // Order marketplace baru jadi uang setelah dana cair; POS selalu lunas di kasir.
     status: s.channel ? (s.marketplace_status === "piutang" ? "Belum cair" : "Cair") : "Lunas",
   }));
@@ -109,6 +119,7 @@ export default async function PenjualanRinciPage({
       pelanggan: one(v?.customers ?? null)?.name ?? "—",
       metode: i.metode_bayar ?? "—",
       total: Number(i.total) || 0,
+      retur: 0,               // retur klinik dicatat sebagai pembatalan invoice, bukan retur barang
       status: i.paid_status ?? "—",
     };
   });
@@ -119,7 +130,11 @@ export default async function PenjualanRinciPage({
     .sort((a, b) => b.waktu.localeCompare(a.waktu));
 
   const totalOmzet = rows.reduce((a, r) => a + r.total, 0);
-  const perKanal = (k: Kanal) => rows.filter((r) => r.kanal === k).reduce((a, r) => a + r.total, 0);
+  const totalRetur = rows.reduce((a, r) => a + r.retur, 0);
+  // Omzet yang dipakai per kanal = bersih setelah retur, supaya angka di kartu
+  // ringkasan sama dengan uang yang benar-benar tinggal di perusahaan.
+  const perKanal = (k: Kanal) =>
+    rows.filter((r) => r.kanal === k).reduce((a, r) => a + r.total - r.retur, 0);
 
   return (
     <LaporanPage
@@ -157,7 +172,9 @@ export default async function PenjualanRinciPage({
       ringkasan={
         <KartuAngka items={[
           { label: "Jumlah transaksi", nilai: `${rows.length}x` },
-          { label: "Total omzet", nilai: rp(totalOmzet), warna: "#15803d" },
+          { label: "Omzet kotor", nilai: rp(totalOmzet) },
+          { label: "Retur", nilai: totalRetur ? `− ${rp(totalRetur)}` : "—", warna: totalRetur ? "#b91c1c" : undefined },
+          { label: "Omzet bersih", nilai: rp(totalOmzet - totalRetur), warna: "#15803d" },
           { label: "Kasir (POS)", nilai: rp(perKanal("POS")) },
           { label: "Online", nilai: rp(perKanal("Online")) },
           { label: "Klinik", nilai: rp(perKanal("Klinik")) },
@@ -176,7 +193,8 @@ export default async function PenjualanRinciPage({
                 <th>Pelanggan</th>
                 <th style={{ width: 110 }}>Pembayaran</th>
                 <th style={{ width: 90, textAlign: "center" }}>Status</th>
-                <th style={{ width: 120, textAlign: "right" }}>Total</th>
+                <th style={{ width: 110, textAlign: "right" }}>Retur</th>
+                <th style={{ width: 120, textAlign: "right" }}>Total bersih</th>
               </tr>
             </thead>
             <tbody>
@@ -197,16 +215,25 @@ export default async function PenjualanRinciPage({
                       {r.status}
                     </span>
                   </td>
-                  <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 700 }}>{rp(r.total)}</td>
+                  <td style={{ textAlign: "right", fontSize: 10.5, color: r.retur ? "#b91c1c" : "var(--td)" }}>
+                    {r.retur ? `− ${rp(r.retur)}` : "—"}
+                  </td>
+                  <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 700 }}>
+                    {rp(r.total - r.retur)}
+                    {r.retur > 0 && (
+                      <div style={{ fontSize: 9, fontWeight: 400, color: "var(--td)" }}>dari {rp(r.total)}</div>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {rows.length === 0 && <TabelKosong kolom={8} pesan="Belum ada transaksi di rentang tanggal ini." />}
+              {rows.length === 0 && <TabelKosong kolom={9} pesan="Belum ada transaksi di rentang tanggal ini." />}
             </tbody>
           </table>
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
           Invoice klinik yang dibatalkan tidak ditampilkan. Order online berstatus &quot;Belum cair&quot;
-          berarti dananya masih ditahan marketplace.
+          berarti dananya masih ditahan marketplace. Struk yang sebagian barangnya dikembalikan tampil
+          dengan nilai bersihnya — retur dihitung berapa pun tanggal returnya.
         </div>
       </div>
     </LaporanPage>
