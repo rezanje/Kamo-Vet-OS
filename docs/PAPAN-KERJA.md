@@ -23,7 +23,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 19 / 42 · P1 + blok keuangan tuntas |
+| Permintaan meeting 14 Agustus selesai | 24 / 42 · P1, keuangan, klinik tuntas |
 | Sisa pekerjaan pra-meeting | 0 / 10 |
 | Nunggu jawaban klien | 3 hal |
 
@@ -68,14 +68,14 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 
 | # | Pekerjaan | Prioritas | Status | Beres |
 |---|---|---|---|---|
-| M19 | Pembayaran rombongan disamakan dengan pembayaran biasa; tombol "lunasi semua" dihapus | P2 | ⬜ | |
-| M20 | Rincian tagihan: tambah diskon persen per item | P2 | ⬜ | |
+| M19 | Pembayaran rombongan disamakan dengan pembayaran biasa; tombol "lunasi semua" dihapus | P2 | ✅ | 17 Agu 2026 |
+| M20 | Rincian tagihan: tambah diskon persen per item | P2 | ✅ | 17 Agu 2026 |
 | M21 | Tambah obat di rekam medis tersambung master barang | P1 | ✅ | 17 Agu 2026 · dicek: sudah live, semua baris obat tertaut master |
-| M22 | Antrian: filter tanggal (bisa mundur) + filter cabang | P2 | ⬜ | |
-| M23 | Nomor antrian pakai kode awalan per cabang | P2 | ⬜ | |
+| M22 | Antrian: filter tanggal (bisa mundur) + filter cabang | P2 | ✅ | 17 Agu 2026 |
+| M23 | Nomor antrian pakai kode awalan per cabang | P2 | ✅ | 17 Agu 2026 · mis. CMGG-A001 |
 | M24 | Rawat inap: total hari otomatis masuk tagihan saat pasien pulang | P2 | ⏸ | nunggu keputusan Pak Aldi |
 | M25 | Formulir persetujuan diikat ke jenis tindakan; tidak bisa bayar sebelum ditandatangani | P2 | ⏸ | nunggu daftar tindakan + klausul |
-| M26 | Promo, voucher, poin muncul di klinik persis seperti di petshop | P2 | ⬜ | |
+| M26 | Promo, voucher, poin muncul di klinik persis seperti di petshop | P2 | ✅ | 17 Agu 2026 · poin nyusul promo & voucher |
 
 ### A4. CRM & promo
 
