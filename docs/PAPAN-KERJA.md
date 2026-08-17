@@ -23,7 +23,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 12 / 42 · semua P1 tuntas |
+| Permintaan meeting 14 Agustus selesai | 19 / 42 · P1 + blok keuangan tuntas |
 | Sisa pekerjaan pra-meeting | 0 / 10 |
 | Nunggu jawaban klien | 3 hal |
 
@@ -92,13 +92,13 @@ hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher k
 
 | # | Pekerjaan | Prioritas | Status | Beres |
 |---|---|---|---|---|
-| M30 | Transaksi berulang: tampilkan sudah berjalan berapa kali + rincian sampai nomor jurnal | P2 | ⬜ | |
-| M31 | Hapus dua pasang menu kembar (Transaksi/Jurnal Berulang, Kas Keluar/Pencatatan Beban) | P2 | ⬜ | |
-| M32 | Pencatatan beban: filter kategori & cabang, pencarian, pengurutan | P2 | ⬜ | |
-| M33 | Jurnal umum: filter + kolom cabang | P2 | ⬜ | |
-| M34 | Rincian hutang bisa diklik ke pembelian — ke PO maupun fakturnya | P2 | ⬜ | |
-| M35 | Semua nomor dokumen bisa diklik di mana pun (laporan, dashboard) | P2 | ⬜ | |
-| M36 | Faktur penjualan backoffice: kode berbeda untuk klinik dan petshop | P2 | ⬜ | |
+| M30 | Transaksi berulang: tampilkan sudah berjalan berapa kali + rincian sampai nomor jurnal | P2 | ✅ | 17 Agu 2026 |
+| M31 | Hapus dua pasang menu kembar (Transaksi/Jurnal Berulang, Kas Keluar/Pencatatan Beban) | P2 | ✅ | 17 Agu 2026 · riwayat beban digabung ke Kas Keluar |
+| M32 | Pencatatan beban: filter kategori & cabang, pencarian, pengurutan | P2 | ✅ | 17 Agu 2026 · di layar Kas Keluar |
+| M33 | Jurnal umum: filter + kolom cabang | P2 | ✅ | 17 Agu 2026 |
+| M34 | Rincian hutang bisa diklik ke pembelian — ke PO maupun fakturnya | P2 | ✅ | 17 Agu 2026 |
+| M35 | Semua nomor dokumen bisa diklik di mana pun (laporan, dashboard) | P2 | ✅ | 17 Agu 2026 · satu pintu /dokumen/<nomor> |
+| M36 | Faktur penjualan backoffice: kode berbeda untuk klinik dan petshop | P2 | ✅ | 17 Agu 2026 · seri FJK vs FJ |
 
 ### A6. Dashboard, peringatan, laporan
 
