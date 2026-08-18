@@ -11,6 +11,7 @@ import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } 
 import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
 import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
+import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
 export type ItemRow = {
   id: string; code: string; name: string; harga: number; kategori: string; stok: number;
@@ -30,6 +31,7 @@ export type CustRow = {
   diskonPersen?: number;      // diskon DASAR golongan (customer_categories)
   rupiahPerPoin?: number;     // belanja sebesar ini = 1 poin
   golonganId?: string | null; // kunci ke pengecualian diskon per produk (0082)
+  ulasan?: StatusUlasan | null; // status ulasan terkini (mis. "Bintang 1 Google")
 };
 // Bentuknya sama persis dengan lib/voucher — layar kasir perlu syarat lengkapnya
 // (plafon, minimal belanja, boleh gabung promo) untuk menolak SEBELUM bayar.
@@ -328,6 +330,12 @@ export function KasirClient({
               </span>
               <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3 }}>Kategori</div>
             </div>
+            {cust.ulasan && (
+              <div style={{ textAlign: "center" }}>
+                <UlasanBadge s={cust.ulasan} />
+                <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3 }}>Status ulasan</div>
+              </div>
+            )}
             <CustStat icon="ti-shopping-bag" label={`${cust.trx}x · ${rp(cust.belanja)}`} sub="Total transaksi" />
             <CustStat icon="ti-trending-up" label={rp(cust.trx ? cust.belanja / cust.trx : 0)} sub="Rata-rata transaksi" />
           </>

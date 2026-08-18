@@ -1,6 +1,6 @@
 # Papan Kerja VetOS — satu-satunya daftar yang dipantau
 
-**Diperbarui** 17 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
+**Diperbarui** 19 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
 
 > **Catatan uji 17 Agustus:** blok stok opname (M1–M10) sudah diuji langsung di aplikasi —
 > daftar 30 barang otomatis, kunci per barang yang bertahan setelah layar ditutup, buka kunci,
@@ -24,6 +24,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
 | Permintaan meeting 14 Agustus selesai | 37 / 42 · sisa: AI WhatsApp + 4 yang nunggu klien |
+| Permintaan susulan di luar meeting | 1 / 1 · status ulasan pelanggan (M43) |
 | Sisa pekerjaan pra-meeting | 1 / 10 · produksi own brand tuntas |
 | Nunggu jawaban klien | 3 hal |
 
@@ -84,6 +85,7 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 | M27 | Voucher bisa diikat ke pelanggan tertentu atau golongan, bukan cuma cabang | P2 | ✅ | 18 Agu 2026 |
 | M28 | Pengingat aktivasi voucher muncul di layar admin klinik | P3 | ✅ | 18 Agu 2026 · di layar antrian |
 | M29 | Loyalty: belanja dapat poin + tutup poin akhir tahun | P3 | ✅ | 18 Agu 2026 · tutup poin per tahun, khusus OWNER |
+| M43 | Status ulasan pelanggan yang bisa ditambah sendiri (mis. bintang 1 Google) | P2 | ✅ | 19 Agu 2026 · permintaan komisaris; muncul juga di kasir & antrian klinik |
 
 Latar: Pak Aldi mau menggiring pelanggan klinik ke petshop lewat voucher yang hanya berlaku
 hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher kertas.

@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { LiveRefresh } from "./LiveRefresh";
 import { estimatedWaitMinutes } from "@/lib/queue";
 import { hariIniWIB } from "@/lib/tanggal";
+import { UlasanBadge } from "@/components/UlasanBadge";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -58,7 +59,7 @@ export default async function AntrianPage({
 
   let query = supabase
     .from("visits")
-    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, pets(name, species, breed, dob, photo_url), customers(name, phone), branches(code)")
+    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code)")
     .gte("created_at", mulaiHari).lte("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
@@ -283,6 +284,9 @@ export default async function AntrianPage({
                       <td>
                         <div style={{ fontSize: 11.5 }}>{cust?.name ?? "—"}</div>
                         <div style={{ fontSize: 10, color: "var(--tm)" }}>{cust?.phone}</div>
+                        {one(cust?.customer_review_statuses ?? null) && (
+                          <div style={{ marginTop: 3 }}><UlasanBadge s={one(cust!.customer_review_statuses)!} size={9.5} /></div>
+                        )}
                       </td>
                       <td style={{ fontSize: 11, color: "var(--tm)" }}>{branch?.code ?? "—"}</td>
                       <td>

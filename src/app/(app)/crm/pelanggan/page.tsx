@@ -17,7 +17,8 @@ export default async function PelangganPage({ searchParams }: {
     .from("customers")
     .select(
       "id, name, phone, email, dob, address, tier, kategori, category_id, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
-        "customer_categories(nama, diskon_persen), " +
+        "review_status_id, review_catatan, review_updated_at, " +
+        "customer_categories(nama, diskon_persen), customer_review_statuses(nama, warna, nada), " +
         "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)"
     )
     .order("total_spending", { ascending: false });
@@ -94,9 +95,17 @@ export default async function PelangganPage({ searchParams }: {
   }));
 
   // Golongan aktif untuk dropdown; diskonnya ditampilkan biar admin sadar dampaknya.
-  const { data: katData } = await supabase
-    .from("customer_categories").select("id, nama, diskon_persen").eq("is_active", true).order("nama");
+  const [{ data: katData }, { data: ulasanData }] = await Promise.all([
+    supabase.from("customer_categories").select("id, nama, diskon_persen").eq("is_active", true).order("nama"),
+    supabase.from("customer_review_statuses").select("id, nama, warna, nada").eq("is_active", true).order("nama"),
+  ]);
   const categories = (katData ?? []).map((k) => ({ ...k, diskon_persen: Number(k.diskon_persen) }));
+  const statusUlasan = (ulasanData ?? []) as { id: string; nama: string; warna: string; nada: string }[];
 
-  return <PelangganClient cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin} categories={categories} />;
+  return (
+    <PelangganClient
+      cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin}
+      categories={categories} statusUlasan={statusUlasan}
+    />
+  );
 }

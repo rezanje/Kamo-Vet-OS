@@ -34,7 +34,7 @@ export default async function KasirPage({
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
     supabase.from("customers")
-      .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active)")
+      .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)")
       .order("name"),
     supabase.from("sales").select("customer_id, total"),
     supabase
@@ -156,6 +156,7 @@ export default async function KasirPage({
     id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
     category_id: string | null;
     customer_categories: Rel<{ nama: string; diskon_persen: number; rupiah_per_poin: number; is_active: boolean }>;
+    customer_review_statuses: Rel<{ nama: string; warna: string; nada: string }>;
   };
   const custRows: CustRow[] = ((customers ?? []) as unknown as CustRaw[]).map((c) => {
     const gol = one(c.customer_categories);
@@ -168,6 +169,9 @@ export default async function KasirPage({
       rupiahPerPoin: gol?.is_active ? Number(gol.rupiah_per_poin) : undefined,
       golonganId: gol?.is_active ? c.category_id : null,
       trx: trxCount[c.id] ?? 0, belanja: trxSum[c.id] ?? 0,
+      // Status ulasan ikut dibawa supaya kasir tahu siapa yang dia layani —
+      // yang bernada negatif ditandai jelas begitu pelanggannya dipilih.
+      ulasan: one(c.customer_review_statuses) ?? null,
     };
   });
 

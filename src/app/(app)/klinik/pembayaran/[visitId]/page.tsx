@@ -10,6 +10,7 @@ import { voidAndReissue } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
+import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 
 type Rel<T> = T | T[] | null;
@@ -34,7 +35,7 @@ export default async function PembayaranPage({
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, status, poli, dokter, created_at, branch_id, customer_id, pets(name, species, weight, photo_url), customers(name, phone, address)")
+    .select("id, status, poli, dokter, created_at, branch_id, customer_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
     .eq("id", visitId)
     .maybeSingle();
   if (!visit) notFound();
@@ -51,6 +52,9 @@ export default async function PembayaranPage({
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
+  // Status ulasan pemilik ditaruh di atas layar bayar: kalau dia pernah kasih
+  // bintang 1, kasir klinik tahu sebelum bicara soal uang.
+  const ulasanPemilik = one((cust as { customer_review_statuses?: Rel<StatusUlasan> } | null)?.customer_review_statuses ?? null);
   const activeStep = STEP_BY_STATUS[visit.status] ?? 3;
 
   // Satu pemilik bisa datang membawa beberapa hewan; tagihannya tetap terpisah per
@@ -205,6 +209,19 @@ export default async function PembayaranPage({
       {success === "reissue" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Invoice lama di-void, invoice baru diterbitkan (Belum Lunas).
+        </div>
+      )}
+
+      {ulasanPemilik && (
+        <div className="p2ban" style={{
+          background: `color-mix(in srgb, ${ulasanPemilik.warna} 8%, transparent)`,
+          border: `.5px solid color-mix(in srgb, ${ulasanPemilik.warna} 35%, transparent)`,
+          color: ulasanPemilik.warna,
+        }}>
+          <UlasanBadge s={ulasanPemilik} />
+          <span style={{ marginLeft: 8, color: "var(--tm)" }}>
+            {cust?.review_catatan ?? "Status ulasan pemilik — layani dengan perhatian lebih."}
+          </span>
         </div>
       )}
 

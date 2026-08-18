@@ -83,6 +83,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Promo & Voucher", icon: "ti-speakerphone", ...G, href: "/crm/promo" },
     { label: "Pelanggan", icon: "ti-users-group", ...B, href: "/crm/pelanggan" },
     { label: "Kategori Pelanggan", icon: "ti-crown", ...B, href: "/crm/kategori-pelanggan" },
+    { label: "Status Ulasan", icon: "ti-star-half", ...B, nw: true, href: "/crm/status-ulasan" },
     { label: "Retention (WA)", icon: "ti-brand-whatsapp", ...P },
     { label: "Owner dashboard", icon: "ti-dashboard", ...P },
   ],

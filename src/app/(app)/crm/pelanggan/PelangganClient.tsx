@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { updateKategoriPelanggan } from "./actions";
+import { updateKategoriPelanggan, updateUlasanPelanggan } from "./actions";
+import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
 export type PetRow = {
   id: string; name: string; species: string | null; breed: string | null;
@@ -20,6 +21,8 @@ export type CustomerRow = {
   customer_categories: { nama: string; diskon_persen: number } | { nama: string; diskon_persen: number }[] | null;
   points: number; total_spending: number;
   catatan: string | null; pekerjaan: string | null; sumber_info: string | null;
+  review_status_id: string | null; review_catatan: string | null; review_updated_at: string | null;
+  customer_review_statuses: StatusUlasan | StatusUlasan[] | null;
   created_at: string; pets: PetRow[];
   purchases: Purchase[]; ledger: Ledger[]; stat: UnitStat | null;
 };
@@ -29,6 +32,12 @@ export type CustomerRow = {
 const namaGolongan = (c: CustomerRow) => {
   const k = Array.isArray(c.customer_categories) ? c.customer_categories[0] : c.customer_categories;
   return k?.nama ?? "—";
+};
+
+// Status ulasan terkini; null = pelanggan ini belum pernah dinilai.
+const ulasan = (c: CustomerRow): StatusUlasan | null => {
+  const u = Array.isArray(c.customer_review_statuses) ? c.customer_review_statuses[0] : c.customer_review_statuses;
+  return u ?? null;
 };
 
 const fmt = (n: number) => n.toLocaleString("id-ID");
@@ -127,10 +136,11 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" }: {
+export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "" }: {
   customers: CustomerRow[];
   isAdmin: boolean;
   categories: { id: string; nama: string; diskon_persen: number }[];
+  statusUlasan: (StatusUlasan & { id: string })[];
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
   cariAwal?: string;
 }) {
@@ -246,7 +256,7 @@ export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" 
             <table className="tbl" style={{ minWidth: 500 }}>
               <thead>
                 <tr>
-                  <th>No.</th><th>Nama Pelanggan</th><th>Kategori</th><th>Tier</th>
+                  <th>No.</th><th>Nama Pelanggan</th><th>Kategori</th><th>Ulasan</th><th>Tier</th>
                   <th style={{ textAlign: "right" }}>Total Pembelian</th>
                   <th style={{ textAlign: "center" }}>Anabul</th>
                   <th>Terdaftar Sejak</th><th>Aksi</th>
@@ -263,6 +273,7 @@ export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" 
                       </div>
                     </td>
                     <td><KategoriBadge v={namaGolongan(c)} /></td>
+                    <td>{ulasan(c) ? <UlasanBadge s={ulasan(c)!} size={10} /> : <span style={{ color: "var(--td)", fontSize: 10.5 }}>—</span>}</td>
                     <td><TierBadge c={c} /></td>
                     <td style={{ textAlign: "right", fontWeight: 500, fontSize: 11 }}>{rp(c.total_spending)}</td>
                     <td style={{ textAlign: "center" }}>{c.pets.length}</td>
@@ -275,7 +286,7 @@ export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" 
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada pelanggan.</td></tr>
+                  <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada pelanggan.</td></tr>
                 )}
               </tbody>
             </table>
@@ -297,7 +308,10 @@ export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" 
                   <Av initials={initials(sel.name)} color={colorFor(sel.id)} size={40} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{sel.name}</div>
-                    <div style={{ marginTop: 4, display: "flex", gap: 5 }}><KategoriBadge v={namaGolongan(sel)} /><TierBadge c={sel} /></div>
+                    <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      <KategoriBadge v={namaGolongan(sel)} /><TierBadge c={sel} />
+                      {ulasan(sel) && <UlasanBadge s={ulasan(sel)!} />}
+                    </div>
                     {isAdmin && (
                       <form action={updateKategoriPelanggan} style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
                         <input type="hidden" name="id" value={sel.id} />
@@ -310,6 +324,21 @@ export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" 
                             </option>
                           ))}
                         </select>
+                        <button type="submit" className="btn-acc" style={{ fontSize: 10, padding: "4px 10px" }}>Simpan</button>
+                      </form>
+                    )}
+                    {isAdmin && (
+                      <form action={updateUlasanPelanggan} style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <input type="hidden" name="id" value={sel.id} />
+                        <label style={{ fontSize: 10, color: "var(--tm)" }}>Ulasan:</label>
+                        <select name="review_status_id" defaultValue={sel.review_status_id ?? ""} className="fi"
+                          style={{ width: "auto", fontSize: 11, padding: "4px 8px" }} key={`ulasan-${sel.id}`}>
+                          <option value="">— belum dinilai —</option>
+                          {statusUlasan.map((u) => <option key={u.id} value={u.id}>{u.nama}</option>)}
+                        </select>
+                        <input name="review_catatan" defaultValue={sel.review_catatan ?? ""} className="fi" maxLength={500}
+                          placeholder='mis. "protes soal antrian, 12 Agu"'
+                          style={{ width: 210, fontSize: 11, padding: "4px 8px" }} key={`ulasancat-${sel.id}`} />
                         <button type="submit" className="btn-acc" style={{ fontSize: 10, padding: "4px 10px" }}>Simpan</button>
                       </form>
                     )}
@@ -349,6 +378,15 @@ export function PelangganClient({ customers, isAdmin, categories, cariAwal = "" 
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
                   <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 5 }}>CATATAN</div>
                   <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>{sel.catatan ?? "—"}</div>
+                  {ulasan(sel) && (
+                    <div style={{ marginTop: 8, fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>
+                      <b style={{ color: ulasan(sel)!.warna }}>{ulasan(sel)!.nama}</b>
+                      {sel.review_catatan ? ` — ${sel.review_catatan}` : ""}
+                      {sel.review_updated_at && (
+                        <span style={{ color: "var(--td)" }}> · dicatat {fmtDate(sel.review_updated_at)}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
