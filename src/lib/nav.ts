@@ -184,7 +184,7 @@ export const TILES: Record<string, Tile[]> = {
   pos: [
     { label: "Permintaan Barang", icon: "ti-clipboard-text", ...G, href: "/pos/permintaan" },
     { label: "Pemindahan Barang", icon: "ti-transfer", ...G, href: "/pos/pemindahan" },
-    { label: "Penyesuaian Persediaan", icon: "ti-adjustments-alt", ...G },
+    { label: "Penyesuaian Persediaan", icon: "ti-adjustments-alt", ...G, nw: true, href: "/pos/penyesuaian" },
     // Dua tile ini pola Accurate untuk manufaktur; di VetOS keduanya dilayani satu
     // layar Produksi Own Brand (resep → bahan keluar → barang jadi masuk).
     { label: "Pekerjaan Pesanan", icon: "ti-clipboard-check", ...G, nw: true, href: "/pos/produksi" },

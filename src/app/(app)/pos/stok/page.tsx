@@ -2,7 +2,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { pivotStokPerGudang, type StokBaris } from "@/lib/laporan";
-import { tambahStok } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -54,7 +53,6 @@ export default async function StokPage({
   }
 
   let stock: StockRow[] = [];
-  let items: Item[] = [];
   if (selectedWh) {
     const { data: stockRaw } = await supabase
       .from("stock")
@@ -62,13 +60,6 @@ export default async function StokPage({
       .eq("warehouse_id", selectedWh.id)
       .order("updated_at", { ascending: false });
     stock = (stockRaw ?? []) as unknown as StockRow[];
-
-    const { data: itemsRaw } = await supabase
-      .from("items")
-      .select("id, code, name, unit")
-      .eq("is_active", true)
-      .order("name");
-    items = (itemsRaw ?? []) as unknown as Item[];
   }
 
   return (
@@ -188,41 +179,31 @@ export default async function StokPage({
 
       {!matrixMode && (
       <div className="crm-sec">
-        <SecHeader num="02" title="STOK MASUK (penyesuaian)" desc="Tambah qty ke stok gudang terpilih." />
-        {!selectedWh ? (
-          <div style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Pilih gudang dulu untuk menambah stok.</div>
-        ) : (
-          <form action={tambahStok} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <input type="hidden" name="warehouseId" value={selectedWh.id} />
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <label className="flab">Item *</label>
-              <select className="fi" name="itemId" required>
-                <option value="">Pilih item</option>
-                {items.map((it) => (
-                  <option key={it.id} value={it.id}>{it.code} — {it.name}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: 1, maxWidth: 160 }}>
-              <label className="flab">Qty masuk *</label>
-              <input className="fi" name="qty" type="number" step="any" placeholder="0" required />
-            </div>
-            <div style={{ minWidth: 160 }}>
-              <label className="flab">Gudang</label>
-              <input className="fi" value={selectedWh.name} disabled readOnly />
-            </div>
-            {/* Alasan ikut ke deskripsi jurnalnya — koreksi stok tanpa keterangan
-                mustahil ditelusuri lagi beberapa bulan kemudian. */}
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <label className="flab">Alasan koreksi</label>
-              <input className="fi" name="catatan" maxLength={80} placeholder="mis. stok awal belum tercatat" />
-            </div>
-            <button type="submit" className="btn-acc"><i className="ti ti-plus" /> Tambah Stok</button>
-          </form>
-        )}
-        <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>Qty ditambahkan ke stok yang ada (akumulatif). Gunakan nilai negatif untuk koreksi/pengurangan.</div>
+        <SecHeader
+          num="02"
+          title="KOREKSI STOK"
+          desc="Perubahan stok di luar penjualan & penerimaan dilakukan lewat dokumen Penyesuaian Persediaan."
+        />
+        {/* Form koreksi cepat di layar ini dihapus (S2). Angkanya memang berubah
+            dan jurnalnya benar, tapi tidak meninggalkan dokumen: tidak bernomor,
+            alasannya boleh kosong, dan tidak ada layar yang bisa menjawab "bulan
+            ini berapa barang hilang". Satu pintu, dan pintunya bernomor. */}
+        <div style={{ fontSize: 11.5, color: "var(--tm)", lineHeight: 1.6, marginBottom: 10 }}>
+          Dokumennya bernomor, alasannya wajib diisi (rusak · hilang · kadaluarsa · temuan),
+          dan tiap barang tersimpan lengkap dengan stok sistem sebelum diubah — jadi koreksinya
+          bisa ditelusuri lagi berbulan-bulan kemudian.
+        </div>
+        <Link href={selectedWh ? `/pos/penyesuaian/baru?wh=${selectedWh.id}` : "/pos/penyesuaian/baru"}
+          className="btn-acc" style={{ fontSize: 11.5, textDecoration: "none" }}>
+          <i className="ti ti-adjustments-alt" /> Buat penyesuaian
+        </Link>
+        <Link href="/pos/penyesuaian" className="btn-def"
+          style={{ fontSize: 11.5, textDecoration: "none", marginLeft: 8 }}>
+          Lihat riwayat penyesuaian
+        </Link>
       </div>
       )}
+
     </>
   );
 }

@@ -25,7 +25,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
 | Permintaan meeting 14 Agustus selesai | 37 / 42 · sisa: AI WhatsApp + 4 yang nunggu klien |
 | Permintaan susulan di luar meeting | 1 / 1 · status ulasan pelanggan (M43) |
-| Sisa pekerjaan pra-meeting | 1 / 10 · produksi own brand tuntas |
+| Sisa pekerjaan pra-meeting | 2 / 10 · produksi own brand + penyesuaian persediaan |
 | Nunggu jawaban klien | 3 hal |
 
 ---
@@ -127,7 +127,7 @@ Dari papan progres 14 Agustus, belum tersentuh permintaan meeting.
 | # | Pekerjaan | Modul | Kenapa perlu | Status |
 |---|---|---|---|---|
 | S1 | Produksi own brand: resep produksi · perintah produksi · penyelesaian | Persediaan | SKU gabungan masih dihitung manual, harga pokok barang jadi belum terbentuk | ✅ 18 Agu 2026 |
-| S2 | Penyesuaian persediaan jadi dokumen bernomor + alasan wajib | Persediaan | Koreksi stok belum meninggalkan jejak audit | ⬜ |
+| S2 | Penyesuaian persediaan jadi dokumen bernomor + alasan wajib | Persediaan | Koreksi stok belum meninggalkan jejak audit | ✅ 19 Agu 2026 · form cepat di Stok per Gudang dimatikan, satu pintu lewat dokumen |
 | S3 | WhatsApp otomatis: struk · retensi 7 pemicu · laporan rawat inap | CRM, Kasir, Klinik | Pelanggan dapat struk & pengingat vaksin langsung | ⏸ nunggu token |
 | S4 | Desain cetakan: kop, logo, catatan kaki di 6 layar cetak | Pengaturan | Dokumen keluar ke pihak lain tanpa identitas perusahaan | ⏸ nunggu logo/alamat/NPWP |
 | S5 | Penomoran dokumen bisa diatur sendiri (awalan, digit, reset periode) | Pengaturan | Ubah format nomor sekarang harus lewat developer | ⬜ |
