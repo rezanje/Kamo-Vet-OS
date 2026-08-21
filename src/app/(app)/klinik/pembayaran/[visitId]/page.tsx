@@ -131,8 +131,19 @@ export default async function PembayaranPage({
   const sourceItems = invoice
     ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat", item_id: l.item_id ?? null, diskon_persen: Number(l.diskon_persen) || 0 }))
     : prefill;
-  const initialObat = sourceItems.filter((r) => r.jenis !== "jasa");
-  const initialJasa = sourceItems.filter((r) => r.jenis === "jasa");
+  // Baris rawat inap jumlah harinya dihitung sistem saat pasien pulang, jadi
+  // qty-nya dikunci di layar (keputusan Aldi, 19 Agustus). Koreksi nilainya lewat
+  // kolom diskon, yang tetap terbuka dan mengikuti hak akses.
+  const { data: jasaInap } = await supabase
+    .from("items").select("id")
+    .eq("tindakan_kategori", "Rawat Inap").eq("is_active", true)
+    .order("name").limit(1).maybeSingle();
+  const idJasaInap = (jasaInap?.id as string | undefined) ?? null;
+  const tandai = <T extends { item_id: string | null }>(r: T) =>
+    ({ ...r, terkunci: !!idJasaInap && r.item_id === idJasaInap && !!inpat });
+
+  const initialObat = sourceItems.filter((r) => r.jenis !== "jasa").map(tandai);
+  const initialJasa = sourceItems.filter((r) => r.jenis === "jasa").map(tandai);
 
   // Baris tambahan di kasir klinik wajib bisa dipilih dari master, bukan diketik
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat

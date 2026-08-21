@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CONDITION_LABEL, ripWaMessage, type Condition } from "@/lib/inpatient";
+import { CONDITION_LABEL, ripWaMessage, type Condition, hariRawatInap } from "@/lib/inpatient";
 import { hasSignedConsent } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -61,7 +61,7 @@ export default async function RawatInapDetailPage({
     .from("consents").select("status").eq("visit_id", rec.visit_id as string);
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
 
-  const [{ data: logs }, { data: statusLog }, { data: me }] = await Promise.all([
+  const [{ data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }] = await Promise.all([
     supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, updated_at")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
     supabase.from("inpatient_status_log").select("previous_status, new_status, notes, changed_at, profiles(full_name)")
@@ -70,6 +70,9 @@ export default async function RawatInapDetailPage({
       const { data: { user } } = await supabase.auth.getUser();
       return supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
     })(),
+    // Tanpa jasa berkategori Rawat Inap, lama menginap tidak punya tarif dan
+    // tagihannya tidak bisa terbentuk sendiri saat pasien pulang.
+    supabase.from("items").select("id").eq("tindakan_kategori", "Rawat Inap").eq("is_active", true).limit(1).maybeSingle(),
   ]);
 
   const cond = rec.condition_status as Condition;
@@ -102,6 +105,17 @@ export default async function RawatInapDetailPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
+      {!tarifInap && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#b45309", justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <i className="ti ti-alert-triangle" /> Tarif rawat inap belum ada di master jasa, jadi lama menginap
+            belum bisa masuk tagihan sendiri. Buat satu jasa berkategori <b>Rawat Inap</b> (tarif per hari).
+          </span>
+          <Link href="/pos/sku/baru" className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+            Buat tarif
+          </Link>
+        </div>
+      )}
       {success === "admit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pasien masuk rawat inap.</div>}
       {success === "log" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Laporan harian tercatat (append-only).</div>}
       {success === "logedit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Catatan dikoreksi — isi lama tersimpan di riwayat koreksi.</div>}
@@ -157,10 +171,16 @@ export default async function RawatInapDetailPage({
             <PairRow label="Berat" value={pet?.weight != null ? `${pet.weight} kg` : null} />
           </div>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <PairRow label="Tanggal Masuk" value={fmtDate(rec.admitted_at)} />
+            <PairRow label="Tanggal Masuk" value={`${fmtDate(rec.admitted_at)} ${fmtT(admitDate.toISOString())}`} />
             <PairRow label="No. Rekam Medis" value={noRM} />
             <PairRow label="Dokter PIC" value={rec.doctor_name} />
-            {rec.discharged_at && <PairRow label="Tanggal Keluar" value={fmtDate(rec.discharged_at)} />}
+            {rec.discharged_at && <PairRow label="Tanggal Keluar" value={`${fmtDate(rec.discharged_at)} ${fmtT(rec.discharged_at)}`} />}
+            {/* Jumlah hari yang akan ditagih: pembulatan ke atas per 24 jam, dihitung
+                dari jam masuk — bukan selisih tanggal. */}
+            <PairRow
+              label={active ? "Sudah menginap" : "Lama menginap"}
+              value={`${hariRawatInap(rec.admitted_at, rec.discharged_at ?? new Date().toISOString())} hari`}
+            />
           </div>
           <div style={{ width: 180, border: `1px solid ${box.bd}`, background: box.bg, borderRadius: 12, padding: 16, textAlign: "center", flexShrink: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tm)", letterSpacing: ".05em", marginBottom: 10 }}>KONDISI</div>

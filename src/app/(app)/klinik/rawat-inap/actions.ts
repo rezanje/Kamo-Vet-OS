@@ -2,11 +2,66 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { canTransition, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
+import { canTransition, hariRawatInap, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
 import { stockDeductions } from "@/lib/compounding";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = any;
+
+/**
+ * Catat biaya rawat inap ke tagihan begitu pasien pulang.
+ *
+ * Sebelumnya jumlah hari diketik tangan saat menutup tagihan, dan itu jalur yang
+ * paling sering meleset — 10 hari tercatat 8, kadang tidak sengaja kadang tidak.
+ * Sekarang jumlahnya dihitung dari jam masuk sampai jam pulang, dibulatkan ke atas
+ * per 24 jam (keputusan Aldi, 19 Agustus).
+ *
+ * Dipanggil setelah `discharged_at` terisi. Aman dipanggil dua kali: barisnya
+ * ditimpa, bukan ditambah lagi.
+ */
+async function catatBiayaRawatInap(supabase: Db, recordId: string): Promise<void> {
+  const { data: rec } = await supabase
+    .from("inpatient_records")
+    .select("visit_id, admitted_at, discharged_at, visits(branch_id)")
+    .eq("id", recordId).maybeSingle();
+  if (!rec?.discharged_at) return;
+
+  // Tarifnya diambil dari master jasa berkategori Rawat Inap. Kalau klinik belum
+  // membuatnya, jangan mengarang harga — biarkan dokter mengisi manual seperti dulu.
+  const { data: jasa } = await supabase
+    .from("items")
+    .select("id, name, sell_price, unit")
+    .eq("tindakan_kategori", "Rawat Inap").eq("is_active", true)
+    .order("name").limit(1).maybeSingle();
+  if (!jasa) return;
+
+  const { data: mr } = await supabase
+    .from("medical_records").select("id").eq("visit_id", rec.visit_id)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!mr) return;
+
+  const hari = hariRawatInap(rec.admitted_at as string, rec.discharged_at as string);
+
+  // Baris lama untuk jasa yang sama dibuang dulu supaya menutup ulang tidak
+  // melahirkan tagihan dobel.
+  await supabase.from("prescription_items")
+    .delete().eq("medical_record_id", mr.id).eq("item_id", jasa.id);
+
+  await supabase.from("prescription_items").insert({
+    medical_record_id: mr.id,
+    item_id: jasa.id,
+    nama_obat: jasa.name,
+    qty: hari,
+    harga: Number(jasa.sell_price) || 0,
+    satuan: jasa.unit ?? "hari",
+    jenis: "jasa",
+    kategori: "Rawat Inap",
+    aturan_pakai: `Otomatis dari lama rawat inap: ${hari} hari`,
+  });
+}
 
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
 export async function admitInpatient(formData: FormData) {
@@ -178,6 +233,7 @@ export async function addDailyLogPos(formData: FormData) {
         condition_status: newStatus,
         ...(isTerminal(newStatus) ? { discharged_at: new Date().toISOString() } : {}),
       }).eq("id", recordId);
+      if (isTerminal(newStatus)) await catatBiayaRawatInap(supabase, recordId);
     }
   }
 
@@ -219,6 +275,8 @@ export async function changeCondition(formData: FormData) {
       ...(isTerminal(newStatus) ? { discharged_at: new Date().toISOString() } : { discharged_at: null }),
     })
     .eq("id", recordId);
+
+  if (isTerminal(newStatus)) await catatBiayaRawatInap(supabase, recordId);
 
   // rip → layar review WA dulu (spec default: review sebelum kirim, bukan auto-send).
   redirect(newStatus === "rip" ? `${back}?wa=review` : `${back}?success=status`);

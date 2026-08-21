@@ -31,3 +31,19 @@ export function ripWaMessage(petName: string, ownerName: string, branchName: str
     `— KAMO PET CARE`
   );
 }
+
+/**
+ * Jumlah hari rawat inap yang ditagihkan: pembulatan KE ATAS per 24 jam
+ * (keputusan Aldi, 19 Agustus — "15 jam berarti 1 hari, 30 jam berarti 2 hari").
+ *
+ * Dihitung dari jam masuk ke jam pulang, bukan dari selisih tanggal: masuk Senin
+ * 23.00 dan pulang Selasa 07.00 itu 8 jam — satu hari, bukan dua.
+ */
+export function hariRawatInap(masuk: string | Date, keluar: string | Date): number {
+  const a = new Date(masuk).getTime();
+  const b = new Date(keluar).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 1;
+  const jam = (b - a) / 36e5;
+  if (jam <= 0) return 1;                    // salah input tanggal tetap ditagih 1 hari
+  return Math.max(1, Math.ceil(jam / 24));
+}

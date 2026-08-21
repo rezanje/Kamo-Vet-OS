@@ -15,6 +15,12 @@ type Line = {
   deskripsi: string; qty: number; harga: number; item_id?: string | null;
   /** Diskon baris dalam persen — permintaan Pak Aldi, meeting 14 Agustus. */
   diskon_persen?: number;
+  /**
+   * Baris yang jumlahnya dihitung sistem dan tidak boleh diketik ulang — sejauh
+   * ini cuma lama rawat inap (keputusan Aldi, 19 Agustus: "ini minta dikunci").
+   * Koreksi harganya lewat kolom diskon, yang tetap terbuka.
+   */
+  terkunci?: boolean;
 };
 export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number };
 type Patient = {
@@ -76,7 +82,13 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
                   )}
                 </div>
               </td>
-              <td><input className="fi" type="number" min={1} value={r.qty} onChange={(e) => set(i, { qty: Number(e.target.value) })} style={{ textAlign: "center" }} /></td>
+              <td>
+                <input className="fi" type="number" min={1} value={r.qty}
+                  onChange={(e) => set(i, { qty: Number(e.target.value) })}
+                  readOnly={r.terkunci} disabled={r.terkunci}
+                  title={r.terkunci ? "Dihitung otomatis dari lama rawat inap" : undefined}
+                  style={{ textAlign: "center", ...(r.terkunci ? { background: "#f3f4f6", cursor: "not-allowed" } : {}) }} />
+              </td>
               <td><input className="fi" type="number" min={0} step="any" value={r.harga} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td>
                 <input className="fi" type="number" min={0} max={100} step="any"
@@ -90,7 +102,11 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
                   <div style={{ fontSize: 9, color: "var(--td)", textDecoration: "line-through" }}>{rp(r.qty * r.harga)}</div>
                 )}
               </td>
-              <td style={{ textAlign: "center" }}><i className="ti ti-x" onClick={() => del(i)} style={{ cursor: "pointer", color: "#dc2626" }} /></td>
+              <td style={{ textAlign: "center" }}>
+                {r.terkunci
+                  ? <i className="ti ti-lock" title="Baris otomatis dari rawat inap" style={{ color: "var(--td)" }} />
+                  : <i className="ti ti-x" onClick={() => del(i)} style={{ cursor: "pointer", color: "#dc2626" }} />}
+              </td>
             </tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", fontSize: 10.5, padding: "10px 0" }}>Belum ada item.</td></tr>}
