@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { TemplateForm, type TemplateRow } from "./TemplateForm";
-import { toggleTemplate } from "./actions";
+import { toggleTemplate, simpanAturanConsent } from "./actions";
+import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
 
 // Kelola template form persetujuan (spec 2026-07-20). Admin/owner saja.
 export default async function PersetujuanPage({
@@ -19,13 +20,17 @@ export default async function PersetujuanPage({
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   const bolehKelola = profile?.role === "OWNER" || profile?.role === "ADMIN";
 
-  const [{ data: templates }, { data: branches }] = await Promise.all([
+  const [{ data: templates }, { data: branches }, { data: aturanRows }] = await Promise.all([
     supabase.from("consent_templates")
       .select("id, nama, isi, branch_id, is_active, updated_at, branches(name)")
       .order("created_at", { ascending: false }),
     supabase.from("branches").select("id, name").eq("is_active", true)
       .in("type", ["KLINIK", "BOTH"]).order("name"),
+    supabase.from("consent_rules").select("kategori, wajib, template_id"),
   ]);
+
+  type AturanRow = { kategori: string; wajib: boolean; template_id: string | null };
+  const aturan = new Map(((aturanRows ?? []) as AturanRow[]).map((a) => [a.kategori, a]));
 
   const rows = (templates ?? []) as unknown as (TemplateRow & { updated_at: string; branches: { name: string } | { name: string }[] | null })[];
   const editing = edit ? rows.find((r) => r.id === edit) ?? null : null;
@@ -48,10 +53,63 @@ export default async function PersetujuanPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Template tersimpan.</div>}
+      {success && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> {success === "aturan" ? "Aturan tindakan tersimpan." : "Template tersimpan."}
+        </div>
+      )}
       {!bolehKelola && (
         <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah template. Kamu bisa melihat isinya saja.</div>
       )}
+
+      <form action={simpanAturanConsent} className="crm-sec">
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 4 }}>TINDAKAN YANG WAJIB BERFORMULIR</div>
+        <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 12, lineHeight: 1.6 }}>
+          Tindakan yang dicentang tidak bisa lanjut ke pembayaran sebelum formulirnya ditandatangani.
+          Formulir bawaan boleh dikosongkan — dokter tinggal memilih sendiri saat meminta persetujuan.
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 520 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 110 }}>Wajib formulir</th>
+                <th>Kategori tindakan</th>
+                <th>Formulir bawaan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TINDAKAN_KATEGORI.map((kat) => {
+                const a = aturan.get(kat);
+                return (
+                  <tr key={kat}>
+                    <td style={{ textAlign: "center" }}>
+                      <input type="checkbox" name={`wajib__${kat}`} defaultChecked={a?.wajib ?? false}
+                        disabled={!bolehKelola} style={{ width: 16, height: 16 }} />
+                    </td>
+                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{kat}</td>
+                    <td>
+                      <select className="fi" name={`template__${kat}`} defaultValue={a?.template_id ?? ""}
+                        disabled={!bolehKelola} style={{ fontSize: 11, padding: "4px 8px", maxWidth: 280 }}>
+                        <option value="">— dokter pilih sendiri —</option>
+                        {rows.filter((t) => t.is_active).map((t) => (
+                          <option key={t.id} value={t.id}>{t.nama}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {bolehKelola && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+              Simpan aturan
+            </SubmitButton>
+          </div>
+        )}
+      </form>
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 12 }}>DAFTAR TEMPLATE</div>

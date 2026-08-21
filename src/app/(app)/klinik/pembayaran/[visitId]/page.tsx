@@ -8,6 +8,7 @@ import { getPajakSettings } from "@/lib/pajak";
 import { SubmitButton } from "@/components/SubmitButton";
 import { voidAndReissue } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
+import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
@@ -100,8 +101,11 @@ export default async function PembayaranPage({
   const { data: consentRows } = await supabase.from("consents").select("status").eq("visit_id", visitId);
   const jasaKategori = (kategoriRows ?? []) as { jenis: string; kategori: string | null }[];
   const consentList = (consentRows ?? []) as { status: string }[];
-  const bolehTagih = bolehBayar(jasaKategori, !!inpat, consentList);
-  const katBerisiko = kategoriBerisiko(jasaKategori, !!inpat);
+  // Aturan tindakan mana yang wajib berformulir diatur klinik sendiri di layar
+  // Form Persetujuan, bukan dikunci di kode.
+  const aturanConsent = await bacaAturanConsent(supabase);
+  const bolehTagih = bolehBayar(jasaKategori, !!inpat, consentList, aturanConsent);
+  const katBerisiko = kategoriBerisiko(jasaKategori, !!inpat, aturanConsent);
   const prefill = resepRows.length
     ? resepRows
     : [{ deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null as string | null }];

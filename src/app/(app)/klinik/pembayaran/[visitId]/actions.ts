@@ -8,6 +8,7 @@ import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { getOpenShift } from "@/lib/shift";
 import { diffInvoice, requiresReason, type InvoiceSnapshot } from "@/lib/invoice-diff";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
+import { bacaAturanConsent } from "@/lib/consent-server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { bacaPoinPelanggan, catatPoinKlinik, poinTerpakai, RUPIAH_PER_POIN } from "@/lib/poin-klinik";
 import { stockIn, stockOut } from "@/lib/inventory";
@@ -149,13 +150,15 @@ export async function bayarVisit(formData: FormData) {
       supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
       supabase.from("consents").select("status").eq("visit_id", visitId),
     ]);
+    const aturanConsent = await bacaAturanConsent(supabase);
     const boleh = bolehBayar(
       (jasaRows ?? []) as { jenis: string; kategori: string | null }[],
       !!inpatRow,
       (consentRows ?? []) as { status: string }[],
+      aturanConsent,
     );
     if (!boleh) {
-      const kat = kategoriBerisiko((jasaRows ?? []) as { jenis: string; kategori: string | null }[], !!inpatRow);
+      const kat = kategoriBerisiko((jasaRows ?? []) as { jenis: string; kategori: string | null }[], !!inpatRow, aturanConsent);
       redirect(`${back}?error=${encodeURIComponent(`Form persetujuan untuk tindakan ${kat.join(", ")} belum ditandatangani`)}`);
     }
   }
@@ -494,6 +497,7 @@ export async function bayarRombongan(formData: FormData) {
       (jasaRows ?? []) as { jenis: string; kategori: string | null }[],
       !!inpatRow,
       (consentRows ?? []) as { status: string }[],
+      await bacaAturanConsent(supabase),
     )) {
       dilewati.push(b.hewan);
       continue;
