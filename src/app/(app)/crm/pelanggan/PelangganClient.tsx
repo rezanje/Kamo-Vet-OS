@@ -244,9 +244,16 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <SecHeader num="02" title="DAFTAR PELANGGAN" desc="Data pelanggan berdasarkan tier dan kategori." />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <Link href="/crm/pelanggan/baru" className="btn-acc" style={{ fontSize: 11 }}>
-              <i className="ti ti-plus" /> Tambah pelanggan
-            </Link>
+            <div style={{ display: "flex", gap: 7 }}>
+              <Link href="/crm/pelanggan/baru" className="btn-acc" style={{ fontSize: 11 }}>
+                <i className="ti ti-plus" /> Tambah pelanggan
+              </Link>
+              {isAdmin && (
+                <Link href="/pengaturan/impor/pelanggan" className="btn-def" style={{ fontSize: 11, textDecoration: "none" }}>
+                  <i className="ti ti-file-spreadsheet" /> Impor dari Excel
+                </Link>
+              )}
+            </div>
             <div style={{ position: "relative", width: 220 }}>
               <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
               <i className="ti ti-search" style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />

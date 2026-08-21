@@ -81,7 +81,8 @@ export default async function PembelianPage({
 
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> PO berhasil dibuat.
+          {/* Impor pemasok mengirim ringkasannya lewat URL; buat PO cuma mengirim "1". */}
+          <i className="ti ti-circle-check" /> {success === "1" ? "PO berhasil dibuat." : success}
         </div>
       )}
       {success_sup && (
@@ -232,7 +233,13 @@ export default async function PembelianPage({
         <div className="grid2" style={{ alignItems: "flex-start" }}>
           {/* Supplier list */}
           <div className="crm-sec" style={{ marginBottom: 0 }}>
-            <SecHeader num="01" title="DAFTAR SUPPLIER" desc="Supplier terdaftar untuk pembelian." />
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+              <SecHeader num="01" title="DAFTAR SUPPLIER" desc="Supplier terdaftar untuk pembelian." />
+              <Link href="/pengaturan/impor/pemasok" className="btn-def"
+                style={{ fontSize: 10.5, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+                <i className="ti ti-file-spreadsheet" /> Impor
+              </Link>
+            </div>
             <div style={{ overflowX: "auto" }}>
               <table className="tbl" style={{ minWidth: 360 }}>
                 <thead>

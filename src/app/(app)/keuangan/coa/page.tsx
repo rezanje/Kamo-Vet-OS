@@ -83,6 +83,10 @@ export default async function CoaPage({
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Bagan Akun</span>
+        <Link href="/pengaturan/impor/akun" className="btn-def"
+          style={{ marginLeft: "auto", fontSize: 11, textDecoration: "none" }}>
+          <i className="ti ti-file-spreadsheet" /> Impor dari Excel
+        </Link>
       </div>
 
       {errMsg && (
@@ -92,7 +96,8 @@ export default async function CoaPage({
       )}
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Bagan akun tersimpan.
+          {/* Impor mengirim ringkasannya lewat URL; simpan biasa cuma mengirim "1". */}
+          <i className="ti ti-circle-check" /> {success === "1" ? "Bagan akun tersimpan." : success}
         </div>
       )}
       {error && (

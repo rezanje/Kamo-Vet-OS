@@ -7,11 +7,11 @@ function one<T>(r: Rel<T>): T | null {
 }
 
 export default async function PelangganPage({ searchParams }: {
-  searchParams: Promise<{ cari?: string }>;
+  searchParams: Promise<{ cari?: string; success?: string; error?: string }>;
 }) {
   // `cari` datang dari pencarian global di topbar — layar terbuka langsung
   // menyorot pelanggannya, bukan daftar penuh yang harus ditelusuri lagi.
-  const { cari } = await searchParams;
+  const { cari, success, error: pesanError } = await searchParams;
   const supabase = await createClient();
   const { data: custData } = await supabase
     .from("customers")
@@ -103,9 +103,21 @@ export default async function PelangganPage({ searchParams }: {
   const statusUlasan = (ulasanData ?? []) as { id: string; nama: string; warna: string; nada: string }[];
 
   return (
-    <PelangganClient
-      cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin}
-      categories={categories} statusUlasan={statusUlasan}
-    />
+    <>
+      {success && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> {success}
+        </div>
+      )}
+      {pesanError && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {pesanError}
+        </div>
+      )}
+      <PelangganClient
+        cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin}
+        categories={categories} statusUlasan={statusUlasan}
+      />
+    </>
   );
 }
