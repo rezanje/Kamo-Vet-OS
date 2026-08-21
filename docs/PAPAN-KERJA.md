@@ -1,6 +1,6 @@
 # Papan Kerja VetOS — satu-satunya daftar yang dipantau
 
-**Diperbarui** 19 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
+**Diperbarui** 21 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
 
 > **Catatan uji 17 Agustus:** blok stok opname (M1–M10) sudah diuji langsung di aplikasi —
 > daftar 30 barang otomatis, kunci per barang yang bertahan setelah layar ditutup, buka kunci,
@@ -23,10 +23,10 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 37 / 42 · sisa: AI WhatsApp + 4 yang nunggu klien |
-| Permintaan susulan di luar meeting | 1 / 1 · status ulasan pelanggan (M43) |
-| Sisa pekerjaan pra-meeting | 2 / 10 · produksi own brand + penyesuaian persediaan |
-| Nunggu jawaban klien | 3 hal |
+| Permintaan meeting 14 Agustus selesai | 39 / 42 · sisa: AI WhatsApp + 2 yang nunggu klien |
+| Permintaan susulan di luar meeting | 2 / 2 · status ulasan pelanggan (M43), impor data awal (S11) |
+| Sisa pekerjaan pra-meeting | 3 / 11 · produksi own brand, penyesuaian persediaan, impor data |
+| Nunggu jawaban klien | 3 hal (laporan, token WA, identitas perusahaan) |
 
 ---
 
@@ -74,8 +74,8 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 | M21 | Tambah obat di rekam medis tersambung master barang | P1 | ✅ | 17 Agu 2026 · dicek: sudah live, semua baris obat tertaut master |
 | M22 | Antrian: filter tanggal (bisa mundur) + filter cabang | P2 | ✅ | 17 Agu 2026 |
 | M23 | Nomor antrian pakai kode awalan per cabang | P2 | ✅ | 17 Agu 2026 · mis. CMGG-A001 |
-| M24 | Rawat inap: total hari otomatis masuk tagihan saat pasien pulang | P2 | ⏸ | nunggu keputusan Pak Aldi |
-| M25 | Formulir persetujuan diikat ke jenis tindakan; tidak bisa bayar sebelum ditandatangani | P2 | ⏸ | nunggu daftar tindakan + klausul |
+| M24 | Rawat inap: total hari otomatis masuk tagihan saat pasien pulang | P2 | ✅ | 21 Agu 2026 · per 24 jam dibulatkan ke atas, qty terkunci |
+| M25 | Formulir persetujuan diikat ke jenis tindakan; tidak bisa bayar sebelum ditandatangani | P2 | ✅ | 21 Agu 2026 · klinik mengatur sendiri di layar Form Persetujuan |
 | M26 | Promo, voucher, poin muncul di klinik persis seperti di petshop | P2 | ✅ | 17 Agu 2026 · poin nyusul promo & voucher |
 
 ### A4. CRM & promo
@@ -135,6 +135,7 @@ Dari papan progres 14 Agustus, belum tersentuh permintaan meeting.
 | S7 | Popup promo berjalan di layar kasir | Kasir | Kasir tidak tahu promo yang sedang jalan | ⬜ |
 | S8 | Proses akhir bulan otomatis tiap tanggal 1 | Buku Besar | Tutup buku masih ditekan manual | ⬜ |
 | S9 | Impor Excel aturan komisi & target | Penjualan | Sekarang diinput satu-satu | ⬜ |
+| S11 | Impor massal pelanggan, pemasok, dan bagan akun | Pengaturan | Data awal masih diketik satu-satu, menahan trial klien | ✅ 21 Agu 2026 |
 | S10 | e-Faktur & SPT: CTAS · email faktur · legacy · bukti potong PPh 21 | Pajak, Laporan | Pelaporan pajak masih manual — sesuai keputusan manajemen, ditaruh paling akhir | ⬜ |
 
 **Catatan data:** harga beli "RC Baby Milk Cat 300gr" masih Rp 0 di master barang, jadi tiap
@@ -147,8 +148,7 @@ penjualannya tercatat untung 100%. Perlu diisi klien supaya laporan laba akurat.
 | Yang ditunggu | Dari | Menahan |
 |---|---|---|
 | Daftar laporan yang benar-benar dipakai | Bu Nisa, Pak Daru | M40 |
-| Daftar tindakan klinik yang wajib formulir persetujuan + isi klausulnya | tim klinik / dok RV | M25 |
-| Keputusan rawat inap: total hari otomatis masuk tagihan | Pak Aldi | M24 |
+| Tarif jasa "Rawat Inap" per hari di master barang | Kamo Group | tagihan rawat inap otomatis |
 | Token layanan WhatsApp | Kamo Group | M41, S3 |
 | Logo, alamat, NPWP perusahaan | Kamo Group | S4 |
 
