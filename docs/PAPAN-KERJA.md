@@ -23,7 +23,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Ukuran | Angka |
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
-| Permintaan meeting 14 Agustus selesai | 39 / 42 · sisa: AI WhatsApp + 2 yang nunggu klien |
+| Permintaan meeting 14 Agustus selesai | 40 / 42 · sisa: AI WhatsApp + 1 yang nunggu klien |
 | Permintaan susulan di luar meeting | 4 / 4 · status ulasan (M43), impor data awal (S11), skala pemantauan (M44), obat khusus (M45) |
 | Sisa pekerjaan pra-meeting | 3 / 11 · produksi own brand, penyesuaian persediaan, impor data |
 | Nunggu jawaban klien | 2 hal (token WA, identitas perusahaan) |
@@ -111,7 +111,7 @@ hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher k
 | M37 | Dashboard menyesuaikan peran (operasional, marketing) — sekarang condong ke keuangan | P3 | ✅ | 18 Agu 2026 · 3 sudut pandang |
 | M38 | Peringatan saat stok kosong tapi tetap diinput | P3 | ✅ | 18 Agu 2026 |
 | M39 | Peringatan saat diskon membuat harga di bawah modal — boleh dilanjut | P3 | ✅ | 18 Agu 2026 |
-| M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | 🔨 | daftar laporan SUDAH masuk 24 Agu → `docs/DAFTAR-LAPORAN-KAMO-2026-08-24.md` (45 laporan; 19 ada, 12 sebagian, 14 belum) |
+| M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | ✅ | 25 Agu 2026 · `/laporan/transaksi-cabang` + `/laporan/pelanggan-harian`. Daftar 45 laporan permintaan klien ada di `docs/DAFTAR-LAPORAN-KAMO-2026-08-24.md` (22 ada, 11 sebagian, 12 belum) |
 
 ### A7. WhatsApp & AI
 

@@ -115,25 +115,38 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 
 ## D. Laporan dasar (ditanyakan "perlu ga?")
 
-Perlu — ini yang paling sering dilihat harian dan paling murah dibuat:
+Perlu — ini yang paling sering dilihat harian dan paling murah dibuat.
+**Keempatnya selesai 25 Agustus 2026** lewat dua layar baru di Daftar Laporan:
 
-| Laporan | Status |
-|---|---|
-| Jumlah pelanggan per hari | 🔨 — ada di dashboard operasional, belum jadi laporan |
-| Rata-rata transaksi per pelanggan | ✅ per kasir; per cabang belum |
-| Rata-rata item per invoice | ⬜ |
-| Jumlah transaksi per cabang | ⬜ |
+| Laporan | Status | Ada di |
+|---|---|---|
+| Jumlah pelanggan per hari | ✅ | `/laporan/pelanggan-harian` — per hari, bisa disaring per cabang; hari sepi tetap muncul sebagai baris nol |
+| Rata-rata transaksi per pelanggan | ✅ | `/laporan/transaksi-cabang` — per cabang dan total |
+| Rata-rata item per invoice | ✅ | `/laporan/transaksi-cabang`, juga per hari di laporan harian |
+| Jumlah transaksi per cabang | ✅ | `/laporan/transaksi-cabang`, dipecah POS / Online / Klinik |
+
+Catatan angka yang perlu disepakati saat dibahas dengan klien:
+
+- **Pembeli umum.** Struk yang identitasnya tidak dicatat dihitung satu orang per struk.
+  Kalau orang yang sama belanja dua kali tanpa menyebut nama, dia terhitung dua orang.
+- **Rata-rata kunjungan per pelanggan** sengaja hanya dihitung dari pelanggan berkartu.
+  Kalau struk umum ikut, angkanya selalu mendekati 1x dan jadi tidak berarti.
+- **Satu orang, dua cabang** dihitung di kedua cabang — jadi jumlah kolom per cabang
+  bisa lebih besar dari total.
+- **Omzet** sudah dikurangi retur penjualan; tagihan klinik yang dibatalkan tidak dihitung.
 
 ---
 
 ## Ringkasan & usulan urutan
 
-Dari 45 laporan yang diminta: **19 sudah ada · 12 sebagian · 14 belum**.
+Dari 45 laporan yang diminta: **22 sudah ada · 11 sebagian · 12 belum**
+(per 25 Agustus 2026, setelah langkah 1 selesai).
 
 Usulan garap:
 
-1. **Laporan dasar + transaksi per cabang** — paling sering dipakai, datanya sudah lengkap,
-   tinggal disajikan. Ini juga yang dua kali disebut di meeting 14 Agustus.
+1. ~~**Laporan dasar + transaksi per cabang**~~ — ✅ selesai 25 Agustus 2026.
+   Paling sering dipakai, datanya sudah lengkap, tinggal disajikan. Ini juga yang
+   dua kali disebut di meeting 14 Agustus.
 2. **Melengkapi yang tinggal sebagian** — buku besar pembantu piutang & utang, rincian arus
    kas, rekap kondisi klinik. Datanya sudah ada, tinggal bentuk laporannya.
 3. **Marketing** — dorman, interval kunjungan, dan kinerja voucher. Ini yang paling

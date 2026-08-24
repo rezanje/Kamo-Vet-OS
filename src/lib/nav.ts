@@ -234,6 +234,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Rekap Gaji", icon: "ti-moneybag", ...A, nw: true, href: "/laporan/gaji" },
     { label: "Rincian Penjualan", icon: "ti-list-details", ...A, nw: true, href: "/laporan/penjualan-rinci" },
     { label: "Penjualan per Kasir", icon: "ti-cash-register", ...A, nw: true, href: "/laporan/penjualan-kasir" },
+    { label: "Transaksi per Cabang", icon: "ti-building-store", ...A, nw: true, href: "/laporan/transaksi-cabang" },
+    { label: "Pelanggan per Hari", icon: "ti-users-group", ...A, nw: true, href: "/laporan/pelanggan-harian" },
     { label: "Nilai KPI Karyawan", icon: "ti-chart-dots", ...A, nw: true, href: "/laporan/kpi" },
     { label: "Laba Rugi", icon: "ti-chart-bar", ...G, href: "/keuangan/laba-rugi" },
     { label: "Neraca", icon: "ti-scale", ...G, href: "/keuangan/neraca" },

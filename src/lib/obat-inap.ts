@@ -5,6 +5,8 @@
 // berapa dosis. Semuanya dihitung dari catatan pemberian yang benar-benar ada —
 // bukan dari asumsi jadwal berjalan lancar.
 
+import { tanggalWIB } from "./tanggal";
+
 export type Protokol = {
   id: string;
   namaObat: string;
@@ -26,11 +28,7 @@ export type Pemberian = {
 };
 
 /** Tanggal WIB dari sebuah waktu ISO — dipakai mengelompokkan dosis per hari. */
-export function tanggalWib(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return new Date(d.getTime() + 7 * 36e5).toISOString().slice(0, 10);
-}
+export const tanggalWib = tanggalWIB;
 
 /** Selisih hari kalender antara dua tanggal YYYY-MM-DD. */
 export function selisihHari(dari: string, sampai: string): number {

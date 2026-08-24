@@ -41,3 +41,12 @@ export function rentangTanggal(dari: string, sampai: string): string[] {
   }
   return hasil;
 }
+
+// Tanggal WIB dari sebuah waktu ISO — dipakai mengelompokkan transaksi per hari.
+// Alasannya sama dengan hariIniWIB(): server jalan di UTC, jadi struk jam 00:00–07:00
+// WIB akan jatuh ke tanggal kemarin kalau ISO-nya dipotong mentah-mentah.
+export function tanggalWIB(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Date(d.getTime() + 7 * 36e5).toISOString().slice(0, 10);
+}
