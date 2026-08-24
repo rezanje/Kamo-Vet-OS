@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PapanPemantauan } from "./PapanPemantauan";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, ripWaMessage, type Condition, hariRawatInap } from "@/lib/inpatient";
@@ -62,7 +63,7 @@ export default async function RawatInapDetailPage({
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
 
   const [{ data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }] = await Promise.all([
-    supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, updated_at")
+    supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, updated_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
     supabase.from("inpatient_status_log").select("previous_status, new_status, notes, changed_at, profiles(full_name)")
       .eq("inpatient_record_id", id).order("changed_at", { ascending: false }),
@@ -74,6 +75,31 @@ export default async function RawatInapDetailPage({
     // tagihannya tidak bisa terbentuk sendiri saat pasien pulang.
     supabase.from("items").select("id").eq("tindakan_kategori", "Rawat Inap").eq("is_active", true).limit(1).maybeSingle(),
   ]);
+
+  // Bentuk laporan untuk papan pemantauan. Tanggalnya memakai log_date (tanggal
+  // yang ditulis dokter), bukan waktu simpan — laporan bisa diisi menyusul.
+  type LogRow = {
+    id: string; log_date: string; created_at: string; condition_note: string;
+    tindakan: string | null; keterangan: string | null; doctor_name: string | null;
+    makan: string | null; minum: string | null; bab: string | null; pipis: string | null;
+    berat: number | string | null; suhu: number | string | null; foto_url: string | null;
+    komunikasi_owner: string | null; komunikasi_via: string | null;
+  };
+  const laporanPemantauan = ((logs ?? []) as LogRow[]).map((l) => ({
+    id: l.id,
+    tanggal: l.log_date ?? String(l.created_at).slice(0, 10),
+    waktu: l.created_at,
+    makan: l.makan, minum: l.minum, bab: l.bab, pipis: l.pipis,
+    berat: l.berat === null ? null : Number(l.berat),
+    suhu: l.suhu === null ? null : Number(l.suhu),
+    fotoUrl: l.foto_url,
+    kondisi: l.condition_note,
+    tindakan: l.tindakan,
+    keterangan: l.keterangan,
+    komunikasiOwner: l.komunikasi_owner,
+    komunikasiVia: l.komunikasi_via,
+    dokter: l.doctor_name,
+  }));
 
   const cond = rec.condition_status as Condition;
   const isDoctor = me?.data?.role === "DOCTOR";
@@ -243,6 +269,8 @@ export default async function RawatInapDetailPage({
           </div>
         )}
       </div>
+
+      <PapanPemantauan laporan={laporanPemantauan} />
 
       {/* Laporan rawat inap harian — tabel utama (gaya referensi) */}
       <div className="crm-sec">

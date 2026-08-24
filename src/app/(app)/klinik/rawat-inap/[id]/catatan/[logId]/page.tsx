@@ -30,7 +30,7 @@ export default async function LogDetailPage({
       .eq("id", id).maybeSingle(),
     supabase
       .from("inpatient_daily_logs")
-      .select("id, log_date, created_at, condition_note, tindakan, keterangan, doctor_name, inpatient_record_id")
+      .select("id, log_date, created_at, condition_note, tindakan, keterangan, doctor_name, inpatient_record_id, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
       .eq("id", logId).maybeSingle(),
   ]);
   if (!rec || !log || log.inpatient_record_id !== id) notFound();

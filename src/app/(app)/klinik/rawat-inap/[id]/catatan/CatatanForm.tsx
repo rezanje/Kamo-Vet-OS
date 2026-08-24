@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
+import { createClient } from "@/lib/supabase/client";
 import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
+import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@/lib/monitoring-inap";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { addDailyLogPos } from "../../actions";
 
@@ -38,6 +40,33 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
   const [jasaNama, setJasaNama] = useState("");
   const [jasaHarga, setJasaHarga] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  // Foto perkembangan pasien: diunggah dari sini supaya dokter/perawat tidak perlu
+  // kirim lewat WA lalu ditempel manual belakangan.
+  const [fotoUrl, setFotoUrl] = useState("");
+  const [fotoPratinjau, setFotoPratinjau] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+
+  async function pilihFoto(file: File | undefined) {
+    if (!file) return;
+    setFotoPratinjau(URL.createObjectURL(file));
+    setUploading(true);
+    setUploadErr("");
+    try {
+      const supabase = createClient();
+      const path = `inap/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, "-")}`;
+      const { error } = await supabase.storage.from("pet-photos").upload(path, file, { upsert: true });
+      if (error) throw error;
+      setFotoUrl(supabase.storage.from("pet-photos").getPublicUrl(path).data.publicUrl);
+    } catch (err) {
+      // Pratinjau lokal tidak boleh ikut tersimpan — alamatnya mati begitu halaman ditutup.
+      setFotoUrl("");
+      setUploadErr(err instanceof Error ? err.message : "Gagal unggah foto");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   // Builder racikan — alur & field sama seperti tab Racikan di form pemeriksaan.
   const [racikNama, setRacikNama] = useState("");
@@ -107,6 +136,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
       <input type="hidden" name="recordId" value={recordId} />
       <input type="hidden" name="resep" value={JSON.stringify(cart)} />
       <input type="hidden" name="catatan_resep" value={catatan} />
+      <input type="hidden" name="foto_url" value={fotoUrl} />
 
       <div className="grid2" style={{ alignItems: "start" }}>
         {/* ===== KIRI: data pasien + detail rawat inap ===== */}
@@ -149,17 +179,106 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
               <input className="fi" type="time" name="log_time" defaultValue={timeStr} required />
             </div>
           </div>
+          {/* Pemantauan harian: dipisah jadi kolom sendiri supaya bisa dihitung &
+              digrafikkan (permintaan Drh. Ilham). Kolom kosong = belum diperiksa,
+              bukan "tidak ada" — bedanya penting untuk hitungan hari tanpa BAB. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 8px" }}>
+            <i className="ti ti-activity-heartbeat" style={{ fontSize: 15, color: "#16a34a" }} />
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: "#16a34a" }}>PEMANTAUAN HARIAN</span>
+            <span style={{ fontSize: 9.5, color: "var(--td)" }}>kosongkan yang belum diperiksa</span>
+          </div>
+          <div className="frow">
+            <div>
+              <label className="flab">Berat badan (kg)</label>
+              <input className="fi" type="number" name="berat" min={0} max={200} step="0.01" placeholder="mis. 12.5" />
+            </div>
+            <div>
+              <label className="flab">Suhu tubuh (°C)</label>
+              <input className="fi" type="number" name="suhu" min={25} max={45} step="0.1" placeholder="mis. 38.6" />
+            </div>
+          </div>
+          <div className="frow">
+            <div>
+              <label className="flab">Makan</label>
+              <select className="fi" name="makan" defaultValue="">
+                <option value="">— belum dicatat —</option>
+                {OPSI_MAKAN.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="flab">Minum</label>
+              <select className="fi" name="minum" defaultValue="">
+                <option value="">— belum dicatat —</option>
+                {OPSI_MINUM.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="frow">
+            <div>
+              <label className="flab">BAB</label>
+              <select className="fi" name="bab" defaultValue="">
+                <option value="">— belum dicatat —</option>
+                {OPSI_BAB.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="flab">Pipis</label>
+              <select className="fi" name="pipis" defaultValue="">
+                <option value="">— belum dicatat —</option>
+                {OPSI_PIPIS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
           <div className="fg">
-            <label className="flab">Kondisi pasien *</label>
-            <textarea className="fi" name="condition_note" required rows={2} placeholder="mis. Lemas, batuk, nafsu makan menurun, suhu 39,5°C" style={{ resize: "vertical" }} />
+            <label className="flab">Foto pasien hari ini</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 62, height: 62, borderRadius: 9, background: "var(--sf1)", border: ".5px solid var(--bd)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {fotoPratinjau || fotoUrl
+                  ? <img src={fotoUrl || fotoPratinjau} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <i className="ti ti-camera" style={{ fontSize: 22, color: "var(--td)" }} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <input type="file" accept="image/*" className="fi" style={{ fontSize: 10.5, padding: 5 }}
+                  onChange={(e) => pilihFoto(e.target.files?.[0])} />
+                <div style={{ fontSize: 9.5, color: uploadErr ? "#b91c1c" : "var(--td)", marginTop: 3 }}>
+                  {uploading ? "Mengunggah foto…" : uploadErr || "JPG/PNG. Foto tersimpan per tanggal, jadi perkembangannya bisa dibandingkan."}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="fg">
+            <label className="flab">Kondisi umum pasien *</label>
+            <textarea className="fi" name="condition_note" required rows={2} placeholder="mis. Lemas berkurang, respons membaik, masih batuk sesekali" style={{ resize: "vertical" }} />
           </div>
           <div className="fg">
             <label className="flab">Tindakan / perawatan</label>
-            <textarea className="fi" name="tindakan" rows={2} placeholder="mis. Terapi cairan, injeksi, pemberian obat, observasi" style={{ resize: "vertical" }} />
+            <textarea className="fi" name="tindakan" rows={2} placeholder="mis. Wound dressing, terapi cairan, injeksi antibiotik, observasi" style={{ resize: "vertical" }} />
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+              Obat yang ditagihkan cukup dipilih di panel kanan — kolom ini untuk tindakan medisnya.
+            </div>
           </div>
           <div className="fg">
             <label className="flab">Keterangan</label>
-            <textarea className="fi" name="keterangan" rows={2} placeholder="mis. Pasien mulai menunjukkan respons baik" style={{ resize: "vertical" }} />
+            <textarea className="fi" name="keterangan" rows={2} placeholder="mis. Nafsu makan mulai kembali, rencana cek darah ulang besok" style={{ resize: "vertical" }} />
+          </div>
+
+          {/* Komunikasi ke pemilik: shift berikutnya harus tahu owner sudah dikabari
+              apa, tanpa perlu bertanya ke orang yang sudah pulang. */}
+          <div className="frow">
+            <div style={{ flex: 2 }}>
+              <label className="flab">Yang disampaikan ke pemilik hari ini</label>
+              <textarea className="fi" name="komunikasi_owner" rows={2}
+                placeholder="mis. Owner dikabari hasil rontgen & rencana operasi besok, owner setuju" style={{ resize: "vertical" }} />
+            </div>
+            <div>
+              <label className="flab">Lewat</label>
+              <select className="fi" name="komunikasi_via" defaultValue="">
+                <option value="">— belum dihubungi —</option>
+                {OPSI_KOMUNIKASI.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
           </div>
           <div className="frow">
             <div>

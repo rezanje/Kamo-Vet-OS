@@ -99,6 +99,27 @@ export async function admitInpatient(formData: FormData) {
   redirect(`/klinik/rawat-inap/${rec!.id}?success=admit`);
 }
 
+// Kolom pemantauan harian (migrasi 0106). Kosong disimpan sebagai NULL — "belum
+// diperiksa" tidak boleh berubah jadi angka atau jadi "tidak ada", karena hitungan
+// hari tanpa BAB & grafik berat dibaca langsung dari sini.
+function bacaPemantauan(formData: FormData) {
+  const teks = (k: string) => {
+    const v = String(formData.get(k) ?? "").trim();
+    return v || null;
+  };
+  const angka = (k: string) => {
+    const v = String(formData.get(k) ?? "").trim();
+    if (!v) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    makan: teks("makan"), minum: teks("minum"), bab: teks("bab"), pipis: teks("pipis"),
+    berat: angka("berat"), suhu: angka("suhu"), foto_url: teks("foto_url"),
+    komunikasi_owner: teks("komunikasi_owner"), komunikasi_via: teks("komunikasi_via"),
+  };
+}
+
 // Laporan harian — append-only (§3 dashboard req): entry baru, tidak pernah overwrite.
 export async function addDailyLog(formData: FormData) {
   const supabase = await createClient();
@@ -114,6 +135,7 @@ export async function addDailyLog(formData: FormData) {
   const { error } = await supabase.from("inpatient_daily_logs").insert({
     inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
     doctor_name: doctorName, created_by: user?.id ?? null,
+    ...bacaPemantauan(formData),
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   redirect(`${back}?success=log`);
@@ -151,6 +173,7 @@ export async function addDailyLogPos(formData: FormData) {
   const { error: logErr } = await supabase.from("inpatient_daily_logs").insert({
     inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
     doctor_name: doctorName, created_by: user?.id ?? null,
+    ...bacaPemantauan(formData),
     ...(logDate ? { log_date: logDate } : {}),
     ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
   });
@@ -330,7 +353,7 @@ export async function updateDailyLog(formData: FormData) {
 
   const { data: before } = await supabase
     .from("inpatient_daily_logs")
-    .select("id, inpatient_record_id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at")
+    .select("id, inpatient_record_id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
     .eq("id", logId).maybeSingle();
   if (!before) redirect(`${back}?error=${encodeURIComponent("Catatan tidak ditemukan")}`);
 
@@ -344,6 +367,9 @@ export async function updateDailyLog(formData: FormData) {
   const { error: upErr } = await supabase.from("inpatient_daily_logs").update({
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
     updated_at: new Date().toISOString(), updated_by: user?.id ?? null,
+    // Angka pemantauan ikut bisa dikoreksi; nilai lamanya tersimpan di snapshot
+    // `before` — berat/suhu yang salah ketik tidak boleh berubah tanpa jejak.
+    ...bacaPemantauan(formData),
     ...(logDate ? { log_date: logDate } : {}),
     ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
   }).eq("id", logId);

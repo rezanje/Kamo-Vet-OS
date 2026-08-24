@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
+import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@/lib/monitoring-inap";
 import { updateDailyLog } from "../../../actions";
 
 export type LogRow = {
   id: string; log_date: string; created_at: string;
   condition_note: string; tindakan: string | null; keterangan: string | null; doctor_name: string | null;
+  makan?: string | null; minum?: string | null; bab?: string | null; pipis?: string | null;
+  berat?: number | string | null; suhu?: number | string | null; foto_url?: string | null;
+  komunikasi_owner?: string | null; komunikasi_via?: string | null;
 };
 
 export type EditRow = {
@@ -72,8 +76,65 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
               <input className="fi" type="time" name="log_time" defaultValue={timeStr} required disabled={!editable} />
             </div>
           </div>
+          {/* Angka pemantauan bisa dikoreksi — salah ketik suhu/berat menyesatkan
+              grafik dan bisa memicu tindakan yang tidak perlu. Nilai lamanya tetap
+              tersimpan di riwayat koreksi. */}
+          <div className="frow">
+            <div>
+              <label className="flab">Berat badan (kg)</label>
+              <input className="fi" type="number" name="berat" min={0} max={200} step="0.01"
+                defaultValue={log.berat ?? ""} disabled={!editable} />
+            </div>
+            <div>
+              <label className="flab">Suhu tubuh (°C)</label>
+              <input className="fi" type="number" name="suhu" min={25} max={45} step="0.1"
+                defaultValue={log.suhu ?? ""} disabled={!editable} />
+            </div>
+          </div>
+          <div className="frow">
+            <div>
+              <label className="flab">Makan</label>
+              <select className="fi" name="makan" defaultValue={log.makan ?? ""} disabled={!editable}>
+                <option value="">— belum dicatat —</option>
+                {OPSI_MAKAN.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="flab">Minum</label>
+              <select className="fi" name="minum" defaultValue={log.minum ?? ""} disabled={!editable}>
+                <option value="">— belum dicatat —</option>
+                {OPSI_MINUM.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="frow">
+            <div>
+              <label className="flab">BAB</label>
+              <select className="fi" name="bab" defaultValue={log.bab ?? ""} disabled={!editable}>
+                <option value="">— belum dicatat —</option>
+                {OPSI_BAB.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="flab">Pipis</label>
+              <select className="fi" name="pipis" defaultValue={log.pipis ?? ""} disabled={!editable}>
+                <option value="">— belum dicatat —</option>
+                {OPSI_PIPIS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {log.foto_url && (
+            <div className="fg">
+              <label className="flab">Foto hari itu</label>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={log.foto_url} alt="Foto pasien" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 9, border: ".5px solid var(--bd)" }} />
+              <input type="hidden" name="foto_url" value={log.foto_url} />
+            </div>
+          )}
+
           <div className="fg">
-            <label className="flab">Kondisi pasien *</label>
+            <label className="flab">Kondisi umum pasien *</label>
             <textarea className="fi" name="condition_note" required rows={2} defaultValue={log.condition_note} disabled={!editable} style={{ resize: "vertical" }} />
           </div>
           <div className="fg">
@@ -84,6 +145,21 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
             <label className="flab">Keterangan</label>
             <textarea className="fi" name="keterangan" rows={2} defaultValue={log.keterangan ?? ""} disabled={!editable} style={{ resize: "vertical" }} />
           </div>
+          <div className="frow">
+            <div style={{ flex: 2 }}>
+              <label className="flab">Yang disampaikan ke pemilik</label>
+              <textarea className="fi" name="komunikasi_owner" rows={2} defaultValue={log.komunikasi_owner ?? ""}
+                disabled={!editable} style={{ resize: "vertical" }} />
+            </div>
+            <div>
+              <label className="flab">Lewat</label>
+              <select className="fi" name="komunikasi_via" defaultValue={log.komunikasi_via ?? ""} disabled={!editable}>
+                <option value="">— belum dihubungi —</option>
+                {OPSI_KOMUNIKASI.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
           <div className="fg">
             <label className="flab">Oleh dokter</label>
             <input className="fi" name="doctor_name" defaultValue={log.doctor_name ?? ""} placeholder="Drh. ..." disabled={!editable} />
