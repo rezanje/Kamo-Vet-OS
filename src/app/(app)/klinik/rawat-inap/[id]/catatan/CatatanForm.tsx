@@ -201,14 +201,14 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
             <div>
               <label className="flab">Makan</label>
               <select className="fi" name="makan" defaultValue="">
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_MAKAN.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
               <label className="flab">Minum</label>
               <select className="fi" name="minum" defaultValue="">
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_MINUM.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
@@ -217,14 +217,14 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
             <div>
               <label className="flab">BAB</label>
               <select className="fi" name="bab" defaultValue="">
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_BAB.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
-              <label className="flab">Pipis</label>
+              <label className="flab">BAK (pipis)</label>
               <select className="fi" name="pipis" defaultValue="">
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_PIPIS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>

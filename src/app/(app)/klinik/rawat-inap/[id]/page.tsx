@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PapanPemantauan } from "./PapanPemantauan";
+import { ObatKhusus } from "./ObatKhusus";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, ripWaMessage, type Condition, hariRawatInap } from "@/lib/inpatient";
@@ -147,6 +148,10 @@ export default async function RawatInapDetailPage({
       {success === "logedit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Catatan dikoreksi — isi lama tersimpan di riwayat koreksi.</div>}
       {success === "status" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Kondisi pasien diperbarui & tercatat di log.</div>}
       {success === "wa" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-brand-whatsapp" /> WA duka terkirim ke pemilik.</div>}
+      {success === "obat" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Protokol obat ditambahkan.</div>}
+      {success === "dosis" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pemberian obat tercatat beserta nama pemberinya.</div>}
+      {success === "stopobat" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Protokol obat dihentikan.</div>}
+      {success === "dosisbatal" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Catatan pemberian ditandai batal — jejaknya tetap tersimpan.</div>}
       {consentBelum && (
         <div className="p2ban" style={{ justifyContent: "space-between" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -271,6 +276,10 @@ export default async function RawatInapDetailPage({
       </div>
 
       <PapanPemantauan laporan={laporanPemantauan} />
+
+      {/* Obat berprotokol dicatat terpisah dari laporan harian: satu protokol bisa
+          berjalan beberapa hari dan diberikan beberapa kali sehari oleh orang berbeda. */}
+      <ObatKhusus recordId={id} aktif={active} />
 
       {/* Laporan rawat inap harian — tabel utama (gaya referensi) */}
       <div className="crm-sec">

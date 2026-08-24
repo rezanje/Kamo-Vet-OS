@@ -1,12 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, hariRawatInap, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
 import { stockDeductions } from "@/lib/compounding";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
+import { hariIniWIB } from "@/lib/tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -382,4 +384,104 @@ export async function updateDailyLog(formData: FormData) {
   });
 
   redirect(`${back}?success=logedit`);
+}
+
+// ── Obat khusus (permintaan drh. Ilham, 24 Agustus) ───────────────────────────
+
+/** Protokol obat: obat apa, berapa kali sehari, berapa hari. */
+export async function tambahObatInap(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const recordId = String(formData.get("recordId") ?? "");
+  const back = `/klinik/rawat-inap/${recordId}`;
+  const gagal = (msg: string): never => redirect(`${back}?error=${encodeURIComponent(msg)}`);
+
+  const nama = String(formData.get("nama_obat") ?? "").trim().slice(0, 120);
+  const itemId = String(formData.get("item_id") ?? "").trim() || null;
+  const frekuensi = Number(formData.get("frekuensi_per_hari")) || 0;
+  const durasi = Number(formData.get("durasi_hari")) || 0;
+  const mulai = String(formData.get("mulai_tanggal") ?? "").trim() || hariIniWIB();
+
+  if (!recordId) gagal("Data rawat inap tidak valid");
+  if (!nama) gagal("Nama obat wajib diisi");
+  if (frekuensi < 1 || frekuensi > 12) gagal("Berapa kali sehari harus antara 1 dan 12");
+  if (durasi < 1 || durasi > 60) gagal("Berapa hari harus antara 1 dan 60");
+
+  const { error } = await supabase.from("inpatient_medications").insert({
+    inpatient_record_id: recordId,
+    item_id: itemId,
+    nama_obat: nama,
+    dosis: String(formData.get("dosis") ?? "").trim().slice(0, 60) || null,
+    rute: String(formData.get("rute") ?? "").trim().slice(0, 20) || null,
+    frekuensi_per_hari: frekuensi,
+    durasi_hari: durasi,
+    mulai_tanggal: mulai,
+    catatan: String(formData.get("catatan") ?? "").trim() || null,
+    created_by: user?.id ?? null,
+  });
+  if (error) gagal(error.message);
+
+  revalidatePath(back);
+  redirect(`${back}?success=obat`);
+}
+
+/**
+ * Catat satu kali pemberian obat.
+ *
+ * Nama pemberi ikut disimpan sebagai teks, bukan cuma id akunnya: jejak siapa yang
+ * menyuntik harus tetap terbaca walau akunnya nanti dinonaktifkan.
+ */
+export async function catatPemberianObat(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const medicationId = String(formData.get("medicationId") ?? "");
+  const recordId = String(formData.get("recordId") ?? "");
+  const back = `/klinik/rawat-inap/${recordId}`;
+  if (!medicationId) redirect(`${back}?error=${encodeURIComponent("Obat tidak valid")}`);
+
+  const { data: me } = await supabase
+    .from("profiles").select("full_name").eq("id", user?.id ?? "").maybeSingle();
+
+  const { error } = await supabase.from("inpatient_med_doses").insert({
+    medication_id: medicationId,
+    diberikan_oleh: user?.id ?? null,
+    nama_pemberi: me?.full_name ?? null,
+    catatan: String(formData.get("catatan") ?? "").trim() || null,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+
+  revalidatePath(back);
+  redirect(`${back}?success=dosis`);
+}
+
+/** Hentikan protokol lebih awal — sisa jadwalnya berhenti menagih. */
+export async function hentikanObatInap(formData: FormData) {
+  const supabase = await createClient();
+  const medicationId = String(formData.get("medicationId") ?? "");
+  const recordId = String(formData.get("recordId") ?? "");
+  const back = `/klinik/rawat-inap/${recordId}`;
+  if (!medicationId) redirect(`${back}?error=${encodeURIComponent("Obat tidak valid")}`);
+
+  await supabase.from("inpatient_medications")
+    .update({ dihentikan_at: new Date().toISOString() }).eq("id", medicationId);
+
+  revalidatePath(back);
+  redirect(`${back}?success=stopobat`);
+}
+
+/** Salah catat pemberian: ditandai batal, bukan dihapus — jejaknya tetap ada. */
+export async function batalkanPemberianObat(formData: FormData) {
+  const supabase = await createClient();
+  const doseId = String(formData.get("doseId") ?? "");
+  const recordId = String(formData.get("recordId") ?? "");
+  const back = `/klinik/rawat-inap/${recordId}`;
+  if (!doseId) redirect(`${back}?error=${encodeURIComponent("Catatan pemberian tidak valid")}`);
+
+  await supabase.from("inpatient_med_doses")
+    .update({ dibatalkan_at: new Date().toISOString() }).eq("id", doseId);
+
+  revalidatePath(back);
+  redirect(`${back}?success=dosisbatal`);
 }

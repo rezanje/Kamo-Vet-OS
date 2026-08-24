@@ -4,9 +4,9 @@
 // tidak ada input tambahan yang harus diisi dua kali.
 
 import {
-  ringkasPerHari, streakTidakAda, trenAngka, statusSuhu, peringatan,
+  ringkasPerHari, streakBuruk, trenAngka, trenOrdinal, statusSuhu, peringatan,
   SUHU_NORMAL_MIN, SUHU_NORMAL_MAX,
-  type LaporanHarian, type Tren,
+  type LaporanHarian, type Tren, type NilaiOrdinal, type JenisOrdinal,
 } from "@/lib/monitoring-inap";
 
 const tglPendek = (iso: string) =>
@@ -26,8 +26,6 @@ export function PapanPemantauan({ laporan }: { laporan: LaporanHarian[] }) {
     );
   }
 
-  const bab = streakTidakAda(hari, "bab");
-  const pipis = streakTidakAda(hari, "pipis");
   const berat = trenAngka(hari, "berat");
   const suhu = trenAngka(hari, "suhu");
   const pesan = peringatan(hari);
@@ -49,8 +47,9 @@ export function PapanPemantauan({ laporan }: { laporan: LaporanHarian[] }) {
       )}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <KartuStreak label="Belum BAB" streak={bab} />
-        <KartuStreak label="Belum pipis" streak={pipis} />
+        {ORDINAL.map((o) => (
+          <KartuOrdinal key={o.jenis} label={o.label} nilai={hari[0][o.jenis]} streak={streakBuruk(hari, o.jenis)} />
+        ))}
         <KartuAngka label="Berat badan" satuan="kg" tren={berat} />
         <KartuAngka label="Suhu tubuh" satuan="°C" tren={suhu}
           status={statusSuhu(suhu.terakhir)}
@@ -61,6 +60,11 @@ export function PapanPemantauan({ laporan }: { laporan: LaporanHarian[] }) {
         <Grafik judul="Tren berat badan (kg)" tren={berat} warna="#2563eb" />
         <Grafik judul="Tren suhu tubuh (°C)" tren={suhu} warna="#dc2626"
           batas={{ min: SUHU_NORMAL_MIN, max: SUHU_NORMAL_MAX }} />
+        {/* Skala Baik/Sedang/Buruk ikut jadi grafik: 3 = Baik, 1 = Buruk. */}
+        {ORDINAL.map((o) => (
+          <Grafik key={o.jenis} judul={`Tren ${o.label.toLowerCase()}`} tren={trenOrdinal(hari, o.jenis)}
+            warna={o.warna} skalaOrdinal />
+        ))}
       </div>
 
       <div style={{ overflowX: "auto" }}>
@@ -73,7 +77,7 @@ export function PapanPemantauan({ laporan }: { laporan: LaporanHarian[] }) {
               <th>Makan</th>
               <th>Minum</th>
               <th>BAB</th>
-              <th>Pipis</th>
+              <th>BAK</th>
               <th style={{ textAlign: "center" }}>Foto</th>
             </tr>
           </thead>
@@ -88,10 +92,10 @@ export function PapanPemantauan({ laporan }: { laporan: LaporanHarian[] }) {
                 </td>
                 <td style={{ textAlign: "right", fontSize: 11.5 }}>{h.berat ?? "—"}</td>
                 <td style={{ textAlign: "right", fontSize: 11.5, color: warnaSuhu(h.suhu) }}>{h.suhu ?? "—"}</td>
-                <td style={{ fontSize: 11 }}>{h.makan ?? <Kosong />}</td>
-                <td style={{ fontSize: 11 }}>{h.minum ?? <Kosong />}</td>
-                <td><Tanda ada={h.adaBab} /></td>
-                <td><Tanda ada={h.adaPipis} /></td>
+                <td><Tanda nilai={h.makan} /></td>
+                <td><Tanda nilai={h.minum} /></td>
+                <td><Tanda nilai={h.bab} /></td>
+                <td><Tanda nilai={h.pipis} /></td>
                 <td style={{ textAlign: "center", fontSize: 11 }}>
                   {h.foto.length > 0 ? `${h.foto.length} foto` : "—"}
                 </td>
@@ -156,35 +160,47 @@ function SubJudul({ icon, teks }: { icon: string; teks: string }) {
   );
 }
 
-const Kosong = () => <span style={{ color: "var(--td)" }}>belum dicatat</span>;
+const LABEL_SKOR: Record<number, string> = { 3: "Baik", 2: "Sedang", 1: "Buruk" };
 
-function Tanda({ ada }: { ada: boolean | null }) {
-  if (ada === null) return <span style={{ fontSize: 10, color: "var(--td)" }}>belum dicatat</span>;
-  return ada
-    ? <span className="bge g" style={{ fontSize: 9 }}>ada</span>
-    : <span className="bge r" style={{ fontSize: 9 }}>tidak ada</span>;
+const ORDINAL: { jenis: JenisOrdinal; label: string; warna: string }[] = [
+  { jenis: "makan", label: "Makan", warna: "#15803d" },
+  { jenis: "minum", label: "Minum", warna: "#0891b2" },
+  { jenis: "bab", label: "BAB", warna: "#b45309" },
+  { jenis: "pipis", label: "BAK", warna: "#7c3aed" },
+];
+
+const WARNA_ORDINAL: Record<NilaiOrdinal, string> = {
+  Baik: "g", Sedang: "o", Buruk: "r",
+};
+
+function Tanda({ nilai }: { nilai: NilaiOrdinal | null }) {
+  if (nilai === null) return <span style={{ fontSize: 10, color: "var(--td)" }}>belum dicatat</span>;
+  return <span className={`bge ${WARNA_ORDINAL[nilai]}`} style={{ fontSize: 9 }}>{nilai}</span>;
+}
+
+function KartuOrdinal({ label, nilai, streak }: {
+  label: string; nilai: NilaiOrdinal | null; streak: { hari: number; terhentiKarenaKosong: boolean };
+}) {
+  const bahaya = nilai === "Buruk";
+  const warna = nilai === "Buruk" ? "#b91c1c" : nilai === "Sedang" ? "#b45309" : nilai === "Baik" ? "#15803d" : "var(--td)";
+  return (
+    <div className="card" style={{ flex: "1 1 140px", background: bahaya ? "#fef2f2" : "var(--sf1)", borderColor: "transparent" }}>
+      <div style={{ fontSize: 10.5, color: "var(--tm)" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: warna, lineHeight: 1.35 }}>
+        {nilai ?? "belum dicatat"}
+      </div>
+      <div style={{ fontSize: 9.5, color: "var(--td)" }}>
+        {streak.hari >= 2
+          ? `buruk ${streak.hari} hari berturut-turut`
+          : streak.terhentiKarenaKosong ? "ada hari yang belum dicatat" : "catatan terakhir"}
+      </div>
+    </div>
+  );
 }
 
 function warnaSuhu(suhu: number | null): string {
   const s = statusSuhu(suhu);
   return s === "demam" ? "#b91c1c" : s === "rendah" ? "#2563eb" : "inherit";
-}
-
-function KartuStreak({ label, streak }: { label: string; streak: { hari: number; terhentiKarenaKosong: boolean } }) {
-  const bahaya = streak.hari >= 2;
-  return (
-    <div className="card" style={{ flex: "1 1 170px", background: bahaya ? "#fef2f2" : "var(--sf1)", borderColor: "transparent" }}>
-      <div style={{ fontSize: 10.5, color: "var(--tm)" }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: bahaya ? "#b91c1c" : "#15803d", lineHeight: 1.3 }}>
-        {streak.hari} hari
-      </div>
-      <div style={{ fontSize: 9.5, color: "var(--td)" }}>
-        {streak.terhentiKarenaKosong
-          ? "hitungan berhenti — ada hari yang belum dicatat"
-          : streak.hari === 0 ? "terakhir tercatat normal" : "berturut-turut sampai catatan terakhir"}
-      </div>
-    </div>
-  );
 }
 
 function KartuAngka({ label, satuan, tren, status, catatan }: {
@@ -210,8 +226,10 @@ function KartuAngka({ label, satuan, tren, status, catatan }: {
 }
 
 /** Grafik garis sederhana — tanpa pustaka tambahan, cukup untuk melihat arahnya. */
-function Grafik({ judul, tren, warna, batas }: {
+function Grafik({ judul, tren, warna, batas, skalaOrdinal }: {
   judul: string; tren: Tren; warna: string; batas?: { min: number; max: number };
+  /** Grafik Baik/Sedang/Buruk: sumbunya dikunci 1–3 dan diberi label kata. */
+  skalaOrdinal?: boolean;
 }) {
   const titik = tren.titik;
   const W = 320, H = 90, P = 10;
@@ -228,8 +246,8 @@ function Grafik({ judul, tren, warna, batas }: {
   }
 
   const nilai = titik.map((t) => t.nilai);
-  const min = Math.min(...nilai, ...(batas ? [batas.min] : []));
-  const max = Math.max(...nilai, ...(batas ? [batas.max] : []));
+  const min = skalaOrdinal ? 1 : Math.min(...nilai, ...(batas ? [batas.min] : []));
+  const max = skalaOrdinal ? 3 : Math.max(...nilai, ...(batas ? [batas.max] : []));
   const span = max - min || 1;
   const x = (i: number) => P + (i * (W - P * 2)) / (titik.length - 1);
   const y = (v: number) => H - P - ((v - min) / span) * (H - P * 2);
@@ -248,9 +266,15 @@ function Grafik({ judul, tren, warna, batas }: {
         {titik.map((t, i) => (
           <g key={i}>
             <circle cx={x(i)} cy={y(t.nilai)} r={3} fill={warna} />
-            <title>{`${tglPendek(t.tanggal)}: ${t.nilai}`}</title>
+            <title>{`${tglPendek(t.tanggal)}: ${skalaOrdinal ? LABEL_SKOR[t.nilai] ?? t.nilai : t.nilai}`}</title>
           </g>
         ))}
+        {skalaOrdinal && (
+          <>
+            <text x={W - P} y={P + 4} fontSize={7.5} fill="#9ca3af" textAnchor="end">Baik</text>
+            <text x={W - P} y={H - P + 2} fontSize={7.5} fill="#9ca3af" textAnchor="end">Buruk</text>
+          </>
+        )}
         <text x={P} y={H - 1} fontSize={8} fill="#9ca3af">{tglPendek(titik[0].tanggal)}</text>
         <text x={W - P} y={H - 1} fontSize={8} fill="#9ca3af" textAnchor="end">{tglPendek(titik.at(-1)!.tanggal)}</text>
       </svg>

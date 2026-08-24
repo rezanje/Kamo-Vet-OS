@@ -1,6 +1,6 @@
 # Papan Kerja VetOS — satu-satunya daftar yang dipantau
 
-**Diperbarui** 21 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
+**Diperbarui** 25 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
 
 > **Catatan uji 17 Agustus:** blok stok opname (M1–M10) sudah diuji langsung di aplikasi —
 > daftar 30 barang otomatis, kunci per barang yang bertahan setelah layar ditutup, buka kunci,
@@ -24,9 +24,9 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 |---|---|
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
 | Permintaan meeting 14 Agustus selesai | 39 / 42 · sisa: AI WhatsApp + 2 yang nunggu klien |
-| Permintaan susulan di luar meeting | 2 / 2 · status ulasan pelanggan (M43), impor data awal (S11) |
+| Permintaan susulan di luar meeting | 4 / 4 · status ulasan (M43), impor data awal (S11), skala pemantauan (M44), obat khusus (M45) |
 | Sisa pekerjaan pra-meeting | 3 / 11 · produksi own brand, penyesuaian persediaan, impor data |
-| Nunggu jawaban klien | 3 hal (laporan, token WA, identitas perusahaan) |
+| Nunggu jawaban klien | 2 hal (token WA, identitas perusahaan) |
 
 ---
 
@@ -86,6 +86,8 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 | M28 | Pengingat aktivasi voucher muncul di layar admin klinik | P3 | ✅ | 18 Agu 2026 · di layar antrian |
 | M29 | Loyalty: belanja dapat poin + tutup poin akhir tahun | P3 | ✅ | 18 Agu 2026 · tutup poin per tahun, khusus OWNER |
 | M43 | Status ulasan pelanggan yang bisa ditambah sendiri (mis. bintang 1 Google) | P2 | ✅ | 19 Agu 2026 · permintaan komisaris; muncul juga di kasir & antrian klinik |
+| M44 | Catatan harian rawat inap: makan, minum, BAB, BAK disamakan ke skala Baik/Sedang/Buruk supaya bisa jadi grafik | P2 | ✅ | 25 Agu 2026 · keputusan drh. Ilham & Pak Aldi |
+| M45 | Obat khusus berprotokol: berapa kali sehari, berapa hari, siapa yang memberikan | P2 | ✅ | 25 Agu 2026 · permintaan drh. Ilham |
 
 Latar: Pak Aldi mau menggiring pelanggan klinik ke petshop lewat voucher yang hanya berlaku
 hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher kertas.
@@ -109,7 +111,7 @@ hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher k
 | M37 | Dashboard menyesuaikan peran (operasional, marketing) — sekarang condong ke keuangan | P3 | ✅ | 18 Agu 2026 · 3 sudut pandang |
 | M38 | Peringatan saat stok kosong tapi tetap diinput | P3 | ✅ | 18 Agu 2026 |
 | M39 | Peringatan saat diskon membuat harga di bawah modal — boleh dilanjut | P3 | ✅ | 18 Agu 2026 |
-| M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | ⏸ | nunggu daftar laporan dari klien |
+| M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | 🔨 | daftar laporan SUDAH masuk 24 Agu → `docs/DAFTAR-LAPORAN-KAMO-2026-08-24.md` (45 laporan; 19 ada, 12 sebagian, 14 belum) |
 
 ### A7. WhatsApp & AI
 
@@ -147,7 +149,6 @@ penjualannya tercatat untung 100%. Perlu diisi klien supaya laporan laba akurat.
 
 | Yang ditunggu | Dari | Menahan |
 |---|---|---|
-| Daftar laporan yang benar-benar dipakai | Bu Nisa, Pak Daru | M40 |
 | Tarif jasa "Rawat Inap" per hari di master barang | Kamo Group | tagihan rawat inap otomatis |
 | Token layanan WhatsApp | Kamo Group | M41, S3 |
 | Logo, alamat, NPWP perusahaan | Kamo Group | S4 |

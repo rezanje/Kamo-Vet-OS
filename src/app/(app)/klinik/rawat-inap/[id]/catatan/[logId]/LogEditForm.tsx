@@ -95,14 +95,14 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
             <div>
               <label className="flab">Makan</label>
               <select className="fi" name="makan" defaultValue={log.makan ?? ""} disabled={!editable}>
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_MAKAN.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
               <label className="flab">Minum</label>
               <select className="fi" name="minum" defaultValue={log.minum ?? ""} disabled={!editable}>
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_MINUM.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
@@ -111,14 +111,14 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
             <div>
               <label className="flab">BAB</label>
               <select className="fi" name="bab" defaultValue={log.bab ?? ""} disabled={!editable}>
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_BAB.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
-              <label className="flab">Pipis</label>
+              <label className="flab">BAK (pipis)</label>
               <select className="fi" name="pipis" defaultValue={log.pipis ?? ""} disabled={!editable}>
-                <option value="">— belum dicatat —</option>
+                <option value="">— belum dinilai —</option>
                 {OPSI_PIPIS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>

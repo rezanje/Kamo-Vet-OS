@@ -4,11 +4,44 @@
 // dua kali sehari. Jadi semua hitungan di sini bekerja atas DAFTAR laporan, lalu
 // meringkasnya per tanggal — bukan mengandaikan satu baris per hari.
 
-export const OPSI_MAKAN = ["habis", "sebagian", "tidak mau"] as const;
-export const OPSI_MINUM = ["normal", "sedikit", "tidak mau"] as const;
-export const OPSI_BAB = ["normal", "cair", "keras", "berdarah", "tidak ada"] as const;
-export const OPSI_PIPIS = ["normal", "sedikit", "berdarah", "tidak ada"] as const;
+/**
+ * Satu skala untuk makan, minum, BAB, dan BAK (keputusan drh. Ilham & Pak Aldi,
+ * 24 Agustus).
+ *
+ * Sebelumnya tiap hal punya pilihan sendiri ("habis/sebagian/tidak mau",
+ * "normal/cair/keras/berdarah"). Detail teksturnya memang lebih kaya, tapi tidak
+ * bisa dijadikan grafik karena skalanya beda-beda — dan dokter tetap harus
+ * menafsirkan sendiri. Sekarang keempatnya memakai skala yang sama; teksturnya
+ * (diare, pasta, berdarah) ditulis di kolom keterangan.
+ */
+export const SKALA_ORDINAL = ["Baik", "Sedang", "Buruk"] as const;
+export type NilaiOrdinal = (typeof SKALA_ORDINAL)[number];
+
+export const OPSI_MAKAN = SKALA_ORDINAL;
+export const OPSI_MINUM = SKALA_ORDINAL;
+export const OPSI_BAB = SKALA_ORDINAL;
+export const OPSI_PIPIS = SKALA_ORDINAL;
 export const OPSI_KOMUNIKASI = ["WhatsApp", "Telepon", "Bertemu langsung"] as const;
+
+/** Nilai lama dari catatan yang sudah telanjur tersimpan, dipetakan ke skala baru. */
+const PETA_LAMA: Record<string, NilaiOrdinal> = {
+  habis: "Baik", normal: "Baik",
+  sebagian: "Sedang", sedikit: "Sedang", keras: "Sedang",
+  "tidak mau": "Buruk", "tidak ada": "Buruk", cair: "Buruk", berdarah: "Buruk",
+};
+
+export function normalOrdinal(v: string | null | undefined): NilaiOrdinal | null {
+  const t = (v ?? "").trim();
+  if (!t) return null;
+  const cocok = SKALA_ORDINAL.find((o) => o.toLowerCase() === t.toLowerCase());
+  return cocok ?? PETA_LAMA[t.toLowerCase()] ?? null;
+}
+
+/** Baik 3 · Sedang 2 · Buruk 1 — dipakai grafik dan pembanding antar hari. */
+export function skorOrdinal(v: string | null | undefined): number | null {
+  const n = normalOrdinal(v);
+  return n === "Baik" ? 3 : n === "Sedang" ? 2 : n === "Buruk" ? 1 : null;
+}
 
 export type LaporanHarian = {
   id: string;
@@ -33,13 +66,13 @@ export type RingkasanHari = {
   tanggal: string;
   jumlahLaporan: number;
   /** Nilai terakhir hari itu — yang paling menggambarkan kondisi saat shift berakhir. */
-  makan: string | null;
-  minum: string | null;
+  makan: NilaiOrdinal | null;
+  minum: NilaiOrdinal | null;
   berat: number | null;
   suhu: number | null;
-  /** Hari dianggap ADA BAB kalau salah satu laporan hari itu mencatat selain "tidak ada". */
-  adaBab: boolean | null;   // null = tidak tercatat sama sekali hari itu
-  adaPipis: boolean | null;
+  /** Nilai terakhir hari itu pada skala Baik/Sedang/Buruk; null = belum dicatat. */
+  bab: NilaiOrdinal | null;
+  pipis: NilaiOrdinal | null;
   foto: string[];
   komunikasi: { isi: string; via: string | null; oleh: string | null }[];
 };
@@ -62,18 +95,15 @@ export function ringkasPerHari(laporan: LaporanHarian[]): RingkasanHari[] {
       const nilaiTerakhir = <K extends keyof LaporanHarian>(k: K) =>
         urut.find((l) => l[k] !== null && l[k] !== "")?.[k] ?? null;
 
-      const babTercatat = urut.filter((l) => !!l.bab);
-      const pipisTercatat = urut.filter((l) => !!l.pipis);
-
       return {
         tanggal,
         jumlahLaporan: list.length,
-        makan: nilaiTerakhir("makan") as string | null,
-        minum: nilaiTerakhir("minum") as string | null,
+        makan: normalOrdinal(nilaiTerakhir("makan") as string | null),
+        minum: normalOrdinal(nilaiTerakhir("minum") as string | null),
         berat: nilaiTerakhir("berat") as number | null,
         suhu: nilaiTerakhir("suhu") as number | null,
-        adaBab: babTercatat.length === 0 ? null : babTercatat.some((l) => l.bab !== "tidak ada"),
-        adaPipis: pipisTercatat.length === 0 ? null : pipisTercatat.some((l) => l.pipis !== "tidak ada"),
+        bab: normalOrdinal(nilaiTerakhir("bab") as string | null),
+        pipis: normalOrdinal(nilaiTerakhir("pipis") as string | null),
         foto: urut.map((l) => l.fotoUrl).filter((f): f is string => !!f),
         komunikasi: urut
           .filter((l) => !!l.komunikasiOwner)
@@ -83,25 +113,27 @@ export function ringkasPerHari(laporan: LaporanHarian[]): RingkasanHari[] {
 }
 
 export type Streak = {
-  /** Berapa hari berturut-turut TIDAK ada, dihitung dari hari terbaru. */
+  /** Berapa hari berturut-turut bernilai Buruk, dihitung dari hari terbaru. */
   hari: number;
-  /** Hitungannya berhenti karena harinya tidak tercatat, bukan karena benar-benar ada. */
+  /** Hitungannya berhenti karena harinya tidak tercatat, bukan karena membaik. */
   terhentiKarenaKosong: boolean;
 };
 
+export type JenisOrdinal = "makan" | "minum" | "bab" | "pipis";
+
 /**
- * "Sudah berapa hari tidak BAB / tidak pipis."
+ * "Sudah berapa hari berturut-turut buruk."
  *
  * Hari yang TIDAK tercatat sengaja menghentikan hitungan dan ditandai: tidak ada
- * catatan bukan berarti tidak terjadi, dan menganggapnya "tidak BAB" bisa memicu
+ * catatan bukan berarti keadaannya baik, dan menganggapnya baik bisa menunda
  * tindakan medis atas dasar data yang sebenarnya kosong.
  */
-export function streakTidakAda(hari: RingkasanHari[], jenis: "bab" | "pipis"): Streak {
+export function streakBuruk(hari: RingkasanHari[], jenis: JenisOrdinal): Streak {
   let n = 0;
   for (const h of hari) {                          // hari[0] = terbaru
-    const ada = jenis === "bab" ? h.adaBab : h.adaPipis;
-    if (ada === null) return { hari: n, terhentiKarenaKosong: true };
-    if (ada) return { hari: n, terhentiKarenaKosong: false };
+    const nilai = h[jenis];
+    if (nilai === null) return { hari: n, terhentiKarenaKosong: true };
+    if (nilai !== "Buruk") return { hari: n, terhentiKarenaKosong: false };
     n++;
   }
   return { hari: n, terhentiKarenaKosong: false };
@@ -137,6 +169,26 @@ export function trenAngka(hari: RingkasanHari[], jenis: "berat" | "suhu"): Tren 
 
 // Rentang suhu normal anjing & kucing (38,0–39,2 °C). Dipakai untuk warna, bukan
 // untuk diagnosis — dokter yang memutuskan.
+/** Grafik untuk hal yang dinilai Baik/Sedang/Buruk — nilainya dipakai skornya. */
+export function trenOrdinal(hari: RingkasanHari[], jenis: JenisOrdinal): Tren {
+  const titik = [...hari]
+    .reverse()
+    .map((h) => ({ tanggal: h.tanggal, nilai: skorOrdinal(h[jenis]) }))
+    .filter((t): t is { tanggal: string; nilai: number } => t.nilai !== null);
+
+  const terakhir = titik.at(-1)?.nilai ?? null;
+  const sebelumnya = titik.at(-2)?.nilai ?? null;
+  if (terakhir === null || sebelumnya === null) {
+    return { terakhir, sebelumnya, delta: null, arah: "belum cukup data", titik };
+  }
+  const delta = terakhir - sebelumnya;
+  return {
+    terakhir, sebelumnya, delta,
+    arah: delta > 0 ? "naik" : delta < 0 ? "turun" : "tetap",
+    titik,
+  };
+}
+
 export const SUHU_NORMAL_MIN = 38.0;
 export const SUHU_NORMAL_MAX = 39.2;
 
@@ -152,10 +204,16 @@ export function peringatan(hari: RingkasanHari[]): string[] {
   const pesan: string[] = [];
   if (hari.length === 0) return pesan;
 
-  const bab = streakTidakAda(hari, "bab");
-  const pipis = streakTidakAda(hari, "pipis");
-  if (bab.hari >= 2) pesan.push(`Belum BAB ${bab.hari} hari berturut-turut`);
-  if (pipis.hari >= 1) pesan.push(`Belum pipis ${pipis.hari} hari berturut-turut`);
+  const LABEL: Record<JenisOrdinal, string> = {
+    makan: "Makan", minum: "Minum", bab: "BAB", pipis: "BAK",
+  };
+
+  // Dua hari berturut-turut buruk lebih pantas ditindak daripada satu kali saja.
+  for (const jenis of ["makan", "minum", "bab", "pipis"] as JenisOrdinal[]) {
+    const s = streakBuruk(hari, jenis);
+    if (s.hari >= 2) pesan.push(`${LABEL[jenis]} buruk ${s.hari} hari berturut-turut`);
+    else if (hari[0][jenis] === "Buruk") pesan.push(`${LABEL[jenis]} buruk pada catatan terakhir`);
+  }
 
   const suhu = trenAngka(hari, "suhu");
   const st = statusSuhu(suhu.terakhir);
@@ -168,10 +226,6 @@ export function peringatan(hari: RingkasanHari[]): string[] {
       && Math.abs(berat.delta) / berat.sebelumnya >= 0.05) {
     pesan.push(`Berat turun ${Math.abs(berat.delta)} kg sejak penimbangan sebelumnya`);
   }
-
-  const terbaru = hari[0];
-  if (terbaru.makan === "tidak mau") pesan.push("Tidak mau makan pada catatan terakhir");
-  if (terbaru.minum === "tidak mau") pesan.push("Tidak mau minum pada catatan terakhir");
 
   return pesan;
 }
