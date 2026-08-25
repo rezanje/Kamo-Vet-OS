@@ -179,9 +179,20 @@ export default async function RawatInapPage({
                     <td><span className={`bge ${COND_BADGE[r.condition_status] ?? "o"}`}>{CONDITION_LABEL[r.condition_status as keyof typeof CONDITION_LABEL] ?? r.condition_status}</span></td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)", maxWidth: 160 }}>{r.treatment_plan ?? "—"}</td>
                     <td>
-                      <Link href={`/klinik/rawat-inap/${r.id}`} className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
-                        <i className="ti ti-eye" /> Detail
-                      </Link>
+                      {/* Formulir harian dikasih pintu langsung dari daftar: dokter jaga
+                          mengisinya tiap giliran, dan menyuruh mereka membuka detail dulu
+                          membuat formulirnya terasa "tidak ada" (masukan drh. Ilham, 25 Agu). */}
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                        {!r.discharged_at && (
+                          <Link href={`/klinik/rawat-inap/${r.id}/catatan`} className="btn-acc"
+                            style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", background: "#2563eb" }}>
+                            <i className="ti ti-clipboard-plus" /> Isi laporan harian
+                          </Link>
+                        )}
+                        <Link href={`/klinik/rawat-inap/${r.id}`} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                          <i className="ti ti-eye" /> Detail
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

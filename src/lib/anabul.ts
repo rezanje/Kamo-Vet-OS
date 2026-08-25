@@ -43,3 +43,14 @@ export function pesanAnabulKembar(nama: string): string {
 export function errorAnabulKembar(message: string | null | undefined): boolean {
   return !!message && message.includes("pets_nama_unik_per_pemilik");
 }
+
+/**
+ * Status reproduksi anabul (permintaan drh. Ilham, 25 Agustus 2026).
+ *
+ * Monorchid = satu testis turun, satunya tertahan. Kriptorkid = dua-duanya tertahan.
+ * Keduanya bukan sekadar catatan: pasiennya belum steril TAPI juga tidak normal, dan
+ * itu menentukan tindakan bedahnya. Dulu pilihannya cuma Utuh/Steril, jadi kasus
+ * begini terpaksa ditulis "Utuh" dan hilang dari data.
+ */
+export const STATUS_REPRODUKSI = ["Utuh", "Steril", "Monorchid", "Kriptorkid"] as const;
+export type StatusReproduksi = (typeof STATUS_REPRODUKSI)[number];

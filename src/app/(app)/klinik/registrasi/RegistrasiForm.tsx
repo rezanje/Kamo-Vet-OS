@@ -1,5 +1,7 @@
 "use client";
 
+import { STATUS_REPRODUKSI } from "@/lib/anabul";
+
 import { useState } from "react";
 import Link from "next/link";
 import { SecHeader } from "@/components/SecHeader";
@@ -351,8 +353,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
             <div>
               <label className="flab">Status reproduksi</label>
               <select className="fi" value={pet.sterilisasi} onChange={(e) => setPet({ sterilisasi: e.target.value })}>
-                <option>Utuh</option>
-                <option>Steril</option>
+                {STATUS_REPRODUKSI.map((x) => <option key={x}>{x}</option>)}
               </select>
             </div>
           </div>

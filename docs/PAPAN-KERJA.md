@@ -88,6 +88,11 @@ memutuskan — dicari besoknya atau dikoreksi dari sistem.
 | M43 | Status ulasan pelanggan yang bisa ditambah sendiri (mis. bintang 1 Google) | P2 | ✅ | 19 Agu 2026 · permintaan komisaris; muncul juga di kasir & antrian klinik |
 | M44 | Catatan harian rawat inap: makan, minum, BAB, BAK disamakan ke skala Baik/Sedang/Buruk supaya bisa jadi grafik | P2 | ✅ | 25 Agu 2026 · keputusan drh. Ilham & Pak Aldi |
 | M45 | Obat khusus berprotokol: berapa kali sehari, berapa hari, siapa yang memberikan | P2 | ✅ | 25 Agu 2026 · permintaan drh. Ilham |
+| M46 | Status reproduksi: tambah Monorchid & Kriptorkid | P2 | ✅ | 25 Agu 2026 · review drh. Ilham; dulu cuma Utuh/Steril |
+| M47 | Formulir rawat inap harian dikasih pintu langsung dari daftar pasien | P2 | ✅ | 25 Agu 2026 · dokter tidak menemukannya karena harus buka detail dulu |
+| M48 | Layar Racik Obat menjelaskan resep ditulis di Rekam Medis | P2 | ✅ | 25 Agu 2026 · dokter mencari form resep di halaman apotek |
+| M49 | Status ulasan & catatan pemilik tampil di layar antrian sebelum diperiksa | P2 | ✅ | 25 Agu 2026 · "pelanggan loyal / suka komplain" perlu diketahui dokter lebih dulu |
+| M50 | Kolom "dokter sebelumnya" di daftar follow up | P2 | ✅ | 25 Agu 2026 · menentukan kasusnya dikonsulkan ke dokter yang sama atau diperiksa ulang |
 
 Latar: Pak Aldi mau menggiring pelanggan klinik ke petshop lewat voucher yang hanya berlaku
 hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher kertas.

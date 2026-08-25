@@ -15,6 +15,8 @@ type Row = {
   pets: Rel<{ name: string }>;
   customers: Rel<{ name: string; phone: string | null }>;
   branches: Rel<{ name: string }>;
+  /** Dokter pada kunjungan yang melahirkan follow up ini. */
+  visits: Rel<{ dokter: string | null }>;
 };
 
 const TABS = [
@@ -37,7 +39,7 @@ export default async function FollowUpPage({
   const today = hariIniWIB();
   let q = supabase
     .from("follow_ups")
-    .select("id, jenis, tanggal, catatan, status, pets(name), customers(name, phone), branches(name)");
+    .select("id, jenis, tanggal, catatan, status, pets(name), customers(name, phone), branches(name), visits(dokter)");
 
   if (tab === "riwayat") q = q.neq("status", "Menunggu").order("tanggal", { ascending: false });
   else if (tab === "mendatang") q = q.eq("status", "Menunggu").gt("tanggal", today).order("tanggal");
@@ -80,7 +82,7 @@ export default async function FollowUpPage({
             <thead>
               <tr>
                 <th style={{ width: 110 }}>Tanggal</th><th style={{ width: 100 }}>Jenis</th>
-                <th>Pasien</th><th>Pemilik</th><th>Catatan</th>
+                <th>Pasien</th><th>Pemilik</th><th style={{ width: 130 }}>Dokter sebelumnya</th><th>Catatan</th>
                 <th style={{ width: 210 }}>{tab === "riwayat" ? "Status" : "Aksi"}</th>
               </tr>
             </thead>
@@ -102,6 +104,12 @@ export default async function FollowUpPage({
                     <td style={{ fontSize: 10.5 }}>
                       {cust?.name ?? "—"}
                       <div style={{ fontSize: 9, color: "var(--tm)" }}>{cust?.phone || "tanpa no. HP"}</div>
+                    </td>
+                    {/* Dokter yang menangani kunjungan sebelumnya (masukan drh. Ilham, 25 Agu):
+                        menentukan kasusnya cukup dikonsulkan ke dokter yang sama atau perlu
+                        diperiksa ulang dari awal oleh dokter lain. */}
+                    <td style={{ fontSize: 10.5, color: one(r.visits)?.dokter ? "var(--tx)" : "var(--td)" }}>
+                      {one(r.visits)?.dokter || "—"}
                     </td>
                     <td style={{ fontSize: 10.5, color: r.catatan ? "var(--tx)" : "var(--td)", maxWidth: 220 }}>{r.catatan || "—"}</td>
                     <td>
@@ -133,7 +141,7 @@ export default async function FollowUpPage({
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                   {tab === "jatuh-tempo" ? "Tidak ada follow up yang jatuh tempo. Aman." : "Belum ada data."}
                 </td></tr>
               )}

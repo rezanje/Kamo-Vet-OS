@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { PrintButton } from "@/components/PrintButton";
 import { RiwayatTabs, type MedEntry, type RacikanEntry, type InapEntry, type InvoiceEntry } from "./RiwayatTabs";
 
@@ -39,7 +40,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, pet_id, created_at, pets(id, name, species, breed, dob, gender, weight, warna, sterilisasi, microchip, alergi, kondisi_khusus, golongan_darah, photo_url, created_at), customers(id, name, phone, email, address, tier, points), branches(name, code)")
+    .select("id, pet_id, created_at, pets(id, name, species, breed, dob, gender, weight, warna, sterilisasi, microchip, alergi, kondisi_khusus, golongan_darah, photo_url, created_at), customers(id, name, phone, email, address, tier, points, catatan, review_catatan, customer_review_statuses(nama, warna, nada)), branches(name, code)")
     .eq("id", id)
     .maybeSingle();
 
@@ -48,6 +49,10 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(visit.branches);
+  const ulasan = one((cust as { customer_review_statuses?: unknown } | null)?.customer_review_statuses as
+    Rel<StatusUlasan>) ?? null;
+  const catatanPemilik = ((cust as { catatan?: string | null } | null)?.catatan ?? "").trim();
+  const catatanUlasan = ((cust as { review_catatan?: string | null } | null)?.review_catatan ?? "").trim();
   const age = petAge(pet?.dob);
 
   // No. ID pasien turunan: PET-<yymmdd daftar>-<4 char id>
@@ -156,6 +161,10 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
               <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".05em" }}>OWNER / PEMILIK</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>{cust?.name ?? "—"}</div>
               <div style={{ fontSize: 11.5, color: "#2563eb", marginTop: 2 }}><i className="ti ti-phone" style={{ fontSize: 12 }} /> {cust?.phone ?? "—"}</div>
+              {/* Status ulasan pemilik ditaruh SEBELUM dokter masuk ruang periksa
+                  (masukan drh. Ilham, 25 Agu): pelanggan yang sedang kecewa perlu
+                  diketahui lebih dulu, bukan ketahuan waktu bayar di kasir. */}
+              {ulasan && <div style={{ marginTop: 5 }}><UlasanBadge s={ulasan} size={10} /></div>}
             </div>
           </div>
           <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, borderLeft: ".5px solid var(--bd)", paddingLeft: 18, minWidth: 480 }}>
@@ -205,6 +214,22 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
             <InfoRow label="Alergi" value={pet?.alergi} />
             <InfoRow label="Catatan Khusus" value={pet?.kondisi_khusus} />
           </div>
+          {(catatanPemilik || catatanUlasan) && (
+            <div style={{ background: "#fffbeb", border: ".5px solid #fcd34d", borderRadius: 10, padding: 12, marginTop: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#b45309", marginBottom: 3 }}>
+                <i className="ti ti-note" /> Catatan tentang pemilik
+              </div>
+              {catatanPemilik && (
+                <div style={{ fontSize: 10.5, color: "var(--tx)", lineHeight: 1.6 }}>{catatanPemilik}</div>
+              )}
+              {catatanUlasan && (
+                <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.6, marginTop: catatanPemilik ? 6 : 0 }}>
+                  <b>Catatan ulasan:</b> {catatanUlasan}
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12, marginTop: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", marginBottom: 3 }}><i className="ti ti-info-circle" /> Catatan</div>
             <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>

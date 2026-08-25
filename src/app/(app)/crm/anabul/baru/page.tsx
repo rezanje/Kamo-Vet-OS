@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { STATUS_REPRODUKSI } from "@/lib/anabul";
 import { SecHeader } from "@/components/SecHeader";
 import { simpanAnabul } from "./actions";
 
@@ -143,11 +144,10 @@ export default async function TambahAnabulPage({
 
             <div className="frow">
               <div>
-                <label className="flab">Sterilisasi</label>
+                <label className="flab">Status reproduksi</label>
                 <select className="fi" name="sterilisasi">
                   <option value="">— Belum diketahui —</option>
-                  <option value="Utuh">Utuh</option>
-                  <option value="Steril">Steril</option>
+                  {STATUS_REPRODUKSI.map((x) => <option key={x} value={x}>{x}</option>)}
                 </select>
               </div>
               <div>

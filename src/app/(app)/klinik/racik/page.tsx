@@ -47,6 +47,25 @@ export default async function RacikListPage({
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success === "void" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Racikan di-void, stok bahan dikembalikan.</div>}
 
+      {/* Dokter sempat mencari form resep di halaman ini (masukan drh. Ilham, 25 Agu).
+          Resep memang tidak ditulis di sini: resep menempel pada kunjungan pasien,
+          jadi tempatnya di rekam medis kunjungan itu. Halaman ini antrean kerja apotek. */}
+      <div className="crm-sec" style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <i className="ti ti-info-circle" style={{ fontSize: 18, color: "#2563eb", marginTop: 1 }} />
+        <div style={{ fontSize: 11.5, color: "var(--tm)", lineHeight: 1.7 }}>
+          <b>Mencari tempat menulis resep?</b> Resep ditulis dokter di <b>Rekam Medis</b> kunjungan
+          pasien — di sana ada daftar obat &amp; jasa, aturan pakai, dan tombol{" "}
+          <b>Simpan &amp; Cetak Resep</b>. Resep menempel pada kunjungannya, jadi riwayat obat
+          tiap pasien tidak pernah terpisah dari pemeriksaannya.<br />
+          Halaman ini antrean kerja apotek: racikan yang lahir dari resep itu, lengkap dengan
+          takaran bahannya.{" "}
+          <Link href="/klinik/antrian" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
+            Buka Antrian Digital
+          </Link>{" "}
+          untuk masuk ke rekam medis pasien yang sedang diperiksa.
+        </div>
+      </div>
+
       <div className="crm-sec">
         <SecHeader num="01" title="DAFTAR OBAT RACIKAN" desc="Petunjuk racik obat dari resep dokter — untuk apoteker/PCA." />
 
