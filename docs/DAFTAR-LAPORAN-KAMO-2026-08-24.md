@@ -139,8 +139,11 @@ Catatan angka yang perlu disepakati saat dibahas dengan klien:
 
 ## Ringkasan & usulan urutan
 
-Dari 45 laporan yang diminta: **34 sudah ada · 0 sebagian · 11 belum**
-(per 25 Agustus 2026, setelah langkah 1 dan 2 selesai).
+Dari **50** laporan yang diminta: **37 sudah ada · 13 belum**
+(per 25 Agustus 2026, setelah langkah 1 dan 2 selesai; tidak ada lagi yang setengah jadi).
+
+> Koreksi: dokumen ini awalnya menyebut 45 laporan — salah hitung. Jumlah baris
+> permintaannya 50. Angka di atas sudah dihitung ulang baris per baris.
 
 Usulan garap:
 

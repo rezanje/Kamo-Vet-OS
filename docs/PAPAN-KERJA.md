@@ -111,7 +111,7 @@ hari itu dan menempel di data orangnya, jadi tidak bisa ditiru seperti voucher k
 | M37 | Dashboard menyesuaikan peran (operasional, marketing) — sekarang condong ke keuangan | P3 | ✅ | 18 Agu 2026 · 3 sudut pandang |
 | M38 | Peringatan saat stok kosong tapi tetap diinput | P3 | ✅ | 18 Agu 2026 |
 | M39 | Peringatan saat diskon membuat harga di bawah modal — boleh dilanjut | P3 | ✅ | 18 Agu 2026 |
-| M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | ✅ | 25 Agu 2026 · `/laporan/transaksi-cabang` + `/laporan/pelanggan-harian`. Daftar 45 laporan permintaan klien ada di `docs/DAFTAR-LAPORAN-KAMO-2026-08-24.md` (34 ada, 0 sebagian, 11 belum) |
+| M40 | Laporan jumlah transaksi per cabang + rata-rata belanja per struk per cabang | P3 | ✅ | 25 Agu 2026 · `/laporan/transaksi-cabang` + `/laporan/pelanggan-harian`. Daftar 50 laporan permintaan klien ada di `docs/DAFTAR-LAPORAN-KAMO-2026-08-24.md` (37 ada, 13 belum) |
 
 ### A7. WhatsApp & AI
 
