@@ -16,7 +16,7 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 | Neraca | ✅ | `/keuangan/neraca` |
 | Arus kas | ✅ | `/keuangan/arus-kas` |
 | Rincian arus kas | ✅ | `/keuangan/arus-kas/rincian` — per rekening kas & bank, lengkap saldo berjalan |
-| Laba ditahan | ⬜ | terbentuk saat tutup buku, belum ada layar laporannya |
+| Laba ditahan | ✅ | `/keuangan/laba-ditahan` — saldo akun 3201 + laba berjalan yang belum ditutup, dipisah |
 
 ### Buku besar
 | Laporan | Status | Catatan |
@@ -52,8 +52,8 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 ### Pembelian
 | Laporan | Status | Catatan |
 |---|---|---|
-| Pembelian per pemasok | ⬜ | |
-| Pembelian per barang | ⬜ | |
+| Pembelian per pemasok | ✅ | `/laporan/pembelian` seksi 01, lengkap retur & sisa hutang |
+| Pembelian per barang | ✅ | `/laporan/pembelian` seksi 02, qty disamakan ke satuan dasar + harga rata-rata |
 | Uang muka pembelian | ✅ | `/pembelian/uang-muka` |
 | Rincian pesanan pembelian | ✅ | `/pembelian` |
 | Rincian penerimaan barang | ✅ | `/pembelian/penerimaan` |
@@ -71,10 +71,10 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 ### Tenaga penjual
 | Laporan | Status | Catatan |
 |---|---|---|
-| Faktur belum lunas per penjual | ⬜ | |
+| Faktur belum lunas per penjual | ✅ | `/laporan/penjual` seksi 02 |
 | Laporan komisi per tenaga penjual | ✅ | `/penjualan/komisi` |
-| Penjualan barang per penjual | ⬜ | |
-| Faktur penjualan per penjual | ⬜ | |
+| Penjualan barang per penjual | ✅ | `/laporan/penjual` — rincian barang bisa dibuka per penjual |
+| Faktur penjualan per penjual | ✅ | `/laporan/penjual` seksi 03 |
 
 ---
 
@@ -107,7 +107,7 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 | Laporan | Status |
 |---|---|
 | Daftar kategori rawat inap, pet hotel, grooming | ✅ — `/laporan/rekap-klinik` seksi 01. Catatan: **Pet Hotel belum ada** sebagai kategori tindakan |
-| Daftar anamnesa / penyakit | ⬜ |
+| Daftar anamnesa / penyakit | ✅ — `/laporan/anamnesa`, penyakit terbanyak + riwayat anamnesa, bisa dicari |
 | Daftar kondisi: sembuh, kontrol, RIP | ✅ — `/laporan/rekap-klinik` seksi 02 (stabil / kritis / sembuh / RIP) |
 | Daftar follow up: vaksin, grooming, kontrol lanjutan | ✅ — `/laporan/rekap-klinik` seksi 03, dipecah per jenis × status |
 
@@ -139,8 +139,8 @@ Catatan angka yang perlu disepakati saat dibahas dengan klien:
 
 ## Ringkasan & usulan urutan
 
-Dari **50** laporan yang diminta: **43 sudah ada · 7 belum**
-(per 25 Agustus 2026, setelah langkah 1, 2, dan 3 selesai).
+Dari **50** laporan yang diminta: **50 sudah ada · 0 belum** — seluruh daftar tuntas
+per 25 Agustus 2026.
 
 > Koreksi: dokumen ini awalnya menyebut 45 laporan — salah hitung. Jumlah baris
 > permintaannya 50. Angka di atas sudah dihitung ulang baris per baris.
@@ -156,8 +156,8 @@ Usulan garap:
 3. ~~**Marketing**~~ — ✅ selesai 25 Agustus 2026. Dorman, interval kunjungan, akuisisi,
    dan kinerja voucher/promo/diskon. Ambang dorman tidak jadi penghalang: bawaannya 90 hari
    dan bisa diubah langsung di layarnya.
-4. **Pembelian & tenaga penjual per dimensi** — pembelian per pemasok/barang, penjualan per
-   penjual. Rapi tapi jarang dilihat harian.
+4. ~~**Pembelian & tenaga penjual per dimensi**~~ — ✅ selesai 25 Agustus 2026, bersama
+   laba ditahan dan daftar anamnesa/penyakit. Seluruh 50 permintaan sudah punya layarnya.
 
 ---
 
@@ -190,3 +190,13 @@ besarnya — tidak ada dokumen yang lolos dari jurnal.
    berikutnya.
 6. **Belum ada satu pun target penjualan tersimpan**, jadi kolom Capaian di laporan diskon
    masih kosong. Begitu target diisi di layar Target Penjualan, kolomnya terisi sendiri.
+
+### Tambahan temuan saat laporan terakhir dibuat
+
+7. **5 dari 6 rekam medis belum diisi diagnosanya.** Anamnesa dan gejala klinis terisi, tapi
+   kolom diagnosa dibiarkan kosong. Laporan penyakit terbanyak baru berguna kalau kolom itu
+   diisi konsisten — layarnya sudah menandai berapa catatan yang kosong.
+8. **Sebagian akun belum terhubung ke kartu karyawan.** Omzet Rp 1.057.000 di Agustus tidak
+   bisa dinisbahkan ke penjual mana pun. Angkanya tetap dilaporkan terpisah, bukan dibuang.
+9. **Satu faktur pembelian tanpa pemasok** (Rp 180.000). Muncul sebagai baris "(tanpa pemasok)"
+   di laporan pembelian.
