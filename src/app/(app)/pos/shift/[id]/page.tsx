@@ -10,7 +10,7 @@ function one<T>(r: Rel<T>): T | null {
 }
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDt = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+  iso ? new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
 // Laporan shift (Addendum §1: dicetak/export, masuk dashboard manajer cabang).
 export default async function LaporanShiftPage({ params }: { params: Promise<{ id: string }> }) {

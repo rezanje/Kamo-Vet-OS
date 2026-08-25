@@ -18,7 +18,7 @@ type Row = {
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 const fmtD = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 const CHANNEL_STYLE: Record<string, { bg: string; fg: string }> = {
   "Shopee": { bg: "#fff1eb", fg: "#ea580c" },

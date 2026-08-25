@@ -111,7 +111,7 @@ export default async function RawatInapDetailPage({
   const noRM = visit
     ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(rec.visit_id as string).slice(0, 3).toUpperCase()}`
     : "—";
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" });
   const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -337,7 +337,7 @@ export default async function RawatInapDetailPage({
                 const by = one(s.profiles as Rel<{ full_name: string | null }>);
                 return (
                   <tr key={i}>
-                    <td style={{ fontSize: 10.5, color: "var(--tm)", whiteSpace: "nowrap" }}>{new Date(s.changed_at).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)", whiteSpace: "nowrap" }}>{new Date(s.changed_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
                     <td style={{ fontSize: 11 }}>{s.previous_status ?? "—"}</td>
                     <td><span className={`bge ${COND_BADGE[s.new_status] ?? "o"}`}>{s.new_status}</span></td>
                     <td style={{ fontSize: 10.5 }}>{by?.full_name ?? "—"}</td>

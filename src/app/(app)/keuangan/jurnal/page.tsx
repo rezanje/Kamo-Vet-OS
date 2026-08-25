@@ -225,7 +225,7 @@ export default async function JurnalPage({
                   const totD = lines.reduce((a, l) => a + Number(l.debit),  0);
                   const totK = lines.reduce((a, l) => a + Number(l.credit), 0);
                   const badge = SOURCE_BADGE[e.source] ?? { label: e.source, cls: "g" };
-                  const tgl = e.tanggal ? new Date(e.tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
+                  const tgl = e.tanggal ? new Date(e.tanggal).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit" }) : "—";
                   return (
                     <tr key={e.id}>
                       {/* Rinciannya dibuka pakai <details> bawaan browser — tidak perlu

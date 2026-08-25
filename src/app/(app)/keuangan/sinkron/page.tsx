@@ -4,7 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { findDrift, findDriftLain, perbaikiDrift } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 export default async function SinkronPage({ searchParams }: { searchParams: Promise<{ success?: string }> }) {
   const { success } = await searchParams;

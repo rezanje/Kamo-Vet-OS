@@ -13,7 +13,7 @@ const BADGE: Record<string, string> = {
   "Menunggu Persetujuan": "o", Disetujui: "b", Dikirim: "b", Selesai: "g", Ditolak: "r",
 };
 const fmtDt = (iso: string) =>
-  new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 type Detail = {
   id: string;

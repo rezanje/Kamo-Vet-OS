@@ -11,7 +11,7 @@ function one<T>(r: Rel<T>): T | null {
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDt = (iso: string) =>
-  new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 type Sale = {
   id: string;
@@ -151,7 +151,7 @@ export default async function PenjualanDetailPage({
               <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", border: ".5px solid var(--bd)", borderRadius: 6, fontSize: 11.5 }}>
                 <span style={{ fontWeight: 500 }}>{r.no_retur ?? "—"}</span>
                 <span style={{ color: "var(--tm)", fontSize: 11 }}>
-                  {new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                  {new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" })}
                 </span>
                 <span style={{ color: "var(--tm)", fontSize: 11 }}>{r.sales_return_items?.length ?? 0} item</span>
                 <span style={{ marginLeft: "auto", fontWeight: 700 }}>{rp(Number(r.total))}</span>

@@ -10,7 +10,7 @@ import {
 } from "@/lib/monitoring-inap";
 
 const tglPendek = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+  new Date(`${iso}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short" });
 
 export function PapanPemantauan({ laporan }: { laporan: LaporanHarian[] }) {
   const hari = ringkasPerHari(laporan);

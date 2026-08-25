@@ -34,7 +34,7 @@ export default async function ResepPage({ params }: { params: Promise<{ visitId:
     ? await supabase.from("prescription_items").select("nama_obat, qty, aturan_pakai").eq("medical_record_id", mr.id).order("created_at")
     : { data: [] as { nama_obat: string; qty: number; aturan_pakai: string | null }[] };
 
-  const tgl = new Date(visit.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+  const tgl = new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
   return (
     <>

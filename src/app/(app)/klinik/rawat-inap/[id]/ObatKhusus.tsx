@@ -18,7 +18,7 @@ const RUTE = ["IV", "IM", "SC", "Oral", "Topikal"];
 const jamWib = (iso: string) =>
   new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 const tglPendek = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+  new Date(`${iso}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short" });
 
 export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif: boolean }) {
   const supabase = await createClient();

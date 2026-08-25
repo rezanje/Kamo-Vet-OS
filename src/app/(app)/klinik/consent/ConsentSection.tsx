@@ -11,7 +11,7 @@ export type ConsentRow = {
   signer_name: string | null; signature_data: string | null; signed_at: string | null;
 };
 
-const waktu = (iso: string) => new Date(iso).toLocaleString("id-ID", {
+const waktu = (iso: string) => new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta",
   day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
 });
 

@@ -6,7 +6,7 @@ import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string; cabang?: string }> }) {
   const { akun, dari, sampai, cabang } = await searchParams;

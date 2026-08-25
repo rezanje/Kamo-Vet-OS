@@ -32,7 +32,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(visit.branches);
-  const tgl = new Date(invoice.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+  const tgl = new Date(invoice.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
   const lunas = invoice.paid_status === "Lunas";
   const sisa = invoice.paid_status === "DP" ? invoice.total - invoice.dp_amount : lunas ? 0 : invoice.total;
 

@@ -55,7 +55,7 @@ export default async function LogDetailPage({
   const noRM = visit
     ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(rec.visit_id as string).slice(0, 3).toUpperCase()}`
     : "—";
-  const tglMasuk = new Date(rec.admitted_at as string).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const tglMasuk = new Date(rec.admitted_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <>
@@ -69,7 +69,7 @@ export default async function LogDetailPage({
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>DETAIL CATATAN HARIAN</div>
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
-            {new Date(log.created_at as string).toLocaleString("id-ID", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+            {new Date(log.created_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
           </div>
         </div>
       </div>

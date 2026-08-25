@@ -49,7 +49,7 @@ export async function DokumenPanel({
                     {r.nama}
                   </a>
                   <div style={{ fontSize: 9.5, color: "var(--td)" }}>
-                    {new Date(r.created_at).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {new Date(r.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     {oleh?.full_name ? ` · ${oleh.full_name}` : ""}
                     {r.ukuran ? ` · ${Math.max(1, Math.round(Number(r.ukuran) / 1024))} KB` : ""}
                   </div>

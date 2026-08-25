@@ -35,7 +35,7 @@ const STATUS_BADGE: Record<string, string> = {
 const JENIS_LIST = ["Cuti", "Izin", "Sakit", "Lembur"];
 
 const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  new Date(d).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 export default async function CutiPage({
   searchParams,

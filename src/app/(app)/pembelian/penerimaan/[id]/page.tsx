@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);

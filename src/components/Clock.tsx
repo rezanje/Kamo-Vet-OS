@@ -8,7 +8,7 @@ export function Clock({ light }: { light?: boolean } = {}) {
 
   useEffect(() => {
     const fmt = () =>
-      new Date().toLocaleString("id-ID", {
+      new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta",
         day: "2-digit",
         month: "short",
         year: "numeric",

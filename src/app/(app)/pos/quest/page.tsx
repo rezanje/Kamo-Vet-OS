@@ -177,7 +177,7 @@ export default async function QuestAdminPage({
                 const reward = one(r.staff_reward_catalog as Rel<{ reward_name: string }>);
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{new Date(r.redeemed_at).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{new Date(r.redeemed_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
                     <td style={{ fontSize: 11.5 }}>{staff?.full_name ?? "—"}</td>
                     <td style={{ fontSize: 11.5 }}>{reward?.reward_name ?? "—"}</td>
                     <td style={{ fontSize: 11.5, fontWeight: 700 }}>{r.points_spent}</td>

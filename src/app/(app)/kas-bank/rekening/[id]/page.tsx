@@ -7,7 +7,7 @@ import { getAccountLedger } from "@/lib/ledger";
 import { geserHari } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 // Sumber jurnal → bahasa orang. Kalau ada source baru, tampilkan apa adanya.
 const ASAL: Record<string, string> = {

@@ -28,7 +28,7 @@ type Req = {
 };
 
 const fmtDt = (iso: string) =>
-  new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default async function PermintaanPage({
   searchParams,

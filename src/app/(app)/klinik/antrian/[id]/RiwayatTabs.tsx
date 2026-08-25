@@ -20,7 +20,7 @@ export type InapEntry = { id: string; visitId: string; doctor: string | null; co
 export type InvoiceEntry = { visitId: string; total: number; paid_status: string; date: string };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
 const TABS = ["Riwayat Medis", "Rawat Inap", "Resep / Racikan", "Invoice / Pembayaran"] as const;

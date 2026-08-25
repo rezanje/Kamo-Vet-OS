@@ -43,7 +43,7 @@ const ulasan = (c: CustomerRow): StatusUlasan | null => {
 const fmt = (n: number) => n.toLocaleString("id-ID");
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  iso ? new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—";
 const pctStr = (n: number, total: number) =>
   total ? (Math.round((n / total) * 1000) / 10).toString().replace(".", ",") + "%" : "0%";
 

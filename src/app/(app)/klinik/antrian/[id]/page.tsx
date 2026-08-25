@@ -23,9 +23,9 @@ function petAge(dob: string | null | undefined): string | null {
   return `${y} Tahun ${m} Bulan`;
 }
 const fmtDateLong = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) : "—";
+  iso ? new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "numeric", month: "long", year: "numeric" }) : "—";
 const fmtDaftar = (iso: string) =>
-  new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 // warna titik timeline per poli (fallback siklus).

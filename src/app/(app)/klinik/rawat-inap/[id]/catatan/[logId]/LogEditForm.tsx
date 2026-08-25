@@ -204,7 +204,7 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--sb)" }}>{e.oleh}</span>
                   <span style={{ fontSize: 9.5, color: "var(--tm)" }}>
-                    {new Date(e.edited_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {new Date(e.edited_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
                 {e.alasan && <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6, fontStyle: "italic" }}>“{e.alasan}”</div>}

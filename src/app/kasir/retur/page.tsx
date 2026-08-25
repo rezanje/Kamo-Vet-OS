@@ -24,7 +24,7 @@ type ReturRow = {
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 const fmtD = (d: string) =>
-  new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 // Retur di layar kasir (spec mba Nissa 2026-07-30): kasir toko bisa proses retur
 // sendiri tanpa lewat backoffice. Dibatasi cabang shift-nya — struk cabang lain

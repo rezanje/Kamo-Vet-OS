@@ -26,7 +26,7 @@ export default async function ConsentPrintPage({ params }: { params: Promise<{ c
   const cust = one(visit?.customers ?? null);
   const branch = one(visit?.branches ?? null);
 
-  const tgl = new Date(c.created_at as string).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+  const tgl = new Date(c.created_at as string).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
   return (
     <>

@@ -7,7 +7,7 @@ import { akunBeban, serapanPeriode } from "@/lib/anggaran-data";
 import { batalGeserAnggaran, geserAnggaran } from "../anggaran/actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const tgl = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+const tgl = (s: string) => new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 const periodeSekarang = () => new Date().toISOString().slice(0, 7);
 
 type Rel<T> = T | T[] | null;

@@ -34,7 +34,7 @@ export default async function SlipPage({
   const slip = ((data ?? []) as unknown as Slip[])
     .sort((a, b) => (one(a.employees)?.nama ?? "").localeCompare(one(b.employees)?.nama ?? ""));
 
-  const namaBulan = new Date(`${periode}-01T00:00:00`).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  const namaBulan = new Date(`${periode}-01T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", month: "long", year: "numeric" });
 
   return (
     <>

@@ -28,7 +28,7 @@ type Doc = {
 };
 
 const fmtD = (d: string) =>
-  new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+  new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
 export default async function PemindahanDetailPage({
   params,

@@ -45,7 +45,7 @@ export async function buatConsent(formData: FormData) {
     tindakan,
     dokter: visit.dokter ?? "",
     cabang: branch?.name ?? "",
-    tanggal: new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }),
+    tanggal: new Date().toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" }),
   };
 
   const { error } = await supabase.from("consents").insert({

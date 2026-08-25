@@ -67,7 +67,7 @@ export default async function JadwalPage({
   }
 
   const terisi = Object.keys(awal).length;
-  const namaBulan = new Date(`${bulan}-01T00:00:00`).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  const namaBulan = new Date(`${bulan}-01T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", month: "long", year: "numeric" });
 
   return (
     <>

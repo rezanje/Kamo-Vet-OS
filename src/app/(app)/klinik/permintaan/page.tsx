@@ -46,7 +46,7 @@ export default async function KlinikPermintaanPage({
   const { data: all } = await statQ;
   const c = (s: string) => (all ?? []).filter((r) => r.status === s).length;
 
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" });
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
   return (

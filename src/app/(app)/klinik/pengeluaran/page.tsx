@@ -53,7 +53,7 @@ export default async function KlinikPengeluaranPage({
   const { data: all } = await statQ.gte("tanggal", startYear);
   const sum = (fromDate: string) => (all ?? []).filter((e) => e.tanggal >= fromDate).reduce((a, e) => a + Number(e.jumlah), 0);
 
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" });
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
   return (

@@ -57,7 +57,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const totalDiskon = invRows.reduce((a, i) => a + (Number(i.discount) || 0), 0);
   const totalPpn = invRows.reduce((a, i) => a + (Number(i.tax) || 0), 0);
   const metode = [...new Set(invRows.map((i) => i.metode_bayar).filter(Boolean))].join(", ") || "-";
-  const tgl = new Date(`${rombongan.tanggal}T00:00:00`).toLocaleDateString("id-ID", {
+  const tgl = new Date(`${rombongan.tanggal}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta",
     day: "2-digit", month: "short", year: "numeric",
   });
 

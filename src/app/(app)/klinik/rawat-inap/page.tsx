@@ -171,7 +171,7 @@ export default async function RawatInapPage({
                     <td><div style={{ fontSize: 11.5 }}>{cust?.name ?? "—"}</div><div style={{ fontSize: 10, color: "var(--tm)" }}>{cust?.phone}</div></td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.doctor_name ?? "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{new Date(r.admitted_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{new Date(r.admitted_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                     <td style={{ fontSize: 11 }}>
                       {lamaInap(r.admitted_at, r.discharged_at)}
                       {r.discharged_at && <div style={{ fontSize: 9, color: "var(--tm)" }}>sudah pulang</div>}

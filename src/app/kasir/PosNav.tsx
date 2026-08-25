@@ -52,7 +52,7 @@ export function PosNav({ branchName, userName, hasShift, notifications }: { bran
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.85)", display: "inline-flex", alignItems: "center", gap: 6 }}>
           <i className="ti ti-calendar-event" style={{ fontSize: 14 }} />
-          {new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+          {new Date().toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" })}
           {" | "}
           {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
         </span>

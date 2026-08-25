@@ -24,7 +24,7 @@ const STATUS = [
 ];
 const badgeCls = (s: string) => STATUS.find((x) => x.k === s)?.cls ?? "x";
 
-const dateOnly = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
+const dateOnly = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" });
 const timeOnly = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 const isoDay = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 

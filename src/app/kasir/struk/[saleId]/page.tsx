@@ -28,7 +28,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const cust = one(sale.customers);
   const branch = one(sale.branches);
-  const tgl = new Date(sale.created_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const tgl = new Date(sale.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <>

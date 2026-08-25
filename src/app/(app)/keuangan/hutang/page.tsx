@@ -10,7 +10,7 @@ import { bayarFaktur } from "../../pembelian/faktur/actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type FakturRow = {
   id: string; no_faktur: string; no_faktur_pemasok: string | null; po_no: string | null; po_id: string | null;

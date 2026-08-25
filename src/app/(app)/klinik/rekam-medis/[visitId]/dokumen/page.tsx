@@ -64,8 +64,8 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
     .from("inpatient_records").select("admitted_at, condition_status").eq("visit_id", visitId).order("admitted_at", { ascending: false });
 
   const noRM = `RM/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(visit.id as string).slice(0, 3).toUpperCase()}`;
-  const tglPeriksa = new Date(visit.created_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  const dicetak = new Date(mr?.created_at ?? visit.created_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const tglPeriksa = new Date(visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const dicetak = new Date(mr?.created_at ?? visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <>
@@ -205,7 +205,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
               <thead><tr><th style={{ width: 110 }}>Tanggal</th><th>Status</th></tr></thead>
               <tbody>
                 {(inpat ?? []).map((r, i) => (
-                  <tr key={i}><td>{new Date(r.admitted_at).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" })}</td><td style={{ textTransform: "capitalize" }}>{r.condition_status}</td></tr>
+                  <tr key={i}><td>{new Date(r.admitted_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" })}</td><td style={{ textTransform: "capitalize" }}>{r.condition_status}</td></tr>
                 ))}
                 {(inpat ?? []).length === 0 && <tr><td>—</td><td style={{ color: "var(--td)" }}>Belum ada riwayat rawat inap.</td></tr>}
               </tbody>

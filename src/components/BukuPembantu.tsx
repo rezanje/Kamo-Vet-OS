@@ -6,7 +6,7 @@ import { totalPembantu, selisihBukuBesar, type BarisPihak } from "@/lib/buku-pem
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmt = (s: string) =>
-  s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
+  s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit" }) : "—";
 
 const WARNA_JENIS: Record<string, string> = {
   Faktur: "#b45309", Pembayaran: "#15803d", "Uang muka": "#2563eb", Retur: "#7c3aed",

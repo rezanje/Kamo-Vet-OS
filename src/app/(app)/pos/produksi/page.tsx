@@ -17,7 +17,7 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? r[0] ?? null : r ??
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (d: string | null) =>
-  d ? new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  d ? new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 type Resep = {
   id: string; nama: string; output_qty: number; is_active: boolean;

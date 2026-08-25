@@ -14,7 +14,7 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmt = (s: string) =>
-  s ? new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
+  s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit" }) : "—";
 
 const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 

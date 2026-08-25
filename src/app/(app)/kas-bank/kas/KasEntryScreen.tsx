@@ -21,7 +21,7 @@ type Baris = {
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtTgl = (d: string) =>
-  new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  new Date(d).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 // Akun lawan yang masuk akal per jenis: kas keluar biasanya beban, kas masuk
 // biasanya pendapatan/ekuitas. Tipe lain tetap boleh — cuma diurutkan belakangan.

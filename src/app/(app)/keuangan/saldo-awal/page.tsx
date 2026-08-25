@@ -5,7 +5,7 @@ import { bacaSaldoAwal, hapusSaldoAwal } from "./actions";
 import { SaldoAwalForm } from "./SaldoAwalForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 export default async function SaldoAwalPage({
   searchParams,

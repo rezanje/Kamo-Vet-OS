@@ -72,7 +72,7 @@ export default async function AbsensiPage({
   const cntAlpha = rows.filter((r) => r.status === "Alpha").length;
 
   const fmtTgl = (d: string) =>
-    new Date(d + "T00:00:00").toLocaleDateString("id-ID", {
+    new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta",
       weekday: "long",
       day: "2-digit",
       month: "long",

@@ -128,7 +128,7 @@ export default async function MonitorExpiredPage({
                       <td style={{ fontSize: 11, color: "var(--tm)" }}>{b.gudang}</td>
                       <td style={{ textAlign: "right", fontSize: 11.5 }}>{b.qty} {b.satuan}</td>
                       <td style={{ fontSize: 11 }}>
-                        {new Date(`${b.expDate}T00:00:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                        {new Date(`${b.expDate}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" })}
                         <div style={{ fontSize: 9.5, color: "var(--td)" }}>
                           {b.sisaHari < 0 ? `lewat ${Math.abs(b.sisaHari)} hari` : `${b.sisaHari} hari lagi`}
                         </div>

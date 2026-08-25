@@ -175,7 +175,7 @@ export default async function PembayaranPage({
     dokter: visit.dokter ?? "—",
     jenisLayanan,
     noInvoice: invoice?.invoice_no ?? "(baru)",
-    tanggal: new Date((invoice?.created_at as string) ?? visit.created_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+    tanggal: new Date((invoice?.created_at as string) ?? visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
   };
 
   // Addendum §1: pembayaran klinik hanya bisa saat shift klinik terbuka (gate server-side).
@@ -491,7 +491,7 @@ export default async function PembayaranPage({
                 const editor = one(l.profiles as Rel<{ full_name: string | null }>);
                 return (
                   <tr key={i}>
-                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{new Date(l.edited_at).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{new Date(l.edited_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
                     <td style={{ fontSize: 10.5 }}>{editor?.full_name ?? "—"}</td>
                     <td><span className={`bge ${l.field_changed === "voided" ? "r" : "o"}`}>{l.field_changed}</span></td>
                     <td style={{ fontSize: 10.5, maxWidth: 180, wordBreak: "break-word" }}>{l.old_value ?? "—"}</td>

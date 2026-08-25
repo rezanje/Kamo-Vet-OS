@@ -31,7 +31,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(visit.branches);
-  const tgl = new Date(invoice.paid_at ?? invoice.created_at).toLocaleString("id-ID", {
+  const tgl = new Date(invoice.paid_at ?? invoice.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta",
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
 

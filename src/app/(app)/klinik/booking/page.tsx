@@ -108,7 +108,7 @@ export default async function BookingKlinikPage({
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 12, fontWeight: 600 }}>
-                        {new Date(`${b.tanggal}T00:00:00`).toLocaleDateString("id-ID", { weekday: "short", day: "2-digit", month: "short" })} · {b.jam} WIB
+                        {new Date(`${b.tanggal}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", weekday: "short", day: "2-digit", month: "short" })} · {b.jam} WIB
                       </div>
                       <div style={{ fontSize: 10.5, color: "var(--td)" }}>
                         {one(b.branches)?.name ?? "—"} · {b.poli}

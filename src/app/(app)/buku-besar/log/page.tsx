@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDateTime = (s: string) => new Date(s).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+const fmtDateTime = (s: string) => new Date(s).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 // Sumber jurnal → label + warna badge (audit trail).
 const SRC: Record<string, { label: string; cls: string }> = {

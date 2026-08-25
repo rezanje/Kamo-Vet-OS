@@ -10,7 +10,7 @@ function one<T>(r: Rel<T>): T | null {
 }
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtTgl = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+const fmtTgl = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
 const BADGE: Record<string, string> = { Draft: "x", Dikirim: "b", Diterima: "g", Dibatalkan: "r" };
 

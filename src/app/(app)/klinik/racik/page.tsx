@@ -97,7 +97,7 @@ export default async function RacikListPage({
                 const badge = STATUS_BADGE[r.status] ?? { cls: "o", label: r.status };
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{new Date(r.created_at).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{new Date(r.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
                     <td><div style={{ fontWeight: 500 }}>{pet?.name ?? "—"}</div><div style={{ fontSize: 10, color: "var(--tm)" }}>{pet?.species}</div></td>
                     <td style={{ fontSize: 11.5 }}>{cust?.name ?? "—"}</td>
                     <td style={{ fontWeight: 500 }}>{r.recipe_name}</td>

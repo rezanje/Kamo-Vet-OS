@@ -36,7 +36,7 @@ export default async function KlinikPenerimaanPage() {
     return req?.from_branch_id === branchId;
   });
 
-  const fmt = (iso: string) => new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const fmt = (iso: string) => new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <>

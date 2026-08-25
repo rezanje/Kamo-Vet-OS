@@ -29,7 +29,7 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
   // sistem (golongan) dan mana diskon yang diketik kasir.
   const golongan = one((cust?.customer_categories ?? null) as Rel<{ nama: string; diskon_persen: number }>);
   const diskonKategori = Number(sale.diskon_kategori) || 0;
-  const tgl = new Date(sale.created_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const tgl = new Date(sale.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <>
