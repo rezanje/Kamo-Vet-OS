@@ -83,22 +83,22 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 ### Akuisisi
 | Laporan | Status |
 |---|---|
-| Pelanggan baru per cabang per periode | ⬜ |
+| Pelanggan baru per cabang per periode | ✅ — `/laporan/akuisisi`, per cabang + per bulan |
 | Pertumbuhan anggota member | ✅ — `/laporan/member`, per bulan + kumulatif + komposisi golongan & strata |
-| Rasio pelanggan baru vs lama per transaksi | ⬜ |
+| Rasio pelanggan baru vs lama per transaksi | ✅ — `/laporan/akuisisi` seksi 03, per cabang |
 
 ### Retensi
 | Laporan | Status |
 |---|---|
-| Daftar pelanggan dorman (tidak transaksi > 90 hari, ambangnya bisa diatur) per cabang | ⬜ |
-| Rata-rata interval kunjungan | ⬜ |
+| Daftar pelanggan dorman (tidak transaksi > 90 hari, ambangnya bisa diatur) per cabang | ✅ — `/laporan/retensi`, ambang bisa diubah + tombol WA |
+| Rata-rata interval kunjungan | ✅ — `/laporan/retensi` seksi 01, lengkap sebarannya |
 
 ### Program & promo
 | Laporan | Status |
 |---|---|
-| Voucher: diterbitkan, ditukarkan, redemption rate per program per cabang | ⬜ |
+| Voucher: diterbitkan, ditukarkan, redemption rate per program per cabang | ✅ — `/laporan/promo` seksi 01 |
 | Cashback/poin: terkumpul, ditukar, saldo | ✅ — `/laporan/member`, termasuk nilai kewajiban poin |
-| Diskon: dipakai dan rasio terhadap target | ⬜ |
+| Diskon: dipakai dan rasio terhadap target | ✅ — `/laporan/promo` seksi 03, dipecah 4 jenis potongan + kolom target |
 
 ---
 
@@ -139,8 +139,8 @@ Catatan angka yang perlu disepakati saat dibahas dengan klien:
 
 ## Ringkasan & usulan urutan
 
-Dari **50** laporan yang diminta: **37 sudah ada · 13 belum**
-(per 25 Agustus 2026, setelah langkah 1 dan 2 selesai; tidak ada lagi yang setengah jadi).
+Dari **50** laporan yang diminta: **43 sudah ada · 7 belum**
+(per 25 Agustus 2026, setelah langkah 1, 2, dan 3 selesai).
 
 > Koreksi: dokumen ini awalnya menyebut 45 laporan — salah hitung. Jumlah baris
 > permintaannya 50. Angka di atas sudah dihitung ulang baris per baris.
@@ -153,8 +153,9 @@ Usulan garap:
 2. ~~**Melengkapi yang tinggal sebagian**~~ — ✅ selesai 25 Agustus 2026. Semua yang tadinya
    setengah jadi sekarang punya layarnya sendiri: buku besar pembantu piutang & utang,
    rincian arus kas per rekening, rekap klinik, dan member & poin.
-3. **Marketing** — dorman, interval kunjungan, dan kinerja voucher. Ini yang paling
-   mengubah cara kerja tim marketing, tapi butuh kesepakatan ambang (mis. dorman > 90 hari).
+3. ~~**Marketing**~~ — ✅ selesai 25 Agustus 2026. Dorman, interval kunjungan, akuisisi,
+   dan kinerja voucher/promo/diskon. Ambang dorman tidak jadi penghalang: bawaannya 90 hari
+   dan bisa diubah langsung di layarnya.
 4. **Pembelian & tenaga penjual per dimensi** — pembelian per pemasok/barang, penjualan per
    penjual. Rapi tapi jarang dilihat harian.
 
@@ -177,3 +178,15 @@ data yang perlu dirapikan klien:
 
 Saldo buku pembantu piutang dan hutang keduanya **cocok persis** dengan akun buku
 besarnya — tidak ada dokumen yang lolos dari jurnal.
+
+### Tambahan temuan saat laporan marketing dibuat
+
+4. **Promo otomatis dulu tidak meninggalkan jejak.** Potongannya dihitung saat checkout lalu
+   langsung dilebur ke kolom diskon; program mana yang kena tidak pernah disimpan. Sejak
+   25 Agustus 2026 nilainya dicatat per baris struk (migrasi 0127), jadi laporan promo baru
+   bisa terisi untuk transaksi setelah tanggal itu.
+5. **Rupiah potongan voucher masih menyatu** dengan diskon transaksi. Jumlah pemakaian dan
+   redemption rate sudah tepat; kalau nanti perlu rupiah voucher terpisah, itu perubahan
+   berikutnya.
+6. **Belum ada satu pun target penjualan tersimpan**, jadi kolom Capaian di laporan diskon
+   masih kosong. Begitu target diisi di layar Target Penjualan, kolomnya terisi sendiri.

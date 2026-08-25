@@ -74,9 +74,13 @@ export async function checkoutSale(formData: FormData) {
   // dulu sempat hanya jalan di sini dan tidak di /kasir, dan selisih diam-diam
   // antara dua layar yang sama-sama menagih uang itu mahal ketahuannya.
   const promoAktif = await loadPromoAktif(supabase, branchId);
-  const potonganPromo = totalPotonganPromo(
-    hitungPromoKeranjang(promoAktif, rows.map((l) => ({ item_id: l.item_id ?? "", qty: l.qty, harga: l.harga }))),
+  const rincianPromo = hitungPromoKeranjang(
+    promoAktif, rows.map((l) => ({ item_id: l.item_id ?? "", qty: l.qty, harga: l.harga })),
   );
+  const potonganPromo = totalPotonganPromo(rincianPromo);
+  // Rinciannya ikut disimpan ke baris struk (migrasi 0127) supaya laporan promo
+  // bisa menyebut program mana yang menghabiskan uang, bukan cuma totalnya.
+  const promoPerItem = new Map(rincianPromo.map((h) => [h.item_id, h]));
 
   // Diskon golongan diambil dari master lewat customer_id — BUKAN dari form.
   // Kalau dibaca dari form, kasir bisa mengarang diskon golongan sesukanya.
@@ -151,6 +155,8 @@ export async function checkoutSale(formData: FormData) {
     rows.map((l) => ({
       sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
       target_species: l.target_species, satuan: l.satuan, faktor: l.faktor,
+      promo_id: l.item_id ? (promoPerItem.get(l.item_id)?.promoId ?? null) : null,
+      promo_discount: l.item_id ? (promoPerItem.get(l.item_id)?.potongan ?? 0) : 0,
     }))
   );
   if (itErr) redirect(`/pos/transaksi?error=${encodeURIComponent(itErr.message)}`);

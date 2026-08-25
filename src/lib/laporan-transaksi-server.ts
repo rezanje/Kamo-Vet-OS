@@ -86,3 +86,53 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
     terpotong: (sales?.length ?? 0) >= BATAS || (invoices?.length ?? 0) >= BATAS,
   };
 }
+
+// Riwayat transaksi SELURUH waktu, versi ringan (tanpa baris item). Dipakai laporan
+// akuisisi & retensi yang harus tahu kapan seseorang pertama kali belanja — pertanyaan
+// itu tidak bisa dijawab dari data satu rentang tanggal saja.
+export type TrxRiwayat = {
+  customerId: string | null;
+  tanggal: string;
+  cabang: string;
+  omzet: number;
+};
+
+export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[]; terpotong: boolean }> {
+  const supabase = await createClient();
+  const akhir = `${sampai}T23:59:59+07:00`;
+  const [{ data: sales }, { data: invoices }] = await Promise.all([
+    supabase.from("sales")
+      .select("customer_id, total, created_at, branches(name)")
+      .lte("created_at", akhir).limit(BATAS),
+    supabase.from("invoices")
+      .select("total, created_at, visits(customer_id, branches(name))")
+      .is("voided_at", null).lte("created_at", akhir).limit(BATAS),
+  ]);
+
+  type S = { customer_id: string | null; total: number; created_at: string; branches: Rel<{ name: string }> };
+  type I = { total: number; created_at: string; visits: Rel<{ customer_id: string | null; branches: Rel<{ name: string }> }> };
+
+  const trx: TrxRiwayat[] = [];
+  for (const s of (sales ?? []) as unknown as S[]) {
+    trx.push({
+      customerId: s.customer_id,
+      tanggal: tanggalWIB(s.created_at),
+      cabang: one(s.branches)?.name ?? "—",
+      omzet: Number(s.total) || 0,
+    });
+  }
+  for (const i of (invoices ?? []) as unknown as I[]) {
+    const v = one(i.visits);
+    trx.push({
+      customerId: v?.customer_id ?? null,
+      tanggal: tanggalWIB(i.created_at),
+      cabang: one(v?.branches ?? null)?.name ?? "—",
+      omzet: Number(i.total) || 0,
+    });
+  }
+
+  return {
+    trx,
+    terpotong: (sales?.length ?? 0) >= BATAS || (invoices?.length ?? 0) >= BATAS,
+  };
+}

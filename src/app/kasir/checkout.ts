@@ -8,7 +8,7 @@ import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
-import { computeTotals, lineDiscount } from "@/lib/pos-calc";
+import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
@@ -145,6 +145,10 @@ export async function checkoutKasir(formData: FormData) {
   // dan angka dari klien tidak boleh menentukan potongan uang.
   const promoAktif = await loadPromoAktif(supabase, branchId);
   const potonganPromo = hitungPromoKeranjang(promoAktif, rows);
+  // Promo mana yang kena di baris mana ikut disimpan ke struk (migrasi 0127) —
+  // tanpa itu laporan promo cuma bisa menghitung total diskon, tidak bisa bilang
+  // program mana yang menghabiskannya.
+  const promoPerItem = new Map(potonganPromo.map((h) => [h.item_id, h.promoId]));
   for (const h of potonganPromo) {
     const baris = rows.find((l) => l.item_id === h.item_id);
     if (baris) baris.promo_discount = h.potongan;
@@ -286,6 +290,8 @@ export async function checkoutKasir(formData: FormData) {
       target_species: l.target_species ?? "Universal",
       item_discount_type: l.item_discount_type ?? null,
       item_discount_value: Math.max(0, Number(l.item_discount_value) || 0),
+      promo_id: l.item_id ? (promoPerItem.get(l.item_id) ?? null) : null,
+      promo_discount: linePromoApplied(l),
       hpp: l.item_id ? (hppBaris.get(l.item_id) ?? 0) : null,
     }))
   );

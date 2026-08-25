@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeTotals, lineDiscount, lineSubtotal, matchPromos, type Promo } from "../pos-calc";
+import { computeTotals, lineDiscount, linePromoApplied, lineSubtotal, matchPromos, type Promo } from "../pos-calc";
 
 describe("lineDiscount / lineSubtotal", () => {
   it("nominal discount subtracts flat amount", () => {
@@ -90,5 +90,26 @@ describe("matchPromos", () => {
   });
   it("empty cart matches nothing", () => {
     expect(matchPromos(promos, [])).toEqual([]);
+  });
+});
+
+describe("linePromoApplied", () => {
+  it("promo tercatat kalau tidak ada diskon manual", () => {
+    expect(linePromoApplied({ qty: 2, harga: 50_000, promo_discount: 10_000 })).toBe(10_000);
+  });
+
+  it("diskon manual menang — promo dicatat nol, bukan ikut ditumpuk", () => {
+    expect(linePromoApplied({
+      qty: 2, harga: 50_000, item_discount_type: "nominal", item_discount_value: 5_000,
+      promo_discount: 10_000,
+    })).toBe(0);
+  });
+
+  it("tidak melebihi nilai barisnya", () => {
+    expect(linePromoApplied({ qty: 1, harga: 5_000, promo_discount: 99_999 })).toBe(5_000);
+  });
+
+  it("tanpa promo = nol", () => {
+    expect(linePromoApplied({ qty: 1, harga: 5_000 })).toBe(0);
   });
 });
