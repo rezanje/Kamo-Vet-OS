@@ -7,21 +7,20 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { stockIn } from "@/lib/inventory";
-import { formatNoTerima, hitungBarisTerima, nilaiDiterima } from "@/lib/penerimaan";
+import { hitungBarisTerima, nilaiDiterima } from "@/lib/penerimaan";
 import { loadUnitOptions, pickUnit, toBaseCost, toBaseQty } from "@/lib/satuan";
 import { normalisasiBatch, type BatchInput } from "@/lib/kadaluarsa-batch";
-import { formatNomor, prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { tanggalLokal } from "@/lib/tanggal";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function nextNoTerima(supabase: any): Promise<string> {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, "TB", tanggalLokal(new Date()), {
     table: "goods_receipts", column: "no_terima",
-    prefix: prefixBulanan("TB", ymDari(now)), pad: 5,
   });
-  return formatNoTerima(now, seq);
+  return nomor;
 }
 
 type ItemInput = {
@@ -51,11 +50,11 @@ export async function buatPO(formData: FormData) {
     redirect("/pembelian/baru?error=" + encodeURIComponent("Gudang, cabang, dan minimal 1 item wajib diisi."));
   }
 
-  // no_po = PO-YYYYMMDD-NNNN, dilanjutkan dari nomor tertinggi hari itu.
-  const prefixPo = `PO-${tanggal.replace(/-/g, "")}-`;
-  const no_po = formatNomor(prefixPo, await urutanBerikutnya(supabase, {
-    table: "purchase_orders", column: "no_po", prefix: prefixPo, pad: 4,
-  }), 4);
+  // Formatnya dibaca dari master penomoran; bawaannya PO-YYYYMMDD-NNNN,
+  // dilanjutkan dari nomor tertinggi hari itu.
+  const { nomor: no_po } = await nomorBerikutnya(supabase, "PO", tanggal, {
+    table: "purchase_orders", column: "no_po",
+  });
 
   // compute total
   const total = items.reduce((acc, it) => acc + (Number(it.qty) || 0) * (Number(it.harga_beli) || 0), 0);

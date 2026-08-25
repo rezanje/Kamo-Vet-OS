@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { checkoutKasir } from "./checkout";
 import { tambahCustomerKasir } from "./actions";
@@ -279,6 +279,25 @@ export function KasirClient({
   const [dismissedAtCartLen, setDismissedAtCartLen] = useState<number | null>(null);
   const promoDismissed = dismissedAtCartLen === cart.length;
   const [showPromoList, setShowPromoList] = useState(false);
+
+  // Promo yang sedang berjalan muncul sendiri sekali sehari per cabang, tanpa harus
+  // diklik dulu. Kasir shift pagi sering tidak tahu ada promo baru dari pusat, dan
+  // promo yang tidak diketahui kasir sama saja dengan promo yang tidak ada.
+  useEffect(() => {
+    if (promos.length === 0) return;
+    const kunci = `promo-dilihat:${branchName}:${hariIni}`;
+    try {
+      if (window.localStorage.getItem(kunci)) return;
+      window.localStorage.setItem(kunci, "1");
+    } catch {
+      // Mode penyamaran / storage diblokir: popupnya muncul tiap buka layar.
+      // Lebih baik sedikit mengganggu daripada promo tidak pernah terlihat.
+    }
+    // Ditunda satu tick supaya layar kasir selesai tergambar dulu — popup yang
+    // muncul di tengah render pertama membuat daftar barang berkedip.
+    const timer = window.setTimeout(() => setShowPromoList(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [promos.length, branchName, hariIni]);
 
   return (
     <>
@@ -660,7 +679,7 @@ export function KasirClient({
           <div style={{ width: 460, maxHeight: "80vh", overflowY: "auto", background: "#fff", borderRadius: 12, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ background: "var(--posb)", color: "#fff", padding: "11px 14px", display: "flex", alignItems: "center", gap: 8 }}>
               <i className="ti ti-speakerphone" />
-              <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Promo Hari Ini · {branchName}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Promo Berjalan Hari Ini · {branchName}</span>
               <i className="ti ti-x" style={{ cursor: "pointer" }} onClick={() => setShowPromoList(false)} />
             </div>
             <div style={{ padding: "12px 14px" }}>

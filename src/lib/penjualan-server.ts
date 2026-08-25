@@ -2,8 +2,9 @@
 // Dipisah dari server action supaya penomoran & pembacaan baris tidak ditulis ulang
 // di enam layar berbeda.
 
-import { formatNoDokumen, prefixNoDokumen, type PrefixDokumen } from "./penjualan-dokumen";
-import { urutanBerikutnya } from "./no-dokumen";
+import { type PrefixDokumen } from "./penjualan-dokumen";
+import { nomorBerikutnya } from "./no-dokumen";
+import { hariIniWIB } from "./tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -30,16 +31,12 @@ const KOLOM: Record<PrefixDokumen, string> = {
   UJ: "no_um",
 };
 
-/** Nomor dokumen berikutnya, urut per bulan. */
+/** Nomor dokumen berikutnya; formatnya dibaca dari master penomoran. */
 export async function nextNoDokumen(supabase: AnyClient, prefix: PrefixDokumen): Promise<string> {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
-    table: TABEL[prefix],
-    column: KOLOM[prefix],
-    prefix: prefixNoDokumen(prefix, now),
-    pad: 5,
+  const { nomor } = await nomorBerikutnya(supabase, prefix, hariIniWIB(), {
+    table: TABEL[prefix], column: KOLOM[prefix],
   });
-  return formatNoDokumen(prefix, now, seq);
+  return nomor;
 }
 
 export type BarisInput = {

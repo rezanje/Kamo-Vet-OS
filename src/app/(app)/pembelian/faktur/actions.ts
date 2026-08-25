@@ -5,12 +5,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
-import { buildFakturLines, formatNoFaktur, sisaFakturable } from "@/lib/faktur-beli";
+import { buildFakturLines, sisaFakturable } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { qtyDiterima } from "@/lib/penerimaan";
 import { totalRetur } from "@/lib/retur";
 import { jurnalBayarHutang, pakaiUangMuka } from "@/lib/uang-muka";
-import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
@@ -18,14 +18,12 @@ type ItemInput = { item_id: string; qty: number; harga: number };
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
-// ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan/retur).
+// Formatnya dibaca dari master penomoran; bawaannya FB.YYYY.MM.NNNNN.
 async function nextNoFaktur(supabase: Db) {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, "FB", hariIniWIB(), {
     table: "purchase_invoices", column: "no_faktur",
-    prefix: prefixBulanan("FB", ymDari(now)), pad: 5,
   });
-  return formatNoFaktur(now, seq);
+  return nomor;
 }
 
 // Buat Faktur Pembelian dari PO Diterima. Harga/qty boleh beda dari PO (faktur pemasok).

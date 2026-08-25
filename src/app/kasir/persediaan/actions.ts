@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
 import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
-import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
 
 // Buat permintaan barang dari dunia kasir — cabang asal otomatis dari shift terbuka.
 export async function buatPermintaanKasir(formData: FormData) {
@@ -32,14 +33,11 @@ export async function buatPermintaanKasir(formData: FormData) {
   if (barisErr) redirect("/kasir/persediaan/baru?error=" + encodeURIComponent(barisErr));
 
   // no_request = PRM-YYYYMMDD-NNNN (urutan hari ini +1, padded 4). Today 2026-07-01.
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const prefixPrm = `PRM-${y}${m}${d}-`;
-  const no_request = formatNomor(prefixPrm, await urutanBerikutnya(supabase, {
-    table: "stock_requests", column: "no_request", prefix: prefixPrm, pad: 4,
-  }), 4);
+  // Formatnya dibaca dari master penomoran; bawaannya PRM-YYYYMMDD-NNNN,
+  // dilanjutkan dari nomor tertinggi hari itu.
+  const { nomor: no_request } = await nomorBerikutnya(supabase, "PRM", hariIniWIB(), {
+    table: "stock_requests", column: "no_request",
+  });
 
   const { data: req, error: reqErr } = await supabase
     .from("stock_requests")

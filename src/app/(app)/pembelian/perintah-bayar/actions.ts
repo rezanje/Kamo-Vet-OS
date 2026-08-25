@@ -5,8 +5,8 @@ import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
-import { formatNoPerintahBayar, sisaFakturBayar } from "@/lib/perintah-bayar";
-import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { sisaFakturBayar } from "@/lib/perintah-bayar";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/pembelian/perintah-bayar";
@@ -21,12 +21,10 @@ const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURICompone
 type Db = any;
 
 async function nextNoPP(supabase: Db): Promise<string> {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, "PP", hariIniWIB(), {
     table: "payment_orders", column: "no_pp",
-    prefix: prefixBulanan("PP", ymDari(now)), pad: 5,
   });
-  return formatNoPerintahBayar(now, seq);
+  return nomor;
 }
 
 /** Sisa hutang tiap faktur, sudah dikurangi pembayaran & perintah bayar yang masih menunggu. */

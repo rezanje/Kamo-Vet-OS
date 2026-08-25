@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
-import { formatNomor, prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -33,11 +33,10 @@ async function assertBoleh(back: string): Promise<Db> {
 }
 
 async function nextNo(supabase: Db, tanggal: string): Promise<string> {
-  const prefix = prefixBulanan("PS", tanggal.slice(0, 7));
-  const seq = await urutanBerikutnya(supabase, {
-    table: "inventory_adjustments", column: "no_adj", prefix, pad: 5,
+  const { nomor } = await nomorBerikutnya(supabase, "PS", tanggal, {
+    table: "inventory_adjustments", column: "no_adj",
   });
-  return formatNomor(prefix, seq, 5);
+  return nomor;
 }
 
 type BarisKiriman = { item_id: string; qty_baru: number };

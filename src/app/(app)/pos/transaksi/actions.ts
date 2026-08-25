@@ -14,7 +14,7 @@ import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
 import { hitungPromoKeranjang, loadPromoAktif, totalPotonganPromo } from "@/lib/promo-hitung";
-import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -127,12 +127,10 @@ export async function checkoutSale(formData: FormData) {
     // pernah ikut dihitung saat tutup shift, jadi selisih kurang palsu.
     .eq("shift_type", "petshop").maybeSingle();
 
-  const now = new Date();
-  const prefix = `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const seqStruk = await urutanBerikutnya(supabase, {
-    table: "sales", column: "no_struk", prefix: `${prefix}-`, pad: 4,
+  // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
+  const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {
+    table: "sales", column: "no_struk",
   });
-  const noStruk = formatNomor(`${prefix}-`, seqStruk, 4);
 
   // Poin ikut golongan pelanggan (migrasi 0078) — rumus sama dengan layar kasir.
   const poin = customerId ? poinDidapat(total, rupiahPerPoin) : 0;

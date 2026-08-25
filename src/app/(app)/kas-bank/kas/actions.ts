@@ -4,11 +4,11 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { jurnalBalik } from "@/lib/transfer-kas";
-import { akunLawanTerlarang, hrefKas, jurnalKasEntry, nomorKasEntry, validasiKasEntry, type JenisKas } from "@/lib/kas-entry";
+import { akunLawanTerlarang, hrefKas, jurnalKasEntry, validasiKasEntry, type JenisKas } from "@/lib/kas-entry";
 import { parseLampiran } from "@/lib/dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { postJournal } from "@/lib/posting";
-import { prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
 
@@ -58,13 +58,12 @@ export async function simpanKasEntry(formData: FormData) {
     gagal("Akun lawan tidak boleh rekening kas/bank — pakai menu Transfer Bank.");
   }
 
-  // Nomor per bulan, dilanjutkan dari nomor tertinggi bulan itu. Awalannya sudah
-  // memisahkan Masuk (KM) dari Keluar (KK), jadi tidak perlu saringan jenis lagi.
-  const seq = await urutanBerikutnya(supabase, {
-    table: "cash_entries", column: "no_bukti",
-    prefix: prefixBulanan(jenis === "Masuk" ? "KM" : "KK", tanggal.slice(0, 7)), pad: 5,
-  });
-  const noBukti = nomorKasEntry(jenis, tanggal, seq - 1);
+  // Formatnya dibaca dari master penomoran. Awalannya sudah memisahkan Masuk (KM)
+  // dari Keluar (KK), jadi tidak perlu saringan jenis lagi saat mencari nomor tertinggi.
+  const { nomor: noBukti } = await nomorBerikutnya(
+    supabase, jenis === "Masuk" ? "KM" : "KK", tanggal,
+    { table: "cash_entries", column: "no_bukti" },
+  );
 
   const { data: { user } } = await supabase.auth.getUser();
 

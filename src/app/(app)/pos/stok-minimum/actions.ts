@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
-import { urutanBerikutnya } from "@/lib/no-dokumen";
+import { formatDokumen, formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/pos/stok-minimum";
@@ -51,16 +51,17 @@ export async function buatPOdariUsulan(formData: FormData) {
   }
 
   const tanggal = hariIniWIB();
-  const ymd = tanggal.replace(/-/g, "");
-  const prefixPo = `PO-${ymd}-`;
+  // Satu tarikan format untuk seluruh batch: PO-nya dibuat berurutan dalam satu putaran,
+  // jadi nomornya cukup dihitung sekali lalu dinaikkan sendiri.
+  const { prefix: prefixPo, digit: digitPo } = await formatDokumen(supabase, "PO", tanggal);
   let seq = await urutanBerikutnya(supabase, {
-    table: "purchase_orders", column: "no_po", prefix: prefixPo, pad: 4,
+    table: "purchase_orders", column: "no_po", prefix: prefixPo, pad: digitPo,
   }) - 1;
   let dibuat = 0;
 
   for (const [supplierKey, rows] of perPemasok) {
     seq += 1;
-    const no_po = `PO-${ymd}-${String(seq).padStart(4, "0")}`;
+    const no_po = formatNomor(prefixPo, seq, digitPo);
 
     const lines = rows.map((b) => {
       const it = master.get(b.itemId);

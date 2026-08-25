@@ -8,15 +8,8 @@ import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
-import {
-  formatNoOnline,
-  hitungKomisi,
-  isChannel,
-  isMarketplace,
-  prefixNoOnline,
-  totalOnline,
-} from "@/lib/online";
-import { urutanBerikutnya } from "@/lib/no-dokumen";
+import { hitungKomisi, isChannel, isMarketplace, totalOnline } from "@/lib/online";
+import { formatDokumen, formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 
 const BACK = "/penjualan/online";
 const POIN_PER_RUPIAH = 1000; // earn: 1 poin / Rp1.000 (sama dengan POS)
@@ -58,10 +51,10 @@ export async function buatPenjualanOnline(formData: FormData) {
   const tanggalRaw = String(formData.get("tanggal") ?? "").trim();
   const tanggal = tanggalRaw || todayJakarta();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) fail("Format tanggal tidak valid.");
-  // Konvensi tanggal (M1): `d` diparse sebagai LOCAL midnight (bukan UTC) supaya
-  // prefixNoOnline/formatNoOnline (getter lokal: getFullYear/getMonth/getDate) balik ke
-  // tanggal yang sama persis di server manapun; created_at di bawah disimpan eksplisit
-  // sebagai WIB midday (+07:00) supaya instant tetap baca sebagai `tanggal` di UTC dan WIB.
+  // Konvensi tanggal (M1): `d` diparse sebagai LOCAL midnight (bukan UTC); created_at
+  // di bawah disimpan eksplisit sebagai WIB midday (+07:00) supaya instant tetap terbaca
+  // sebagai `tanggal` di UTC maupun WIB. Nomor struknya sendiri memakai string `tanggal`
+  // apa adanya, jadi tidak bergantung zona waktu server sama sekali.
   const d = new Date(`${tanggal}T00:00:00`);
   if (Number.isNaN(d.getTime())) fail("Tanggal tidak valid.");
   const todayStr = todayJakarta();
@@ -114,8 +107,10 @@ export async function buatPenjualanOnline(formData: FormData) {
   const total = totalOnline(items);
   if (total <= 0) fail("Total order harus lebih dari nol.");
 
+  // Formatnya dibaca dari master penomoran; bawaannya ONL-YYYYMMDD-NNNN.
+  const { prefix: prefixOnl, digit: digitOnl } = await formatDokumen(supabase, "ONL", tanggal);
   const seq = await urutanBerikutnya(supabase, {
-    table: "sales", column: "no_struk", prefix: `${prefixNoOnline(d)}-`, pad: 4,
+    table: "sales", column: "no_struk", prefix: prefixOnl, pad: digitOnl,
   });
 
   const marketplace = isMarketplace(channel);
@@ -127,10 +122,10 @@ export async function buatPenjualanOnline(formData: FormData) {
   // total persis MAX_NO_STRUK_ATTEMPTS percobaan (M2).
   const noStrukCandidates = Array.from(
     { length: MAX_NO_STRUK_ATTEMPTS - 1 },
-    (_, i) => formatNoOnline(d, seq + i),
+    (_, i) => formatNomor(prefixOnl, seq + i, digitOnl),
   );
   noStrukCandidates.push(
-    `${formatNoOnline(d, seq)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+    `${formatNomor(prefixOnl, seq, digitOnl)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
   );
 
   let sale: { id: string } | null = null;

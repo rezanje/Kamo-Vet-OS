@@ -12,7 +12,7 @@ import { bacaAturanConsent } from "@/lib/consent-server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { bacaPoinPelanggan, catatPoinKlinik, poinTerpakai, RUPIAH_PER_POIN } from "@/lib/poin-klinik";
 import { stockIn, stockOut } from "@/lib/inventory";
-import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -117,12 +117,11 @@ const todayIso = () => hariIniWIB();
 
 async function nextInvoiceNo(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   // Nomor dilanjutkan dari yang tertinggi; race antar kasir masih dijaga unique constraint.
-  const now = new Date();
-  const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}-`;
-  const seq = await urutanBerikutnya(supabase, {
-    table: "invoices", column: "invoice_no", prefix, pad: 4,
+  // Formatnya dibaca dari master penomoran; bawaannya INV-YYYYMM-NNNN.
+  const { nomor } = await nomorBerikutnya(supabase, "INV", hariIniWIB(), {
+    table: "invoices", column: "invoice_no",
   });
-  return formatNomor(prefix, seq, 4);
+  return nomor;
 }
 
 export async function bayarVisit(formData: FormData) {

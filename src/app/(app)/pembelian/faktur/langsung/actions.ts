@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { buildFakturLangsungLines, formatNoFaktur } from "@/lib/faktur-beli";
+import { buildFakturLangsungLines } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockIn } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty, toBaseCost } from "@/lib/satuan";
-import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { parseLampiran } from "@/lib/dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -172,10 +172,8 @@ export async function buatFakturLangsung(formData: FormData) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function nextNoFakturLangsung(supabase: any) {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, "FB", hariIniWIB(), {
     table: "purchase_invoices", column: "no_faktur",
-    prefix: prefixBulanan("FB", ymDari(now)), pad: 5,
   });
-  return formatNoFaktur(now, seq);
+  return nomor;
 }

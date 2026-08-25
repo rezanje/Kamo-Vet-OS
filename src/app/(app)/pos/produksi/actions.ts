@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { stockIn, stockOut } from "@/lib/inventory";
-import { formatNomor, prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 import { bahanKurang, hppPerUnit, kebutuhanBahan, rencanaJadi, type BahanResep } from "@/lib/produksi";
@@ -30,13 +30,12 @@ async function assertBoleh(): Promise<Db> {
 }
 
 async function nextNoProduksi(supabase: Db, tanggal: string): Promise<string> {
-  // ymDari butuh Date; tanggal dokumen dipakai apa adanya supaya nomor ikut bulan
-  // dokumennya, bukan bulan server.
-  const prefix = prefixBulanan("PRD", tanggal.slice(0, 7));
-  const seq = await urutanBerikutnya(supabase, {
-    table: "production_orders", column: "no_produksi", prefix, pad: 5,
+  // Tanggal dokumen dipakai apa adanya supaya nomor ikut bulan dokumennya,
+  // bukan bulan server.
+  const { nomor } = await nomorBerikutnya(supabase, "PRD", tanggal, {
+    table: "production_orders", column: "no_produksi",
   });
-  return formatNomor(prefix, seq, 5);
+  return nomor;
 }
 
 // ── Resep produksi ────────────────────────────────────────────────────────────

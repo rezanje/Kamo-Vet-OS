@@ -16,7 +16,7 @@ import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
 import { hitungPromoKeranjang, loadPromoAktif } from "@/lib/promo-hitung";
-import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -233,12 +233,10 @@ export async function checkoutKasir(formData: FormData) {
   const kembali = metode === "Tunai" ? Math.max(0, bayar - total) : 0;
   if (metode === "Tunai" && bayar < total) redirect(`/kasir?error=${encodeURIComponent("Uang bayar kurang")}`);
 
-  const now = new Date();
-  const prefix = `POS-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const seqStruk = await urutanBerikutnya(supabase, {
-    table: "sales", column: "no_struk", prefix: `${prefix}-`, pad: 4,
+  // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
+  const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {
+    table: "sales", column: "no_struk",
   });
-  const noStruk = formatNomor(`${prefix}-`, seqStruk, 4);
 
   // Poin ikut golongan pelanggan (migrasi 0078); golongan tanpa pengaturan
   // sendiri tetap Rp1.000 = 1 poin seperti sebelumnya.

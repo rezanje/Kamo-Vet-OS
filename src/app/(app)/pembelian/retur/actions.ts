@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { formatNoRetur, sisaRetur, totalRetur } from "@/lib/retur";
+import { sisaRetur, totalRetur } from "@/lib/retur";
 import { stockOut } from "@/lib/inventory";
 import { nilaiDiterima, qtyDiterima } from "@/lib/penerimaan";
 import { toBaseCost, toBaseQty } from "@/lib/satuan";
-import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
@@ -16,14 +16,10 @@ type ItemInput = { item_id: string; qty: number };
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
-// ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan).
+// Formatnya dibaca dari master penomoran; bawaannya RB/RJ.YYYY.MM.NNNNN.
 async function nextNoRetur(supabase: Db, table: "purchase_returns" | "sales_returns", jenis: "RB" | "RJ") {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
-    table, column: "no_retur",
-    prefix: prefixBulanan(jenis, ymDari(now)), pad: 5,
-  });
-  return formatNoRetur(jenis, now, seq);
+  const { nomor } = await nomorBerikutnya(supabase, jenis, hariIniWIB(), { table, column: "no_retur" });
+  return nomor;
 }
 
 // Retur Pembelian: barang keluar ke pemasok, potong hutang PO.

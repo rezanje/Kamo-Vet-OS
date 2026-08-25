@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { barangKurang, formatNoOpname, nilaiFakturSelisih, pakaiHargaJual } from "@/lib/opname";
+import { barangKurang, nilaiFakturSelisih, pakaiHargaJual } from "@/lib/opname";
 import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
-import { urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
@@ -61,12 +61,13 @@ async function orderTerjangkau(supabase: Db, orderId: string) {
 }
 
 // Seq global persis format Accurate (OPO.00385), dilanjutkan dari nomor tertinggi.
+// Formatnya dibaca dari master penomoran; bawaannya tetap OPO./OPR. tanpa token tanggal,
+// jadi nomornya berlanjut terus dan tidak mengulang tiap bulan.
 async function nextNo(supabase: Db, table: "opname_orders" | "opname_results", prefix: "OPO" | "OPR") {
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, prefix, hariIniWIB(), {
     table, column: table === "opname_orders" ? "no_opname" : "no_hasil",
-    prefix: `${prefix}.`, pad: 5,
   });
-  return formatNoOpname(prefix, seq);
+  return nomor;
 }
 
 // ================= Perintah Stok Opname =================

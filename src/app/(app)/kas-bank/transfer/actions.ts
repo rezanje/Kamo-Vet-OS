@@ -3,10 +3,10 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
-import { validasiTransfer, jurnalTransfer, jurnalBalik, nomorTransfer } from "@/lib/transfer-kas";
+import { validasiTransfer, jurnalTransfer, jurnalBalik } from "@/lib/transfer-kas";
 import { hariIniWIB } from "@/lib/tanggal";
 import { postJournal } from "@/lib/posting";
-import { prefixBulanan, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 
 const BACK = "/kas-bank/transfer";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -43,12 +43,11 @@ export async function buatTransfer(formData: FormData) {
   if (!dari || !ke) gagal("Rekening tidak ditemukan");
   if (!dari!.is_active || !ke!.is_active) gagal("Rekening yang dipilih sudah nonaktif");
 
-  // Nomor per bulan (pola IT/RB/RJ/FB), dilanjutkan dari nomor tertinggi bulan itu.
-  const seq = await urutanBerikutnya(supabase, {
+  // Formatnya dibaca dari master penomoran; bawaannya TF.YYYY.MM.NNNNN,
+  // dilanjutkan dari nomor tertinggi bulan itu.
+  const { nomor: noTransfer } = await nomorBerikutnya(supabase, "TF", tanggal, {
     table: "cash_transfers", column: "no_transfer",
-    prefix: prefixBulanan("TF", tanggal.slice(0, 7)), pad: 5,
   });
-  const noTransfer = nomorTransfer(tanggal, seq - 1);
 
   const { data: { user } } = await supabase.auth.getUser();
 

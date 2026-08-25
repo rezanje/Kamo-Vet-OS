@@ -5,11 +5,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import {
-  formatNoRetur, sisaRetur, totalRetur, rasioBayar, hargaRefund,
+  sisaRetur, totalRetur, rasioBayar, hargaRefund,
   modalPerBarang, pisahModalRetur, bolehMasukStok,
 } from "@/lib/retur";
 import { stockIn } from "@/lib/inventory";
-import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { kodeAkunBayar, kodeKasJurnalAsal } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -303,14 +303,12 @@ export async function buatReturJual(formData: FormData) {
   redirect(`${listHref}?success=` + encodeURIComponent(`Retur ${no_retur} tersimpan.`));
 }
 
-// ponytail: nomor via count bulan berjalan +1 — pola existing (pemindahan).
+// Formatnya dibaca dari master penomoran; bawaannya RJ.YYYY.MM.NNNNN.
 async function nextNoRetur(supabase: Db) {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, "RJ", hariIniWIB(), {
     table: "sales_returns", column: "no_retur",
-    prefix: prefixBulanan("RJ", ymDari(now)), pad: 5,
   });
-  return formatNoRetur("RJ", now, seq);
+  return nomor;
 }
 
 // Cari struk utk form (dipakai via query param, bukan action) — lihat baru/page.tsx.

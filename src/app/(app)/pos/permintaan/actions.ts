@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
 import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
 import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
-import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export async function buatPermintaan(formData: FormData) {
   const supabase = await createClient();
@@ -25,15 +26,11 @@ export async function buatPermintaan(formData: FormData) {
   const { rows: baris, error: barisErr } = siapkanBaris(input, master);
   if (barisErr) redirect("/pos/permintaan/baru?error=" + encodeURIComponent(barisErr));
 
-  // no_request = PRM-YYYYMMDD-NNNN, dilanjutkan dari nomor tertinggi hari itu.
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const prefixPrm = `PRM-${y}${m}${d}-`;
-  const no_request = formatNomor(prefixPrm, await urutanBerikutnya(supabase, {
-    table: "stock_requests", column: "no_request", prefix: prefixPrm, pad: 4,
-  }), 4);
+  // Formatnya dibaca dari master penomoran; bawaannya PRM-YYYYMMDD-NNNN,
+  // dilanjutkan dari nomor tertinggi hari itu.
+  const { nomor: no_request } = await nomorBerikutnya(supabase, "PRM", hariIniWIB(), {
+    table: "stock_requests", column: "no_request",
+  });
 
   const { data: req, error: reqErr } = await supabase
     .from("stock_requests")

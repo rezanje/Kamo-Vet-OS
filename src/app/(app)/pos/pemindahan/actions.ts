@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { formatNoPemindahan, hitungStatusKirim, sisaTransit } from "@/lib/pemindahan";
+import { hitungStatusKirim, sisaTransit } from "@/lib/pemindahan";
 import { transferStock } from "@/lib/inventory";
-import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type ItemInput = { item_id: string; qty: number };
@@ -33,14 +33,12 @@ async function getTransitWarehouse(supabase: Db, fallbackBranchId: string): Prom
   return created.id as string;
 }
 
-// ponytail: nomor via count bulan berjalan +1 — pola existing (pos/permintaan); counter table kalau kelak sering tabrakan.
+// Formatnya dibaca dari master penomoran; bawaannya IT.YYYY.MM.NNNNN.
 async function nextNoPemindahan(supabase: Db): Promise<string> {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, "IT", hariIniWIB(), {
     table: "stock_transfers", column: "no_pemindahan",
-    prefix: prefixBulanan("IT", ymDari(now)), pad: 5,
   });
-  return formatNoPemindahan(now, seq);
+  return nomor;
 }
 
 // ================= Kirim Barang =================

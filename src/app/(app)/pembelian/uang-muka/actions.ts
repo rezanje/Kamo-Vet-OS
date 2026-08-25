@@ -5,8 +5,8 @@ import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
-import { formatNoUangMuka, jurnalUangMuka } from "@/lib/uang-muka";
-import { prefixBulanan, urutanBerikutnya, ymDari } from "@/lib/no-dokumen";
+import { jurnalUangMuka } from "@/lib/uang-muka";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/pembelian/uang-muka";
@@ -15,12 +15,10 @@ const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURICompone
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function nextNoUangMuka(supabase: any): Promise<string> {
-  const now = new Date();
-  const seq = await urutanBerikutnya(supabase, {
+  const { nomor } = await nomorBerikutnya(supabase, "UM", hariIniWIB(), {
     table: "purchase_advances", column: "no_um",
-    prefix: prefixBulanan("UM", ymDari(now)), pad: 5,
   });
-  return formatNoUangMuka(now, seq);
+  return nomor;
 }
 
 export async function bayarUangMuka(formData: FormData) {

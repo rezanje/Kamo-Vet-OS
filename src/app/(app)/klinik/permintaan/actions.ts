@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type ItemInput = { nama: string; qty_diminta: number };
 
@@ -27,13 +28,11 @@ export async function buatPermintaanKlinik(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent("Gudang tujuan & minimal 1 item wajib diisi")}`);
   }
 
-  // no_request = PRM-YYYYMMDD-NNNN, dilanjutkan dari nomor tertinggi hari itu.
-  const now = new Date();
-  const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const prefixPrm = `PRM-${ymd}-`;
-  const no_request = formatNomor(prefixPrm, await urutanBerikutnya(supabase, {
-    table: "stock_requests", column: "no_request", prefix: prefixPrm, pad: 4,
-  }), 4);
+  // Formatnya dibaca dari master penomoran; bawaannya PRM-YYYYMMDD-NNNN,
+  // dilanjutkan dari nomor tertinggi hari itu.
+  const { nomor: no_request } = await nomorBerikutnya(supabase, "PRM", hariIniWIB(), {
+    table: "stock_requests", column: "no_request",
+  });
 
   const { data: req, error } = await supabase
     .from("stock_requests")

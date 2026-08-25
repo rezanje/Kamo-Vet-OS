@@ -16,7 +16,7 @@
 // - Stok dipindah DULU; kalau gagal, dokumen penerimaan tidak dibuat sama sekali.
 
 import { transferStock } from "./inventory";
-import { formatNomor, urutanBerikutnya } from "./no-dokumen";
+import { nomorBerikutnya } from "./no-dokumen";
 import { toBaseQty } from "./satuan";
 import { receiptSummary } from "./stock-recon";
 import { hariIniWIB } from "./tanggal";
@@ -40,13 +40,12 @@ export type HasilTerima =
 
 const baik = (kondisi: string | null | undefined) => (kondisi || "baik").toLowerCase() === "baik";
 
-/** Nomor dokumen penerimaan: TRM-YYMMDD-NNN. */
+/** Nomor dokumen penerimaan; formatnya dibaca dari master penomoran (bawaan TRM-YYMMDD-NNN). */
 export async function nomorPenerimaan(supabase: AnyClient): Promise<string> {
-  const ymd = hariIniWIB().slice(2).replace(/-/g, "");
-  const prefix = `TRM-${ymd}-`;
-  return formatNomor(prefix, await urutanBerikutnya(supabase, {
-    table: "stock_receipts", column: "receipt_number", prefix, pad: 3,
-  }), 3);
+  const { nomor } = await nomorBerikutnya(supabase, "TRM", hariIniWIB(), {
+    table: "stock_receipts", column: "receipt_number",
+  });
+  return nomor;
 }
 
 export async function prosesTerimaPermintaan(
