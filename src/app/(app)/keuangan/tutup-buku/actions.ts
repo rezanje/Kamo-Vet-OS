@@ -7,6 +7,8 @@ import { getAccountBalances } from "@/lib/ledger";
 import { buildClosingLines } from "@/lib/tutup-buku";
 import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
 import { formatNomor } from "@/lib/no-dokumen";
+import { jalankanAkhirBulan } from "@/lib/akhir-bulan-server";
+import { ringkasHasil } from "@/lib/akhir-bulan";
 
 const BACK = "/keuangan/tutup-buku";
 
@@ -92,4 +94,53 @@ export async function tutupBuku(formData: FormData) {
   redirect(`${BACK}?success=${encodeURIComponent(
     `Tutup buku s/d ${tanggal} beres — laba/rugi Rp ${Math.round(laba).toLocaleString("id-ID")} dipindah ke Laba Ditahan (${no_jurnal}), periode dikunci.`,
   )}`);
+}
+
+/**
+ * Aturan proses akhir bulan otomatis (S8).
+ *
+ * Penguncian sengaja punya tombol sendiri dan mati secara bawaan: mengunci pembukuan
+ * tanpa diminta bisa menahan pekerjaan yang sedang berjalan, dan kunci yang bikin orang
+ * kesal akan sering dibuka — kunci yang sering dibuka bukan kunci.
+ */
+export async function simpanAturanAkhirBulan(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+    redirect(`${BACK}?error=${encodeURIComponent("Hanya owner/admin yang boleh mengubah aturan akhir bulan.")}`);
+  }
+
+  const auto = String(formData.get("auto_kunci") ?? "") === "on";
+  const jeda = Math.max(0, Math.min(28, Number(formData.get("jeda")) || 0));
+
+  const { error } = await supabase.from("accounting_locks").upsert({
+    id: true, auto_kunci: auto, auto_kunci_jeda_hari: jeda,
+    updated_by: user?.id ?? null, updated_at: new Date().toISOString(),
+  });
+  if (error) redirect(`${BACK}?error=${encodeURIComponent(error.message)}`);
+
+  revalidatePath(BACK);
+  redirect(`${BACK}?success=${encodeURIComponent(
+    auto ? `Penguncian otomatis menyala, dengan masa tenggang ${jeda} hari.` : "Penguncian otomatis dimatikan.",
+  )}`);
+}
+
+/** Jalankan proses akhir bulan sekarang — pekerjaan yang sama dengan cron tanggal 1. */
+export async function jalankanAkhirBulanSekarang(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+    redirect(`${BACK}?error=${encodeURIComponent("Hanya owner/admin yang boleh menjalankan proses akhir bulan.")}`);
+  }
+
+  const hasil = await jalankanAkhirBulan(supabase, {
+    sumber: "manual",
+    userId: user?.id ?? null,
+    paksaKunci: String(formData.get("kunci_sekalian") ?? "") === "on",
+  });
+
+  revalidatePath(BACK);
+  redirect(`${BACK}?success=${encodeURIComponent(`Proses akhir bulan ${hasil.periode} selesai — ${ringkasHasil(hasil)}.`)}`);
 }

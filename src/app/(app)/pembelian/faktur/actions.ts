@@ -13,6 +13,7 @@ import { jurnalBayarHutang, pakaiUangMuka } from "@/lib/uang-muka";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
+import { cekPersetujuan } from "@/lib/persetujuan-server";
 
 type ItemInput = { item_id: string; qty: number; harga: number };
 
@@ -213,6 +214,20 @@ export async function bayarFaktur(formData: FormData) {
   }
 
   const { data: { user } } = await supabase.auth.getUser();
+
+  // Persetujuan diperiksa TEPAT DI SINI: setelah semua validasi lolos, sebelum
+  // satu rupiah pun tercatat keluar. Kalau ditahan, tidak ada baris pembayaran,
+  // tidak ada jurnal, dan tidak ada uang muka yang terpakai.
+  const izin = await cekPersetujuan(supabase, {
+    jenis: "bayar-faktur",
+    refId: invoiceId,
+    nilai: amount,
+    noDokumen: inv!.no_faktur,
+    keterangan: `Pembayaran faktur ${inv!.no_faktur} sebesar Rp ${Math.round(amount).toLocaleString("id-ID")}`,
+    userId: user?.id ?? null,
+  });
+  if (!izin.boleh) fail(izin.pesan ?? "Transaksi ini butuh persetujuan atasan.");
+
   const { error: payErr } = await supabase.from("purchase_invoice_payments").insert({
     invoice_id: invoiceId, tanggal, amount, metode, catatan, created_by: user?.id ?? null,
     advance_id: advance?.id ?? null, dari_uang_muka: dariUangMuka,

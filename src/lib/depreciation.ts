@@ -1,5 +1,5 @@
 // Mesin penyusutan garis lurus — dipakai action manual, lazy catch-up (halaman Aset),
-// dan cron bulanan (/api/cron/depreciation). Idempotent: unique(asset_id, periode).
+// dan cron bulanan (/api/cron/akhir-bulan). Idempotent: unique(asset_id, periode).
 
 // Impor relatif (bukan alias @/) supaya modul ini bisa diuji langsung oleh Vitest,
 // yang tidak memuat alias tsconfig. Sama pola dgn barang.ts → ./tindakan.

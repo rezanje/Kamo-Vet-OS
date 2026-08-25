@@ -25,7 +25,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
 | Permintaan meeting 14 Agustus selesai | 40 / 42 · sisa: AI WhatsApp + 1 yang nunggu klien |
 | Permintaan susulan di luar meeting | 4 / 4 · status ulasan (M43), impor data awal (S11), skala pemantauan (M44), obat khusus (M45) |
-| Sisa pekerjaan pra-meeting | 3 / 11 · produksi own brand, penyesuaian persediaan, impor data |
+| Sisa pekerjaan pra-meeting | 7 / 11 · sisa: WA otomatis & desain cetakan (nunggu klien), impor Excel komisi, e-Faktur |
 | Nunggu jawaban klien | 2 hal (token WA, identitas perusahaan) |
 
 ---
@@ -132,10 +132,10 @@ Dari papan progres 14 Agustus, belum tersentuh permintaan meeting.
 | S2 | Penyesuaian persediaan jadi dokumen bernomor + alasan wajib | Persediaan | Koreksi stok belum meninggalkan jejak audit | ✅ 19 Agu 2026 · form cepat di Stok per Gudang dimatikan, satu pintu lewat dokumen |
 | S3 | WhatsApp otomatis: struk · retensi 7 pemicu · laporan rawat inap | CRM, Kasir, Klinik | Pelanggan dapat struk & pengingat vaksin langsung | ⏸ nunggu token |
 | S4 | Desain cetakan: kop, logo, catatan kaki di 6 layar cetak | Pengaturan | Dokumen keluar ke pihak lain tanpa identitas perusahaan | ⏸ nunggu logo/alamat/NPWP |
-| S5 | Penomoran dokumen bisa diatur sendiri (awalan, digit, reset periode) | Pengaturan | Ubah format nomor sekarang harus lewat developer | ⬜ |
-| S6 | Penyetuju transaksi (approval berjenjang) | Pengaturan, Perusahaan | Transaksi besar belum perlu persetujuan atasan | ⬜ |
-| S7 | Popup promo berjalan di layar kasir | Kasir | Kasir tidak tahu promo yang sedang jalan | ⬜ |
-| S8 | Proses akhir bulan otomatis tiap tanggal 1 | Buku Besar | Tutup buku masih ditekan manual | ⬜ |
+| S5 | Penomoran dokumen bisa diatur sendiri (awalan, digit, reset periode) | Pengaturan | Ubah format nomor sekarang harus lewat developer | ✅ 25 Agu 2026 · `/pengaturan/penomoran`, 27 jenis dokumen; JRN sengaja dikecualikan |
+| S6 | Penyetuju transaksi (approval berjenjang) | Pengaturan, Perusahaan | Transaksi besar belum perlu persetujuan atasan | ✅ 25 Agu 2026 · `/pengaturan/penyetuju`; menjaga pembayaran hutang & kas keluar |
+| S7 | Popup promo berjalan di layar kasir | Kasir | Kasir tidak tahu promo yang sedang jalan | ✅ 25 Agu 2026 · muncul sendiri sekali sehari per cabang |
+| S8 | Proses akhir bulan otomatis tiap tanggal 1 | Buku Besar | Tutup buku masih ditekan manual | ✅ 25 Agu 2026 · cron + tombol manual di Tutup Buku; penguncian opsional |
 | S9 | Impor Excel aturan komisi & target | Penjualan | Sekarang diinput satu-satu | ⬜ |
 | S11 | Impor massal pelanggan, pemasok, dan bagan akun | Pengaturan | Data awal masih diketik satu-satu, menahan trial klien | ✅ 21 Agu 2026 |
 | S10 | e-Faktur & SPT: CTAS · email faktur · legacy · bukti potong PPh 21 | Pajak, Laporan | Pelaporan pajak masih manual — sesuai keputusan manajemen, ditaruh paling akhir | ⬜ |

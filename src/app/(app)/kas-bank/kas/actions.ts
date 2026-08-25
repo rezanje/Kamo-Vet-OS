@@ -8,6 +8,8 @@ import { akunLawanTerlarang, hrefKas, jurnalKasEntry, validasiKasEntry, type Jen
 import { parseLampiran } from "@/lib/dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { postJournal } from "@/lib/posting";
+import { cekPersetujuan } from "@/lib/persetujuan-server";
+import { kunciKasKeluar } from "@/lib/persetujuan";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -66,6 +68,21 @@ export async function simpanKasEntry(formData: FormData) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
+
+  // Hanya kas KELUAR yang dijaga: uang masuk tidak perlu izin siapa pun.
+  // Diperiksa sebelum bukti kas terbit, jadi transaksi yang ditahan tidak
+  // meninggalkan nomor bukti kosong yang harus dijelaskan belakangan.
+  if (jenis === "Keluar") {
+    const izin = await cekPersetujuan(supabase, {
+      jenis: "kas-keluar",
+      refId: kunciKasKeluar({ tanggal, accountId, lawanCode, jumlah }),
+      nilai: jumlah,
+      noDokumen: null,
+      keterangan: `Kas keluar ${rek.nama} Rp ${Math.round(jumlah).toLocaleString("id-ID")}${keterangan ? ` — ${keterangan}` : ""}`,
+      userId: user?.id ?? null,
+    });
+    if (!izin.boleh) gagal(izin.pesan ?? "Pengeluaran ini butuh persetujuan atasan.");
+  }
 
   const { data: entry, error: entryErr } = await supabase.from("cash_entries").insert({
     no_bukti: noBukti, jenis, tanggal,

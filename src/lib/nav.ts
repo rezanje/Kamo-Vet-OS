@@ -108,7 +108,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Pengguna", icon: "ti-shield", ...A, href: "/pengaturan/pengguna" },
     { label: "Penomoran", icon: "ti-list-numbers", ...A, nw: true, href: "/pengaturan/penomoran" },
     { label: "Desain Cetakan", icon: "ti-printer", ...A },
-    { label: "Penyetuju Transaksi", icon: "ti-user-check", ...A },
+    { label: "Penyetuju Transaksi", icon: "ti-user-check", ...A, nw: true, href: "/pengaturan/penyetuju" },
     { label: "Cabang & gudang", icon: "ti-building-store", ...B, href: "/pengaturan/cabang" },
     { label: "Konfigurasi loyalty", icon: "ti-star", ...B, href: "/pengaturan/tier" },
     { label: "Aturan gaji", icon: "ti-adjustments-dollar", ...B, href: "/pengaturan/gaji" },
