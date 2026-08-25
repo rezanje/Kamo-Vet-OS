@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -78,6 +79,11 @@ export default async function TargetPage({
       error={sp.error} success={sp.success} successMsg="Target tersimpan."
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah target penjualan."
+      aksi={bolehKelola ? (
+        <Link href="/pengaturan/impor/target" className="btn-def" style={{ fontSize: 11, textDecoration: "none" }}>
+          <i className="ti ti-file-spreadsheet" /> Impor dari Excel
+        </Link>
+      ) : null}
     >
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader

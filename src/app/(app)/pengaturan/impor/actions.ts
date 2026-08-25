@@ -7,6 +7,7 @@ import {
   periksaPelanggan, periksaPemasok, periksaAkun, type AkunImpor,
 } from "@/lib/impor-master";
 import { KONFIG, isJenisImpor, type JenisImpor } from "@/lib/impor-jenis";
+import { kunciNama, kunciTarget, periksaKomisi, periksaTarget } from "@/lib/impor-komisi";
 import { pesanSimpanGagal } from "@/lib/barang";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,6 +56,50 @@ async function simpan(supabase: Db, jenis: JenisImpor, baris: ReturnType<typeof 
     });
     if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
     const { error } = await supabase.from("suppliers").insert(siap);
+    if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
+    return { masuk: siap.length, salah, pesanGagal: null };
+  }
+
+  if (jenis === "komisi" || jenis === "target") {
+    // Master pendukungnya dibaca sekali di sini, bukan per baris: file 200 baris
+    // tidak boleh jadi 200 kali query cuma untuk mencocokkan nama cabang.
+    const [{ data: emp }, { data: cab }, { data: kat }] = await Promise.all([
+      supabase.from("employees").select("id, nama").eq("status", "Aktif"),
+      supabase.from("branches").select("id, name").eq("is_active", true),
+      supabase.from("item_categories").select("id, name"),
+    ]);
+    const karyawan = new Map(((emp ?? []) as { id: string; nama: string }[])
+      .map((e) => [kunciNama(e.nama), e.id]));
+    const cabang = new Map(((cab ?? []) as { id: string; name: string }[])
+      .map((c) => [kunciNama(c.name), c.id]));
+    const kategori = new Map(((kat ?? []) as { id: string; name: string }[])
+      .map((k) => [kunciNama(k.name), k.id]));
+
+    if (jenis === "komisi") {
+      const { data: brg } = await supabase.from("items").select("id, code, name");
+      // Barang boleh dirujuk lewat kode maupun namanya — di lapangan dua-duanya dipakai.
+      const barang = new Map<string, string>();
+      for (const b of (brg ?? []) as { id: string; code: string | null; name: string }[]) {
+        if (b.code) barang.set(kunciNama(b.code), b.id);
+        barang.set(kunciNama(b.name), b.id);
+      }
+
+      const { siap, salah } = periksaKomisi(baris.baris, { karyawan, cabang, kategori, barang });
+      if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
+      const { error } = await supabase.from("commission_rules").insert(siap);
+      if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
+      return { masuk: siap.length, salah, pesanGagal: null };
+    }
+
+    const { data: adaTarget } = await supabase
+      .from("sales_targets").select("periode, employee_id, branch_id, category_id");
+    const sudahAda = new Set(((adaTarget ?? []) as {
+      periode: string; employee_id: string | null; branch_id: string | null; category_id: string | null;
+    }[]).map(kunciTarget));
+
+    const { siap, salah } = periksaTarget(baris.baris, { karyawan, cabang, kategori, sudahAda });
+    if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
+    const { error } = await supabase.from("sales_targets").insert(siap);
     if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
     return { masuk: siap.length, salah, pesanGagal: null };
   }
@@ -121,7 +166,7 @@ export async function imporMaster(formData: FormData) {
   // jangan "berhasil 0" yang bikin pemakai kira filenya sudah beres.
   if (masuk === 0) gagal(`Tidak ada baris yang bisa disimpan. ${ringkasSalah(salah)}`);
 
-  const label = jenis === "akun" ? "akun" : jenis;
+  const label = { akun: "akun", komisi: "aturan komisi", target: "target" }[jenis as string] ?? jenis;
   const pesan = salah.length === 0
     ? `${masuk} ${label} berhasil diimpor.`
     : `${masuk} ${label} diimpor, ${salah.length} baris dilewati — ${ringkasSalah(salah)}`;

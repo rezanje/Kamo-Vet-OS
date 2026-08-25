@@ -25,7 +25,7 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 | Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
 | Permintaan meeting 14 Agustus selesai | 40 / 42 · sisa: AI WhatsApp + 1 yang nunggu klien |
 | Permintaan susulan di luar meeting | 4 / 4 · status ulasan (M43), impor data awal (S11), skala pemantauan (M44), obat khusus (M45) |
-| Sisa pekerjaan pra-meeting | 7 / 11 · sisa: WA otomatis & desain cetakan (nunggu klien), impor Excel komisi, e-Faktur |
+| Sisa pekerjaan pra-meeting | 8 / 11 · sisa: WA otomatis & desain cetakan (nunggu klien), e-Faktur (nunggu template Coretax + PPh 21 Fase 3) |
 | Nunggu jawaban klien | 2 hal (token WA, identitas perusahaan) |
 
 ---
@@ -136,9 +136,9 @@ Dari papan progres 14 Agustus, belum tersentuh permintaan meeting.
 | S6 | Penyetuju transaksi (approval berjenjang) | Pengaturan, Perusahaan | Transaksi besar belum perlu persetujuan atasan | ✅ 25 Agu 2026 · `/pengaturan/penyetuju`; menjaga pembayaran hutang & kas keluar |
 | S7 | Popup promo berjalan di layar kasir | Kasir | Kasir tidak tahu promo yang sedang jalan | ✅ 25 Agu 2026 · muncul sendiri sekali sehari per cabang |
 | S8 | Proses akhir bulan otomatis tiap tanggal 1 | Buku Besar | Tutup buku masih ditekan manual | ✅ 25 Agu 2026 · cron + tombol manual di Tutup Buku; penguncian opsional |
-| S9 | Impor Excel aturan komisi & target | Penjualan | Sekarang diinput satu-satu | ⬜ |
+| S9 | Impor Excel aturan komisi & target | Penjualan | Sekarang diinput satu-satu | ✅ 25 Agu 2026 · `/pengaturan/impor/komisi` & `/impor/target`, master dirujuk lewat nama |
 | S11 | Impor massal pelanggan, pemasok, dan bagan akun | Pengaturan | Data awal masih diketik satu-satu, menahan trial klien | ✅ 21 Agu 2026 |
-| S10 | e-Faktur & SPT: CTAS · email faktur · legacy · bukti potong PPh 21 | Pajak, Laporan | Pelaporan pajak masih manual — sesuai keputusan manajemen, ditaruh paling akhir | ⬜ |
+| S10 | e-Faktur & SPT: CTAS · email faktur · legacy · bukti potong PPh 21 | Pajak, Laporan | Pelaporan pajak masih manual — sesuai keputusan manajemen, ditaruh paling akhir | 🔨 25 Agu 2026 · `/pajak/faktur` (berkas pajak per masa + unduhan CSV + identitas NPWP). Berkas impor Coretax menunggu template resmi dari klien; PPh 21 menunggu mesin potongan gaji (Fase 3) |
 
 **Catatan data:** harga beli "RC Baby Milk Cat 300gr" masih Rp 0 di master barang, jadi tiap
 penjualannya tercatat untung 100%. Perlu diisi klien supaya laporan laba akurat.

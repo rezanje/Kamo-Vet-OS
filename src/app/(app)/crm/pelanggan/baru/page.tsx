@@ -79,6 +79,11 @@ export default async function TambahPelangganPage({
             </div>
 
             <div className="fg">
+              <label className="flab">NPWP</label>
+              <input className="fi" name="npwp" placeholder="01.234.567.8-901.000 — kosongkan untuk pembeli pribadi" />
+            </div>
+
+            <div className="fg">
               <label className="flab">Catatan</label>
               <textarea className="fi" name="catatan" placeholder="Catatan tambahan tentang pelanggan ini..." rows={5} style={{ resize: "vertical" }} />
             </div>

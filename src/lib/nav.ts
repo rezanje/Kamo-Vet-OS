@@ -221,9 +221,8 @@ export const TILES: Record<string, Tile[]> = {
   pajak: [
     { label: "Mode PKP & tarif PPN", icon: "ti-settings", ...B, href: "/pengaturan/pajak" },
     { label: "Rekap PPN", icon: "ti-receipt-tax", ...G, href: "/keuangan/ppn" },
-    { label: "e-Faktur CTAS", icon: "ti-file-invoice", ...P },
+    { label: "Berkas Pajak per Masa", icon: "ti-file-invoice", ...G, nw: true, href: "/pajak/faktur" },
     { label: "Email Faktur Pajak", icon: "ti-mail-forward", ...P },
-    { label: "e-Faktur Legacy", icon: "ti-file-text", ...P },
   ],
   laporan: [
     // Laporan operasional yang diminta tim (2026-08-01) — di luar laporan

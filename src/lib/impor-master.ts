@@ -14,20 +14,20 @@ const kosongJadiNull = (v: string) => (v ? v : null);
 // ── Pelanggan ─────────────────────────────────────────────────────────────────
 
 export const KOLOM_PELANGGAN = [
-  "nama", "telp", "email", "alamat", "kategori", "pekerjaan", "sumber_info", "catatan",
+  "nama", "telp", "email", "alamat", "kategori", "pekerjaan", "sumber_info", "catatan", "npwp",
 ] as const;
 export const WAJIB_PELANGGAN = ["nama", "telp"] as const;
 
 export const CONTOH_PELANGGAN = [
   KOLOM_PELANGGAN.join(","),
-  "Budi Santoso,081234567890,budi@email.com,Jl. Merdeka 10,Member,Wiraswasta,Instagram,",
-  "Siti Aminah,081298765432,,Jl. Sudirman 5,Umum,,Teman,",
+  "Budi Santoso,081234567890,budi@email.com,Jl. Merdeka 10,Member,Wiraswasta,Instagram,,",
+  "PT Anugerah Jaya,081298765432,,Jl. Sudirman 5,Umum,,Teman,,01.234.567.8-901.000",
 ].join("\n");
 
 export type PelangganImpor = {
   name: string; phone: string; email: string | null; address: string | null;
   category_id: string | null; pekerjaan: string | null; sumber_info: string | null;
-  catatan: string | null;
+  catatan: string | null; npwp: string | null;
 };
 
 export type MasterPelanggan = {
@@ -80,6 +80,8 @@ export function periksaPelanggan(baris: BarisCsv[], master: MasterPelanggan): Ha
       pekerjaan: kosongJadiNull(teks(d.pekerjaan, 80)),
       sumber_info: kosongJadiNull(teks(d.sumber_info, 60)),
       catatan: kosongJadiNull(teks(d.catatan, 500)),
+      // NPWP hanya perlu untuk pembeli ber-NPWP; kosong itu wajar, bukan data kurang.
+      npwp: kosongJadiNull(teks(d.npwp, 30)),
     });
   }
 

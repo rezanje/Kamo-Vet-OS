@@ -16,6 +16,9 @@ export async function simpanPelanggan(formData: FormData) {
   const pekerjaan = String(formData.get("pekerjaan") ?? "").trim() || null;
   const sumber_info = String(formData.get("sumber_info") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
+  // NPWP hanya perlu untuk pembeli ber-NPWP (perusahaan). Kosong itu wajar dan
+  // tidak dianggap data kurang — pembeli pribadi memang tidak punya.
+  const npwp = String(formData.get("npwp") ?? "").trim().slice(0, 30) || null;
 
   if (!nama || !phone) {
     redirect(
@@ -43,7 +46,7 @@ export async function simpanPelanggan(formData: FormData) {
   }
 
   const { error } = await supabase.from("customers").insert({
-    name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, catatan,
+    name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, catatan, npwp,
   });
 
   if (error) {

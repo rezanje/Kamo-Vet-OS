@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 
 export function MasterPage({
   back, icon, iconBg = "#eff6ff", iconFg = "#2563eb", title, desc,
-  error, success, successMsg, bolehKelola, readOnlyNote, children,
+  error, success, successMsg, bolehKelola, readOnlyNote, aksi, children,
 }: {
   back: string;
   icon: string;
@@ -19,6 +19,8 @@ export function MasterPage({
   successMsg: string;
   bolehKelola: boolean;
   readOnlyNote: string;
+  /** Tombol tambahan di kanan judul, mis. "Impor dari Excel". */
+  aksi?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -35,6 +37,7 @@ export function MasterPage({
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>{title}</div>
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>{desc}</div>
         </div>
+        {aksi && <div style={{ marginLeft: "auto" }}>{aksi}</div>}
       </div>
 
       {error && (
@@ -44,7 +47,10 @@ export function MasterPage({
       )}
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> {successMsg}
+          {/* Layar biasa mengirim success=1 dan pesannya ditulis di sini. Impor
+              mengirim kalimat lengkapnya (berapa baris masuk, berapa dilewati) —
+              kalimat itu tidak boleh ditelan dan diganti pesan bawaan. */}
+          <i className="ti ti-circle-check" /> {success && success !== "1" ? success : successMsg}
         </div>
       )}
       {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> {readOnlyNote}</div>}

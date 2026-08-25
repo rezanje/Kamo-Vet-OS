@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -79,6 +80,11 @@ export default async function KomisiPage({
       error={sp.error} success={sp.success} successMsg="Aturan komisi tersimpan."
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah aturan komisi."
+      aksi={bolehKelola ? (
+        <Link href="/pengaturan/impor/komisi" className="btn-def" style={{ fontSize: 11, textDecoration: "none" }}>
+          <i className="ti ti-file-spreadsheet" /> Impor dari Excel
+        </Link>
+      ) : null}
     >
       <div className="crm-sec">
         <SecHeader

@@ -11,9 +11,12 @@ export default async function PajakPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
   const { data: s } = await supabase
-    .from("company_settings").select("mode_pkp, ppn_rate").eq("id", true).maybeSingle();
+    .from("company_settings").select("mode_pkp, ppn_rate, nama_perusahaan, npwp, alamat").eq("id", true).maybeSingle();
   const modePkp = !!s?.mode_pkp;
   const rate = Number(s?.ppn_rate) || 11;
+  const nama = (s?.nama_perusahaan as string | null) ?? "";
+  const npwp = (s?.npwp as string | null) ?? "";
+  const alamat = (s?.alamat as string | null) ?? "";
 
   return (
     <>
@@ -54,6 +57,34 @@ export default async function PajakPage({
             Saat AKTIF: harga POS dianggap sudah termasuk PPN (dipisah di pembukuan), tagihan klinik
             ditambah PPN di atas DPP, faktur pembelian memisahkan PPN Masukan. Rekap bulanan ada di{" "}
             <Link href="/keuangan/ppn" style={{ color: "var(--ac)" }}>Keuangan → Rekap PPN</Link>.
+          </div>
+        </div>
+
+        <div className="crm-sec" style={{ maxWidth: 560 }}>
+          <SecHeader
+            num="02"
+            title="IDENTITAS PERUSAHAAN"
+            desc="Dipakai berkas pajak, dan nanti juga kop dokumen cetak. Boleh dikosongkan dulu."
+          />
+          <div className="fg">
+            <label className="flab">Nama perusahaan</label>
+            <input className="fi" name="nama_perusahaan" defaultValue={nama} placeholder="PT Kamo Group" maxLength={120} />
+          </div>
+          <div className="fg">
+            <label className="flab">NPWP</label>
+            <input className="fi" name="npwp" defaultValue={npwp} placeholder="01.234.567.8-901.000" maxLength={30} />
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+              15 digit (format lama) atau 16 digit. Salah ketik di sini membuat seluruh berkas pajak
+              ditolak, dan itu baru ketahuan saat pelaporan — jadi angkanya diperiksa saat disimpan.
+            </div>
+          </div>
+          <div className="fg">
+            <label className="flab">Alamat</label>
+            <textarea className="fi" name="alamat" defaultValue={alamat} rows={2} maxLength={500} />
+          </div>
+          <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4, lineHeight: 1.6 }}>
+            Daftar pajak keluaran & masukan per bulan beserta unduhan berkasnya ada di{" "}
+            <Link href="/pajak/faktur" style={{ color: "var(--ac)" }}>Pajak → Berkas Pajak per Masa</Link>.
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
             <button type="submit" className="btn-acc"><i className="ti ti-device-floppy" /> Simpan</button>
