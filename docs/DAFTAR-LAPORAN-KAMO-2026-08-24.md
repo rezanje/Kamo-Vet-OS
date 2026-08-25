@@ -15,7 +15,7 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 | Laba rugi | ✅ | `/keuangan/laba-rugi`, tiap akun bisa diklik ke buku besarnya |
 | Neraca | ✅ | `/keuangan/neraca` |
 | Arus kas | ✅ | `/keuangan/arus-kas` |
-| Rincian arus kas | 🔨 | ada ringkasannya; rincian per akun belum |
+| Rincian arus kas | ✅ | `/keuangan/arus-kas/rincian` — per rekening kas & bank, lengkap saldo berjalan |
 | Laba ditahan | ⬜ | terbentuk saat tutup buku, belum ada layar laporannya |
 
 ### Buku besar
@@ -30,23 +30,23 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 |---|---|---|
 | History bank | ✅ | `/kas-bank/rekening` per rekening |
 | Transaksi terekonsiliasi & belum | ✅ | `/keuangan/rekonsiliasi` |
-| Rincian pembayaran per bank | 🔨 | datanya ada di peta metode bayar, laporannya belum berdiri sendiri |
-| Arus kas per akun | ⬜ | |
+| Rincian pembayaran per bank | ✅ | `/keuangan/arus-kas/rincian` — tiap rekening bisa dibuka rinciannya |
+| Arus kas per akun | ✅ | `/keuangan/arus-kas/rincian` |
 
 ### Piutang
 | Laporan | Status | Catatan |
 |---|---|---|
 | Faktur belum lunas / rincian piutang | ✅ | `/keuangan/piutang`, lengkap dengan umur piutang |
-| Buku besar pembantu piutang | 🔨 | per pelanggan sudah ada; format buku besar pembantu belum |
-| History piutang | 🔨 | |
+| Buku besar pembantu piutang | ✅ | `/keuangan/piutang/pembantu` — saldo awal, mutasi, saldo akhir per pelanggan |
+| History piutang | ✅ | `/keuangan/piutang/pembantu` — rincian tiap pelanggan bisa dibuka |
 | Penerimaan penjualan | ✅ | |
 
 ### Utang
 | Laporan | Status | Catatan |
 |---|---|---|
 | Faktur belum lunas / rincian utang | ✅ | `/keuangan/hutang`, rinciannya bisa diklik ke PO & faktur |
-| Buku besar pembantu utang | 🔨 | |
-| History utang | 🔨 | |
+| Buku besar pembantu utang | ✅ | `/keuangan/hutang/pembantu` |
+| History utang | ✅ | `/keuangan/hutang/pembantu` |
 | Rincian pembayaran pembelian | ✅ | |
 
 ### Pembelian
@@ -84,7 +84,7 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 | Laporan | Status |
 |---|---|
 | Pelanggan baru per cabang per periode | ⬜ |
-| Pertumbuhan anggota member | 🔨 — golongan & strata sudah tercatat, grafik pertumbuhan belum |
+| Pertumbuhan anggota member | ✅ — `/laporan/member`, per bulan + kumulatif + komposisi golongan & strata |
 | Rasio pelanggan baru vs lama per transaksi | ⬜ |
 
 ### Retensi
@@ -97,7 +97,7 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 | Laporan | Status |
 |---|---|
 | Voucher: diterbitkan, ditukarkan, redemption rate per program per cabang | ⬜ |
-| Cashback/poin: terkumpul, ditukar, saldo | 🔨 — saldo & mutasi poin sudah tercatat, laporannya belum |
+| Cashback/poin: terkumpul, ditukar, saldo | ✅ — `/laporan/member`, termasuk nilai kewajiban poin |
 | Diskon: dipakai dan rasio terhadap target | ⬜ |
 
 ---
@@ -106,10 +106,10 @@ Status: `✅ sudah ada` · `🔨 sebagian` · `⬜ belum`
 
 | Laporan | Status |
 |---|---|
-| Daftar kategori rawat inap, pet hotel, grooming | 🔨 — kategori tindakan sudah ada, laporannya belum |
+| Daftar kategori rawat inap, pet hotel, grooming | ✅ — `/laporan/rekap-klinik` seksi 01. Catatan: **Pet Hotel belum ada** sebagai kategori tindakan |
 | Daftar anamnesa / penyakit | ⬜ |
-| Daftar kondisi: sembuh, kontrol, RIP | 🔨 — status tercatat per pasien, rekapnya belum |
-| Daftar follow up: vaksin, grooming, kontrol lanjutan | 🔨 — `/klinik/follow-up` sudah ada, belum dipecah per jenis |
+| Daftar kondisi: sembuh, kontrol, RIP | ✅ — `/laporan/rekap-klinik` seksi 02 (stabil / kritis / sembuh / RIP) |
+| Daftar follow up: vaksin, grooming, kontrol lanjutan | ✅ — `/laporan/rekap-klinik` seksi 03, dipecah per jenis × status |
 
 ---
 
@@ -139,17 +139,38 @@ Catatan angka yang perlu disepakati saat dibahas dengan klien:
 
 ## Ringkasan & usulan urutan
 
-Dari 45 laporan yang diminta: **22 sudah ada · 11 sebagian · 12 belum**
-(per 25 Agustus 2026, setelah langkah 1 selesai).
+Dari 45 laporan yang diminta: **34 sudah ada · 0 sebagian · 11 belum**
+(per 25 Agustus 2026, setelah langkah 1 dan 2 selesai).
 
 Usulan garap:
 
 1. ~~**Laporan dasar + transaksi per cabang**~~ — ✅ selesai 25 Agustus 2026.
    Paling sering dipakai, datanya sudah lengkap, tinggal disajikan. Ini juga yang
    dua kali disebut di meeting 14 Agustus.
-2. **Melengkapi yang tinggal sebagian** — buku besar pembantu piutang & utang, rincian arus
-   kas, rekap kondisi klinik. Datanya sudah ada, tinggal bentuk laporannya.
+2. ~~**Melengkapi yang tinggal sebagian**~~ — ✅ selesai 25 Agustus 2026. Semua yang tadinya
+   setengah jadi sekarang punya layarnya sendiri: buku besar pembantu piutang & utang,
+   rincian arus kas per rekening, rekap klinik, dan member & poin.
 3. **Marketing** — dorman, interval kunjungan, dan kinerja voucher. Ini yang paling
    mengubah cara kerja tim marketing, tapi butuh kesepakatan ambang (mis. dorman > 90 hari).
 4. **Pembelian & tenaga penjual per dimensi** — pembelian per pemasok/barang, penjualan per
    penjual. Rapi tapi jarang dilihat harian.
+
+---
+
+## Temuan saat laporan dibuat (25 Agustus 2026)
+
+Tiga hal yang baru kelihatan setelah laporannya jadi. Bukan kesalahan program —
+data yang perlu dirapikan klien:
+
+1. **Jasa klinik belum digolongkan.** Enam baris jasa senilai Rp 75.000 masuk kategori
+   "Jasa tanpa kategori". Selama kategorinya kosong, laporan per kategori tidak bisa
+   memisahkan grooming, vaksinasi, dan konsultasi.
+2. **Pet Hotel belum ada sebagai kategori tindakan.** Kategori yang tersedia: Konsultasi,
+   Vaksinasi, Operasi, Grooming, Rawat Inap, Lab. Perlu ditambah kalau pet hotel dijual
+   sebagai layanan tersendiri.
+3. **5.000 poin tidak berasal dari transaksi mana pun.** Saldo poin di kartu pelanggan
+   8.094, sementara riwayat transaksi hanya menjelaskan 3.094. Selisihnya kemungkinan
+   saldo awal saat data dipindahkan. Tertulis terbuka di layar Member & Poin.
+
+Saldo buku pembantu piutang dan hutang keduanya **cocok persis** dengan akun buku
+besarnya — tidak ada dokumen yang lolos dari jurnal.

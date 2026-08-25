@@ -187,3 +187,90 @@ export async function getCashMovements(
 
   return { moves: [...agg.values()], saldoKasNow: saldo + saldoAwal, saldoAwal };
 }
+
+// Rincian arus kas PER REKENING — pelengkap getCashMovements yang hanya meringkas
+// per sumber transaksi. Yang dicari di sini: rekening mana menerima/mengeluarkan apa,
+// lengkap dengan saldo berjalannya. Semua rekening ditarik dalam satu tarikan jurnal,
+// bukan satu query per rekening.
+export type RekeningMutasi = {
+  code: string;
+  nama: string;
+  jenis: string;
+  saldoAwal: number;
+  masuk: number;
+  keluar: number;
+  saldoAkhir: number;
+  mutasi: (LedgerLine & { saldo: number })[];
+};
+
+export async function getCashLedgerPerAccount(
+  supabase: AnyClient,
+  f?: LedgerFilter,
+): Promise<RekeningMutasi[]> {
+  const [{ data: rek }, lines] = await Promise.all([
+    supabase.from("cash_accounts").select("nama, jenis, coa_code").eq("is_active", true).order("jenis").order("nama") as
+      Promise<{ data: { nama: string; jenis: string; coa_code: string }[] | null }>,
+    fetchLines(supabase, f),
+  ]);
+  const rekening = rek ?? [];
+  if (rekening.length === 0) return [];
+
+  const kode = [...new Set(rekening.map((r) => r.coa_code))];
+  const { data: accs } = (await supabase.from("coa_accounts").select("id, code").in("code", kode)) as
+    { data: { id: string; code: string }[] | null };
+  const kodePerId = new Map((accs ?? []).map((a) => [a.id, a.code]));
+
+  const awalPerKode = new Map<string, number>();
+  if (f?.from) {
+    const before = await fetchLines(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds });
+    for (const l of before) {
+      const c = kodePerId.get(l.account_id);
+      if (!c) continue;
+      awalPerKode.set(c, (awalPerKode.get(c) ?? 0) + Number(l.debit) - Number(l.credit));
+    }
+  }
+
+  const mutasiPerKode = new Map<string, LedgerLine[]>();
+  for (const l of lines) {
+    const c = kodePerId.get(l.account_id);
+    if (!c) continue;
+    const arr = mutasiPerKode.get(c) ?? [];
+    arr.push({
+      tanggal: l.journal_entries?.tanggal ?? "",
+      no_jurnal: l.journal_entries?.no_jurnal ?? "",
+      deskripsi: l.journal_entries?.deskripsi ?? "",
+      source: l.journal_entries?.source ?? "manual",
+      debit: Number(l.debit),
+      credit: Number(l.credit),
+    });
+    mutasiPerKode.set(c, arr);
+  }
+
+  // Satu kode akun bisa dipakai beberapa rekening (mis. dua e-wallet menunjuk 1103).
+  // Dalam kasus itu mutasinya memang tidak bisa dipisah — namanya digabung apa adanya
+  // supaya tidak terlihat seperti dua rekening yang masing-masing punya saldo penuh.
+  const namaPerKode = new Map<string, { nama: string[]; jenis: string }>();
+  for (const r of rekening) {
+    const cur = namaPerKode.get(r.coa_code) ?? { nama: [], jenis: r.jenis };
+    cur.nama.push(r.nama);
+    namaPerKode.set(r.coa_code, cur);
+  }
+
+  return [...namaPerKode].map(([code, info]) => {
+    const rows = (mutasiPerKode.get(code) ?? []).sort(
+      (a, b) => a.tanggal.localeCompare(b.tanggal) || a.no_jurnal.localeCompare(b.no_jurnal),
+    );
+    const saldoAwal = awalPerKode.get(code) ?? 0;
+    let saldo = saldoAwal;
+    const mutasi = rows.map((r) => {
+      saldo += r.debit - r.credit;
+      return { ...r, saldo };
+    });
+    const masuk = rows.reduce((a, r) => a + r.debit, 0);
+    const keluar = rows.reduce((a, r) => a + r.credit, 0);
+    return {
+      code, nama: info.nama.join(" + "), jenis: info.jenis,
+      saldoAwal, masuk, keluar, saldoAkhir: saldoAwal + masuk - keluar, mutasi,
+    };
+  }).sort((a, b) => a.code.localeCompare(b.code));
+}

@@ -124,6 +124,9 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Hutang Usaha (AP)</span>
+        <Link href="/keuangan/hutang/pembantu" className="back-btn" style={{ marginLeft: "auto" }}>
+          <i className="ti ti-book-2" /> Buku Besar Pembantu
+        </Link>
       </div>
 
       {success && (

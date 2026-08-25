@@ -2,27 +2,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getCashMovements } from "@/lib/ledger";
+import { SUMBER_KAS as SRC } from "@/lib/arus-kas";
 import { PeriodFilter } from "../PeriodFilter";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-// Peta source jurnal → aktivitas arus kas + label.
-const SRC: Record<string, { act: "operasi" | "investasi" | "pendanaan"; label: string }> = {
-  sale: { act: "operasi", label: "Penerimaan penjualan POS" },
-  klinik: { act: "operasi", label: "Penerimaan jasa klinik" },
-  "klinik-ar": { act: "operasi", label: "Pelunasan piutang pelanggan" },
-  "klinik-edit": { act: "operasi", label: "Koreksi invoice klinik" },
-  "klinik-void": { act: "operasi", label: "Void invoice klinik" },
-  expense: { act: "operasi", label: "Pembayaran beban operasional" },
-  payroll: { act: "operasi", label: "Pembayaran gaji karyawan" },
-  shift: { act: "operasi", label: "Selisih kas kasir" },
-  purchase: { act: "operasi", label: "Pembayaran pembelian" },
-  "purchase-pay": { act: "operasi", label: "Pembayaran hutang pembelian" },
-  "stock-in": { act: "operasi", label: "Pembelian stok" },
-  "bank-rec": { act: "operasi", label: "Penyesuaian rekonsiliasi bank" },
-  asset: { act: "investasi", label: "Pembelian aset tetap" },
-  manual: { act: "pendanaan", label: "Setoran modal / jurnal manual" },
-};
 
 export default async function ArusKasPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }> }) {
   const { dari, sampai, cabang } = await searchParams;
