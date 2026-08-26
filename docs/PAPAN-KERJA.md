@@ -1,11 +1,14 @@
 # Papan Kerja VetOS — satu-satunya daftar yang dipantau
 
-**Diperbarui** 25 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
+**Diperbarui** 26 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
 
 > **Catatan uji 17 Agustus:** blok stok opname (M1–M10) sudah diuji langsung di aplikasi —
 > daftar 30 barang otomatis, kunci per barang yang bertahan setelah layar ditutup, buka kunci,
 > simpan semua, sampai faktur selisih FJS.2026.08.00001 Rp 100.000 dan jurnalnya. Jalur klinik
 > (dinilai modal) baru teruji lewat tes otomatis: gudang klinik di data uji belum ada isinya.
+
+Foto kondisi untuk klien: `docs/Papan-Progres-VetOS-untuk-Kamo-Group-26-Agustus-2026.pdf`
+(sumbernya `docs/papan-progres-26-agustus.html` — ubah HTML-nya lalu cetak ulang ke PDF).
 
 Gabungan dari dua sumber:
 - `docs/Progres-VetOS-14-Agustus-2026.pdf` — status menu per modul (54/81 menu wajib = 67%)
@@ -22,9 +25,9 @@ Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ 
 
 | Ukuran | Angka |
 |---|---|
-| Menu wajib ala Accurate sudah jadi | 54 / 81 · 67% |
+| Menu wajib ala Accurate sudah jadi | 69 / 81 · 85% (dihitung per menu; 21 Agu = 65) |
 | Permintaan meeting 14 Agustus selesai | 40 / 42 · sisa: AI WhatsApp + 1 yang nunggu klien |
-| Permintaan susulan di luar meeting | 4 / 4 · status ulasan (M43), impor data awal (S11), skala pemantauan (M44), obat khusus (M45) |
+| Permintaan susulan di luar meeting | 9 / 9 · M43–M50 (review drh. Ilham & Pak Aldi) + impor data awal (S11) |
 | Sisa pekerjaan pra-meeting | 8 / 11 · sisa: WA otomatis & desain cetakan (nunggu klien), e-Faktur (nunggu template Coretax + PPh 21 Fase 3) |
 | Nunggu jawaban klien | 2 hal (token WA, identitas perusahaan) |
 

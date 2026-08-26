@@ -1,0 +1,434 @@
+<title>Papan Progres Kamo Vet OS</title>
+<style>
+  :root{
+    --ink:#1a1a19; --mut:#6b6b69; --soft:#9a9a97; --line:#e4e2dd;
+    --gr:#0f7a63; --gr-bg:#e7f3ef; --am:#a35c11; --am-bg:#fbf0e2; --rd:#a32f2f; --rd-bg:#fbeaea;
+    --pill:#eef4f2; --pill-ink:#31514a; --pill-bd:#d8e6e1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 40px 46px;background:#fff;color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;max-width:1040px}
+  .kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--soft);font-weight:600}
+  h1{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-weight:500;font-size:34px;
+    line-height:1.15;margin:6px 0 10px;letter-spacing:-.01em}
+  h2{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-weight:500;font-size:21px;
+    margin:34px 0 4px}
+  .lede{font-size:13.5px;color:var(--ink);max-width:760px;margin:0 0 14px}
+  .sub{font-size:12.5px;color:var(--mut);max-width:820px;margin:0 0 12px}
+  .meta{font-size:11.5px;color:var(--mut);margin-bottom:20px}
+  .meta a{color:var(--ink);font-weight:600}
+  .meta span{margin:0 12px;color:var(--line)}
+
+  .hero{border:1px solid var(--line);border-radius:14px;padding:20px 22px;display:flex;
+    justify-content:space-between;align-items:flex-start;gap:28px;margin-bottom:6px}
+  .hero .big{font-family:Georgia,serif;font-size:42px;line-height:1;font-weight:500}
+  .hero .big small{font-size:15px;color:var(--mut);font-family:-apple-system,sans-serif;margin-left:4px}
+  .bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;display:flex;margin:14px 0 8px;width:640px;max-width:100%}
+  .bar i{display:block;height:100%}
+  .legend{font-size:11px;color:var(--mut);display:flex;gap:16px}
+  .legend b{font-weight:500}
+  .dot{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:0}
+  .hero-right{text-align:right;flex-shrink:0}
+  .hero-right .n{font-size:15px;font-weight:700}
+  .hero-right .s{font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px}
+
+  .strip{display:flex;gap:14px;margin:14px 0 4px}
+  .card{flex:1;border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+  .card .l{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);font-weight:600}
+  .card .v{font-family:Georgia,serif;font-size:22px;margin-top:5px}
+  .card .d{font-size:11.5px;color:var(--mut);margin-top:3px;line-height:1.4}
+
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  thead th{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:600;
+    text-align:left;padding:9px 12px;background:#faf9f7;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  tbody td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:12.5px}
+  tbody tr:last-child td{border-bottom:none}
+  .mod{font-weight:700;font-size:13.5px}
+  .mod small{display:block;font-weight:400;font-size:10.5px;color:var(--mut);margin-top:2px}
+  .chip{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;padding:3px 9px;border-radius:20px}
+  .c-full{background:var(--gr-bg);color:var(--gr)}
+  .c-part{background:var(--am-bg);color:var(--am)}
+  .c-none{background:var(--rd-bg);color:var(--rd)}
+  .pill{display:inline-block;font-size:10.5px;padding:3px 8px;margin:0 4px 5px 0;border-radius:5px;
+    background:var(--pill);color:var(--pill-ink);border:.5px solid var(--pill-bd);text-decoration:none}
+  .pill.new{background:#fff;border-color:#c9b48a;color:#7a5f2b;font-weight:600}
+  .pill.new::after{content:" ·  baru";font-size:8.5px;letter-spacing:.06em;opacity:.8}
+  ul.rest{margin:0;padding-left:15px}
+  ul.rest li{margin-bottom:5px;line-height:1.42}
+  .done{color:var(--mut);font-style:italic}
+  .badge{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.07em;padding:4px 9px;border-radius:20px;
+    border:1px solid;white-space:nowrap}
+  .b-isi{border-color:#d9b47a;color:#8a5f18;background:#fdf6ea}
+  .b-akses{border-color:#d9b47a;color:#8a5f18;background:#fdf6ea}
+  .b-jadwal{border-color:#a9cfc3;color:var(--gr);background:var(--gr-bg)}
+  .b-next{border-color:var(--line);color:var(--mut);background:#fff}
+  .new-list{border:1px solid var(--line);border-radius:12px;padding:4px 18px 6px;margin-top:12px}
+  .new-list div{padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;display:flex;gap:14px}
+  .new-list div:last-child{border-bottom:none}
+  .new-list .tgl{flex:0 0 96px;color:var(--mut);font-size:11.5px;padding-top:1px}
+  .new-list b{font-weight:600}
+  .wait{border:1px solid var(--line);border-radius:12px;padding:2px 18px;margin-top:12px}
+  .wait div{padding:11px 0;border-bottom:1px solid var(--line);display:flex;gap:16px;font-size:12.5px}
+  .wait div:last-child{border-bottom:none}
+  .wait .w{flex:0 0 300px;font-weight:600}
+  .foot{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);font-size:11px;color:var(--mut);line-height:1.6}
+  .pb{break-before:page}
+  @page{size:A4 landscape;margin:12mm}
+  @media print{body{padding:0}h2{break-after:avoid}tr{break-inside:avoid}.hero,.card,.new-list,.wait{break-inside:avoid}}
+</style>
+
+<div class="kicker">Papan progres · Kamo Vet OS</div>
+<h1>Status pengembangan per modul</h1>
+<p class="lede">Foto kondisi aplikasi per 26 Agustus 2026. Setiap menu yang sudah jadi dapat dibuka langsung dari dokumen ini — nama menunya bisa diklik.</p>
+<div class="meta">Diperbarui 26 Agustus 2026 <span>·</span> Aplikasi: <a href="https://kamo-vet-os.vercel.app">kamo-vet-os.vercel.app</a> <span>·</span> Tautan memerlukan login</div>
+
+<div class="hero">
+  <div>
+    <div class="kicker">Permintaan meeting 14 Agustus yang sudah selesai</div>
+    <div class="big">40 <small>/ 42 · 95%</small></div>
+    <div class="bar"><i style="width:95.2%;background:#0f7a63"></i><i style="width:4.8%;background:#a35c11"></i></div>
+    <div class="legend">
+      <b><span class="dot" style="background:#0f7a63"></span>Selesai 40</b>
+      <b><span class="dot" style="background:#a35c11"></span>Menunggu bahan dari Kamo Group 1</b>
+      <b><span class="dot" style="background:#d8d6d1"></span>Tahap berikutnya 1</b>
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="n">69 dari 81 menu wajib · 85%</div>
+    <div class="s">acuan struktur Accurate, dihitung per menu<br>naik dari 65 menu (80%) pada 21 Agustus</div>
+  </div>
+</div>
+
+<div class="strip">
+  <div class="card">
+    <div class="l">Permintaan susulan drh. Ilham &amp; Pak Aldi</div>
+    <div class="v">9 dari 9</div>
+    <div class="d">Di luar daftar meeting — pemantauan rawat inap, obat berprotokol, status ulasan, dan lima perbaikan alur dokter.</div>
+  </div>
+  <div class="card">
+    <div class="l">Daftar laporan yang diminta tim</div>
+    <div class="v">50 dari 50</div>
+    <div class="d">Seluruh laporan pada daftar 24 Agustus sudah bisa dibuka di aplikasi.</div>
+  </div>
+  <div class="card">
+    <div class="l">Pekerjaan sisa sebelum meeting</div>
+    <div class="v">8 dari 11</div>
+    <div class="d">Sisanya: WhatsApp otomatis &amp; desain cetakan (menunggu klien), pajak elektronik (tahap berikutnya).</div>
+  </div>
+</div>
+
+<h2 class="pb">Progres per modul</h2>
+<p class="sub">Kolom “Sudah ada di modul ini” berisi menu yang aktif dan dapat langsung dibuka. Kolom “Tinggal dilengkapi” berisi hal yang masih tersisa di modul tersebut.</p>
+
+<table>
+  <thead><tr><th style="width:13%">Modul</th><th style="width:8%">Status</th><th style="width:56%">Sudah ada di modul ini</th><th style="width:23%">Tinggal dilengkapi</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="mod">Klinik<small>inti operasional</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/registrasi">Registrasi pasien</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/antrian">Antrian digital</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/rawat-inap">Rawat inap</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/klinik/rawat-inap">Pemantauan harian &amp; grafik</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/klinik/rawat-inap">Obat berprotokol</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/racik">Racik obat</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/persetujuan">Form persetujuan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/jadwal-dokter">Jadwal dokter</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/booking">Booking online</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/klinik/follow-up">Follow up + dokter sebelumnya</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/bahan-baku">Bahan baku</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/klinik/antrian">Pembayaran &amp; rombongan</a>
+      </td>
+      <td><ul class="rest">
+        <li>Tarif rawat inap per hari di master jasa, agar lama menginap masuk tagihan sendiri</li>
+        <li>Klausul formulir persetujuan untuk vaksinasi, rawat inap, dan lab</li>
+      </ul></td>
+    </tr>
+    <tr>
+      <td class="mod">Kasir / Petshop<small>inti operasional</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kasir">Layar jualan</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/kasir">Pemberitahuan promo berjalan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kasir/opname">Stok opname</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kasir/retur">Retur</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kasir/pengeluaran">Pengeluaran</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kasir/persediaan">Pesan &amp; terima barang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kasir/tutup">Tutup shift</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kasir/quest">Quest staf</a>
+      </td>
+      <td><ul class="rest"><li>Struk otomatis ke WhatsApp pelanggan</li></ul></td>
+    </tr>
+    <tr>
+      <td class="mod">Persediaan<small>14 / 14 menu</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/sku">Barang &amp; jasa</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/sku/impor">Impor barang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/harga">Harga bertingkat</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/stok">Stok per gudang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/kartu-stok">Kartu stok</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/expired">Monitor kedaluwarsa</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/opname">Arsip opname</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/penyesuaian">Penyesuaian persediaan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/produksi">Produksi own brand</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/pemindahan">Pemindahan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/permintaan">Permintaan antar cabang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pos/stok-minimum">Stok minimum</a>
+      </td>
+      <td class="done">Lengkap — tidak ada sisa pekerjaan.</td>
+    </tr>
+    <tr>
+      <td class="mod">Pembelian<small>9 / 9 menu</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian">Pesanan pembelian</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian/penerimaan">Penerimaan barang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian/faktur">Faktur pembelian</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian/faktur">Faktur tanpa PO</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian/uang-muka">Uang muka</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian/retur">Retur pembelian</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian/perintah-bayar">Perintah pembayaran</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pembelian?tab=supplier">Pemasok &amp; termin</a>
+      </td>
+      <td class="done">Lengkap — tidak ada sisa pekerjaan.</td>
+    </tr>
+    <tr>
+      <td class="mod">Penjualan<small>10 / 10 menu</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/penawaran">Penawaran</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/pesanan">Pesanan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/pengiriman">Pengiriman</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/faktur">Faktur</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/uang-muka">Uang muka</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/retur">Retur</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/komisi">Komisi penjual</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/target">Target penjualan</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/pengaturan/impor/komisi">Impor komisi &amp; target</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/penjualan/online">Penjualan online</a>
+      </td>
+      <td class="done">Lengkap — impor Excel komisi &amp; target ikut selesai.</td>
+    </tr>
+    <tr>
+      <td class="mod">Buku Besar<small>9 / 9 menu</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/coa">Akun perkiraan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/impor/akun">Impor bagan akun</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/jurnal">Jurnal umum</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/jurnal-berulang">Transaksi berulang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/buku-besar">Buku besar</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/buku-besar/anggaran">Anggaran</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/buku-besar/monitor-anggaran">Monitor anggaran</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/saldo-awal">Saldo awal</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/keuangan/tutup-buku">Tutup buku otomatis tiap tanggal 1</a>
+      </td>
+      <td class="done">Lengkap — proses akhir bulan berjalan sendiri.</td>
+    </tr>
+    <tr>
+      <td class="mod">Kas &amp; Bank<small>4 / 4 menu</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kas-bank/rekening">Daftar rekening</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kas-bank/kas-masuk">Kas masuk</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kas-bank/kas-keluar">Kas keluar</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/kas-bank/transfer">Transfer bank</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/rekonsiliasi">Rekonsiliasi</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/piutang">Piutang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/hutang">Hutang</a>
+      </td>
+      <td class="done">Lengkap — tidak ada sisa pekerjaan.</td>
+    </tr>
+    <tr>
+      <td class="mod">Aset Tetap<small>6 / 6 menu</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/aset">Daftar aset</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/kategori-aset">Kategori aset</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/kategori-aset-pajak">Golongan pajak fiskal</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/aset">Perubahan nilai &amp; umur</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/aset">Disposisi</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/aset">Pindah cabang</a>
+      </td>
+      <td class="done">Lengkap — penyusutan berjalan otomatis tiap tanggal 1.</td>
+    </tr>
+    <tr>
+      <td class="mod">HRIS<small>5 / 5 menu</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/hris/karyawan">Karyawan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/hris/absensi">Absensi berlokasi</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/hris/jadwal">Jadwal bulanan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/hris/penggajian">Penggajian &amp; slip</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/me">Cuti, lembur, kasbon &amp; reimburse</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/hris/kpi">KPI karyawan</a>
+      </td>
+      <td class="done">Lengkap — gaji terbit otomatis dari absensi, lembur, komisi, dan kasbon.</td>
+    </tr>
+    <tr>
+      <td class="mod">Laporan<small>50 laporan permintaan tim</small></td>
+      <td><span class="chip c-full">Penuh</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/laba-rugi">Laba rugi</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/neraca">Neraca</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/arus-kas">Arus kas</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/penjualan-kasir">Penjualan per kasir</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/penjualan-rinci">Penjualan rinci</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/laporan/transaksi-cabang">Transaksi per cabang</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/laporan/pelanggan-harian">Pelanggan per hari</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/pelanggan-teratas">Pelanggan teratas</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/retensi">Retensi pelanggan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/rekap-klinik">Rekap klinik</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/anamnesa">Anamnesa &amp; penyakit</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/absensi">Rekap absensi</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/gaji">Rekap gaji</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/kpi">Nilai KPI</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/promo">Promo, voucher &amp; diskon</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/laporan/member">Member &amp; poin</a>
+      </td>
+      <td><ul class="rest"><li>Formulir SPT dan bukti potong PPh 21 — ikut modul pajak</li></ul></td>
+    </tr>
+    <tr>
+      <td class="mod">CRM<small>pelanggan &amp; promo</small></td>
+      <td><span class="chip c-part">Sebagian</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/crm/pelanggan">Pelanggan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/impor/pelanggan">Impor pelanggan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/crm/pelanggan">Data anabul</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/crm/kategori-pelanggan">Golongan &amp; diskon</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/crm/status-ulasan">Status ulasan</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/crm/promo">Promo</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/crm/voucher">Voucher bersasaran</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/tier">Loyalty &amp; poin</a>
+      </td>
+      <td><ul class="rest"><li>Pengingat otomatis via WhatsApp — 7 pemicu, menunggu akses layanan pengirim</li></ul></td>
+    </tr>
+    <tr>
+      <td class="mod">Pengaturan<small>4 / 6 menu</small></td>
+      <td><span class="chip c-part">Sebagian</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/pengguna">Pengguna</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/akses-grup">Akses grup per peran</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/pengaturan/penomoran">Penomoran dokumen</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/pengaturan/penyetuju">Penyetuju transaksi</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/cabang">Cabang &amp; gudang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/gaji">Aturan gaji</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/pajak">Mode PKP &amp; tarif</a>
+      </td>
+      <td><ul class="rest">
+        <li>Kop cetakan pada struk &amp; faktur — menunggu logo, alamat, dan NPWP</li>
+        <li>Preferensi umum aplikasi</li>
+      </ul></td>
+    </tr>
+    <tr>
+      <td class="mod">Perusahaan<small>4 / 7 menu</small></td>
+      <td><span class="chip c-part">Sebagian</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/perusahaan/cabang">Cabang</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/jurnal-berulang">Transaksi berulang</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/keuangan/tutup-buku">Proses akhir bulan otomatis</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/pengaturan/penyetuju">Persetujuan transaksi</a>
+      </td>
+      <td><ul class="rest">
+        <li>Transaksi favorit</li>
+        <li>Kalender pengingat</li>
+        <li>Log aktivitas seluruh sistem — sekarang baru khusus jurnal</li>
+      </ul></td>
+    </tr>
+    <tr>
+      <td class="mod">Pajak<small>0 / 3 menu e-faktur</small></td>
+      <td><span class="chip c-none">Belum</span></td>
+      <td>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/keuangan/ppn">Rekap PPN</a>
+        <a class="pill" href="https://kamo-vet-os.vercel.app/pengaturan/pajak">Mode PKP &amp; tarif</a>
+        <a class="pill new" href="https://kamo-vet-os.vercel.app/pajak/faktur">Berkas pajak per masa</a>
+      </td>
+      <td><ul class="rest">
+        <li>e-Faktur CTAS, email faktur pajak, e-Faktur legacy</li>
+      </ul>
+      <div style="font-size:11px;color:var(--mut);margin-top:6px">Ditempatkan paling akhir sesuai keputusan manajemen — pelaporan pajak masih manual.</div></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Yang bertambah sejak 21 Agustus</h2>
+<p class="sub">Semuanya sudah aktif di aplikasi dan bisa dicoba langsung.</p>
+<div class="new-list">
+  <div><span class="tgl">21 Agustus</span><span><b>Impor massal data awal</b> — pelanggan, pemasok, dan bagan akun bisa diunggah dari Excel, tidak lagi diketik satu per satu.</span></div>
+  <div><span class="tgl">24 Agustus</span><span><b>Pemantauan harian rawat inap</b> — berat, suhu, makan, minum, BAB, dan pipis punya kolom sendiri; muncul grafik tren, hitungan hari tanpa BAB, foto pasien, catatan komunikasi ke pemilik, dan peringatan serah terima.</span></div>
+  <div><span class="tgl">25 Agustus</span><span><b>Penomoran dokumen &amp; penyetuju transaksi</b> — format nomor 27 jenis dokumen bisa diatur sendiri, dan transaksi di atas batas nilai wajib disetujui atasan.</span></div>
+  <div><span class="tgl">25 Agustus</span><span><b>Tutup buku otomatis tiap tanggal 1</b> dan <b>impor Excel aturan komisi &amp; target</b>.</span></div>
+  <div><span class="tgl">25 Agustus</span><span><b>Pemberitahuan promo berjalan di layar kasir</b> — muncul sendiri sekali sehari per cabang.</span></div>
+  <div><span class="tgl">25 Agustus</span><span><b>50 laporan permintaan tim tuntas</b> — termasuk transaksi per cabang dan rata-rata belanja per struk.</span></div>
+  <div><span class="tgl">25 Agustus</span><span><b>Tindak lanjut review drh. Ilham</b> — obat berprotokol (berapa kali sehari, berapa hari, siapa yang memberi), skala Baik/Sedang/Buruk agar bisa jadi grafik, status reproduksi Monorchid &amp; Kriptorkid, pintu langsung ke formulir harian, dan kolom dokter sebelumnya di follow up.</span></div>
+  <div><span class="tgl">25 Agustus</span><span><b>Status ulasan &amp; catatan pemilik tampil di antrian</b> — dokter tahu lebih dulu pelanggan loyal atau pernah komplain.</span></div>
+  <div><span class="tgl">26 Agustus</span><span><b>Tanggal &amp; jam mengikuti waktu Indonesia Barat</b> di seluruh layar.</span></div>
+  <div><span class="tgl">26 Agustus</span><span><b>Warna tema disamakan</b> — biru muda diganti biru tua Kamo di seluruh layar klinik dan petshop, sesuai permintaan Pak Aldi.</span></div>
+</div>
+
+<h2 class="pb">Pekerjaan yang masih tersisa</h2>
+<p class="sub">Diurutkan dari yang paling berdampak ke operasional. Kolom terakhir menunjukkan apa yang membuatnya belum bisa jalan.</p>
+<table>
+  <thead><tr><th style="width:19%">Pekerjaan</th><th style="width:11%">Modul</th><th style="width:32%">Kenapa perlu</th><th style="width:24%">Yang membuatnya tertahan</th><th style="width:14%">Urutan</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="mod">Tagihan rawat inap otomatis</td><td>Klinik</td>
+      <td>Lama menginap dihitung per 24 jam dan langsung masuk tagihan saat pasien pulang, tanpa diketik ulang.</td>
+      <td>Tarif jasa “Rawat Inap” per hari belum ada di master barang.</td>
+      <td><span class="badge b-isi">Tinggal isi</span></td>
+    </tr>
+    <tr>
+      <td class="mod">Formulir persetujuan lengkap</td><td>Klinik</td>
+      <td>Tindakan berisiko tidak bisa lanjut ke pembayaran sebelum formulirnya ditandatangani.</td>
+      <td>Klausul untuk vaksinasi, rawat inap, dan lab belum diisi. Menunya sudah tersedia untuk tim klinik.</td>
+      <td><span class="badge b-isi">Tinggal isi</span></td>
+    </tr>
+    <tr>
+      <td class="mod">WhatsApp otomatis</td><td>CRM, Kasir, Klinik</td>
+      <td>Struk terkirim sendiri, pengingat vaksin dan kontrol berjalan otomatis, pemilik hewan menerima kabar rawat inap.</td>
+      <td>Menunggu nomor dan akses layanan pengirim WhatsApp. Modulnya sudah selesai.</td>
+      <td><span class="badge b-akses">Menunggu akses</span></td>
+    </tr>
+    <tr>
+      <td class="mod">Kop pada dokumen cetak</td><td>Pengaturan</td>
+      <td>Struk, faktur, dan surat jalan tampil dengan identitas resmi perusahaan.</td>
+      <td>Menunggu logo, alamat, dan NPWP.</td>
+      <td><span class="badge b-akses">Menunggu data</span></td>
+    </tr>
+    <tr>
+      <td class="mod">Pelengkap Perusahaan</td><td>Perusahaan</td>
+      <td>Transaksi favorit, kalender pengingat, dan log aktivitas seluruh sistem.</td>
+      <td>Tidak ada — sudah dijadwalkan.</td>
+      <td><span class="badge b-jadwal">Dijadwalkan</span></td>
+    </tr>
+    <tr>
+      <td class="mod">e-Faktur &amp; SPT</td><td>Pajak, Laporan</td>
+      <td>Pelaporan pajak elektronik langsung dari sistem, termasuk bukti potong PPh 21.</td>
+      <td>Menunggu template resmi Coretax dari klien; PPh 21 menyusul bersama mesin potongan gaji.</td>
+      <td><span class="badge b-next">Tahap berikutnya</span></td>
+    </tr>
+    <tr>
+      <td class="mod">Asisten AI WhatsApp</td><td>CRM</td>
+      <td>Menjawab pertanyaan pelanggan hingga transaksi, dan follow up sampai closing.</td>
+      <td>Menyusul setelah modul WhatsApp dasar aktif.</td>
+      <td><span class="badge b-next">Tahap berikutnya</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Yang ditunggu dari Kamo Group</h2>
+<div class="wait">
+  <div><span class="w">Tarif jasa “Rawat Inap” per hari</span><span>Menahan tagihan rawat inap otomatis.</span></div>
+  <div><span class="w">Token layanan WhatsApp</span><span>Menahan struk otomatis, pengingat vaksin, dan laporan rawat inap ke pemilik.</span></div>
+  <div><span class="w">Logo, alamat, dan NPWP perusahaan</span><span>Menahan kop pada seluruh dokumen cetak.</span></div>
+  <div><span class="w">Template resmi Coretax</span><span>Menahan berkas e-Faktur untuk diunggah ke sistem pajak.</span></div>
+  <div><span class="w">Harga beli “RC Baby Milk Cat 300gr”</span><span>Masih Rp 0 di master barang, sehingga penjualannya tercatat untung 100% dan laporan laba jadi meleset.</span></div>
+</div>
+
+<div class="foot">
+  Hitungan 81 menu wajib mengacu pada struktur Accurate dan dihitung per menu. Menu khusus VetOS — klinik, CRM, HRIS, dan quest staf — berada di luar hitungan tersebut dan sudah berjalan penuh.<br>
+  Disusun 26 Agustus 2026 berdasarkan pemeriksaan langsung pada aplikasi · Gen Dev Studio untuk PT Kamo Group.
+</div>

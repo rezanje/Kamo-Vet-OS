@@ -117,9 +117,9 @@ export const TILES: Record<string, Tile[]> = {
   perusahaan: [
     { label: "Cabang", icon: "ti-building-community", ...B, href: "/perusahaan/cabang" },
     { label: "Transaksi Berulang", icon: "ti-repeat", ...G, href: "/keuangan/jurnal-berulang" },
-    { label: "Proses Akhir Bulan", icon: "ti-calendar-stats", ...G },
+    { label: "Proses Akhir Bulan", icon: "ti-calendar-stats", ...G, href: "/keuangan/tutup-buku" },
     { label: "Transaksi Favorit", icon: "ti-star", ...P },
-    { label: "Persetujuan (Approval)", icon: "ti-file-check", ...P },
+    { label: "Persetujuan (Approval)", icon: "ti-file-check", ...P, href: "/pengaturan/penyetuju" },
     { label: "Kalender", icon: "ti-calendar", ...P },
     { label: "Log Aktifitas", icon: "ti-history", ...P },
   ],
