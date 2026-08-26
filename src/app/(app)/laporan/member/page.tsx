@@ -152,7 +152,7 @@ export default async function MemberPage({
                   <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{t.baru}</td>
                   <td>
                     <div style={{
-                      height: 10, borderRadius: 5, background: "#2563eb",
+                      height: 10, borderRadius: 5, background: "var(--posb)",
                       width: `${Math.max(t.baru ? 3 : 0, (t.baru / puncak) * 100)}%`,
                     }} />
                   </td>

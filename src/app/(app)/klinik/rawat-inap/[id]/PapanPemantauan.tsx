@@ -57,7 +57,7 @@ export function PapanPemantauan({ laporan }: { laporan: LaporanHarian[] }) {
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-        <Grafik judul="Tren berat badan (kg)" tren={berat} warna="#2563eb" />
+        <Grafik judul="Tren berat badan (kg)" tren={berat} warna="var(--posb)" />
         <Grafik judul="Tren suhu tubuh (°C)" tren={suhu} warna="#dc2626"
           batas={{ min: SUHU_NORMAL_MIN, max: SUHU_NORMAL_MAX }} />
         {/* Skala Baik/Sedang/Buruk ikut jadi grafik: 3 = Baik, 1 = Buruk. */}
@@ -200,7 +200,7 @@ function KartuOrdinal({ label, nilai, streak }: {
 
 function warnaSuhu(suhu: number | null): string {
   const s = statusSuhu(suhu);
-  return s === "demam" ? "#b91c1c" : s === "rendah" ? "#2563eb" : "inherit";
+  return s === "demam" ? "#b91c1c" : s === "rendah" ? "var(--posb)" : "inherit";
 }
 
 function KartuAngka({ label, satuan, tren, status, catatan }: {
@@ -209,7 +209,7 @@ function KartuAngka({ label, satuan, tren, status, catatan }: {
 }) {
   const naik = tren.arah === "naik";
   const turun = tren.arah === "turun";
-  const warna = status === "demam" ? "#b91c1c" : status === "rendah" ? "#2563eb" : "var(--sb)";
+  const warna = status === "demam" ? "#b91c1c" : status === "rendah" ? "var(--posb)" : "var(--sb)";
   return (
     <div className="card" style={{ flex: "1 1 170px", background: "var(--sf1)", borderColor: "transparent" }}>
       <div style={{ fontSize: 10.5, color: "var(--tm)" }}>{label}</div>

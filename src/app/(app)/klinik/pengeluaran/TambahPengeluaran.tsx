@@ -10,7 +10,7 @@ export function TambahPengeluaran({ branchId, today }: { branchId: string; today
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="btn-acc" style={{ background: "#2563eb", padding: "8px 16px" }}>
+      <button type="button" onClick={() => setOpen(true)} className="btn-acc" style={{ background: "var(--posb)", padding: "8px 16px" }}>
         <i className="ti ti-plus" /> Tambah Pengeluaran
       </button>
       {open && (

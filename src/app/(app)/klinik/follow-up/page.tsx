@@ -71,7 +71,7 @@ export default async function FollowUpPage({
         {TABS.map(([id, label, icon]) => (
           <Link key={id} href={`/klinik/follow-up?tab=${id}`} className="back-btn" style={{
             padding: "7px 14px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, textDecoration: "none",
-            border: ".5px solid var(--bd)", background: tab === id ? "#2563eb" : "#fff", color: tab === id ? "#fff" : "var(--tm)",
+            border: ".5px solid var(--bd)", background: tab === id ? "var(--posb)" : "#fff", color: tab === id ? "#fff" : "var(--tm)",
           }}><i className={`ti ${icon}`} /> {label}</Link>
         ))}
       </div>

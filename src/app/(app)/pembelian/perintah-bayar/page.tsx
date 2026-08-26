@@ -130,7 +130,7 @@ export default async function PerintahBayarPage({
                 <input className="fi" name="catatan" placeholder="opsional" />
               </div>
               <div style={{ display: "flex", alignItems: "flex-end" }}>
-                <SubmitButton className="btn-acc" icon="ti-file-plus" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+                <SubmitButton className="btn-acc" icon="ti-file-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                   Ajukan perintah bayar
                 </SubmitButton>
               </div>

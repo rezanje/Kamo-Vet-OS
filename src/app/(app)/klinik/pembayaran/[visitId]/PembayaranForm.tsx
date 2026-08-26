@@ -225,17 +225,17 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
       <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 14, alignItems: "start" }}>
         {/* ===== KIRI: rincian tagihan ===== */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 12, borderBottom: "2px solid #2563eb", paddingBottom: 8, display: "inline-block" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em", marginBottom: 12, borderBottom: "2px solid var(--posb)", paddingBottom: 8, display: "inline-block" }}>
             <i className="ti ti-clipboard-list" /> RINCIAN TAGIHAN
           </div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
           <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="#2563eb" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: "#1d4ed8", marginBottom: 4 }}>CATATAN RESEP</div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--posb)", marginBottom: 4 }}>CATATAN RESEP</div>
               <div style={{ fontSize: 11, color: "var(--tm)", lineHeight: 1.5 }}>{catatanResep || "—"}</div>
             </div>
             <div>
@@ -277,7 +277,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
               <SumRow label={`PPN ${ppnRate}%`} value={rp(tax)} />
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1.5px solid var(--bd)" }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)" }}>TOTAL TAGIHAN</span>
-                <span style={{ fontSize: 17, fontWeight: 800, color: "#2563eb" }}>{rp(total)}</span>
+                <span style={{ fontSize: 17, fontWeight: 800, color: "var(--posb)" }}>{rp(total)}</span>
               </div>
             </div>
           </div>
@@ -305,7 +305,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
 
           {/* Ringkasan */}
           <div className="card">
-            <div style={{ fontSize: 11.5, fontWeight: 800, color: "#2563eb", marginBottom: 8 }}>RINGKASAN PEMBAYARAN</div>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>RINGKASAN PEMBAYARAN</div>
             <SumRow label="Total Tagihan" value={rp(total)} />
             <SumRow label="Total Pembayaran" value={rp(totalDiterima)} />
             <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1px solid var(--bd)" }}>
@@ -332,7 +332,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
 
           {/* Metode */}
           <div className="card">
-            <div style={{ fontSize: 11.5, fontWeight: 800, color: "#2563eb", marginBottom: 8 }}>PILIH METODE PEMBAYARAN</div>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PILIH METODE PEMBAYARAN</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {METODE_BAYAR.map(({ m, ic, desc }) => (
                 <button key={m} type="button" onClick={() => setMetode(m)} style={{
@@ -352,7 +352,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
 
           {/* Penerimaan */}
           <div className="card">
-            <div style={{ fontSize: 11.5, fontWeight: 800, color: "#2563eb", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Jumlah Bayar</span>
               <input className="fi" type="number" min={0} step={1} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
@@ -374,7 +374,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
                 <i className="ti ti-printer" /> Cetak
               </span>
             )}
-            <SubmitButton className="btn-acc" name="finalize" value="0" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "#2563eb" }}>Simpan</SubmitButton>
+            <SubmitButton className="btn-acc" name="finalize" value="0" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>Simpan</SubmitButton>
             <SubmitButton className="kpos-bayar" name="finalize" value="1" icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>
           </div>
         </div>

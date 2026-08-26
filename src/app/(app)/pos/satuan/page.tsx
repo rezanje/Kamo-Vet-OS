@@ -53,7 +53,7 @@ export default async function SatuanPage({
                 Disimpan huruf kecil semua supaya tidak kembar.
               </div>
             </div>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
             {editing && <Link href="/pos/satuan" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}

@@ -100,7 +100,7 @@ export default async function UangMukaPage({
                 <input className="fi" name="catatan" placeholder="opsional" />
               </div>
               <div style={{ display: "flex", alignItems: "flex-end" }}>
-                <SubmitButton className="btn-acc" icon="ti-cash" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+                <SubmitButton className="btn-acc" icon="ti-cash" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                   Bayar uang muka
                 </SubmitButton>
               </div>

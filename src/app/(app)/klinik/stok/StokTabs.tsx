@@ -14,8 +14,8 @@ export function StokTabs({ active, action }: { active: string; action?: React.Re
         {TABS.map((t) => (
           <Link key={t.key} href={t.href} className="back-btn" style={{
             padding: "4px 0 12px", fontSize: 13, fontWeight: active === t.key ? 700 : 500, borderRadius: 0,
-            color: active === t.key ? "#2563eb" : "var(--tm)",
-            borderBottom: active === t.key ? "2px solid #2563eb" : "2px solid transparent",
+            color: active === t.key ? "var(--posb)" : "var(--tm)",
+            borderBottom: active === t.key ? "2px solid var(--posb)" : "2px solid transparent",
           }}>
             <i className={`ti ${t.icon}`} /> {t.label}
           </Link>

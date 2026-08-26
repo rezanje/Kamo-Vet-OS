@@ -43,7 +43,7 @@ export default async function PersetujuanPage({
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className="ti ti-file-check" style={{ fontSize: 22, color: "#2563eb" }} />
+          <i className="ti ti-file-check" style={{ fontSize: 22, color: "var(--posb)" }} />
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>FORM PERSETUJUAN</div>
@@ -63,7 +63,7 @@ export default async function PersetujuanPage({
       )}
 
       <form action={simpanAturanConsent} className="crm-sec">
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 4 }}>TINDAKAN YANG WAJIB BERFORMULIR</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em", marginBottom: 4 }}>TINDAKAN YANG WAJIB BERFORMULIR</div>
         <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 12, lineHeight: 1.6 }}>
           Tindakan yang dicentang tidak bisa lanjut ke pembayaran sebelum formulirnya ditandatangani.
           Formulir bawaan boleh dikosongkan — dokter tinggal memilih sendiri saat meminta persetujuan.
@@ -104,7 +104,7 @@ export default async function PersetujuanPage({
         </div>
         {bolehKelola && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan aturan
             </SubmitButton>
           </div>
@@ -112,7 +112,7 @@ export default async function PersetujuanPage({
       </form>
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 12 }}>DAFTAR TEMPLATE</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em", marginBottom: 12 }}>DAFTAR TEMPLATE</div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
             <thead>

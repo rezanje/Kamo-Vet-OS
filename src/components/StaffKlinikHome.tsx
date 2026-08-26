@@ -20,7 +20,7 @@ const HERO: Hero[] = [
     label: "PENDAFTARAN",
     desc: "Tambah & kelola pendaftaran pasien baru",
     icon: "ti-file-plus",
-    color: "#2563eb",
+    color: "var(--posb)",
     tint: "#eff6ff",
     href: "/klinik/registrasi",
   },

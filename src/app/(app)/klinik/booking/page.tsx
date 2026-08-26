@@ -77,7 +77,7 @@ export default async function BookingKlinikPage({
       <div style={{ display: "flex", gap: 6, marginBottom: 11, flexWrap: "wrap" }}>
         {TAB.map((t) => (
           <Link key={t} href={`/klinik/booking?tab=${t}`} className="back-btn"
-            style={t === tab ? { background: "#eff6ff", color: "#2563eb", borderColor: "#bfdbfe", fontWeight: 700 } : {}}>
+            style={t === tab ? { background: "#eff6ff", color: "var(--posb)", borderColor: "#bfdbfe", fontWeight: 700 } : {}}>
             {JUDUL_TAB[t]} ({jumlah[t] ?? 0})
           </Link>
         ))}

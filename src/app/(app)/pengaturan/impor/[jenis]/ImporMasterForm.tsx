@@ -84,7 +84,7 @@ export function ImporMasterForm({ jenis, konfig }: { jenis: JenisImpor; konfig: 
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <SubmitButton className="btn-acc" icon="ti-upload" pendingText="Mengimpor…" style={{ background: "#2563eb" }}>
+        <SubmitButton className="btn-acc" icon="ti-upload" pendingText="Mengimpor…" style={{ background: "var(--posb)" }}>
           Impor {jenis}
         </SubmitButton>
       </div>

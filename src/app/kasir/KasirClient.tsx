@@ -344,7 +344,7 @@ export function KasirClient({
               <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3 }}>Tier</div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <span className="bge" style={{ background: "#eff6ff", color: "#1d4ed8", fontSize: 11, padding: "3px 12px" }}>
+              <span className="bge" style={{ background: "#eff6ff", color: "var(--posb)", fontSize: 11, padding: "3px 12px" }}>
                 {cust.kategori}
               </span>
               <div style={{ fontSize: 9, color: "var(--td)", marginTop: 3 }}>Kategori</div>

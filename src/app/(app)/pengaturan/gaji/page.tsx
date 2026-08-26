@@ -94,7 +94,7 @@ export default async function AturanGajiPage({
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan aturan
             </SubmitButton>
           </div>

@@ -64,7 +64,7 @@ export default async function KategoriBarangPage({
                 {calonInduk.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
             {editing && <Link href="/pos/kategori" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}

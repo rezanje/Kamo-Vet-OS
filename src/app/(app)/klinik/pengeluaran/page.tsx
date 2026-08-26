@@ -67,7 +67,7 @@ export default async function KlinikPengeluaranPage({
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengeluaran tersimpan.</div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 14 }}>
-        <StatCard label="Total Pengeluaran Hari Ini" value={rp(sum(startDay))} color="#2563eb" bg="#eff6ff" icon="ti-receipt" />
+        <StatCard label="Total Pengeluaran Hari Ini" value={rp(sum(startDay))} color="var(--posb)" bg="#eff6ff" icon="ti-receipt" />
         <StatCard label="Total Pengeluaran Bulan Ini" value={rp(sum(startMonth))} color="#16a34a" bg="#e8f5ee" icon="ti-chart-bar" />
         <StatCard label="Total Pengeluaran Tahun Ini" value={rp(sum(startYear))} color="#7c3aed" bg="#f3f0ff" icon="ti-chart-pie" />
       </div>
@@ -75,7 +75,7 @@ export default async function KlinikPengeluaranPage({
       <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 14, alignItems: "start" }}>
         {/* Filter sidebar (GET) */}
         <form method="GET" className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>FILTER PENGELUARAN</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--posb)", marginBottom: 12 }}>FILTER PENGELUARAN</div>
           <div className="fg"><label className="flab">Dari tanggal</label><input className="fi" name="from" type="date" defaultValue={from} /></div>
           <div className="fg"><label className="flab">Sampai tanggal</label><input className="fi" name="to" type="date" defaultValue={to} /></div>
           <div className="fg">
@@ -93,13 +93,13 @@ export default async function KlinikPengeluaranPage({
             </select>
           </div>
           <div className="fg"><label className="flab">Deskripsi</label><input className="fi" name="q" defaultValue={q} placeholder="Cari deskripsi…" /></div>
-          <button type="submit" className="btn-acc" style={{ width: "100%", justifyContent: "center", background: "#2563eb", marginTop: 4 }}><i className="ti ti-filter" /> Terapkan Filter</button>
+          <button type="submit" className="btn-acc" style={{ width: "100%", justifyContent: "center", background: "var(--posb)", marginTop: 4 }}><i className="ti ti-filter" /> Terapkan Filter</button>
           <Link href="/klinik/pengeluaran" className="btn-def" style={{ width: "100%", justifyContent: "center", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, textDecoration: "none" }}><i className="ti ti-refresh" /> Reset Filter</Link>
         </form>
 
         {/* Tabel */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>DAFTAR PENGELUARAN</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", marginBottom: 12 }}>DAFTAR PENGELUARAN</div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 720 }}>
               <thead><tr><th style={{ width: 30 }}>No.</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th style={{ textAlign: "right" }}>Jumlah</th><th>Metode</th><th>Dibuat Oleh</th></tr></thead>

@@ -98,7 +98,7 @@ export default async function RawatInapPage({
               {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
-          <button type="submit" className="btn-acc" style={{ padding: "7px 14px", fontSize: 11.5, background: "#2563eb" }}>
+          <button type="submit" className="btn-acc" style={{ padding: "7px 14px", fontSize: 11.5, background: "var(--posb)" }}>
             <i className="ti ti-refresh" /> Refresh
           </button>
         </form>
@@ -107,7 +107,7 @@ export default async function RawatInapPage({
       {/* Card counters berwarna (gaya referensi) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
         {([
-          { label: "TOTAL RAWAT INAP", val: counts.total, color: "#2563eb", bg: "#eff6ff", icon: "ti-bed" },
+          { label: "TOTAL RAWAT INAP", val: counts.total, color: "var(--posb)", bg: "#eff6ff", icon: "ti-bed" },
           { label: "RAWAT INAP HARI INI", val: counts.hariIni, color: "#d97706", bg: "#fffbeb", icon: "ti-clock" },
           { label: "SEMBUH / BOLEH PULANG", val: counts.sembuh, color: "#16a34a", bg: "#e8f5ee", icon: "ti-paw" },
           { label: "KRITIS", val: counts.kritis, color: "#b91c1c", bg: "#fef2f2", icon: "ti-alert-circle" },
@@ -127,8 +127,8 @@ export default async function RawatInapPage({
 
       <div className="crm-sec">
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <i className="ti ti-clipboard-list" style={{ fontSize: 18, color: "#2563eb" }} />
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em" }}>DAFTAR PASIEN RAWAT INAP</div>
+          <i className="ti ti-clipboard-list" style={{ fontSize: 18, color: "var(--posb)" }} />
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>DAFTAR PASIEN RAWAT INAP</div>
         </div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
@@ -163,7 +163,7 @@ export default async function RawatInapPage({
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <PetPhoto url={pet?.photo_url} />
                         <div>
-                          <div style={{ fontWeight: 600, color: "#2563eb" }}>{pet?.name ?? "—"}</div>
+                          <div style={{ fontWeight: 600, color: "var(--posb)" }}>{pet?.name ?? "—"}</div>
                           <div style={{ fontSize: 10, color: "var(--tm)" }}>{pet?.species}{pet?.breed ? ` / ${pet.breed}` : ""}{age ? ` · ${age}` : ""}</div>
                         </div>
                       </div>
@@ -185,7 +185,7 @@ export default async function RawatInapPage({
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                         {!r.discharged_at && (
                           <Link href={`/klinik/rawat-inap/${r.id}/catatan`} className="btn-acc"
-                            style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", background: "#2563eb" }}>
+                            style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", background: "var(--posb)" }}>
                             <i className="ti ti-clipboard-plus" /> Isi laporan harian
                           </Link>
                         )}

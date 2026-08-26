@@ -17,7 +17,7 @@ function petAge(dob: string | null | undefined): string {
   return y >= 1 ? `${y} Tahun${mm ? ` ${mm} Bln` : ""}` : `${mm} Bulan`;
 }
 
-const BLUE = "#1d4ed8";
+const BLUE = "var(--posb)";
 
 export default async function DokumenRekamMedisPage({ params }: { params: Promise<{ visitId: string }> }) {
   const { visitId } = await params;

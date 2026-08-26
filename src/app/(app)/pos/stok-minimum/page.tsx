@@ -119,7 +119,7 @@ export default async function StokMinimumPage({
                   {gudangs.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                 </select>
               </div>
-              <SubmitButton className="btn-acc" icon="ti-file-plus" pendingText="Membuat…" style={{ background: "#2563eb" }}>
+              <SubmitButton className="btn-acc" icon="ti-file-plus" pendingText="Membuat…" style={{ background: "var(--posb)" }}>
                 Buat draft PO
               </SubmitButton>
             </div>

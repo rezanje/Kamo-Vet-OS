@@ -46,7 +46,7 @@ export default async function KategoriPemasokPage({
               <label className="flab">{editing ? "Ubah nama kategori" : "Kategori baru"}</label>
               <input className="fi" name="nama" defaultValue={editing?.nama ?? ""} maxLength={60} placeholder="mis. Pakan" required />
             </div>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
             {editing && <Link href="/pembelian/kategori-pemasok" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}

@@ -73,7 +73,7 @@ export default async function RacikDetailPage({
       {/* Judul besar (referensi) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className="ti ti-flask" style={{ fontSize: 22, color: "#2563eb" }} />
+          <i className="ti ti-flask" style={{ fontSize: 22, color: "var(--posb)" }} />
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>RACIK OBAT</div>
@@ -112,7 +112,7 @@ export default async function RacikDetailPage({
             <Pair label="No. Resep" value={noResep} />
           </div>
           <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 14, maxWidth: 360, flex: 1, minWidth: 240 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: "#1d4ed8", marginBottom: 6 }}><i className="ti ti-clipboard-text" /> CATATAN RESEP</div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--posb)", marginBottom: 6 }}><i className="ti ti-clipboard-text" /> CATATAN RESEP</div>
             <div style={{ fontSize: 11.5, color: "var(--tm)", lineHeight: 1.5 }}>{catatanResep}</div>
           </div>
         </div>
@@ -121,8 +121,8 @@ export default async function RacikDetailPage({
       {/* Daftar obat racikan */}
       <div className="crm-sec">
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <i className="ti ti-mortar" style={{ fontSize: 18, color: "#2563eb" }} />
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em" }}>DAFTAR OBAT RACIKAN</div>
+          <i className="ti ti-mortar" style={{ fontSize: 18, color: "var(--posb)" }} />
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>DAFTAR OBAT RACIKAN</div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
@@ -169,7 +169,7 @@ export default async function RacikDetailPage({
         {(r.status === "pending" || r.status === "ready") && (
           <form action={updateRacikPetunjuk} style={{ border: ".5px solid #bfdbfe", background: "#f8fbff", borderRadius: 10, padding: 14, marginTop: 14 }}>
             <input type="hidden" name="recipeId" value={r.id} />
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", marginBottom: 3 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", marginBottom: 3 }}>
               <i className="ti ti-pencil" /> ISI PETUNJUK RACIK — {r.recipe_name}
             </div>
             <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 10 }}>
@@ -204,14 +204,14 @@ export default async function RacikDetailPage({
       {/* Informasi resep + pemilik */}
       <div className="grid2" style={{ marginTop: 12 }}>
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 10 }}>INFORMASI RESEP</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em", marginBottom: 10 }}>INFORMASI RESEP</div>
           <Pair label="Tanggal Periksa" value={tglPeriksa} />
           <Pair label="Poli" value={visit?.poli} />
           <Pair label="Keluhan" value={visit?.keluhan} />
           <Pair label="Diagnosa" value={mr?.diagnosis} />
         </div>
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em", marginBottom: 10 }}>INFORMASI PEMILIK</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em", marginBottom: 10 }}>INFORMASI PEMILIK</div>
           <Pair label="Nama" value={cust?.name} />
           <Pair label="No. HP" value={cust?.phone} />
           <Pair label="Alamat" value={cust?.address} />

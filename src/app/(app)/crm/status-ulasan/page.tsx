@@ -73,7 +73,7 @@ export default async function StatusUlasanPage({
               <input className="fi" name="warna" type="color" defaultValue={editing?.warna ?? "#b91c1c"}
                 style={{ padding: 2, height: 32 }} key={`warna-${editing?.id ?? "baru"}`} />
             </div>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
             {editing && <Link href="/crm/status-ulasan" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}

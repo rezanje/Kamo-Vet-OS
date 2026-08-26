@@ -253,7 +253,7 @@ export default async function RekamMedisPage({
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                   <span style={{
                     width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
-                    background: on ? "#2563eb" : "#f3f4f6",
+                    background: on ? "var(--posb)" : "#f3f4f6",
                     color: on ? "#fff" : "var(--td)",
                     border: active ? "2px solid #93c5fd" : "none",
                     display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
@@ -261,12 +261,12 @@ export default async function RekamMedisPage({
                     {done ? <i className="ti ti-check" /> : <i className={`ti ${ic}`} />}
                   </span>
                   <div style={{ lineHeight: 1.2 }}>
-                    <div style={{ fontSize: 11.5, fontWeight: active ? 700 : 500, color: on ? "#2563eb" : "var(--tm)" }}>{s}</div>
-                    <div style={{ fontSize: 9.5, color: active ? "#2563eb" : "var(--td)" }}>{sub}</div>
+                    <div style={{ fontSize: 11.5, fontWeight: active ? 700 : 500, color: on ? "var(--posb)" : "var(--tm)" }}>{s}</div>
+                    <div style={{ fontSize: 9.5, color: active ? "var(--posb)" : "var(--td)" }}>{sub}</div>
                   </div>
                 </div>
                 {shownI < stepsShown.length - 1 && (
-                  <div style={{ flex: 1, height: 2, background: done ? "#2563eb" : "var(--bd)", margin: "16px 9px 0" }} />
+                  <div style={{ flex: 1, height: 2, background: done ? "var(--posb)" : "var(--bd)", margin: "16px 9px 0" }} />
                 )}
               </div>
             );
@@ -306,7 +306,7 @@ export default async function RekamMedisPage({
             </div>
           )}
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-            <Link href={`/klinik/rekam-medis/${visit.id}/dokumen`} className="btn-acc" style={{ textDecoration: "none", background: "#1d4ed8" }}>
+            <Link href={`/klinik/rekam-medis/${visit.id}/dokumen`} className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)" }}>
               <i className="ti ti-file-text" /> Cetak Rekam Medis
             </Link>
           </div>
@@ -462,7 +462,7 @@ function tabHewan(active: boolean): React.CSSProperties {
     display: "inline-flex", alignItems: "center",
     padding: "5px 10px", borderRadius: 7, fontSize: 11.5, fontWeight: 600,
     background: active ? "#eff6ff" : "var(--sf1)",
-    color: active ? "#2563eb" : "var(--tm)",
+    color: active ? "var(--posb)" : "var(--tm)",
     border: `.5px solid ${active ? "#bfdbfe" : "var(--bd)"}`,
   };
 }

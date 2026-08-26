@@ -165,8 +165,8 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0 10px" }}>
-            <i className="ti ti-clipboard-list" style={{ fontSize: 16, color: "#2563eb" }} />
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#2563eb" }}>DETAIL RAWAT INAP</span>
+            <i className="ti ti-clipboard-list" style={{ fontSize: 16, color: "var(--posb)" }} />
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)" }}>DETAIL RAWAT INAP</span>
           </div>
 
           <div className="frow">
@@ -306,13 +306,13 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
         {/* ===== KANAN: POS obat & jasa ===== */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--sb)", letterSpacing: ".02em", marginBottom: 12 }}>
-            <i className="ti ti-shopping-cart" style={{ color: "#2563eb" }} /> INPUT OBAT &amp; JASA (POS)
+            <i className="ti ti-shopping-cart" style={{ color: "var(--posb)" }} /> INPUT OBAT &amp; JASA (POS)
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
             {TABS.map((t) => (
               <button key={t.id} type="button" onClick={() => setTab(t.id)} className="back-btn" style={{
                 flex: 1, justifyContent: "center", padding: "8px 0", borderRadius: 8, fontSize: 11.5, fontWeight: 600,
-                border: ".5px solid var(--bd)", background: tab === t.id ? "#2563eb" : "#fff", color: tab === t.id ? "#fff" : "var(--tm)",
+                border: ".5px solid var(--bd)", background: tab === t.id ? "var(--posb)" : "#fff", color: tab === t.id ? "#fff" : "var(--tm)",
               }}><i className={`ti ${t.icon}`} /> {t.id}</button>
             ))}
           </div>
@@ -353,7 +353,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <input className="fi" placeholder="Nama jasa (mis. Rawat inap/hari)" value={jasaNama} onChange={(e) => setJasaNama(e.target.value)} />
                   <input className="fi" type="number" min={0} step="any" placeholder="Harga" value={jasaHarga || ""} onChange={(e) => setJasaHarga(Number(e.target.value))} />
-                  <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "#2563eb", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
+                  <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "var(--posb)", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
                 </div>
               )}
               {tab === "Paket" && <div style={{ fontSize: 11, color: "var(--td)", padding: "12px 0" }}>Paket bundling — dalam pengembangan.</div>}
@@ -394,12 +394,12 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
                         </div>
                       ))}
                       <div style={{ display: "flex", justifyContent: "space-between", borderTop: ".5px solid var(--bd)", paddingTop: 5, marginTop: 3, fontSize: 11.5, fontWeight: 700 }}>
-                        <span>Estimasi</span><span style={{ color: "#2563eb" }}>{rp(racikSubtotal)}</span>
+                        <span>Estimasi</span><span style={{ color: "var(--posb)" }}>{rp(racikSubtotal)}</span>
                       </div>
                     </div>
                   )}
                   <button type="button" onClick={addRacikanToCart} disabled={!racikNama.trim() || racikBahan.length === 0}
-                    className="btn-acc" style={{ justifyContent: "center", background: "#2563eb", opacity: (!racikNama.trim() || racikBahan.length === 0) ? .5 : 1 }}>
+                    className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!racikNama.trim() || racikBahan.length === 0) ? .5 : 1 }}>
                     <i className="ti ti-plus" /> Tambah racikan ke keranjang
                   </button>
                 </div>
@@ -409,7 +409,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
             {/* Keranjang */}
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#2563eb" }}>KERANJANG ({cart.length})</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)" }}>KERANJANG ({cart.length})</span>
                 {cart.length > 0 && <button type="button" onClick={clear} className="back-btn" style={{ fontSize: 10, color: "#b91c1c" }}>Hapus semua</button>}
               </div>
               <div style={{ minHeight: 60, overflowX: "auto" }}>
@@ -485,7 +485,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
                 <Row k="PPN (0%)" v={rp(ppn)} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0 0", borderTop: "1px solid var(--bd)", marginTop: 6 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 700 }}>TOTAL</span>
-                  <span style={{ fontSize: 17, fontWeight: 800, color: "#2563eb" }}>{rp(total)}</span>
+                  <span style={{ fontSize: 17, fontWeight: 800, color: "var(--posb)" }}>{rp(total)}</span>
                 </div>
                 <div style={{ fontSize: 9, color: "var(--td)", marginTop: 6 }}>Obat, jasa &amp; racikan masuk resep visit → ikut tagihan saat pasien pulang.</div>
               </div>

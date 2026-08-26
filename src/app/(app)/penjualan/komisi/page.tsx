@@ -182,7 +182,7 @@ export default async function KomisiPage({
                 <input className="fi" name="berlaku_sampai" type="date" />
               </div>
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-end" }}>
-                <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+                <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                   Simpan aturan
                 </SubmitButton>
               </div>

@@ -137,7 +137,7 @@ export default async function AnamnesaPage({
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{d.nama}</td>
                   <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{d.jumlah}</td>
                   <td>
-                    <div style={{ height: 10, borderRadius: 5, background: "#2563eb", width: `${Math.max(3, (d.jumlah / puncak) * 100)}%` }} />
+                    <div style={{ height: 10, borderRadius: 5, background: "var(--posb)", width: `${Math.max(3, (d.jumlah / puncak) * 100)}%` }} />
                   </td>
                   <td style={{ fontSize: 10, color: d.ejaanLain.length ? "#b45309" : "var(--td)" }}>
                     {d.ejaanLain.length ? d.ejaanLain.join(" · ") : "—"}

@@ -62,7 +62,7 @@ export function PermintaanFormKlinik({ branchName, warehouses }: { branchName: s
         </div>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>Simpan Permintaan</SubmitButton>
+        <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>Simpan Permintaan</SubmitButton>
       </div>
     </form>
   );

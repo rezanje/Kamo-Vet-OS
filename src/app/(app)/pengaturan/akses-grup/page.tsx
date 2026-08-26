@@ -140,7 +140,7 @@ export default async function AksesGrupPage({
 
           {akuOwner && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+              <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                 Simpan hak akses {dipilih}
               </SubmitButton>
             </div>

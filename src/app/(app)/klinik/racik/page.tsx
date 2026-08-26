@@ -51,7 +51,7 @@ export default async function RacikListPage({
           Resep memang tidak ditulis di sini: resep menempel pada kunjungan pasien,
           jadi tempatnya di rekam medis kunjungan itu. Halaman ini antrean kerja apotek. */}
       <div className="crm-sec" style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-        <i className="ti ti-info-circle" style={{ fontSize: 18, color: "#2563eb", marginTop: 1 }} />
+        <i className="ti ti-info-circle" style={{ fontSize: 18, color: "var(--posb)", marginTop: 1 }} />
         <div style={{ fontSize: 11.5, color: "var(--tm)", lineHeight: 1.7 }}>
           <b>Mencari tempat menulis resep?</b> Resep ditulis dokter di <b>Rekam Medis</b> kunjungan
           pasien — di sana ada daftar obat &amp; jasa, aturan pakai, dan tombol{" "}
@@ -59,7 +59,7 @@ export default async function RacikListPage({
           tiap pasien tidak pernah terpisah dari pemeriksaannya.<br />
           Halaman ini antrean kerja apotek: racikan yang lahir dari resep itu, lengkap dengan
           takaran bahannya.{" "}
-          <Link href="/klinik/antrian" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
+          <Link href="/klinik/antrian" style={{ color: "var(--posb)", textDecoration: "none", fontWeight: 700 }}>
             Buka Antrian Digital
           </Link>{" "}
           untuk masuk ke rekam medis pasien yang sedang diperiksa.

@@ -174,7 +174,7 @@ export default async function VoucherPage({
             </div>
 
             <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
-              <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+              <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                 {editing ? "Simpan perubahan" : "Buat voucher"}
               </SubmitButton>
               {editing && <Link href="/crm/voucher" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}

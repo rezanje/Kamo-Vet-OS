@@ -58,7 +58,7 @@ export default async function MerekPage({
               <label className="flab">{editing ? "Ubah nama merek" : "Merek baru"}</label>
               <input className="fi" name="name" defaultValue={editing?.name ?? ""} placeholder="mis. Royal Canin" required />
             </div>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
             {editing && <Link href="/pos/merek" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}

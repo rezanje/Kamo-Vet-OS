@@ -192,7 +192,7 @@ export default async function PembayaranPage({
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className="ti ti-file-invoice" style={{ fontSize: 22, color: "#2563eb" }} />
+          <i className="ti ti-file-invoice" style={{ fontSize: 22, color: "var(--posb)" }} />
         </div>
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>INVOICE / PEMBAYARAN</div>
@@ -281,7 +281,7 @@ export default async function PembayaranPage({
       {adaRombongan && rombongan && ringkasan && (
         <div className="card" style={{ marginBottom: 12, borderColor: "#bfdbfe", background: "#f8fbff" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#1e40af" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--posb-dk)" }}>
               <i className="ti ti-paw" /> {rombongan.customerName} membawa {ringkasan.jumlahPasien} pasien hari ini
             </div>
             <div style={{ fontSize: 11, color: "var(--tm)" }}>

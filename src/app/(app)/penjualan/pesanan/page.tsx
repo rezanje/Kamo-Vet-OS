@@ -113,7 +113,7 @@ export default async function PesananPage({
             <BarisJualForm items={items} listId="so-items" />
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-              <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+              <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                 Simpan pesanan
               </SubmitButton>
             </div>

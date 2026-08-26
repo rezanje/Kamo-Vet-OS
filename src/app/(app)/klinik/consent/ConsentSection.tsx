@@ -29,11 +29,11 @@ export function ConsentSection({ visitId, consents, templates }: {
     <div className="card">
       <div className="card-hd" style={{ justifyContent: "space-between" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <i className="ti ti-file-check" style={{ color: "#2563eb" }} /> Form persetujuan
+          <i className="ti ti-file-check" style={{ color: "var(--posb)" }} /> Form persetujuan
         </span>
         {templates.length > 0 && !buka && (
           <button type="button" onClick={() => setBuka(true)} className="btn-acc"
-            style={{ padding: "4px 10px", fontSize: 10.5, background: "#2563eb" }}>
+            style={{ padding: "4px 10px", fontSize: 10.5, background: "var(--posb)" }}>
             <i className="ti ti-plus" /> Buat
           </button>
         )}
@@ -61,7 +61,7 @@ export function ConsentSection({ visitId, consents, templates }: {
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" onClick={() => setBuka(false)} className="btn-def" style={{ fontSize: 11 }}>Batal</button>
-            <SubmitButton className="btn-acc" icon="ti-file-plus" pendingText="Membuat…" style={{ background: "#2563eb", fontSize: 11 }}>
+            <SubmitButton className="btn-acc" icon="ti-file-plus" pendingText="Membuat…" style={{ background: "var(--posb)", fontSize: 11 }}>
               Buat Form
             </SubmitButton>
           </div>
@@ -91,7 +91,7 @@ export function ConsentSection({ visitId, consents, templates }: {
 
             <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
               <button type="button" onClick={() => setLihat(lihat === c.id ? null : c.id)} className="back-btn"
-                style={{ fontSize: 10.5, color: "#2563eb" }}>
+                style={{ fontSize: 10.5, color: "var(--posb)" }}>
                 <i className={`ti ti-chevron-${lihat === c.id ? "up" : "down"}`} /> {lihat === c.id ? "Sembunyikan" : "Lihat isi"}
               </button>
               {c.status === "belum_ttd" && signing !== c.id && (

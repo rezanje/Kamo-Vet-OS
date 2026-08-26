@@ -90,7 +90,7 @@ export default async function MutasiRekeningPage({
             <label className="flab">Sampai tanggal</label>
             <input className="fi" type="date" name="sampai" defaultValue={sampai ?? ""} style={{ width: 140 }} />
           </div>
-          <button type="submit" className="btn-acc" style={{ background: "#2563eb" }}>
+          <button type="submit" className="btn-acc" style={{ background: "var(--posb)" }}>
             <i className="ti ti-filter" /> Terapkan
           </button>
           {(dari || sampai) && (

@@ -77,7 +77,7 @@ export default async function DiskonGolonganPage({
               <input className="fi" name="diskon_persen" type="number" min={0} max={100} step="0.01"
                 defaultValue={0} required />
             </div>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
           </div>

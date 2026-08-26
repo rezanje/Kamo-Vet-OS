@@ -103,10 +103,10 @@ export default async function QuestPage({
         {/* KIRI: ringkasan + streak + leaderboard */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="card">
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", letterSpacing: ".04em", marginBottom: 8 }}>📊 RINGKASAN PENCAPAIAN</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 8 }}>📊 RINGKASAN PENCAPAIAN</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
               {([
-                { label: "Total Poin", val: totalPoints.toLocaleString("id-ID"), icon: "ti-star", chip: "#2563eb", bg: "#eff6ff", color: "#1d4ed8", brd: "#bfdbfe" },
+                { label: "Total Poin", val: totalPoints.toLocaleString("id-ID"), icon: "ti-star", chip: "var(--posb)", bg: "#eff6ff", color: "var(--posb)", brd: "#bfdbfe" },
                 { label: "Quest Selesai", val: `${questSelesaiTotal}`, icon: "ti-circle-check", chip: "#16a34a", bg: "#f0fdf4", color: "#15803d", brd: "#bbf7d0" },
                 { label: "Streak Harian", val: `${streakDays} Hari`, icon: "ti-flame", chip: "#f59e0b", bg: "#fffbeb", color: "#b45309", brd: "#fde68a" },
                 { label: "Reward Terklaim", val: `${rewardClaimed}`, icon: "ti-gift", chip: "#7c3aed", bg: "#f5f3ff", color: "#6d28d9", brd: "#ddd6fe" },
@@ -122,7 +122,7 @@ export default async function QuestPage({
             </div>
             <div style={{ marginTop: 10 }}>
               {([
-                { label: "Daily Quest", rows: daily, grad: "linear-gradient(90deg,#3b82f6,#2563eb)", ink: "#2563eb" },
+                { label: "Daily Quest", rows: daily, grad: "linear-gradient(90deg,var(--posb),var(--posb))", ink: "var(--posb)" },
                 { label: "Monthly Quest", rows: monthly, grad: "linear-gradient(90deg,#a78bfa,#7c3aed)", ink: "#7c3aed" },
               ] as const).map((g) => {
                 const done = doneCount(g.rows);
@@ -173,7 +173,7 @@ export default async function QuestPage({
           </div>
 
           <div className="card">
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", letterSpacing: ".04em", marginBottom: 8 }}>🏆 LEADERBOARD (BULAN INI · {shift.branchName})</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 8 }}>🏆 LEADERBOARD (BULAN INI · {shift.branchName})</div>
             {board.length === 0 && <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada poin bulan ini.</div>}
             {board.slice(0, 10).map((b, i) => {
               const rank = [
@@ -192,7 +192,7 @@ export default async function QuestPage({
                   <span style={{ fontSize: 11.5, flex: 1, fontWeight: me ? 700 : 400 }}>
                     {nameMap.get(b.staff_id) ?? "—"}{me ? " (Anda)" : ""}
                   </span>
-                  <span style={{ fontSize: 11.5, fontWeight: 800, color: "#1d4ed8" }}>{b.points.toLocaleString("id-ID")} Poin</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)" }}>{b.points.toLocaleString("id-ID")} Poin</span>
                 </div>
               );
             })}
@@ -206,7 +206,7 @@ export default async function QuestPage({
               {(["daily", "monthly"] as const).map((t) => (
                 <a key={t} href={`/kasir/quest?tab=${t}`} className="back-btn" style={{
                   padding: "5px 14px", borderRadius: 7, textDecoration: "none", fontSize: 11.5, fontWeight: 600,
-                  border: tab === t ? "1px solid #2563eb" : ".5px solid var(--bd)", background: tab === t ? "linear-gradient(90deg,#3b82f6,#2563eb)" : "#fff", color: tab === t ? "#fff" : "var(--tm)",
+                  border: tab === t ? "1px solid var(--posb)" : ".5px solid var(--bd)", background: tab === t ? "linear-gradient(90deg,var(--posb),var(--posb))" : "#fff", color: tab === t ? "#fff" : "var(--tm)",
                 }}>
                   {t === "daily" ? "Daily Quest" : "Monthly Quest"}
                 </a>
@@ -228,7 +228,7 @@ export default async function QuestPage({
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 11.5, fontWeight: 700 }}>{def.title}</div>
                       <div style={{ height: 8, background: "#eef2f7", borderRadius: 5, overflow: "hidden", marginTop: 5 }}>
-                        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: done ? "linear-gradient(90deg,#34d399,#16a34a)" : "linear-gradient(90deg,#3b82f6,#2563eb)" }} />
+                        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: done ? "linear-gradient(90deg,#34d399,#16a34a)" : "linear-gradient(90deg,var(--posb),var(--posb))" }} />
                       </div>
                       <div style={{ fontSize: 9.5, color: "var(--tm)", marginTop: 3 }}>
                         {isAmount ? `${rp(cur)} / ${rp(target)}` : `${cur} / ${target}`}
@@ -253,7 +253,7 @@ export default async function QuestPage({
 
           <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", letterSpacing: ".04em" }}>🎁 REWARD TERSEDIA</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em" }}>🎁 REWARD TERSEDIA</span>
               <span style={{ fontSize: 11 }}>Poin Anda: <b style={{ color: "#b45309", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 999, padding: "2px 9px" }}><i className="ti ti-star" style={{ color: "#f59e0b" }} /> {totalPoints.toLocaleString("id-ID")}</b></span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
@@ -262,7 +262,7 @@ export default async function QuestPage({
                 const icon = r.reward_type === "discount_voucher" ? "ti-ticket" : r.reward_type === "free_shipping" ? "ti-truck" : r.reward_type === "free_product" ? "ti-gift" : "ti-star";
                 const tint = [
                   { chip: "linear-gradient(180deg,#fbbf24,#f59e0b)", bg: "#fffbeb", brd: "#fde68a" },
-                  { chip: "linear-gradient(180deg,#60a5fa,#2563eb)", bg: "#eff6ff", brd: "#bfdbfe" },
+                  { chip: "linear-gradient(180deg,#60a5fa,var(--posb))", bg: "#eff6ff", brd: "#bfdbfe" },
                   { chip: "linear-gradient(180deg,#f472b6,#db2777)", bg: "#fdf2f8", brd: "#fbcfe8" },
                   { chip: "linear-gradient(180deg,#a78bfa,#7c3aed)", bg: "#f5f3ff", brd: "#ddd6fe" },
                 ][i % 4];
@@ -277,7 +277,7 @@ export default async function QuestPage({
                       <input type="hidden" name="rewardId" value={r.id} />
                       <button type="submit" disabled={!afford}
                         style={{ width: "100%", padding: "6px 0", fontSize: 10.5, fontWeight: 600, borderRadius: 7, border: "none", color: "#fff",
-                          background: afford ? "linear-gradient(90deg,#3b82f6,#2563eb)" : "#cbd5e1", opacity: afford ? 1 : 0.7, cursor: afford ? "pointer" : "not-allowed" }}>
+                          background: afford ? "linear-gradient(90deg,var(--posb),var(--posb))" : "#cbd5e1", opacity: afford ? 1 : 0.7, cursor: afford ? "pointer" : "not-allowed" }}>
                         Tukar
                       </button>
                     </form>

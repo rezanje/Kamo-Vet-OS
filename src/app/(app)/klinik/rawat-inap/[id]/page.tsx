@@ -18,7 +18,7 @@ const COND_BADGE: Record<string, string> = { stabil: "g", kritis: "r", sembuh: "
 const COND_BOX: Record<string, { fg: string; bg: string; bd: string }> = {
   stabil: { fg: "#15803d", bg: "#f0fdf4", bd: "#bbf7d0" },
   kritis: { fg: "#b91c1c", bg: "#fef2f2", bd: "#fca5a5" },
-  sembuh: { fg: "#1d4ed8", bg: "#eff6ff", bd: "#bfdbfe" },
+  sembuh: { fg: "var(--posb)", bg: "#eff6ff", bd: "#bfdbfe" },
   rip: { fg: "#b91c1c", bg: "#fef2f2", bd: "#fca5a5" },
 };
 
@@ -123,7 +123,7 @@ export default async function RawatInapDetailPage({
       {/* Judul besar (gaya referensi) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className="ti ti-bed" style={{ fontSize: 22, color: "#2563eb" }} />
+          <i className="ti ti-bed" style={{ fontSize: 22, color: "var(--posb)" }} />
         </div>
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>LAPORAN RAWAT INAP</div>
@@ -285,11 +285,11 @@ export default async function RawatInapDetailPage({
       <div className="crm-sec">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <i className="ti ti-clipboard-list" style={{ fontSize: 18, color: "#2563eb" }} />
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em" }}>LAPORAN RAWAT INAP HARIAN</div>
+            <i className="ti ti-clipboard-list" style={{ fontSize: 18, color: "var(--posb)" }} />
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>LAPORAN RAWAT INAP HARIAN</div>
           </div>
           {active && (
-            <Link href={`/klinik/rawat-inap/${rec.id}/catatan`} className="btn-acc" style={{ textDecoration: "none", background: "#2563eb" }}>
+            <Link href={`/klinik/rawat-inap/${rec.id}/catatan`} className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)" }}>
               <i className="ti ti-plus" /> Tambah
             </Link>
           )}
@@ -311,7 +311,7 @@ export default async function RawatInapDetailPage({
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.doctor_name ?? "—"}</td>
                   <td style={{ textAlign: "center" }}>
                     <Link href={`/klinik/rawat-inap/${rec.id}/catatan/${l.id}`} title="Lihat detail"
-                      style={{ display: "inline-flex", width: 26, height: 26, borderRadius: 6, border: "1px solid #bfdbfe", color: "#2563eb", background: "#fff", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
+                      style={{ display: "inline-flex", width: 26, height: 26, borderRadius: 6, border: "1px solid #bfdbfe", color: "var(--posb)", background: "#fff", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
                       <i className="ti ti-eye" />
                     </Link>
                   </td>

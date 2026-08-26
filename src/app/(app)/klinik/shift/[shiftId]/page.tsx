@@ -42,7 +42,7 @@ export default async function RingkasanShiftKlinikPage({ params }: { params: Pro
       </div>
 
       <ShiftSummaryCard
-        accent="#1d4ed8"
+        accent="var(--posb)"
         masukLabel="Kas dari invoice"
         doneHref="/mulai"
         data={{

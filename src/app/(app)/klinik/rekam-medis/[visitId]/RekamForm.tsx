@@ -184,10 +184,10 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
             </div>
           </div>
 
-          <ExamField icon="ti-message-2" color="#2563eb" label="Keluhan">
+          <ExamField icon="ti-message-2" color="var(--posb)" label="Keluhan">
             <input className="fi" name="keluhan" defaultValue={patient.keluhan ?? ""} placeholder="Keluhan utama pasien" />
           </ExamField>
-          <ExamField icon="ti-file-text" color="#2563eb" label="Anamnesa">
+          <ExamField icon="ti-file-text" color="var(--posb)" label="Anamnesa">
             <textarea className="fi" name="anamnesis" rows={2} placeholder="Riwayat & perjalanan penyakit" style={{ resize: "vertical" }} />
           </ExamField>
           <ExamField icon="ti-weight" color="#0891b2" label="Berat Badan">
@@ -209,7 +209,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
             <input className="fi" name="hasil_penunjang" placeholder="mis. Foto thorax normal" />
             <PenunjangUpload name="penunjang_urls" />
           </ExamField>
-          <ExamField icon="ti-stethoscope" color="#2563eb" label="Diagnosa">
+          <ExamField icon="ti-stethoscope" color="var(--posb)" label="Diagnosa">
             <textarea className="fi" name="diagnosis" rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />
           </ExamField>
         </div>
@@ -217,7 +217,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
         {/* ================= KANAN: POS obat & jasa ================= */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--sb)", letterSpacing: ".02em", marginBottom: 12 }}>
-            <i className="ti ti-shopping-cart" style={{ color: "#2563eb" }} /> INPUT OBAT &amp; JASA (POS)
+            <i className="ti ti-shopping-cart" style={{ color: "var(--posb)" }} /> INPUT OBAT &amp; JASA (POS)
           </div>
 
           {/* Tab jenis */}
@@ -225,7 +225,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
             {([["Obat", "ti-pill"], ["Jasa", "ti-stethoscope"], ["Paket", "ti-package"], ["Racikan", "ti-flask"]] as const).map(([t, ic]) => (
               <button key={t} type="button" onClick={() => setTab(t)} className="back-btn" style={{
                 flex: 1, justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                border: ".5px solid var(--bd)", background: tab === t ? "#2563eb" : "#fff", color: tab === t ? "#fff" : "var(--tm)",
+                border: ".5px solid var(--bd)", background: tab === t ? "var(--posb)" : "#fff", color: tab === t ? "#fff" : "var(--tm)",
               }}><i className={`ti ${ic}`} /> {t}</button>
             ))}
           </div>
@@ -290,7 +290,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
                           </div>
                         </div>
                         <button type="button" onClick={() => addJasa(it)} className="btn-acc"
-                          style={{ padding: "3px 8px", background: "#2563eb" }}><i className="ti ti-plus" /></button>
+                          style={{ padding: "3px 8px", background: "var(--posb)" }}><i className="ti ti-plus" /></button>
                       </div>
                     ))}
                   </div>
@@ -339,12 +339,12 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
                         </div>
                       ))}
                       <div style={{ display: "flex", justifyContent: "space-between", borderTop: ".5px solid var(--bd)", paddingTop: 5, marginTop: 3, fontSize: 11.5, fontWeight: 700 }}>
-                        <span>Estimasi</span><span style={{ color: "#2563eb" }}>{rp(racikSubtotal)}</span>
+                        <span>Estimasi</span><span style={{ color: "var(--posb)" }}>{rp(racikSubtotal)}</span>
                       </div>
                     </div>
                   )}
                   <button type="button" onClick={addRacikanToCart} disabled={!racikNama.trim() || racikBahan.length === 0}
-                    className="btn-acc" style={{ justifyContent: "center", background: "#2563eb", opacity: (!racikNama.trim() || racikBahan.length === 0) ? .5 : 1 }}>
+                    className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!racikNama.trim() || racikBahan.length === 0) ? .5 : 1 }}>
                     <i className="ti ti-plus" /> Tambah racikan ke keranjang
                   </button>
                 </div>
@@ -354,7 +354,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
             {/* Keranjang */}
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#2563eb" }}>KERANJANG ({cart.length})</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)" }}>KERANJANG ({cart.length})</span>
                 {cart.length > 0 && <button type="button" onClick={clear} className="back-btn" style={{ fontSize: 10, color: "#b91c1c" }}>Hapus semua</button>}
               </div>
               <div style={{ minHeight: 60, overflowX: "auto" }}>
@@ -432,7 +432,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
                 <Row k="PPN (0%)" v={rp(ppn)} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0 0", borderTop: "1px solid var(--bd)", marginTop: 6 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 700 }}>TOTAL</span>
-                  <span style={{ fontSize: 17, fontWeight: 800, color: "#2563eb" }}>{rp(total)}</span>
+                  <span style={{ fontSize: 17, fontWeight: 800, color: "var(--posb)" }}>{rp(total)}</span>
                 </div>
                 <div style={{ fontSize: 9, color: "var(--td)", marginTop: 6 }}>Harga & diskon final dikonfirmasi kasir di tahap pembayaran.</div>
               </div>

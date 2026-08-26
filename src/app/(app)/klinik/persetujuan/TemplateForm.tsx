@@ -24,7 +24,7 @@ export function TemplateForm({ branches, editing }: {
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="btn-acc" style={{ background: "#2563eb" }}>
+      <button type="button" onClick={() => setOpen(true)} className="btn-acc" style={{ background: "var(--posb)" }}>
         <i className="ti ti-plus" /> Template Baru
       </button>
     );
@@ -36,7 +36,7 @@ export function TemplateForm({ branches, editing }: {
     <form action={simpanTemplate} className="crm-sec" style={{ marginBottom: 14 }}>
       <input type="hidden" name="id" value={editing?.id ?? ""} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", letterSpacing: ".02em" }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>
           <i className="ti ti-file-text" /> {editing ? "EDIT TEMPLATE" : "TEMPLATE BARU"}
         </div>
         {!editing && (
@@ -64,7 +64,7 @@ export function TemplateForm({ branches, editing }: {
           <span style={{ fontSize: 9.5, color: "var(--tm)", alignSelf: "center", marginRight: 2 }}>Sisipkan:</span>
           {PLACEHOLDERS.map((p) => (
             <button key={p} type="button" onClick={() => sisip(p)} className="back-btn"
-              style={{ fontSize: 9.5, border: ".5px solid var(--bd)", borderRadius: 5, padding: "2px 6px", color: "#2563eb" }}>
+              style={{ fontSize: 9.5, border: ".5px solid var(--bd)", borderRadius: 5, padding: "2px 6px", color: "var(--posb)" }}>
               {"{" + p + "}"}
             </button>
           ))}
@@ -75,13 +75,13 @@ export function TemplateForm({ branches, editing }: {
           Placeholder terisi otomatis saat form dibuat dari data kunjungan.
         </div>
         {!isi && (
-          <button type="button" onClick={() => setIsi(CONTOH)} className="back-btn" style={{ fontSize: 10.5, color: "#2563eb", marginTop: 4 }}>
+          <button type="button" onClick={() => setIsi(CONTOH)} className="back-btn" style={{ fontSize: 10.5, color: "var(--posb)", marginTop: 4 }}>
             <i className="ti ti-wand" /> Pakai contoh teks
           </button>
         )}
       </div>
 
-      <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+      <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
         Simpan Template
       </SubmitButton>
     </form>

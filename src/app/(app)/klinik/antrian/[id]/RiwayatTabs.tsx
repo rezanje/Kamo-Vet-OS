@@ -38,8 +38,8 @@ export function RiwayatTabs({ med, racikan, inap, invoices }: {
         {TABS.map((t) => (
           <button key={t} onClick={() => setTab(t)} className="back-btn" style={{
             padding: "2px 0 10px", fontSize: 12.5, fontWeight: tab === t ? 700 : 500,
-            color: tab === t ? "#2563eb" : "var(--tm)",
-            borderBottom: tab === t ? "2px solid #2563eb" : "2px solid transparent", borderRadius: 0,
+            color: tab === t ? "var(--posb)" : "var(--tm)",
+            borderBottom: tab === t ? "2px solid var(--posb)" : "2px solid transparent", borderRadius: 0,
           }}>{t}</button>
         ))}
       </div>
@@ -160,7 +160,7 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tx)" }}>{children}</div>;
 }
 function Pill({ children }: { children: React.ReactNode }) {
-  return <span style={{ display: "inline-block", background: "#eff6ff", color: "#2563eb", fontSize: 9.5, fontWeight: 600, padding: "1px 7px", borderRadius: 20, marginLeft: 6 }}>{children}</span>;
+  return <span style={{ display: "inline-block", background: "#eff6ff", color: "var(--posb)", fontSize: 9.5, fontWeight: 600, padding: "1px 7px", borderRadius: 20, marginLeft: 6 }}>{children}</span>;
 }
 function Empty({ text }: { text: string }) {
   return <div style={{ fontSize: 11.5, color: "var(--td)", textAlign: "center", padding: "24px 0" }}>{text}</div>;

@@ -121,7 +121,7 @@ export default async function PenggajianPage({
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
             <form action={hitungPenggajian}>
               <input type="hidden" name="periode" value={periode} />
-              <SubmitButton className="btn-acc" icon="ti-calculator" pendingText="Menghitung…" style={{ background: "#2563eb" }} disabled={final}>
+              <SubmitButton className="btn-acc" icon="ti-calculator" pendingText="Menghitung…" style={{ background: "var(--posb)" }} disabled={final}>
                 {slip.length > 0 ? "Hitung ulang" : "Hitung"}
               </SubmitButton>
             </form>

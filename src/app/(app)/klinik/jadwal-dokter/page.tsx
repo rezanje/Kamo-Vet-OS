@@ -84,7 +84,7 @@ export default async function JadwalDokterPage({
         {medis.length === 0 ? (
           <div style={{ fontSize: 11, color: "var(--td)" }}>
             Belum ada dokter/paramedis aktif di cabang ini. Tambahkan dulu di{" "}
-            <Link href="/hris/karyawan" style={{ color: "#2563eb" }}>Karyawan</Link>.
+            <Link href="/hris/karyawan" style={{ color: "var(--posb)" }}>Karyawan</Link>.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -95,7 +95,7 @@ export default async function JadwalDokterPage({
                   {hari.map((h) => (
                     <th key={h.tanggal} style={{ textAlign: "center", background: h.tanggal === hariIni ? "#eff6ff" : undefined }}>
                       {h.namaHari} {h.hari}
-                      {h.tanggal === hariIni && <div style={{ fontSize: 9, color: "#2563eb" }}>hari ini</div>}
+                      {h.tanggal === hariIni && <div style={{ fontSize: 9, color: "var(--posb)" }}>hari ini</div>}
                     </th>
                   ))}
                 </tr>
@@ -134,7 +134,7 @@ export default async function JadwalDokterPage({
 
         <div style={{ marginTop: 10, fontSize: 10.5, color: "var(--td)" }}>
           Mau ubah jadwalnya?{" "}
-          <Link href={`/hris/jadwal?cabang=${cabang}`} style={{ color: "#2563eb" }}>Atur di HRIS → Jadwal Shift</Link>.
+          <Link href={`/hris/jadwal?cabang=${cabang}`} style={{ color: "var(--posb)" }}>Atur di HRIS → Jadwal Shift</Link>.
           Kolom kosong berarti orang itu belum dijadwalkan hari tersebut.
         </div>
       </div>

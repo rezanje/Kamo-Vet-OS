@@ -165,7 +165,7 @@ export function JadwalBoard({
           <span style={{ fontSize: 11, color: jumlahUbah > 0 ? "#b55a35" : "var(--td)" }}>
             {jumlahUbah > 0 ? `${jumlahUbah} sel belum disimpan` : "Belum ada perubahan"}
           </span>
-          <button type="submit" className="btn-acc" style={{ background: "#2563eb" }} disabled={jumlahUbah === 0}>
+          <button type="submit" className="btn-acc" style={{ background: "var(--posb)" }} disabled={jumlahUbah === 0}>
             <i className="ti ti-device-floppy" /> Simpan jadwal
           </button>
         </div>

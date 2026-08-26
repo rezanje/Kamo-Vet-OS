@@ -55,11 +55,11 @@ export default async function KlinikPermintaanPage({
         <Link href="/klinik" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
       </div>
       <StokTabs active="permintaan" action={
-        <Link href="/klinik/permintaan/baru" className="btn-acc" style={{ background: "#2563eb", padding: "8px 16px", textDecoration: "none" }}><i className="ti ti-plus" /> Tambah Permintaan Barang</Link>
+        <Link href="/klinik/permintaan/baru" className="btn-acc" style={{ background: "var(--posb)", padding: "8px 16px", textDecoration: "none" }}><i className="ti ti-plus" /> Tambah Permintaan Barang</Link>
       } />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 14 }}>
-        <StatCard label="Total Permintaan" value={String((all ?? []).length)} color="#2563eb" bg="#eff6ff" icon="ti-file-text" big />
+        <StatCard label="Total Permintaan" value={String((all ?? []).length)} color="var(--posb)" bg="#eff6ff" icon="ti-file-text" big />
         <StatCard label="Menunggu Persetujuan" value={String(c("Menunggu Persetujuan"))} color="#d97706" bg="#fffbeb" icon="ti-hourglass" big />
         <StatCard label="Disetujui" value={String(c("Disetujui"))} color="#16a34a" bg="#e8f5ee" icon="ti-circle-check" big />
         <StatCard label="Ditolak" value={String(c("Ditolak"))} color="#b91c1c" bg="#fef2f2" icon="ti-circle-x" big />
@@ -68,7 +68,7 @@ export default async function KlinikPermintaanPage({
 
       <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 14, alignItems: "start" }}>
         <form method="GET" className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>FILTER PERMINTAAN</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--posb)", marginBottom: 12 }}>FILTER PERMINTAAN</div>
           <div className="fg"><label className="flab">Dari tanggal</label><input className="fi" name="from" type="date" defaultValue={from} /></div>
           <div className="fg"><label className="flab">Sampai tanggal</label><input className="fi" name="to" type="date" defaultValue={to} /></div>
           <div className="fg">
@@ -86,12 +86,12 @@ export default async function KlinikPermintaanPage({
             </select>
           </div>
           <div className="fg"><label className="flab">Cari no. permintaan</label><input className="fi" name="q" defaultValue={q} placeholder="PRM-…" /></div>
-          <button type="submit" className="btn-acc" style={{ width: "100%", justifyContent: "center", background: "#2563eb", marginTop: 4 }}><i className="ti ti-filter" /> Terapkan Filter</button>
+          <button type="submit" className="btn-acc" style={{ width: "100%", justifyContent: "center", background: "var(--posb)", marginTop: 4 }}><i className="ti ti-filter" /> Terapkan Filter</button>
           <Link href="/klinik/permintaan" className="btn-def" style={{ width: "100%", justifyContent: "center", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, textDecoration: "none" }}><i className="ti ti-refresh" /> Reset Filter</Link>
         </form>
 
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>DAFTAR PERMINTAAN BARANG</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", marginBottom: 12 }}>DAFTAR PERMINTAAN BARANG</div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 820 }}>
               <thead><tr><th style={{ width: 30 }}>No.</th><th>No. Permintaan</th><th>Tanggal</th><th>Tujuan / Cabang</th><th>Diajukan Oleh</th><th>Prioritas</th><th>Status</th><th>Total Item</th></tr></thead>
@@ -104,7 +104,7 @@ export default async function KlinikPermintaanPage({
                   return (
                     <tr key={r.id}>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                      <td style={{ fontSize: 11.5, fontWeight: 600, color: "#2563eb" }}>{r.no_request ?? "—"}</td>
+                      <td style={{ fontSize: 11.5, fontWeight: 600, color: "var(--posb)" }}>{r.no_request ?? "—"}</td>
                       <td style={{ fontSize: 11 }}>{fmtDate(r.created_at)}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{fmtTime(r.created_at)}</div></td>
                       <td style={{ fontSize: 11.5 }}>{br?.name ?? one(r.warehouses as Rel<{ name: string }>)?.name ?? "—"}</td>
                       <td style={{ fontSize: 11.5 }}>{by?.full_name ?? "—"}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{by?.role ?? ""}</div></td>

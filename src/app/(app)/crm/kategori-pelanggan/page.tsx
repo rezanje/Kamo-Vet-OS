@@ -68,7 +68,7 @@ export default async function KategoriPelangganPage({
                 Makin kecil, makin royal. 1000 = tiap Rp1.000 dapat 1 poin.
               </div>
             </div>
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
             {editing && <Link href="/crm/kategori-pelanggan" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}

@@ -89,13 +89,13 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
             </div>
           ))}
           <div style={{ display: "flex", justifyContent: "space-between", borderTop: ".5px solid var(--bd)", paddingTop: 5, marginTop: 3, fontSize: 11.5, fontWeight: 700 }}>
-            <span>Estimasi</span><span style={{ color: "#2563eb" }}>{rp(subtotal)}</span>
+            <span>Estimasi</span><span style={{ color: "var(--posb)" }}>{rp(subtotal)}</span>
           </div>
         </div>
       )}
 
       <button type="submit" disabled={!nama.trim() || bahan.length === 0}
-        className="btn-acc" style={{ justifyContent: "center", background: "#2563eb", opacity: (!nama.trim() || bahan.length === 0) ? .5 : 1 }}>
+        className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!nama.trim() || bahan.length === 0) ? .5 : 1 }}>
         <i className="ti ti-plus" /> Simpan racikan
       </button>
     </form>

@@ -61,10 +61,10 @@ export function LunasiRombonganForm({ visitId, jumlahPasien, total, tertahan, be
       <input type="hidden" name="poinDigunakan" value={poinDipakai} />
 
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1e40af" }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--posb-dk)" }}>
           TOTAL {jumlahPasien} PASIEN
         </span>
-        <span style={{ fontSize: 26, fontWeight: 800, color: "#1e40af", lineHeight: 1.15 }}>{rp(tagihan)}</span>
+        <span style={{ fontSize: 26, fontWeight: 800, color: "var(--posb-dk)", lineHeight: 1.15 }}>{rp(tagihan)}</span>
       </div>
 
       {tertahan.length > 0 && (
@@ -81,7 +81,7 @@ export function LunasiRombonganForm({ visitId, jumlahPasien, total, tertahan, be
         {poinDipakai > 0 && <Baris label="Potongan poin" nilai={`- ${rp(poinDipakai)}`} />}
       </div>
 
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", margin: "10px 0 6px" }}>PILIH METODE PEMBAYARAN</div>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--posb)", margin: "10px 0 6px" }}>PILIH METODE PEMBAYARAN</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6 }}>
         {METODE_BAYAR.map(({ m, ic, desc }) => (
           <button key={m} type="button" onClick={() => setMetode(m)} style={{

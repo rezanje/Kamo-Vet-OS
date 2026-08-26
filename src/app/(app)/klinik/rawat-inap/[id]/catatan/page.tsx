@@ -65,7 +65,7 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className="ti ti-bed" style={{ fontSize: 22, color: "#2563eb" }} />
+          <i className="ti ti-bed" style={{ fontSize: 22, color: "var(--posb)" }} />
         </div>
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>RAWAT INAP</div>

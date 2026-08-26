@@ -62,8 +62,8 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0 10px" }}>
-            <i className="ti ti-clipboard-list" style={{ fontSize: 16, color: "#2563eb" }} />
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#2563eb" }}>DETAIL RAWAT INAP</span>
+            <i className="ti ti-clipboard-list" style={{ fontSize: 16, color: "var(--posb)" }} />
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)" }}>DETAIL RAWAT INAP</span>
           </div>
 
           <div className="frow">

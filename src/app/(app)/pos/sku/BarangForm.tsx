@@ -418,7 +418,7 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+        <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
           Simpan barang
         </SubmitButton>
         <Link href="/pos/sku" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>

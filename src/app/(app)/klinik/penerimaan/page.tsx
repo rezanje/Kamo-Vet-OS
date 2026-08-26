@@ -48,12 +48,12 @@ export default async function KlinikPenerimaanPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 14 }}>
         <StatCard label="Perlu Diterima" value={String((pending ?? []).length)} color="#d97706" bg="#fffbeb" icon="ti-package-import" big />
         <StatCard label="Total Penerimaan" value={String(receiptRows.length)} color="#16a34a" bg="#e8f5ee" icon="ti-checks" big />
-        <StatCard label="Cabang" value={shift?.branchName ?? "—"} color="#2563eb" bg="#eff6ff" icon="ti-building-store" big />
+        <StatCard label="Cabang" value={shift?.branchName ?? "—"} color="var(--posb)" bg="#eff6ff" icon="ti-building-store" big />
       </div>
 
       {/* Perlu diterima */}
       <div className="crm-sec">
-        <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>BARANG PERLU DITERIMA</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", marginBottom: 12 }}>BARANG PERLU DITERIMA</div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
             <thead><tr><th style={{ width: 30 }}>No.</th><th>No. Permintaan</th><th>Tanggal</th><th>Dari Gudang</th><th>Total Item</th><th>Status</th><th>Aksi</th></tr></thead>
@@ -61,7 +61,7 @@ export default async function KlinikPenerimaanPage() {
               {(pending ?? []).map((r, i) => (
                 <tr key={r.id}>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                  <td style={{ fontSize: 11.5, fontWeight: 600, color: "#2563eb" }}>{r.no_request ?? "—"}</td>
+                  <td style={{ fontSize: 11.5, fontWeight: 600, color: "var(--posb)" }}>{r.no_request ?? "—"}</td>
                   <td style={{ fontSize: 11 }}>{fmt(r.created_at)}</td>
                   <td style={{ fontSize: 11.5 }}>{one(r.warehouses as Rel<{ name: string }>)?.name ?? "—"}</td>
                   <td style={{ fontSize: 11.5 }}>{many(r.stock_request_items as Rel<{ id: string }>).length} Item</td>
@@ -81,7 +81,7 @@ export default async function KlinikPenerimaanPage() {
 
       {/* Riwayat */}
       <div className="crm-sec" style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>RIWAYAT PENERIMAAN</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", marginBottom: 12 }}>RIWAYAT PENERIMAAN</div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 680 }}>
             <thead><tr><th style={{ width: 30 }}>No.</th><th>No. Penerimaan</th><th>No. Permintaan</th><th>Tanggal Terima</th><th>Total Item</th><th>Diterima Oleh</th></tr></thead>
@@ -90,7 +90,7 @@ export default async function KlinikPenerimaanPage() {
                 <tr key={r.id}>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.receipt_number}</td>
-                  <td style={{ fontSize: 11.5, color: "#2563eb" }}>{one(r.stock_requests as Rel<{ no_request: string }>)?.no_request ?? "—"}</td>
+                  <td style={{ fontSize: 11.5, color: "var(--posb)" }}>{one(r.stock_requests as Rel<{ no_request: string }>)?.no_request ?? "—"}</td>
                   <td style={{ fontSize: 11 }}>{fmt(r.received_at)}</td>
                   <td style={{ fontSize: 11.5 }}>{many(r.stock_receipt_items as Rel<{ id: string }>).length} Item</td>
                   <td style={{ fontSize: 11 }}>{one(r.profiles as Rel<{ full_name: string | null }>)?.full_name ?? "—"}</td>

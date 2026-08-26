@@ -72,7 +72,7 @@ export default async function KomponenGajiPage({
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-              <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+              <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                 Simpan komponen
               </SubmitButton>
             </div>
@@ -165,7 +165,7 @@ export default async function KomponenGajiPage({
                     <input className="fi" name="nominal" type="number" min={0} step="any" placeholder="kosong = ikut bawaan" />
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-end" }}>
-                    <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+                    <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                       Pasang
                     </SubmitButton>
                   </div>

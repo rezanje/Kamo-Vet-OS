@@ -102,7 +102,7 @@ export default async function HargaJualPage({
             <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--tm)" }}> · {baris.length} baris harga</span>
           </div>
           {bolehKelola && baris.length > 0 && (
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan harga
             </SubmitButton>
           )}

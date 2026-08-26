@@ -89,7 +89,7 @@ export default async function BarangJasaPage({
             <Link href="/pos/sku/impor" className="btn-def" style={{ textDecoration: "none" }}>
               <i className="ti ti-file-spreadsheet" /> Impor CSV
             </Link>
-            <Link href="/pos/sku/baru" className="btn-acc" style={{ background: "#2563eb", textDecoration: "none" }}>
+            <Link href="/pos/sku/baru" className="btn-acc" style={{ background: "var(--posb)", textDecoration: "none" }}>
               <i className="ti ti-plus" /> Barang Baru
             </Link>
           </div>

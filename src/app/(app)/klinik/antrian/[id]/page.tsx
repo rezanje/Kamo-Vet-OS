@@ -30,9 +30,9 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 // warna titik timeline per poli (fallback siklus).
 const POLI_COLOR: Record<string, string> = {
-  "Poli Umum": "#2563eb", "Poli Gigi": "#7c3aed", "Poli Kulit": "#ec4899", "Vaksinasi": "#d97706", "Grooming": "#16a34a",
+  "Poli Umum": "var(--posb)", "Poli Gigi": "#7c3aed", "Poli Kulit": "#ec4899", "Vaksinasi": "#d97706", "Grooming": "#16a34a",
 };
-const CYCLE = ["#2563eb", "#16a34a", "#7c3aed", "#d97706", "#ec4899"];
+const CYCLE = ["var(--posb)", "#16a34a", "#7c3aed", "#d97706", "#ec4899"];
 
 export default async function PatientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -155,12 +155,12 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
         <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 220 }}>
             <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <i className="ti ti-user" style={{ fontSize: 26, color: "#2563eb" }} />
+              <i className="ti ti-user" style={{ fontSize: 26, color: "var(--posb)" }} />
             </div>
             <div>
               <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".05em" }}>OWNER / PEMILIK</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>{cust?.name ?? "—"}</div>
-              <div style={{ fontSize: 11.5, color: "#2563eb", marginTop: 2 }}><i className="ti ti-phone" style={{ fontSize: 12 }} /> {cust?.phone ?? "—"}</div>
+              <div style={{ fontSize: 11.5, color: "var(--posb)", marginTop: 2 }}><i className="ti ti-phone" style={{ fontSize: 12 }} /> {cust?.phone ?? "—"}</div>
               {/* Status ulasan pemilik ditaruh SEBELUM dokter masuk ruang periksa
                   (masukan drh. Ilham, 25 Agu): pelanggan yang sedang kecewa perlu
                   diketahui lebih dulu, bukan ketahuan waktu bayar di kasir. */}
@@ -200,7 +200,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 22, fontWeight: 800, color: "var(--sb)" }}>{pet?.name ?? "—"}</span>
-            <i className={`ti ${pet?.gender === "Betina" ? "ti-gender-female" : "ti-gender-male"}`} style={{ color: "#2563eb", fontSize: 18 }} />
+            <i className={`ti ${pet?.gender === "Betina" ? "ti-gender-female" : "ti-gender-male"}`} style={{ color: "var(--posb)", fontSize: 18 }} />
             <span className="bge b">{pet?.species ?? "—"}</span>
           </div>
           <div>
@@ -231,7 +231,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
           )}
 
           <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12, marginTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", marginBottom: 3 }}><i className="ti ti-info-circle" /> Catatan</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", marginBottom: 3 }}><i className="ti ti-info-circle" /> Catatan</div>
             <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>
               Riwayat medis menampilkan kunjungan terakhir dan tindakan yang pernah dilakukan pada anabul.
             </div>
@@ -248,7 +248,7 @@ function HeadCell({ icon, label, value }: { icon: string; label: string; value: 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <div style={{ width: 34, height: 34, borderRadius: 9, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <i className={`ti ${icon}`} style={{ color: "#2563eb", fontSize: 16 }} />
+        <i className={`ti ${icon}`} style={{ color: "var(--posb)", fontSize: 16 }} />
       </div>
       <div>
         <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".04em" }}>{label}</div>

@@ -16,7 +16,7 @@ export type PersRow = {
 
 // Status → warna badge + dot + deskripsi (selaras referensi UI).
 const STATUS = [
-  { k: "Menunggu Persetujuan", cls: "b", dot: "#1d4ed8", desc: "Menunggu persetujuan dari gudang" },
+  { k: "Menunggu Persetujuan", cls: "b", dot: "var(--posb)", desc: "Menunggu persetujuan dari gudang" },
   { k: "Disetujui", cls: "g", dot: "#15803d", desc: "Permintaan telah disetujui" },
   { k: "Dikirim", cls: "o", dot: "#b55a35", desc: "Barang sedang dikirim" },
   { k: "Selesai", cls: "g", dot: "#15803d", desc: "Barang telah diterima toko" },

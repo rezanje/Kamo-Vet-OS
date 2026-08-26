@@ -174,7 +174,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
           </div>
 
           <div style={{ borderTop: ".5px dashed var(--bd)", margin: "14px 0 0", paddingTop: 4 }} />
-          <SubHead icon="ti-calendar-event" title="DATA KUNJUNGAN" color="#2563eb" tint="#eff6ff" />
+          <SubHead icon="ti-calendar-event" title="DATA KUNJUNGAN" color="var(--posb)" tint="#eff6ff" />
           <div className="frow">
             <div>
               <label className="flab">Cabang {req}</label>
@@ -420,7 +420,7 @@ function tabHewan(active: boolean): React.CSSProperties {
     display: "inline-flex", alignItems: "center",
     padding: "5px 10px", borderRadius: 7, fontSize: 11.5, fontWeight: 600,
     background: active ? "#eff6ff" : "var(--sf1)",
-    color: active ? "#2563eb" : "var(--tm)",
+    color: active ? "var(--posb)" : "var(--tm)",
     border: `.5px solid ${active ? "#bfdbfe" : "var(--bd)"}`,
   };
 }

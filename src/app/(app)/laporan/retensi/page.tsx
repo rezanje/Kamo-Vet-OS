@@ -142,7 +142,7 @@ export default async function RetensiPage({
                 <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{s.n}</td>
                 <td>
                   <div style={{
-                    height: 10, borderRadius: 5, background: "#2563eb",
+                    height: 10, borderRadius: 5, background: "var(--posb)",
                     width: `${Math.max(s.n ? 3 : 0, (s.n / sebaranPuncak) * 100)}%`,
                   }} />
                 </td>

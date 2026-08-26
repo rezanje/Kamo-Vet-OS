@@ -26,7 +26,7 @@ function petAge(dob: string | null | undefined): string | null {
 
 // warna aksen per status (kartu, border baris, pill)
 const STATUS_META: Record<string, { badge: string; border: string; label: string }> = {
-  Menunggu: { badge: "b", border: "#2563eb", label: "Menunggu" },
+  Menunggu: { badge: "b", border: "var(--posb)", label: "Menunggu" },
   Diperiksa: { badge: "o", border: "#d97706", label: "Diperiksa" },
   Pembayaran: { badge: "r", border: "#b91c1c", label: "Pembayaran" },
   Selesai: { badge: "g", border: "#16a34a", label: "Selesai" },
@@ -144,7 +144,7 @@ export default async function AntrianPage({
       {/* Judul besar (gaya referensi) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className="ti ti-users" style={{ fontSize: 22, color: "#2563eb" }} />
+          <i className="ti ti-users" style={{ fontSize: 22, color: "var(--posb)" }} />
         </div>
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>ANTRIAN PASIEN</div>
@@ -178,7 +178,7 @@ export default async function AntrianPage({
       {/* Stat cards berwarna (gaya referensi) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
         {([
-          { label: "TOTAL ANTRIAN", val: totalToday, color: "#2563eb", bg: "#eff6ff", icon: "ti-users" },
+          { label: "TOTAL ANTRIAN", val: totalToday, color: "var(--posb)", bg: "#eff6ff", icon: "ti-users" },
           { label: "MENUNGGU", val: counts.Menunggu, color: "#16a34a", bg: "#e8f5ee", icon: "ti-clock" },
           { label: "SEDANG DIPERIKSA", val: counts.Diperiksa, color: "#d97706", bg: "#fffbeb", icon: "ti-stethoscope" },
           // Label tanpa "hari ini": angka-angka ini ikut tanggal yang sedang dilihat.
@@ -217,14 +217,14 @@ export default async function AntrianPage({
                   className="back-btn"
                   style={{
                     padding: "5px 12px", borderRadius: 7, border: ".5px solid var(--bd)",
-                    background: filter === t.key ? "#2563eb" : "#fff",
+                    background: filter === t.key ? "var(--posb)" : "#fff",
                     color: filter === t.key ? "#fff" : "var(--tm)",
                   }}>
                   {t.label}
                 </Link>
               ))}
             </div>
-            <Link href="/klinik/registrasi" className="btn-acc" style={{ textDecoration: "none", background: "#2563eb", flexShrink: 0 }}>
+            <Link href="/klinik/registrasi" className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)", flexShrink: 0 }}>
               <i className="ti ti-plus" /> Daftarkan pasien
             </Link>
           </div>
@@ -274,7 +274,7 @@ export default async function AntrianPage({
                         <Link href={`/klinik/antrian/${v.id}`} style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: "inherit" }}>
                           <PetPhoto url={pet?.photo_url} />
                           <div>
-                            <div style={{ fontWeight: 600, color: "#2563eb" }}>{pet?.name ?? "—"}</div>
+                            <div style={{ fontWeight: 600, color: "var(--posb)" }}>{pet?.name ?? "—"}</div>
                             <div style={{ fontSize: 10, color: "var(--tm)" }}>
                               {pet?.species}{pet?.breed ? ` / ${pet.breed}` : ""}{age ? ` · ${age}` : ""}
                             </div>
@@ -309,7 +309,7 @@ export default async function AntrianPage({
                               <form action={updateVisitStatus}>
                                 <input type="hidden" name="id" value={v.id} />
                                 <input type="hidden" name="status" value="Diperiksa" />
-                                <SubmitButton className="btn-acc" icon="ti-bell" style={{ padding: "4px 10px", fontSize: 10.5, background: "#2563eb" }} pendingText="…">Panggil</SubmitButton>
+                                <SubmitButton className="btn-acc" icon="ti-bell" style={{ padding: "4px 10px", fontSize: 10.5, background: "var(--posb)" }} pendingText="…">Panggil</SubmitButton>
                               </form>
                               <CancelButton id={v.id} />
                             </>
@@ -356,14 +356,14 @@ export default async function AntrianPage({
         {/* ===== KANAN: sidebar ===== */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Panggilan berikutnya */}
-          <div className="card" style={{ borderColor: "#2563eb" }}>
-            <div style={{ fontSize: 9.5, fontWeight: 700, color: "#2563eb", letterSpacing: ".05em", marginBottom: 10 }}>
+          <div className="card" style={{ borderColor: "var(--posb)" }}>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--posb)", letterSpacing: ".05em", marginBottom: 10 }}>
               <i className="ti ti-bell-ringing" /> PANGGILAN BERIKUTNYA
             </div>
             {nextUp ? (
               <>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, textAlign: "center" }}>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: "#2563eb", fontFamily: "ui-monospace, monospace", lineHeight: 1 }}>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: "var(--posb)", fontFamily: "ui-monospace, monospace", lineHeight: 1 }}>
                     {nextUp.queue_number ?? "—"}
                   </div>
                   <PetPhoto url={nextPet?.photo_url} size={64} />
@@ -381,7 +381,7 @@ export default async function AntrianPage({
                 <form action={updateVisitStatus} style={{ marginTop: 10 }}>
                   <input type="hidden" name="id" value={nextUp.id} />
                   <input type="hidden" name="status" value="Diperiksa" />
-                  <SubmitButton className="pay-btn" icon="ti-bell" style={{ background: "#2563eb" }} pendingText="Memanggil…">Panggil Sekarang</SubmitButton>
+                  <SubmitButton className="pay-btn" icon="ti-bell" style={{ background: "var(--posb)" }} pendingText="Memanggil…">Panggil Sekarang</SubmitButton>
                 </form>
               </>
             ) : (
@@ -412,7 +412,7 @@ export default async function AntrianPage({
               <i className="ti ti-info-circle" /> KETERANGAN STATUS
             </div>
             {([
-              { color: "#2563eb", label: "Menunggu", desc: "Pasien menunggu giliran" },
+              { color: "var(--posb)", label: "Menunggu", desc: "Pasien menunggu giliran" },
               { color: "#d97706", label: "Sedang Diperiksa", desc: "Pasien dalam pemeriksaan dokter" },
               { color: "#16a34a", label: "Selesai", desc: "Pemeriksaan telah selesai" },
             ] as const).map((s) => (

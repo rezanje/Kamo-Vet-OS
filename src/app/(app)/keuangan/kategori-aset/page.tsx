@@ -74,7 +74,7 @@ export default async function KategoriAsetPage({
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
             {editing && <Link href="/keuangan/kategori-aset" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}
-            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "#2563eb" }}>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
           </div>

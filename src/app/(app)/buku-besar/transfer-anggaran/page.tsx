@@ -104,7 +104,7 @@ export default async function TransferAnggaranPage({
                 <input className="fi" name="alasan" placeholder="mis. listrik naik, transport turun" />
               </div>
               <div style={{ display: "flex", alignItems: "flex-end" }}>
-                <SubmitButton className="btn-acc" icon="ti-arrows-transfer-down" pendingText="Menggeser…" style={{ background: "#2563eb" }}>
+                <SubmitButton className="btn-acc" icon="ti-arrows-transfer-down" pendingText="Menggeser…" style={{ background: "var(--posb)" }}>
                   Geser
                 </SubmitButton>
               </div>

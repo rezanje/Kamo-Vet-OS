@@ -44,7 +44,7 @@ export default async function KlinikShiftPage({
         <div className="card" style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 460, padding: 22 }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
             <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "#1d4ed8" }} />
+              <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700 }}>HITUNG UANG DI KASIR</div>
@@ -100,7 +100,7 @@ export default async function KlinikShiftPage({
       <form action={mulaiShiftKlinik} className="card" style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 440, padding: 22 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "#1d4ed8" }} />
+            <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700 }}>UANG DI KASIR SAAT INI</div>
