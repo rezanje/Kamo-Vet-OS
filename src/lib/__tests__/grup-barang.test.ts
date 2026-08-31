@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   agregasiKebutuhanGrup,
+  expandBarisGrup,
+  kebutuhanStokCheckout,
   normalisasiKomponenGrup,
   parseKomponenGrupDrafts,
   stokEfektifGrup,
@@ -95,6 +97,64 @@ describe("agregasiKebutuhanGrup", () => {
       { item_id: "food", qty_dasar: 6, item_type: "Persediaan", source_sale_item: "group" },
       { item_id: "service", qty_dasar: 1, item_type: "Jasa", source_sale_item: "group" },
       { item_id: "label", qty_dasar: 1, item_type: "Non-Persediaan", source_sale_item: "group" },
+    ])).toEqual([{ item_id: "food", qty_dasar: 8 }]);
+  });
+});
+
+describe("checkout Grup", () => {
+  it("mengalikan qty grup, qty komponen, dan faktor satuan", () => {
+    expect(expandBarisGrup({ item_id: "group", qty: 3 }, [{
+      component_item_id: "food",
+      item_type: "Persediaan",
+      qty: 2,
+      factor: 0.5,
+      unit: "1/2KG",
+      name: "Bolt Dog",
+      code: "BD",
+      sort_order: 0,
+    }])).toEqual([{
+      component_item_id: "food",
+      component_code: "BD",
+      component_name: "Bolt Dog",
+      item_type: "Persediaan",
+      qty_per_group: 2,
+      unit: "1/2KG",
+      factor: 0.5,
+      total_base_qty: 3,
+      hpp: 0,
+      sort_order: 0,
+    }]);
+  });
+
+  it("barang biasa memakai qty × faktor; Jasa dan Non-Persediaan tanpa kebutuhan stok", () => {
+    expect(kebutuhanStokCheckout([
+      { item_id: "food", item_type: "Persediaan", qty: 2, factor: 12 },
+      { item_id: "service", item_type: "Jasa", qty: 1, factor: 1 },
+      { item_id: "label", item_type: "Non-Persediaan", qty: 1, factor: 1 },
+    ])).toEqual([{ item_id: "food", qty_dasar: 24 }]);
+  });
+
+  it("menggabungkan barang langsung dengan komponen dari beberapa Grup", () => {
+    expect(kebutuhanStokCheckout([
+      { item_id: "food", item_type: "Persediaan", qty: 2, factor: 1 },
+      {
+        item_id: "group",
+        item_type: "Grup",
+        qty: 3,
+        factor: 1,
+        group_components: [{
+          component_item_id: "food",
+          component_code: "BD",
+          component_name: "Bolt Dog",
+          item_type: "Persediaan",
+          qty_per_group: 2,
+          unit: "PCS",
+          factor: 1,
+          total_base_qty: 6,
+          hpp: 0,
+          sort_order: 0,
+        }],
+      },
     ])).toEqual([{ item_id: "food", qty_dasar: 8 }]);
   });
 });

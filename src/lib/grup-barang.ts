@@ -105,3 +105,77 @@ export function stokEfektifGrup(
     Math.floor((stok.get(row.item_id) ?? 0) / row.qty_per_group),
   )));
 }
+
+export type ResepKomponenCheckout = {
+  component_item_id: string;
+  item_type: Exclude<JenisKomponen, "Grup">;
+  qty: number;
+  unit: string;
+  factor: number;
+  name: string;
+  code: string | null;
+  sort_order: number;
+};
+
+export type SnapshotKomponenGrup = {
+  component_item_id: string;
+  component_code: string | null;
+  component_name: string;
+  item_type: Exclude<JenisKomponen, "Grup">;
+  qty_per_group: number;
+  unit: string;
+  factor: number;
+  total_base_qty: number;
+  hpp: number;
+  sort_order: number;
+};
+
+export function expandBarisGrup(
+  row: { item_id: string; qty: number },
+  components: ResepKomponenCheckout[],
+): SnapshotKomponenGrup[] {
+  return components.map((component) => ({
+    component_item_id: component.component_item_id,
+    component_code: component.code,
+    component_name: component.name,
+    item_type: component.item_type,
+    qty_per_group: Number(component.qty),
+    unit: component.unit,
+    factor: Number(component.factor),
+    total_base_qty: Number(row.qty) * Number(component.qty) * Number(component.factor),
+    hpp: 0,
+    sort_order: Number(component.sort_order),
+  }));
+}
+
+export type BarisCheckoutStok = {
+  item_id: string;
+  item_type: JenisKomponen;
+  qty: number;
+  factor: number;
+  group_components?: SnapshotKomponenGrup[];
+};
+
+export function kebutuhanStokCheckout(rows: BarisCheckoutStok[]) {
+  const expanded: KebutuhanKomponen[] = [];
+  for (const row of rows) {
+    if (row.item_type === "Grup") {
+      for (const component of row.group_components ?? []) {
+        expanded.push({
+          item_id: component.component_item_id,
+          qty_dasar: component.total_base_qty,
+          item_type: component.item_type,
+          source_sale_item: row.item_id,
+        });
+      }
+      continue;
+    }
+    expanded.push({
+      item_id: row.item_id,
+      qty_dasar: Number(row.qty) * Number(row.factor),
+      item_type: row.item_type,
+      source_sale_item: row.item_id,
+    });
+  }
+  return agregasiKebutuhanGrup(expanded);
+}

@@ -20,12 +20,22 @@ import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
+import {
+  expandBarisGrup,
+  kebutuhanStokCheckout,
+  validasiKomponenGrup,
+  type JenisKomponen,
+  type ResepKomponenCheckout,
+  type SnapshotKomponenGrup,
+} from "@/lib/grup-barang";
 
 type CartLine = {
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
   promo_discount?: number | null;   // diisi server dari master, bukan dari klien
   satuan?: string; faktor?: number; // ditetapkan ulang dari master di bawah
+  item_type?: JenisKomponen;         // ditetapkan ulang dari master di bawah
+  group_components?: SnapshotKomponenGrup[];
 };
 
 // Earning sekarang ikut golongan pelanggan (lib/harga-golongan → poinDidapat).
@@ -71,21 +81,124 @@ export async function checkoutKasir(formData: FormData) {
   // (migrasi 0073), jadi layar kasir yang sudah lama terbuka tidak boleh menentukan
   // harga sendiri. Baris tanpa item_id (ketikan manual) tetap pakai harga yang diisi.
   const cartIds = [...new Set(rows.map((l) => l.item_id).filter(Boolean))];
+  const namaStok = new Map<string, string>();
   if (cartIds.length > 0) {
     const [{ data: itemsHarga }, hargaMap, unitMap] = await Promise.all([
-      supabase.from("items").select("id, nama:name, unit, sell_price, min_sell_qty").in("id", cartIds),
+      supabase.from("items").select("id, nama:name, unit, item_type, sell_price, min_sell_qty, is_active").in("id", cartIds),
       loadHargaCabang(supabase, branchId, cartIds),
       // Faktor satuan WAJIB dari master: faktor palsu dari klien = stok terpotong
       // lebih sedikit daripada barang yang benar-benar keluar dari rak.
       loadUnitOptions(supabase, cartIds),
     ]);
+    type ItemHarga = {
+      id: string; nama: string; unit: string; item_type: JenisKomponen;
+      sell_price: number; min_sell_qty: number; is_active: boolean;
+    };
     const pusat = new Map(
-      ((itemsHarga ?? []) as { id: string; nama: string; unit: string; sell_price: number; min_sell_qty: number }[])
+      ((itemsHarga ?? []) as ItemHarga[])
         .map((i) => [i.id, i]),
     );
+    for (const item of pusat.values()) namaStok.set(item.id, item.nama);
+
+    const groupIds = [...new Set(rows
+      .map((line) => line.item_id ? pusat.get(line.item_id) : undefined)
+      .filter((item): item is ItemHarga => item?.item_type === "Grup")
+      .map((item) => item.id))];
+    type RecipeRaw = {
+      group_item_id: string; component_item_id: string; qty: number;
+      unit: string; factor: number; sort_order: number;
+    };
+    const { data: recipeRaw, error: recipeErr } = groupIds.length
+      ? await supabase.from("item_group_components")
+        .select("group_item_id, component_item_id, qty, unit, factor, sort_order")
+        .in("group_item_id", groupIds).order("sort_order")
+      : { data: [], error: null };
+    if (recipeErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca rincian Grup: ${recipeErr.message}`)}`);
+
+    const recipeRows = (recipeRaw ?? []) as RecipeRaw[];
+    const componentIds = [...new Set(recipeRows.map((recipe) => recipe.component_item_id))];
+    const [{ data: componentItemsRaw, error: componentErr }, componentUnitMap] = componentIds.length
+      ? await Promise.all([
+        supabase.from("items").select("id, code, name, item_type, is_active").in("id", componentIds),
+        loadUnitOptions(supabase, componentIds),
+      ])
+      : [{ data: [], error: null }, new Map()];
+    if (componentErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca komponen Grup: ${componentErr.message}`)}`);
+
+    type ComponentMaster = {
+      id: string; code: string | null; name: string;
+      item_type: JenisKomponen; is_active: boolean;
+    };
+    const componentById = new Map(
+      ((componentItemsRaw ?? []) as ComponentMaster[]).map((component) => [component.id, component]),
+    );
+    for (const component of componentById.values()) namaStok.set(component.id, component.name);
+
+    const recipeByGroup = new Map<string, ResepKomponenCheckout[]>();
+    for (const groupId of groupIds) {
+      const rawForGroup = recipeRows.filter((recipe) => recipe.group_item_id === groupId);
+      const normalized = rawForGroup.map((recipe) => {
+        const master = componentById.get(recipe.component_item_id);
+        const officialUnit = componentUnitMap.get(recipe.component_item_id)
+          ?.find((unit: { unit: string; factor: number }) =>
+            unit.unit.toLowerCase() === recipe.unit.toLowerCase());
+        if (!master?.is_active || master.item_type === "Grup" || !officialUnit
+          || Number(officialUnit.factor) !== Number(recipe.factor)) {
+          return null;
+        }
+        return {
+          component_item_id: master.id,
+          item_type: master.item_type,
+          qty: Number(recipe.qty),
+          unit: officialUnit.unit,
+          factor: Number(officialUnit.factor),
+          name: master.name,
+          code: master.code,
+          sort_order: Number(recipe.sort_order),
+        } satisfies ResepKomponenCheckout;
+      });
+      const groupName = pusat.get(groupId)?.nama ?? "Grup";
+      if (normalized.some((component) => component == null)) {
+        redirect(`/kasir?error=${encodeURIComponent(`Rincian Grup "${groupName}" rusak atau punya komponen nonaktif`)}`);
+      }
+      const complete = normalized.filter((component): component is ResepKomponenCheckout => component != null);
+      const validation = validasiKomponenGrup(
+        complete.map((component) => ({
+          component_item_id: component.component_item_id,
+          qty: component.qty,
+          unit: component.unit,
+          factor: component.factor,
+        })),
+        new Map(complete.map((component) => [component.component_item_id, component.item_type])),
+      );
+      if (validation) {
+        redirect(`/kasir?error=${encodeURIComponent(`Rincian Grup "${groupName}" tidak valid: ${validation}`)}`);
+      }
+      recipeByGroup.set(groupId, complete);
+    }
+
     for (const l of rows) {
       const p = l.item_id ? pusat.get(l.item_id) : undefined;
-      if (!p) continue;
+      if (!l.item_id) {
+        l.item_type = "Non-Persediaan";
+        l.faktor = 1;
+        continue;
+      }
+      if (!p?.is_active) {
+        redirect(`/kasir?error=${encodeURIComponent(`Barang "${l.nama}" sudah nonaktif atau tidak ditemukan`)}`);
+      }
+      l.nama = p.nama;
+      l.item_type = p.item_type;
+      if (p.item_type === "Grup") {
+        l.satuan = p.unit;
+        l.faktor = 1;
+        l.harga = hargaCabang(hargaMap, l.item_id, p.unit, Number(p.sell_price));
+        l.group_components = expandBarisGrup(
+          { item_id: l.item_id, qty: Number(l.qty) },
+          recipeByGroup.get(l.item_id) ?? [],
+        );
+        continue;
+      }
       const opsi = applyHargaCabang(unitMap.get(l.item_id) ?? [], l.item_id, hargaMap);
       if (opsi.length > 0) {
         // Satuan yang dikirim klien hanya dipakai untuk MEMILIH dari daftar resmi;
@@ -233,6 +346,44 @@ export async function checkoutKasir(formData: FormData) {
   const kembali = metode === "Tunai" ? Math.max(0, bayar - total) : 0;
   if (metode === "Tunai" && bayar < total) redirect(`/kasir?error=${encodeURIComponent("Uang bayar kurang")}`);
 
+  // Preflight seluruh kebutuhan dalam satuan dasar SEBELUM sales dibuat. Barang
+  // langsung dan komponen dari beberapa Grup digabung agar item sama tidak lolos
+  // karena diperiksa per baris.
+  const kebutuhanStok = kebutuhanStokCheckout(rows.map((row) => ({
+    item_id: row.item_id,
+    item_type: row.item_type ?? "Non-Persediaan",
+    qty: Number(row.qty),
+    factor: Number(row.faktor) || 1,
+    group_components: row.group_components,
+  })));
+  const { data: wh, error: whErr } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId)
+    .eq("is_active", true).order("type").limit(1).maybeSingle();
+  if (whErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca gudang: ${whErr.message}`)}`);
+  if (kebutuhanStok.length > 0 && !wh) {
+    redirect(`/kasir?error=${encodeURIComponent("Cabang belum punya gudang aktif untuk memotong stok")}`);
+  }
+  if (wh && kebutuhanStok.length > 0) {
+    const { data: stockRows, error: stockErr } = await supabase.from("stock")
+      .select("item_id, qty").eq("warehouse_id", wh.id)
+      .in("item_id", kebutuhanStok.map((row) => row.item_id));
+    if (stockErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca stok: ${stockErr.message}`)}`);
+    const available = new Map(
+      ((stockRows ?? []) as { item_id: string; qty: number }[])
+        .map((stock) => [stock.item_id, Number(stock.qty)]),
+    );
+    const shortages = kebutuhanStok.filter((need) =>
+      (available.get(need.item_id) ?? 0) + Number.EPSILON < need.qty_dasar,
+    );
+    if (shortages.length > 0) {
+      const detail = shortages.map((need) => {
+        const stock = available.get(need.item_id) ?? 0;
+        return `${namaStok.get(need.item_id) ?? need.item_id} butuh ${need.qty_dasar}, tersedia ${stock}`;
+      }).join("; ");
+      redirect(`/kasir?error=${encodeURIComponent(`Stok tidak cukup: ${detail}`)}`);
+    }
+  }
+
   // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
   const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {
     table: "sales", column: "no_struk",
@@ -254,46 +405,70 @@ export async function checkoutKasir(formData: FormData) {
     .select("id").single();
   if (saleErr || !sale) redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
 
-  // Stok dipotong DULU, baru baris struk disimpan: modal FIFO tiap baris ikut
-  // dicatat (sale_items.hpp, migrasi 0084) supaya retur nanti bisa menilai
-  // barang yang kembali persis seperti saat keluar.
+  // Stok dipotong DULU per baris, lalu sale_item + snapshot disimpan. HPP Grup
+  // adalah total cost FIFO komponen Persediaan, bukan buy_price induk virtual.
   let hppFifo = 0;
-  const hppBaris = new Map<string, number>();
-  const { data: wh } = await supabase
-    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
-  if (wh) {
+  let checkoutFailure: string | null = null;
+  try {
     for (const r of rows) {
-      if (!r.item_id) continue;
-      try {
-        // Stok SELALU dipotong dalam satuan dasar: jual 1 dus isi 12 = keluar 12 pcs.
+      let lineHpp = 0;
+      const snapshots = (r.group_components ?? []).map((snapshot) => ({ ...snapshot }));
+
+      if (wh && r.item_type === "Persediaan" && r.item_id) {
         const { cost } = await stockOut(supabase, {
           warehouseId: wh.id, itemId: r.item_id, qty: toBaseQty(r.qty, r.faktor ?? 1),
           source: "sale", ref: noStruk,
         });
-        hppFifo += cost;
-        hppBaris.set(r.item_id, (hppBaris.get(r.item_id) ?? 0) + cost);
-      } catch (e) {
-        // Struk sudah tersimpan — jangan bikin kasir crash di depan pelanggan.
-        // ponytail: dicatat ke log server saja; kalau ini pernah kejadian beneran,
-        // naikkan jadi notifikasi backoffice + antrean koreksi stok.
-        console.error(`[stok] gagal potong stok ${noStruk} item ${r.item_id}:`, e);
+        lineHpp += cost;
       }
-    }
-  }
+      if (wh && r.item_type === "Grup") {
+        for (const snapshot of snapshots) {
+          if (snapshot.item_type !== "Persediaan") continue;
+          const { cost } = await stockOut(supabase, {
+            warehouseId: wh.id,
+            itemId: snapshot.component_item_id,
+            qty: snapshot.total_base_qty,
+            source: "sale-group",
+            ref: noStruk,
+          });
+          snapshot.hpp = cost;
+          lineHpp += cost;
+        }
+      }
 
-  const { error: itErr } = await supabase.from("sale_items").insert(
-    rows.map((l) => ({
-      sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
-      satuan: l.satuan ?? null, faktor: l.faktor ?? 1,
-      target_species: l.target_species ?? "Universal",
-      item_discount_type: l.item_discount_type ?? null,
-      item_discount_value: Math.max(0, Number(l.item_discount_value) || 0),
-      promo_id: l.item_id ? (promoPerItem.get(l.item_id) ?? null) : null,
-      promo_discount: linePromoApplied(l),
-      hpp: l.item_id ? (hppBaris.get(l.item_id) ?? 0) : null,
-    }))
-  );
-  if (itErr) redirect(`/kasir?error=${encodeURIComponent(itErr.message)}`);
+      const { data: saleItem, error: itemErr } = await supabase.from("sale_items").insert({
+        sale_id: sale.id, item_id: r.item_id, nama: r.nama, qty: r.qty, harga: r.harga,
+        satuan: r.satuan ?? null, faktor: r.faktor ?? 1,
+        target_species: r.target_species ?? "Universal",
+        item_discount_type: r.item_discount_type ?? null,
+        item_discount_value: Math.max(0, Number(r.item_discount_value) || 0),
+        promo_id: r.item_id ? (promoPerItem.get(r.item_id) ?? null) : null,
+        promo_discount: linePromoApplied(r),
+        hpp: r.item_id ? lineHpp : null,
+      }).select("id").single();
+      if (itemErr || !saleItem) {
+        throw new Error(itemErr?.message ?? `Gagal simpan baris ${r.nama}`);
+      }
+
+      if (snapshots.length > 0) {
+        const { error: snapshotErr } = await supabase.from("sale_item_group_components").insert(
+          snapshots.map((snapshot) => ({ ...snapshot, sale_item_id: saleItem.id })),
+        );
+        if (snapshotErr) throw new Error(`Gagal simpan rincian Grup ${r.nama}: ${snapshotErr.message}`);
+      }
+      hppFifo += lineHpp;
+    }
+  } catch (error) {
+    checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
+    console.error(`[checkout] gagal menyimpan ${noStruk}:`, error);
+  }
+  if (checkoutFailure) {
+    // Sale item/snapshot ikut terhapus lewat FK cascade. Mutasi stockOut masih JS
+    // nontransaksional; kegagalannya tidak disamarkan sebagai transaksi sukses.
+    const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
+    if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
+    redirect(`/kasir?error=${encodeURIComponent(checkoutFailure)}`);
+  }
 
   // poin: redeem (minus) lalu earn (plus), saldo berjalan konsisten di ledger.
   if (customerId) {
