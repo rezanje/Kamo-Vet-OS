@@ -20,7 +20,13 @@ import {
   type ExistingAccurateCategory,
   type ExistingAccurateItem,
 } from "@/lib/impor-accurate";
-import { fingerprintInput } from "@/lib/impor-accurate-lanjutan";
+import {
+  bacaWorkbookKomponenGrup,
+  fingerprintInput,
+  groupComponentPayload,
+  parseKomponenGrupRows,
+  type GroupMasterLite,
+} from "@/lib/impor-accurate-lanjutan";
 
 const BACK = "/pos/sku/impor";
 
@@ -112,6 +118,17 @@ export type AccurateImportState = {
   source_fingerprint: string | null;
 };
 
+export type GroupImportState = {
+  ok: boolean;
+  phase: "preview" | "done";
+  message: string;
+  complete: number;
+  incomplete: number;
+  rejected: number;
+  unknown: number;
+  errors: string[];
+};
+
 type MasterAccurate = {
   items: ExistingAccurateItem[];
   categories: Map<string, ExistingAccurateCategory>;
@@ -141,6 +158,10 @@ function stateError(message: string): AccurateImportState {
     source_hash: null,
     source_fingerprint: null,
   };
+}
+
+function groupStateError(message: string): GroupImportState {
+  return { ok: false, phase: "preview", message, complete: 0, incomplete: 0, rejected: 0, unknown: 0, errors: [] };
 }
 
 function summarize(rows: AccuratePreviewRow[]) {
@@ -248,6 +269,19 @@ async function muatMasterAccurate(supabase: any): Promise<MasterAccurate> {
     units: toMap(unitRows, "nama"),
     suppliers: toMap(supplierRows, "nama"),
   };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function muatMasterGrup(supabase: any): Promise<Map<string, GroupMasterLite>> {
+  const master = await muatMasterAccurate(supabase);
+  return new Map(master.items.map((item) => [item.code.trim().toUpperCase(), {
+    id: item.id,
+    itemType: item.item_type,
+    unit: item.unit,
+    isActive: item.is_active,
+    trackExpiry: item.track_expiry,
+    units: item.units.map((unit) => ({ unit: unit.unit, factor: unit.factor })),
+  }]));
 }
 
 async function bacaUploads(files: File[]): Promise<{
@@ -593,5 +627,97 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     };
   } catch (error) {
     return stateError(error instanceof Error ? error.message : "Impor gagal diproses.");
+  }
+}
+
+function getGroupUpload(formData: FormData): File {
+  const file = formData.get("group_file");
+  if (!(file instanceof File) || file.size === 0) throw new Error("Pilih file Rincian Grup .xlsx terlebih dulu.");
+  if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("File Rincian Grup harus berformat .xlsx.");
+  if (file.size > MAX_XLSX_BYTES) throw new Error("Ukuran file Rincian Grup maksimal 15 MB.");
+  return file;
+}
+
+async function prepareGroupImport(formData: FormData) {
+  const supabase = await assertBolehKelola();
+  const file = getGroupUpload(formData);
+  const parsed = await bacaWorkbookKomponenGrup(new Uint8Array(await file.arrayBuffer()));
+  if (parsed.errors.length) return { supabase, file, parsed, resolved: null };
+  const master = await muatMasterGrup(supabase);
+  const resolved = parseKomponenGrupRows(parsed.rows, master);
+  return { supabase, file, parsed, resolved };
+}
+
+export async function previewKomponenGrup(formData: FormData): Promise<GroupImportState> {
+  try {
+    const prepared = await prepareGroupImport(formData);
+    if (!prepared.resolved) return groupStateError(prepared.parsed.errors.join(" "));
+    const { valid, rejected, incompleteGroups } = prepared.resolved;
+    const unknown = rejected.filter((row) => /tidak ditemukan/.test(row.reason)).length;
+    return {
+      ok: rejected.length === 0 && valid.length > 0,
+      phase: "preview",
+      message: `${new Set(valid.map((row) => row.groupCode.toUpperCase())).size} Grup siap diproses. Pastikan semua rincian berasal dari export Accurate.`,
+      complete: new Set(valid.map((row) => row.groupCode.toUpperCase())).size,
+      incomplete: incompleteGroups.length,
+      rejected: rejected.length + prepared.parsed.errors.length,
+      unknown,
+      errors: rejected.map((row) => `Baris ${row.row}: ${row.reason}`),
+    };
+  } catch (error) {
+    return groupStateError(error instanceof Error ? error.message : "Rincian Grup gagal dibaca.");
+  }
+}
+
+export async function konfirmasiKomponenGrup(formData: FormData): Promise<GroupImportState> {
+  try {
+    const prepared = await prepareGroupImport(formData);
+    if (!prepared.resolved) return groupStateError(prepared.parsed.errors.join(" "));
+    const { valid, rejected, incompleteGroups } = prepared.resolved;
+    if (rejected.length || !valid.length) {
+      return {
+        ok: false,
+        phase: "preview",
+        message: "Impor diblokir sampai semua baris rincian valid.",
+        complete: 0,
+        incomplete: incompleteGroups.length,
+        rejected: rejected.length,
+        unknown: rejected.filter((row) => /tidak ditemukan/.test(row.reason)).length,
+        errors: rejected.map((row) => `Baris ${row.row}: ${row.reason}`),
+      };
+    }
+    const master = await muatMasterGrup(prepared.supabase);
+    const payloadByGroup = groupComponentPayload(valid);
+    let complete = 0;
+    for (const [groupCode, payload] of payloadByGroup) {
+      const group = master.get(groupCode.trim().toUpperCase());
+      if (!group?.id) continue;
+      const components = valid
+        .filter((row) => row.groupCode === groupCode)
+        .map((row) => ({ ...payload.find((item) => item.component_item_id === row.componentId), factor: row.factor }));
+      const rpc = await prepared.supabase.rpc("replace_item_group_components", {
+        p_group_item_id: group.id,
+        p_components: components,
+      });
+      if (rpc.error) throw new Error(rpc.error.message);
+      const activated = await prepared.supabase.from("items").update({ is_active: true })
+        .eq("id", group.id).eq("item_type", "Grup");
+      if (activated.error) throw new Error(activated.error.message);
+      complete += 1;
+    }
+    revalidatePath("/pos/sku");
+    revalidatePath(BACK);
+    return {
+      ok: true,
+      phase: "done",
+      message: `${complete} Grup aktif setelah rincian komponen berhasil disimpan.`,
+      complete,
+      incomplete: 0,
+      rejected: 0,
+      unknown: 0,
+      errors: [],
+    };
+  } catch (error) {
+    return groupStateError(error instanceof Error ? error.message : "Rincian Grup gagal disimpan.");
   }
 }

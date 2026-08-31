@@ -2,6 +2,7 @@ import Link from "next/link";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { ImporForm } from "./ImporForm";
 import { AccurateImportForm } from "./AccurateImportForm";
+import { GroupComponentImport } from "./GroupComponentImport";
 
 export default async function ImporBarangPage({
   searchParams,
@@ -40,6 +41,7 @@ export default async function ImporBarangPage({
       ) : (
         <>
           <AccurateImportForm />
+          <GroupComponentImport />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>
             <div style={{ height: 1, background: "var(--bd)", flex: 1 }} />

@@ -26,6 +26,11 @@ export type KomponenGrupDraft = {
   sortOrder: number;
 };
 
+export type KomponenGrupWorkbookResult = {
+  rows: KomponenGrupDraft[];
+  errors: string[];
+};
+
 export type ResolvedGroupComponent = {
   groupCode: string;
   componentId: string;
@@ -53,6 +58,46 @@ type MasterLite = {
 };
 
 const key = (value: string) => value.trim().toUpperCase();
+
+const cellText = (value: ExcelJS.CellValue | undefined) => {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value !== "object") return String(value).trim();
+  if ("result" in value) return String(value.result ?? "").trim();
+  if ("richText" in value) return value.richText.map((part) => part.text).join("").trim();
+  if ("text" in value) return String(value.text ?? "").trim();
+  return String(value).trim();
+};
+
+export async function bacaWorkbookKomponenGrup(bytes: Uint8Array): Promise<KomponenGrupWorkbookResult> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(bytes) as never);
+  const worksheet = workbook.getWorksheet("Rincian Grup");
+  if (!worksheet) return { rows: [], errors: ["Sheet Rincian Grup tidak ditemukan"] };
+  const headers = new Map<string, number>();
+  worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, column) => {
+    headers.set(cellText(cell.value).replace(/\s+/g, " ").toLowerCase(), column);
+  });
+  const required = ["Kode Grup", "Kode Komponen", "Kuantitas", "Satuan", "Urutan"];
+  const missing = required.filter((header) => !headers.has(header.toLowerCase()));
+  if (missing.length) return { rows: [], errors: [`Kolom wajib tidak ditemukan: ${missing.join(", ")}`] };
+  const rows: KomponenGrupDraft[] = [];
+  const errors: string[] = [];
+  for (let rowNo = 2; rowNo <= worksheet.rowCount; rowNo += 1) {
+    const row = worksheet.getRow(rowNo);
+    const get = (header: string) => cellText(row.getCell(headers.get(header.toLowerCase())!).value);
+    const values = { groupCode: get("Kode Grup"), componentCode: get("Kode Komponen"), unit: get("Satuan") };
+    if (!values.groupCode && !values.componentCode && !values.unit) continue;
+    const qty = Number(get("Kuantitas").replace(/,/g, ""));
+    const sortOrder = Number(get("Urutan").replace(/,/g, ""));
+    if (!values.groupCode || !values.componentCode || !values.unit || !Number.isFinite(qty) || !Number.isFinite(sortOrder)) {
+      errors.push(`Baris ${rowNo}: Kode Grup, Kode Komponen, Kuantitas, Satuan, dan Urutan wajib valid`);
+      continue;
+    }
+    rows.push({ row: rowNo, ...values, qty, sortOrder });
+  }
+  return { rows, errors };
+}
 
 export function gabungWorkbookAccurate(files: FileRows[]) {
   const count = new Map<string, number>();
@@ -161,3 +206,4 @@ export function duplicateStockKeys<T extends { row: number; warehouseId: string;
   for (const row of rows) counts.set(stockKey(row), (counts.get(stockKey(row)) ?? 0) + 1);
   return rows.filter((row) => (counts.get(stockKey(row)) ?? 0) > 1).map(({ row }) => ({ row, reason: "Baris saldo kembar" }));
 }
+import ExcelJS from "exceljs";
