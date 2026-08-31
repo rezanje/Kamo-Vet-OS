@@ -12,9 +12,17 @@ import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
 import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
+import type { ItemType } from "@/lib/barang";
+
+export type GroupComponentRow = {
+  itemId: string; code: string; name: string;
+  itemType: Exclude<ItemType, "Grup">;
+  qty: number; unit: string; factor: number;
+};
 
 export type ItemRow = {
-  id: string; code: string; name: string; harga: number; kategori: string; stok: number;
+  id: string; code: string; name: string; itemType: ItemType;
+  harga: number; kategori: string; stok: number | null;
   // Aturan jual dari master barang (migrasi 0075).
   minJual?: number; diskonDefault?: number; substitusi?: string | null;
   // Satuan berjenjang; hanya diisi kalau barangnya punya lebih dari satu satuan.
@@ -24,6 +32,8 @@ export type ItemRow = {
   /** Modal per satuan dasar — dipakai HANYA untuk peringatan jual di bawah modal;
    *  angkanya tidak pernah ditampilkan ke kasir. */
   modal?: number;
+  /** Resep tetap Grup; harga tetap hanya berada di baris induk. */
+  groupComponents?: GroupComponentRow[];
 };
 export type CustRow = {
   id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
@@ -51,8 +61,9 @@ type CartLine = {
   hargaNormal?: number;
   tiers?: Tingkat[];
   /** Stok saat barang dimasukkan & modal per satuan dasar — bahan peringatan. */
-  stok?: number;
+  stok?: number | null;
   modal?: number;
+  groupComponents?: GroupComponentRow[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -145,7 +156,8 @@ export function KasirClient({
         minJual: Math.max(1, Number(it.minJual) || 0),
         satuan: dasar?.unit, faktor: dasar?.factor ?? 1, opsiSatuan: it.satuan,
         tiers: it.tiers ?? [],
-        stok: Number(it.stok) || 0, modal: Number(it.modal) || 0,
+        stok: it.stok, modal: Number(it.modal) || 0,
+        groupComponents: it.groupComponents,
       };
       const k = kunciBaris(baris);
       const ex = c.find((l) => kunciBaris(l) === k);
@@ -211,6 +223,7 @@ export function KasirClient({
   // tertinggal dari rak dan diskon di bawah modal kadang memang keputusan owner.
   const peringatan = useMemo(() => {
     const stokKurang = cartHitung.filter((l) => {
+      if (l.stok == null) return false;
       const stok = Number(l.stok);
       if (!Number.isFinite(stok)) return false;
       return l.qty * (Number(l.faktor) || 1) > stok;
@@ -410,7 +423,7 @@ export function KasirClient({
                       {it.name}
                       {/* Barang kosong: tawarkan penggantinya langsung, jangan biarkan
                           kasir bilang "habis" padahal ada substitusinya di rak. */}
-                      {it.stok <= 0 && it.substitusi && (
+                      {it.stok != null && it.stok <= 0 && it.substitusi && (
                         <div style={{ fontSize: 9.5, color: "#b55a35" }}>
                           <i className="ti ti-arrow-right" /> ganti: {it.substitusi}
                         </div>
@@ -418,10 +431,22 @@ export function KasirClient({
                       {(it.minJual ?? 0) > 1 && (
                         <div style={{ fontSize: 9.5, color: "var(--td)" }}>min beli {it.minJual}</div>
                       )}
+                      {it.itemType === "Grup" && (
+                        <div style={{ marginTop: 2 }}>
+                          <span className="bge" style={{ background: "#ede9fe", color: "#6b21a8", fontSize: 8.5 }}>Grup</span>
+                          {it.groupComponents?.map((component) => (
+                            <div key={`${component.itemId}:${component.unit}`} style={{ fontSize: 9, color: "var(--td)", marginTop: 1 }}>
+                              ↳ {component.qty} {component.unit} {component.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{it.kategori}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.harga)}</td>
-                    <td style={{ textAlign: "center", fontSize: 11, color: it.stok <= 0 ? "#b91c1c" : it.stok < 10 ? "#b55a35" : "var(--tm)" }}>{it.stok}</td>
+                    <td style={{ textAlign: "center", fontSize: 11, color: it.stok != null && it.stok <= 0 ? "#b91c1c" : it.stok != null && it.stok < 10 ? "#b55a35" : "var(--tm)" }}>
+                      {it.stok == null ? "—" : it.stok}
+                    </td>
                     <td style={{ textAlign: "center" }}>
                       {/* stopPropagation: tanpa ini klik tombol ikut memicu klik
                           baris di atasnya → barang masuk keranjang dua kali. */}
@@ -490,6 +515,11 @@ export function KasirClient({
                           <div style={{ fontSize: 9, color: "var(--td)" }}>
                             {rp(l.harga)}{l.satuan ? ` / ${l.satuan}` : ""}
                           </div>
+                          {l.groupComponents?.map((component) => (
+                            <div key={`${component.itemId}:${component.unit}`} style={{ fontSize: 8.8, color: "var(--td)", marginTop: 1 }}>
+                              ↳ {l.qty * component.qty} {component.unit} {component.name}
+                            </div>
+                          ))}
                           {/* Satuan berjenjang: muncul hanya untuk barang yang punya
                               lebih dari satu satuan. Ganti satuan = ganti harga. */}
                           {l.opsiSatuan && l.opsiSatuan.length > 1 && (

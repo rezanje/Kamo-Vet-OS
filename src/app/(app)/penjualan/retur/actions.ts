@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import {
   sisaRetur, totalRetur, rasioBayar, hargaRefund,
-  modalPerBarang, pisahModalRetur, bolehMasukStok,
+  alokasiReturGrup, modalPerBarang, pisahModalRetur, bolehMasukStok,
 } from "@/lib/retur";
 import { stockIn } from "@/lib/inventory";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
@@ -16,6 +16,24 @@ import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type ItemInput = { item_id: string; qty: number; kondisi?: string; exp_date?: string };
+
+type SnapshotGrupJual = {
+  component_item_id: string | null;
+  item_type: string;
+  total_base_qty: number;
+  hpp: number;
+};
+
+type SaleItemAsal = {
+  id: string;
+  item_id: string | null;
+  qty: number;
+  harga: number;
+  faktor: number;
+  hpp: number | null;
+  created_at: string;
+  sale_item_group_components: SnapshotGrupJual[] | null;
+};
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -66,7 +84,7 @@ export async function buatReturJual(formData: FormData) {
   // berlaku di situ (tidak ada kas fisik yang diterima dari channel itu di cabang manapun).
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, branch_id, subtotal, total, metode_bayar, sale_items(item_id, qty, harga, faktor, hpp)")
+    .select("id, no_struk, branch_id, subtotal, total, metode_bayar, sale_items(id, item_id, qty, harga, faktor, hpp, created_at, sale_item_group_components(component_item_id, item_type, total_base_qty, hpp))")
     .eq("id", sale_id).is("channel", null).single();
   if (!sale) fail("Struk tidak ditemukan, atau merupakan order online — retur online tidak didukung di sini.");
   if (lockBranchId && sale!.branch_id !== lockBranchId) {
@@ -98,7 +116,9 @@ export async function buatReturJual(formData: FormData) {
   // menghitungnya per baris membuat baris terakhir menimpa yang lain dan modalnya
   // meleset berkali-kali lipat.
   Object.assign(modal, modalPerBarang(
-    (sale!.sale_items ?? []).map((r) => ({
+    ((sale!.sale_items ?? []) as SaleItemAsal[])
+      .filter((r) => (r.sale_item_group_components ?? []).length === 0)
+      .map((r) => ({
       item_id: r.item_id,
       qtyDasar: Number(r.qty) * (Number(r.faktor) > 0 ? Number(r.faktor) : 1),
       hpp: r.hpp,
@@ -136,6 +156,44 @@ export async function buatReturJual(formData: FormData) {
   }));
   const total = totalRetur(rows);
   if (total <= 0) fail("Nilai retur nol.");
+
+  // Alokasikan retur Grup ke sale_item asal secara berurutan. Snapshot tiap
+  // sale_item bisa beda bila resep master pernah diedit; resep TERKINI tidak
+  // boleh dipakai untuk mengubah sejarah stok/HPP.
+  const saleItems = [...((sale!.sale_items ?? []) as SaleItemAsal[])]
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  const groupItemIds = new Set(saleItems
+    .filter((line) => (line.sale_item_group_components ?? []).length > 0 && line.item_id)
+    .map((line) => line.item_id as string));
+  type AlokasiKomponen = {
+    component_item_id: string | null; qty: number; hpp: number;
+    kondisi: string; exp_date: string | null;
+  };
+  const groupAllocations: AlokasiKomponen[] = [];
+  for (const row of rows.filter((candidate) => groupItemIds.has(candidate.item_id))) {
+    let skipped = sudah[row.item_id] ?? 0;
+    let requested = Number(row.qty);
+    for (const source of saleItems.filter((line) => line.item_id === row.item_id)) {
+      const sold = Number(source.qty);
+      const skipHere = Math.min(skipped, sold);
+      skipped -= skipHere;
+      const availableHere = sold - skipHere;
+      const take = Math.min(requested, availableHere);
+      if (take <= 0) continue;
+      const inventorySnapshots = (source.sale_item_group_components ?? [])
+        .filter((snapshot) => snapshot.item_type === "Persediaan");
+      for (const allocation of alokasiReturGrup(take, sold, inventorySnapshots)) {
+        groupAllocations.push({
+          ...allocation,
+          kondisi: row.kondisi,
+          exp_date: row.exp_date,
+        });
+      }
+      requested -= take;
+      if (requested <= 0) break;
+    }
+    if (requested > Number.EPSILON) fail(`Snapshot komponen Grup untuk ${row.item_id} tidak lengkap.`);
+  }
 
   const { data: { user } } = await supabase.auth.getUser();
   const no_retur = await nextNoRetur(supabase);
@@ -205,7 +263,8 @@ export async function buatReturJual(formData: FormData) {
     .order("type").limit(1).maybeSingle();
   // Jasa (grooming, konsultasi) boleh diretur — uangnya dikembalikan — tapi TIDAK
   // punya stok. Tanpa saringan ini, membatalkan jasa malah menambah persediaan.
-  const berstok = (id: string) => (nameMap.get(id)?.item_type ?? "Persediaan") === "Persediaan";
+  const berstok = (id: string) => !groupItemIds.has(id)
+    && (nameMap.get(id)?.item_type ?? "Persediaan") === "Persediaan";
   // Modal barang yang kembali = modal saat barang itu KELUAR. Kalau memakai
   // harga beli master, tiap retur menambah nilai persediaan dari udara —
   // di simulasi keluar Rp200.000 lalu masuk lagi Rp210.000.
@@ -215,9 +274,21 @@ export async function buatReturJual(formData: FormData) {
   // Cabang tanpa gudang aktif = barangnya tidak punya tempat pulang. Kalau tetap
   // dilanjutkan, jurnal HPP di bawah akan menambah nilai Persediaan yang secara
   // fisik tidak pernah masuk — buku dan gudang langsung berbeda.
-  if (!wh) {
+  const perluGudang = rows.some((row) => berstok(row.item_id) && bolehMasukStok(row.kondisi))
+    || groupAllocations.some((allocation) =>
+      allocation.component_item_id && bolehMasukStok(allocation.kondisi));
+  if (perluGudang && !wh) {
+    await supabase.from("expenses").delete()
+      .eq("deskripsi", `Refund retur ${no_retur} (struk ${sale!.no_struk ?? sale_id})`);
     await supabase.from("sales_returns").delete().eq("id", doc!.id);
     fail("Cabang ini belum punya gudang aktif — barang retur tidak bisa diterima. Hubungi admin.");
+  }
+  if (groupAllocations.some((allocation) =>
+    !allocation.component_item_id && bolehMasukStok(allocation.kondisi))) {
+    await supabase.from("expenses").delete()
+      .eq("deskripsi", `Refund retur ${no_retur} (struk ${sale!.no_struk ?? sale_id})`);
+    await supabase.from("sales_returns").delete().eq("id", doc!.id);
+    fail("Komponen Grup pada struk sudah dihapus dari master — stok retur perlu diperbaiki admin.");
   }
 
   // HANYA barang berkondisi "baik" yang kembali jadi stok jualan. Barang rusak /
@@ -236,6 +307,19 @@ export async function buatReturJual(formData: FormData) {
         source: "retur-jual", ref: no_retur,
         tanggal,          // lapisan & kartu stok ikut tanggal retur, bukan hari ini
         expDate: r.exp_date,
+      });
+    }
+    for (const allocation of groupAllocations) {
+      if (!allocation.component_item_id || !bolehMasukStok(allocation.kondisi)) continue;
+      await stockIn(supabase, {
+        warehouseId: wh!.id as string,
+        itemId: allocation.component_item_id,
+        qty: allocation.qty,
+        unitCost: allocation.qty > 0 ? allocation.hpp / allocation.qty : 0,
+        source: "retur-jual-group",
+        ref: no_retur,
+        tanggal,
+        expDate: allocation.exp_date,
       });
     }
   } catch (e) {
@@ -282,8 +366,16 @@ export async function buatReturJual(formData: FormData) {
   // (source, source_ref) yang mencakup 'sales-return-hpp'. Dua kali posting dengan
   // source yang sama membuat yang kedua ditolak DB — dan postJournal menelan error,
   // jadi jurnalnya hilang tanpa jejak.
-  const { baik: hppBaik, rusak: hppRusak, total: hppTotal } =
+  const ordinaryHpp =
     pisahModalRetur(rows, modalSatuan, berstok);
+  const groupHpp = groupAllocations.reduce((totalHpp, allocation) => {
+    if (bolehMasukStok(allocation.kondisi)) totalHpp.baik += allocation.hpp;
+    else totalHpp.rusak += allocation.hpp;
+    return totalHpp;
+  }, { baik: 0, rusak: 0 });
+  const hppBaik = ordinaryHpp.baik + groupHpp.baik;
+  const hppRusak = ordinaryHpp.rusak + groupHpp.rusak;
+  const hppTotal = hppBaik + hppRusak;
   if (hppTotal > 0) {
     await postJournal(supabase, {
       tanggal,

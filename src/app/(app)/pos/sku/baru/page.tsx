@@ -8,7 +8,7 @@ export default async function BarangBaruPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
-  const { categories, brands, units, suppliers, barangLain } = await siapkanFormBarang();
+  const { categories, brands, units, suppliers, barangLain, kandidatGrup } = await siapkanFormBarang();
 
   return (
     <>
@@ -28,7 +28,8 @@ export default async function BarangBaruPage({
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
 
-      <BarangForm categories={categories} brands={brands} satuanMaster={units} suppliers={suppliers} barangLain={barangLain} editing={null} />
+      <BarangForm categories={categories} brands={brands} satuanMaster={units}
+        suppliers={suppliers} barangLain={barangLain} kandidatGrup={kandidatGrup} editing={null} />
     </>
   );
 }

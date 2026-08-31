@@ -11,6 +11,10 @@ type Row = {
   berstok?: boolean;
   /** Barang yang dipantau kadaluarsanya — hanya ini yang butuh isian tanggal. */
   trackExpiry?: boolean;
+  components?: {
+    component_item_id: string | null; component_name: string;
+    item_type: string; qty_per_group: number; unit: string;
+  }[];
 };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -60,13 +64,20 @@ export function ReturJualForm({
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.map((r) => {
-            const dipilih = (Number(qty[r.item_id]) || 0) > 0;
+            const qtyDipilih = Number(qty[r.item_id]) || 0;
+            const dipilih = qtyDipilih > 0;
             const kond = kondisi[r.item_id] ?? "baik";
             const punyaStok = r.berstok !== false;
             return (
               <div key={r.item_id} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ flex: 1, minWidth: 140, fontSize: 11.5 }}>
                   {r.nama} <span style={{ color: "var(--td)", fontSize: 10.5 }}>@{rp(r.harga)}</span>
+                  {r.components?.map((component) => (
+                    <span key={`${component.component_item_id}:${component.unit}`} style={{ display: "block", paddingLeft: 10, fontSize: 9.5, color: "var(--td)" }}>
+                      ↳ {dipilih ? qtyDipilih * component.qty_per_group : component.qty_per_group} {component.unit} {component.component_name}
+                      {!dipilih && " / Grup"}
+                    </span>
+                  ))}
                 </span>
                 <span style={{ fontSize: 10.5, color: "var(--tm)" }}>maks {r.sisa}</span>
                 <input className="fi" type="number" min={0} max={r.sisa} step="any"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatNoRetur, sisaRetur, totalRetur,
-  modalPerBarang, bolehMasukStok, pisahModalRetur,
+  alokasiReturGrup, modalPerBarang, bolehMasukStok, pisahModalRetur,
 } from "../retur";
 
 describe("formatNoRetur", () => {
@@ -26,6 +26,21 @@ describe("totalRetur", () => {
   });
   it("baris kosong = 0", () => {
     expect(totalRetur([])).toBe(0);
+  });
+});
+
+describe("alokasiReturGrup", () => {
+  it("retur setengah Grup mengembalikan setengah qty dan HPP komponen", () => {
+    expect(alokasiReturGrup(1, 2, [{
+      component_item_id: "food",
+      total_base_qty: 8,
+      hpp: 40_000,
+    }])).toEqual([{ component_item_id: "food", qty: 4, hpp: 20_000 }]);
+  });
+
+  it("menolak qty negatif dan retur melebihi qty Grup terjual", () => {
+    expect(() => alokasiReturGrup(-1, 2, [])).toThrow("tidak valid");
+    expect(() => alokasiReturGrup(3, 2, [])).toThrow("melebihi");
   });
 });
 

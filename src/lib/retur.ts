@@ -25,6 +25,30 @@ export function totalRetur(rows: { qty: number; harga: number }[]): number {
   return rows.reduce((a, r) => a + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0);
 }
 
+/**
+ * Membagi qty dasar dan HPP snapshot satu baris Grup menurut qty induk yang
+ * diretur. Snapshot sudah mewakili seluruh qty baris penjualan, jadi rasio harus
+ * memakai qty Grup pada sale_item asal—bukan resep master saat ini.
+ */
+export function alokasiReturGrup(
+  qtyRetur: number,
+  qtyTerjual: number,
+  snapshots: { component_item_id: string | null; total_base_qty: number; hpp: number }[],
+) {
+  const retur = Number(qtyRetur);
+  const terjual = Number(qtyTerjual);
+  if (!Number.isFinite(retur) || retur < 0 || !Number.isFinite(terjual) || terjual <= 0) {
+    throw new Error("Qty retur Grup tidak valid");
+  }
+  if (retur > terjual) throw new Error("Qty retur Grup melebihi qty terjual");
+  const ratio = retur / terjual;
+  return snapshots.map((snapshot) => ({
+    component_item_id: snapshot.component_item_id,
+    qty: Number(snapshot.total_base_qty) * ratio,
+    hpp: Number(snapshot.hpp) * ratio,
+  }));
+}
+
 // ── Refund harus sebanding dengan yang BENAR-BENAR dibayar ─────────────────
 //
 // Struk POS bisa kena promo, diskon golongan, voucher, dan poin. Kalau refund

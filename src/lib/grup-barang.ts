@@ -1,0 +1,181 @@
+export type JenisKomponen = "Persediaan" | "Jasa" | "Non-Persediaan" | "Grup";
+
+export type KomponenGrupDraft = {
+  component_item_id: string;
+  qty: number;
+  unit: string;
+  factor: number;
+};
+
+export type MasterKomponenGrup = {
+  item_type: JenisKomponen;
+  is_active: boolean;
+  units: { unit: string; factor: number }[];
+};
+
+export function parseKomponenGrupDrafts(raw: unknown): {
+  rows: KomponenGrupDraft[];
+  error: string | null;
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(raw ?? "[]"));
+  } catch {
+    return { rows: [], error: "Rincian Grup tidak valid" };
+  }
+  if (!Array.isArray(parsed)) return { rows: [], error: "Rincian Grup tidak valid" };
+
+  const rows = parsed.map((value) => {
+    const row = value as Partial<KomponenGrupDraft>;
+    return {
+      component_item_id: String(row?.component_item_id ?? "").trim(),
+      qty: Number(row?.qty),
+      unit: String(row?.unit ?? "").trim().slice(0, 20),
+      factor: Number(row?.factor),
+    };
+  });
+  return { rows, error: null };
+}
+
+export function normalisasiKomponenGrup(
+  rows: KomponenGrupDraft[],
+  masters: Map<string, MasterKomponenGrup>,
+): { rows: KomponenGrupDraft[]; error: string | null } {
+  const normalized: KomponenGrupDraft[] = [];
+  for (const row of rows) {
+    if (!row.component_item_id) return { rows: [], error: "Komponen wajib dipilih" };
+    const master = masters.get(row.component_item_id);
+    if (!master?.is_active) return { rows: [], error: "Komponen sudah nonaktif atau tidak ditemukan" };
+    const official = master.units.find((unit) => unit.unit.toLowerCase() === row.unit.toLowerCase());
+    if (!official) return { rows: [], error: `Satuan "${row.unit}" tidak terdaftar untuk komponen` };
+    normalized.push({ ...row, unit: official.unit, factor: Number(official.factor) });
+  }
+
+  const error = validasiKomponenGrup(
+    normalized,
+    new Map([...masters].map(([id, master]) => [id, master.item_type])),
+  );
+  return error ? { rows: [], error } : { rows: normalized, error: null };
+}
+
+export function validasiKomponenGrup(
+  rows: KomponenGrupDraft[],
+  jenis: Map<string, JenisKomponen>,
+): string | null {
+  if (rows.length === 0) return "Grup wajib punya minimal 1 komponen";
+
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!row.component_item_id) return "Komponen wajib dipilih";
+    if (!Number.isFinite(row.qty) || row.qty <= 0) return "Qty komponen harus lebih dari 0";
+    if (!Number.isFinite(row.factor) || row.factor <= 0) return "Faktor satuan harus lebih dari 0";
+    if (jenis.get(row.component_item_id) === "Grup") return "Komponen tidak boleh Grup";
+
+    const key = `${row.component_item_id}:${row.unit.trim().toLowerCase()}`;
+    if (seen.has(key)) return "Komponen dan satuan kembar tidak diperbolehkan";
+    seen.add(key);
+  }
+
+  return null;
+}
+
+export type KebutuhanKomponen = {
+  item_id: string;
+  qty_dasar: number;
+  item_type: JenisKomponen;
+  source_sale_item: string;
+};
+
+export function agregasiKebutuhanGrup(rows: KebutuhanKomponen[]) {
+  const total = new Map<string, number>();
+  for (const row of rows) {
+    if (row.item_type !== "Persediaan") continue;
+    total.set(row.item_id, (total.get(row.item_id) ?? 0) + row.qty_dasar);
+  }
+  return [...total].map(([item_id, qty_dasar]) => ({ item_id, qty_dasar }));
+}
+
+export function stokEfektifGrup(
+  rows: { item_id: string; qty_per_group: number; item_type: JenisKomponen }[],
+  stok: Map<string, number>,
+): number {
+  const tracked = rows.filter((row) => row.item_type === "Persediaan");
+  if (tracked.length === 0) return Number.MAX_SAFE_INTEGER;
+  return Math.max(0, Math.min(...tracked.map((row) =>
+    Math.floor((stok.get(row.item_id) ?? 0) / row.qty_per_group),
+  )));
+}
+
+export type ResepKomponenCheckout = {
+  component_item_id: string;
+  item_type: Exclude<JenisKomponen, "Grup">;
+  qty: number;
+  unit: string;
+  factor: number;
+  name: string;
+  code: string | null;
+  sort_order: number;
+};
+
+export type SnapshotKomponenGrup = {
+  component_item_id: string;
+  component_code: string | null;
+  component_name: string;
+  item_type: Exclude<JenisKomponen, "Grup">;
+  qty_per_group: number;
+  unit: string;
+  factor: number;
+  total_base_qty: number;
+  hpp: number;
+  sort_order: number;
+};
+
+export function expandBarisGrup(
+  row: { item_id: string; qty: number },
+  components: ResepKomponenCheckout[],
+): SnapshotKomponenGrup[] {
+  return components.map((component) => ({
+    component_item_id: component.component_item_id,
+    component_code: component.code,
+    component_name: component.name,
+    item_type: component.item_type,
+    qty_per_group: Number(component.qty),
+    unit: component.unit,
+    factor: Number(component.factor),
+    total_base_qty: Number(row.qty) * Number(component.qty) * Number(component.factor),
+    hpp: 0,
+    sort_order: Number(component.sort_order),
+  }));
+}
+
+export type BarisCheckoutStok = {
+  item_id: string;
+  item_type: JenisKomponen;
+  qty: number;
+  factor: number;
+  group_components?: SnapshotKomponenGrup[];
+};
+
+export function kebutuhanStokCheckout(rows: BarisCheckoutStok[]) {
+  const expanded: KebutuhanKomponen[] = [];
+  for (const row of rows) {
+    if (row.item_type === "Grup") {
+      for (const component of row.group_components ?? []) {
+        expanded.push({
+          item_id: component.component_item_id,
+          qty_dasar: component.total_base_qty,
+          item_type: component.item_type,
+          source_sale_item: row.item_id,
+        });
+      }
+      continue;
+    }
+    expanded.push({
+      item_id: row.item_id,
+      qty_dasar: Number(row.qty) * Number(row.factor),
+      item_type: row.item_type,
+      source_sale_item: row.item_id,
+    });
+  }
+  return agregasiKebutuhanGrup(expanded);
+}

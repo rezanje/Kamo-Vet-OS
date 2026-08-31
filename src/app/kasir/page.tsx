@@ -7,6 +7,8 @@ import type { PromoHitung } from "@/lib/promo-hitung";
 import { loadInfoBarang, type AturanDiskon } from "@/lib/harga-golongan";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions } from "@/lib/satuan";
+import { stokEfektifGrup, type JenisKomponen } from "@/lib/grup-barang";
+import type { ItemType } from "@/lib/barang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -30,7 +32,7 @@ export default async function KasirPage({
   if (!shift) redirect("/kasir/mulai");
 
   const [{ data: items }, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
-    supabase.from("items").select("id, code, name, unit, sell_price, buy_price, target_species, min_sell_qty, default_discount, substitute_item_id, item_categories(name)").eq("is_active", true).order("name"),
+    supabase.from("items").select("id, code, name, unit, item_type, sell_price, buy_price, target_species, min_sell_qty, default_discount, substitute_item_id, item_categories(name)").eq("is_active", true).order("name"),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
     supabase.from("customers")
@@ -108,7 +110,8 @@ export default async function KasirPage({
   const harga = await loadHargaCabang(supabase, shift.branch_id);
 
   type ItemRaw = {
-    id: string; code: string; name: string; unit: string; sell_price: number; buy_price: number; target_species: string;
+    id: string; code: string; name: string; unit: string; item_type: ItemType;
+    sell_price: number; buy_price: number; target_species: string;
     min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
     item_categories: Rel<{ name: string }>;
   };
@@ -120,6 +123,44 @@ export default async function KasirPage({
   // kasir sama sekali tidak membaca item_units, jadi satuan yang sudah dibuat di
   // master tidak bisa dipilih saat jualan (dilaporkan tim 2026-08-11).
   const unitMap = await loadUnitOptions(supabase, itemsRaw.map((i) => i.id));
+
+  // Grup tidak punya stok sendiri. Stok jualnya = jumlah paket paling kecil yang
+  // masih bisa dirakit dari seluruh komponen Persediaan di gudang shift.
+  const groupIds = itemsRaw.filter((i) => i.item_type === "Grup").map((i) => i.id);
+  const { data: groupComponentRowsRaw } = groupIds.length
+    ? await supabase.from("item_group_components")
+      .select("group_item_id, component_item_id, qty, unit, factor, sort_order")
+      .in("group_item_id", groupIds).order("sort_order")
+    : { data: [] };
+  type GroupComponentRaw = {
+    group_item_id: string; component_item_id: string; qty: number;
+    unit: string; factor: number; sort_order: number;
+  };
+  const groupComponentRows = (groupComponentRowsRaw ?? []) as GroupComponentRaw[];
+  const componentIds = [...new Set(groupComponentRows.map((row) => row.component_item_id))];
+  const { data: componentItemsRaw } = componentIds.length
+    ? await supabase.from("items").select("id, code, name, item_type").in("id", componentIds)
+    : { data: [] };
+  const componentById = new Map(
+    ((componentItemsRaw ?? []) as { id: string; code: string; name: string; item_type: JenisKomponen }[])
+      .map((row) => [row.id, row]),
+  );
+  const groupMap = new Map<string, ItemRow["groupComponents"]>();
+  for (const row of groupComponentRows) {
+    const component = componentById.get(row.component_item_id);
+    if (!component || component.item_type === "Grup") continue;
+    const current = groupMap.get(row.group_item_id) ?? [];
+    current.push({
+      itemId: component.id,
+      code: component.code,
+      name: component.name,
+      itemType: component.item_type,
+      qty: Number(row.qty),
+      unit: row.unit,
+      factor: Number(row.factor),
+    });
+    groupMap.set(row.group_item_id, current);
+  }
 
   // Harga bertingkat per jumlah beli (meeting 14 Agustus) — dikirim bersama
   // barangnya supaya harga di keranjang ikut turun begitu qty-nya cukup.
@@ -134,21 +175,32 @@ export default async function KasirPage({
 
   const itemRows: ItemRow[] = itemsRaw.map((i) => {
     const satuan = applyHargaCabang(unitMap.get(i.id) ?? [], i.id, harga);
+    const groupComponents = groupMap.get(i.id) ?? [];
+    const groupHasInventory = groupComponents.some((component) => component.itemType === "Persediaan");
+    const groupStock = i.item_type === "Grup" && groupHasInventory
+      ? stokEfektifGrup(groupComponents.map((component) => ({
+        item_id: component.itemId,
+        qty_per_group: component.qty * component.factor,
+        item_type: component.itemType,
+      })), new Map(Object.entries(stockMap)))
+      : null;
     return {
       id: i.id, code: i.code, name: i.name,
+      itemType: i.item_type,
       harga: hargaCabang(harga, i.id, i.unit, Number(i.sell_price)),
       kategori: one(i.item_categories)?.name ?? "Lainnya",
-      stok: stockMap[i.id] ?? 0,
+      stok: i.item_type === "Grup" ? groupStock : stockMap[i.id] ?? 0,
+      groupComponents: i.item_type === "Grup" ? groupComponents : undefined,
       minJual: Number(i.min_sell_qty) || 0,
       diskonDefault: Number(i.default_discount) || 0,
       substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
       tiers: tierMap.get(i.id) ?? [],
       // Modal dikirim HANYA sebagai bahan peringatan "jual di bawah modal";
       // layar kasir tidak pernah menampilkan angkanya.
-      modal: Number(i.buy_price) || 0,
+      modal: i.item_type === "Grup" ? 0 : Number(i.buy_price) || 0,
       // Hanya kirim kalau benar-benar berjenjang — barang bersatuan tunggal tidak
       // perlu dropdown yang isinya satu pilihan.
-      satuan: satuan.length > 1 ? satuan : undefined,
+      satuan: i.item_type !== "Grup" && satuan.length > 1 ? satuan : undefined,
     };
   });
 

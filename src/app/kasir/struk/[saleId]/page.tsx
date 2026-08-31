@@ -23,7 +23,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: items } = await supabase
     .from("sale_items")
-    .select("nama, qty, satuan, harga, item_discount_type, item_discount_value, promos(name)")
+    .select("nama, qty, satuan, harga, item_discount_type, item_discount_value, promos(name), sale_item_group_components(component_name, qty_per_group, unit, sort_order)")
     .eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers);
@@ -54,6 +54,9 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           // Addendum §6: struk breakdown — potongan per item tampil di bawah barisnya.
           const disc = lineDiscount({ qty: it.qty, harga: it.harga, item_discount_type: it.item_discount_type as "nominal" | "percent" | null, item_discount_value: it.item_discount_value });
           const promo = one(it.promos as Rel<{ name: string }>);
+          const components = ([...((it.sale_item_group_components ?? []) as {
+            component_name: string; qty_per_group: number; unit: string; sort_order: number;
+          }[])]).sort((a, b) => Number(a.sort_order) - Number(b.sort_order));
           return (
             <div key={i} style={{ marginBottom: 3 }}>
               <div>{it.nama}</div>
@@ -62,6 +65,11 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
                     "2 x 35.000" tidak memberi tahu 2 botol atau 2 dus. */}
                 <span>{it.qty} {it.satuan || "pcs"} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
               </div>
+              {components.map((component) => (
+                <div key={`${component.sort_order}-${component.component_name}`} style={{ paddingLeft: 10, fontSize: 9.5 }}>
+                  ↳ {Number(it.qty) * Number(component.qty_per_group)} {component.unit} {component.component_name}
+                </div>
+              ))}
               {disc > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
                   <span>&nbsp;&nbsp;Pot. {promo?.name ?? "item"}{it.item_discount_type === "percent" ? ` ${Number(it.item_discount_value)}%` : ""}</span>

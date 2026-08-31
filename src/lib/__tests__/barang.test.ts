@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { pickItemType, validasiBarang, pesanSimpanGagal, type BarangDraft } from "../barang";
+import {
+  fieldBarangMenurutJenis,
+  ITEM_TYPES,
+  pickItemType,
+  validasiBarang,
+  pesanSimpanGagal,
+  type BarangDraft,
+} from "../barang";
 
 const draft = (over: Partial<BarangDraft> = {}): BarangDraft => ({
   name: "ANC Cat Litter 5,5L",
@@ -22,6 +29,12 @@ describe("pickItemType", () => {
   it("jenis resmi diterima", () => {
     expect(pickItemType("Jasa")).toBe("Jasa");
     expect(pickItemType("Non-Persediaan")).toBe("Non-Persediaan");
+  });
+
+  it("Grup resmi tetapi tidak punya stok atau pembelian sendiri", () => {
+    expect(ITEM_TYPES).toContain("Grup");
+    expect(pickItemType("Grup")).toBe("Grup");
+    expect(fieldBarangMenurutJenis("Grup")).toEqual({ punyaStok: false, bolehDibeli: false });
   });
 });
 
