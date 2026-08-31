@@ -1,8 +1,8 @@
 # Runbook Rollout Production Operation & Sales
 
-**Disusun:** 1 September 2026  
-**Lingkup:** migrasi master Accurate, saldo awal, data operasional klinik, dashboard Operation & Sales, alert operasional  
-**Keputusan saat ini:** menunggu pencatatan keputusan final  
+**Disusun:** 1 September 2026
+**Lingkup:** migrasi master Accurate, saldo awal, data operasional klinik, dashboard Operation & Sales, alert operasional
+**Keputusan saat ini:** **NO-GO** — dicatat 1 September 2026 setelah pemeriksaan otomatis
 **Akses pilot:** OWNER/ADMIN saja. Peran lain tetap terkunci sampai seluruh gate lulus.
 
 ## Aturan evidence
@@ -34,7 +34,7 @@
 | 5 | Operasional: booking, timestamp, provider, kapasitas, referral lulus smoke test | **BLOCKED BY DATA** | Struktur dan kalkulasi lulus tes otomatis. Data kapasitas, tautan provider/karyawan, serta skenario browser aktual belum tersedia. | Belum ada |
 | 6 | Alert: setiap alert aktif dapat direproduksi dari detail | **BLOCKED BY DATA** | Ambang, prioritas, missing-state, dan tautan internal lulus tes. Reproduksi lima alert memakai data aktual belum dijalankan; selisih opname tetap missing sampai penilaian HPP dapat dipercaya. | Belum ada |
 | 7 | Keamanan cabang: tes positif dan negatif lulus | **BELUM LULUS — BLOCKED BY ENVIRONMENT** | Penolakan cabang asing dan filter scope lulus tes kode. Kebijakan database nyata belum diuji karena database lokal tidak aktif; matriks OWNER, ADMIN, dan user satu cabang belum punya screenshot/query evidence. | Belum ada |
-| 8 | Keputusan produksi: persetujuan OWNER/ADMIN dan waktu | **BELUM DIPUTUSKAN** | Gate 1–7 belum seluruhnya lulus. Tidak ada persetujuan produksi. | Belum ada |
+| 8 | Keputusan produksi: persetujuan OWNER/ADMIN dan waktu | **NO-GO** | Gate 1–7 belum seluruhnya lulus. Tidak ada persetujuan produksi. | Belum ada |
 
 ## Matriks browser yang wajib dijalankan setelah environment siap
 
@@ -61,3 +61,13 @@
 ## Rollback
 
 Code/dashboard rollback: redeploy prior production commit. Configuration rollback: deactivate rules. Posted opening stock is never deleted; correction uses Penyesuaian Persediaan referencing import run ID.
+
+## Catatan keputusan final
+
+- **Keputusan:** NO-GO.
+- **Gate gagal/belum lulus:** 1–7.
+- **Penyebab utama:** data eksternal pilot belum lengkap; database lokal dan uji browser belum siap.
+- **Pemilik remediasi data:** Kamo Group untuk ekspor Accurate, saldo awal, target, kapasitas, dan tautan karyawan/provider.
+- **Pemilik remediasi teknis:** tim implementasi VetOS untuk mengaktifkan database lokal, menjalankan migrasi, matriks keamanan, dan bukti browser.
+- **Review berikutnya:** 2 September 2026, atau segera setelah paket data lengkap tersedia.
+- **Larangan:** jangan aktifkan multi-cabang, jangan menganggap missing sebagai nol, dan jangan menghapus saldo awal yang sudah diposting.
