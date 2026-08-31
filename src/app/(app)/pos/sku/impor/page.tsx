@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { ImporForm } from "./ImporForm";
+import { AccurateImportForm } from "./AccurateImportForm";
 
 export default async function ImporBarangPage({
   searchParams,
@@ -22,7 +23,7 @@ export default async function ImporBarangPage({
         </div>
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>IMPOR BARANG</div>
-          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Masukkan banyak barang sekaligus dari file CSV</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Migrasi master dari Accurate XLSX atau file CSV</div>
         </div>
       </div>
 
@@ -38,6 +39,13 @@ export default async function ImporBarangPage({
         </div>
       ) : (
         <>
+          <AccurateImportForm />
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>
+            <div style={{ height: 1, background: "var(--bd)", flex: 1 }} />
+            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--tm)" }}>IMPOR CSV GENERIK</span>
+            <div style={{ height: 1, background: "var(--bd)", flex: 1 }} />
+          </div>
           <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "#1e40af" }}>
             <i className="ti ti-bulb" /> Dari Excel: <b>File → Save As → CSV</b>, lalu pilih filenya di bawah.
             Baris yang bermasalah dilewati dan dilaporkan — sisanya tetap masuk.
