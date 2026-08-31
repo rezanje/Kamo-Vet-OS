@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alertDetailHref,
   defaultAlertSettings,
   evaluateAlerts,
   resolveAlertSetting,
@@ -28,6 +29,18 @@ const metric = (ruleKey: AlertMetric["ruleKey"], actual: number, extra: Partial<
 });
 
 describe("operational alerts", () => {
+  it("hanya membuat tautan internal yang dikenal dan membawa filter", () => {
+    expect(alertDetailHref("/laporan/penjualan-rinci", {
+      from: "2026-08-01", to: "2026-08-31", branchName: "Kamo Barat",
+    })).toBe("/laporan/penjualan-rinci?dari=2026-08-01&sampai=2026-08-31&cabang=Kamo+Barat");
+    expect(alertDetailHref("https://evil.example/steal", {
+      from: "2026-08-01", to: "2026-08-31",
+    })).toBeNull();
+    expect(alertDetailHref("/route-tidak-ada", {
+      from: "2026-08-01", to: "2026-08-31",
+    })).toBeNull();
+  });
+
   it("branch override menang atas setting perusahaan", () => {
     const settings = [
       { ...setting("sales_below_target", 80), periodDays: 30 },

@@ -80,6 +80,23 @@ export function alertRuleLabel(ruleKey: AlertRuleKey): string {
   return LABELS[ruleKey];
 }
 
+const ALERT_DETAIL_PATHS = new Set([
+  "/laporan/penjualan-rinci",
+  "/pos/opname",
+  "/pos/expired",
+  "/pos/stok",
+]);
+
+export function alertDetailHref(
+  path: string,
+  filter: { from: string; to: string; branchName?: string },
+): string | null {
+  if (!ALERT_DETAIL_PATHS.has(path)) return null;
+  const params = new URLSearchParams({ dari: filter.from, sampai: filter.to });
+  if (filter.branchName) params.set("cabang", filter.branchName);
+  return `${path}?${params.toString()}`;
+}
+
 const DEFAULTS: AlertSetting[] = [
   { ruleKey: "sales_below_target", branchId: null, threshold: 80, periodDays: 30, active: true, severity: "red" },
   { ruleKey: "stock_opname_variance", branchId: null, threshold: 500_000, periodDays: 1, active: true, severity: "red" },

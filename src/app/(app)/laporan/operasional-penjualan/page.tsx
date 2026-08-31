@@ -3,6 +3,7 @@ import { LaporanPage } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { buildPeriod, type Channel, type PeriodPreset } from "@/lib/operation-sales";
 import { collectDashboard } from "@/lib/operation-sales-server";
+import { collectOperationalAlertBlock } from "@/lib/operational-alerts-server";
 import { OperationSalesDashboard } from "./OperationSalesDashboard";
 
 const CHANNELS: Channel[] = ["all", "pos", "online", "reseller", "klinik"];
@@ -49,6 +50,13 @@ export default async function OperationSalesPage({
       </LaporanPage>
     );
   }
+  const [alerts, profileResult] = await Promise.all([
+    collectOperationalAlertBlock(supabase, { from, to, branchIds: branch ? [branch] : [], channel }, dashboard),
+    supabase.auth.getUser().then(async ({ data: { user } }) => user
+      ? supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+      : { data: null }),
+  ]);
+  const role = profileResult.data?.role;
 
   return (
     <LaporanPage
@@ -88,7 +96,7 @@ export default async function OperationSalesPage({
         </>
       }
     >
-      <OperationSalesDashboard data={dashboard} />
+      <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} />
     </LaporanPage>
   );
 }

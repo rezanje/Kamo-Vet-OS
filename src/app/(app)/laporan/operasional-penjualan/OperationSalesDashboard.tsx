@@ -1,5 +1,8 @@
 import Link from "next/link";
 import type { DashboardData } from "@/lib/operation-sales-server";
+import type { AlertEvaluation } from "@/lib/operational-alerts";
+import type { DashboardBlock } from "@/lib/operation-sales-server";
+import { OperationalAlertPanel } from "./OperationalAlertPanel";
 import {
   angka,
   BlockState,
@@ -20,7 +23,11 @@ const channelLabel: Record<string, string> = {
   klinik: "Klinik",
 };
 
-export function OperationSalesDashboard({ data }: { data: DashboardData }) {
+export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics }: {
+  data: DashboardData;
+  alerts: DashboardBlock<AlertEvaluation>;
+  showAlertDiagnostics: boolean;
+}) {
   const branchName = data.scope.branches.length === 1 ? data.scope.branches[0].name : undefined;
   const detailFilter = { from: data.filter.from, to: data.filter.to, branchName };
   const branchLink = (branchId: string) => {
@@ -30,6 +37,7 @@ export function OperationSalesDashboard({ data }: { data: DashboardData }) {
 
   return (
     <>
+      <OperationalAlertPanel block={alerts} filter={{ from: data.filter.from, to: data.filter.to }} showDiagnostics={showAlertDiagnostics} />
       <div className="crm-sec" style={{ marginBottom: 12, background: "#eff6ff", borderColor: "#bfdbfe" }}>
         <div style={{ fontSize: 12, fontWeight: 800, color: "#1e3a8a" }}>Cockpit Operation & Sales</div>
         <div style={{ fontSize: 10.5, color: "#1d4ed8", marginTop: 3 }}>

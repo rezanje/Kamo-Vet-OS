@@ -9,6 +9,7 @@ import {
 import {
   collectDashboard,
   resolveDashboardScope,
+  type DashboardData,
   type DashboardScope,
   type DashboardBlock,
 } from "./operation-sales-server";
@@ -113,9 +114,13 @@ async function stockMetrics(supabase: AnyClient, scope: DashboardScope, filter: 
   return metrics;
 }
 
-export async function collectOperationalAlerts(supabase: AnyClient, filter: DashboardFilter): Promise<OperationalAlertData> {
-  const scope = await resolveDashboardScope(supabase, filter.branchIds);
-  const dashboard = await collectDashboard(supabase, filter);
+export async function collectOperationalAlerts(
+  supabase: AnyClient,
+  filter: DashboardFilter,
+  existingDashboard?: DashboardData,
+): Promise<OperationalAlertData> {
+  const dashboard = existingDashboard ?? await collectDashboard(supabase, filter);
+  const scope = existingDashboard?.scope ?? await resolveDashboardScope(supabase, filter.branchIds);
   const settingResult = await read(supabase.from("operational_alert_settings").select("rule_key,branch_id,threshold,period_days,active,severity"));
   throwQueryError(settingResult);
   const settings = settingRows(settingResult.data ?? []);
@@ -141,9 +146,10 @@ export async function collectOperationalAlerts(supabase: AnyClient, filter: Dash
 export async function collectOperationalAlertBlock(
   supabase: AnyClient,
   filter: DashboardFilter,
+  existingDashboard?: DashboardData,
 ): Promise<DashboardBlock<AlertEvaluation>> {
   try {
-    return { status: "ready", data: (await collectOperationalAlerts(supabase, filter)).evaluation };
+    return { status: "ready", data: (await collectOperationalAlerts(supabase, filter, existingDashboard)).evaluation };
   } catch (error) {
     if (missingError(error)) return { status: "missing", reason: "Data alert belum lengkap" };
     const cryptoApi = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto : null;

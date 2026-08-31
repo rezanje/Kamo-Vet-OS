@@ -2,7 +2,6 @@ import { SubmitButton } from "@/components/SubmitButton";
 import {
   ALERT_RULE_KEYS,
   alertRuleLabel,
-  type AlertRuleKey,
   type AlertSetting,
 } from "@/lib/operational-alerts";
 import { simpanAlertOperasional } from "./actions";
