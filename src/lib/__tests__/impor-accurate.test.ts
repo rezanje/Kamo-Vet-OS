@@ -1,6 +1,11 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { bacaWorkbookAccurate } from "../impor-accurate";
+import {
+  bacaWorkbookAccurate,
+  buatPayloadItemAccurate,
+  buatPreviewAccurate,
+  type AccurateItem,
+} from "../impor-accurate";
 
 async function workbook(rows: unknown[][], sheetName = "Barang & Jasa") {
   const wb = new ExcelJS.Workbook();
@@ -104,5 +109,98 @@ describe("bacaWorkbookAccurate", () => {
 
   it("menolak bytes yang bukan workbook", async () => {
     await expect(bacaWorkbookAccurate(Buffer.from("bukan xlsx"))).rejects.toThrow();
+  });
+});
+
+const itemAccurate: AccurateItem = {
+  row_no: 2,
+  code: "SKU-1",
+  name: "Makanan Kucing",
+  item_type: "Persediaan",
+  category_name: "Pakan",
+  brand_name: "Kamo",
+  unit: "PCS",
+  sell_price: 20_000,
+  buy_price: 15_000,
+  min_stock: 10,
+  supplier_name: "Pemasok A",
+  buy_unit: "DUS",
+  min_buy: 2,
+  upc: "8990001",
+  track_expiry: true,
+  default_discount: 5,
+  is_active: true,
+  units: [{ unit: "DUS", factor: 24, sell_price: 450_000, buy_price: 350_000 }],
+};
+
+describe("buatPreviewAccurate", () => {
+  it("membedakan barang baru, sama, update, dilewati, dan ditolak", () => {
+    const hasil = buatPreviewAccurate({
+      rows: [
+        itemAccurate,
+        { ...itemAccurate, row_no: 3, code: "SKU-2" },
+        { ...itemAccurate, row_no: 4, code: "SKU-3", sell_price: 25_000 },
+      ],
+      skipped: [{ row_no: 5, code: "GRUP", name: "Paket", reason: "Grup dilewati" }],
+      rejected: [{ row_no: 6, code: "BAD", name: "Rusak", reason: "Kode wajib" }],
+      errors: [],
+    }, [
+      { ...itemAccurate, id: "id-2", code: "sku-2", units: [...itemAccurate.units].reverse() },
+      { ...itemAccurate, id: "id-3", code: "SKU-3" },
+    ]);
+
+    expect(hasil.map((row) => [row.code, row.status])).toEqual([
+      ["SKU-1", "Baru"],
+      ["SKU-2", "Sama"],
+      ["SKU-3", "Update"],
+      ["GRUP", "Dilewati"],
+      ["BAD", "Ditolak"],
+    ]);
+    expect(hasil[2].changed_fields).toEqual(["sell_price"]);
+  });
+});
+
+describe("buatPayloadItemAccurate", () => {
+  it("membuat payload master tanpa field stok", () => {
+    const payload = buatPayloadItemAccurate(itemAccurate, {
+      category_id: "kategori-1",
+      brand_id: "merek-1",
+      supplier_id: "pemasok-1",
+    });
+
+    expect(payload).toMatchObject({
+      code: "SKU-1",
+      item_type: "Persediaan",
+      category_id: "kategori-1",
+      brand_id: "merek-1",
+      supplier_id: "pemasok-1",
+      unit: "PCS",
+      buy_unit: "DUS",
+      min_stock: 10,
+    });
+    expect(Object.keys(payload)).not.toEqual(expect.arrayContaining([
+      "stock", "qty", "stock_qty", "warehouse_id", "stock_layers",
+    ]));
+  });
+
+  it("mematikan field stok/pembelian untuk jasa", () => {
+    const payload = buatPayloadItemAccurate({
+      ...itemAccurate,
+      item_type: "Jasa",
+      track_expiry: true,
+      min_stock: 10,
+    }, {
+      category_id: "kategori-1",
+      brand_id: null,
+      supplier_id: "pemasok-1",
+    });
+    expect(payload).toMatchObject({
+      min_stock: 0,
+      track_expiry: false,
+      supplier_id: null,
+      buy_unit: null,
+      min_buy: 0,
+      tindakan_kategori: "Konsultasi",
+    });
   });
 });

@@ -43,6 +43,25 @@ export type AccurateWorkbookResult = {
   errors: string[];
 };
 
+export type ExistingAccurateItem = Omit<AccurateItem, "row_no"> & { id: string };
+
+export type AccuratePreviewStatus = "Baru" | "Update" | "Sama" | "Dilewati" | "Ditolak";
+
+export type AccuratePreviewRow = {
+  row_no: number;
+  code: string;
+  name: string;
+  status: AccuratePreviewStatus;
+  changed_fields: string[];
+  reason: string | null;
+};
+
+export type AccurateItemRefs = {
+  category_id: string;
+  brand_id: string | null;
+  supplier_id: string | null;
+};
+
 const REQUIRED_HEADERS = [
   "Kode Barang",
   "Nama Barang",
@@ -244,4 +263,99 @@ export async function bacaWorkbookAccurate(bytes: Uint8Array): Promise<AccurateW
 
   rejected.sort((a, b) => a.row_no - b.row_no);
   return { rows: uniqueRows, skipped, rejected, errors: [] };
+}
+
+const COMPARABLE_FIELDS = [
+  "name", "item_type", "category_name", "brand_name", "unit", "sell_price",
+  "buy_price", "min_stock", "supplier_name", "buy_unit", "min_buy", "upc",
+  "track_expiry", "default_discount", "is_active", "units",
+] as const;
+
+function normalizedComparable(field: (typeof COMPARABLE_FIELDS)[number], value: unknown): unknown {
+  if (field === "units") {
+    return ((value ?? []) as AccurateUnit[])
+      .map((unit) => ({
+        unit: unit.unit.trim().toLowerCase(),
+        factor: Number(unit.factor),
+        sell_price: Number(unit.sell_price),
+        buy_price: Number(unit.buy_price),
+      }))
+      .sort((a, b) => a.unit.localeCompare(b.unit));
+  }
+  if (["sell_price", "buy_price", "min_stock", "min_buy", "default_discount"].includes(field)) {
+    return Number(value ?? 0);
+  }
+  if (["track_expiry", "is_active"].includes(field)) return Boolean(value);
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function changedFields(item: AccurateItem, existing: ExistingAccurateItem): string[] {
+  return COMPARABLE_FIELDS.filter((field) => (
+    JSON.stringify(normalizedComparable(field, item[field]))
+      !== JSON.stringify(normalizedComparable(field, existing[field]))
+  ));
+}
+
+/** Preview deterministik. Tidak membaca/menulis DB dan tidak membawa data stok. */
+export function buatPreviewAccurate(
+  workbook: AccurateWorkbookResult,
+  existingItems: ExistingAccurateItem[],
+): AccuratePreviewRow[] {
+  const existingByCode = new Map(existingItems.map((item) => [item.code.trim().toLowerCase(), item]));
+  const preview: AccuratePreviewRow[] = workbook.rows.map((item) => {
+    const existing = existingByCode.get(item.code.toLowerCase());
+    const changed = existing ? changedFields(item, existing) : [];
+    return {
+      row_no: item.row_no,
+      code: item.code,
+      name: item.name,
+      status: existing ? (changed.length ? "Update" : "Sama") : "Baru",
+      changed_fields: changed,
+      reason: null,
+    };
+  });
+  preview.push(...workbook.skipped.map((issue) => ({
+    row_no: issue.row_no,
+    code: issue.code,
+    name: issue.name,
+    status: "Dilewati" as const,
+    changed_fields: [],
+    reason: issue.reason,
+  })));
+  preview.push(...workbook.rejected.map((issue) => ({
+    row_no: issue.row_no,
+    code: issue.code,
+    name: issue.name,
+    status: "Ditolak" as const,
+    changed_fields: [],
+    reason: issue.reason,
+  })));
+  return preview.sort((a, b) => a.row_no - b.row_no);
+}
+
+/** Payload hanya master barang. Sengaja tak punya qty/gudang/layer stok. */
+export function buatPayloadItemAccurate(item: AccurateItem, refs: AccurateItemRefs) {
+  const punyaStok = item.item_type === "Persediaan";
+  const isJasa = item.item_type === "Jasa";
+  return {
+    code: item.code,
+    name: item.name,
+    category_id: refs.category_id,
+    item_type: item.item_type,
+    brand_id: refs.brand_id,
+    upc: item.upc,
+    unit: item.unit,
+    sell_price: item.sell_price,
+    buy_price: item.buy_price,
+    min_stock: punyaStok ? item.min_stock : 0,
+    tindakan_kategori: isJasa ? "Konsultasi" : null,
+    supplier_id: punyaStok ? refs.supplier_id : null,
+    buy_unit: punyaStok ? (item.buy_unit || item.unit) : null,
+    min_buy: punyaStok ? item.min_buy : 0,
+    min_sell_qty: 0,
+    default_discount: item.default_discount,
+    substitute_item_id: null,
+    track_expiry: punyaStok && item.track_expiry,
+    is_active: item.is_active,
+  };
 }
