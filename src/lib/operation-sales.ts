@@ -1,3 +1,5 @@
+import { transaksiValid } from "./laporan-transaksi";
+
 export type Channel = "all" | "pos" | "online" | "reseller" | "klinik";
 
 export type DashboardFilter = {
@@ -31,6 +33,18 @@ export type SalesMetric = {
   atv: number | null;
   upt: number | null;
   grossMargin: number;
+};
+
+export type BranchPerformance = {
+  branchId: string;
+  branchName: string;
+  sales: number;
+  achievement: number | null;
+  growth: number | null;
+  transactions: number;
+  atv: number | null;
+  grossMargin: number;
+  uniqueCustomers: number;
 };
 
 export type MetricValue =
@@ -107,8 +121,6 @@ export type SupplierPerformance = {
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const INVALID_SALES_STATUSES = new Set(["void", "batal", "cancelled", "canceled", "dibatalkan"]);
-
 function dateValue(value: string): number | null {
   if (!DATE_RE.test(value)) return null;
   const [year, month, day] = value.split("-").map(Number);
@@ -186,7 +198,7 @@ export function buildPeriod(input: {
 }
 
 export function isValidSalesStatus(status: string): boolean {
-  return !INVALID_SALES_STATUSES.has(status.trim().toLowerCase());
+  return transaksiValid(status);
 }
 
 export function salesMetrics(rows: SalesMetricRow[]): SalesMetric {

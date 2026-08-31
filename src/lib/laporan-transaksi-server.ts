@@ -2,6 +2,7 @@
 // dipakai dua laporan sekaligus (per cabang & per hari) — angkanya wajib sama.
 import { createClient } from "@/lib/supabase/server";
 import { tanggalWIB } from "@/lib/tanggal";
+import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import type { Trx } from "@/lib/laporan-transaksi";
 
 type Rel<T> = T | T[] | null;
@@ -21,8 +22,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   const supabase = await createClient();
   // created_at disimpan UTC; batasnya ditulis dengan offset +07:00 supaya struk
   // jam 07:00 WIB tidak jatuh ke hari sebelumnya.
-  const mulai = `${dari}T00:00:00+07:00`;
-  const akhir = `${sampai}T23:59:59+07:00`;
+  const { mulai, akhir } = batasTanggalWIB(dari, sampai);
 
   const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] =
     await Promise.all([
