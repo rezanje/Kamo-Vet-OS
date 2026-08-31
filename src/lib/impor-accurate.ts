@@ -12,7 +12,7 @@ export type AccurateItem = {
   row_no: number;
   code: string;
   name: string;
-  item_type: Exclude<ItemType, "Grup">;
+  item_type: ItemType;
   category_name: string;
   brand_name: string | null;
   unit: string;
@@ -128,6 +128,7 @@ function mapItemType(raw: string): AccurateItem["item_type"] | null {
   if (raw === "INV") return "Persediaan";
   if (raw === "SVC") return "Jasa";
   if (raw === "NON") return "Non-Persediaan";
+  if (raw.startsWith("GROUP")) return "Grup";
   return null;
 }
 
@@ -148,11 +149,8 @@ function parseDataRow(
   const baseUnit = text(get("Satuan"));
 
   if (![code, name, typeRaw, category, baseUnit].some(Boolean)) return {};
-  if (typeRaw.startsWith("GROUP")) {
-    return { skipped: rowIssue(rowNo, get, "Grup dilewati karena export tidak membawa rincian komponen") };
-  }
   if (typeRaw.startsWith("VARIANT")) {
-    return { skipped: rowIssue(rowNo, get, "Varian dilewati; fase ini memakai SKU terpisah") };
+    return { skipped: rowIssue(rowNo, get, "Butuh contoh export Varian untuk mapping aman") };
   }
   if (!code) return { rejected: rowIssue(rowNo, get, "Kode barang wajib diisi") };
   if (!name) return { rejected: rowIssue(rowNo, get, "Nama barang wajib diisi") };
@@ -219,7 +217,7 @@ function parseDataRow(
       upc: text(get("UPC/Barcode")) || null,
       track_expiry: yes(get("Pakai tanggal kadaluarsa")),
       default_discount: Math.min(100, Math.max(0, discountRaw)),
-      is_active: !yes(get("Non Aktif")),
+      is_active: !typeRaw.startsWith("GROUP") && !yes(get("Non Aktif")),
       units,
     },
   };
