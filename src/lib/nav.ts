@@ -229,6 +229,7 @@ export const TILES: Record<string, Tile[]> = {
   laporan: [
     // Laporan operasional yang diminta tim (2026-08-01) — di luar laporan
     // keuangan standar Accurate, jadi ditaruh paling atas karena paling sering dibuka.
+    { label: "Operation & Sales", icon: "ti-dashboard", ...A, nw: true, href: "/laporan/operasional-penjualan" },
     { label: "Pelanggan Teratas", icon: "ti-trophy", ...A, nw: true, href: "/laporan/pelanggan-teratas" },
     { label: "Jadwal Anabul", icon: "ti-calendar-heart", ...A, nw: true, href: "/laporan/jadwal-anabul" },
     { label: "Rekap Absensi", icon: "ti-clock-check", ...A, nw: true, href: "/laporan/absensi" },
