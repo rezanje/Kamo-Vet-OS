@@ -71,3 +71,12 @@ Code/dashboard rollback: redeploy prior production commit. Configuration rollbac
 - **Pemilik remediasi teknis:** tim implementasi VetOS untuk mengaktifkan database lokal, menjalankan migrasi, matriks keamanan, dan bukti browser.
 - **Review berikutnya:** 2 September 2026, atau segera setelah paket data lengkap tersedia.
 - **Larangan:** jangan aktifkan multi-cabang, jangan menganggap missing sebagai nol, dan jangan menghapus saldo awal yang sudah diposting.
+
+## Percobaan melanjutkan opsi A — 1 September 2026
+
+- Pencarian workspace tidak menemukan paket data impor.
+- Pencarian folder unduhan menemukan tiga kandidat ekspor Accurate: dua ekspor barang dan satu ekspor kategori.
+- Pemeriksaan workbook menunjukkan masing-masing hanya memiliki satu kepala kolom dan nol baris data. Ketiganya tidak dapat dipakai sebagai sumber pilot.
+- Berkas komponen Grup, saldo awal, target sales, kapasitas, dan tautan karyawan/provider tidak ditemukan.
+- Pemeriksaan environment tidak menemukan Docker Desktop, Colima, OrbStack, Podman, atau Rancher. Reset database lokal belum dapat dijalankan sampai runtime container dipasang.
+- Tidak ada preview, posting saldo awal, perubahan database, atau rekonsiliasi yang dilakukan pada percobaan ini.
