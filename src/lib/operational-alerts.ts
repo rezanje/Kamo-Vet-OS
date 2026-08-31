@@ -10,6 +10,19 @@ export type AlertRuleKey =
   | "no_show_limit"
   | "staff_productivity";
 
+export const ALERT_RULE_KEYS: AlertRuleKey[] = [
+  "sales_below_target",
+  "stock_opname_variance",
+  "expired_or_near_expiry",
+  "sales_drop",
+  "negative_stock",
+  "manual_discount_limit",
+  "void_limit",
+  "fast_moving_out_of_stock",
+  "no_show_limit",
+  "staff_productivity",
+];
+
 export type AlertSeverity = "red" | "yellow";
 
 export type AlertSetting = {
@@ -62,6 +75,10 @@ const LABELS: Record<AlertRuleKey, string> = {
   no_show_limit: "No-show melewati batas",
   staff_productivity: "Produktivitas staf di bawah target",
 };
+
+export function alertRuleLabel(ruleKey: AlertRuleKey): string {
+  return LABELS[ruleKey];
+}
 
 const DEFAULTS: AlertSetting[] = [
   { ruleKey: "sales_below_target", branchId: null, threshold: 80, periodDays: 30, active: true, severity: "red" },
