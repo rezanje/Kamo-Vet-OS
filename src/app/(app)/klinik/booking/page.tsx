@@ -2,9 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { hariIniWIB } from "@/lib/tanggal";
-import { LABEL_STATUS_BOOKING, BADGE_STATUS_BOOKING } from "@/lib/booking";
+import { composeBookingScheduledAt, LABEL_STATUS_BOOKING, BADGE_STATUS_BOOKING } from "@/lib/booking";
 import { konfirmasiBooking, tolakBooking, batalkanBooking } from "./actions";
+import { NoShowButton } from "./NoShowButton";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -25,20 +25,20 @@ export default async function BookingKlinikPage({
   const sp = await searchParams;
   const tab = (TAB as readonly string[]).includes(sp.tab ?? "") ? sp.tab! : "baru";
   const supabase = await createClient();
-  const hariIni = hariIniWIB();
 
   const { data } = await supabase
     .from("bookings")
-    .select("id, tanggal, jam, poli, nama_pemilik, phone, nama_hewan, jenis_hewan, keluhan, status, catatan_staf, visit_id, created_at, branches(name)")
+    .select("id, tanggal, jam, poli, nama_pemilik, phone, nama_hewan, jenis_hewan, keluhan, status, attendance_outcome, catatan_staf, visit_id, created_at, branches(name)")
     .order("tanggal").order("jam");
 
   type Row = {
     id: string; tanggal: string; jam: string; poli: string; nama_pemilik: string; phone: string;
     nama_hewan: string; jenis_hewan: string; keluhan: string | null; status: string;
-    catatan_staf: string | null; visit_id: string | null; created_at: string;
+    attendance_outcome: string; catatan_staf: string | null; visit_id: string | null; created_at: string;
     branches: Rel<{ name: string }>;
   };
   const semua = (data ?? []) as Row[];
+  const nowMs = new Date().getTime();
 
   const cocok = (r: Row) =>
     tab === "selesai" ? !!r.visit_id
@@ -94,7 +94,7 @@ export default async function BookingKlinikPage({
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {baris.map((b) => {
-              const lewat = b.tanggal < hariIni && !b.visit_id;
+              const lewat = new Date(composeBookingScheduledAt(b.tanggal, b.jam)).getTime() < nowMs && !b.visit_id;
               return (
                 <div key={b.id} className="card" style={{ borderColor: lewat ? "#fecaca" : undefined }}>
                   <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -129,7 +129,7 @@ export default async function BookingKlinikPage({
 
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 9 }}>
                     <span className={`bge ${BADGE_STATUS_BOOKING[b.status] ?? ""}`}>
-                      {b.visit_id ? "Sudah didaftarkan" : LABEL_STATUS_BOOKING[b.status] ?? b.status}
+                      {b.visit_id ? "Sudah didaftarkan" : b.attendance_outcome === "no_show" ? "Tidak hadir" : LABEL_STATUS_BOOKING[b.status] ?? b.status}
                     </span>
                     {lewat && <span className="bge r">Tanggalnya sudah lewat</span>}
 
@@ -156,6 +156,7 @@ export default async function BookingKlinikPage({
                             <i className="ti ti-x" /> {b.status === "baru" ? "Tolak" : "Batalkan"}
                           </SubmitButton>
                         </form>
+                        {b.status === "dikonfirmasi" && b.attendance_outcome === "pending" && lewat && <NoShowButton id={b.id} />}
                       </>
                     )}
                     {b.visit_id && (

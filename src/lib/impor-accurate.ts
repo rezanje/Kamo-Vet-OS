@@ -12,7 +12,7 @@ export type AccurateItem = {
   row_no: number;
   code: string;
   name: string;
-  item_type: Exclude<ItemType, "Grup">;
+  item_type: ItemType;
   category_name: string;
   brand_name: string | null;
   unit: string;
@@ -27,6 +27,7 @@ export type AccurateItem = {
   default_discount: number;
   is_active: boolean;
   units: AccurateUnit[];
+  source?: string;
 };
 
 export type AccurateIssue = {
@@ -34,6 +35,7 @@ export type AccurateIssue = {
   code: string;
   name: string;
   reason: string;
+  source?: string;
 };
 
 export type AccurateWorkbookResult = {
@@ -71,6 +73,7 @@ export type AccuratePreviewRow = {
   status: AccuratePreviewStatus;
   changed_fields: string[];
   reason: string | null;
+  source?: string;
 };
 
 export type AccurateItemRefs = {
@@ -128,6 +131,7 @@ function mapItemType(raw: string): AccurateItem["item_type"] | null {
   if (raw === "INV") return "Persediaan";
   if (raw === "SVC") return "Jasa";
   if (raw === "NON") return "Non-Persediaan";
+  if (raw.startsWith("GROUP")) return "Grup";
   return null;
 }
 
@@ -148,11 +152,8 @@ function parseDataRow(
   const baseUnit = text(get("Satuan"));
 
   if (![code, name, typeRaw, category, baseUnit].some(Boolean)) return {};
-  if (typeRaw.startsWith("GROUP")) {
-    return { skipped: rowIssue(rowNo, get, "Grup dilewati karena export tidak membawa rincian komponen") };
-  }
   if (typeRaw.startsWith("VARIANT")) {
-    return { skipped: rowIssue(rowNo, get, "Varian dilewati; fase ini memakai SKU terpisah") };
+    return { skipped: rowIssue(rowNo, get, "Butuh contoh export Varian untuk mapping aman") };
   }
   if (!code) return { rejected: rowIssue(rowNo, get, "Kode barang wajib diisi") };
   if (!name) return { rejected: rowIssue(rowNo, get, "Nama barang wajib diisi") };
@@ -219,7 +220,7 @@ function parseDataRow(
       upc: text(get("UPC/Barcode")) || null,
       track_expiry: yes(get("Pakai tanggal kadaluarsa")),
       default_discount: Math.min(100, Math.max(0, discountRaw)),
-      is_active: !yes(get("Non Aktif")),
+      is_active: !typeRaw.startsWith("GROUP") && !yes(get("Non Aktif")),
       units,
     },
   };
@@ -417,6 +418,7 @@ export function buatPreviewAccurate(
       row_no: item.row_no,
       code: item.code,
       name: item.name,
+      source: item.source,
       status: existing ? (changed.length ? "Update" : "Sama") : "Baru",
       changed_fields: changed,
       reason: null,
@@ -426,6 +428,7 @@ export function buatPreviewAccurate(
     row_no: issue.row_no,
     code: issue.code,
     name: issue.name,
+    source: issue.source,
     status: "Dilewati" as const,
     changed_fields: [],
     reason: issue.reason,
@@ -434,6 +437,7 @@ export function buatPreviewAccurate(
     row_no: issue.row_no,
     code: issue.code,
     name: issue.name,
+    source: issue.source,
     status: "Ditolak" as const,
     changed_fields: [],
     reason: issue.reason,

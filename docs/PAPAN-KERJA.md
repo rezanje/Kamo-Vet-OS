@@ -1,6 +1,6 @@
 # Papan Kerja VetOS — satu-satunya daftar yang dipantau
 
-**Diperbarui** 26 Agustus 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
+**Diperbarui** 1 September 2026 · **Target go-live** Oktober 2026 (ulang tahun Kamo Group)
 
 > **Catatan uji 17 Agustus:** blok stok opname (M1–M10) sudah diuji langsung di aplikasi —
 > daftar 30 barang otomatis, kunci per barang yang bertahan setelah layar ditutup, buka kunci,
@@ -18,6 +18,20 @@ Mulai sekarang **file ini yang diperbarui tiap kali ada pekerjaan beres.** Dua f
 dibekukan sebagai foto kondisi 14 Agustus.
 
 Status: `⬜ belum` · `🔨 dikerjakan` · `✅ selesai` (isi tanggal) · `⏸ nunggu klien`
+
+---
+
+## Program onboarding data & cockpit operasional — 1 September 2026
+
+| Pekerjaan | Status | Catatan bisnis |
+|---|---|---|
+| Impor lanjutan master Accurate, komponen, saldo awal, dan keluarga varian | 🔨 | Mesin preview, reject, audit, posting sekali, dan rekonsiliasi sudah dibuat; eksekusi pilot menunggu paket data lengkap dan konfirmasi gudang/tanggal cut-off. |
+| Data operasional klinik | 🔨 | Booking/no-show, waktu layanan, provider, follow-up, kapasitas, referral, dan audit sudah disiapkan; smoke test data aktual menunggu kapasitas serta tautan karyawan/provider. |
+| Dashboard Operation & Sales | 🔨 | Cockpit lintas sales, cabang, customer, stok, pembelian, dan klinik sudah dibuat; sementara dikunci untuk OWNER/ADMIN. Rekonsiliasi laporan aktual belum selesai. |
+| Alert operasional | 🔨 | Lima aturan bawaan, ambang perusahaan/cabang, prioritas merah/kuning, missing-state, dan drill-down sudah dibuat; reproduksi dengan data pilot belum selesai. |
+| Keputusan produksi | ⏸ | **Belum boleh produksi — BLOCKED BY DATA.** Pilot satu gudang, rekonsiliasi nol selisih, uji keamanan cabang, dan persetujuan OWNER/ADMIN masih wajib. |
+
+Runbook evidence dan syarat pembukaan produksi: `docs/runbooks/2026-08-31-operation-sales-production-rollout.md`.
 
 ---
 

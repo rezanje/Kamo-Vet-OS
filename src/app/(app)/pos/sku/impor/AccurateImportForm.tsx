@@ -29,7 +29,7 @@ function MasterList({ label, values }: { label: string; values: string[] }) {
 }
 
 export function AccurateImportForm() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [categoryFile, setCategoryFile] = useState<File | null>(null);
   const [state, setState] = useState<AccurateImportState | null>(null);
   const [localError, setLocalError] = useState("");
@@ -42,15 +42,16 @@ export function AccurateImportForm() {
   );
 
   const run = (action: (data: FormData) => Promise<AccurateImportState>) => {
-    if (!file) {
-      setLocalError("Pilih file Accurate .xlsx terlebih dulu.");
+    if (!files.length) {
+      setLocalError("Pilih minimal satu file Accurate .xlsx terlebih dulu.");
       return;
     }
     setLocalError("");
     startTransition(async () => {
       const data = new FormData();
-      data.append("file", file);
+      files.forEach((file) => data.append("files", file));
       if (categoryFile) data.append("category_file", categoryFile);
+      if (action === konfirmasiImporAccurate && state?.run_id) data.append("run_id", state.run_id);
       setState(await action(data));
     });
   };
@@ -71,19 +72,20 @@ export function AccurateImportForm() {
       </div>
 
       <div className="p2ban" style={{ marginTop: 12, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
-        <i className="ti ti-alert-triangle" /> Grup Accurate dilewati karena export tidak membawa rincian komponennya.
+          <i className="ti ti-alert-triangle" /> Grup Accurate masuk sebagai nonaktif sampai rincian komponennya tersedia.
         Tambahkan export Kategori Barang supaya relasi induk/subkategori ikut diimpor.
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
         <label className="btn-def" style={{ cursor: "pointer" }}>
-          <i className="ti ti-file-spreadsheet" /> Barang &amp; Jasa .xlsx
+          <i className="ti ti-file-spreadsheet" /> Barang &amp; Jasa .xlsx (bisa banyak)
           <input
             type="file"
+            multiple
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             style={{ display: "none" }}
             onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
+              setFiles(Array.from(event.target.files ?? []));
               setState(null);
               setLocalError("");
               setShowSame(false);
@@ -103,11 +105,11 @@ export function AccurateImportForm() {
             }}
           />
         </label>
-        <button type="button" className="btn-acc" disabled={pending || !file}
+        <button type="button" className="btn-acc" disabled={pending || !files.length}
           onClick={() => run(previewImporAccurate)} style={{ background: "var(--posb)" }}>
           <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek perubahan"}
         </button>
-        {file && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {file.name}</span>}
+        {files.length > 0 && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {files.length} file master dipilih</span>}
         {categoryFile && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name}</span>}
       </div>
 
@@ -161,7 +163,7 @@ export function AccurateImportForm() {
               <tbody>
                 {visibleRows.map((row) => (
                   <tr key={`${row.row_no}-${row.code}`}>
-                    <td>{row.row_no}</td>
+                    <td>{row.source || row.row_no}</td>
                     <td><code>{row.code}</code></td>
                     <td>{row.name}</td>
                     <td>
@@ -185,7 +187,7 @@ export function AccurateImportForm() {
 
           <div style={{ marginTop: 12, display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
             {state.phase === "preview" ? (
-              <button type="button" className="btn-acc" disabled={pending || !state.ok}
+              <button type="button" className="btn-acc" disabled={pending || !state.ok || !state.run_id}
                 onClick={() => run(konfirmasiImporAccurate)} style={{ background: "#15803d" }}>
                 <i className="ti ti-database-import" /> {pending ? "Mengimpor…" : "Konfirmasi impor master"}
               </button>
@@ -195,6 +197,9 @@ export function AccurateImportForm() {
               </Link>
             )}
             <span style={{ fontSize: 10.5, color: state.ok ? "#166534" : "#b91c1c" }}>{state.message}</span>
+            {state.phase === "preview" && state.source_fingerprint && (
+              <span style={{ fontSize: 10, color: "var(--tm)" }}>Batch: {state.source_fingerprint}</span>
+            )}
           </div>
         </>
       )}

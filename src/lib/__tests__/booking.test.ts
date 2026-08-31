@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validasiBooking, normalPhone, type BookingDraft } from "../booking";
+import { composeBookingScheduledAt, validasiBooking, normalPhone, type BookingDraft } from "../booking";
 
 const dasar: BookingDraft = {
   branchId: "b1", poli: "Poli Umum", tanggal: "2026-08-10", jam: "09:00",
@@ -43,5 +43,11 @@ describe("validasiBooking", () => {
 
   it("menolak keluhan kepanjangan (batas simpanan)", () => {
     expect(validasiBooking({ ...dasar, keluhan: "x".repeat(501) }, hariIni)).toMatch(/panjang/i);
+  });
+});
+
+describe("composeBookingScheduledAt", () => {
+  it("membentuk instant Asia/Jakarta tanpa bergantung locale browser", () => {
+    expect(composeBookingScheduledAt("2026-08-31", "09:30")).toBe("2026-08-31T09:30:00+07:00");
   });
 });

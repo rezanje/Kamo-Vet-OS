@@ -112,6 +112,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Cabang & gudang", icon: "ti-building-store", ...B, href: "/pengaturan/cabang" },
     { label: "Konfigurasi loyalty", icon: "ti-star", ...B, href: "/pengaturan/tier" },
     { label: "Aturan gaji", icon: "ti-adjustments-dollar", ...B, href: "/pengaturan/gaji" },
+    { label: "Operasional Klinik", icon: "ti-activity-heartbeat", ...A, nw: true, href: "/pengaturan/operasional-klinik" },
+    { label: "Alert Operasional", icon: "ti-bell-ringing", ...R, nw: true, href: "/pengaturan/alert-operasional" },
     { label: "WA Engine (7 trigger)", icon: "ti-brand-whatsapp", ...B },
   ],
   perusahaan: [
@@ -193,6 +195,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Perintah Stok Opname", icon: "ti-clipboard-list", ...G, href: "/pos/opname" },
     { label: "Hasil Stok Opname", icon: "ti-clipboard-check", ...G, href: "/pos/opname" },
     { label: "Barang & Jasa", icon: "ti-package", ...B, href: "/pos/sku" },
+    { label: "Keluarga Varian", icon: "ti-packages", ...B, nw: true, href: "/pos/sku/varian" },
     { label: "Impor Barang", icon: "ti-file-spreadsheet", ...B, nw: true, href: "/pos/sku/impor" },
     { label: "Harga Jual", icon: "ti-tag", ...B, nw: true, href: "/pos/harga" },
     { label: "Gudang", icon: "ti-building-warehouse", ...B, href: "/pengaturan/cabang" },
@@ -227,6 +230,7 @@ export const TILES: Record<string, Tile[]> = {
   laporan: [
     // Laporan operasional yang diminta tim (2026-08-01) — di luar laporan
     // keuangan standar Accurate, jadi ditaruh paling atas karena paling sering dibuka.
+    { label: "Operation & Sales", icon: "ti-dashboard", ...A, nw: true, href: "/laporan/operasional-penjualan" },
     { label: "Pelanggan Teratas", icon: "ti-trophy", ...A, nw: true, href: "/laporan/pelanggan-teratas" },
     { label: "Jadwal Anabul", icon: "ti-calendar-heart", ...A, nw: true, href: "/laporan/jadwal-anabul" },
     { label: "Rekap Absensi", icon: "ti-clock-check", ...A, nw: true, href: "/laporan/absensi" },

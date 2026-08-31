@@ -34,6 +34,10 @@ export function normalPhone(raw: string): string {
   return angka;
 }
 
+export function composeBookingScheduledAt(tanggal: string, jam: string): string {
+  return `${tanggal}T${jam}:00+07:00`;
+}
+
 export function validasiBooking(d: BookingDraft, hariIni: string): string | null {
   if (!d.branchId) return "Pilih klinik tujuan";
   if (!(POLI_BOOKING as readonly string[]).includes(d.poli)) return "Layanan tidak dikenal";

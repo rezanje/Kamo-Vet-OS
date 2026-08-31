@@ -69,14 +69,14 @@ describe("bacaWorkbookAccurate", () => {
     },
   );
 
-  it("melewati GROUP dengan alasan eksplisit", async () => {
+  it("memetakan GROUP sebagai Grup nonaktif sampai komponen tersedia", async () => {
     const bytes = await workbook([
       ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Satuan"],
       ["G1", "Paket", "GROUP (barang tipe grup tidak dapat diimport ulang)", "PROMO", "PCS"],
     ]);
     const hasil = await bacaWorkbookAccurate(bytes);
-    expect(hasil.rows).toEqual([]);
-    expect(hasil.skipped[0].reason).toContain("rincian komponen");
+    expect(hasil.rows[0]).toMatchObject({ item_type: "Grup", is_active: false });
+    expect(hasil.skipped).toEqual([]);
   });
 
   it("menerima header beda kapital/spasi dan menolak header wajib hilang", async () => {

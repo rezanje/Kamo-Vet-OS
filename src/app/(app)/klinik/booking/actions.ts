@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { composeBookingScheduledAt } from "@/lib/booking";
+import { bolehNoShow } from "@/lib/operasional-klinik";
 
 /**
  * Keputusan staf atas sebuah booking. Booking yang sudah jadi kunjungan tidak
@@ -36,4 +38,25 @@ export async function tolakBooking(formData: FormData) {
 
 export async function batalkanBooking(formData: FormData) {
   await putuskan(formData, "batal");
+}
+
+export async function markBookingNoShow(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) redirect("/klinik/booking?error=" + encodeURIComponent("Booking tidak dikenal"));
+  const { data: booking, error: loadError } = await supabase.from("bookings")
+    .select("id, status, attendance_outcome, tanggal, jam, visit_id, branch_id")
+    .eq("id", id).maybeSingle();
+  if (loadError || !booking) redirect("/klinik/booking?error=" + encodeURIComponent(loadError?.message ?? "Booking tidak ditemukan"));
+  const allowed = bolehNoShow({
+    status: String(booking.status),
+    outcome: (booking.attendance_outcome ?? "pending") as "pending" | "hadir" | "no_show",
+    scheduledAt: composeBookingScheduledAt(String(booking.tanggal), String(booking.jam)),
+    visitId: booking.visit_id ? String(booking.visit_id) : null,
+  });
+  if (!allowed) redirect("/klinik/booking?error=" + encodeURIComponent("Booking belum memenuhi syarat no-show"));
+  const { error } = await supabase.rpc("mark_booking_no_show", { p_booking_id: id });
+  if (error) redirect("/klinik/booking?error=" + encodeURIComponent(error.message));
+  revalidatePath("/klinik/booking");
+  redirect("/klinik/booking?success=no_show");
 }

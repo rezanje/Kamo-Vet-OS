@@ -36,6 +36,20 @@ export type Rekap = {
   rataTrxPerPelanggan: number;
 };
 
+/** Status yang tidak boleh masuk angka penjualan lintas laporan. */
+export const STATUS_TRANSAKSI_BATAL = new Set(["void", "batal", "cancelled", "canceled", "dibatalkan"]);
+
+export function transaksiValid(status: string | null | undefined): boolean {
+  return !STATUS_TRANSAKSI_BATAL.has((status ?? "").trim().toLowerCase());
+}
+
+export function batasTanggalWIB(dari: string, sampai: string) {
+  return {
+    mulai: `${dari}T00:00:00+07:00`,
+    akhir: `${sampai}T23:59:59.999+07:00`,
+  };
+}
+
 const bagi = (atas: number, bawah: number) => (bawah ? atas / bawah : 0);
 
 export function rekap(list: Trx[]): Rekap {
