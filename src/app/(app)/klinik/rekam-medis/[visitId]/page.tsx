@@ -11,6 +11,7 @@ import { templatesForBranch } from "@/lib/consent";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
+import { ReferralPanel } from "./ReferralPanel";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -27,6 +28,10 @@ const STEPS: [string, string][] = [
   ["Pembayaran", "ti-credit-card"],
 ];
 
+const fmtDaftar = (iso: string) => new Date(iso).toLocaleString("id-ID", {
+  timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+});
+
 export default async function RekamMedisPage({
   params,
   searchParams,
@@ -40,7 +45,7 @@ export default async function RekamMedisPage({
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, pet_id, branch_id, poli, status, dokter, doctor_id, keluhan, created_at, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
+    .select("id, pet_id, branch_id, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
     .eq("id", visitId)
     .maybeSingle();
 
@@ -49,6 +54,10 @@ export default async function RekamMedisPage({
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const dokterOpsi = await daftarDokter(supabase);
+  const { data: providerRows } = await supabase.from("employees")
+    .select("id, nama, jabatan, branch_id")
+    .eq("branch_id", visit.branch_id).eq("status", "Aktif").order("nama");
+  const providerOpsi = (providerRows ?? []) as { id: string; nama: string; jabatan: string | null }[];
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
@@ -86,13 +95,17 @@ export default async function RekamMedisPage({
   }
 
   // Rawat inap aktif utk visit ini (Addendum §3 — admit dari rekam medis, design klinik/07).
-  const { data: inpatient } = await supabase
-    .from("inpatient_records")
-    .select("id, condition_status, discharged_at")
-    .eq("visit_id", visitId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [{ data: inpatient }, { data: referralRows }] = await Promise.all([
+    supabase.from("inpatient_records")
+      .select("id, condition_status, discharged_at")
+      .eq("visit_id", visitId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from("visit_referrals")
+      .select("id, direction, facility, reason, notes, referred_at")
+      .eq("visit_id", visitId).order("referred_at", { ascending: false }),
+  ]);
 
   const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 5, Selesai: 6 };
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
@@ -238,6 +251,11 @@ export default async function RekamMedisPage({
           <i className="ti ti-circle-check" /> Form persetujuan ditandatangani.
         </div>
       )}
+      {success === "referral" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Referral tersimpan dan masuk audit kunjungan.
+        </div>
+      )}
 
       {/* Stepper status kunjungan (§3.4) — ikon + sub-status (ala referensi) */}
       <div className="card" style={{ marginBottom: 12 }}>
@@ -284,6 +302,19 @@ export default async function RekamMedisPage({
             <Field label="Poli" value={visit.poli} />
             {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
             <Field label="Keluhan" value={visit.keluhan ?? "—"} />
+          </div>
+        </div>
+      )}
+
+      {recorded && (
+        <div className="card" style={{ marginBottom: 12, fontSize: 11 }}>
+          <div className="card-hd"><i className="ti ti-timeline" style={{ color: "var(--posb)" }} /> Waktu layanan</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 22px", color: "var(--tm)" }}>
+            <span>Sumber: <b style={{ color: "var(--tx)" }}>{visit.source === "booking" ? "Booking" : "Walk-in"}</b></span>
+            <span>Check-in: <b style={{ color: "var(--tx)" }}>{visit.checked_in_at ? fmtDaftar(visit.checked_in_at) : "Belum tercatat"}</b></span>
+            <span>Mulai: <b style={{ color: "var(--tx)" }}>{visit.service_started_at ? fmtDaftar(visit.service_started_at) : "Belum tercatat"}</b></span>
+            <span>Selesai: <b style={{ color: "var(--tx)" }}>{visit.service_finished_at ? fmtDaftar(visit.service_finished_at) : "Belum tercatat"}</b></span>
+            <span>Check-out: <b style={{ color: "var(--tx)" }}>{visit.checked_out_at ? fmtDaftar(visit.checked_out_at) : "Belum tercatat"}</b></span>
           </div>
         </div>
       )}
@@ -389,6 +420,8 @@ export default async function RekamMedisPage({
             <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />
           </div>
 
+          <ReferralPanel visitId={visit.id as string} referrals={(referralRows ?? []) as { id: string; direction: string; facility: string; reason: string; notes: string | null; referred_at: string }[]} />
+
           {/* Rawat inap (Addendum §3) — popup "Catatan Rawat Inap" design klinik/07 sebagai card inline. */}
           <div className="card" style={{ marginTop: 12 }}>
             <div className="card-hd" style={{ justifyContent: "space-between" }}>
@@ -442,6 +475,7 @@ export default async function RekamMedisPage({
             tglPeriksa,
             dokter: visit.dokter ?? "",
             dokterId: visit.doctor_id ?? null,
+            providerId: visit.service_provider_id ?? null,
             owner: cust?.name ?? "—",
             phone: cust?.phone ?? "—",
             address: cust?.address ?? "—",
@@ -449,6 +483,7 @@ export default async function RekamMedisPage({
             keluhan: visit.keluhan ?? null,
             photo: pet?.photo_url ?? null,
           }}
+          providerOpsi={providerOpsi}
         />
       )}
     </>

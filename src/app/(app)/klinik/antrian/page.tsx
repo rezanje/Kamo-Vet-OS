@@ -7,6 +7,7 @@ import { LiveRefresh } from "./LiveRefresh";
 import { estimatedWaitMinutes } from "@/lib/queue";
 import { hariIniWIB } from "@/lib/tanggal";
 import { UlasanBadge } from "@/components/UlasanBadge";
+import { serviceDurations } from "@/lib/operasional-klinik";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -59,7 +60,7 @@ export default async function AntrianPage({
 
   let query = supabase
     .from("visits")
-    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code)")
+    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code)")
     .gte("created_at", mulaiHari).lte("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
@@ -125,6 +126,7 @@ export default async function AntrianPage({
 
   const fmtTime = (iso: string) =>
     new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  const fmtOptional = (iso: string | null | undefined) => iso ? fmtTime(iso) : "—";
 
   const nextPet = nextUp ? one(nextUp.pets) : null;
 
@@ -267,6 +269,12 @@ export default async function AntrianPage({
                   const pos = waitPos.get(v.id);
                   const meta = STATUS_META[v.status] ?? STATUS_META.Menunggu;
                   const age = petAge(pet?.dob);
+                  const durations = serviceDurations({
+                    checkedInAt: v.checked_in_at ?? null,
+                    serviceStartedAt: v.service_started_at ?? null,
+                    serviceFinishedAt: v.service_finished_at ?? null,
+                    checkedOutAt: v.checked_out_at ?? null,
+                  });
                   return (
                     <tr key={v.id} style={{ boxShadow: `inset 3px 0 0 ${meta.border}` }}>
                       <td style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700, fontSize: 12, color: meta.border, paddingLeft: 14 }}>{v.queue_number ?? "—"}</td>
@@ -293,7 +301,12 @@ export default async function AntrianPage({
                         <div style={{ fontSize: 11.5 }}>{v.poli}</div>
                         {v.dokter && <div style={{ fontSize: 10, color: "var(--tm)" }}>{v.dokter}</div>}
                       </td>
-                      <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTime(v.created_at)}</td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.55 }}>
+                        <div>Daftar {fmtTime(v.created_at)}</div>
+                        <div>Check-in {fmtOptional(v.checked_in_at)}</div>
+                        <div>Mulai {fmtOptional(v.service_started_at)} · Selesai {fmtOptional(v.service_finished_at)}</div>
+                        <div style={{ color: "var(--td)" }}>Tunggu {durations.waitMinutes == null ? "Belum tercatat" : `${durations.waitMinutes} mnt`} · Layanan {durations.serviceMinutes == null ? "Belum tercatat" : `${durations.serviceMinutes} mnt`}</div>
+                      </td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
                         {v.status === "Menunggu" && pos !== undefined ? `± ${estimatedWaitMinutes(pos)} mnt` : "—"}
                       </td>

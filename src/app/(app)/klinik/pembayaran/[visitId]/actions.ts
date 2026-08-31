@@ -346,7 +346,13 @@ export async function bayarVisit(formData: FormData) {
       });
     }
 
-    await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
+    if (visitStatus === "Selesai") {
+      const checkedOut = await supabase.rpc("set_visit_service_state", { p_visit_id: visitId, p_action: "checkout" });
+      if (checkedOut.error) redirect(`${back}?error=${encodeURIComponent(checkedOut.error.message)}`);
+    } else {
+      const visitUpdated = await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
+      if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent(visitUpdated.error.message)}`);
+    }
     if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
     redirect(`${back}?success=edit`);
   }
@@ -377,7 +383,13 @@ export async function bayarVisit(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(itErr.message)}`);
   }
 
-  await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
+  if (visitStatus === "Selesai") {
+    const checkedOut = await supabase.rpc("set_visit_service_state", { p_visit_id: visitId, p_action: "checkout" });
+    if (checkedOut.error) redirect(`${back}?error=${encodeURIComponent(checkedOut.error.message)}`);
+  } else {
+    const visitUpdated = await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
+    if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent(visitUpdated.error.message)}`);
+  }
 
   // Accounting (akrual): pendapatan jasa klinik diakui saat invoice; PPN dipisah.
   await postJournal(supabase, {
@@ -577,7 +589,8 @@ export async function bayarRombongan(formData: FormData) {
       item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
     })));
 
-    await supabase.from("visits").update({ status: "Selesai" }).eq("id", b.visitId);
+    const checkedOut = await supabase.rpc("set_visit_service_state", { p_visit_id: b.visitId, p_action: "checkout" });
+    if (checkedOut.error) redirect(`${back}?error=${encodeURIComponent(checkedOut.error.message)}`);
 
     // Rekening kas mengikuti peta metode bayar CABANG kunjungan itu — bukan bawaan
     // global; uang tunai cabang A tidak boleh mendarat di rekening cabang B.

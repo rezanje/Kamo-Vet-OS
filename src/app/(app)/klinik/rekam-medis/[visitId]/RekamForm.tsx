@@ -38,14 +38,15 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItems, currentWeight, dokterOpsi }: {
+export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItems, currentWeight, dokterOpsi, providerOpsi }: {
   visitId: string; petId: string;
-  patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
+  patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   bahanItems: ItemLite[];
   jasaItems: ItemLite[];
   currentWeight: number | null;
   dokterOpsi: { id: string; nama: string; jabatan: string | null }[];
+  providerOpsi: { id: string; nama: string; jabatan: string | null }[];
 }) {
   const [tab, setTab] = useState<"Obat" | "Jasa" | "Paket" | "Racikan">("Obat");
   const [search, setSearch] = useState("");
@@ -173,6 +174,14 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
                     {dokterOpsi.map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Pelaksana</span>
+                  <select className="fi" name="provider_id" defaultValue={patient.providerId ?? ""}
+                    style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
+                    <option value="">— belum ditentukan —</option>
+                    {providerOpsi.map((provider) => <option key={provider.id} value={provider.id}>{provider.nama}{provider.jabatan ? ` · ${provider.jabatan}` : ""}</option>)}
                   </select>
                 </div>
                 <MiniKV k="No. HP" v={patient.phone} />

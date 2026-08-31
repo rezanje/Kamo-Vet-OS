@@ -67,6 +67,13 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   const back = `/klinik/rekam-medis/${visitId}`;
+  const providerId = String(formData.get("provider_id") ?? "").trim();
+  if (providerId) {
+    const provider = await supabase.rpc("set_visit_service_state", {
+      p_visit_id: visitId, p_action: "provider", p_provider_id: providerId,
+    });
+    if (provider.error) redirect(`${back}?error=${encodeURIComponent(provider.error.message)}`);
+  }
 
   // Foto penunjang: path di bucket privat `medical-docs`, dikirim sbg JSON dari klien.
   let penunjangUrls: string[] = [];
@@ -205,11 +212,37 @@ export async function simpanRekamMedis(formData: FormData) {
     await supabase.from("pets").update({ weight: berat }).eq("id", petId);
   }
 
-  // §3.4: rekam medis selesai → lanjut tahap Pembayaran. keluhan disinkron ke visit.
-  await supabase.from("visits").update({ status: "Pembayaran", dokter, doctor_id: doctorId, keluhan }).eq("id", visitId);
+  // §3.4: rekam medis selesai → lanjut tahap Pembayaran. Waktu selesai dan audit
+  // layanan dicatat bersama perubahan status lewat RPC.
+  const finished = await supabase.rpc("set_visit_service_state", { p_visit_id: visitId, p_action: "finish" });
+  if (finished.error) redirect(`${back}?error=${encodeURIComponent(finished.error.message)}`);
+  const visitUpdated = await supabase.from("visits")
+    .update({ status: "Pembayaran", dokter, doctor_id: doctorId, keluhan }).eq("id", visitId);
+  if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent(visitUpdated.error.message)}`);
 
   // Tujuan setelah simpan tergantung tombol yg dipencet.
   if (next === "resep") redirect(`${back}/resep`);            // cetak resep
   if (next === "rawatinap") redirect(back);                   // form admit rawat inap ada di view recorded
   redirect(`/klinik/pembayaran/${visitId}`);                  // fallback
+}
+
+export async function createReferral(formData: FormData) {
+  const supabase = await createClient();
+  const visitId = String(formData.get("visit_id") ?? "").trim();
+  const direction = String(formData.get("direction") ?? "").trim();
+  const facility = String(formData.get("facility") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+  if (!visitId || !["masuk", "keluar"].includes(direction) || !facility || !reason) {
+    redirect(`/klinik/rekam-medis/${visitId}?error=${encodeURIComponent("Data referral belum lengkap")}`);
+  }
+  const { error } = await supabase.rpc("create_visit_referral", {
+    p_visit_id: visitId,
+    p_direction: direction,
+    p_facility: facility,
+    p_reason: reason,
+    p_notes: notes || null,
+  });
+  if (error) redirect(`/klinik/rekam-medis/${visitId}?error=${encodeURIComponent(error.message)}`);
+  redirect(`/klinik/rekam-medis/${visitId}?success=referral`);
 }

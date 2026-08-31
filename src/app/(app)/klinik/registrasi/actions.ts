@@ -32,6 +32,7 @@ async function daftar(formData: FormData): Promise<string[]> {
   // form, supaya nama di dokumen cetak tidak pernah beda dari orang yang dibayar.
   const { doctorId, nama: dokter } = await resolveDokter(supabase, String(formData.get("doctor_id") ?? "").trim() || null);
   const branchId = String(formData.get("branchId") ?? "");
+  const bookingId = String(formData.get("bookingId") ?? "").trim();
   const kontrol = String(formData.get("kontrol") ?? "baru");
   const tujuanKontrol = String(formData.get("tujuanKontrol") ?? "").trim();
 
@@ -49,6 +50,16 @@ async function daftar(formData: FormData): Promise<string[]> {
   // bikin pencarian itu gagal dan satu pemilik jadi punya dua kartu.
   if (!nomorHpValid(phone)) {
     redirect(`/klinik/registrasi?error=${encodeURIComponent(PESAN_HP_TIDAK_VALID)}`);
+  }
+
+  if (bookingId) {
+    const { data: booking, error: bookingError } = await supabase.from("bookings")
+      .select("id, branch_id, status, attendance_outcome, visit_id")
+      .eq("id", bookingId).maybeSingle();
+    if (bookingError || !booking || booking.branch_id !== branchId || booking.visit_id
+      || booking.status !== "dikonfirmasi" || booking.attendance_outcome === "no_show") {
+      redirect(`/klinik/registrasi?error=${encodeURIComponent("Booking tidak tersedia untuk cabang ini")}`);
+    }
   }
 
   // ponytail: lookup-by-phone reuses an existing customer instead of duplicating.
@@ -133,6 +144,8 @@ async function daftar(formData: FormData): Promise<string[]> {
         poli, dokter, doctor_id: doctorId,
         keluhan: susunKeluhan(p.keluhan, kontrol, tujuanKontrol),
         status: "Menunggu", queue_number: queueNumber,
+        source: bookingId ? "booking" : "walk_in",
+        checked_in_at: new Date().toISOString(),
       })
       .select("id").single();
     if (visitErr || !visit) {
@@ -141,13 +154,25 @@ async function daftar(formData: FormData): Promise<string[]> {
     visitIds.push(visit!.id);
   }
 
-  // Booking online yang jadi kunjungan ditandai di sini — supaya satu booking
-  // tidak bisa didaftarkan dua kali dan staf tahu mana pesanan yang sudah datang.
-  const bookingId = String(formData.get("bookingId") ?? "").trim();
+  // Booking dan audit kehadiran diikat lewat satu RPC. Kalau pengikatan gagal,
+  // kunjungan yang baru dibuat dibersihkan agar booking tidak setengah selesai.
   if (bookingId && visitIds.length) {
-    await supabase.from("bookings").update({
-      status: "dikonfirmasi", visit_id: visitIds[0], handled_at: new Date().toISOString(),
-    }).eq("id", bookingId).is("visit_id", null);
+    const linked = await supabase.rpc("record_booking_visit", {
+      p_booking_id: bookingId,
+      p_visit_id: visitIds[0],
+    });
+    if (linked.error) {
+      await supabase.from("visits").delete().in("id", visitIds);
+      redirect(`/klinik/registrasi?error=${encodeURIComponent(linked.error.message)}`);
+    }
+  } else {
+    for (const visitId of visitIds) {
+      const checkedIn = await supabase.rpc("record_visit_check_in", { p_visit_id: visitId });
+      if (checkedIn.error) {
+        await supabase.from("visits").delete().in("id", visitIds);
+        redirect(`/klinik/registrasi?error=${encodeURIComponent(checkedIn.error.message)}`);
+      }
+    }
   }
 
   return visitIds;
