@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   agregasiKebutuhanGrup,
+  normalisasiKomponenGrup,
+  parseKomponenGrupDrafts,
   stokEfektifGrup,
   validasiKomponenGrup,
   type KomponenGrupDraft,
@@ -18,6 +20,42 @@ const component = (patch: Partial<KomponenGrupDraft> = {}): KomponenGrupDraft =>
   unit: "PCS",
   factor: 1,
   ...patch,
+});
+
+describe("payload form komponen Grup", () => {
+  it("menolak JSON rusak", () => {
+    expect(parseKomponenGrupDrafts("{"))
+      .toEqual({ rows: [], error: "Rincian Grup tidak valid" });
+  });
+
+  it("memakai faktor resmi master, bukan faktor dari browser", () => {
+    const parsed = parseKomponenGrupDrafts(JSON.stringify([
+      { component_item_id: "food", qty: "2", unit: " DUS ", factor: 1 },
+    ]));
+    expect(parsed.error).toBeNull();
+
+    expect(normalisasiKomponenGrup(parsed.rows, new Map([
+      ["food", {
+        item_type: "Persediaan" as const,
+        is_active: true,
+        units: [{ unit: "PCS", factor: 1 }, { unit: "DUS", factor: 12 }],
+      }],
+    ]))).toEqual({
+      rows: [{ component_item_id: "food", qty: 2, unit: "DUS", factor: 12 }],
+      error: null,
+    });
+  });
+
+  it("menolak komponen nonaktif dan satuan yang tidak ada di master", () => {
+    const row = component();
+    expect(normalisasiKomponenGrup([row], new Map([
+      ["food", { item_type: "Persediaan", is_active: false, units: [{ unit: "PCS", factor: 1 }] }],
+    ])).error).toBe("Komponen sudah nonaktif atau tidak ditemukan");
+
+    expect(normalisasiKomponenGrup([component({ unit: "KARUNG" })], new Map([
+      ["food", { item_type: "Persediaan", is_active: true, units: [{ unit: "PCS", factor: 1 }] }],
+    ])).error).toBe('Satuan "KARUNG" tidak terdaftar untuk komponen');
+  });
 });
 
 describe("validasiKomponenGrup", () => {

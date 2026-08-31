@@ -2,9 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { parseUnitDrafts } from "@/lib/satuan";
+import { loadUnitOptions, parseUnitDrafts } from "@/lib/satuan";
 import { rapikanTingkat } from "@/lib/harga-tingkat";
 import { pickItemType, validasiBarang, pesanSimpanGagal } from "@/lib/barang";
+import {
+  normalisasiKomponenGrup,
+  parseKomponenGrupDrafts,
+  type JenisKomponen,
+  type KomponenGrupDraft,
+} from "@/lib/grup-barang";
 
 const LIST = "/pos/sku";
 
@@ -42,6 +48,7 @@ export async function simpanBarang(formData: FormData) {
   if (salah) gagal(salah);
 
   const isJasa = draft.itemType === "Jasa";
+  const isGroup = draft.itemType === "Grup";
   const unit = String(formData.get("unit") ?? "").trim() || (isJasa ? "tindakan" : "pcs");
   const upc = String(formData.get("upc") ?? "").trim();
   const brandId = String(formData.get("brand_id") ?? "").trim();
@@ -49,7 +56,36 @@ export async function simpanBarang(formData: FormData) {
   // Satuan berjenjang: jasa tidak punya kemasan, sisanya divalidasi (faktor > 0, tanpa dobel).
   const { rows: unitRows, error: unitErr } = parseUnitDrafts(formData.get("units"), unit);
   if (unitErr) gagal(unitErr);
-  const units = isJasa ? [] : unitRows;
+  const units = isJasa || isGroup ? [] : unitRows;
+
+  // Faktor komponen dari browser diabaikan. Server memuat ulang satuan resmi setiap
+  // komponen, lalu resep dinormalisasi sebelum item utama disentuh.
+  let groupComponents: KomponenGrupDraft[] = [];
+  if (isGroup) {
+    const parsed = parseKomponenGrupDrafts(formData.get("group_components"));
+    if (parsed.error) gagal(parsed.error);
+    const componentIds = [...new Set(parsed.rows.map((row) => row.component_item_id).filter(Boolean))];
+    const [{ data: componentItems }, optionMap] = await Promise.all([
+      componentIds.length
+        ? supabase.from("items").select("id, item_type, is_active").in("id", componentIds)
+        : Promise.resolve({ data: [] }),
+      loadUnitOptions(supabase, componentIds),
+    ]);
+    const masters = new Map(
+      ((componentItems ?? []) as { id: string; item_type: JenisKomponen; is_active: boolean }[])
+        .map((row) => [row.id, {
+          item_type: row.item_type,
+          is_active: row.is_active,
+          units: (optionMap.get(row.id) ?? []).map((option) => ({
+            unit: option.unit,
+            factor: option.factor,
+          })),
+        }]),
+    );
+    const normalized = normalisasiKomponenGrup(parsed.rows, masters);
+    if (normalized.error) gagal(normalized.error);
+    groupComponents = normalized.rows;
+  }
 
   // Info pembelian & aturan jual (migrasi 0075). Diskon default dipagari 0–100:
   // constraint DB sudah ada, tapi angka liar dari form lebih enak ditolak di sini
@@ -72,7 +108,7 @@ export async function simpanBarang(formData: FormData) {
     upc: upc || null,
     unit,
     sell_price: draft.sellPrice,
-    buy_price: draft.buyPrice,
+    buy_price: isGroup ? 0 : draft.buyPrice,
     // Jasa & non-persediaan tidak dilacak stoknya — jangan simpan ambang yang tak dipakai.
     min_stock: punyaStok ? draft.minStock : 0,
     tindakan_kategori: isJasa ? draft.tindakanKategori : null,
@@ -118,6 +154,23 @@ export async function simpanBarang(formData: FormData) {
         units.map((u) => ({ item_id: itemId, unit: u.unit, factor: u.factor, sell_price: u.sell_price, buy_price: u.buy_price })),
       );
       if (uErr) gagal(pesanSimpanGagal(uErr.message));
+    }
+
+    // RPC = delete+insert satu transaksi. Jika insert resep baru ditolak trigger,
+    // resep lama tidak ikut hilang. Payload kosong membersihkan resep saat jenis
+    // diubah dari Grup menjadi jenis lain.
+    const { error: groupErr } = await supabase.rpc("replace_item_group_components", {
+      p_group_item_id: itemId,
+      p_components: groupComponents.map((row, sortOrder) => ({
+        ...row,
+        sort_order: sortOrder,
+      })),
+    });
+    if (groupErr) {
+      if (!id && isGroup) {
+        await supabase.rpc("delete_empty_group_item", { p_item_id: itemId });
+      }
+      gagal(pesanSimpanGagal(groupErr.message));
     }
   }
 

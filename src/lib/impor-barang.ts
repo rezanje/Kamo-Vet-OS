@@ -81,6 +81,10 @@ export function periksaBaris(baris: BarisCsv[], master: MasterImpor): HasilPerik
       continue;
     }
     const jenis = (jenisTeks || "Persediaan") as ItemType;
+    if (jenis === "Grup") {
+      tolak("Grup wajib diimpor lewat Excel Accurate atau dibuat manual karena CSV tidak membawa rincian komponen");
+      continue;
+    }
     const isJasa = jenis === "Jasa";
 
     const katTeks = (d.kategori ?? "").trim();

@@ -3,14 +3,22 @@
 
 import { TINDAKAN_KATEGORI } from "./tindakan";
 
-export const ITEM_TYPES = ["Persediaan", "Jasa", "Non-Persediaan"] as const;
+export const ITEM_TYPES = ["Persediaan", "Jasa", "Non-Persediaan", "Grup"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 export const ITEM_TYPE_HINT: Record<ItemType, string> = {
   Persediaan: "Punya stok — dihitung masuk/keluar per gudang.",
   Jasa: "Tindakan/layanan. Tidak punya stok.",
   "Non-Persediaan": "Dijual atau dipakai, tapi stoknya tidak dilacak.",
+  Grup: "Produk virtual berisi barang/jasa tetap. Stok mengikuti komponennya.",
 };
+
+export function fieldBarangMenurutJenis(itemType: ItemType) {
+  return {
+    punyaStok: itemType === "Persediaan",
+    bolehDibeli: itemType === "Persediaan" || itemType === "Non-Persediaan",
+  };
+}
 
 // Nilai dari form tidak boleh dipercaya: jenis karangan bikin aturan wajib-consent
 // & pemotongan stok ikut salah. Default aman = Persediaan.

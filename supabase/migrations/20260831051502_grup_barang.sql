@@ -124,6 +124,84 @@ create policy item_group_components_update on item_group_components
 create policy item_group_components_delete on item_group_components
   for delete to authenticated using ((select public.is_admin()));
 
+-- Replace-all resep dalam satu transaksi database. Server action tidak boleh
+-- menghapus resep lama lalu gagal di tengah insert resep baru.
+create or replace function public.replace_item_group_components(
+  p_group_item_id uuid,
+  p_components jsonb
+)
+returns void
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Hanya OWNER/ADMIN yang boleh mengubah rincian Grup'
+      using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_components) is distinct from 'array' then
+    raise exception 'Rincian Grup tidak valid';
+  end if;
+
+  delete from public.item_group_components
+  where group_item_id = p_group_item_id;
+
+  insert into public.item_group_components (
+    group_item_id, component_item_id, qty, unit, factor, sort_order
+  )
+  select
+    p_group_item_id,
+    component_item_id,
+    qty,
+    unit,
+    factor,
+    sort_order
+  from jsonb_to_recordset(p_components) as x(
+    component_item_id uuid,
+    qty numeric,
+    unit text,
+    factor numeric,
+    sort_order integer
+  );
+end;
+$$;
+
+revoke all on function public.replace_item_group_components(uuid, jsonb) from public;
+grant execute on function public.replace_item_group_components(uuid, jsonb) to authenticated;
+
+-- Kompensasi sempit untuk create baru: bila resep gagal setelah items berhasil
+-- dibuat, server action boleh membersihkan Grup kosong yang belum pernah dipakai.
+create or replace function public.delete_empty_group_item(p_item_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  deleted_count integer;
+begin
+  if not public.is_admin() then
+    raise exception 'Hanya OWNER/ADMIN yang boleh membersihkan Grup kosong'
+      using errcode = '42501';
+  end if;
+
+  delete from public.items i
+  where i.id = p_item_id
+    and i.item_type = 'Grup'
+    and not exists (
+      select 1 from public.item_group_components c where c.group_item_id = i.id
+    )
+    and not exists (
+      select 1 from public.sale_items si where si.item_id = i.id
+    );
+  get diagnostics deleted_count = row_count;
+  return deleted_count = 1;
+end;
+$$;
+
+revoke all on function public.delete_empty_group_item(uuid) from public;
+grant execute on function public.delete_empty_group_item(uuid) to authenticated;
+
 revoke all on table sale_item_group_components from anon, authenticated;
 grant select, insert on table sale_item_group_components to authenticated;
 

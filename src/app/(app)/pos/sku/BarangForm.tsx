@@ -8,7 +8,19 @@ import { ITEM_TYPES, ITEM_TYPE_HINT, type ItemType } from "@/lib/barang";
 import { flatOptions, type KategoriRow } from "@/lib/kategori";
 import type { ItemUnit } from "@/lib/satuan";
 import { rapikanTingkat, type Tingkat } from "@/lib/harga-tingkat";
+import type { KomponenGrupDraft } from "@/lib/grup-barang";
 import { simpanBarang } from "./actions";
+
+export type KandidatKomponenGrup = {
+  id: string;
+  code: string | null;
+  name: string;
+  unit: string;
+  item_type: Exclude<ItemType, "Grup">;
+  sell_price: number;
+  buy_price: number;
+  units: { unit: string; factor: number }[];
+};
 
 export type BarangRow = {
   id: string; name: string; code: string | null; unit: string; upc: string | null;
@@ -20,23 +32,27 @@ export type BarangRow = {
   units?: ItemUnit[];
   /** Harga jual bertingkat menurut jumlah beli (meeting 14 Agustus). */
   tiers?: Tingkat[];
+  group_components?: KomponenGrupDraft[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 // Tab dibiarkan tetap ter-render (display:none) — satu <form> untuk semua tab,
 // jadi pindah tab tidak boleh menghapus isian yang belum disimpan.
-const TABS = ["Umum", "Penjualan / Pembelian"] as const;
+const TABS = ["Umum", "Penjualan / Pembelian", "Rincian Grup"] as const;
 type Tab = (typeof TABS)[number];
 
 // `satuanMaster` = daftar satuan resmi (tabel units). Namanya dibedakan dari state
 // `units` di bawah, yang isinya satuan BERJENJANG milik barang ini.
-export function BarangForm({ categories, brands, satuanMaster, suppliers = [], barangLain = [], editing }: {
+export function BarangForm({
+  categories, brands, satuanMaster, suppliers = [], barangLain = [], kandidatGrup = [], editing,
+}: {
   categories: KategoriRow[];
   brands: { id: string; name: string }[];
   satuanMaster: { id: string; nama: string }[];
   suppliers?: { id: string; nama: string }[];
   barangLain?: { id: string; code: string | null; name: string }[];
+  kandidatGrup?: KandidatKomponenGrup[];
   editing: BarangRow | null;
 }) {
   const [tab, setTab] = useState<Tab>("Umum");
@@ -51,12 +67,14 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
   // Harga bertingkat: "beli minimal sekian → harga sekian". Beda dari satuan
   // berjenjang yang mengurus kemasan; ini mengurus volume dalam satuan yang sama.
   const [tiers, setTiers] = useState<Tingkat[]>(editing?.tiers ?? []);
+  const [groupComponents, setGroupComponents] = useState<KomponenGrupDraft[]>(editing?.group_components ?? []);
   const addTier = () => setTiers((t) => [...t, { min_qty: 0, harga: 0 }]);
   const setTier = (i: number, patch: Partial<Tingkat>) =>
     setTiers((t) => t.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const delTier = (i: number) => setTiers((t) => t.filter((_, j) => j !== i));
 
   const isJasa = itemType === "Jasa";
+  const isGroup = itemType === "Grup";
   const punyaStok = itemType === "Persediaan";
   const dasar = (baseUnit.trim() || (isJasa ? "tindakan" : "pcs")).trim();
 
@@ -64,13 +82,23 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
     setUnits((us) => us.map((u, j) => (j === i ? { ...u, ...patch } : u)));
   const addUnit = () => setUnits((us) => [...us, { unit: "", factor: 1, sell_price: 0, buy_price: 0 }]);
   const delUnit = (i: number) => setUnits((us) => us.filter((_, j) => j !== i));
+  const setGroupComponent = (i: number, patch: Partial<KomponenGrupDraft>) =>
+    setGroupComponents((rows) => rows.map((row, j) => j === i ? { ...row, ...patch } : row));
+  const addGroupComponent = () => setGroupComponents((rows) => [...rows, {
+    component_item_id: "", qty: 1, unit: "", factor: 1,
+  }]);
+  const delGroupComponent = (i: number) =>
+    setGroupComponents((rows) => rows.filter((_, j) => j !== i));
 
   const gantiJenis = (v: ItemType) => {
     setItemType(v);
     // Satuan default ikut jenis selama belum diutak-atik manual.
     if (v === "Jasa" && baseUnit === "pcs") setBaseUnit("tindakan");
     if (v !== "Jasa" && baseUnit === "tindakan") setBaseUnit("pcs");
+    if (v !== "Grup" && tab === "Rincian Grup") setTab("Umum");
   };
+
+  const visibleTabs = isGroup ? TABS : TABS.filter((t) => t !== "Rincian Grup");
 
   // Isian wajib yang sedang berada di tab tersembunyi bikin tombol Simpan MATI TOTAL:
   // browser menolak submit, lalu gagal menampilkan peringatannya karena field-nya
@@ -89,11 +117,12 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
     <form action={simpanBarang} className="crm-sec" onInvalid={keTabYangBermasalah}>
       <input type="hidden" name="id" value={editing?.id ?? ""} />
       <input type="hidden" name="item_type" value={itemType} />
-      <input type="hidden" name="units" value={JSON.stringify(isJasa ? [] : units)} />
-      <input type="hidden" name="tiers" value={JSON.stringify(isJasa ? [] : rapikanTingkat(tiers))} />
+      <input type="hidden" name="units" value={JSON.stringify(isJasa || isGroup ? [] : units)} />
+      <input type="hidden" name="tiers" value={JSON.stringify(isJasa || isGroup ? [] : rapikanTingkat(tiers))} />
+      <input type="hidden" name="group_components" value={JSON.stringify(isGroup ? groupComponents : [])} />
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14, borderBottom: ".5px solid var(--bd)" }}>
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button key={t} type="button" onClick={() => setTab(t)} style={tabStyle(tab === t)}>
             {t}
           </button>
@@ -196,14 +225,16 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
             <input className="fi" name="sell_price" type="number" min={0} step="any"
               value={baseSell || ""} onChange={(e) => setBaseSell(Number(e.target.value))} required />
           </div>
-          <div>
-            <label className="flab">Harga beli / modal <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
-            <input className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
-          </div>
+          {!isGroup && (
+            <div>
+              <label className="flab">Harga beli / modal <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
+              <input className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
+            </div>
+          )}
         </div>
 
         {/* Satuan berjenjang — tidak relevan untuk jasa (tidak punya stok/kemasan). */}
-        {!isJasa && (
+        {!isJasa && !isGroup && (
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: ".5px solid var(--bd)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
               <div>
@@ -248,7 +279,7 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
           </div>
         )}
 
-        {!isJasa && (
+        {!isJasa && !isGroup && (
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: ".5px solid var(--bd)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
               <div>
@@ -416,6 +447,84 @@ export function BarangForm({ categories, brands, satuanMaster, suppliers = [], b
           </div>
         )}
       </div>
+
+      {/* ── Rincian Grup ────────────────────────────────────────────────────── */}
+      {isGroup && (
+        <div data-tab="Rincian Grup" style={{ display: tab === "Rincian Grup" ? "block" : "none" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 700 }}>
+                <i className="ti ti-packages" /> Komponen tetap Grup
+              </div>
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>
+                Harga dijual dari Grup. Stok dan HPP mengikuti komponen Persediaan; kasir tidak dapat mengubah rincian.
+              </div>
+            </div>
+            <button type="button" className="btn-def" onClick={addGroupComponent}
+              style={{ padding: "4px 10px", fontSize: 10.5, flexShrink: 0 }}>
+              + Tambah komponen
+            </button>
+          </div>
+
+          {groupComponents.length === 0 && (
+            <div style={{ fontSize: 10.5, color: "#b91c1c", padding: "10px 0" }}>
+              Grup belum punya komponen. Tambahkan minimal satu sebelum menyimpan.
+            </div>
+          )}
+
+          {groupComponents.map((row, i) => {
+            const item = kandidatGrup.find((candidate) => candidate.id === row.component_item_id);
+            const unitOptions = item?.units ?? (row.unit ? [{ unit: row.unit, factor: row.factor }] : []);
+            return (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 110px 120px 38px", gap: 7, alignItems: "end", marginBottom: 8 }}>
+                <div>
+                  {i === 0 && <label className="flab">Barang / jasa komponen *</label>}
+                  <select className="fi" value={row.component_item_id} required
+                    onChange={(e) => {
+                      const selected = kandidatGrup.find((candidate) => candidate.id === e.target.value);
+                      const firstUnit = selected?.units[0] ?? { unit: "", factor: 1 };
+                      setGroupComponent(i, {
+                        component_item_id: e.target.value,
+                        unit: firstUnit.unit,
+                        factor: firstUnit.factor,
+                      });
+                    }}>
+                    <option value="">— pilih komponen —</option>
+                    {kandidatGrup.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.code ? `${candidate.code} — ` : ""}{candidate.name} · {candidate.item_type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  {i === 0 && <label className="flab">Qty *</label>}
+                  <input className="fi" type="number" min={0.0001} step="any" required
+                    value={row.qty || ""}
+                    onChange={(e) => setGroupComponent(i, { qty: Number(e.target.value) })} />
+                </div>
+                <div>
+                  {i === 0 && <label className="flab">Satuan *</label>}
+                  <select className="fi" value={row.unit} required
+                    onChange={(e) => {
+                      const selected = unitOptions.find((unit) => unit.unit === e.target.value);
+                      setGroupComponent(i, { unit: e.target.value, factor: selected?.factor ?? 1 });
+                    }}>
+                    <option value="">— pilih —</option>
+                    {unitOptions.map((unit) => (
+                      <option key={unit.unit} value={unit.unit}>{unit.unit}</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="button" className="btn-def" onClick={() => delGroupComponent(i)}
+                  style={{ height: 30, padding: 0, color: "#b91c1c" }} title="Hapus komponen">
+                  <i className="ti ti-trash" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>

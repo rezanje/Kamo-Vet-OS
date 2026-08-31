@@ -7,6 +7,57 @@ export type KomponenGrupDraft = {
   factor: number;
 };
 
+export type MasterKomponenGrup = {
+  item_type: JenisKomponen;
+  is_active: boolean;
+  units: { unit: string; factor: number }[];
+};
+
+export function parseKomponenGrupDrafts(raw: unknown): {
+  rows: KomponenGrupDraft[];
+  error: string | null;
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(raw ?? "[]"));
+  } catch {
+    return { rows: [], error: "Rincian Grup tidak valid" };
+  }
+  if (!Array.isArray(parsed)) return { rows: [], error: "Rincian Grup tidak valid" };
+
+  const rows = parsed.map((value) => {
+    const row = value as Partial<KomponenGrupDraft>;
+    return {
+      component_item_id: String(row?.component_item_id ?? "").trim(),
+      qty: Number(row?.qty),
+      unit: String(row?.unit ?? "").trim().slice(0, 20),
+      factor: Number(row?.factor),
+    };
+  });
+  return { rows, error: null };
+}
+
+export function normalisasiKomponenGrup(
+  rows: KomponenGrupDraft[],
+  masters: Map<string, MasterKomponenGrup>,
+): { rows: KomponenGrupDraft[]; error: string | null } {
+  const normalized: KomponenGrupDraft[] = [];
+  for (const row of rows) {
+    if (!row.component_item_id) return { rows: [], error: "Komponen wajib dipilih" };
+    const master = masters.get(row.component_item_id);
+    if (!master?.is_active) return { rows: [], error: "Komponen sudah nonaktif atau tidak ditemukan" };
+    const official = master.units.find((unit) => unit.unit.toLowerCase() === row.unit.toLowerCase());
+    if (!official) return { rows: [], error: `Satuan "${row.unit}" tidak terdaftar untuk komponen` };
+    normalized.push({ ...row, unit: official.unit, factor: Number(official.factor) });
+  }
+
+  const error = validasiKomponenGrup(
+    normalized,
+    new Map([...masters].map(([id, master]) => [id, master.item_type])),
+  );
+  return error ? { rows: [], error } : { rows: normalized, error: null };
+}
+
 export function validasiKomponenGrup(
   rows: KomponenGrupDraft[],
   jenis: Map<string, JenisKomponen>,

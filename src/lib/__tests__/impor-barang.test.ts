@@ -131,4 +131,12 @@ describe("pemeriksaan baris", () => {
     );
     expect(salah[0].pesan).toContain("Barang Ajaib");
   });
+
+  it("CSV umum menolak Grup karena tidak membawa rincian komponen", () => {
+    const { siap, salah } = periksaBaris(
+      baris("G1,Paket,Makanan / Pakan,Grup,,pcs,10000,,,,"), master(),
+    );
+    expect(siap).toHaveLength(0);
+    expect(salah[0].pesan).toContain("rincian komponen");
+  });
 });
