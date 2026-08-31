@@ -1,9 +1,11 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import {
+  bacaWorkbookKategoriAccurate,
   bacaWorkbookAccurate,
   buatPayloadItemAccurate,
   buatPreviewAccurate,
+  rencanaIndukKategoriAccurate,
   type AccurateItem,
 } from "../impor-accurate";
 
@@ -109,6 +111,57 @@ describe("bacaWorkbookAccurate", () => {
 
   it("menolak bytes yang bukan workbook", async () => {
     await expect(bacaWorkbookAccurate(Buffer.from("bukan xlsx"))).rejects.toThrow();
+  });
+});
+
+describe("bacaWorkbookKategoriAccurate", () => {
+  it("membaca relasi kategori induk dari export Accurate", async () => {
+    const bytes = await workbook([
+      ["No", "Nama", "Sub Kategori"],
+      [1, "POHON", ""],
+      [2, "DAUN", "POHON"],
+      [3, "RANTING", "POHON"],
+    ], "Kategori Barang");
+
+    const hasil = await bacaWorkbookKategoriAccurate(bytes);
+
+    expect(hasil.errors).toEqual([]);
+    expect(hasil.rows).toEqual([
+      { row_no: 2, name: "POHON", parent_name: null },
+      { row_no: 3, name: "DAUN", parent_name: "POHON" },
+      { row_no: 4, name: "RANTING", parent_name: "POHON" },
+    ]);
+  });
+
+  it("menolak induk hilang dan hierarchy melingkar", async () => {
+    const indukHilang = await workbook([
+      ["Nama", "Sub Kategori"],
+      ["DAUN", "POHON"],
+    ], "Kategori Barang");
+    expect((await bacaWorkbookKategoriAccurate(indukHilang)).errors[0]).toContain("POHON");
+
+    const melingkar = await workbook([
+      ["Nama", "Sub Kategori"],
+      ["A", "B"],
+      ["B", "A"],
+    ], "Kategori Barang");
+    expect((await bacaWorkbookKategoriAccurate(melingkar)).errors[0]).toContain("melingkar");
+  });
+});
+
+describe("rencanaIndukKategoriAccurate", () => {
+  it("hanya mengubah parent yang berbeda dari Accurate", () => {
+    const hasil = rencanaIndukKategoriAccurate([
+      { row_no: 2, name: "POHON", parent_name: null },
+      { row_no: 3, name: "DAUN", parent_name: "POHON" },
+      { row_no: 4, name: "RANTING", parent_name: "POHON" },
+    ], [
+      { id: "p", name: "POHON", parent_id: null },
+      { id: "d", name: "DAUN", parent_id: null },
+      { id: "r", name: "RANTING", parent_id: "p" },
+    ]);
+
+    expect(hasil).toEqual([{ id: "d", parent_id: "p" }]);
   });
 });
 

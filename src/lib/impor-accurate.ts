@@ -43,6 +43,23 @@ export type AccurateWorkbookResult = {
   errors: string[];
 };
 
+export type AccurateCategory = {
+  row_no: number;
+  name: string;
+  parent_name: string | null;
+};
+
+export type AccurateCategoryWorkbookResult = {
+  rows: AccurateCategory[];
+  errors: string[];
+};
+
+export type ExistingAccurateCategory = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+};
+
 export type ExistingAccurateItem = Omit<AccurateItem, "row_no"> & { id: string };
 
 export type AccuratePreviewStatus = "Baru" | "Update" | "Sama" | "Dilewati" | "Ditolak";
@@ -263,6 +280,97 @@ export async function bacaWorkbookAccurate(bytes: Uint8Array): Promise<AccurateW
 
   rejected.sort((a, b) => a.row_no - b.row_no);
   return { rows: uniqueRows, skipped, rejected, errors: [] };
+}
+
+export async function bacaWorkbookKategoriAccurate(
+  bytes: Uint8Array,
+): Promise<AccurateCategoryWorkbookResult> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(bytes) as never);
+  const worksheet = workbook.getWorksheet("Kategori Barang");
+  if (!worksheet) return { rows: [], errors: ["Sheet Kategori Barang tidak ditemukan"] };
+
+  const columns: ColumnMap = new Map();
+  worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, column) => {
+    const header = normalizedHeader(cell.value);
+    if (header) columns.set(header, column);
+  });
+  const nameColumn = columns.get(normalizedHeader("Nama"));
+  const parentColumn = columns.get(normalizedHeader("Sub Kategori"));
+  if (!nameColumn || !parentColumn) {
+    return { rows: [], errors: ["Kolom wajib tidak ditemukan: Nama, Sub Kategori"] };
+  }
+
+  const rows: AccurateCategory[] = [];
+  const errors: string[] = [];
+  const rowByName = new Map<string, AccurateCategory>();
+  for (let rowNo = 2; rowNo <= worksheet.rowCount; rowNo += 1) {
+    const row = worksheet.getRow(rowNo);
+    const name = text(row.getCell(nameColumn).value);
+    const parentName = text(row.getCell(parentColumn).value) || null;
+    if (!name && !parentName) continue;
+    if (!name) {
+      errors.push(`Nama kategori kosong pada baris ${rowNo}`);
+      continue;
+    }
+    const key = name.toLowerCase();
+    if (rowByName.has(key)) {
+      errors.push(`Kategori "${name}" kembar pada baris ${rowNo}`);
+      continue;
+    }
+    const category = { row_no: rowNo, name, parent_name: parentName };
+    rows.push(category);
+    rowByName.set(key, category);
+  }
+
+  for (const row of rows) {
+    if (!row.parent_name) continue;
+    const parentKey = row.parent_name.toLowerCase();
+    if (parentKey === row.name.toLowerCase()) {
+      errors.push(`Hierarchy kategori melingkar pada "${row.name}"`);
+    } else if (!rowByName.has(parentKey)) {
+      errors.push(`Induk kategori "${row.parent_name}" tidak ditemukan untuk "${row.name}"`);
+    }
+  }
+  if (errors.length) return { rows, errors };
+
+  const parentByName = new Map(rows.map((row) => [
+    row.name.toLowerCase(),
+    row.parent_name?.toLowerCase() ?? null,
+  ]));
+  for (const row of rows) {
+    const seen = new Set<string>();
+    let current: string | null = row.name.toLowerCase();
+    while (current) {
+      if (seen.has(current)) {
+        errors.push(`Hierarchy kategori melingkar pada "${row.name}"`);
+        break;
+      }
+      seen.add(current);
+      current = parentByName.get(current) ?? null;
+    }
+    if (errors.length) break;
+  }
+  return { rows, errors };
+}
+
+export function rencanaIndukKategoriAccurate(
+  rows: AccurateCategory[],
+  existingCategories: ExistingAccurateCategory[],
+) {
+  const existingByName = new Map(
+    existingCategories.map((row) => [row.name.trim().toLowerCase(), row]),
+  );
+  return rows.flatMap((row) => {
+    const category = existingByName.get(row.name.toLowerCase());
+    if (!category) throw new Error(`Kategori "${row.name}" belum dibuat`);
+    const parent = row.parent_name
+      ? existingByName.get(row.parent_name.toLowerCase())
+      : null;
+    if (row.parent_name && !parent) throw new Error(`Induk kategori "${row.parent_name}" belum dibuat`);
+    const parentId = parent?.id ?? null;
+    return category.parent_id === parentId ? [] : [{ id: category.id, parent_id: parentId }];
+  });
 }
 
 const COMPARABLE_FIELDS = [

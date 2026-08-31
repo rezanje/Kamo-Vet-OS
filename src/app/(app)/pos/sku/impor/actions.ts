@@ -6,12 +6,16 @@ import { createClient } from "@/lib/supabase/server";
 import { bacaCsv, periksaBaris, type BarisSalah, type MasterImpor } from "@/lib/impor-barang";
 import { pesanSimpanGagal } from "@/lib/barang";
 import {
+  bacaWorkbookKategoriAccurate,
   bacaWorkbookAccurate,
   buatPayloadItemAccurate,
   buatPreviewAccurate,
+  rencanaIndukKategoriAccurate,
+  type AccurateCategory,
   type AccurateItem,
   type AccuratePreviewRow,
   type AccuratePreviewStatus,
+  type ExistingAccurateCategory,
   type ExistingAccurateItem,
 } from "@/lib/impor-accurate";
 
@@ -91,6 +95,7 @@ export type AccurateImportState = {
   ok: boolean;
   phase: "preview" | "done";
   message: string;
+  hierarchy_count: number;
   rows: AccuratePreviewRow[];
   summary: Record<AccuratePreviewStatus, number>;
   new_masters: {
@@ -103,7 +108,7 @@ export type AccurateImportState = {
 
 type MasterAccurate = {
   items: ExistingAccurateItem[];
-  categories: Map<string, string>;
+  categories: Map<string, ExistingAccurateCategory>;
   brands: Map<string, string>;
   units: Map<string, string>;
   suppliers: Map<string, string>;
@@ -122,6 +127,7 @@ function stateError(message: string): AccurateImportState {
     ok: false,
     phase: "preview",
     message,
+    hierarchy_count: 0,
     rows: [],
     summary: emptySummary(),
     new_masters: { categories: [], brands: [], units: [], suppliers: [] },
@@ -139,6 +145,14 @@ function getUpload(formData: FormData): File {
   if (!(file instanceof File) || file.size === 0) throw new Error("Pilih file Accurate .xlsx terlebih dulu.");
   if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("File harus berformat .xlsx.");
   if (file.size > MAX_XLSX_BYTES) throw new Error("Ukuran file maksimal 15 MB.");
+  return file;
+}
+
+function getCategoryUpload(formData: FormData): File | null {
+  const file = formData.get("category_file");
+  if (!(file instanceof File) || file.size === 0) return null;
+  if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("File kategori harus berformat .xlsx.");
+  if (file.size > 1024 * 1024) throw new Error("Ukuran file kategori maksimal 1 MB.");
   return file;
 }
 
@@ -172,7 +186,7 @@ async function muatMasterAccurate(supabase: any): Promise<MasterAccurate> {
       "category:item_categories(name)", "brand:brands(name)", "supplier:suppliers(nama)",
       "units:item_units(unit,factor,sell_price,buy_price)",
     ].join(",")),
-    loadAll(supabase, "item_categories", "id,name"),
+    loadAll(supabase, "item_categories", "id,name,parent_id"),
     loadAll(supabase, "brands", "id,name"),
     loadAll(supabase, "units", "id,nama"),
     loadAll(supabase, "suppliers", "id,nama"),
@@ -209,14 +223,21 @@ async function muatMasterAccurate(supabase: any): Promise<MasterAccurate> {
   );
   return {
     items,
-    categories: toMap(categoryRows, "name"),
+    categories: new Map(categoryRows.map((row) => {
+      const category: ExistingAccurateCategory = {
+        id: String(row.id),
+        name: String(row.name ?? "").trim(),
+        parent_id: row.parent_id ? String(row.parent_id) : null,
+      };
+      return [category.name.toLowerCase(), category] as const;
+    }).filter(([name]) => Boolean(name))),
     brands: toMap(brandRows, "name"),
     units: toMap(unitRows, "nama"),
     suppliers: toMap(supplierRows, "nama"),
   };
 }
 
-function uniqueMissing(values: (string | null)[], existing: Map<string, string>) {
+function uniqueMissing(values: (string | null)[], existing: ReadonlyMap<string, unknown>) {
   const missing = new Map<string, string>();
   values.forEach((value) => {
     const clean = value?.trim();
@@ -227,14 +248,17 @@ function uniqueMissing(values: (string | null)[], existing: Map<string, string>)
   return [...missing.values()].sort((a, b) => a.localeCompare(b));
 }
 
-function newMasters(items: AccurateItem[], master: MasterAccurate) {
+function newMasters(items: AccurateItem[], master: MasterAccurate, categories: AccurateCategory[] = []) {
   const units = items.flatMap((item) => [
     item.unit,
     item.buy_unit,
     ...item.units.map((unit) => unit.unit),
   ]);
   return {
-    categories: uniqueMissing(items.map((item) => item.category_name), master.categories),
+    categories: uniqueMissing([
+      ...categories.map((row) => row.name),
+      ...items.map((item) => item.category_name),
+    ], master.categories),
     brands: uniqueMissing(items.map((item) => item.brand_name), master.brands),
     units: uniqueMissing(units, master.units),
     suppliers: uniqueMissing(items.map((item) => item.supplier_name), master.suppliers),
@@ -245,17 +269,24 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
   try {
     const supabase = await assertBolehKelola();
     const file = getUpload(formData);
+    const categoryFile = getCategoryUpload(formData);
     const parsed = await bacaWorkbookAccurate(new Uint8Array(await file.arrayBuffer()));
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
+    const parsedCategories = categoryFile
+      ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
+      : { rows: [], errors: [] };
+    if (parsedCategories.errors.length) return stateError(parsedCategories.errors.join(" "));
     const master = await muatMasterAccurate(supabase);
     const rows = buatPreviewAccurate(parsed, master.items);
+    const hierarchyCount = parsedCategories.rows.filter((row) => row.parent_name).length;
     return {
       ok: true,
       phase: "preview",
-      message: `${parsed.rows.length} baris valid diperiksa. Konfirmasi hanya menyimpan master, bukan stok.`,
+      message: `${parsed.rows.length} baris valid diperiksa. ${hierarchyCount} relasi subkategori ditemukan. Stok tidak diimpor.`,
+      hierarchy_count: hierarchyCount,
       rows,
       summary: summarize(rows),
-      new_masters: newMasters(parsed.rows, master),
+      new_masters: newMasters(parsed.rows, master, parsedCategories.rows),
     };
   } catch (error) {
     return stateError(error instanceof Error ? error.message : "File gagal dibaca.");
@@ -266,12 +297,13 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
 async function ensureCategory(supabase: any, master: MasterAccurate, name: string) {
   const key = name.toLowerCase();
   const existing = master.categories.get(key);
-  if (existing) return existing;
+  if (existing) return existing.id;
   const { data, error } = await supabase.from("item_categories")
     .insert({ name, parent_id: null, is_active: true }).select("id").single();
   if (error) throw new Error(pesanSimpanGagal(error.message));
-  master.categories.set(key, data.id);
-  return String(data.id);
+  const id = String(data.id);
+  master.categories.set(key, { id, name, parent_id: null });
+  return id;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -314,9 +346,30 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
   try {
     const supabase = await assertBolehKelola();
     const file = getUpload(formData);
+    const categoryFile = getCategoryUpload(formData);
     const parsed = await bacaWorkbookAccurate(new Uint8Array(await file.arrayBuffer()));
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
+    const parsedCategories = categoryFile
+      ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
+      : { rows: [], errors: [] };
+    if (parsedCategories.errors.length) return stateError(parsedCategories.errors.join(" "));
     const master = await muatMasterAccurate(supabase);
+
+    for (const category of parsedCategories.rows) {
+      await ensureCategory(supabase, master, category.name);
+    }
+    const categoryUpdates = rencanaIndukKategoriAccurate(
+      parsedCategories.rows,
+      [...master.categories.values()],
+    );
+    for (const update of categoryUpdates) {
+      const { error } = await supabase.from("item_categories")
+        .update({ parent_id: update.parent_id }).eq("id", update.id);
+      if (error) throw new Error(pesanSimpanGagal(error.message));
+      const category = [...master.categories.values()].find((row) => row.id === update.id);
+      if (category) category.parent_id = update.parent_id;
+    }
+
     const initialPreview = buatPreviewAccurate(parsed, master.items);
     const statusByRow = new Map(initialPreview.map((row) => [row.row_no, row.status]));
     const existingByCode = new Map(master.items.map((item) => [item.code.toLowerCase(), item]));
@@ -389,7 +442,8 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     return {
       ok: summary.Ditolak === parsed.rejected.length,
       phase: "done",
-      message: `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. Stok tidak diubah.`,
+      message: `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. ${parsedCategories.rows.filter((row) => row.parent_name).length} relasi subkategori diterapkan. Stok tidak diubah.`,
+      hierarchy_count: parsedCategories.rows.filter((row) => row.parent_name).length,
       rows,
       summary,
       new_masters: { categories: [], brands: [], units: [], suppliers: [] },

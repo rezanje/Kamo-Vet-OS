@@ -30,6 +30,7 @@ function MasterList({ label, values }: { label: string; values: string[] }) {
 
 export function AccurateImportForm() {
   const [file, setFile] = useState<File | null>(null);
+  const [categoryFile, setCategoryFile] = useState<File | null>(null);
   const [state, setState] = useState<AccurateImportState | null>(null);
   const [localError, setLocalError] = useState("");
   const [showSame, setShowSame] = useState(false);
@@ -49,6 +50,7 @@ export function AccurateImportForm() {
     startTransition(async () => {
       const data = new FormData();
       data.append("file", file);
+      if (categoryFile) data.append("category_file", categoryFile);
       setState(await action(data));
     });
   };
@@ -70,12 +72,12 @@ export function AccurateImportForm() {
 
       <div className="p2ban" style={{ marginTop: 12, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
         <i className="ti ti-alert-triangle" /> Grup Accurate dilewati karena export tidak membawa rincian komponennya.
-        Kategori masuk sebagai kategori utama; subkategori tidak bisa ditebak dari file ini.
+        Tambahkan export Kategori Barang supaya relasi induk/subkategori ikut diimpor.
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
         <label className="btn-def" style={{ cursor: "pointer" }}>
-          <i className="ti ti-file-spreadsheet" /> Pilih file .xlsx
+          <i className="ti ti-file-spreadsheet" /> Barang &amp; Jasa .xlsx
           <input
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -88,11 +90,25 @@ export function AccurateImportForm() {
             }}
           />
         </label>
+        <label className="btn-def" style={{ cursor: "pointer" }}>
+          <i className="ti ti-hierarchy-2" /> Kategori Barang .xlsx
+          <input
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            style={{ display: "none" }}
+            onChange={(event) => {
+              setCategoryFile(event.target.files?.[0] ?? null);
+              setState(null);
+              setLocalError("");
+            }}
+          />
+        </label>
         <button type="button" className="btn-acc" disabled={pending || !file}
           onClick={() => run(previewImporAccurate)} style={{ background: "var(--posb)" }}>
           <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek perubahan"}
         </button>
         {file && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {file.name}</span>}
+        {categoryFile && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name}</span>}
       </div>
 
       {(localError || (state && !state.ok)) && (
@@ -116,6 +132,9 @@ export function AccurateImportForm() {
                 {status} {state.summary[status]}
               </span>
             ))}
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#6d28d9", background: "#ede9fe", borderRadius: 999, padding: "5px 9px" }}>
+              Subkategori {state.hierarchy_count}
+            </span>
             <label style={{ fontSize: 10.5, color: "var(--tm)", display: "flex", gap: 5, alignItems: "center", marginLeft: 4 }}>
               <input type="checkbox" checked={showSame} onChange={(event) => setShowSame(event.target.checked)} />
               Tampilkan yang sama
