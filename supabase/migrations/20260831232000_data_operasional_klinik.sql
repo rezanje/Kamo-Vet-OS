@@ -84,6 +84,13 @@ alter table branch_capacity_periods enable row level security;
 alter table visit_referrals enable row level security;
 alter table visit_operational_events enable row level security;
 
+revoke all on table branch_capacity_periods, visit_referrals,
+  visit_operational_events from anon, authenticated;
+grant select, insert on table branch_capacity_periods, visit_referrals,
+  visit_operational_events to authenticated;
+revoke all on sequence visit_operational_events_id_seq from anon, authenticated;
+grant usage, select on sequence visit_operational_events_id_seq to authenticated;
+
 create policy branch_capacity_select on branch_capacity_periods
   for select to authenticated using (public.user_can_access_branch(branch_id));
 create policy branch_capacity_insert on branch_capacity_periods
@@ -94,13 +101,35 @@ create policy visit_referrals_select on visit_referrals
   for select to authenticated using (public.user_can_access_branch(branch_id));
 create policy visit_referrals_insert on visit_referrals
   for insert to authenticated
-  with check (public.user_can_access_branch(branch_id));
+  with check (
+    public.user_can_access_branch(branch_id)
+    and exists (
+      select 1 from visits v
+      where v.id = visit_id and v.branch_id = branch_id
+    )
+  );
 
 create policy visit_events_select on visit_operational_events
   for select to authenticated using (public.user_can_access_branch(branch_id));
 create policy visit_events_insert on visit_operational_events
   for insert to authenticated
-  with check (public.user_can_access_branch(branch_id));
+  with check (
+    public.user_can_access_branch(branch_id)
+    and (
+      visit_id is null
+      or exists (
+        select 1 from visits v
+        where v.id = visit_id and v.branch_id = branch_id
+      )
+    )
+    and (
+      booking_id is null
+      or exists (
+        select 1 from bookings b
+        where b.id = booking_id and b.branch_id = branch_id
+      )
+    )
+  );
 
 create or replace function public.mark_booking_no_show(p_booking_id uuid)
 returns void

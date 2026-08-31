@@ -25,6 +25,9 @@ create unique index operational_alert_branch_rule
 
 alter table operational_alert_settings enable row level security;
 
+revoke all on table operational_alert_settings from anon, authenticated;
+grant select, insert, update on table operational_alert_settings to authenticated;
+
 create policy operational_alert_settings_read on operational_alert_settings
   for select to authenticated
   using (branch_id is null or public.user_can_access_branch(branch_id));

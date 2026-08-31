@@ -50,6 +50,15 @@ alter table import_run_rows enable row level security;
 alter table item_variant_families enable row level security;
 alter table item_variant_members enable row level security;
 
+-- Proyek lama memberi hak luas ke tabel baru lewat default privileges.
+-- Batasi Data API ke operasi yang memang dipakai aplikasi.
+revoke all on table import_runs, import_run_rows,
+  item_variant_families, item_variant_members from anon, authenticated;
+grant select, insert, update on table import_runs, import_run_rows to authenticated;
+grant select, insert, update, delete on table item_variant_families, item_variant_members to authenticated;
+revoke all on sequence import_run_rows_id_seq from anon, authenticated;
+grant usage, select on sequence import_run_rows_id_seq to authenticated;
+
 create policy import_runs_select on import_runs for select to authenticated
   using ((branch_id is not null and public.user_can_access_branch(branch_id))
     or (branch_id is null and public.is_admin()));
