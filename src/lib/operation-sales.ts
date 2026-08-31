@@ -18,6 +18,12 @@ export type Period = {
   previousTo: string;
 };
 
+export function canAccessOperationSales(role: string, rolloutRoles: string | undefined): boolean {
+  if (role === "OWNER" || role === "ADMIN") return true;
+  const enabled = new Set((rolloutRoles ?? "").split(",").map((item) => item.trim()).filter(Boolean));
+  return enabled.has(role);
+}
+
 export type SalesMetricRow = {
   saleId: string;
   qty: number;

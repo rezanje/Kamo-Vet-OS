@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
-import { buildPeriod, type Channel, type PeriodPreset } from "@/lib/operation-sales";
+import { buildPeriod, canAccessOperationSales, type Channel, type PeriodPreset } from "@/lib/operation-sales";
 import { collectDashboard } from "@/lib/operation-sales-server";
 import { collectOperationalAlertBlock } from "@/lib/operational-alerts-server";
 import { OperationSalesDashboard } from "./OperationSalesDashboard";
@@ -40,6 +40,18 @@ export default async function OperationSalesPage({
   const channel = CHANNELS.includes(rawChannel as Channel) ? rawChannel as Channel : "all";
   const branch = one(sp.branch) ?? "";
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+    : { data: null };
+  const role = profile?.role ?? "";
+  if (!canAccessOperationSales(role, process.env.OPERATION_SALES_ROLLOUT_ROLES)) {
+    return (
+      <LaporanPage icon="ti-dashboard" title="OPERATION & SALES" desc="Cockpit operasi, penjualan, customer, stok, pembelian, dan klinik.">
+        <div className="crm-sec" style={{ color: "var(--tm)", fontSize: 11 }}><i className="ti ti-lock" /> Dashboard masih dalam tahap pilot OWNER/ADMIN.</div>
+      </LaporanPage>
+    );
+  }
   let dashboard;
   try {
     dashboard = await collectDashboard(supabase, { from, to, branchIds: branch ? [branch] : [], channel });
@@ -50,13 +62,11 @@ export default async function OperationSalesPage({
       </LaporanPage>
     );
   }
-  const [alerts, profileResult] = await Promise.all([
-    collectOperationalAlertBlock(supabase, { from, to, branchIds: branch ? [branch] : [], channel }, dashboard),
-    supabase.auth.getUser().then(async ({ data: { user } }) => user
-      ? supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
-      : { data: null }),
-  ]);
-  const role = profileResult.data?.role;
+  const alerts = await collectOperationalAlertBlock(
+    supabase,
+    { from, to, branchIds: branch ? [branch] : [], channel },
+    dashboard,
+  );
 
   return (
     <LaporanPage

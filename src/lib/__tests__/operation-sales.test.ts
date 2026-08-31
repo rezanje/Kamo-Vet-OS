@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPeriod,
+  canAccessOperationSales,
   classifyCustomers,
   growthPercent,
   outstandingPoQty,
@@ -14,6 +15,13 @@ import {
 } from "../operation-sales";
 
 describe("operation sales metrics", () => {
+  it("membatasi rollout ke OWNER/ADMIN kecuali peran dibuka eksplisit", () => {
+    expect(canAccessOperationSales("OWNER", undefined)).toBe(true);
+    expect(canAccessOperationSales("ADMIN", "")).toBe(true);
+    expect(canAccessOperationSales("STAFF", undefined)).toBe(false);
+    expect(canAccessOperationSales("STAFF", "FINANCE, STAFF")).toBe(true);
+  });
+
   it("MTD membandingkan hari setara bulan sebelumnya", () => {
     expect(buildPeriod({ preset: "mtd", now: "2026-08-31" })).toEqual({
       from: "2026-08-01",
