@@ -11,7 +11,19 @@ type SaleRow = {
   total: number;
   created_at: string;
   customers: { name: string } | null;
-  sale_items: { item_id: string | null; nama: string; qty: number; harga: number; satuan: string | null; faktor: number }[] | null;
+  sale_items: {
+    item_id: string | null; nama: string; qty: number; harga: number; satuan: string | null; faktor: number;
+    sale_item_group_components: {
+      component_item_id: string | null; component_name: string; item_type: string;
+      qty_per_group: number; unit: string; sort_order: number;
+    }[] | null;
+  }[] | null;
+};
+
+type ComponentRow = NonNullable<NonNullable<SaleRow["sale_items"]>[number]["sale_item_group_components"]>[number];
+type FormRow = {
+  item_id: string; nama: string; harga: number; sisa: number;
+  berstok?: boolean; trackExpiry?: boolean; components?: ComponentRow[];
 };
 
 export default async function ReturJualBaruPage({
@@ -23,7 +35,7 @@ export default async function ReturJualBaruPage({
   const supabase = await createClient();
 
   let sale: SaleRow | null = null;
-  let rows: { item_id: string; nama: string; harga: number; sisa: number; berstok?: boolean; trackExpiry?: boolean }[] = [];
+  let rows: FormRow[] = [];
   let notFoundMsg: string | null = null;
 
   if (struk?.trim()) {
@@ -31,7 +43,7 @@ export default async function ReturJualBaruPage({
     // refund retur jual keluar dari kas kasir, sedangkan online tidak punya shift kasir.
     const { data } = await supabase
       .from("sales")
-      .select("id, no_struk, subtotal, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, satuan, faktor)")
+      .select("id, no_struk, subtotal, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, satuan, faktor, sale_item_group_components(component_item_id, component_name, item_type, qty_per_group, unit, sort_order))")
       .eq("no_struk", struk.trim())
       .is("channel", null)
       .maybeSingle();
@@ -43,7 +55,7 @@ export default async function ReturJualBaruPage({
       // yang dijual campur box+pcs tidak jadi angka sisa yang ambigu.
       const sumber: Record<string, number> = {};
       const rasio = rasioBayar(Number(sale.subtotal), Number(sale.total));
-      const meta: Record<string, { nama: string; harga: number }> = {};
+      const meta: Record<string, { nama: string; harga: number; components: ComponentRow[] }> = {};
       for (const r of sale.sale_items ?? []) {
         if (!r.item_id) continue;
         const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
@@ -51,7 +63,13 @@ export default async function ReturJualBaruPage({
         // Harga refund yang DITAMPILKAN harus sama dengan yang nanti dibayar
         // server: sebanding dengan yang benar-benar dikeluarkan pelanggan,
         // bukan harga daftar sebelum promo/diskon/voucher.
-        meta[r.item_id] = { nama: r.nama, harga: hargaRefund((Number(r.harga) || 0) / f, rasio) };
+        const components = [...(r.sale_item_group_components ?? [])]
+          .sort((a, b) => Number(a.sort_order) - Number(b.sort_order));
+        meta[r.item_id] = {
+          nama: r.nama,
+          harga: hargaRefund((Number(r.harga) || 0) / f, rasio),
+          components,
+        };
       }
       const { data: prev } = await supabase
         .from("sales_returns").select("sales_return_items(item_id, qty)").eq("sale_id", sale.id);
@@ -60,11 +78,21 @@ export default async function ReturJualBaruPage({
         for (const r of d.sales_return_items ?? [])
           if (r.item_id) sudah[r.item_id] = (sudah[r.item_id] ?? 0) + Number(r.qty);
       const sisa = sisaRetur(sumber, sudah);
-      const info = await infoBarangRetur(supabase, Object.keys(sisa));
-      rows = Object.entries(sisa).map(([item_id, qty]) => ({
-        item_id, sisa: qty, nama: meta[item_id]?.nama ?? "—", harga: meta[item_id]?.harga ?? 0,
-        ...(info.get(item_id) ?? { berstok: true, trackExpiry: false }),
-      }));
+      const componentIds = Object.values(meta).flatMap((item) =>
+        item.components.map((component) => component.component_item_id).filter((id): id is string => !!id));
+      const info = await infoBarangRetur(supabase, [...Object.keys(sisa), ...componentIds]);
+      rows = Object.entries(sisa).map(([item_id, qty]) => {
+        const components = meta[item_id]?.components ?? [];
+        const baseInfo = info.get(item_id) ?? { berstok: true, trackExpiry: false };
+        const trackedComponents = components.filter((component) => component.item_type === "Persediaan");
+        return {
+          item_id, sisa: qty, nama: meta[item_id]?.nama ?? "—", harga: meta[item_id]?.harga ?? 0,
+          berstok: trackedComponents.length > 0 || baseInfo.berstok,
+          trackExpiry: baseInfo.trackExpiry || trackedComponents.some((component) =>
+            component.component_item_id ? !!info.get(component.component_item_id)?.trackExpiry : false),
+          components,
+        };
+      });
       if (rows.length === 0) notFoundMsg = `Semua barang di struk ${sale.no_struk} sudah diretur.`;
     }
   }
