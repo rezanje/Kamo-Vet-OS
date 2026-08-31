@@ -27,6 +27,13 @@ import {
   parseKomponenGrupRows,
   type GroupMasterLite,
 } from "@/lib/impor-accurate-lanjutan";
+import {
+  bacaWorkbookSaldoAwal,
+  reconcileInitialStock,
+  resolveSaldoAwalRows,
+  type ResolvedSaldoAwal,
+  type SaldoAwalMasterItem,
+} from "@/lib/impor-saldo-accurate";
 
 const BACK = "/pos/sku/impor";
 
@@ -129,6 +136,29 @@ export type GroupImportState = {
   errors: string[];
 };
 
+export type InitialStockCheck = {
+  label: "Qty stok" | "Qty layer" | "Qty kartu" | "Nilai layer";
+  ok: boolean;
+  difference: number;
+};
+
+export type InitialStockRow = ResolvedSaldoAwal & { itemName: string | null };
+
+export type InitialStockState = {
+  ok: boolean;
+  phase: "preview" | "done";
+  message: string;
+  branch_id: string | null;
+  warehouse_id: string | null;
+  as_of: string | null;
+  run_id: string | null;
+  source_hash: string | null;
+  rows: InitialStockRow[];
+  source_qty: number;
+  source_value: number;
+  checks: InitialStockCheck[];
+};
+
 type MasterAccurate = {
   items: ExistingAccurateItem[];
   categories: Map<string, ExistingAccurateCategory>;
@@ -162,6 +192,23 @@ function stateError(message: string): AccurateImportState {
 
 function groupStateError(message: string): GroupImportState {
   return { ok: false, phase: "preview", message, complete: 0, incomplete: 0, rejected: 0, unknown: 0, errors: [] };
+}
+
+function initialStockStateError(message: string): InitialStockState {
+  return {
+    ok: false,
+    phase: "preview",
+    message,
+    branch_id: null,
+    warehouse_id: null,
+    as_of: null,
+    run_id: null,
+    source_hash: null,
+    rows: [],
+    source_qty: 0,
+    source_value: 0,
+    checks: [],
+  };
 }
 
 function summarize(rows: AccuratePreviewRow[]) {
@@ -719,5 +766,241 @@ export async function konfirmasiKomponenGrup(formData: FormData): Promise<GroupI
     };
   } catch (error) {
     return groupStateError(error instanceof Error ? error.message : "Rincian Grup gagal disimpan.");
+  }
+}
+
+function getInitialStockFile(formData: FormData): File {
+  const file = formData.get("initial_stock_file");
+  if (!(file instanceof File) || file.size === 0) throw new Error("Pilih file Saldo Awal .xlsx terlebih dulu.");
+  if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("File Saldo Awal harus berformat .xlsx.");
+  if (file.size > MAX_XLSX_BYTES) throw new Error("Ukuran file Saldo Awal maksimal 15 MB.");
+  return file;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function muatMasterSaldoAwal(supabase: any): Promise<ReadonlyMap<string, SaldoAwalMasterItem>> {
+  const rows = await loadAll(supabase, "items", "id,code,unit,track_expiry,item_units(unit,factor)");
+  return new Map(rows.map((row) => {
+    const item: SaldoAwalMasterItem = {
+      id: String(row.id),
+      code: String(row.code ?? ""),
+      unit: String(row.unit ?? ""),
+      trackExpiry: Boolean(row.track_expiry),
+      units: (row.item_units ?? []).map((unit: Record<string, unknown>) => ({
+        unit: String(unit.unit ?? ""),
+        factor: Number(unit.factor ?? 0),
+      })),
+    };
+    return [item.code.trim().toLowerCase(), item] as const;
+  }).filter(([code]) => Boolean(code)));
+}
+
+function initialStockRowsState(rows: ResolvedSaldoAwal[], names: ReadonlyMap<string, string>): InitialStockRow[] {
+  return rows.map((row) => ({ ...row, itemName: names.get(row.itemId) ?? null }));
+}
+
+function initialStockSummary(rows: ResolvedSaldoAwal[]) {
+  const valid = rows.filter((row) => row.status === "valid");
+  return {
+    valid: valid.length,
+    rejected: rows.length - valid.length,
+    source_qty: valid.reduce((total, row) => total + row.baseQty, 0),
+    source_value: valid.reduce((total, row) => total + row.value, 0),
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadInitialScope(supabase: any, branchId: string, warehouseId: string) {
+  if (!branchId || !warehouseId) throw new Error("Cabang dan gudang wajib dipilih.");
+  const [{ data: branch, error: branchError }, { data: warehouse, error: warehouseError }] = await Promise.all([
+    supabase.from("branches").select("id, name, is_active").eq("id", branchId).maybeSingle(),
+    supabase.from("warehouses").select("id, name, branch_id, is_active").eq("id", warehouseId).maybeSingle(),
+  ]);
+  if (branchError) throw new Error(branchError.message);
+  if (warehouseError) throw new Error(warehouseError.message);
+  if (!branch?.is_active || !warehouse?.is_active || warehouse.branch_id !== branchId) {
+    throw new Error("Cabang atau gudang tidak tersedia untuk batch ini.");
+  }
+  return { branch, warehouse };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function createInitialStockRun(supabase: any, input: {
+  sourceName: string;
+  sourceHash: string;
+  branchId: string;
+  warehouseId: string;
+  asOf: string;
+  summary: Record<string, number>;
+  rows: ResolvedSaldoAwal[];
+}) {
+  const existing = await supabase.from("import_runs")
+    .select("id,status,kind,branch_id,warehouse_id,as_of_date")
+    .eq("kind", "initial_stock")
+    .eq("source_hash", input.sourceHash)
+    .maybeSingle();
+  if (existing.error) throw new Error(existing.error.message);
+  if (existing.data) {
+    if (existing.data.status !== "previewed") throw new Error("Batch saldo awal yang sama sudah pernah diposting.");
+    return String(existing.data.id);
+  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sesi login kedaluwarsa.");
+  const inserted = await supabase.from("import_runs").insert({
+    kind: "initial_stock",
+    source_name: input.sourceName,
+    source_hash: input.sourceHash,
+    branch_id: input.branchId,
+    warehouse_id: input.warehouseId,
+    as_of_date: input.asOf,
+    summary: input.summary,
+    created_by: user.id,
+  }).select("id").single();
+  if (inserted.error) throw new Error(inserted.error.message);
+  const rowPayload = input.rows.map((row) => ({
+    run_id: inserted.data.id,
+    source_row: row.row,
+    source_code: row.itemCode,
+    status: row.status,
+    reason: row.reason,
+    payload: {
+      item_id: row.itemId,
+      item_code: row.itemCode,
+      warehouse_id: row.warehouseId,
+      base_qty: row.baseQty,
+      base_unit_cost: row.baseUnitCost,
+      as_of: input.asOf,
+      batch_no: row.batchNo,
+      exp_date: row.expDate,
+    },
+  }));
+  if (rowPayload.length) {
+    const insertedRows = await supabase.from("import_run_rows").insert(rowPayload);
+    if (insertedRows.error) throw new Error(insertedRows.error.message);
+  }
+  return String(inserted.data.id);
+}
+
+export async function previewSaldoAwalAccurate(formData: FormData): Promise<InitialStockState> {
+  try {
+    const supabase = await assertBolehKelola();
+    const branchId = String(formData.get("branch_id") ?? "").trim();
+    const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
+    const asOf = String(formData.get("as_of") ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error("Tanggal saldo wajib diisi.");
+    await loadInitialScope(supabase, branchId, warehouseId);
+    const file = getInitialStockFile(formData);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const parsed = await bacaWorkbookSaldoAwal(bytes);
+    if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
+    const master = await muatMasterSaldoAwal(supabase);
+    const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouseId);
+    const sourceHash = await hashFiles([{ name: file.name, data: bytes }]);
+    const summary = initialStockSummary(resolved);
+    const runId = await createInitialStockRun(supabase, {
+      sourceName: file.name,
+      sourceHash,
+      branchId,
+      warehouseId,
+      asOf,
+      summary,
+      rows: resolved,
+    });
+    const names = new Map([...master.values()].map((item) => [item.id, item.code]));
+    return {
+      ok: summary.valid > 0 && summary.rejected === 0,
+      phase: "preview",
+      message: summary.rejected
+        ? `${summary.valid} baris siap, ${summary.rejected} baris ditolak. Perbaiki file sebelum posting.`
+        : `${summary.valid} baris siap diposting ke gudang terpilih.`,
+      branch_id: branchId,
+      warehouse_id: warehouseId,
+      as_of: asOf,
+      run_id: runId,
+      source_hash: sourceHash,
+      rows: initialStockRowsState(resolved, names),
+      source_qty: summary.source_qty,
+      source_value: summary.source_value,
+      checks: [],
+    };
+  } catch (error) {
+    return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal dibaca.");
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function reconcilePostedInitialStock(supabase: any, runId: string, sourceQty: number, sourceValue: number, warehouseId: string, itemIds: string[]) {
+  const [{ data: stock }, { data: layers }, { data: moves }] = await Promise.all([
+    supabase.from("stock").select("qty").eq("warehouse_id", warehouseId).in("item_id", itemIds),
+    supabase.from("stock_layers").select("qty_left, unit_cost").eq("warehouse_id", warehouseId)
+      .eq("source", "saldo-awal-accurate").eq("source_ref", runId).in("item_id", itemIds),
+    supabase.from("stock_moves").select("qty").eq("warehouse_id", warehouseId)
+      .eq("source", "saldo-awal-accurate").eq("source_ref", runId).in("item_id", itemIds),
+  ]);
+  const stockQty = (stock ?? []).reduce((total: number, row: { qty: number }) => total + Number(row.qty), 0);
+  const layerQty = (layers ?? []).reduce((total: number, row: { qty_left: number }) => total + Number(row.qty_left), 0);
+  const moveQty = (moves ?? []).reduce((total: number, row: { qty: number }) => total + Number(row.qty), 0);
+  const layerValue = (layers ?? []).reduce((total: number, row: { qty_left: number; unit_cost: number }) => total + Number(row.qty_left) * Number(row.unit_cost), 0);
+  const result = reconcileInitialStock({ sourceQty, stockQty, layerQty, moveQty, sourceValue, layerValue });
+  return [
+    { label: "Qty stok" as const, ok: Math.abs(result.differences.stock) < 0.000001, difference: result.differences.stock },
+    { label: "Qty layer" as const, ok: Math.abs(result.differences.layers) < 0.000001, difference: result.differences.layers },
+    { label: "Qty kartu" as const, ok: Math.abs(result.differences.moves) < 0.000001, difference: result.differences.moves },
+    { label: "Nilai layer" as const, ok: Math.abs(result.differences.value) < 0.000001, difference: result.differences.value },
+  ];
+}
+
+export async function postSaldoAwalAccurate(formData: FormData): Promise<InitialStockState> {
+  try {
+    const supabase = await assertBolehKelola();
+    if (String(formData.get("confirm_scope") ?? "") !== "on") {
+      return initialStockStateError("Centang konfirmasi gudang dan tanggal sebelum posting.");
+    }
+    const runId = String(formData.get("run_id") ?? "").trim();
+    const branchId = String(formData.get("branch_id") ?? "").trim();
+    const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
+    const asOf = String(formData.get("as_of") ?? "").trim();
+    if (!runId || !branchId || !warehouseId || !asOf) return initialStockStateError("Batch saldo awal tidak lengkap.");
+    await loadInitialScope(supabase, branchId, warehouseId);
+    const file = getInitialStockFile(formData);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const sourceHash = await hashFiles([{ name: file.name, data: bytes }]);
+    const run = await supabase.from("import_runs")
+      .select("id,kind,status,source_hash,branch_id,warehouse_id,as_of_date,summary")
+      .eq("id", runId).maybeSingle();
+    if (run.error) throw new Error(run.error.message);
+    if (!run.data || run.data.kind !== "initial_stock" || run.data.status !== "previewed"
+      || run.data.source_hash !== sourceHash || run.data.branch_id !== branchId
+      || run.data.warehouse_id !== warehouseId || run.data.as_of_date !== asOf) {
+      return initialStockStateError("File atau pilihan batch berubah. Jalankan preview lagi.");
+    }
+    const rpc = await supabase.rpc("post_accurate_initial_stock", { p_run_id: runId });
+    if (rpc.error) throw new Error(rpc.error.message);
+    const posted = await supabase.from("import_run_rows").select("payload").eq("run_id", runId).eq("status", "posted");
+    if (posted.error) throw new Error(posted.error.message);
+    const payloads = (posted.data ?? []).map((row: { payload: Record<string, unknown> }) => row.payload);
+    const itemIds = [...new Set(payloads.map((row) => String(row.item_id)).filter(Boolean))];
+    const sourceQty = payloads.reduce((total, row) => total + Number(row.base_qty ?? 0), 0);
+    const sourceValue = payloads.reduce((total, row) => total + Number(row.base_qty ?? 0) * Number(row.base_unit_cost ?? 0), 0);
+    const checks = await reconcilePostedInitialStock(supabase, runId, sourceQty, sourceValue, warehouseId, itemIds);
+    revalidatePath("/pos/stok");
+    revalidatePath(BACK);
+    const ok = checks.every((check) => check.ok);
+    return {
+      ok,
+      phase: "done",
+      message: ok ? "Saldo awal diposting dan empat rekonsiliasi cocok." : "Posting selesai, tetapi rekonsiliasi belum cocok. Status tetap perlu ditinjau.",
+      branch_id: branchId,
+      warehouse_id: warehouseId,
+      as_of: asOf,
+      run_id: runId,
+      source_hash: sourceHash,
+      rows: [],
+      source_qty: sourceQty,
+      source_value: sourceValue,
+      checks,
+    };
+  } catch (error) {
+    return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal diposting.");
   }
 }
