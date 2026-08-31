@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { bacaCsv, periksaBaris, type BarisSalah, type MasterImpor } from "@/lib/impor-barang";
 import { pesanSimpanGagal } from "@/lib/barang";
@@ -12,12 +13,14 @@ import {
   buatPreviewAccurate,
   rencanaIndukKategoriAccurate,
   type AccurateCategory,
+  type AccurateIssue,
   type AccurateItem,
   type AccuratePreviewRow,
   type AccuratePreviewStatus,
   type ExistingAccurateCategory,
   type ExistingAccurateItem,
 } from "@/lib/impor-accurate";
+import { fingerprintInput } from "@/lib/impor-accurate-lanjutan";
 
 const BACK = "/pos/sku/impor";
 
@@ -104,6 +107,9 @@ export type AccurateImportState = {
     units: string[];
     suppliers: string[];
   };
+  run_id: string | null;
+  source_hash: string | null;
+  source_fingerprint: string | null;
 };
 
 type MasterAccurate = {
@@ -131,6 +137,9 @@ function stateError(message: string): AccurateImportState {
     rows: [],
     summary: emptySummary(),
     new_masters: { categories: [], brands: [], units: [], suppliers: [] },
+    run_id: null,
+    source_hash: null,
+    source_fingerprint: null,
   };
 }
 
@@ -140,12 +149,16 @@ function summarize(rows: AccuratePreviewRow[]) {
   return summary;
 }
 
-function getUpload(formData: FormData): File {
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) throw new Error("Pilih file Accurate .xlsx terlebih dulu.");
-  if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("File harus berformat .xlsx.");
-  if (file.size > MAX_XLSX_BYTES) throw new Error("Ukuran file maksimal 15 MB.");
-  return file;
+function getUploads(formData: FormData): File[] {
+  const submitted = formData.getAll("files");
+  const files = (submitted.length ? submitted : [formData.get("file")])
+    .filter((value): value is File => value instanceof File && value.size > 0);
+  if (!files.length) throw new Error("Pilih minimal satu file Accurate .xlsx terlebih dulu.");
+  if (files.some((file) => !file.name.toLowerCase().endsWith(".xlsx"))) {
+    throw new Error("Semua file harus berformat .xlsx.");
+  }
+  if (files.some((file) => file.size > MAX_XLSX_BYTES)) throw new Error("Ukuran tiap file maksimal 15 MB.");
+  return files;
 }
 
 function getCategoryUpload(formData: FormData): File | null {
@@ -237,6 +250,101 @@ async function muatMasterAccurate(supabase: any): Promise<MasterAccurate> {
   };
 }
 
+async function bacaUploads(files: File[]): Promise<{
+  parsed: { rows: AccurateItem[]; skipped: AccurateIssue[]; rejected: AccurateIssue[]; errors: string[] };
+  bytes: { name: string; data: Uint8Array }[];
+}> {
+  const parsed = await Promise.all(files.map(async (file) => ({
+    file,
+    data: new Uint8Array(await file.arrayBuffer()),
+  })));
+  const results = await Promise.all(parsed.map(async ({ file, data }) => ({
+    file,
+    data,
+    result: await bacaWorkbookAccurate(data),
+  })));
+  const rows = results.flatMap(({ file, result }) => result.rows.map((row) => ({
+    ...row,
+    source: `${file.name}:${row.row_no}`,
+  })));
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const code = row.code.trim().toLowerCase();
+    counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  const duplicateCodes = new Set([...counts].filter(([, count]) => count > 1).map(([code]) => code));
+  const crossFileRejected: AccurateIssue[] = rows
+    .filter((row) => duplicateCodes.has(row.code.trim().toLowerCase()))
+    .map((row) => ({
+      row_no: row.row_no,
+      code: row.code,
+      name: row.name,
+      reason: "Kode kembar lintas-file",
+      source: row.source,
+    }));
+  return {
+    parsed: {
+      rows: rows.filter((row) => !duplicateCodes.has(row.code.trim().toLowerCase())),
+      skipped: results.flatMap(({ file, result }) => result.skipped.map((row) => ({ ...row, source: `${file.name}:${row.row_no}` }))),
+      rejected: [
+        ...results.flatMap(({ file, result }) => result.rejected.map((row) => ({ ...row, source: `${file.name}:${row.row_no}` }))),
+        ...crossFileRejected,
+      ],
+      errors: results.flatMap(({ file, result }) => result.errors.map((error) => `${file.name}: ${error}`)),
+    },
+    bytes: results.map(({ file, data }) => ({ name: file.name, data })),
+  };
+}
+
+async function hashFiles(parts: { name: string; data: Uint8Array }[]) {
+  const hash = createHash("sha256");
+  for (const part of [...parts].sort((a, b) => a.name.localeCompare(b.name))) {
+    hash.update(part.name);
+    hash.update("\0");
+    hash.update(String(part.data.byteLength));
+    hash.update("\0");
+    hash.update(part.data);
+  }
+  return hash.digest("hex");
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function findOrCreateImportRun(supabase: any, input: {
+  sourceName: string;
+  sourceHash: string;
+  summary: Record<string, number>;
+  rows: AccuratePreviewRow[];
+}) {
+  const existing = await supabase.from("import_runs")
+    .select("id, status").eq("kind", "master_accurate").eq("source_hash", input.sourceHash).maybeSingle();
+  if (existing.error) throw new Error(existing.error.message);
+  if (existing.data) {
+    if (existing.data.status !== "previewed") throw new Error("Batch file yang sama sudah pernah diposting.");
+    return String(existing.data.id);
+  }
+  const inserted = await supabase.from("import_runs").insert({
+    kind: "master_accurate",
+    source_name: input.sourceName,
+    source_hash: input.sourceHash,
+    summary: input.summary,
+    created_by: (await supabase.auth.getUser()).data.user?.id,
+  }).select("id").single();
+  if (inserted.error) throw new Error(inserted.error.message);
+  const rowPayload = input.rows.map((row) => ({
+    run_id: inserted.data.id,
+    source_row: row.row_no,
+    source_code: row.code,
+    status: row.status === "Baru" || row.status === "Update" ? "valid" : row.status === "Sama" ? "same" : row.status === "Dilewati" ? "skipped" : "rejected",
+    reason: row.reason,
+    payload: row,
+  }));
+  if (rowPayload.length) {
+    const rowsInserted = await supabase.from("import_run_rows").insert(rowPayload);
+    if (rowsInserted.error) throw new Error(rowsInserted.error.message);
+  }
+  return String(inserted.data.id);
+}
+
 function uniqueMissing(values: (string | null)[], existing: ReadonlyMap<string, unknown>) {
   const missing = new Map<string, string>();
   values.forEach((value) => {
@@ -268,9 +376,10 @@ function newMasters(items: AccurateItem[], master: MasterAccurate, categories: A
 export async function previewImporAccurate(formData: FormData): Promise<AccurateImportState> {
   try {
     const supabase = await assertBolehKelola();
-    const file = getUpload(formData);
+    const files = getUploads(formData);
     const categoryFile = getCategoryUpload(formData);
-    const parsed = await bacaWorkbookAccurate(new Uint8Array(await file.arrayBuffer()));
+    const upload = await bacaUploads(files);
+    const parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
     const parsedCategories = categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
@@ -279,14 +388,27 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     const master = await muatMasterAccurate(supabase);
     const rows = buatPreviewAccurate(parsed, master.items);
     const hierarchyCount = parsedCategories.rows.filter((row) => row.parent_name).length;
+    const categoryBytes = categoryFile ? [{ name: `category:${categoryFile.name}`, data: new Uint8Array(await categoryFile.arrayBuffer()) }] : [];
+    const sourceParts = [...upload.bytes, ...categoryBytes];
+    const sourceHash = await hashFiles(sourceParts);
+    const summary = summarize(rows);
+    const runId = await findOrCreateImportRun(supabase, {
+      sourceName: sourceParts.map((part) => part.name).sort().join(", "),
+      sourceHash,
+      summary,
+      rows,
+    });
     return {
       ok: true,
       phase: "preview",
-      message: `${parsed.rows.length} baris valid diperiksa. ${hierarchyCount} relasi subkategori ditemukan. Stok tidak diimpor.`,
+      message: `${parsed.rows.length} baris valid diperiksa dari ${files.length} file. ${hierarchyCount} relasi subkategori ditemukan. Stok tidak diimpor.`,
       hierarchy_count: hierarchyCount,
       rows,
-      summary: summarize(rows),
+      summary,
       new_masters: newMasters(parsed.rows, master, parsedCategories.rows),
+      run_id: runId,
+      source_hash: sourceHash,
+      source_fingerprint: fingerprintInput(sourceParts.map((part) => ({ name: part.name, size: part.data.byteLength }))),
     };
   } catch (error) {
     return stateError(error instanceof Error ? error.message : "File gagal dibaca.");
@@ -345,14 +467,26 @@ async function ensureUnit(supabase: any, master: MasterAccurate, name: string | 
 export async function konfirmasiImporAccurate(formData: FormData): Promise<AccurateImportState> {
   try {
     const supabase = await assertBolehKelola();
-    const file = getUpload(formData);
+    const files = getUploads(formData);
     const categoryFile = getCategoryUpload(formData);
-    const parsed = await bacaWorkbookAccurate(new Uint8Array(await file.arrayBuffer()));
+    const upload = await bacaUploads(files);
+    const parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
     const parsedCategories = categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
       : { rows: [], errors: [] };
     if (parsedCategories.errors.length) return stateError(parsedCategories.errors.join(" "));
+    const categoryBytes = categoryFile ? [{ name: `category:${categoryFile.name}`, data: new Uint8Array(await categoryFile.arrayBuffer()) }] : [];
+    const sourceParts = [...upload.bytes, ...categoryBytes];
+    const sourceHash = await hashFiles(sourceParts);
+    const runId = String(formData.get("run_id") ?? "");
+    if (!runId) return stateError("Preview impor sudah kedaluwarsa. Jalankan cek perubahan lagi.");
+    const run = await supabase.from("import_runs").select("id, kind, source_hash, status")
+      .eq("id", runId).maybeSingle();
+    if (run.error) return stateError(run.error.message);
+    if (!run.data || run.data.kind !== "master_accurate" || run.data.source_hash !== sourceHash || run.data.status !== "previewed") {
+      return stateError("File berubah atau batch sudah diposting. Jalankan cek perubahan lagi.");
+    }
     const master = await muatMasterAccurate(supabase);
 
     for (const category of parsedCategories.rows) {
@@ -436,6 +570,12 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     }
 
     const rows = resultRows.sort((a, b) => a.row_no - b.row_no);
+    const postedRows = await supabase.from("import_run_rows").update({ status: "posted" })
+      .eq("run_id", runId).eq("status", "valid");
+    if (postedRows.error) throw new Error(postedRows.error.message);
+    const postedRun = await supabase.from("import_runs").update({ status: "posted", posted_at: new Date().toISOString() })
+      .eq("id", runId).eq("status", "previewed");
+    if (postedRun.error) throw new Error(postedRun.error.message);
     revalidatePath("/pos/sku");
     revalidatePath(BACK);
     const summary = summarize(rows);
@@ -447,6 +587,9 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
       rows,
       summary,
       new_masters: { categories: [], brands: [], units: [], suppliers: [] },
+      run_id: runId,
+      source_hash: sourceHash,
+      source_fingerprint: fingerprintInput(sourceParts.map((part) => ({ name: part.name, size: part.data.byteLength }))),
     };
   } catch (error) {
     return stateError(error instanceof Error ? error.message : "Impor gagal diproses.");

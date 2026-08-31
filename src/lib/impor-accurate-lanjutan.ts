@@ -102,7 +102,7 @@ export function parseSaldoAwalRows(rows: SaldoAwalDraft[], master: Map<string, M
   return { valid, rejected };
 }
 
-export type GroupMasterLite = MasterLite & { id: string };
+export type GroupMasterLite = MasterLite & { id?: string };
 
 export function parseKomponenGrupRows(rows: KomponenGrupDraft[], master: Map<string, GroupMasterLite>) {
   const valid: ResolvedGroupComponent[] = [];
@@ -126,7 +126,7 @@ export function parseKomponenGrupRows(rows: KomponenGrupDraft[], master: Map<str
     } else {
       valid.push({
         groupCode: row.groupCode,
-        componentId: component!.id,
+        componentId: component!.id ?? row.componentCode,
         qty: row.qty,
         unit: row.unit,
         factor: factor!,

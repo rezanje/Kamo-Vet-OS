@@ -27,6 +27,7 @@ export type AccurateItem = {
   default_discount: number;
   is_active: boolean;
   units: AccurateUnit[];
+  source?: string;
 };
 
 export type AccurateIssue = {
@@ -34,6 +35,7 @@ export type AccurateIssue = {
   code: string;
   name: string;
   reason: string;
+  source?: string;
 };
 
 export type AccurateWorkbookResult = {
@@ -71,6 +73,7 @@ export type AccuratePreviewRow = {
   status: AccuratePreviewStatus;
   changed_fields: string[];
   reason: string | null;
+  source?: string;
 };
 
 export type AccurateItemRefs = {
@@ -415,6 +418,7 @@ export function buatPreviewAccurate(
       row_no: item.row_no,
       code: item.code,
       name: item.name,
+      source: item.source,
       status: existing ? (changed.length ? "Update" : "Sama") : "Baru",
       changed_fields: changed,
       reason: null,
@@ -424,6 +428,7 @@ export function buatPreviewAccurate(
     row_no: issue.row_no,
     code: issue.code,
     name: issue.name,
+    source: issue.source,
     status: "Dilewati" as const,
     changed_fields: [],
     reason: issue.reason,
@@ -432,6 +437,7 @@ export function buatPreviewAccurate(
     row_no: issue.row_no,
     code: issue.code,
     name: issue.name,
+    source: issue.source,
     status: "Ditolak" as const,
     changed_fields: [],
     reason: issue.reason,
