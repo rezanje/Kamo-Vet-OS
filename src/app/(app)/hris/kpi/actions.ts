@@ -1,10 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { assertHrisManager } from "@/lib/master-guard";
 
 export async function simpanKpi(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await assertHrisManager("/hris/kpi");
 
   const employeeId = String(formData.get("employee_id") ?? "").trim();
   const periode = String(formData.get("periode") ?? "").trim();

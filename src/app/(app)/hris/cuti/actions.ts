@@ -2,11 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { assertHrisManager } from "@/lib/master-guard";
 
 // ponytail: insert pengajuan cuti/lembur dengan status default Menunggu.
 export async function ajukanCuti(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await assertHrisManager("/hris/cuti");
 
   const employeeId = String(formData.get("employee_id") ?? "").trim();
   const jenis = String(formData.get("jenis") ?? "").trim();
@@ -45,7 +45,7 @@ export async function ajukanCuti(formData: FormData) {
 
 // ponytail: approve atau tolak pengajuan — sama polanya seperti updateVisitStatus di antrian.
 export async function updateLeaveStatus(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await assertHrisManager("/hris/cuti");
   const id = String(formData.get("id"));
   const status = String(formData.get("status"));
   await supabase.from("leave_requests").update({ status }).eq("id", id);

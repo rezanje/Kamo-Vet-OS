@@ -1,13 +1,13 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { assertMasterAdmin } from "@/lib/master-guard";
+import { assertPayrollOwner } from "@/lib/master-guard";
 
 const BACK = "/hris/komponen-gaji";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 
 export async function simpanKomponen(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "komponen gaji");
+  const supabase = await assertPayrollOwner(BACK);
 
   const id = String(formData.get("id") ?? "").trim();
   const nama = String(formData.get("nama") ?? "").trim();
@@ -28,7 +28,7 @@ export async function simpanKomponen(formData: FormData) {
 }
 
 export async function toggleKomponen(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "komponen gaji");
+  const supabase = await assertPayrollOwner(BACK);
   const id = String(formData.get("id") ?? "").trim();
   const aktif = String(formData.get("aktif") ?? "") === "1";
   if (!id) gagal("Komponen tidak valid");
@@ -40,7 +40,7 @@ export async function toggleKomponen(formData: FormData) {
 // Pasang komponen ke karyawan. Nominal kosong = ikut nominal bawaan komponen,
 // supaya naik-turun tunjangan cukup diubah sekali di master.
 export async function pasangKomponen(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "komponen gaji karyawan");
+  const supabase = await assertPayrollOwner(BACK);
 
   const employeeId = String(formData.get("employee_id") ?? "").trim();
   const componentId = String(formData.get("component_id") ?? "").trim();
@@ -61,7 +61,7 @@ export async function pasangKomponen(formData: FormData) {
 }
 
 export async function lepasKomponen(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "komponen gaji karyawan");
+  const supabase = await assertPayrollOwner(BACK);
   const id = String(formData.get("id") ?? "").trim();
   const emp = String(formData.get("employee_id") ?? "").trim();
   if (!id) gagal("Data tidak valid");

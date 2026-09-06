@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { bolehKelolaPayroll } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 import { getAturanGaji } from "@/lib/payroll-aturan";
 import { hitungPenggajian, sahkanPenggajian, simpanKoreksi } from "./actions";
@@ -28,7 +28,18 @@ export default async function PenggajianPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
-  const bolehKelola = await bolehKelolaMaster();
+  const bolehKelola = await bolehKelolaPayroll();
+
+  if (!bolehKelola) {
+    return (
+      <div className="crm-sec" style={{ marginBottom: 0 }}>
+        <Link href="/hris" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke HRIS</Link>
+        <div style={{ marginTop: 16, color: "var(--td)", fontSize: 13 }}>
+          Penggajian hanya dapat diakses pemilik usaha selama masa pilot.
+        </div>
+      </div>
+    );
+  }
 
   const periode = /^\d{4}-\d{2}$/.test(sp.periode ?? "") ? sp.periode! : hariIniWIB().slice(0, 7);
 

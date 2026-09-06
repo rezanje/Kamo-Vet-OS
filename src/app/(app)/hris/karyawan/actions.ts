@@ -1,10 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { assertHrisManager } from "@/lib/master-guard";
 
 export async function simpanKaryawan(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await assertHrisManager("/hris/karyawan");
 
   const nama = String(formData.get("nama") ?? "").trim();
   const nik = String(formData.get("nik") ?? "").trim() || null;
@@ -20,6 +20,9 @@ export async function simpanKaryawan(formData: FormData) {
   // ponytail: validasi nama wajib diisi sebelum insert.
   if (!nama) {
     redirect(`/hris/karyawan?error=${encodeURIComponent("Nama karyawan wajib diisi")}`);
+  }
+  if (status === "Aktif" && !branchId) {
+    redirect(`/hris/karyawan?error=${encodeURIComponent("Pilih cabang utama sebelum mengaktifkan karyawan")}`);
   }
 
   const { error } = await supabase.from("employees").insert({
