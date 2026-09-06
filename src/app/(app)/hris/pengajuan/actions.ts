@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { assertRole } from "@/lib/master-guard";
+import { assertHrisManager } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { AKUN_PIUTANG_KARYAWAN } from "@/lib/kasbon";
@@ -9,14 +9,13 @@ import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/hris/pengajuan";
-const BOLEH = ["OWNER", "ADMIN"];
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 
 // Nama/value tombol submit TIDAK ikut terkirim ke server action (sudah diuji:
 // FormData cuma berisi field form). Karena itu setuju & tolak jadi dua action
 // terpisah, bukan satu action yang membaca tombol mana yang ditekan.
 
-async function stempel(supabase: Awaited<ReturnType<typeof assertRole>>, status: string, formData: FormData) {
+async function stempel(supabase: Awaited<ReturnType<typeof assertHrisManager>>, status: string, formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   return {
     status,
@@ -27,7 +26,7 @@ async function stempel(supabase: Awaited<ReturnType<typeof assertRole>>, status:
 }
 
 async function putuskan(tabel: string, status: string, formData: FormData, sukses: string) {
-  const supabase = await assertRole(BACK, "pengajuan karyawan", BOLEH);
+  const supabase = await assertHrisManager(BACK);
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Pengajuan tidak valid");
 
@@ -61,7 +60,7 @@ export async function tolakKasbon(formData: FormData) {
 // Kasbon disetujui = uangnya cair saat itu juga: Dr Piutang Karyawan / Cr rekening.
 // Tenor boleh diubah penyetuju — dia yang tahu kemampuan bayar karyawannya.
 export async function setujuiKasbon(formData: FormData) {
-  const supabase = await assertRole(BACK, "pengajuan kasbon", BOLEH);
+  const supabase = await assertHrisManager(BACK);
 
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Pengajuan tidak valid");

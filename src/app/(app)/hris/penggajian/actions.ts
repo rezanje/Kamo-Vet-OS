@@ -2,7 +2,7 @@
 
 import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
-import { assertRole } from "@/lib/master-guard";
+import { assertPayrollOwner } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { AKUN_PIUTANG_KARYAWAN } from "@/lib/kasbon";
@@ -20,7 +20,6 @@ async function kumpulkanGajiDenganAtribusi(...args:Parameters<typeof kumpulkanDa
 }
 
 const BASE = "/hris/penggajian";
-const BOLEH = ["OWNER", "ADMIN"];
 
 const kembali = (periode: string) => `${BASE}?periode=${periode}`;
 
@@ -35,7 +34,7 @@ function periodeDari(formData: FormData): string {
 export async function hitungPenggajian(formData: FormData) {
   const periode = periodeDari(formData);
   const gagal = (msg: string): never => redirect(`${kembali(periode)}&error=${encodeURIComponent(msg)}`);
-  const supabase = await assertRole(kembali(periode), "penggajian", BOLEH);
+  const supabase = await assertPayrollOwner(kembali(periode));
 
   const { data: lama, error:readError } = await supabase
     .from("payrolls").select("employee_id, penyesuaian, status").eq("periode", periode);
@@ -85,7 +84,7 @@ export async function hitungPenggajian(formData: FormData) {
 export async function simpanKoreksi(formData: FormData) {
   const periode = periodeDari(formData);
   const gagal = (msg: string): never => redirect(`${kembali(periode)}&error=${encodeURIComponent(msg)}`);
-  const supabase = await assertRole(kembali(periode), "penggajian", BOLEH);
+  const supabase = await assertPayrollOwner(kembali(periode));
 
   const { data: lama, error:readError } = await supabase
     .from("payrolls").select("employee_id, status").eq("periode", periode);
@@ -118,7 +117,7 @@ export async function simpanKoreksi(formData: FormData) {
 export async function sahkanPenggajian(formData: FormData) {
   const periode = periodeDari(formData);
   const gagal = (msg: string): never => redirect(`${kembali(periode)}&error=${encodeURIComponent(msg)}`);
-  const supabase = await assertRole(kembali(periode), "penggajian", BOLEH);
+  const supabase = await assertPayrollOwner(kembali(periode));
 
   const tanggal = akhirBulan(periode);
   const pesanPeriode = await cekPeriode(supabase, tanggal);

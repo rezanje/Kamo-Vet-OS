@@ -2,6 +2,7 @@
 // tempat: OWNER/ADMIN boleh mengubah master data, FINANCE ikut untuk Kas & Bank.
 import { loadRoleCapabilities } from "./role-capabilities";
 import { redirect } from "next/navigation";
+import { bolehKelolaPayroll as peranBolehKelolaPayroll } from "@/lib/hris-access";
 import { createClient } from "@/lib/supabase/server";
 
 const ADMIN = ["OWNER", "ADMIN"];
@@ -39,6 +40,11 @@ export async function assertPayrollOwner(back: string) {
 export async function bolehKelolaMaster(): Promise<boolean> {
   const { role } = await roleSaya();
   return ADMIN.includes(role);
+}
+
+export async function bolehKelolaPayroll(): Promise<boolean> {
+  const { role } = await roleSaya();
+  return peranBolehKelolaPayroll(role);
 }
 
 // Kas & Bank: transaksi, bukan master data — FINANCE ikut boleh.

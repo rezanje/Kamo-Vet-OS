@@ -5,11 +5,11 @@ import { parseEmployeeBranches } from "@/lib/employee-branch-input";
 import { hariIniWIB } from "@/lib/tanggal";
 import { bacaEditKaryawan } from "@/lib/karyawan-edit";
 import { redirect } from "next/navigation";
-import { assertMasterAdmin } from "@/lib/master-guard";
+import { assertHrisManager, assertMasterAdmin } from "@/lib/master-guard";
 import { employeeOccupationInput } from "@/lib/employee-occupation";
 
 export async function simpanKaryawan(formData: FormData) {
-  const supabase = await assertMasterAdmin("/hris/karyawan", "data karyawan");
+  const supabase = await assertHrisManager("/hris/karyawan");
 
   const nama = String(formData.get("nama") ?? "").trim();
   const nik = String(formData.get("nik") ?? "").trim() || null;
@@ -29,6 +29,9 @@ export async function simpanKaryawan(formData: FormData) {
   // ponytail: validasi nama wajib diisi sebelum insert.
   if (!nama) {
     redirect(`/hris/karyawan?error=${encodeURIComponent("Nama karyawan wajib diisi")}`);
+  }
+  if (status === "Aktif" && !branchId) {
+    redirect(`/hris/karyawan?error=${encodeURIComponent("Pilih cabang utama sebelum mengaktifkan karyawan")}`);
   }
 
   const { data: created, error } = await supabase.from("employees").insert({
