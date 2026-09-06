@@ -26,6 +26,14 @@ export async function assertMasterAdmin(back: string, apa: string) {
   return assertRole(back, apa, ADMIN);
 }
 
+export async function assertHrisManager(back: string) {
+  return assertRole(back, "data HRIS cabang ini", ["OWNER", "ADMIN"]);
+}
+
+export async function assertPayrollOwner(back: string) {
+  return assertRole(back, "data HRIS cabang ini", ["OWNER"]);
+}
+
 // Dipakai server component: staf tetap boleh LIHAT daftarnya, form-nya saja disembunyikan.
 export async function bolehKelolaMaster(): Promise<boolean> {
   const { role } = await roleSaya();
