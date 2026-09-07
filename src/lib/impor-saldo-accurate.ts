@@ -27,6 +27,9 @@ export type SaldoAwalDraft = {
   unitCost: number;
   batchNo: string | null;
   expDate: string | null;
+  branchName: string | null;
+  warehouseName: string | null;
+  asOf: string | null;
 };
 
 export type SaldoAwalWorkbookResult = {
@@ -38,6 +41,7 @@ export type SaldoAwalMasterItem = {
   id: string;
   code: string;
   unit: string;
+  itemType: string;
   trackExpiry: boolean;
   units: { unit: string; factor: number }[];
 };
@@ -140,12 +144,16 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
 
   const columns = {
     code: findColumn(headers, ["Kode Barang", "Kode", "Item Code"]),
-    qty: findColumn(headers, ["Kuantitas", "Qty", "Jumlah"]),
-    unit: findColumn(headers, ["Satuan", "Unit"]),
-    unitCost: findColumn(headers, ["HPP", "Harga Pokok", "Unit Cost", "Biaya Satuan"]),
+    qty: findColumn(headers, ["Kuantitas", "Qty", "Jumlah", "Kuantitas Saldo Awal"]),
+    unit: findColumn(headers, ["Satuan", "Unit", "Satuan Saldo Awal"]),
+    unitCost: findColumn(headers, ["HPP", "Harga Pokok", "Unit Cost", "Biaya Satuan", "Nilai Satuan"]),
     batchNo: findColumn(headers, ["Batch", "No Batch", "Batch No"]),
     expDate: findColumn(headers, ["Expiry", "Tanggal Kadaluarsa", "Exp Date", "Kadaluarsa"]),
+    branchName: findColumn(headers, ["Cabang Saldo", "Cabang"]),
+    warehouseName: findColumn(headers, ["Gudang Saldo Awal", "Gudang"]),
+    asOf: findColumn(headers, ["Per Tanggal", "Tanggal Saldo"]),
   };
+  const isCombinedItemWorkbook = headers.has(normalizeHeader("Kuantitas Saldo Awal"));
   const missing = [
     ["Kode Barang", columns.code],
     ["Kuantitas", columns.qty],
@@ -159,11 +167,18 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
   for (let rowNo = 2; rowNo <= worksheet.rowCount; rowNo += 1) {
     const row = worksheet.getRow(rowNo);
     const itemCode = cellText(row.getCell(columns.code!).value);
-    const rawQty = numberValue(row.getCell(columns.qty!).value);
+    const rawQtyCell = row.getCell(columns.qty!).value;
+    const rawQty = numberValue(rawQtyCell);
     const unit = cellText(row.getCell(columns.unit!).value);
-    const unitCost = numberValue(row.getCell(columns.unitCost!).value);
+    const unitCostCell = row.getCell(columns.unitCost!).value;
+    const unitCost = numberValue(unitCostCell);
     const batchNo = columns.batchNo ? cellText(row.getCell(columns.batchNo).value) || null : null;
     const expDate = columns.expDate ? excelDate(row.getCell(columns.expDate).value) : null;
+    const branchName = columns.branchName ? cellText(row.getCell(columns.branchName).value) || null : null;
+    const warehouseName = columns.warehouseName ? cellText(row.getCell(columns.warehouseName).value) || null : null;
+    const asOf = columns.asOf ? excelDate(row.getCell(columns.asOf).value) : null;
+    const hasBalanceValue = [cellText(rawQtyCell), unit, cellText(unitCostCell)].some(Boolean);
+    if (isCombinedItemWorkbook && !hasBalanceValue) continue;
     if (!itemCode && !unit && !Number.isFinite(rawQty) && !Number.isFinite(unitCost)) continue;
     if (!itemCode) errors.push(`Baris ${rowNo}: Kode Barang wajib diisi`);
     if (!Number.isFinite(rawQty) || rawQty < 0) errors.push(`Baris ${rowNo}: Kuantitas harus angka nol atau lebih`);
@@ -172,7 +187,7 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     if (columns.expDate && row.getCell(columns.expDate).value != null && !expDate) {
       errors.push(`Baris ${rowNo}: Tanggal kedaluwarsa tidak valid`);
     }
-    rows.push({ row: rowNo, itemCode, qty: rawQty, unit, unitCost, batchNo, expDate });
+    rows.push({ row: rowNo, itemCode, qty: rawQty, unit, unitCost, batchNo, expDate, branchName, warehouseName, asOf });
   }
   return { rows, errors };
 }
@@ -187,6 +202,7 @@ export function resolveSaldoAwalRows(
     let reason: string | null = null;
     let factor = 1;
     if (!item) reason = "Kode barang tidak ditemukan";
+    else if (item.itemType !== "Persediaan") reason = "Saldo stok hanya untuk barang persediaan";
     else if (!item.unit) reason = "Satuan dasar barang belum tersedia";
     else if (row.unit.trim().toLowerCase() !== item.unit.trim().toLowerCase()) {
       factor = item.units.find((unit) => unit.unit.trim().toLowerCase() === row.unit.trim().toLowerCase())?.factor ?? 0;

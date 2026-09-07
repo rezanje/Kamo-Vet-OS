@@ -12,8 +12,17 @@ type Option = { id: string; name: string; branch_id?: string };
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const qty = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 });
 
-export function InitialStockImport({ branches, warehouses }: { branches: Option[]; warehouses: Option[] }) {
-  const [file, setFile] = useState<File | null>(null);
+export function InitialStockImport({
+  branches,
+  warehouses,
+  sourceFile,
+  masterRunId,
+}: {
+  branches: Option[];
+  warehouses: Option[];
+  sourceFile: File | null;
+  masterRunId: string | null;
+}) {
   const [branchId, setBranchId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [asOf, setAsOf] = useState("");
@@ -24,14 +33,15 @@ export function InitialStockImport({ branches, warehouses }: { branches: Option[
 
   const availableWarehouses = warehouses.filter((warehouse) => !warehouse.branch_id || !branchId || warehouse.branch_id === branchId);
   const run = (action: typeof previewSaldoAwalAccurate | typeof postSaldoAwalAccurate) => {
-    if (!file || !branchId || !warehouseId || !asOf) {
-      setLocalError("Cabang, gudang, tanggal, dan file wajib diisi.");
+    if (!sourceFile || !masterRunId || !branchId || !warehouseId || !asOf) {
+      setLocalError("Konfirmasi Barang & Jasa, cabang, gudang, dan tanggal wajib selesai dulu.");
       return;
     }
     setLocalError("");
     startTransition(async () => {
       const data = new FormData();
-      data.append("initial_stock_file", file);
+      data.append("initial_stock_file", sourceFile);
+      data.append("master_run_id", masterRunId);
       data.append("branch_id", branchId);
       data.append("warehouse_id", warehouseId);
       data.append("as_of", asOf);
@@ -43,9 +53,9 @@ export function InitialStockImport({ branches, warehouses }: { branches: Option[
 
   return (
     <section className="crm-sec" style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Impor Saldo Awal Accurate</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Tahap 2 — Saldo Stok Awal</div>
       <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3, lineHeight: 1.55 }}>
-        Stok diposting ke satu gudang dan tanggal pilihan. HPP serta kuantitas dikonversi ke satuan dasar.
+        Memakai file Barang &amp; Jasa yang sama. Saldo diposting setelah impor master selesai, ke satu gudang dan tanggal pilihan.
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 12 }}>
@@ -67,13 +77,10 @@ export function InitialStockImport({ branches, warehouses }: { branches: Option[
       </div>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
-        <label className="btn-def" style={{ cursor: "pointer" }}>
-          <i className="ti ti-file-spreadsheet" /> Pilih Saldo Awal .xlsx
-          <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }}
-            onChange={(event) => { setFile(event.target.files?.[0] ?? null); setState(null); setLocalError(""); }} />
-        </label>
-        {file && <span style={{ fontSize: 11, color: "var(--tm)" }}>{file.name}</span>}
-        <button type="button" className="btn-acc" disabled={pending || !file} onClick={() => run(previewSaldoAwalAccurate)}>
+        <span style={{ fontSize: 11, color: sourceFile && masterRunId ? "#166534" : "var(--tm)" }}>
+          <i className="ti ti-file-spreadsheet" /> {sourceFile && masterRunId ? sourceFile.name : "Selesaikan tahap Barang & Jasa dulu"}
+        </span>
+        <button type="button" className="btn-acc" disabled={pending || !sourceFile || !masterRunId} onClick={() => run(previewSaldoAwalAccurate)}>
           <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek saldo"}
         </button>
       </div>

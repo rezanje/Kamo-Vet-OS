@@ -1,5 +1,13 @@
+import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { duplicateStockKeys, reconcileInitialStock, toBaseStock } from "../impor-saldo-accurate";
+import { bacaWorkbookSaldoAwal, duplicateStockKeys, reconcileInitialStock, resolveSaldoAwalRows, toBaseStock } from "../impor-saldo-accurate";
+
+async function workbook(rows: unknown[][]) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Sheet1");
+  rows.forEach((row) => ws.addRow(row));
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
 
 describe("toBaseStock", () => {
   it("mengubah qty dan HPP ke satuan dasar tanpa mengubah nilai", () => {
@@ -28,5 +36,42 @@ describe("duplicateStockKeys", () => {
       { row: 3, warehouseId: "w", itemId: "i", batchNo: "B1", expDate: "2027-01-01" },
     ]);
     expect(issues.map((i) => i.row)).toEqual([2, 3]);
+  });
+});
+
+describe("bacaWorkbookSaldoAwal", () => {
+  it("membaca kolom saldo awal dari file Barang dan Jasa Accurate", async () => {
+    const parsed = await bacaWorkbookSaldoAwal(await workbook([
+      ["Kode Barang", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],
+      ["SKU-1", 12, "PCS", 15_000],
+      ["SKU-2", "", "", ""],
+    ]));
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows).toEqual([{
+      row: 2,
+      itemCode: "SKU-1",
+      qty: 12,
+      unit: "PCS",
+      unitCost: 15_000,
+      batchNo: null,
+      expDate: null,
+      branchName: null,
+      warehouseName: null,
+      asOf: null,
+    }]);
+  });
+});
+
+describe("resolveSaldoAwalRows", () => {
+  it("menolak jasa meski kode dan satuannya cocok", () => {
+    const resolved = resolveSaldoAwalRows([{
+      row: 2, itemCode: "JASA-1", qty: 1, unit: "PCS", unitCost: 20_000,
+      batchNo: null, expDate: null, branchName: null, warehouseName: null, asOf: null,
+    }], new Map([["jasa-1", {
+      id: "jasa-1", code: "JASA-1", unit: "PCS", itemType: "Jasa", trackExpiry: false, units: [],
+    }]]), "warehouse-1");
+
+    expect(resolved[0]).toMatchObject({ status: "rejected", reason: "Saldo stok hanya untuk barang persediaan" });
   });
 });

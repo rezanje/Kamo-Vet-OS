@@ -13,6 +13,7 @@ import {
   type AccurateImportProgress,
   type AccurateImportState,
 } from "./actions";
+import { InitialStockImport } from "./InitialStockImport";
 
 const STATUS_STYLE: Record<AccuratePreviewStatus, { bg: string; color: string }> = {
   Baru: { bg: "#dcfce7", color: "#166534" },
@@ -37,7 +38,9 @@ function MasterList({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-export function AccurateImportForm() {
+type Option = { id: string; name: string; branch_id?: string };
+
+export function AccurateImportForm({ branches, warehouses }: { branches: Option[]; warehouses: Option[] }) {
   const [files, setFiles] = useState<File[]>([]);
   const [categoryFile, setCategoryFile] = useState<File | null>(null);
   const [state, setState] = useState<AccurateImportState | null>(null);
@@ -313,6 +316,13 @@ export function AccurateImportForm() {
           </div>
         </>
       )}
+
+      <InitialStockImport
+        branches={branches}
+        warehouses={warehouses}
+        sourceFile={files.length === 1 ? files[0] : null}
+        masterRunId={state?.phase === "done" ? state.run_id : null}
+      />
     </div>
   );
 }
