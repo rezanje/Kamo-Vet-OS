@@ -40,7 +40,11 @@ function MasterList({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-export function AccurateImportForm() {
+export function AccurateImportForm({
+  initialReceipt = null,
+}: {
+  initialReceipt?: { stockCount: number; problemCount: number } | null;
+}) {
   const [files, setFiles] = useState<File[]>([]);
   const [categoryFile, setCategoryFile] = useState<File | null>(null);
   const [state, setState] = useState<AccurateImportState | null>(null);
@@ -51,6 +55,7 @@ export function AccurateImportForm() {
   const [oneClickStatus, setOneClickStatus] = useState("");
   const [oneClickPercentage, setOneClickPercentage] = useState(0);
   const [flowMode, setFlowMode] = useState<"idle" | "checking" | "importing">("idle");
+  const [receiptDismissed, setReceiptDismissed] = useState(false);
   const [oneClickStockState, setOneClickStockState] = useState<InitialStockState | null>(null);
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
@@ -87,6 +92,14 @@ export function AccurateImportForm() {
     && oneClickStockState.phase === "preview",
   );
   const importComplete = Boolean(oneClickStockState?.ok && oneClickStockState.phase === "done");
+  const successStockCount = importComplete
+    ? oneClickStockState?.rows.filter((row) => row.status === "valid").length ?? 0
+    : initialReceipt?.stockCount ?? 0;
+  const successProblemCount = importComplete
+    ? oneClickStockState?.rows.filter((row) => row.status === "rejected").length ?? 0
+    : initialReceipt?.problemCount ?? 0;
+  const showSuccessReceipt = importComplete || Boolean(initialReceipt && !receiptDismissed);
+  const stockFailure = Boolean(oneClickStockState && !oneClickStockState.ok && !pending);
   const canCheck = files.length === 1 && !pending && !previewReady && !importComplete;
   const canImportOnce = previewReady && !pending;
   const shownPercentage = progress
@@ -192,11 +205,21 @@ export function AccurateImportForm() {
       stockPostData.append("as_of", stockPreview.as_of);
       stockPostData.append("confirm_scope", "on");
       const postedStock = await postSaldoAwalAccurate(stockPostData);
+      const postedRows = stockPreview.rows.filter((row) => row.status === "valid").length;
+      const problemRows = stockPreview.rows.filter((row) => row.status === "rejected").length;
       setOneClickStockState(postedStock.ok && postedStock.phase === "done"
         ? { ...postedStock, rows: stockPreview.rows }
         : postedStock);
       setOneClickPercentage(100);
       setOneClickStatus(postedStock.message);
+      if (postedStock.ok && postedStock.phase === "done") {
+        const params = new URLSearchParams({
+          import_success: "1",
+          stock_count: String(postedRows),
+          problem_count: String(problemRows),
+        });
+        window.history.replaceState(window.history.state, "", `/pos/sku/impor?${params.toString()}`);
+      }
     });
   };
 
@@ -259,6 +282,8 @@ export function AccurateImportForm() {
               setOneClickStatus("");
               setOneClickPercentage(0);
               setFlowMode("idle");
+              setReceiptDismissed(true);
+              window.history.replaceState(window.history.state, "", "/pos/sku/impor");
               setLocalError("");
               setShowSame(false);
               setVisibleMatrixColumns(DEFAULT_MATRIX_COLUMNS);
@@ -325,10 +350,20 @@ export function AccurateImportForm() {
         </div>
       )}
 
-      {importComplete && !pending && (
+      {stockFailure && (
+        <div role="alert" style={{ marginTop: 12, padding: 13, border: ".5px solid #fca5a5", borderRadius: 9, background: "#fef2f2", color: "#b91c1c" }}>
+          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-alert-circle" /> Import belum selesai</div>
+          <div style={{ fontSize: 10.5, marginTop: 4 }}>{oneClickStockState?.message}</div>
+        </div>
+      )}
+
+      {showSuccessReceipt && !pending && (
         <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
-          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Import berhasil</div>
-          <div style={{ fontSize: 10.5, marginTop: 4 }}>Barang, jasa, dan saldo stok valid sudah diproses. Periksa jumlah akhirnya di halaman Stok.</div>
+          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Import terakhir berhasil</div>
+          <div style={{ fontSize: 10.5, marginTop: 4 }}>
+            Barang dan jasa sudah diperbarui. {successStockCount} saldo stok masuk.
+            {successProblemCount > 0 ? ` ${successProblemCount} baris bermasalah dilewati untuk diperbaiki.` : ""}
+          </div>
           <Link href="/pos/stok" className="btn-acc" style={{ display: "inline-flex", marginTop: 9, background: "#15803d", textDecoration: "none" }}>
             <i className="ti ti-box" /> Buka halaman Stok
           </Link>

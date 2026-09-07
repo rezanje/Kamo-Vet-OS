@@ -7,10 +7,21 @@ import { GroupComponentImport } from "./GroupComponentImport";
 export default async function ImporBarangPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    import_success?: string;
+    stock_count?: string;
+    problem_count?: string;
+  }>;
 }) {
-  const { error } = await searchParams;
+  const { error, import_success, stock_count, problem_count } = await searchParams;
   const boleh = await bolehKelolaMaster();
+  const initialReceipt = import_success === "1"
+    ? {
+        stockCount: Math.max(0, Number.parseInt(stock_count ?? "0", 10) || 0),
+        problemCount: Math.max(0, Number.parseInt(problem_count ?? "0", 10) || 0),
+      }
+    : null;
 
   return (
     <>
@@ -40,7 +51,7 @@ export default async function ImporBarangPage({
         </div>
       ) : (
         <>
-          <AccurateImportForm />
+          <AccurateImportForm initialReceipt={initialReceipt} />
           <GroupComponentImport />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>
