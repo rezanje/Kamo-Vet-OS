@@ -46,6 +46,15 @@ export type SaldoAwalMasterItem = {
   units: { unit: string; factor: number }[];
 };
 
+type InitialStockScopeRow = Pick<SaldoAwalDraft, "branchName" | "warehouseName" | "asOf">;
+
+export type InitialStockBranchOption = { id: string; code: string; name: string };
+export type InitialStockWarehouseOption = { id: string; branch_id: string; code: string; name: string };
+
+export type InitialStockSourceScope =
+  | { ok: true; branch: InitialStockBranchOption; warehouse: InitialStockWarehouseOption; asOf: string }
+  | { ok: false; message: string };
+
 export type ResolvedSaldoAwal = SaldoAwalDraft & {
   itemId: string;
   baseQty: number;
@@ -103,6 +112,38 @@ function cellText(value: ExcelJS.CellValue | undefined): string {
 
 function normalizeHeader(value: string) {
   return value.toLowerCase().replace(/[\s_/-]+/g, "").replace(/[()]/g, "");
+}
+
+function scopeKey(value: string) {
+  return value.trim().toLocaleLowerCase("id-ID");
+}
+
+function oneSourceValue(rows: InitialStockScopeRow[], key: keyof InitialStockScopeRow, label: string) {
+  const values = [...new Set(rows.map((row) => row[key]).filter((value): value is string => Boolean(value)))];
+  if (!values.length) return { ok: false as const, message: `File belum memuat ${label} saldo.` };
+  if (values.length > 1) return { ok: false as const, message: `File memuat lebih dari satu ${label}. Pisahkan file per ${label}.` };
+  if (rows.some((row) => !row[key])) return { ok: false as const, message: `Sebagian baris belum memuat ${label} saldo.` };
+  return { ok: true as const, value: values[0] };
+}
+
+export function resolveInitialStockSourceScope(
+  rows: InitialStockScopeRow[],
+  branches: InitialStockBranchOption[],
+  warehouses: InitialStockWarehouseOption[],
+): InitialStockSourceScope {
+  const branchSource = oneSourceValue(rows, "branchName", "cabang");
+  if (!branchSource.ok) return branchSource;
+  const warehouseSource = oneSourceValue(rows, "warehouseName", "gudang");
+  if (!warehouseSource.ok) return warehouseSource;
+  const dateSource = oneSourceValue(rows, "asOf", "tanggal");
+  if (!dateSource.ok) return dateSource;
+
+  const branch = branches.find((item) => [item.code, item.name].some((value) => scopeKey(value) === scopeKey(branchSource.value)));
+  if (!branch) return { ok: false, message: `Cabang ${branchSource.value} dari file belum tersedia di VetOS.` };
+  const warehouse = warehouses.find((item) => item.branch_id === branch.id
+    && [item.code, item.name].some((value) => scopeKey(value) === scopeKey(warehouseSource.value)));
+  if (!warehouse) return { ok: false, message: `Gudang ${warehouseSource.value} dari file belum tersedia pada cabang ${branch.name}.` };
+  return { ok: true, branch, warehouse, asOf: dateSource.value };
 }
 
 function findColumn(headers: Map<string, number>, aliases: string[]) {

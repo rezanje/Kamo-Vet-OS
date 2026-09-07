@@ -38,9 +38,7 @@ function MasterList({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-type Option = { id: string; name: string; branch_id?: string };
-
-export function AccurateImportForm({ branches, warehouses }: { branches: Option[]; warehouses: Option[] }) {
+export function AccurateImportForm() {
   const [files, setFiles] = useState<File[]>([]);
   const [categoryFile, setCategoryFile] = useState<File | null>(null);
   const [state, setState] = useState<AccurateImportState | null>(null);
@@ -318,8 +316,6 @@ export function AccurateImportForm({ branches, warehouses }: { branches: Option[
       )}
 
       <InitialStockImport
-        branches={branches}
-        warehouses={warehouses}
         sourceFile={files.length === 1 ? files[0] : null}
         masterRunId={state?.phase === "done" ? state.run_id : null}
       />

@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { bacaWorkbookSaldoAwal, duplicateStockKeys, reconcileInitialStock, resolveSaldoAwalRows, toBaseStock } from "../impor-saldo-accurate";
+import { bacaWorkbookSaldoAwal, duplicateStockKeys, reconcileInitialStock, resolveInitialStockSourceScope, resolveSaldoAwalRows, toBaseStock } from "../impor-saldo-accurate";
 
 async function workbook(rows: unknown[][]) {
   const wb = new ExcelJS.Workbook();
@@ -60,6 +60,29 @@ describe("bacaWorkbookSaldoAwal", () => {
       warehouseName: null,
       asOf: null,
     }]);
+  });
+});
+
+describe("resolveInitialStockSourceScope", () => {
+  const rows = [{
+    row: 2, itemCode: "SKU-1", qty: 12, unit: "PCS", unitCost: 15_000,
+    batchNo: null, expDate: null, branchName: "PDRY", warehouseName: "WH PDRY", asOf: "2024-12-20",
+  }];
+  const branches = [{ id: "branch-pdry", code: "PDRY", name: "Kamo Petshop Panduraya" }];
+  const warehouses = [{ id: "warehouse-pdry", branch_id: "branch-pdry", code: "WH_PDRY", name: "WH PDRY" }];
+
+  it("memilih cabang, gudang, dan tanggal dari file Accurate", () => {
+    expect(resolveInitialStockSourceScope(rows, branches, warehouses)).toEqual({
+      ok: true,
+      branch: branches[0],
+      warehouse: warehouses[0],
+      asOf: "2024-12-20",
+    });
+  });
+
+  it("menolak file yang mencampur gudang", () => {
+    expect(resolveInitialStockSourceScope([...rows, { ...rows[0], row: 3, warehouseName: "WH LAIN" }], branches, warehouses))
+      .toMatchObject({ ok: false, message: expect.stringContaining("lebih dari satu gudang") });
   });
 });
 

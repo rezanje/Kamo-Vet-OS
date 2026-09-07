@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { createClient } from "@/lib/supabase/server";
 import { ImporForm } from "./ImporForm";
 import { AccurateImportForm } from "./AccurateImportForm";
 import { GroupComponentImport } from "./GroupComponentImport";
@@ -12,13 +11,6 @@ export default async function ImporBarangPage({
 }) {
   const { error } = await searchParams;
   const boleh = await bolehKelolaMaster();
-  const supabase = boleh ? await createClient() : null;
-  const [{ data: branches }, { data: warehouses }] = supabase
-    ? await Promise.all([
-      supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("warehouses").select("id, name, branch_id").eq("is_active", true).order("name"),
-    ])
-    : [{ data: [] }, { data: [] }];
 
   return (
     <>
@@ -48,7 +40,7 @@ export default async function ImporBarangPage({
         </div>
       ) : (
         <>
-          <AccurateImportForm branches={branches ?? []} warehouses={warehouses ?? []} />
+          <AccurateImportForm />
           <GroupComponentImport />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>

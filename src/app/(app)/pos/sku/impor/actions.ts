@@ -31,6 +31,7 @@ import {
 import {
   bacaWorkbookSaldoAwal,
   reconcileInitialStock,
+  resolveInitialStockSourceScope,
   resolveSaldoAwalRows,
   type ResolvedSaldoAwal,
   type SaldoAwalMasterItem,
@@ -901,28 +902,17 @@ async function loadInitialScope(supabase: any, branchId: string, warehouseId: st
   return { branch, warehouse };
 }
 
-function scopeKey(value: string) {
-  return value.trim().toLocaleLowerCase("id-ID");
-}
-
-function validateInitialStockSourceScope(
-  rows: Awaited<ReturnType<typeof bacaWorkbookSaldoAwal>>["rows"],
-  scope: { branch: { name: string }; warehouse: { name: string } },
-  asOf: string,
-) {
-  const errors: string[] = [];
-  for (const row of rows) {
-    if (row.branchName && scopeKey(row.branchName) !== scopeKey(scope.branch.name)) {
-      errors.push(`Baris ${row.row}: cabang di file tidak cocok dengan cabang pilihan`);
-    }
-    if (row.warehouseName && scopeKey(row.warehouseName) !== scopeKey(scope.warehouse.name)) {
-      errors.push(`Baris ${row.row}: gudang di file tidak cocok dengan gudang pilihan`);
-    }
-    if (row.asOf && row.asOf !== asOf) {
-      errors.push(`Baris ${row.row}: tanggal saldo di file tidak cocok dengan tanggal pilihan`);
-    }
-  }
-  return errors;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadInitialScopeFromFile(supabase: any, rows: Awaited<ReturnType<typeof bacaWorkbookSaldoAwal>>["rows"]) {
+  const [{ data: branches, error: branchError }, { data: warehouses, error: warehouseError }] = await Promise.all([
+    supabase.from("branches").select("id,code,name").eq("is_active", true),
+    supabase.from("warehouses").select("id,branch_id,code,name").eq("is_active", true),
+  ]);
+  if (branchError) throw new Error(branchError.message);
+  if (warehouseError) throw new Error(warehouseError.message);
+  const scope = resolveInitialStockSourceScope(rows, branches ?? [], warehouses ?? []);
+  if (!scope.ok) throw new Error(scope.message);
+  return scope;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -996,28 +986,22 @@ async function createInitialStockRun(supabase: any, input: {
 export async function previewSaldoAwalAccurate(formData: FormData): Promise<InitialStockState> {
   try {
     const supabase = await assertBolehKelola();
-    const branchId = String(formData.get("branch_id") ?? "").trim();
-    const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
-    const asOf = String(formData.get("as_of") ?? "").trim();
     const masterRunId = String(formData.get("master_run_id") ?? "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error("Tanggal saldo wajib diisi.");
     await assertMasterImportPosted(supabase, masterRunId);
-    const scope = await loadInitialScope(supabase, branchId, warehouseId);
     const file = getInitialStockFile(formData);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const parsed = await bacaWorkbookSaldoAwal(bytes);
     if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
-    const sourceScopeErrors = validateInitialStockSourceScope(parsed.rows, scope, asOf);
-    if (sourceScopeErrors.length) return initialStockStateError(sourceScopeErrors.join(" "));
+    const { branch, warehouse, asOf } = await loadInitialScopeFromFile(supabase, parsed.rows);
     const master = await muatMasterSaldoAwal(supabase);
-    const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouseId);
+    const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);
     const sourceHash = await hashFiles([{ name: file.name, data: bytes }]);
     const summary = initialStockSummary(resolved);
     const runId = await createInitialStockRun(supabase, {
       sourceName: file.name,
       sourceHash,
-      branchId,
-      warehouseId,
+      branchId: branch.id,
+      warehouseId: warehouse.id,
       asOf,
       summary,
       rows: resolved,
@@ -1028,9 +1012,9 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
       phase: "preview",
       message: summary.rejected
         ? `${summary.valid} baris siap, ${summary.rejected} baris ditolak. Perbaiki file sebelum posting.`
-        : `${summary.valid} baris siap diposting ke gudang terpilih.`,
-      branch_id: branchId,
-      warehouse_id: warehouseId,
+        : `${summary.valid} baris siap diposting ke ${warehouse.name}, ${branch.name}, per ${asOf}.`,
+      branch_id: branch.id,
+      warehouse_id: warehouse.id,
       as_of: asOf,
       run_id: runId,
       master_run_id: masterRunId,
