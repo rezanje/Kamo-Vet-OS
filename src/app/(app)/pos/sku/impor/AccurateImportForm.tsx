@@ -10,6 +10,7 @@ import {
   konfirmasiImporAccurate,
   postSaldoAwalAccurate,
   previewImporAccurate,
+  preflightSaldoAwalSekali,
   previewSaldoAwalAccurate,
   type AccurateImportProgress,
   type AccurateImportState,
@@ -133,6 +134,16 @@ export function AccurateImportForm() {
         return;
       }
 
+      setOneClickStatus("Mengecek saldo stok awal…");
+      const stockPreflightData = new FormData();
+      stockPreflightData.append("initial_stock_file", file);
+      const stockPreflight = await preflightSaldoAwalSekali(stockPreflightData);
+      setOneClickStockState(stockPreflight);
+      if (!stockPreflight.ok) {
+        setOneClickStatus("");
+        return;
+      }
+
       let masterDone = masterPreview;
       if (masterPreview.phase === "preview") {
         setOneClickStatus("Menyimpan master Barang & Jasa…");
@@ -148,7 +159,7 @@ export function AccurateImportForm() {
         return;
       }
 
-      setOneClickStatus("Mengecek saldo stok awal…");
+      setOneClickStatus("Menyiapkan saldo stok awal…");
       const stockPreviewData = new FormData();
       stockPreviewData.append("initial_stock_file", file);
       stockPreviewData.append("master_run_id", masterDone.run_id);

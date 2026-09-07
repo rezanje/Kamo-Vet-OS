@@ -991,6 +991,56 @@ async function createInitialStockRun(supabase: any, input: {
   return String(inserted.data.id);
 }
 
+export async function preflightSaldoAwalSekali(formData: FormData): Promise<InitialStockState> {
+  try {
+    const supabase = await assertBolehKelola();
+    const file = getInitialStockFile(formData);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const [saldo, barang] = await Promise.all([
+      bacaWorkbookSaldoAwal(bytes),
+      bacaWorkbookAccurate(bytes),
+    ]);
+    if (saldo.errors.length) return initialStockStateError(saldo.errors.join(" "));
+    if (barang.errors.length) return initialStockStateError(barang.errors.join(" "));
+    const { warehouse, asOf } = await loadInitialScopeFromFile(supabase, saldo.rows);
+    const existing = await muatMasterSaldoAwal(supabase);
+    const projected = new Map(existing);
+    for (const item of barang.rows) {
+      const key = item.code.trim().toLowerCase();
+      projected.set(key, {
+        id: existing.get(key)?.id ?? `baru-${key}`,
+        code: item.code,
+        unit: item.unit,
+        itemType: item.item_type,
+        trackExpiry: item.track_expiry,
+        units: item.units.map((unit) => ({ unit: unit.unit, factor: unit.factor })),
+      });
+    }
+    const resolved = resolveSaldoAwalRows(saldo.rows, projected, warehouse.id);
+    const summary = initialStockSummary(resolved);
+    const names = new Map([...projected.values()].map((item) => [item.id, item.code]));
+    return {
+      ok: summary.valid > 0 && summary.rejected === 0,
+      phase: "preview",
+      message: summary.rejected
+        ? `${summary.valid} baris siap, ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi sebelum impor.`
+        : `${summary.valid} baris siap untuk impor sekali. ${summary.skipped} baris dilewati.`,
+      branch_id: null,
+      warehouse_id: null,
+      as_of: asOf,
+      run_id: null,
+      master_run_id: null,
+      source_hash: null,
+      rows: initialStockRowsState(resolved, names),
+      source_qty: summary.source_qty,
+      source_value: summary.source_value,
+      checks: [],
+    };
+  } catch (error) {
+    return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal diperiksa.");
+  }
+}
+
 export async function previewSaldoAwalAccurate(formData: FormData): Promise<InitialStockState> {
   try {
     const supabase = await assertBolehKelola();
