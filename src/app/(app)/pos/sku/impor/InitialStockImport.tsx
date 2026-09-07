@@ -69,6 +69,7 @@ export function InitialStockImport({
         <>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
             <span className="badge g">Valid {state.rows.filter((row) => row.status === "valid").length}</span>
+            <span className="badge y">Dilewati {state.rows.filter((row) => row.status === "skipped").length}</span>
             <span className="badge r">Ditolak {state.rows.filter((row) => row.status === "rejected").length}</span>
             <span className="badge b">Qty dasar {qty.format(state.source_qty)}</span>
             <span className="badge y">Nilai {rupiah.format(state.source_value)}</span>
@@ -78,10 +79,10 @@ export function InitialStockImport({
               <thead><tr><th>Baris</th><th>Barang</th><th>Satuan</th><th>Qty dasar</th><th>Status</th><th>Catatan</th></tr></thead>
               <tbody>{state.rows.map((row) => (
                 <tr key={`${row.row}-${row.itemCode}`}>
-                  <td>{row.row}</td><td>{row.itemCode}{row.itemName ? ` — ${row.itemName}` : ""}</td><td>{row.unit}</td>
+                  <td>{row.sourceRows?.join(", ") ?? row.row}</td><td>{row.itemCode}{row.itemName ? ` — ${row.itemName}` : ""}</td><td>{row.unit}</td>
                   <td>{qty.format(row.baseQty)}</td>
-                  <td><span className={`badge ${row.status === "valid" ? "g" : "r"}`}>{row.status}</span></td>
-                  <td style={{ color: row.reason ? "#b91c1c" : "var(--tm)" }}>{row.reason ?? "Siap"}</td>
+                  <td><span className={`badge ${row.status === "valid" ? "g" : row.status === "skipped" ? "y" : "r"}`}>{row.status}</span></td>
+                  <td style={{ color: row.status === "rejected" ? "#b91c1c" : "var(--tm)" }}>{row.reason ?? "Siap"}</td>
                 </tr>
               ))}</tbody>
             </table>

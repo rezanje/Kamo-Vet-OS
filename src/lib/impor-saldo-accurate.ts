@@ -61,7 +61,8 @@ export type ResolvedSaldoAwal = SaldoAwalDraft & {
   baseUnitCost: number;
   value: number;
   warehouseId: string;
-  status: "valid" | "rejected";
+  sourceRows?: number[];
+  status: "valid" | "rejected" | "skipped";
   reason: string | null;
 };
 
@@ -243,7 +244,7 @@ export function resolveSaldoAwalRows(
     let reason: string | null = null;
     let factor = 1;
     if (!item) reason = "Kode barang tidak ditemukan";
-    else if (item.itemType !== "Persediaan") reason = "Saldo stok hanya untuk barang persediaan";
+    else if (item.itemType !== "Persediaan") reason = "Jasa atau non-persediaan dilewati";
     else if (!item.unit) reason = "Satuan dasar barang belum tersedia";
     else if (row.unit.trim().toLowerCase() !== item.unit.trim().toLowerCase()) {
       factor = item.units.find((unit) => unit.unit.trim().toLowerCase() === row.unit.trim().toLowerCase())?.factor ?? 0;
@@ -252,6 +253,7 @@ export function resolveSaldoAwalRows(
     if (!reason && item?.trackExpiry && row.qty > 0 && !row.expDate) reason = "Tanggal kedaluwarsa wajib untuk barang bertanggal";
     if (!reason && row.expDate && row.expDate < "1900-01-01") reason = "Tanggal kedaluwarsa tidak valid";
     const converted = toBaseStock({ qty: row.qty, factor, unitCost: row.unitCost });
+    const skipped = !reason && converted.baseQty === 0;
     return {
       ...row,
       itemId: item?.id ?? "",
@@ -259,19 +261,44 @@ export function resolveSaldoAwalRows(
       baseUnitCost: converted.baseUnitCost,
       value: converted.value,
       warehouseId,
-      status: reason ? "rejected" : "valid",
-      reason,
+      status: reason ? (item && item.itemType !== "Persediaan" ? "skipped" : "rejected") : skipped ? "skipped" : "valid",
+      reason: reason ?? (skipped ? "Saldo nol dilewati" : null),
     };
   });
-  const duplicates = duplicateStockKeys(resolved.map((row) => ({
-    row: row.row,
-    warehouseId: row.warehouseId,
-    itemId: row.itemId || row.itemCode.trim().toLowerCase(),
-    batchNo: row.batchNo,
-    expDate: row.expDate,
-  })));
-  const duplicateRows = new Map(duplicates.map((row) => [row.row, row.message]));
-  return resolved.map((row) => duplicateRows.has(row.row)
-    ? { ...row, status: "rejected" as const, reason: duplicateRows.get(row.row)! }
-    : row);
+  const grouped = new Map<string, ResolvedSaldoAwal[]>();
+  const passthrough = resolved.filter((row) => row.status !== "valid");
+  for (const row of resolved.filter((item) => item.status === "valid")) {
+    const key = stockKey({
+      row: row.row,
+      warehouseId: row.warehouseId,
+      itemId: row.itemId,
+      batchNo: row.batchNo,
+      expDate: row.expDate,
+    });
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
+  const merged = [...grouped.values()].flatMap((group) => {
+    if (group.length === 1) return group;
+    const sourceRows = group.map((row) => row.row).sort((a, b) => a - b);
+    const firstCost = group[0].baseUnitCost;
+    if (group.some((row) => Math.abs(row.baseUnitCost - firstCost) > 0.000001)) {
+      return group.map((row) => ({
+        ...row,
+        status: "rejected" as const,
+        reason: "Saldo ganda dengan harga dasar berbeda",
+        sourceRows,
+      }));
+    }
+    const first = group[0];
+    const baseQty = group.reduce((total, row) => total + row.baseQty, 0);
+    const value = group.reduce((total, row) => total + row.value, 0);
+    return [{
+      ...first,
+      baseQty,
+      value,
+      baseUnitCost: baseQty > 0 ? value / baseQty : firstCost,
+      sourceRows,
+    }];
+  });
+  return [...passthrough, ...merged].sort((a, b) => a.row - b.row);
 }

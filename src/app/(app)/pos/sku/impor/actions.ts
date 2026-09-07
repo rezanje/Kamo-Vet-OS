@@ -885,9 +885,11 @@ function initialStockRowsState(rows: ResolvedSaldoAwal[], names: ReadonlyMap<str
 
 function initialStockSummary(rows: ResolvedSaldoAwal[]) {
   const valid = rows.filter((row) => row.status === "valid");
+  const skipped = rows.filter((row) => row.status === "skipped");
   return {
     valid: valid.length,
-    rejected: rows.length - valid.length,
+    skipped: skipped.length,
+    rejected: rows.length - valid.length - skipped.length,
     source_qty: valid.reduce((total, row) => total + row.baseQty, 0),
     source_value: valid.reduce((total, row) => total + row.value, 0),
   };
@@ -1001,7 +1003,10 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     const { branch, warehouse, asOf } = await loadInitialScopeFromFile(supabase, parsed.rows);
     const master = await muatMasterSaldoAwal(supabase);
     const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);
-    const sourceHash = await hashFiles([{ name: file.name, data: bytes }]);
+    const sourceHash = await hashFiles([
+      { name: file.name, data: bytes },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode("v2") },
+    ]);
     const summary = initialStockSummary(resolved);
     const runId = await createInitialStockRun(supabase, {
       sourceName: file.name,
@@ -1017,8 +1022,8 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
       ok: summary.valid > 0 && summary.rejected === 0,
       phase: "preview",
       message: summary.rejected
-        ? `${summary.valid} baris siap, ${summary.rejected} baris ditolak. Perbaiki file sebelum posting.`
-        : `${summary.valid} baris siap diposting ke ${warehouse.name}, ${branch.name}, per ${asOf}.`,
+        ? `${summary.valid} baris siap, ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi sebelum posting.`
+        : `${summary.valid} baris siap, ${summary.skipped} dilewati, ke ${warehouse.name}, ${branch.name}, per ${asOf}.`,
       branch_id: branch.id,
       warehouse_id: warehouse.id,
       as_of: asOf,
@@ -1073,7 +1078,10 @@ export async function postSaldoAwalAccurate(formData: FormData): Promise<Initial
     await loadInitialScope(supabase, branchId, warehouseId);
     const file = getInitialStockFile(formData);
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const sourceHash = await hashFiles([{ name: file.name, data: bytes }]);
+    const sourceHash = await hashFiles([
+      { name: file.name, data: bytes },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode("v2") },
+    ]);
     const run = await supabase.from("import_runs")
       .select("id,kind,status,source_hash,branch_id,warehouse_id,as_of_date,summary")
       .eq("id", runId).maybeSingle();

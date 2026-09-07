@@ -87,7 +87,7 @@ describe("resolveInitialStockSourceScope", () => {
 });
 
 describe("resolveSaldoAwalRows", () => {
-  it("menolak jasa meski kode dan satuannya cocok", () => {
+  it("melewati jasa dan stok nol", () => {
     const resolved = resolveSaldoAwalRows([{
       row: 2, itemCode: "JASA-1", qty: 1, unit: "PCS", unitCost: 20_000,
       batchNo: null, expDate: null, branchName: null, warehouseName: null, asOf: null,
@@ -95,6 +95,30 @@ describe("resolveSaldoAwalRows", () => {
       id: "jasa-1", code: "JASA-1", unit: "PCS", itemType: "Jasa", trackExpiry: false, units: [],
     }]]), "warehouse-1");
 
-    expect(resolved[0]).toMatchObject({ status: "rejected", reason: "Saldo stok hanya untuk barang persediaan" });
+    expect(resolved[0]).toMatchObject({ status: "skipped", reason: "Jasa atau non-persediaan dilewati" });
+  });
+
+  it("menggabungkan saldo ganda saat harga dasar sama", () => {
+    const rows = resolveSaldoAwalRows([
+      { row: 2, itemCode: "SKU-1", qty: 2, unit: "PCS", unitCost: 15_000, batchNo: null, expDate: null, branchName: null, warehouseName: null, asOf: null },
+      { row: 3, itemCode: "SKU-1", qty: 3, unit: "PCS", unitCost: 15_000, batchNo: null, expDate: null, branchName: null, warehouseName: null, asOf: null },
+    ], new Map([["sku-1", {
+      id: "sku-1", code: "SKU-1", unit: "PCS", itemType: "Persediaan", trackExpiry: false, units: [],
+    }]]), "warehouse-1");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "valid", baseQty: 5, value: 75_000, sourceRows: [2, 3] });
+  });
+
+  it("menahan saldo ganda dengan harga dasar berbeda", () => {
+    const rows = resolveSaldoAwalRows([
+      { row: 2, itemCode: "SKU-1", qty: 2, unit: "PCS", unitCost: 15_000, batchNo: null, expDate: null, branchName: null, warehouseName: null, asOf: null },
+      { row: 3, itemCode: "SKU-1", qty: 3, unit: "PCS", unitCost: 20_000, batchNo: null, expDate: null, branchName: null, warehouseName: null, asOf: null },
+    ], new Map([["sku-1", {
+      id: "sku-1", code: "SKU-1", unit: "PCS", itemType: "Persediaan", trackExpiry: false, units: [],
+    }]]), "warehouse-1");
+
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.status === "rejected")).toBe(true);
   });
 });
