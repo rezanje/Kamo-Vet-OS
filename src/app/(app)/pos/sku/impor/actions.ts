@@ -1156,7 +1156,9 @@ export async function postSaldoAwalAccurate(formData: FormData): Promise<Initial
     return {
       ok,
       phase: "done",
-      message: ok ? "Saldo awal diposting dan empat rekonsiliasi cocok." : "Posting selesai, tetapi rekonsiliasi belum cocok. Status tetap perlu ditinjau.",
+      message: ok
+        ? `${payloads.length} saldo stok awal berhasil masuk dan seluruh pengecekan akhir cocok.`
+        : "Posting selesai, tetapi pengecekan akhir belum cocok. Hasil perlu ditinjau.",
       branch_id: branchId,
       warehouse_id: warehouseId,
       as_of: asOf,
