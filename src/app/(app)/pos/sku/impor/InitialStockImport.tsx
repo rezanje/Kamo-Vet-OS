@@ -20,7 +20,16 @@ export function InitialStockImport({
   const [confirmed, setConfirmed] = useState(false);
   const [state, setState] = useState<InitialStockState | null>(null);
   const [localError, setLocalError] = useState("");
+  const [rowFilter, setRowFilter] = useState<"all" | "valid" | "skipped" | "rejected">("all");
   const [pending, startTransition] = useTransition();
+  const validCount = state?.rows.filter((row) => row.status === "valid").length ?? 0;
+  const skippedCount = state?.rows.filter((row) => row.status === "skipped").length ?? 0;
+  const rejectedRows = state?.rows.filter((row) => row.status === "rejected") ?? [];
+  const rejectedCount = rejectedRows.length;
+  const visibleRows = state?.rows.filter((row) => rowFilter === "all" || row.status === rowFilter) ?? [];
+  const reasons = [...new Map(rejectedRows.map((row) => [row.reason ?? "Perlu klarifikasi", 0]))]
+    .map(([reason]) => ({ reason, count: rejectedRows.filter((row) => row.reason === reason).length }));
+  const canPost = Boolean(state?.ok && confirmed && !pending);
 
   const run = (action: typeof previewSaldoAwalAccurate | typeof postSaldoAwalAccurate) => {
     if (!sourceFile || !masterRunId) {
@@ -39,7 +48,12 @@ export function InitialStockImport({
         data.append("warehouse_id", state.warehouse_id ?? "");
         data.append("as_of", state.as_of ?? "");
       }
-      setState(await action(data));
+      const result = await action(data);
+      if (action === previewSaldoAwalAccurate) {
+        setConfirmed(false);
+        setRowFilter(result.ok ? "all" : "rejected");
+      }
+      setState(result);
     });
   };
 
@@ -59,29 +73,50 @@ export function InitialStockImport({
         </button>
       </div>
 
-      {(localError || (state && !state.ok && state.phase === "preview")) && (
+      {localError && (
         <div className="p2ban" style={{ marginTop: 10, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-circle" /> {localError || state?.message}
+          <i className="ti ti-alert-circle" /> {localError}
         </div>
       )}
 
       {state && state.rows.length > 0 && (
         <>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
-            <span className="badge g">Valid {state.rows.filter((row) => row.status === "valid").length}</span>
-            <span className="badge y">Dilewati {state.rows.filter((row) => row.status === "skipped").length}</span>
-            <span className="badge r">Ditolak {state.rows.filter((row) => row.status === "rejected").length}</span>
+            <span className="badge g">Siap {validCount}</span>
+            <span className="badge y">Dilewati {skippedCount}</span>
+            <span className="badge r">Perlu klarifikasi {rejectedCount}</span>
             <span className="badge b">Qty dasar {qty.format(state.source_qty)}</span>
             <span className="badge y">Nilai {rupiah.format(state.source_value)}</span>
+          </div>
+          {rejectedCount > 0 ? (
+            <div className="p2ban" style={{ marginTop: 10, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+              <b>Posting terkunci — {rejectedCount} baris perlu klarifikasi.</b>
+              {reasons.map(({ reason, count }) => <div key={reason} style={{ marginTop: 4 }}>• {count} baris: {reason}.</div>)}
+              <div style={{ marginTop: 5 }}>Sistem tidak memilih harga sendiri supaya nilai stok awal tidak salah.</div>
+            </div>
+          ) : (
+            <div className="p2ban" style={{ marginTop: 10, background: "#f0fdf4", border: ".5px solid #bbf7d0", color: "#166534" }}>
+              Semua saldo yang akan masuk sudah siap. {skippedCount} baris jasa atau saldo nol dilewati dan tidak menghalangi posting.
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+            {([
+              ["all", "Semua"], ["valid", `Siap (${validCount})`], ["skipped", `Dilewati (${skippedCount})`], ["rejected", `Perlu klarifikasi (${rejectedCount})`],
+            ] as const).map(([filter, label]) => (
+              <button key={filter} type="button" className="btn-def" onClick={() => setRowFilter(filter)}
+                style={{ background: rowFilter === filter ? "#e0e7ff" : undefined, borderColor: rowFilter === filter ? "#818cf8" : undefined }}>
+                {label}
+              </button>
+            ))}
           </div>
           <div style={{ overflowX: "auto", marginTop: 10, maxHeight: 220 }}>
             <table className="data-table" style={{ fontSize: 10.5 }}>
               <thead><tr><th>Baris</th><th>Barang</th><th>Satuan</th><th>Qty dasar</th><th>Status</th><th>Catatan</th></tr></thead>
-              <tbody>{state.rows.map((row) => (
+              <tbody>{visibleRows.map((row) => (
                 <tr key={`${row.row}-${row.itemCode}`}>
                   <td>{row.sourceRows?.join(", ") ?? row.row}</td><td>{row.itemCode}{row.itemName ? ` — ${row.itemName}` : ""}</td><td>{row.unit}</td>
                   <td>{qty.format(row.baseQty)}</td>
-                  <td><span className={`badge ${row.status === "valid" ? "g" : row.status === "skipped" ? "y" : "r"}`}>{row.status}</span></td>
+                  <td><span className={`badge ${row.status === "valid" ? "g" : row.status === "skipped" ? "y" : "r"}`}>{row.status === "valid" ? "Siap" : row.status === "skipped" ? "Dilewati" : "Klarifikasi"}</span></td>
                   <td style={{ color: row.status === "rejected" ? "#b91c1c" : "var(--tm)" }}>{row.reason ?? "Siap"}</td>
                 </tr>
               ))}</tbody>
@@ -93,12 +128,12 @@ export function InitialStockImport({
       {state?.phase === "preview" && state.run_id && (
         <div style={{ marginTop: 12 }}>
           <label style={{ display: "flex", gap: 7, alignItems: "flex-start", fontSize: 11, color: "var(--sb)" }}>
-            <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
+            <input type="checkbox" checked={confirmed} disabled={rejectedCount > 0} onChange={(event) => setConfirmed(event.target.checked)} />
             <span>Saya sudah mencocokkan tujuan dan tanggal saldo dari preview.</span>
           </label>
-          <button type="button" className="btn-acc" style={{ marginTop: 9, background: "#15803d" }}
-            disabled={pending || !state.ok || !confirmed} onClick={() => run(postSaldoAwalAccurate)}>
-            <i className="ti ti-database-import" /> {pending ? "Posting…" : "Posting saldo awal"}
+          <button type="button" className="btn-acc" style={{ marginTop: 9, background: canPost ? "#15803d" : "#94a3b8", cursor: canPost ? "pointer" : "not-allowed" }}
+            disabled={!canPost} onClick={() => run(postSaldoAwalAccurate)}>
+            <i className="ti ti-database-import" /> {pending ? "Posting…" : rejectedCount > 0 ? `Posting terkunci — ${rejectedCount} masalah` : "Posting saldo awal"}
           </button>
         </div>
       )}
