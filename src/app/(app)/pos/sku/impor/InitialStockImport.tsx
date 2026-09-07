@@ -45,14 +45,14 @@ export function InitialStockImport({
 
   return (
     <section className="crm-sec" style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Tahap 2 — Saldo Stok Awal</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Saldo Stok Awal</div>
       <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3, lineHeight: 1.55 }}>
-        Memakai file Barang &amp; Jasa yang sama. Cabang, gudang, dan tanggal dibaca otomatis dari file.
+        Masih dalam alur impor file yang sama. Cabang, gudang, dan tanggal dibaca otomatis dari file.
       </div>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
         <span style={{ fontSize: 11, color: sourceFile && masterRunId ? "#166534" : "var(--tm)" }}>
-          <i className="ti ti-file-spreadsheet" /> {sourceFile && masterRunId ? sourceFile.name : "Selesaikan tahap Barang & Jasa dulu"}
+          <i className="ti ti-file-spreadsheet" /> {sourceFile && masterRunId ? sourceFile.name : "Pilih dan cek file impor dulu"}
         </span>
         <button type="button" className="btn-acc" disabled={pending || !sourceFile || !masterRunId} onClick={() => run(previewSaldoAwalAccurate)}>
           <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek saldo"}

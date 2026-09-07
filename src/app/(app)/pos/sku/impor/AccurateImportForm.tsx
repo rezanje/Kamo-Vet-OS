@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import {
   ACCURATE_MATRIX_COLUMNS,
   type AccurateMatrixColumn,
@@ -113,14 +112,14 @@ export function AccurateImportForm() {
     <div className="crm-sec" style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Impor Barang &amp; Jasa Excel</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Impor Barang, Jasa &amp; Saldo Stok Awal</div>
           <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3, maxWidth: 700, lineHeight: 1.55 }}>
             Pakai export <b>Persediaan → Barang &amp; Jasa → Ekspor ke Excel</b> atau format Excel klien dengan kolom yang sama.
-            Sistem menampilkan perubahan dulu; tombol konfirmasi baru menyimpan master barang.
+            Satu alur untuk master dan saldo stok dari file yang sama. Master tetap dicek dulu, lalu saldo dapat ditinjau sebelum diposting.
           </div>
         </div>
         <span style={{ fontSize: 10, fontWeight: 800, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "5px 9px" }}>
-          STOK TIDAK DIIMPOR
+          SALDO DALAM ALUR INI
         </span>
       </div>
 
@@ -303,9 +302,9 @@ export function AccurateImportForm() {
                 <i className="ti ti-database-import" /> {pending ? "Mengimpor…" : "Konfirmasi impor master"}
               </button>
             ) : (
-              <Link href="/pos/sku" className="btn-acc" style={{ background: "#15803d" }}>
-                <i className="ti ti-check" /> Lihat Barang &amp; Jasa
-              </Link>
+              <span style={{ fontSize: 10.5, color: "#166534", fontWeight: 800 }}>
+                <i className="ti ti-circle-check" /> Master siap. Lanjut cek saldo stok di bawah.
+              </span>
             )}
             <span style={{ fontSize: 10.5, color: state.ok ? "#166534" : "#b91c1c" }}>{state.message}</span>
             {state.phase === "preview" && state.source_fingerprint && (
@@ -316,6 +315,7 @@ export function AccurateImportForm() {
       )}
 
       <InitialStockImport
+        key={state?.run_id ?? "belum-ada-master"}
         sourceFile={files.length === 1 ? files[0] : null}
         masterRunId={state?.phase === "done" ? state.run_id : null}
       />

@@ -428,8 +428,11 @@ async function findOrCreateImportRun(supabase: any, input: {
     .select("id, status").eq("kind", "master_accurate").eq("source_hash", input.sourceHash).maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
   if (existing.data) {
-    if (existing.data.status !== "previewed") throw new Error("Batch file yang sama sudah pernah diposting.");
-    return String(existing.data.id);
+    if (existing.data.status === "posted") {
+      return { id: String(existing.data.id), status: "posted" as const };
+    }
+    if (existing.data.status !== "previewed") throw new Error("Batch file ini tidak dapat dilanjutkan.");
+    return { id: String(existing.data.id), status: "previewed" as const };
   }
   const inserted = await supabase.from("import_runs").insert({
     kind: "master_accurate",
@@ -451,7 +454,7 @@ async function findOrCreateImportRun(supabase: any, input: {
     const rowsInserted = await supabase.from("import_run_rows").insert(rowPayload);
     if (rowsInserted.error) throw new Error(rowsInserted.error.message);
   }
-  return String(inserted.data.id);
+  return { id: String(inserted.data.id), status: "previewed" as const };
 }
 
 function uniqueMissing(values: (string | null)[], existing: ReadonlyMap<string, unknown>) {
@@ -501,21 +504,24 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     const sourceParts = [...upload.bytes, ...categoryBytes];
     const sourceHash = await hashFiles(sourceParts);
     const summary = summarize(rows);
-    const runId = await findOrCreateImportRun(supabase, {
+    const importRun = await findOrCreateImportRun(supabase, {
       sourceName: sourceParts.map((part) => part.name).sort().join(", "),
       sourceHash,
       summary,
       rows,
     });
+    const masterAlreadyPosted = importRun.status === "posted";
     return {
       ok: true,
-      phase: "preview",
-      message: `${parsed.rows.length} baris siap dari ${files.length} file. ${parsed.skipped.length} duplikat sama dilewati, ${parsed.rejected.length} konflik ditandai. ${hierarchyCount} relasi subkategori ditemukan. Stok tidak diimpor.`,
+      phase: masterAlreadyPosted ? "done" : "preview",
+      message: masterAlreadyPosted
+        ? "Master dari file ini sudah pernah diimpor. Lanjutkan cek saldo stok awal dari file yang sama di bawah."
+        : `${parsed.rows.length} baris siap dari ${files.length} file. ${parsed.skipped.length} duplikat sama dilewati, ${parsed.rejected.length} konflik ditandai. ${hierarchyCount} relasi subkategori ditemukan.`,
       hierarchy_count: hierarchyCount,
       rows,
       summary,
       new_masters: newMasters(parsed.rows, master, parsedCategories.rows),
-      run_id: runId,
+      run_id: importRun.id,
       source_hash: sourceHash,
       source_fingerprint: fingerprintInput(sourceParts.map((part) => ({ name: part.name, size: part.data.byteLength }))),
     };
