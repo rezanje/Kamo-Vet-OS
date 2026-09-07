@@ -1,15 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { SubmitButton } from "@/components/SubmitButton";
-import { kategoriWajibConsent } from "@/lib/tindakan";
 import { loadItemUnits, type ItemUnit } from "@/lib/satuan";
 import { ITEM_TYPES } from "@/lib/barang";
 import { BARANG_FIELDS } from "./data";
-import { toggleBarang } from "./actions";
 import { flatOptions, labelPath, type KategoriRow } from "@/lib/kategori";
-
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+import { BarangMatrixTable, type BarangMatrixRow } from "./BarangMatrixTable";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -18,8 +14,11 @@ function one<T>(r: Rel<T>): T | null {
 
 type Row = {
   id: string; name: string; code: string | null; unit: string; category_id: string | null;
-  item_type: string; sell_price: number; is_active: boolean; tindakan_kategori: string | null;
+  item_type: string; sell_price: number; buy_price: number; min_stock: number; is_active: boolean;
+  upc: string | null; track_expiry: boolean; supplier_id: string | null; buy_unit: string | null;
+  min_buy: number; default_discount: number; tindakan_kategori: string | null;
   brands: Rel<{ name: string }>;
+  suppliers: Rel<{ nama: string }>;
   units?: ItemUnit[];
 };
 
@@ -45,7 +44,7 @@ export default async function BarangJasaPage({
   const katRows = (categories ?? []) as KategoriRow[];
   const cats = flatOptions(katRows); // chip filter: hanya kategori aktif
 
-  let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name)`).order("name").limit(500);
+  let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name), suppliers(nama)`).order("name").limit(500);
   if (kat) q = q.eq("category_id", kat);
   if (jenis) q = q.eq("item_type", jenis);
   // `cari` datang dari pencarian global di topbar — layar langsung terbuka
@@ -59,6 +58,27 @@ export default async function BarangJasaPage({
   // Kolom kategori dipetakan dari SEMUA kategori (termasuk yang nonaktif) — barang
   // lama tetap menunjukkan kategorinya, bukan tanda strip.
   const namaKat = new Map(katRows.map((c) => [c.id, labelPath(c.id, katRows)]));
+  const matrixRows: BarangMatrixRow[] = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    code: row.code,
+    item_type: row.item_type,
+    category_name: row.category_id ? namaKat.get(row.category_id) ?? null : null,
+    brand_name: one(row.brands)?.name ?? null,
+    unit: row.unit,
+    units: row.units ?? [],
+    sell_price: Number(row.sell_price),
+    buy_price: Number(row.buy_price),
+    min_stock: Number(row.min_stock),
+    supplier_name: one(row.suppliers)?.nama ?? null,
+    buy_unit: row.buy_unit,
+    min_buy: Number(row.min_buy),
+    upc: row.upc,
+    track_expiry: row.track_expiry,
+    default_discount: Number(row.default_discount),
+    is_active: row.is_active,
+    tindakan_kategori: row.tindakan_kategori,
+  }));
 
   const filterHref = (next: { kat?: string; jenis?: string }) => {
     const p = new URLSearchParams();
@@ -115,76 +135,7 @@ export default async function BarangJasaPage({
         ))}
       </div>
 
-      <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 860 }}>
-            <thead>
-              <tr>
-                <th style={{ width: 30 }}>No.</th><th>Nama</th><th style={{ width: 90 }}>Kode</th>
-                <th style={{ width: 110 }}>Jenis</th>
-                <th style={{ width: 120 }}>Kategori</th><th style={{ width: 110 }}>Merek</th>
-                <th style={{ width: 120 }}>Tindakan</th>
-                <th style={{ width: 110, textAlign: "right" }}>Harga jual</th>
-                <th style={{ width: 80 }}>Status</th>{bolehKelola && <th style={{ width: 130 }}>Aksi</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((it, i) => (
-                <tr key={it.id}>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>
-                    {it.name}
-                    <div style={{ fontSize: 9, color: "var(--tm)" }}>
-                      {it.unit}
-                      {(it.units ?? []).map((u) => (
-                        <span key={u.unit} style={{ color: "var(--td)" }}> · 1 {u.unit} = {u.factor} {it.unit}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{it.code || "—"}</td>
-                  <td style={{ fontSize: 10.5 }}>{it.item_type}</td>
-                  <td style={{ fontSize: 10.5 }}>{it.category_id ? namaKat.get(it.category_id) ?? "—" : "—"}</td>
-                  <td style={{ fontSize: 10.5 }}>{one(it.brands)?.name ?? "—"}</td>
-                  <td>
-                    {it.tindakan_kategori
-                      ? <span className={`bge ${kategoriWajibConsent(it.tindakan_kategori) ? "r" : "b"}`}>{it.tindakan_kategori}</span>
-                      : <span style={{ fontSize: 10.5, color: "var(--td)" }}>—</span>}
-                  </td>
-                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
-                    {rp(Number(it.sell_price))}
-                    <div style={{ fontSize: 9, fontWeight: 400, color: "var(--tm)" }}>/ {it.unit}</div>
-                    {(it.units ?? []).map((u) => (
-                      <div key={u.unit} style={{ fontSize: 9.5, fontWeight: 500, color: "var(--tm)" }}>
-                        {rp(u.sell_price)} <span style={{ fontWeight: 400, color: "var(--td)" }}>/ {u.unit}</span>
-                      </div>
-                    ))}
-                  </td>
-                  <td><span className={`bge ${it.is_active ? "g" : "x"}`}>{it.is_active ? "Aktif" : "Nonaktif"}</span></td>
-                  {bolehKelola && (
-                    <td>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <Link href={`/pos/sku/${it.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Edit</Link>
-                        <form action={toggleBarang}>
-                          <input type="hidden" name="id" value={it.id} />
-                          <input type="hidden" name="aktif" value={it.is_active ? "1" : "0"} />
-                          <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
-                            {it.is_active ? "Nonaktifkan" : "Aktifkan"}
-                          </SubmitButton>
-                        </form>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={bolehKelola ? 10 : 9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                  Belum ada barang di filter ini.
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <BarangMatrixTable rows={matrixRows} bolehKelola={bolehKelola} />
     </>
   );
 }

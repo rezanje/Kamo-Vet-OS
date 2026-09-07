@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ACCURATE_MATRIX_COLUMNS,
   type AccurateMatrixColumn,
+} from "@/lib/accurate-matrix";
+import {
   type AccuratePreviewStatus,
 } from "@/lib/impor-accurate";
 import {
