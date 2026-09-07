@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   experimental: {
     // Export Accurate bisa lebih besar dari batas bawaan Server Action (1 MB).
     // Validasi action membatasi barang 15 MB + kategori 1 MB.
-    serverActions: { bodySizeLimit: "16mb" },
+    serverActions: { bodySizeLimit: "32mb" },
   },
 };
 
