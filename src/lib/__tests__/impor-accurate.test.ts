@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bacaWorkbookKategoriAccurate,
   bacaWorkbookAccurate,
+  buatMatriksItemAccurate,
   buatPayloadItemAccurate,
   buatPreviewAccurate,
   rencanaIndukKategoriAccurate,
@@ -152,6 +153,52 @@ describe("bacaWorkbookAccurate", () => {
 
   it("menolak bytes yang bukan workbook", async () => {
     await expect(bacaWorkbookAccurate(Buffer.from("bukan xlsx"))).rejects.toThrow();
+  });
+});
+
+describe("buatMatriksItemAccurate", () => {
+  it("menampilkan seluruh data master yang akan diimpor tanpa mengikutkan stok awal", () => {
+    const matrix = buatMatriksItemAccurate({
+      row_no: 2,
+      code: "SKU-1",
+      name: "Makanan Kucing",
+      item_type: "Persediaan",
+      category_name: "Pakan",
+      brand_name: "Kamo",
+      unit: "PCS",
+      sell_price: 20_000,
+      buy_price: 15_000,
+      min_stock: 10,
+      supplier_name: "Pemasok A",
+      buy_unit: "DUS",
+      min_buy: 2,
+      upc: "8990001",
+      track_expiry: true,
+      default_discount: 5,
+      is_active: true,
+      units: [{ unit: "DUS", factor: 12, sell_price: 240_000, buy_price: 0 }],
+    });
+
+    expect(matrix).toMatchObject({
+      code: "SKU-1",
+      name: "Makanan Kucing",
+      item_type: "Persediaan",
+      category_name: "Pakan",
+      brand_name: "Kamo",
+      unit: "PCS",
+      extra_units: "DUS (12x; jual 240000)",
+      sell_price: "20000",
+      buy_price: "15000",
+      min_stock: "10",
+      supplier_name: "Pemasok A",
+      buy_unit: "DUS",
+      min_buy: "2",
+      upc: "8990001",
+      track_expiry: "Ya",
+      default_discount: "5",
+      is_active: "Aktif",
+    });
+    expect(matrix).not.toHaveProperty("initial_stock");
   });
 });
 

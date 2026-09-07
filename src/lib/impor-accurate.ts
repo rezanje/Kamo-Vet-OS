@@ -30,6 +30,55 @@ export type AccurateItem = {
   source?: string;
 };
 
+export const ACCURATE_MATRIX_COLUMNS = [
+  { key: "item_type", label: "Jenis" },
+  { key: "category_name", label: "Kategori" },
+  { key: "brand_name", label: "Merek" },
+  { key: "unit", label: "Satuan dasar" },
+  { key: "extra_units", label: "Satuan tambahan" },
+  { key: "sell_price", label: "Harga jual" },
+  { key: "buy_price", label: "Harga beli" },
+  { key: "min_stock", label: "Batas stok minimum" },
+  { key: "supplier_name", label: "Pemasok" },
+  { key: "buy_unit", label: "Satuan beli" },
+  { key: "min_buy", label: "Minimum beli" },
+  { key: "upc", label: "Barcode" },
+  { key: "track_expiry", label: "Tanggal kadaluarsa" },
+  { key: "default_discount", label: "Diskon default" },
+  { key: "is_active", label: "Status aktif" },
+] as const;
+
+export type AccurateMatrixColumn = (typeof ACCURATE_MATRIX_COLUMNS)[number]["key"];
+
+export type AccurateMatrixValues = Record<
+  "code" | "name" | AccurateMatrixColumn,
+  string
+>;
+
+export function buatMatriksItemAccurate(item: AccurateItem): AccurateMatrixValues {
+  return {
+    code: item.code,
+    name: item.name,
+    item_type: item.item_type,
+    category_name: item.category_name,
+    brand_name: item.brand_name ?? "",
+    unit: item.unit,
+    extra_units: item.units.map((unit) => (
+      `${unit.unit} (${unit.factor}x; jual ${unit.sell_price})`
+    )).join(", "),
+    sell_price: String(item.sell_price),
+    buy_price: String(item.buy_price),
+    min_stock: String(item.min_stock),
+    supplier_name: item.supplier_name ?? "",
+    buy_unit: item.buy_unit ?? "",
+    min_buy: String(item.min_buy),
+    upc: item.upc ?? "",
+    track_expiry: item.track_expiry ? "Ya" : "Tidak",
+    default_discount: String(item.default_discount),
+    is_active: item.is_active ? "Aktif" : "Nonaktif",
+  };
+}
+
 export type AccurateIssue = {
   row_no: number;
   code: string;
@@ -74,6 +123,7 @@ export type AccuratePreviewRow = {
   changed_fields: string[];
   reason: string | null;
   source?: string;
+  matrix: AccurateMatrixValues | null;
 };
 
 export type AccurateItemRefs = {
@@ -477,6 +527,7 @@ export function buatPreviewAccurate(
       status: existing ? (changed.length ? "Update" : "Sama") : "Baru",
       changed_fields: changed,
       reason: null,
+      matrix: buatMatriksItemAccurate(item),
     };
   });
   preview.push(...workbook.skipped.map((issue) => ({
@@ -487,6 +538,7 @@ export function buatPreviewAccurate(
     status: "Dilewati" as const,
     changed_fields: [],
     reason: issue.reason,
+    matrix: null,
   })));
   preview.push(...workbook.rejected.map((issue) => ({
     row_no: issue.row_no,
@@ -496,6 +548,7 @@ export function buatPreviewAccurate(
     status: "Ditolak" as const,
     changed_fields: [],
     reason: issue.reason,
+    matrix: null,
   })));
   return preview.sort((a, b) => a.row_no - b.row_no);
 }

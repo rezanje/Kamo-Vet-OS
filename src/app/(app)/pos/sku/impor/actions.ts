@@ -9,6 +9,7 @@ import { pesanSimpanGagal } from "@/lib/barang";
 import {
   bacaWorkbookKategoriAccurate,
   bacaWorkbookAccurate,
+  buatMatriksItemAccurate,
   buatPayloadItemAccurate,
   buatPreviewAccurate,
   rencanaIndukKategoriAccurate,
@@ -709,6 +710,7 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
               changed_fields: [],
               reason,
               source: preview?.source ?? item.source,
+              matrix: preview?.matrix ?? buatMatriksItemAccurate(item),
             });
             await rejectImportRow(supabase, runId, item, reason);
           }

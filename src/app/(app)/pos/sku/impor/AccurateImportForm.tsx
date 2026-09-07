@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import type { AccuratePreviewStatus } from "@/lib/impor-accurate";
+import {
+  ACCURATE_MATRIX_COLUMNS,
+  type AccurateMatrixColumn,
+  type AccuratePreviewStatus,
+} from "@/lib/impor-accurate";
 import {
   konfirmasiImporAccurate,
   previewImporAccurate,
@@ -17,6 +21,10 @@ const STATUS_STYLE: Record<AccuratePreviewStatus, { bg: string; color: string }>
   Dilewati: { bg: "#fef3c7", color: "#92400e" },
   Ditolak: { bg: "#fee2e2", color: "#b91c1c" },
 };
+
+const DEFAULT_MATRIX_COLUMNS: AccurateMatrixColumn[] = [
+  "item_type", "category_name", "unit", "sell_price", "buy_price",
+];
 
 function MasterList({ label, values }: { label: string; values: string[] }) {
   if (!values.length) return null;
@@ -35,6 +43,7 @@ export function AccurateImportForm() {
   const [state, setState] = useState<AccurateImportState | null>(null);
   const [localError, setLocalError] = useState("");
   const [showSame, setShowSame] = useState(false);
+  const [visibleMatrixColumns, setVisibleMatrixColumns] = useState<AccurateMatrixColumn[]>(DEFAULT_MATRIX_COLUMNS);
   const [progress, setProgress] = useState<AccurateImportProgress | null>(null);
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
@@ -63,6 +72,14 @@ export function AccurateImportForm() {
     () => (state?.rows ?? []).filter((row) => showSame || row.status !== "Sama"),
     [showSame, state],
   );
+
+  const toggleMatrixColumn = (column: AccurateMatrixColumn) => {
+    setVisibleMatrixColumns((current) => (
+      current.includes(column)
+        ? current.filter((value) => value !== column)
+        : [...current, column]
+    ));
+  };
 
   const run = (action: (data: FormData) => Promise<AccurateImportState>) => {
     if (!files.length) {
@@ -216,10 +233,37 @@ export function AccurateImportForm() {
             </div>
           )}
 
+          <details style={{ marginTop: 10, padding: "9px 10px", background: "#f8fafc", border: ".5px solid #cbd5e1", borderRadius: 8 }}>
+            <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 800, color: "#334155" }}>
+              Atur kolom matriks ({visibleMatrixColumns.length}/{ACCURATE_MATRIX_COLUMNS.length})
+            </summary>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "7px 12px", marginTop: 9 }}>
+              {ACCURATE_MATRIX_COLUMNS.map((column) => (
+                <label key={column.key} style={{ fontSize: 10.5, color: "#475569", display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={visibleMatrixColumns.includes(column.key)}
+                    onChange={() => toggleMatrixColumn(column.key)}
+                  />
+                  {column.label}
+                </label>
+              ))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 10, color: "#64748b" }}>
+              Kolom di sini hanya mengatur tampilan. Semua data master tetap diperiksa dan diimpor saat dikonfirmasi.
+            </div>
+          </details>
+
           <div style={{ marginTop: 10, maxHeight: 430, overflow: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
-            <table className="dt" style={{ width: "100%", minWidth: 720 }}>
+            <table className="dt" style={{ width: "100%", minWidth: 720 + (visibleMatrixColumns.length * 130) }}>
               <thead>
-                <tr><th>Baris</th><th>Kode</th><th>Nama</th><th>Status</th><th>Perubahan / alasan</th></tr>
+                <tr>
+                  <th>Baris</th><th>Kode</th><th>Nama</th>
+                  {ACCURATE_MATRIX_COLUMNS.filter((column) => visibleMatrixColumns.includes(column.key)).map((column) => (
+                    <th key={column.key}>{column.label}</th>
+                  ))}
+                  <th>Status</th><th>Perubahan / alasan</th>
+                </tr>
               </thead>
               <tbody>
                 {visibleRows.map((row) => (
@@ -227,6 +271,11 @@ export function AccurateImportForm() {
                     <td>{row.source || row.row_no}</td>
                     <td><code>{row.code}</code></td>
                     <td>{row.name}</td>
+                    {ACCURATE_MATRIX_COLUMNS.filter((column) => visibleMatrixColumns.includes(column.key)).map((column) => (
+                      <td key={column.key} style={{ fontSize: 10.5, color: "var(--tm)", whiteSpace: "nowrap" }}>
+                        {row.matrix?.[column.key] || "—"}
+                      </td>
+                    ))}
                     <td>
                       <span style={{
                         fontSize: 9.5,
