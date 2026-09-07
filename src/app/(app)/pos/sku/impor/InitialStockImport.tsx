@@ -36,6 +36,7 @@ export function InitialStockImport({
   const reasons = [...new Map(rejectedRows.map((row) => [row.reason ?? "Perlu klarifikasi", 0]))]
     .map(([reason]) => ({ reason, count: rejectedRows.filter((row) => row.reason === reason).length }));
   const canPost = Boolean(displayedState?.ok && confirmed && !pending);
+  const showManualControls = !presetState;
 
   const run = (action: typeof previewSaldoAwalAccurate | typeof postSaldoAwalAccurate) => {
     if (!sourceFile || !masterRunId) {
@@ -66,19 +67,21 @@ export function InitialStockImport({
 
   return (
     <section className="crm-sec" style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Saldo Stok Awal</div>
-      <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3, lineHeight: 1.55 }}>
-        Masih dalam alur impor file yang sama. Cabang, gudang, dan tanggal dibaca otomatis dari file.
-      </div>
+      {showManualControls && <>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Saldo Stok Awal</div>
+        <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3, lineHeight: 1.55 }}>
+          Memakai file yang sama. Cabang, gudang, dan tanggal dibaca otomatis dari file.
+        </div>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
-        <span style={{ fontSize: 11, color: sourceFile && masterRunId ? "#166534" : "var(--tm)" }}>
-          <i className="ti ti-file-spreadsheet" /> {sourceFile && masterRunId ? sourceFile.name : "Pilih dan cek file impor dulu"}
-        </span>
-        <button type="button" className="btn-acc" disabled={pending || !sourceFile || !masterRunId} onClick={() => run(previewSaldoAwalAccurate)}>
-          <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek saldo"}
-        </button>
-      </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+          <span style={{ fontSize: 11, color: sourceFile && masterRunId ? "#166534" : "var(--tm)" }}>
+            <i className="ti ti-file-spreadsheet" /> {sourceFile && masterRunId ? sourceFile.name : "Pilih dan cek file impor dulu"}
+          </span>
+          <button type="button" className="btn-acc" disabled={pending || !sourceFile || !masterRunId} onClick={() => run(previewSaldoAwalAccurate)}>
+            <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek saldo"}
+          </button>
+        </div>
+      </>}
 
       {localError && (
         <div className="p2ban" style={{ marginTop: 10, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>

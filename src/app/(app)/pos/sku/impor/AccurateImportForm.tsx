@@ -114,6 +114,33 @@ export function AccurateImportForm() {
     });
   };
 
+  const cekPerubahanSekali = () => {
+    if (files.length !== 1) {
+      setLocalError("Cek perubahan dan saldo memakai satu file Excel yang sama.");
+      return;
+    }
+    const file = files[0];
+    setLocalError("");
+    setOneClickStockState(null);
+    startTransition(async () => {
+      const masterData = new FormData();
+      masterData.append("files", file);
+      if (categoryFile) masterData.append("category_file", categoryFile);
+      setOneClickStatus("Mengecek master Barang & Jasa…");
+      const masterPreview = await previewImporAccurate(masterData);
+      setState(masterPreview);
+      if (!masterPreview.ok) {
+        setOneClickStatus("");
+        return;
+      }
+      setOneClickStatus("Mengecek saldo stok awal…");
+      const stockData = new FormData();
+      stockData.append("initial_stock_file", file);
+      setOneClickStockState(await preflightSaldoAwalSekali(stockData));
+      setOneClickStatus("");
+    });
+  };
+
   const importSekali = () => {
     if (files.length !== 1) {
       setLocalError("Import Sekali memakai satu file Excel yang memuat master dan saldo stok awal.");
@@ -236,7 +263,7 @@ export function AccurateImportForm() {
           />
         </label>
         <button type="button" className="btn-acc" disabled={pending || !files.length}
-          onClick={() => run(previewImporAccurate)} style={{ background: "var(--posb)" }}>
+          onClick={cekPerubahanSekali} style={{ background: "var(--posb)" }}>
           <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek perubahan"}
         </button>
         <button type="button" className="btn-acc" disabled={pending || files.length !== 1}
@@ -394,13 +421,15 @@ export function AccurateImportForm() {
         </>
       )}
 
-      <InitialStockImport
-        key={state?.run_id ?? "belum-ada-master"}
-        sourceFile={files.length === 1 ? files[0] : null}
-        masterRunId={state?.phase === "done" ? state.run_id : null}
-        presetState={oneClickStockState}
-        onPresetStateChange={setOneClickStockState}
-      />
+      {oneClickStockState && (
+        <InitialStockImport
+          key={state?.run_id ?? "belum-ada-master"}
+          sourceFile={files.length === 1 ? files[0] : null}
+          masterRunId={state?.phase === "done" ? state.run_id : null}
+          presetState={oneClickStockState}
+          onPresetStateChange={setOneClickStockState}
+        />
+      )}
     </div>
   );
 }
