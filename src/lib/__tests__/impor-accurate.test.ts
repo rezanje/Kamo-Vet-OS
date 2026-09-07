@@ -58,6 +58,18 @@ describe("bacaWorkbookAccurate", () => {
     ]);
   });
 
+  it("mengabaikan satuan lanjutan yang sama dengan satuan dasar", async () => {
+    const bytes = await workbook([
+      ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Satuan", "Satuan #2", "Rasio Satuan #2"],
+      ["DUA-SATUAN", "Contoh", "INV", "UMUM", "PCS", "PCS", 12],
+    ]);
+
+    const hasil = await bacaWorkbookAccurate(bytes);
+
+    expect(hasil.rejected).toEqual([]);
+    expect(hasil.rows[0].units).toEqual([]);
+  });
+
   it.each([["SVC", "Jasa"], ["NON", "Non-Persediaan"]] as const)(
     "memetakan %s menjadi %s",
     async (source, expected) => {
@@ -93,6 +105,19 @@ describe("bacaWorkbookAccurate", () => {
     expect((await bacaWorkbookAccurate(missing)).errors[0]).toContain("Jenis Barang");
   });
 
+  it("menerima sheet bernama bebas bila struktur Barang dan Jasa lengkap", async () => {
+    const fileDariKlien = await workbook([
+      ["NO", "Kategori Barang", "Kode Barang", "Nama Barang", "Jenis Barang", "Satuan"],
+      [1, "OBAT", "OBT-001", "Contoh Obat", "INV", "PCS"],
+    ], "Sheet1");
+
+    const hasil = await bacaWorkbookAccurate(fileDariKlien);
+
+    expect(hasil.errors).toEqual([]);
+    expect(hasil.rows).toHaveLength(1);
+    expect(hasil.rows[0]).toMatchObject({ code: "OBT-001", item_type: "Persediaan" });
+  });
+
   it("menolak kedua baris berkode duplikat dan angka negatif", async () => {
     const bytes = await workbook([
       ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Satuan", "Harga Beli"],
@@ -103,10 +128,26 @@ describe("bacaWorkbookAccurate", () => {
     const hasil = await bacaWorkbookAccurate(bytes);
     expect(hasil.rows).toEqual([]);
     expect(hasil.rejected.map((row) => row.reason)).toEqual([
-      "Kode kembar di dalam file ini",
-      "Kode kembar di dalam file ini",
+      "Kode kembar dengan isi berbeda",
+      "Kode kembar dengan isi berbeda",
       "Harga beli tidak boleh negatif",
     ]);
+  });
+
+  it("menyimpan satu salinan ketika kode kembar isinya sama", async () => {
+    const bytes = await workbook([
+      ["NO", "Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Satuan"],
+      [1, "SAMA", "Contoh", "INV", "UMUM", "PCS"],
+      [2, "SAMA", "Contoh", "INV", "UMUM", "PCS"],
+    ]);
+
+    const hasil = await bacaWorkbookAccurate(bytes);
+
+    expect(hasil.rows).toHaveLength(1);
+    expect(hasil.skipped).toEqual([
+      expect.objectContaining({ row_no: 3, code: "SAMA", reason: "Kode kembar dengan isi sama" }),
+    ]);
+    expect(hasil.rejected).toEqual([]);
   });
 
   it("menolak bytes yang bukan workbook", async () => {

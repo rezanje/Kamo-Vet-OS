@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import type { AccuratePreviewStatus } from "@/lib/impor-accurate";
 import {
   konfirmasiImporAccurate,
   previewImporAccurate,
+  type AccurateImportProgress,
   type AccurateImportState,
 } from "./actions";
 
@@ -34,7 +35,29 @@ export function AccurateImportForm() {
   const [state, setState] = useState<AccurateImportState | null>(null);
   const [localError, setLocalError] = useState("");
   const [showSame, setShowSame] = useState(false);
+  const [progress, setProgress] = useState<AccurateImportProgress | null>(null);
   const [pending, startTransition] = useTransition();
+  const progressTimer = useRef<number | null>(null);
+
+  const stopProgressPolling = () => {
+    if (progressTimer.current != null) window.clearInterval(progressTimer.current);
+    progressTimer.current = null;
+  };
+
+  const startProgressPolling = (runId: string) => {
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/impor/accurate/progres?run_id=${encodeURIComponent(runId)}`, { cache: "no-store" });
+        if (response.ok) setProgress(await response.json() as AccurateImportProgress);
+      } catch { /* hasil akhir tetap dari aksi impor */ }
+    };
+    void refresh();
+    progressTimer.current = window.setInterval(() => { void refresh(); }, 800);
+  };
+
+  useEffect(() => () => {
+    if (progressTimer.current != null) window.clearInterval(progressTimer.current);
+  }, []);
 
   const visibleRows = useMemo(
     () => (state?.rows ?? []).filter((row) => showSame || row.status !== "Sama"),
@@ -51,8 +74,20 @@ export function AccurateImportForm() {
       const data = new FormData();
       files.forEach((file) => data.append("files", file));
       if (categoryFile) data.append("category_file", categoryFile);
-      if (action === konfirmasiImporAccurate && state?.run_id) data.append("run_id", state.run_id);
-      setState(await action(data));
+      const isConfirmation = action === konfirmasiImporAccurate;
+      if (isConfirmation && state?.run_id) data.append("run_id", state.run_id);
+      if (isConfirmation && state?.run_id) {
+        setProgress({ phase: "menyiapkan", completed: 0, total: state.rows.length, percentage: 0 });
+        startProgressPolling(state.run_id);
+      }
+      try {
+        setState(await action(data));
+      } finally {
+        if (isConfirmation) {
+          stopProgressPolling();
+          setProgress(null);
+        }
+      }
     });
   };
 
@@ -60,10 +95,10 @@ export function AccurateImportForm() {
     <div className="crm-sec" style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Impor langsung dari Accurate</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Impor Barang &amp; Jasa Excel</div>
           <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3, maxWidth: 700, lineHeight: 1.55 }}>
-            Pakai export <b>Persediaan → Barang &amp; Jasa → Ekspor ke Excel</b>. Sistem menampilkan
-            perubahan dulu; tombol konfirmasi baru menyimpan master barang.
+            Pakai export <b>Persediaan → Barang &amp; Jasa → Ekspor ke Excel</b> atau format Excel klien dengan kolom yang sama.
+            Sistem menampilkan perubahan dulu; tombol konfirmasi baru menyimpan master barang.
           </div>
         </div>
         <span style={{ fontSize: 10, fontWeight: 800, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "5px 9px" }}>
@@ -89,6 +124,8 @@ export function AccurateImportForm() {
               setState(null);
               setLocalError("");
               setShowSame(false);
+              setProgress(null);
+              stopProgressPolling();
             }}
           />
         </label>
@@ -116,6 +153,30 @@ export function AccurateImportForm() {
       {(localError || (state && !state.ok)) && (
         <div className="p2ban" style={{ marginTop: 12, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {localError || state?.message}
+        </div>
+      )}
+
+      {pending && !progress && (
+        <div role="status" aria-live="polite" style={{ marginTop: 12, padding: 11, border: ".5px solid #93c5fd", borderRadius: 8, background: "#eff6ff", color: "#1e3a8a" }}>
+          <div style={{ fontSize: 11, fontWeight: 800 }}>Membaca file dan mengecek perubahan…</div>
+          <progress style={{ width: "100%", height: 7, marginTop: 8 }} />
+        </div>
+      )}
+
+      {pending && progress && (
+        <div role="status" aria-live="polite" style={{ marginTop: 12, padding: 11, border: ".5px solid #93c5fd", borderRadius: 8, background: "#eff6ff", color: "#1e3a8a" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, fontWeight: 800 }}>
+            <span>{progress.phase === "menyiapkan" ? "Mengunggah dan membaca file…" : "Menyimpan Barang & Jasa…"}</span>
+            <span>{progress.percentage}%</span>
+          </div>
+          <div style={{ height: 7, overflow: "hidden", borderRadius: 999, background: "#bfdbfe", marginTop: 8 }}>
+            <div style={{ width: `${progress.percentage}%`, height: "100%", borderRadius: "inherit", background: "#2563eb", transition: "width .25s ease" }} />
+          </div>
+          <div style={{ marginTop: 6, fontSize: 10.5 }}>
+            {progress.total > 0
+              ? `${progress.completed.toLocaleString("id-ID")} dari ${progress.total.toLocaleString("id-ID")} barang/jasa selesai diproses`
+              : "Menyiapkan proses impor"}
+          </div>
         </div>
       )}
 

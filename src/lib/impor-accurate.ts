@@ -118,6 +118,19 @@ const yes = (value: unknown) => text(value).toUpperCase() === "YA";
 
 type ColumnMap = Map<string, number>;
 
+function mapColumns(worksheet: ExcelJS.Worksheet): ColumnMap {
+  const columns: ColumnMap = new Map();
+  worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, column) => {
+    const header = normalizedHeader(cell.value);
+    if (header) columns.set(header, column);
+  });
+  return columns;
+}
+
+function isItemWorksheet(columns: ColumnMap) {
+  return REQUIRED_HEADERS.every((header) => columns.has(normalizedHeader(header)));
+}
+
 function rowIssue(rowNo: number, get: (header: string) => unknown, reason: string): AccurateIssue {
   return {
     row_no: rowNo,
@@ -195,6 +208,9 @@ function parseDataRow(
       return { rejected: rowIssue(rowNo, get, `Harga jual Satuan #${position} tidak valid`) };
     }
     const key = unit.toLowerCase();
+    // Export sumber kadang mengulang satuan dasar sebagai satuan turunan.
+    // Rasio tambahan tidak punya arti untuk satuan yang sudah menjadi basis stok.
+    if (key === baseUnit.toLowerCase()) continue;
     if (seenUnits.has(key)) {
       return { rejected: rowIssue(rowNo, get, `Satuan "${unit}" kembar pada barang yang sama`) };
     }
@@ -231,16 +247,14 @@ export async function bacaWorkbookAccurate(bytes: Uint8Array): Promise<AccurateW
   // ExcelJS 4 membawa deklarasi Buffer lama yang bentrok dengan @types/node 20;
   // runtime menerima Uint8Array/Buffer ini dengan benar.
   await workbook.xlsx.load(Buffer.from(bytes) as never);
-  const worksheet = workbook.getWorksheet("Barang & Jasa");
+  const namedWorksheet = workbook.getWorksheet("Barang & Jasa");
+  const worksheet = namedWorksheet
+    ?? workbook.worksheets.find((candidate) => isItemWorksheet(mapColumns(candidate)));
   if (!worksheet) {
-    return { rows: [], skipped: [], rejected: [], errors: ["Sheet Barang & Jasa tidak ditemukan"] };
+    return { rows: [], skipped: [], rejected: [], errors: ["Sheet dengan kolom Barang & Jasa tidak ditemukan"] };
   }
 
-  const columns: ColumnMap = new Map();
-  worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, column) => {
-    const header = normalizedHeader(cell.value);
-    if (header) columns.set(header, column);
-  });
+  const columns = mapColumns(worksheet);
   const missing = REQUIRED_HEADERS.filter((header) => !columns.has(normalizedHeader(header)));
   if (missing.length > 0) {
     return {
@@ -259,28 +273,69 @@ export async function bacaWorkbookAccurate(bytes: Uint8Array): Promise<AccurateW
     if (parsed.rejected) rejected.push(parsed.rejected);
   }
 
-  const codeCounts = new Map<string, number>();
+  const rowsByCode = new Map<string, AccurateItem[]>();
   for (const row of rows) {
     const key = row.code.toLowerCase();
-    codeCounts.set(key, (codeCounts.get(key) ?? 0) + 1);
+    const group = rowsByCode.get(key) ?? [];
+    group.push(row);
+    rowsByCode.set(key, group);
   }
-  const duplicateKeys = new Set([...codeCounts].filter(([, count]) => count > 1).map(([key]) => key));
   const uniqueRows: AccurateItem[] = [];
-  for (const row of rows) {
-    if (!duplicateKeys.has(row.code.toLowerCase())) {
-      uniqueRows.push(row);
+  for (const group of rowsByCode.values()) {
+    if (group.length === 1) {
+      uniqueRows.push(group[0]);
       continue;
     }
-    rejected.push({
-      row_no: row.row_no,
-      code: row.code,
-      name: row.name,
-      reason: "Kode kembar di dalam file ini",
-    });
+    const first = group[0];
+    const sameContent = group.every((row) => sameAccurateItem(row, first));
+    if (sameContent) {
+      uniqueRows.push(first);
+      skipped.push(...group.slice(1).map((row) => ({
+        row_no: row.row_no,
+        code: row.code,
+        name: row.name,
+        reason: "Kode kembar dengan isi sama",
+      })));
+    } else {
+      rejected.push(...group.map((row) => ({
+        row_no: row.row_no,
+        code: row.code,
+        name: row.name,
+        reason: "Kode kembar dengan isi berbeda",
+      })));
+    }
   }
 
   rejected.sort((a, b) => a.row_no - b.row_no);
   return { rows: uniqueRows, skipped, rejected, errors: [] };
+}
+
+function sameAccurateItem(left: AccurateItem, right: AccurateItem) {
+  const normalize = (item: AccurateItem) => ({
+    code: item.code.trim().toLowerCase(),
+    name: item.name.trim().toLowerCase(),
+    item_type: item.item_type,
+    category_name: item.category_name.trim().toLowerCase(),
+    brand_name: item.brand_name?.trim().toLowerCase() ?? null,
+    unit: item.unit.trim().toLowerCase(),
+    sell_price: Number(item.sell_price),
+    buy_price: Number(item.buy_price),
+    min_stock: Number(item.min_stock),
+    supplier_name: item.supplier_name?.trim().toLowerCase() ?? null,
+    buy_unit: item.buy_unit?.trim().toLowerCase() ?? null,
+    min_buy: Number(item.min_buy),
+    upc: item.upc?.trim().toLowerCase() ?? null,
+    track_expiry: item.track_expiry,
+    default_discount: Number(item.default_discount),
+    is_active: item.is_active,
+    units: item.units.map((unit) => ({
+      unit: unit.unit.trim().toLowerCase(),
+      factor: Number(unit.factor),
+      sell_price: Number(unit.sell_price),
+      buy_price: Number(unit.buy_price),
+    })).sort((a, b) => a.unit.localeCompare(b.unit)),
+  });
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
 
 export async function bacaWorkbookKategoriAccurate(

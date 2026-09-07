@@ -34,6 +34,7 @@ import {
   type ResolvedSaldoAwal,
   type SaldoAwalMasterItem,
 } from "@/lib/impor-saldo-accurate";
+import { bagiImporBatch, hitungProgresImpor, type ProgresImpor } from "@/lib/impor-accurate-batch";
 
 const BACK = "/pos/sku/impor";
 
@@ -125,6 +126,8 @@ export type AccurateImportState = {
   source_fingerprint: string | null;
 };
 
+export type AccurateImportProgress = ProgresImpor;
+
 export type GroupImportState = {
   ok: boolean;
   phase: "preview" | "done";
@@ -188,6 +191,27 @@ function stateError(message: string): AccurateImportState {
     source_hash: null,
     source_fingerprint: null,
   };
+}
+
+function progressState(
+  phase: AccurateImportProgress["phase"],
+  completed: number,
+  total: number,
+): AccurateImportProgress {
+  return { phase, ...hitungProgresImpor(completed, total) };
+}
+
+async function saveImportProgress(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  runId: string,
+  summary: Record<string, number>,
+  progress: AccurateImportProgress,
+) {
+  const { error } = await supabase.from("import_runs").update({
+    summary: { ...summary, progress },
+  }).eq("id", runId).eq("kind", "master_accurate");
+  if (error) throw new Error(error.message);
 }
 
 function groupStateError(message: string): GroupImportState {
@@ -482,7 +506,7 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     return {
       ok: true,
       phase: "preview",
-      message: `${parsed.rows.length} baris valid diperiksa dari ${files.length} file. ${hierarchyCount} relasi subkategori ditemukan. Stok tidak diimpor.`,
+      message: `${parsed.rows.length} baris siap dari ${files.length} file. ${parsed.skipped.length} duplikat sama dilewati, ${parsed.rejected.length} konflik ditandai. ${hierarchyCount} relasi subkategori ditemukan. Stok tidak diimpor.`,
       hierarchy_count: hierarchyCount,
       rows,
       summary,
@@ -545,6 +569,78 @@ async function ensureUnit(supabase: any, master: MasterAccurate, name: string | 
   master.units.set(key, String(data.id));
 }
 
+function referenceFor(master: MasterAccurate, item: AccurateItem) {
+  const category = master.categories.get(item.category_name.toLowerCase());
+  if (!category) throw new Error(`Kategori ${item.category_name} belum tersedia`);
+  return {
+    category_id: category.id,
+    brand_id: item.brand_name ? master.brands.get(item.brand_name.toLowerCase()) ?? null : null,
+    supplier_id: item.supplier_name ? master.suppliers.get(item.supplier_name.toLowerCase()) ?? null : null,
+  };
+}
+
+async function prepareBatchReferences(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  master: MasterAccurate,
+  items: AccurateItem[],
+) {
+  for (const item of items) {
+    await ensureCategory(supabase, master, item.category_name);
+    await ensureBrand(supabase, master, item.brand_name);
+    if (item.item_type === "Persediaan") await ensureSupplier(supabase, master, item.supplier_name);
+    for (const unit of [item.unit, item.buy_unit, ...item.units.map((row) => row.unit)]) {
+      await ensureUnit(supabase, master, unit);
+    }
+  }
+}
+
+async function saveAccurateBatch(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  master: MasterAccurate,
+  existingByCode: ReadonlyMap<string, ExistingAccurateItem>,
+  items: AccurateItem[],
+) {
+  await prepareBatchReferences(supabase, master, items);
+  const payloads = items.map((item) => {
+    const existing = existingByCode.get(item.code.toLowerCase());
+    const payload = buatPayloadItemAccurate(item, referenceFor(master, item));
+    return existing ? { ...payload, id: existing.id } : payload;
+  });
+  const saved = await supabase.from("items").upsert(payloads, { onConflict: "id" }).select("id, code");
+  if (saved.error) throw new Error(pesanSimpanGagal(saved.error.message));
+  const idByCode = new Map(((saved.data ?? []) as { id: string; code: string }[])
+    .map((row) => [row.code.toLowerCase(), row.id]));
+  const itemIds = items.map((item) => idByCode.get(item.code.toLowerCase()));
+  if (itemIds.some((id) => !id)) throw new Error("Sebagian barang tidak menerima identitas penyimpanan");
+
+  const { error: deleteError } = await supabase.from("item_units").delete().in("item_id", itemIds);
+  if (deleteError) throw new Error(pesanSimpanGagal(deleteError.message));
+  const unitRows = items.flatMap((item, index) => item.item_type === "Jasa" ? [] : item.units.map((unit) => ({
+    item_id: itemIds[index],
+    unit: unit.unit,
+    factor: unit.factor,
+    sell_price: unit.sell_price,
+    buy_price: unit.buy_price,
+  })));
+  if (unitRows.length) {
+    const { error: unitError } = await supabase.from("item_units").insert(unitRows);
+    if (unitError) throw new Error(pesanSimpanGagal(unitError.message));
+  }
+}
+
+async function rejectImportRow(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  runId: string,
+  item: AccurateItem,
+  reason: string,
+) {
+  await supabase.from("import_run_rows").update({ status: "rejected", reason })
+    .eq("run_id", runId).eq("source_row", item.row_no).eq("source_code", item.code).eq("status", "valid");
+}
+
 export async function konfirmasiImporAccurate(formData: FormData): Promise<AccurateImportState> {
   try {
     const supabase = await assertBolehKelola();
@@ -588,78 +684,54 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const initialPreview = buatPreviewAccurate(parsed, master.items);
     const statusByRow = new Map(initialPreview.map((row) => [row.row_no, row.status]));
     const existingByCode = new Map(master.items.map((item) => [item.code.toLowerCase(), item]));
-    const resultRows: AccuratePreviewRow[] = initialPreview.filter(
-      (row) => row.status === "Dilewati" || row.status === "Ditolak",
-    );
+    const resultByRow = new Map(initialPreview.map((row) => [row.row_no, row]));
+    const itemsToSave = parsed.rows.filter((item) => (statusByRow.get(item.row_no) ?? "Baru") !== "Sama");
+    const sameCount = parsed.rows.length - itemsToSave.length;
+    const progressSummary = summarize(initialPreview);
+    let completed = sameCount;
+    await saveImportProgress(supabase, runId, progressSummary, progressState("menyiapkan", completed, parsed.rows.length));
 
-    for (const item of parsed.rows) {
-      const status = statusByRow.get(item.row_no) ?? "Baru";
-      if (status === "Sama") {
-        resultRows.push({ row_no: item.row_no, code: item.code, name: item.name, status, changed_fields: [], reason: null });
-        continue;
-      }
+    for (const batch of bagiImporBatch(itemsToSave)) {
       try {
-        const [categoryId, brandId, supplierId] = await Promise.all([
-          ensureCategory(supabase, master, item.category_name),
-          ensureBrand(supabase, master, item.brand_name),
-          ensureSupplier(supabase, master, item.supplier_name),
-        ]);
-        for (const unit of [item.unit, item.buy_unit, ...item.units.map((row) => row.unit)]) {
-          await ensureUnit(supabase, master, unit);
+        await saveAccurateBatch(supabase, master, existingByCode, batch);
+      } catch {
+        for (const item of batch) {
+          try {
+            await saveAccurateBatch(supabase, master, existingByCode, [item]);
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : "Gagal menyimpan baris";
+            const preview = resultByRow.get(item.row_no);
+            resultByRow.set(item.row_no, {
+              row_no: item.row_no,
+              code: item.code,
+              name: item.name,
+              status: "Ditolak",
+              changed_fields: [],
+              reason,
+              source: preview?.source ?? item.source,
+            });
+            await rejectImportRow(supabase, runId, item, reason);
+          }
         }
-        const payload = buatPayloadItemAccurate(item, {
-          category_id: categoryId,
-          brand_id: brandId,
-          supplier_id: supplierId,
-        });
-        const existing = existingByCode.get(item.code.toLowerCase());
-        const saved = existing
-          ? await supabase.from("items").update(payload).eq("id", existing.id).select("id").single()
-          : await supabase.from("items").insert(payload).select("id").single();
-        if (saved.error) throw new Error(pesanSimpanGagal(saved.error.message));
-        const itemId = String(saved.data.id);
-        const deleted = await supabase.from("item_units").delete().eq("item_id", itemId);
-        if (deleted.error) throw new Error(pesanSimpanGagal(deleted.error.message));
-        if (item.item_type !== "Jasa" && item.units.length) {
-          const inserted = await supabase.from("item_units").insert(item.units.map((unit) => ({
-            item_id: itemId,
-            unit: unit.unit,
-            factor: unit.factor,
-            sell_price: unit.sell_price,
-            buy_price: unit.buy_price,
-          })));
-          if (inserted.error) throw new Error(pesanSimpanGagal(inserted.error.message));
-        }
-        resultRows.push({
-          row_no: item.row_no,
-          code: item.code,
-          name: item.name,
-          status,
-          changed_fields: initialPreview.find((row) => row.row_no === item.row_no)?.changed_fields ?? [],
-          reason: null,
-        });
-      } catch (error) {
-        resultRows.push({
-          row_no: item.row_no,
-          code: item.code,
-          name: item.name,
-          status: "Ditolak",
-          changed_fields: [],
-          reason: error instanceof Error ? error.message : "Gagal menyimpan baris",
-        });
       }
+      completed += batch.length;
+      await saveImportProgress(supabase, runId, progressSummary, progressState("mengimpor", completed, parsed.rows.length));
     }
 
-    const rows = resultRows.sort((a, b) => a.row_no - b.row_no);
+    const rows = [...resultByRow.values()].sort((a, b) => a.row_no - b.row_no);
+    const summary = summarize(rows);
     const postedRows = await supabase.from("import_run_rows").update({ status: "posted" })
       .eq("run_id", runId).eq("status", "valid");
     if (postedRows.error) throw new Error(postedRows.error.message);
-    const postedRun = await supabase.from("import_runs").update({ status: "posted", posted_at: new Date().toISOString() })
+    const postedRun = await supabase.from("import_runs").update({
+      status: "posted",
+      posted_at: new Date().toISOString(),
+      summary: { ...summary, progress: progressState("selesai", parsed.rows.length, parsed.rows.length) },
+    })
       .eq("id", runId).eq("status", "previewed");
     if (postedRun.error) throw new Error(postedRun.error.message);
     revalidatePath("/pos/sku");
     revalidatePath(BACK);
-    const summary = summarize(rows);
     return {
       ok: summary.Ditolak === parsed.rejected.length,
       phase: "done",
