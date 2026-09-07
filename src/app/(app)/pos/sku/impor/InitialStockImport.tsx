@@ -99,10 +99,10 @@ export function InitialStockImport({
             <span className="badge y">Nilai {rupiah.format(displayedState.source_value)}</span>
           </div>
           {rejectedCount > 0 ? (
-            <div className="p2ban" style={{ marginTop: 10, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-              <b>Posting terkunci — {rejectedCount} baris perlu klarifikasi.</b>
+            <div className="p2ban" style={{ marginTop: 10, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
+              <b>{rejectedCount} baris tidak masuk — {validCount} saldo aman tetap bisa diposting.</b>
               {reasons.map(({ reason, count }) => <div key={reason} style={{ marginTop: 4 }}>• {count} baris: {reason}.</div>)}
-              <div style={{ marginTop: 5 }}>Sistem tidak memilih harga sendiri supaya nilai stok awal tidak salah.</div>
+              <div style={{ marginTop: 5 }}>Baris ini tetap tampil untuk diperbaiki dan diimpor susulan.</div>
             </div>
           ) : (
             <div className="p2ban" style={{ marginTop: 10, background: "#f0fdf4", border: ".5px solid #bbf7d0", color: "#166534" }}>
@@ -138,12 +138,12 @@ export function InitialStockImport({
       {displayedState?.phase === "preview" && displayedState.run_id && (
         <div style={{ marginTop: 12 }}>
           <label style={{ display: "flex", gap: 7, alignItems: "flex-start", fontSize: 11, color: "var(--sb)" }}>
-            <input type="checkbox" checked={confirmed} disabled={rejectedCount > 0} onChange={(event) => setConfirmed(event.target.checked)} />
-            <span>Saya sudah mencocokkan tujuan dan tanggal saldo dari preview.</span>
+            <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
+            <span>Saya sudah mencocokkan tujuan, tanggal, dan jumlah saldo yang akan masuk.</span>
           </label>
           <button type="button" className="btn-acc" style={{ marginTop: 9, background: canPost ? "#15803d" : "#94a3b8", cursor: canPost ? "pointer" : "not-allowed" }}
             disabled={!canPost} onClick={() => run(postSaldoAwalAccurate)}>
-            <i className="ti ti-database-import" /> {pending ? "Posting…" : rejectedCount > 0 ? `Posting terkunci — ${rejectedCount} masalah` : "Posting saldo awal"}
+            <i className="ti ti-database-import" /> {pending ? "Posting…" : rejectedCount > 0 ? `Posting ${validCount} saldo aman` : "Posting saldo awal"}
           </button>
         </div>
       )}

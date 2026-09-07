@@ -1020,10 +1020,10 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
     const summary = initialStockSummary(resolved);
     const names = new Map([...projected.values()].map((item) => [item.id, item.code]));
     return {
-      ok: summary.valid > 0 && summary.rejected === 0,
+      ok: summary.valid > 0,
       phase: "preview",
       message: summary.rejected
-        ? `${summary.valid} baris siap, ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi sebelum impor.`
+        ? `${summary.valid} baris siap untuk impor. ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi dan tidak masuk.`
         : `${summary.valid} baris siap untuk impor sekali. ${summary.skipped} baris dilewati.`,
       branch_id: null,
       warehouse_id: null,
@@ -1069,10 +1069,10 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     });
     const names = new Map([...master.values()].map((item) => [item.id, item.code]));
     return {
-      ok: summary.valid > 0 && summary.rejected === 0,
+      ok: summary.valid > 0,
       phase: "preview",
       message: summary.rejected
-        ? `${summary.valid} baris siap, ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi sebelum posting.`
+        ? `${summary.valid} baris siap untuk posting. ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi dan tidak masuk.`
         : `${summary.valid} baris siap, ${summary.skipped} dilewati, ke ${warehouse.name}, ${branch.name}, per ${asOf}.`,
       branch_id: branch.id,
       warehouse_id: warehouse.id,
