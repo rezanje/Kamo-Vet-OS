@@ -13,23 +13,29 @@ const qty = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 });
 export function InitialStockImport({
   sourceFile,
   masterRunId,
+  presetState,
+  onPresetStateChange,
 }: {
   sourceFile: File | null;
   masterRunId: string | null;
+  presetState?: InitialStockState | null;
+  onPresetStateChange?: (state: InitialStockState) => void;
 }) {
   const [confirmed, setConfirmed] = useState(false);
   const [state, setState] = useState<InitialStockState | null>(null);
   const [localError, setLocalError] = useState("");
-  const [rowFilter, setRowFilter] = useState<"all" | "valid" | "skipped" | "rejected">("all");
+  const [rowFilter, setRowFilter] = useState<"auto" | "all" | "valid" | "skipped" | "rejected">("auto");
   const [pending, startTransition] = useTransition();
-  const validCount = state?.rows.filter((row) => row.status === "valid").length ?? 0;
-  const skippedCount = state?.rows.filter((row) => row.status === "skipped").length ?? 0;
-  const rejectedRows = state?.rows.filter((row) => row.status === "rejected") ?? [];
+  const displayedState = presetState ?? state;
+  const activeFilter = rowFilter === "auto" ? (displayedState?.ok ? "all" : "rejected") : rowFilter;
+  const validCount = displayedState?.rows.filter((row) => row.status === "valid").length ?? 0;
+  const skippedCount = displayedState?.rows.filter((row) => row.status === "skipped").length ?? 0;
+  const rejectedRows = displayedState?.rows.filter((row) => row.status === "rejected") ?? [];
   const rejectedCount = rejectedRows.length;
-  const visibleRows = state?.rows.filter((row) => rowFilter === "all" || row.status === rowFilter) ?? [];
+  const visibleRows = displayedState?.rows.filter((row) => activeFilter === "all" || row.status === activeFilter) ?? [];
   const reasons = [...new Map(rejectedRows.map((row) => [row.reason ?? "Perlu klarifikasi", 0]))]
     .map(([reason]) => ({ reason, count: rejectedRows.filter((row) => row.reason === reason).length }));
-  const canPost = Boolean(state?.ok && confirmed && !pending);
+  const canPost = Boolean(displayedState?.ok && confirmed && !pending);
 
   const run = (action: typeof previewSaldoAwalAccurate | typeof postSaldoAwalAccurate) => {
     if (!sourceFile || !masterRunId) {
@@ -42,11 +48,11 @@ export function InitialStockImport({
       data.append("initial_stock_file", sourceFile);
       data.append("master_run_id", masterRunId);
       if (confirmed) data.append("confirm_scope", "on");
-      if (action === postSaldoAwalAccurate && state?.run_id) {
-        data.append("run_id", state.run_id);
-        data.append("branch_id", state.branch_id ?? "");
-        data.append("warehouse_id", state.warehouse_id ?? "");
-        data.append("as_of", state.as_of ?? "");
+      if (action === postSaldoAwalAccurate && displayedState?.run_id) {
+        data.append("run_id", displayedState.run_id);
+        data.append("branch_id", displayedState.branch_id ?? "");
+        data.append("warehouse_id", displayedState.warehouse_id ?? "");
+        data.append("as_of", displayedState.as_of ?? "");
       }
       const result = await action(data);
       if (action === previewSaldoAwalAccurate) {
@@ -54,6 +60,7 @@ export function InitialStockImport({
         setRowFilter(result.ok ? "all" : "rejected");
       }
       setState(result);
+      onPresetStateChange?.(result);
     });
   };
 
@@ -79,14 +86,14 @@ export function InitialStockImport({
         </div>
       )}
 
-      {state && state.rows.length > 0 && (
+      {displayedState && displayedState.rows.length > 0 && (
         <>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
             <span className="badge g">Siap {validCount}</span>
             <span className="badge y">Dilewati {skippedCount}</span>
             <span className="badge r">Perlu klarifikasi {rejectedCount}</span>
-            <span className="badge b">Qty dasar {qty.format(state.source_qty)}</span>
-            <span className="badge y">Nilai {rupiah.format(state.source_value)}</span>
+            <span className="badge b">Qty dasar {qty.format(displayedState.source_qty)}</span>
+            <span className="badge y">Nilai {rupiah.format(displayedState.source_value)}</span>
           </div>
           {rejectedCount > 0 ? (
             <div className="p2ban" style={{ marginTop: 10, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
@@ -104,7 +111,7 @@ export function InitialStockImport({
               ["all", "Semua"], ["valid", `Siap (${validCount})`], ["skipped", `Dilewati (${skippedCount})`], ["rejected", `Perlu klarifikasi (${rejectedCount})`],
             ] as const).map(([filter, label]) => (
               <button key={filter} type="button" className="btn-def" onClick={() => setRowFilter(filter)}
-                style={{ background: rowFilter === filter ? "#e0e7ff" : undefined, borderColor: rowFilter === filter ? "#818cf8" : undefined }}>
+                style={{ background: activeFilter === filter ? "#e0e7ff" : undefined, borderColor: activeFilter === filter ? "#818cf8" : undefined }}>
                 {label}
               </button>
             ))}
@@ -125,7 +132,7 @@ export function InitialStockImport({
         </>
       )}
 
-      {state?.phase === "preview" && state.run_id && (
+      {displayedState?.phase === "preview" && displayedState.run_id && (
         <div style={{ marginTop: 12 }}>
           <label style={{ display: "flex", gap: 7, alignItems: "flex-start", fontSize: 11, color: "var(--sb)" }}>
             <input type="checkbox" checked={confirmed} disabled={rejectedCount > 0} onChange={(event) => setConfirmed(event.target.checked)} />
@@ -138,11 +145,11 @@ export function InitialStockImport({
         </div>
       )}
 
-      {state?.phase === "done" && (
+      {displayedState?.phase === "done" && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 11, color: state.ok ? "#166534" : "#b91c1c", fontWeight: 700 }}>{state.message}</div>
+          <div style={{ fontSize: 11, color: displayedState.ok ? "#166534" : "#b91c1c", fontWeight: 700 }}>{displayedState.message}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 7, marginTop: 9 }}>
-            {state.checks.map((check) => (
+            {displayedState.checks.map((check) => (
               <div key={check.label} style={{ padding: "8px 10px", borderRadius: 8, background: check.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${check.ok ? "#bbf7d0" : "#fecaca"}`, fontSize: 10.5 }}>
                 <i className={`ti ${check.ok ? "ti-circle-check" : "ti-alert-circle"}`} /> {check.label}: {check.ok ? "cocok" : qty.format(check.difference)}
               </div>

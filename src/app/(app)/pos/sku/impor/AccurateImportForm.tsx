@@ -8,9 +8,12 @@ import {
 } from "@/lib/impor-accurate";
 import {
   konfirmasiImporAccurate,
+  postSaldoAwalAccurate,
   previewImporAccurate,
+  previewSaldoAwalAccurate,
   type AccurateImportProgress,
   type AccurateImportState,
+  type InitialStockState,
 } from "./actions";
 import { InitialStockImport } from "./InitialStockImport";
 
@@ -45,6 +48,8 @@ export function AccurateImportForm() {
   const [showSame, setShowSame] = useState(false);
   const [visibleMatrixColumns, setVisibleMatrixColumns] = useState<AccurateMatrixColumn[]>(DEFAULT_MATRIX_COLUMNS);
   const [progress, setProgress] = useState<AccurateImportProgress | null>(null);
+  const [oneClickStatus, setOneClickStatus] = useState("");
+  const [oneClickStockState, setOneClickStockState] = useState<InitialStockState | null>(null);
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
 
@@ -108,6 +113,66 @@ export function AccurateImportForm() {
     });
   };
 
+  const importSekali = () => {
+    if (files.length !== 1) {
+      setLocalError("Import Sekali memakai satu file Excel yang memuat master dan saldo stok awal.");
+      return;
+    }
+    const file = files[0];
+    setLocalError("");
+    setOneClickStockState(null);
+    startTransition(async () => {
+      const masterData = new FormData();
+      masterData.append("files", file);
+      if (categoryFile) masterData.append("category_file", categoryFile);
+      setOneClickStatus("Mengecek master Barang & Jasa…");
+      const masterPreview = await previewImporAccurate(masterData);
+      setState(masterPreview);
+      if (!masterPreview.ok || !masterPreview.run_id) {
+        setOneClickStatus("");
+        return;
+      }
+
+      let masterDone = masterPreview;
+      if (masterPreview.phase === "preview") {
+        setOneClickStatus("Menyimpan master Barang & Jasa…");
+        const confirmData = new FormData();
+        confirmData.append("files", file);
+        confirmData.append("run_id", masterPreview.run_id);
+        if (categoryFile) confirmData.append("category_file", categoryFile);
+        masterDone = await konfirmasiImporAccurate(confirmData);
+        setState(masterDone);
+      }
+      if (!masterDone.ok || !masterDone.run_id) {
+        setOneClickStatus("");
+        return;
+      }
+
+      setOneClickStatus("Mengecek saldo stok awal…");
+      const stockPreviewData = new FormData();
+      stockPreviewData.append("initial_stock_file", file);
+      stockPreviewData.append("master_run_id", masterDone.run_id);
+      const stockPreview = await previewSaldoAwalAccurate(stockPreviewData);
+      setOneClickStockState(stockPreview);
+      if (!stockPreview.ok || !stockPreview.run_id || !stockPreview.branch_id || !stockPreview.warehouse_id || !stockPreview.as_of) {
+        setOneClickStatus("");
+        return;
+      }
+
+      setOneClickStatus("Menyimpan saldo stok awal…");
+      const stockPostData = new FormData();
+      stockPostData.append("initial_stock_file", file);
+      stockPostData.append("master_run_id", masterDone.run_id);
+      stockPostData.append("run_id", stockPreview.run_id);
+      stockPostData.append("branch_id", stockPreview.branch_id);
+      stockPostData.append("warehouse_id", stockPreview.warehouse_id);
+      stockPostData.append("as_of", stockPreview.as_of);
+      stockPostData.append("confirm_scope", "on");
+      setOneClickStockState(await postSaldoAwalAccurate(stockPostData));
+      setOneClickStatus("");
+    });
+  };
+
   return (
     <div className="crm-sec" style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -163,6 +228,10 @@ export function AccurateImportForm() {
           onClick={() => run(previewImporAccurate)} style={{ background: "var(--posb)" }}>
           <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek perubahan"}
         </button>
+        <button type="button" className="btn-acc" disabled={pending || files.length !== 1}
+          onClick={importSekali} style={{ background: "#15803d" }}>
+          <i className={`ti ${pending ? "ti-loader-2" : "ti-database-import"}`} /> {pending ? "Mengimpor…" : "Import Sekali"}
+        </button>
         {files.length > 0 && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {files.length} file master dipilih</span>}
         {categoryFile && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name}</span>}
       </div>
@@ -175,7 +244,7 @@ export function AccurateImportForm() {
 
       {pending && !progress && (
         <div role="status" aria-live="polite" style={{ marginTop: 12, padding: 11, border: ".5px solid #93c5fd", borderRadius: 8, background: "#eff6ff", color: "#1e3a8a" }}>
-          <div style={{ fontSize: 11, fontWeight: 800 }}>Membaca file dan mengecek perubahan…</div>
+          <div style={{ fontSize: 11, fontWeight: 800 }}>{oneClickStatus || "Membaca file dan mengecek perubahan…"}</div>
           <progress style={{ width: "100%", height: 7, marginTop: 8 }} />
         </div>
       )}
@@ -318,6 +387,8 @@ export function AccurateImportForm() {
         key={state?.run_id ?? "belum-ada-master"}
         sourceFile={files.length === 1 ? files[0] : null}
         masterRunId={state?.phase === "done" ? state.run_id : null}
+        presetState={oneClickStockState}
+        onPresetStateChange={setOneClickStockState}
       />
     </div>
   );
