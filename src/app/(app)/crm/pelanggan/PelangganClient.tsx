@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { updateKategoriPelanggan, updateUlasanPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
@@ -144,6 +145,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
   cariAwal?: string;
 }) {
+  const router = useRouter();
   const awal = cariAwal.trim().toLowerCase();
   const [selId, setSelId] = useState<string | null>(
     (awal ? customers.find((c) => c.name.toLowerCase().includes(awal)) : null)?.id
@@ -158,6 +160,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
     requestAnimationFrame(() => {
       detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  };
+
+  const bukaRiwayatMedis = (petId: string) => {
+    router.push(`/klinik/rekam-medis?pet=${encodeURIComponent(petId)}`);
   };
 
   const agg = useMemo(() => {
@@ -425,7 +431,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     </thead>
                     <tbody>
                       {sel.pets.map((p, i) => (
-                        <tr key={p.id}>
+                        <tr key={p.id} tabIndex={0} role="link" aria-label={`Buka riwayat medis ${p.name}`} style={{ cursor: "pointer" }} onClick={() => bukaRiwayatMedis(p.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); bukaRiwayatMedis(p.id); } }}>
                           <td style={{ color: "var(--td)", fontSize: 11 }}>{i + 1}</td>
                           <td style={{ fontWeight: 500 }}>{p.name}</td>
                           <td style={{ color: "var(--tm)" }}>{p.species ?? "—"}</td>
@@ -440,7 +446,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.sterilisasi ?? "—"}</td>
                           <td><span className={`bge ${p.status === "Aktif" ? "g" : p.status === "RIP" ? "x" : "o"}`}>{p.status}</span></td>
                           <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Link href={`/klinik/rekam-medis?pet=${encodeURIComponent(p.id)}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>
+                            <Link href={`/klinik/rekam-medis?pet=${encodeURIComponent(p.id)}`} onClick={(e) => e.stopPropagation()} className="btn-def" style={{ textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>
                               <i className="ti ti-notes-medical" /> Riwayat medis
                             </Link>
                           </td>
