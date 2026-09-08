@@ -1,12 +1,7 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { RekamMedisImportForm } from "./RekamMedisImportForm";
 
 export default async function ImporRekamMedisPage() {
-  const supabase = await createClient();
-  const { data: branches } = await supabase
-    .from("branches").select("id, name, code").in("type", ["KLINIK", "BOTH"]).eq("is_active", true).order("name");
-
   return (
     <>
       <div style={{ marginBottom: 4 }}>
@@ -21,7 +16,7 @@ export default async function ImporRekamMedisPage() {
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Baca kartu medis Excel, cek hasilnya, lalu simpan setelah disetujui</div>
         </div>
       </div>
-      <RekamMedisImportForm branches={(branches ?? []).map((branch) => ({ id: branch.id, name: `${branch.code} — ${branch.name}` }))} />
+      <RekamMedisImportForm />
     </>
   );
 }

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
   bacaWorkbooksRekamMedis,
+  bolehKonfirmasiImporRekamMedis,
+  pilahRiwayatTersimpan,
   type RekamMedisImporHeld,
   type RekamMedisImporRow,
 } from "@/lib/impor-rekam-medis";
@@ -39,19 +41,28 @@ async function assertBolehImpor() {
   return supabase;
 }
 
-function files(formData: FormData): File[] {
+function files(formData: FormData): Array<{ file: File; sourcePath: string }> {
   const uploads = formData.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
   if (!uploads.length) throw new Error("Pilih minimal satu file .xlsx.");
   if (uploads.some((file) => !file.name.toLowerCase().endsWith(".xlsx"))) throw new Error("Semua file harus berformat .xlsx.");
   if (uploads.some((file) => file.size > MAX_FILE_BYTES)) throw new Error("Satu file maksimal 5 MB.");
   if (uploads.reduce((sum, file) => sum + file.size, 0) > MAX_BATCH_BYTES) throw new Error("Total file maksimal 30 MB per impor.");
-  return uploads;
+  const sourcePaths = formData.getAll("paths");
+  return uploads.map((file, index) => {
+    const candidate = typeof sourcePaths[index] === "string" ? sourcePaths[index].replace(/\\/g, "/") : file.name;
+    const parts = candidate.split("/").filter(Boolean);
+    const safePath = candidate.length <= 500 && !parts.includes("..") && parts.at(-1) === file.name
+      ? parts.join("/")
+      : file.name;
+    return { file, sourcePath: safePath };
+  });
 }
 
 async function baca(formData: FormData) {
   const uploads = files(formData);
-  return bacaWorkbooksRekamMedis(await Promise.all(uploads.map(async (file) => ({
+  return bacaWorkbooksRekamMedis(await Promise.all(uploads.map(async ({ file, sourcePath }) => ({
     fileName: file.name,
+    sourcePath,
     bytes: new Uint8Array(await file.arrayBuffer()),
   }))));
 }
@@ -77,24 +88,23 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
   try {
     const supabase = await assertBolehImpor();
     if (String(formData.get("approved") ?? "") !== "true") throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
-    const branchId = String(formData.get("branch_id") ?? "").trim();
-    if (!branchId) throw new Error("Pilih cabang tujuan.");
     const result = await baca(formData);
-    if (!result.rows.length) throw new Error("Tidak ada riwayat yang aman untuk diimpor.");
-    if (result.held.length) throw new Error("Selesaikan semua riwayat yang ditahan sebelum menyimpan.");
+    if (!bolehKonfirmasiImporRekamMedis(result.rows.length, true)) throw new Error("Tidak ada riwayat yang aman untuk diimpor.");
 
     const { data: existing, error: existingError } = await supabase
       .from("visits").select("legacy_source_key")
-      .eq("branch_id", branchId)
       .in("legacy_source_key", result.rows.map((row) => row.source_key));
     if (existingError) throw new Error(existingError.message);
-    if (existing?.length) throw new Error(`${existing.length} riwayat sudah pernah diimpor ke cabang ini.`);
+    const { baru, sudah_ada } = pilahRiwayatTersimpan(
+      result.rows,
+      (existing ?? []).flatMap((row) => row.legacy_source_key ? [row.legacy_source_key] : []),
+    );
 
     const importClient = supabase as unknown as ImportRpcClient;
-    for (const row of result.rows) {
+    for (const row of baru) {
       const { error } = await importClient.rpc("import_legacy_medical_record", {
-        p_branch_id: branchId,
         p_source_key: row.source_key,
+        p_record_no: row.record_no,
         p_record_date: `${row.record_date}T00:00:00+07:00`,
         p_owner_name: row.owner_name,
         p_phone: row.phone,
@@ -105,6 +115,7 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
         p_gender: row.gender,
         p_dob: row.dob,
         p_doctor: row.doctor,
+        p_note: row.note,
         p_anamnesis: row.anamnesis,
         p_clinical_findings: row.clinical_findings,
         p_diagnosis: row.diagnosis,
@@ -114,7 +125,8 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
     }
     revalidatePath("/klinik/antrian");
     revalidatePath("/crm/pelanggan");
-    return { ok: true, phase: "done", message: `${result.rows.length} riwayat berhasil diimpor.`, ...result };
+    const existingMessage = sudah_ada ? ` ${sudah_ada} riwayat sudah ada dan tidak digandakan.` : "";
+    return { ok: true, phase: "done", message: `${baru.length} riwayat baru berhasil disimpan.${existingMessage}`, ...result };
   } catch (error) {
     return empty(error instanceof Error ? error.message : "Impor gagal.");
   }
