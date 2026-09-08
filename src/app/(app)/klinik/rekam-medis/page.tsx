@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
+import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 type Rel<T> = T | T[] | null;
 
@@ -138,7 +139,7 @@ export default async function DaftarRekamMedisPage({
                     <td style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.45 }}>{row.note || "—"}</td>
                     <td style={{ maxWidth: 190, fontSize: 11, lineHeight: 1.45 }}>{row.diagnosis || "Belum diisi"}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <Link href={`/klinik/rekam-medis/${row.id}`} className="btn-def" style={{ textDecoration: "none", padding: "5px 10px" }}><i className="ti ti-eye" /> Buka</Link>
+                      <BukaRekamMedisLink href={`/klinik/rekam-medis/${row.id}`} />
                     </td>
                   </tr>
                 ))}
