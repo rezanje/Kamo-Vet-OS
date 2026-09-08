@@ -6,12 +6,41 @@ import { createClient } from "@/lib/supabase/server";
 import { nextStatus, stockDeductions, type RecipeStatus } from "@/lib/compounding";
 
 import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
+import { hargaCabang, loadHargaCabang } from "@/lib/harga-cabang";
+
+export type BahanRacikan = { id: string; name: string; unit: string; sell_price: number; stok: number };
 
 // helper: gudang utama cabang (pola sama dgn checkout kasir).
 async function branchWarehouse(supabase: Awaited<ReturnType<typeof createClient>>, branchId: string) {
   const { data: wh } = await supabase
     .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   return wh?.id ?? null;
+}
+
+export async function bahanRacikanUntukKunjungan(visitId: string): Promise<BahanRacikan[]> {
+  const supabase = await createClient();
+  const [{ data: visit }, { data: items }] = await Promise.all([
+    supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle(),
+    supabase.from("items").select("id, name, unit, sell_price").eq("is_active", true).eq("is_compound_material", true).order("name").limit(400),
+  ]);
+  if (!visit || !items?.length) return [];
+  const ids = items.map((item) => item.id as string);
+  const [{ data: warehouse }, hargaMap] = await Promise.all([
+    supabase.from("warehouses").select("id").eq("branch_id", visit.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle(),
+    loadHargaCabang(supabase, visit.branch_id, ids),
+  ]);
+  const { data: stockRows } = warehouse
+    ? await supabase.from("stock").select("item_id, qty").eq("warehouse_id", warehouse.id).in("item_id", ids)
+    : { data: [] as { item_id: string; qty: number }[] };
+  const stokByItem = new Map<string, number>();
+  for (const stock of stockRows ?? []) stokByItem.set(stock.item_id as string, (stokByItem.get(stock.item_id as string) ?? 0) + Number(stock.qty));
+  return items.map((item) => ({
+    id: item.id as string,
+    name: item.name as string,
+    unit: (item.unit as string) || "pcs",
+    sell_price: hargaCabang(hargaMap, item.id as string, item.unit as string, Number(item.sell_price)),
+    stok: stokByItem.get(item.id as string) ?? 0,
+  }));
 }
 
 // delta>0 = kembalikan bahan (layer baru @buy_price); delta<0 = potong bahan (FIFO).

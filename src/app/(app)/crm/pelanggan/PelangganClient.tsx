@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { updateKategoriPelanggan, updateUlasanPelanggan } from "./actions";
+import { detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
 export type PetRow = {
@@ -153,6 +153,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   );
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState(cariAwal);
+  const [detailByCustomer, setDetailByCustomer] = useState<Record<string, DetailPelanggan>>({});
   const detailRef = useRef<HTMLDivElement>(null);
 
   const pilihPelanggan = (id: string) => {
@@ -181,6 +182,18 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   }, [customers, q]);
 
   const sel = customers.find((c) => c.id === selId) ?? null;
+  const detail = sel ? detailByCustomer[sel.id] ?? null : null;
+
+  useEffect(() => {
+    if (!sel || detailByCustomer[sel.id]) return;
+    let active = true;
+    void detailPelanggan(sel.id).then((loaded) => {
+      if (active) setDetailByCustomer((current) => ({ ...current, [sel.id]: loaded }));
+    }).catch(() => {
+      if (active) setDetailByCustomer((current) => ({ ...current, [sel.id]: { purchases: [], ledger: [], stat: null } }));
+    });
+    return () => { active = false; };
+  }, [sel, detailByCustomer]);
 
   return (
     <>
@@ -381,13 +394,13 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <span style={{ fontSize: 11, fontWeight: 500, textAlign: "right", maxWidth: 180 }}>{row.val}</span>
                   </div>
                 ))}
-                {isAdmin && sel.stat && (
+                {isAdmin && detail?.stat && (
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 6 }}>RINCIAN TRANSAKSI (ADMIN)</div>
                     {[
-                      { unit: "Petshop", count: sel.stat.petshopCount, total: sel.stat.petshopTotal },
-                      { unit: "Online (WA)", count: sel.stat.onlineCount, total: sel.stat.onlineTotal },
-                      { unit: "Klinik", count: sel.stat.klinikCount, total: sel.stat.klinikTotal },
+                      { unit: "Petshop", count: detail.stat.petshopCount, total: detail.stat.petshopTotal },
+                      { unit: "Online (WA)", count: detail.stat.onlineCount, total: detail.stat.onlineTotal },
+                      { unit: "Klinik", count: detail.stat.klinikCount, total: detail.stat.klinikTotal },
                     ].map((u) => (
                       <div key={u.unit} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
                         <span>{u.unit}</span>
@@ -483,7 +496,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                       <tr><th>Tanggal</th><th>Produk</th><th>Anabul</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Total</th><th>Cabang</th></tr>
                     </thead>
                     <tbody>
-                      {sel.purchases.map((p, i) => (
+                      {(detail?.purchases ?? []).map((p, i) => (
                         <tr key={i}>
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(p.tgl)}</td>
                           <td style={{ fontWeight: 500 }}>{p.produk}</td>
@@ -493,7 +506,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.cabang}</td>
                         </tr>
                       ))}
-                      {sel.purchases.length === 0 && (
+                      {!detail && (
+                        <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}><i className="ti ti-loader-2 ti-spin" /> Memuat riwayat pelanggan…</td></tr>
+                      )}
+                      {detail && detail.purchases.length === 0 && (
                         <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada transaksi.</td></tr>
                       )}
                     </tbody>
@@ -526,7 +542,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                       <table className="tbl">
                         <thead><tr><th>Tanggal</th><th>Deskripsi</th><th style={{ textAlign: "right" }}>Poin</th><th style={{ textAlign: "right" }}>Saldo</th></tr></thead>
                         <tbody>
-                          {sel.ledger.map((l, i) => (
+                          {(detail?.ledger ?? []).map((l, i) => (
                             <tr key={i}>
                               <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(l.tgl)}</td>
                               <td style={{ fontSize: 11 }}>{l.desc}</td>
@@ -534,7 +550,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                               <td style={{ textAlign: "right", fontSize: 11 }}>{fmt(l.saldo)}</td>
                             </tr>
                           ))}
-                          {sel.ledger.length === 0 && (
+                          {!detail && (
+                            <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}><i className="ti ti-loader-2 ti-spin" /> Memuat riwayat poin…</td></tr>
+                          )}
+                          {detail && detail.ledger.length === 0 && (
                             <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada riwayat poin.</td></tr>
                           )}
                         </tbody>

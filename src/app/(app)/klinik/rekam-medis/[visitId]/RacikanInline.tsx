@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { addRacikan } from "@/app/(app)/klinik/racik/actions";
+import { useState, useTransition } from "react";
+import { addRacikan, bahanRacikanUntukKunjungan, type BahanRacikan } from "@/app/(app)/klinik/racik/actions";
 
-type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number };
+type ItemLite = BahanRacikan;
 type Bahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -14,15 +14,15 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
   visitId: string; medicalRecordId: string; bahanItems: ItemLite[];
 }) {
   const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<ItemLite[]>(bahanItems);
+  const [loadError, setLoadError] = useState("");
+  const [isLoading, startTransition] = useTransition();
   const [nama, setNama] = useState("");
   const [form, setForm] = useState("sirup");
   const [aturan, setAturan] = useState("");
   const [search, setSearch] = useState("");
   const [bahan, setBahan] = useState<Bahan[]>([]);
 
-  const filtered = search.trim()
-    ? bahanItems.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()))
-    : bahanItems;
   const subtotal = bahan.reduce((a, b) => a + b.qty * b.harga, 0);
 
   const addBahan = (it: ItemLite) => {
@@ -31,13 +31,28 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
   };
   const setQty = (id: string, qty: number) => setBahan(bahan.map((b) => (b.item_id === id ? { ...b, qty } : b)));
   const delBahan = (id: string) => setBahan(bahan.filter((b) => b.item_id !== id));
+  const bukaRacikan = () => {
+    setLoadError("");
+    if (items.length) return setOpen(true);
+    startTransition(async () => {
+      try {
+        setItems(await bahanRacikanUntukKunjungan(visitId));
+        setOpen(true);
+      } catch {
+        setLoadError("Bahan racikan belum bisa dimuat. Coba lagi.");
+      }
+    });
+  };
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="btn-acc"
-        style={{ padding: "4px 10px", fontSize: 10.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
-        <i className="ti ti-plus" /> Racikan baru
-      </button>
+      <div>
+        <button type="button" onClick={bukaRacikan} disabled={isLoading} className="btn-acc"
+          style={{ padding: "4px 10px", fontSize: 10.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <i className={`ti ${isLoading ? "ti-loader-2 ti-spin" : "ti-plus"}`} /> {isLoading ? "Menyiapkan bahan…" : "Racikan baru"}
+        </button>
+        {loadError && <div style={{ marginTop: 6, fontSize: 10.5, color: "#dc2626" }}>{loadError}</div>}
+      </div>
     );
   }
 
@@ -65,8 +80,8 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
         <i className="ti ti-search" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 13 }} />
       </div>
       <div style={{ maxHeight: 140, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
-        {bahanItems.length === 0 && <div style={{ fontSize: 10.5, color: "var(--td)", padding: "8px 10px" }}>Belum ada bahan baku. Tandai di menu Kelola Bahan Baku.</div>}
-        {filtered.map((it) => (
+        {items.length === 0 && <div style={{ fontSize: 10.5, color: "var(--td)", padding: "8px 10px" }}>Belum ada bahan baku. Tandai di menu Kelola Bahan Baku.</div>}
+        {(search.trim() ? items.filter((i) => i.name.toLowerCase().includes(search.toLowerCase())) : items).map((it) => (
           <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderBottom: ".5px solid var(--bd)" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</div>

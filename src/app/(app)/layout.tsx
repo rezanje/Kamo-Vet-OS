@@ -7,6 +7,7 @@ import { Clock } from "@/components/Clock";
 import { CariGlobal } from "@/components/CariGlobal";
 import { KlinikTopbar } from "@/components/KlinikTopbar";
 import { getOpenShift } from "@/lib/shift";
+import { NavigationFeedback } from "@/components/NavigationFeedback";
 
 export default async function AppLayout({
   children,
@@ -46,6 +47,7 @@ export default async function AppLayout({
 
   return (
     <div className="shell">
+      <NavigationFeedback />
       {!isStaff && (
         <Sidebar
           branches={branches ?? []}

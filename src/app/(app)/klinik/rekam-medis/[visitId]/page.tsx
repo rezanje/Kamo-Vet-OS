@@ -53,14 +53,14 @@ export default async function RekamMedisPage({
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
-  const dokterOpsi = await daftarDokter(supabase);
-  const { data: providerRows } = await supabase.from("employees")
-    .select("id, nama, jabatan, branch_id")
-    .eq("branch_id", visit.branch_id).eq("status", "Aktif").order("nama");
-  const providerOpsi = (providerRows ?? []) as { id: string; nama: string; jabatan: string | null }[];
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
+  const dokterOpsi = recorded ? [] : await daftarDokter(supabase);
+  const { data: providerRows } = recorded ? { data: [] } : await supabase.from("employees")
+    .select("id, nama, jabatan, branch_id")
+    .eq("branch_id", visit.branch_id).eq("status", "Aktif").order("nama");
+  const providerOpsi = (providerRows ?? []) as { id: string; nama: string; jabatan: string | null }[];
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
@@ -129,7 +129,7 @@ export default async function RekamMedisPage({
   let obatItems: ItemLiteFull[] = [];
   let bahanItems: ItemLiteFull[] = [];
   let jasaItems: ItemLiteFull[] = [];
-  {
+  if (!recorded) {
     const { data: itemRows } = await supabase
       .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori")
       .eq("is_active", true).order("name").limit(400);
