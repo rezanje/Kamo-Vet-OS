@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { updateKategoriPelanggan, updateUlasanPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
@@ -151,6 +151,14 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   );
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState(cariAwal);
+  const detailRef = useRef<HTMLDivElement>(null);
+
+  const pilihPelanggan = (id: string) => {
+    setSelId(id);
+    requestAnimationFrame(() => {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const agg = useMemo(() => {
     const total = customers.length;
@@ -271,7 +279,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
               </thead>
               <tbody>
                 {filtered.map((c, i) => (
-                  <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, transition: "background .1s" }} onClick={() => setSelId(c.id)}>
+                  <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, transition: "background .1s" }} onClick={() => pilihPelanggan(c.id)}>
                     <td style={{ color: "var(--td)", fontSize: 11 }}>{i + 1}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -286,7 +294,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <td style={{ textAlign: "center" }}>{c.pets.length}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(c.created_at)}</td>
                     <td>
-                      <button className="back-btn" title="Lihat detail" onClick={(e) => { e.stopPropagation(); setSelId(c.id); }}>
+                      <button className="back-btn" title="Buka detail & anabul" aria-label={`Buka detail ${c.name}`} onClick={(e) => { e.stopPropagation(); pilihPelanggan(c.id); }}>
                         <i className="ti ti-eye" />
                       </button>
                     </td>
@@ -303,7 +311,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
       </div>
 
       {/* Section 03: Pets + detail */}
-      <div className="crm-sec">
+      <div ref={detailRef} className="crm-sec" style={{ scrollMarginTop: 96 }}>
         <SecHeader num="03" title="DATA ANABUL PELANGGAN" desc="Rincian hewan peliharaan (anabul) yang terdaftar pada pelanggan terpilih." />
         {!sel ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>Pilih pelanggan untuk lihat detail.</div>
