@@ -8,21 +8,65 @@ async function kartu(rows: Array<[number, number, unknown]>, name = "KARTU MEDIS
   return Buffer.from(await book.xlsx.writeBuffer());
 }
 
-async function baca(bytes: Uint8Array, fileName = "Rani.xlsx") {
+async function kartuDenganMergeKosong() {
+  const book = new ExcelJS.Workbook();
+  const sheet = book.addWorksheet("01012025");
+  sheet.getCell("A1").value = "KARTU MEDIS PASIEN";
+  lengkap.forEach(([row, column, value]) => sheet.getRow(row + 1).getCell(column).value = value as ExcelJS.CellValue);
+  sheet.mergeCells("C20:E20");
+  return Buffer.from(await book.xlsx.writeBuffer());
+}
+
+async function beberapaKartu(cards: Array<{ name: string; rows: Array<[number, number, unknown]> }>) {
+  const book = new ExcelJS.Workbook();
+  cards.forEach(({ name, rows }) => {
+    const sheet = book.addWorksheet(name);
+    sheet.getCell("A1").value = "KARTU MEDIS PASIEN";
+    rows.forEach(([row, column, value]) => sheet.getRow(row + 1).getCell(column).value = value as ExcelJS.CellValue);
+  });
+  return Buffer.from(await book.xlsx.writeBuffer());
+}
+
+async function baca(bytes: Uint8Array, fileName = "Rani.xlsx", sourcePath?: string) {
   const loaded = await import("../impor-rekam-medis").catch(() => ({}));
   expect(loaded).toHaveProperty("bacaWorkbookRekamMedis");
-  return (loaded as { bacaWorkbookRekamMedis: (b: Uint8Array, f: string) => unknown })
-    .bacaWorkbookRekamMedis(bytes, fileName) as Promise<{
+  return (loaded as { bacaWorkbookRekamMedis: (b: Uint8Array, f: string, p?: string) => unknown })
+    .bacaWorkbookRekamMedis(bytes, fileName, sourcePath) as Promise<{
       rows: Array<Record<string, unknown>>;
       held: Array<Record<string, unknown>>;
     }>;
 }
 
-async function bacaBanyak(files: Array<{ fileName: string; bytes: Uint8Array }>) {
+async function bacaBanyak(files: Array<{ fileName: string; sourcePath?: string; bytes: Uint8Array }>) {
   const loaded = await import("../impor-rekam-medis").catch(() => ({}));
   expect(loaded).toHaveProperty("bacaWorkbooksRekamMedis");
   return (loaded as { bacaWorkbooksRekamMedis: (f: typeof files) => unknown })
-    .bacaWorkbooksRekamMedis(files) as Promise<{ rows: Array<Record<string, unknown>>; held: Array<Record<string, unknown>> }>;
+    .bacaWorkbooksRekamMedis(files) as Promise<{
+      rows: Array<Record<string, unknown>>;
+      held: Array<Record<string, unknown>>;
+      ignored_sheets: number;
+    }>;
+}
+
+async function pilah(rows: Array<Record<string, unknown>>, existingKeys: string[]) {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("pilahRiwayatTersimpan");
+  return (loaded as { pilahRiwayatTersimpan: (r: typeof rows, e: string[]) => unknown })
+    .pilahRiwayatTersimpan(rows, existingKeys) as { baru: Array<Record<string, unknown>>; sudah_ada: number };
+}
+
+async function bolehKonfirmasi(riwayatSiap: number, disetujui: boolean) {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("bolehKonfirmasiImporRekamMedis");
+  return (loaded as { bolehKonfirmasiImporRekamMedis: (siap: number, setuju: boolean) => boolean })
+    .bolehKonfirmasiImporRekamMedis(riwayatSiap, disetujui);
+}
+
+async function progres(tahap: "baca" | "simpan") {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("infoProgresImporRekamMedis");
+  return (loaded as { infoProgresImporRekamMedis: (t: "baca" | "simpan") => { label: string } })
+    .infoProgresImporRekamMedis(tahap);
 }
 
 const lengkap = [
@@ -52,11 +96,59 @@ describe("bacaWorkbookRekamMedis", () => {
     });
   });
 
+  it("mengikat kartu tanpa telepon ke owner dari folder", async () => {
+    const tanpaTelepon = lengkap.filter(([row, column]) => !(row === 4 && column === 2));
+    const hasil = await baca(
+      await kartu(tanpaTelepon),
+      "Mochi.xlsx",
+      "Data/0001 - Resti Khalillah R - 081384467002/Mochi.xlsx",
+    );
+
+    expect(hasil.held).toEqual([]);
+    expect(hasil.rows[0]).toMatchObject({
+      owner_name: "Resti Khalillah R",
+      phone: "081384467002",
+      patient_name: "Mochi",
+    });
+  });
+
+  it("memakai tanggal nama tab saat berbeda dengan tanggal kartu", async () => {
+    const tanggalLama = [[1, 1, "KARTU MEDIS PASIEN"], ...lengkap.map(([row, column, value]) => (
+      row === 2 && column === 5 ? [row, column, "16/12/2024"] : [row, column, value]
+    ))] as Array<[number, number, unknown]>;
+    const hasil = await baca(await kartu(tanggalLama, "270925"));
+
+    expect(hasil.rows[0]).toMatchObject({ record_date: "2025-09-27" });
+    expect(hasil.rows[0].warning).toContain("Tanggal kartu berbeda; memakai tanggal nama tab");
+  });
+
+  it("menggabungkan semua baris pada setiap bagian medis", async () => {
+    const banyakBaris = [
+      [1, 1, "KARTU MEDIS PASIEN"],
+      [2, 1, "Tanggal Rek"], [2, 2, "29/09/2024"],
+      [3, 1, "Nama Pasien"], [3, 2, "Oreo"],
+      [4, 1, "Nama Pemilik"], [4, 2, "Resti"],
+      [5, 1, "No Telepon"], [5, 2, "081234567890"],
+      [7, 3, "Anamnesa"], [7, 4, "Gambaran Klinis"], [7, 5, "Diagnosa"], [7, 6, "Terapi"],
+      [8, 3, "makan minum normal"], [8, 4, "BB 4,4 kg"], [8, 5, "mycosis"], [8, 6, "miconazole"],
+      [9, 3, "aktif"], [9, 4, "T 39,4"], [9, 6, "oles 2 kali sehari"],
+      [10, 4, "kemerahan di tengkuk"],
+    ] as Array<[number, number, unknown]>;
+    const hasil = await baca(await kartu(banyakBaris, "29092024"), "Oreo.xlsx");
+
+    expect(hasil.rows[0]).toMatchObject({
+      anamnesis: "makan minum normal\naktif",
+      clinical_findings: "BB 4,4 kg\nT 39,4\nkemerahan di tengkuk",
+      diagnosis: "mycosis",
+      therapy: "miconazole\noles 2 kali sehari",
+    });
+  });
+
   it("menahan kartu tanpa tanggal, pasien, atau pemilik", async () => {
     const rusak = lengkap.filter(([row, column]) => !(
       (row === 2 && column === 5) || (row === 3 && column === 2) || (row === 3 && column === 5)
     ));
-    const hasil = await baca(await kartu(rusak));
+    const hasil = await baca(await kartu(rusak), "Template Rek Med.xlsx");
     expect(hasil.rows).toEqual([]);
     expect(hasil.held[0].reason).toContain("Tanggal");
     expect(hasil.held[0].reason).toContain("nama pasien");
@@ -71,7 +163,7 @@ describe("bacaWorkbookRekamMedis", () => {
   });
 
   it("menandai tab kosong sebagai bukan kartu yang bisa diimpor", async () => {
-    const hasil = await baca(await kartu([], "KARTU MEDIS PASIEN"));
+    const hasil = await baca(await kartu([], "KARTU MEDIS PASIEN"), "Template Rek Med.xlsx");
     expect(hasil.rows).toEqual([]);
     expect(hasil.held[0].reason).toContain("kosong");
   });
@@ -86,5 +178,120 @@ describe("bacaWorkbookRekamMedis", () => {
     ]);
     expect(hasil.rows).toHaveLength(1);
     expect(hasil.held[0].reason).toContain("ganda");
+  });
+
+  it("melewati salinan riwayat yang isinya sama", async () => {
+    const bytes = await kartu(lengkap);
+    const hasil = await bacaBanyak([
+      { fileName: "Mochi.xlsx", bytes },
+      { fileName: "Salinan Mochi.xlsx", bytes },
+    ]);
+
+    expect(hasil.rows).toHaveLength(1);
+    expect(hasil.held).toEqual([]);
+    expect(hasil.ignored_sheets).toBe(1);
+  });
+
+  it("tetap membaca kartu yang memiliki gabungan sel kosong", async () => {
+    await expect(baca(await kartuDenganMergeKosong())).resolves.toMatchObject({
+      rows: [expect.objectContaining({ patient_name: "Mochi" })],
+    });
+  });
+
+  it("tidak mencampur owner berbeda yang memakai nomor telepon sama", async () => {
+    const bytes = await kartu(lengkap);
+    const hasil = await bacaBanyak([
+      { fileName: "Mochi.xlsx", sourcePath: "Data/0006 - Yuni - 0817752230/Mochi.xlsx", bytes },
+      { fileName: "Mochi.xlsx", sourcePath: "Data/0008 - Tanti Rachmawati - 0817752230/Mochi.xlsx", bytes },
+    ]);
+
+    expect(hasil.rows).toHaveLength(2);
+    expect(hasil.held).toEqual([]);
+  });
+
+  it("mengikat kartu tanpa nama pasien ke nama file hewan", async () => {
+    const tanpaPasien = lengkap.filter(([row, column]) => !(row === 3 && column === 2));
+    const hasil = await baca(
+      await kartu(tanpaPasien),
+      "Oreo.xlsx",
+      "Data/0001 - Resti Khalillah R - 081384467002/Oreo.xlsx",
+    );
+
+    expect(hasil.held).toEqual([]);
+    expect(hasil.rows[0]).toMatchObject({ patient_name: "Oreo" });
+  });
+
+  it("menahan sheet milik hewan lain dalam satu file", async () => {
+    const namaBerbeda = lengkap.map(([row, column, value]) => (
+      row === 3 && column === 2 ? [row, column, "Moci"] : [row, column, value]
+    )) as Array<[number, number, unknown]>;
+    const hasil = await baca(await beberapaKartu([
+      { name: "01012025", rows: lengkap },
+      { name: "02012025", rows: namaBerbeda },
+    ]), "Mochi.xlsx");
+
+    expect(hasil.rows).toHaveLength(1);
+    expect(hasil.rows[0]).toMatchObject({ patient_name: "Mochi" });
+    expect(hasil.held[0].reason).toContain("tidak konsisten");
+  });
+
+  it("memakai jejak sumber stabil walau nama folder utama berubah", async () => {
+    const bytes = await kartu(lengkap);
+    const pertama = await baca(bytes, "Mochi.xlsx", "Unduhan Lama/0001 - Rani - 081234567890/Mochi.xlsx");
+    const kedua = await baca(bytes, "Mochi.xlsx", "Unduhan Baru/0001 - Rani - 081234567890/Mochi.xlsx");
+
+    expect(pertama.rows[0].source_key).toBe(kedua.rows[0].source_key);
+  });
+
+  it("menahan tanggal kartu yang tidak mungkin", async () => {
+    const tanggalRusak = [[1, 1, "KARTU MEDIS PASIEN"], ...lengkap.map(([row, column, value]) => (
+      row === 2 && column === 5 ? [row, column, "2025-02-31"] : [row, column, value]
+    ))] as Array<[number, number, unknown]>;
+    const hasil = await baca(await kartu(tanggalRusak, "Next Rekmed"));
+
+    expect(hasil.rows).toEqual([]);
+    expect(hasil.held[0].reason).toContain("Tanggal");
+  });
+
+  it("membaca catatan kunjungan dari kartu", async () => {
+    const denganCatatan = [...lengkap, [6, 1, "Note"], [6, 2, "Promo vaksin kedua"]] as Array<[number, number, unknown]>;
+    const hasil = await baca(await kartu(denganCatatan));
+
+    expect(hasil.rows[0]).toMatchObject({ note: "Promo vaksin kedua" });
+  });
+
+  it("melanjutkan hanya riwayat yang belum tersimpan saat impor diulang", async () => {
+    const hasil = await baca(await beberapaKartu([
+      { name: "01012025", rows: lengkap },
+      { name: "02012025", rows: lengkap },
+    ]), "Mochi.xlsx");
+    const dipilah = await pilah(hasil.rows, [String(hasil.rows[0].source_key)]);
+
+    expect(dipilah.baru).toHaveLength(1);
+    expect(dipilah.sudah_ada).toBe(1);
+  });
+
+  it("melengkapi profil hewan dari sheet histori yang lebih lengkap", async () => {
+    const denganKelamin = [...lengkap, [6, 4, "Jenis Kelamin"], [6, 5, "Jantan"]] as Array<[number, number, unknown]>;
+    const bytes = await beberapaKartu([
+      { name: "01012025", rows: lengkap },
+      { name: "02012025", rows: denganKelamin },
+    ]);
+    const hasil = await bacaBanyak([{ fileName: "Mochi.xlsx", bytes }]);
+
+    expect(hasil.rows[0]).toMatchObject({ gender: "Jantan" });
+  });
+});
+
+describe("bolehKonfirmasiImporRekamMedis", () => {
+  it("tetap mengizinkan riwayat aman disimpan saat ada riwayat lain yang ditahan", async () => {
+    await expect(bolehKonfirmasi(14, true)).resolves.toBe(true);
+  });
+});
+
+describe("infoProgresImporRekamMedis", () => {
+  it("membedakan progres saat membaca dan menyimpan", async () => {
+    await expect(progres("baca")).resolves.toMatchObject({ label: "Membaca kartu medis…" });
+    await expect(progres("simpan")).resolves.toMatchObject({ label: "Menyimpan riwayat aman…" });
   });
 });
