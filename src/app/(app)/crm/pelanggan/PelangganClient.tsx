@@ -408,11 +408,11 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                   </div>
                 </div>
                 <div style={{ overflowX: "auto" }}>
-                  <table className="tbl" style={{ minWidth: 600 }}>
+                  <table className="tbl" style={{ minWidth: 700 }}>
                     <thead>
                       <tr>
                         <th>No.</th><th>Nama</th><th>Jenis</th><th>Ras</th><th>Kelamin</th>
-                        <th>Usia</th><th>Gol. Darah</th><th>Steril</th><th>Status</th>
+                        <th>Usia</th><th>Gol. Darah</th><th>Steril</th><th>Status</th><th />
                       </tr>
                     </thead>
                     <tbody>
@@ -431,10 +431,15 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           <td>{p.golongan_darah ? <span className="bge r">{p.golongan_darah}</span> : <span style={{ color: "var(--td)" }}>—</span>}</td>
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.sterilisasi ?? "—"}</td>
                           <td><span className={`bge ${p.status === "Aktif" ? "g" : p.status === "RIP" ? "x" : "o"}`}>{p.status}</span></td>
+                          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                            <Link href={`/klinik/rekam-medis?pet=${encodeURIComponent(p.id)}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>
+                              <i className="ti ti-notes-medical" /> Riwayat medis
+                            </Link>
+                          </td>
                         </tr>
                       ))}
                       {sel.pets.length === 0 && (
-                        <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada anabul terdaftar</td></tr>
+                        <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada anabul terdaftar</td></tr>
                       )}
                     </tbody>
                   </table>

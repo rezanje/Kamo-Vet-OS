@@ -27,15 +27,16 @@ const dateText = (iso: string) => new Date(iso).toLocaleDateString("id-ID", {
 export default async function DaftarRekamMedisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; pet?: string }>;
 }) {
-  const { q = "" } = await searchParams;
+  const { q = "", pet: petId = "" } = await searchParams;
   const supabase = await createClient();
-  const { data } = await supabase
+  let query = supabase
     .from("visits")
     .select("id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis)")
-    .order("created_at", { ascending: false })
-    .limit(300);
+    .order("created_at", { ascending: false });
+  if (petId) query = query.eq("pet_id", petId);
+  const { data } = await query.limit(300);
 
   type SourceRow = {
     id: string;
@@ -72,6 +73,7 @@ export default async function DaftarRekamMedisPage({
   const filtered = saringDaftarRekamMedis(rows, q);
   const pets = new Set(rows.map((row) => row.petName).filter((name) => name !== "—")).size;
   const imported = rows.filter((row) => row.isImported).length;
+  const selectedPet = petId ? rows[0] : null;
 
   return (
     <>
@@ -83,7 +85,9 @@ export default async function DaftarRekamMedisPage({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
         <div>
           <div className="pg-hd" style={{ marginBottom: 2 }}>REKAM MEDIS</div>
-          <div className="pg-sub">Riwayat pemeriksaan seluruh cabang klinik</div>
+          <div className="pg-sub">
+            {selectedPet ? `Riwayat ${selectedPet.petName} · ${selectedPet.ownerName}` : "Riwayat pemeriksaan seluruh cabang klinik"}
+          </div>
         </div>
         <Link href="/klinik/rekam-medis/impor" className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)" }}>
           <i className="ti ti-file-import" /> Import rekam medis
@@ -101,20 +105,21 @@ export default async function DaftarRekamMedisPage({
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Daftar riwayat</div>
             <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>
-              {q ? `${filtered.length} riwayat ditemukan.` : "Cari lewat nama pemilik, nama hewan, atau nomor telepon."}
+              {q ? `${filtered.length} riwayat ditemukan.` : selectedPet ? `Seluruh riwayat medis ${selectedPet.petName}.` : "Cari lewat nama pemilik, nama hewan, atau nomor telepon."}
             </div>
           </div>
           <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {petId && <input type="hidden" name="pet" value={petId} />}
             <input className="fi" name="q" defaultValue={q} placeholder="Cari owner atau hewan..." style={{ width: 240 }} />
             <button className="btn-def" type="submit"><i className="ti ti-search" /> Cari</button>
-            {q && <Link href="/klinik/rekam-medis" className="btn-def" style={{ textDecoration: "none" }}>Reset</Link>}
+            {(q || petId) && <Link href="/klinik/rekam-medis" className="btn-def" style={{ textDecoration: "none" }}>Semua riwayat</Link>}
           </form>
         </div>
 
         {filtered.length === 0 ? (
           <div style={{ padding: "30px 12px", textAlign: "center", color: "var(--tm)", fontSize: 12 }}>
             <i className="ti ti-notes-off" style={{ display: "block", fontSize: 28, marginBottom: 7, color: "var(--td)" }} />
-            Belum ada rekam medis yang cocok.
+            {petId ? "Belum ada riwayat medis untuk anabul ini." : "Belum ada rekam medis yang cocok."}
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
