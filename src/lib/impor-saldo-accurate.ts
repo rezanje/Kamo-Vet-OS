@@ -173,6 +173,17 @@ function numberValue(value: ExcelJS.CellValue | undefined) {
   return Number(text);
 }
 
+/**
+ * ExcelJS mengembalikan rumus tanpa nilai tersimpan sebagai `{ formula }`.
+ * Nilainya tidak boleh ditebak: terutama rumus yang merujuk workbook lain
+ * akan menghasilkan stok/modal berbeda bila asalnya tidak ikut diunggah.
+ */
+function formulaTanpaNilai(value: ExcelJS.CellValue | undefined) {
+  if (!value || typeof value !== "object" || !("formula" in value)) return false;
+  const formula = value as { result?: unknown };
+  return formula.result === undefined || formula.result === null || formula.result === "";
+}
+
 export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwalWorkbookResult> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
@@ -206,13 +217,17 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
 
   const rows: SaldoAwalDraft[] = [];
   const errors: string[] = [];
+  const rumusQtyTanpaNilai: number[] = [];
+  const rumusHppTanpaNilai: number[] = [];
   for (let rowNo = 2; rowNo <= worksheet.rowCount; rowNo += 1) {
     const row = worksheet.getRow(rowNo);
     const itemCode = cellText(row.getCell(columns.code!).value);
     const rawQtyCell = row.getCell(columns.qty!).value;
+    const qtyMasihRumus = formulaTanpaNilai(rawQtyCell);
     const rawQty = numberValue(rawQtyCell);
     const unit = cellText(row.getCell(columns.unit!).value);
     const unitCostCell = row.getCell(columns.unitCost!).value;
+    const hppMasihRumus = formulaTanpaNilai(unitCostCell);
     const unitCost = numberValue(unitCostCell);
     const batchNo = columns.batchNo ? cellText(row.getCell(columns.batchNo).value) || null : null;
     const expDate = columns.expDate ? excelDate(row.getCell(columns.expDate).value) : null;
@@ -223,13 +238,23 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     if (isCombinedItemWorkbook && !hasBalanceValue) continue;
     if (!itemCode && !unit && !Number.isFinite(rawQty) && !Number.isFinite(unitCost)) continue;
     if (!itemCode) errors.push(`Baris ${rowNo}: Kode Barang wajib diisi`);
-    if (!Number.isFinite(rawQty) || rawQty < 0) errors.push(`Baris ${rowNo}: Kuantitas harus angka nol atau lebih`);
+    if (qtyMasihRumus) rumusQtyTanpaNilai.push(rowNo);
+    else if (!Number.isFinite(rawQty) || rawQty < 0) errors.push(`Baris ${rowNo}: Kuantitas harus angka nol atau lebih`);
     if (!unit) errors.push(`Baris ${rowNo}: Satuan wajib diisi`);
-    if (!Number.isFinite(unitCost) || unitCost < 0) errors.push(`Baris ${rowNo}: HPP harus angka nol atau lebih`);
+    if (hppMasihRumus) rumusHppTanpaNilai.push(rowNo);
+    else if (!Number.isFinite(unitCost) || unitCost < 0) errors.push(`Baris ${rowNo}: HPP harus angka nol atau lebih`);
     if (columns.expDate && row.getCell(columns.expDate).value != null && !expDate) {
       errors.push(`Baris ${rowNo}: Tanggal kedaluwarsa tidak valid`);
     }
     rows.push({ row: rowNo, itemCode, qty: rawQty, unit, unitCost, batchNo, expDate, branchName, warehouseName, asOf });
+  }
+  const rentang = (baris: number[]) => `${baris.length} baris (${baris.slice(0, 3).join(", ")}${baris.length > 3 ? ", …" : ""})`;
+  if (rumusQtyTanpaNilai.length || rumusHppTanpaNilai.length) {
+    const kolom = [
+      rumusQtyTanpaNilai.length ? `kuantitas pada ${rentang(rumusQtyTanpaNilai)}` : "",
+      rumusHppTanpaNilai.length ? `HPP pada ${rentang(rumusHppTanpaNilai)}` : "",
+    ].filter(Boolean).join(" dan ");
+    errors.push(`${kolom} masih berupa rumus Excel tanpa hasil angka. Buka file sumber beserta data gudang yang dirujuk, pastikan angkanya muncul, lalu simpan atau ekspor ulang sebagai nilai sebelum diunggah.`);
   }
   return { rows, errors };
 }

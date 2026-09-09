@@ -61,6 +61,18 @@ describe("bacaWorkbookSaldoAwal", () => {
       asOf: null,
     }]);
   });
+
+  it("meringkas rumus tanpa nilai tersimpan agar pengguna tahu file sumbernya belum lengkap", async () => {
+    const parsed = await bacaWorkbookSaldoAwal(await workbook([
+      ["Kode Barang", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],
+      ["SKU-1", { formula: "VLOOKUP(A2,Data!A:B,2,0)" }, "PCS", { formula: "VLOOKUP(A2,Data!A:C,3,0)" }],
+    ]));
+
+    expect(parsed.errors).toHaveLength(1);
+    expect(parsed.errors[0]).toContain("kuantitas pada 1 baris (2)");
+    expect(parsed.errors[0]).toContain("HPP pada 1 baris (2)");
+    expect(parsed.errors[0]).toContain("rumus Excel tanpa hasil angka");
+  });
 });
 
 describe("resolveInitialStockSourceScope", () => {
