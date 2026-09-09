@@ -59,6 +59,7 @@ export function AccurateImportForm({
   const [flowMode, setFlowMode] = useState<"idle" | "checking" | "importing">("idle");
   const [receiptDismissed, setReceiptDismissed] = useState(false);
   const [oneClickStockState, setOneClickStockState] = useState<InitialStockState | null>(null);
+  const [initialStockAsOf, setInitialStockAsOf] = useState("");
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
 
@@ -88,6 +89,7 @@ export function AccurateImportForm({
   );
   const previewReady = Boolean(
     files.length === 1
+    && initialStockAsOf
     && state?.ok
     && state.run_id
     && oneClickStockState?.ok
@@ -142,6 +144,7 @@ export function AccurateImportForm({
       setOneClickStatus("Mengecek saldo stok awal…");
       const stockData = new FormData();
       stockData.append("initial_stock_file", file);
+      stockData.append("initial_stock_as_of", initialStockAsOf);
       const stockPreview = await preflightSaldoAwalSekali(stockData);
       setOneClickStockState(stockPreview);
       setOneClickPercentage(100);
@@ -189,6 +192,7 @@ export function AccurateImportForm({
       const stockPreviewData = new FormData();
       stockPreviewData.append("initial_stock_file", file);
       stockPreviewData.append("master_run_id", masterDone.run_id);
+      stockPreviewData.append("initial_stock_as_of", initialStockAsOf);
       const stockPreview = await previewSaldoAwalAccurate(stockPreviewData);
       setOneClickStockState(stockPreview);
       if (!stockPreview.ok || !stockPreview.run_id || !stockPreview.branch_id || !stockPreview.warehouse_id || !stockPreview.as_of) {
@@ -205,6 +209,7 @@ export function AccurateImportForm({
       stockPostData.append("branch_id", stockPreview.branch_id);
       stockPostData.append("warehouse_id", stockPreview.warehouse_id);
       stockPostData.append("as_of", stockPreview.as_of);
+      stockPostData.append("initial_stock_as_of", initialStockAsOf);
       stockPostData.append("confirm_scope", "on");
       const postedStock = await postSaldoAwalAccurate(stockPostData);
       const postedRows = stockPreview.rows.filter((row) => row.status === "valid").length;
@@ -323,6 +328,27 @@ export function AccurateImportForm({
         {categoryFile && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name}</span>}
       </div>
 
+      <label style={{ display: "block", marginTop: 10, maxWidth: 300 }}>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--sb)", marginBottom: 4 }}>
+          Tanggal posisi saldo awal <span style={{ color: "#b91c1c" }}>*</span>
+        </span>
+        <input
+          type="date"
+          required
+          value={initialStockAsOf}
+          onChange={(event) => {
+            setInitialStockAsOf(event.target.value);
+            setOneClickStockState(null);
+            setOneClickStatus("");
+            setLocalError("");
+          }}
+          style={{ width: "100%", padding: "8px 9px", borderRadius: 7, border: ".5px solid var(--bd)", background: "white" }}
+        />
+        <span style={{ display: "block", marginTop: 4, fontSize: 10, color: "var(--tm)", lineHeight: 1.45 }}>
+          Wajib dipilih. Dipakai hanya bila Per Tanggal di file kosong; bila file berisi tanggal berbeda, impor akan diblokir.
+        </span>
+      </label>
+
       {(localError || (state && !state.ok)) && (
         <div className="p2ban" style={{ marginTop: 12, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {localError || state?.message}
@@ -357,7 +383,7 @@ export function AccurateImportForm({
           <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-alert-circle" /> Saldo stok awal belum siap</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>{oneClickStockState?.message}</div>
           <div style={{ fontSize: 10.5, marginTop: 7, color: "#9f1239" }}>
-            Barang dan jasa sudah terbaca. Lengkapi data saldo pada file, lalu pilih <b>Cek perubahan</b> lagi agar tombol Import Sekali aktif.
+            Barang dan jasa sudah terbaca. Pilih Tanggal posisi saldo awal atau perbaiki data saldo yang disebutkan, lalu pilih <b>Cek perubahan</b> lagi agar tombol Import Sekali aktif.
           </div>
         </div>
       )}

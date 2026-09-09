@@ -860,6 +860,10 @@ function getInitialStockFile(formData: FormData): File {
   return file;
 }
 
+function getInitialStockAsOf(formData: FormData) {
+  return String(formData.get("initial_stock_as_of") ?? "").trim();
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function muatMasterSaldoAwal(supabase: any): Promise<ReadonlyMap<string, SaldoAwalMasterItem>> {
   const rows = await loadAll(supabase, "items", "id,code,unit,item_type,track_expiry,item_units(unit,factor)");
@@ -911,14 +915,17 @@ async function loadInitialScope(supabase: any, branchId: string, warehouseId: st
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadInitialScopeFromFile(supabase: any, rows: Awaited<ReturnType<typeof bacaWorkbookSaldoAwal>>["rows"]) {
+async function loadInitialScopeFromFile(supabase: any,
+  rows: Awaited<ReturnType<typeof bacaWorkbookSaldoAwal>>["rows"],
+  selectedAsOf: string,
+) {
   const [{ data: branches, error: branchError }, { data: warehouses, error: warehouseError }] = await Promise.all([
     supabase.from("branches").select("id,code,name").eq("is_active", true),
     supabase.from("warehouses").select("id,branch_id,code,name").eq("is_active", true),
   ]);
   if (branchError) throw new Error(branchError.message);
   if (warehouseError) throw new Error(warehouseError.message);
-  const scope = resolveInitialStockSourceScope(rows, branches ?? [], warehouses ?? []);
+  const scope = resolveInitialStockSourceScope(rows, branches ?? [], warehouses ?? [], selectedAsOf);
   if (!scope.ok) throw new Error(scope.message);
   return scope;
 }
@@ -996,13 +1003,14 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
     const supabase = await assertBolehKelola();
     const file = getInitialStockFile(formData);
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const selectedAsOf = getInitialStockAsOf(formData);
     const [saldo, barang] = await Promise.all([
       bacaWorkbookSaldoAwal(bytes),
       bacaWorkbookAccurate(bytes),
     ]);
     if (saldo.errors.length) return initialStockStateError(saldo.errors.join(" "));
     if (barang.errors.length) return initialStockStateError(barang.errors.join(" "));
-    const { warehouse, asOf } = await loadInitialScopeFromFile(supabase, saldo.rows);
+    const { warehouse, asOf } = await loadInitialScopeFromFile(supabase, saldo.rows, selectedAsOf);
     const existing = await muatMasterSaldoAwal(supabase);
     const projected = new Map(existing);
     for (const item of barang.rows) {
@@ -1048,14 +1056,15 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     await assertMasterImportPosted(supabase, masterRunId);
     const file = getInitialStockFile(formData);
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const selectedAsOf = getInitialStockAsOf(formData);
     const parsed = await bacaWorkbookSaldoAwal(bytes);
     if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
-    const { branch, warehouse, asOf } = await loadInitialScopeFromFile(supabase, parsed.rows);
+    const { branch, warehouse, asOf } = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf);
     const master = await muatMasterSaldoAwal(supabase);
     const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);
     const sourceHash = await hashFiles([
       { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode("v2") },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v3:${asOf}`) },
     ]);
     const summary = initialStockSummary(resolved);
     const runId = await createInitialStockRun(supabase, {
@@ -1122,15 +1131,22 @@ export async function postSaldoAwalAccurate(formData: FormData): Promise<Initial
     const branchId = String(formData.get("branch_id") ?? "").trim();
     const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
     const asOf = String(formData.get("as_of") ?? "").trim();
+    const selectedAsOf = getInitialStockAsOf(formData);
     const masterRunId = String(formData.get("master_run_id") ?? "").trim();
     if (!runId || !branchId || !warehouseId || !asOf) return initialStockStateError("Batch saldo awal tidak lengkap.");
     await assertMasterImportPosted(supabase, masterRunId);
     await loadInitialScope(supabase, branchId, warehouseId);
     const file = getInitialStockFile(formData);
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const parsed = await bacaWorkbookSaldoAwal(bytes);
+    if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
+    const fileScope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf);
+    if (fileScope.branch.id !== branchId || fileScope.warehouse.id !== warehouseId || fileScope.asOf !== asOf) {
+      return initialStockStateError("File, tanggal posisi, atau tujuan batch berubah. Jalankan preview lagi.");
+    }
     const sourceHash = await hashFiles([
       { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode("v2") },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v3:${asOf}`) },
     ]);
     const run = await supabase.from("import_runs")
       .select("id,kind,status,source_hash,branch_id,warehouse_id,as_of_date,summary")

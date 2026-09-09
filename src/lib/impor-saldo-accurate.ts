@@ -119,29 +119,41 @@ function scopeKey(value: string) {
   return value.trim().toLocaleLowerCase("id-ID");
 }
 
-function oneSourceValue(rows: InitialStockScopeRow[], key: keyof InitialStockScopeRow, label: string) {
+function oneSourceValue(rows: InitialStockScopeRow[], key: Exclude<keyof InitialStockScopeRow, "asOf">, label: string) {
   const values = [...new Set(rows.map((row) => row[key]).filter((value): value is string => Boolean(value)))];
-  if (!values.length) {
-    const message = key === "asOf"
-      ? "Kolom Per Tanggal kosong. Isi satu tanggal saldo yang sama pada semua baris, sesuai tanggal stok terakhir dari sumber."
-      : `File belum memuat ${label} saldo.`;
-    return { ok: false as const, message };
-  }
+  if (!values.length) return { ok: false as const, message: `File belum memuat ${label} saldo.` };
   if (values.length > 1) return { ok: false as const, message: `File memuat lebih dari satu ${label}. Pisahkan file per ${label}.` };
   if (rows.some((row) => !row[key])) return { ok: false as const, message: `Sebagian baris belum memuat ${label} saldo.` };
   return { ok: true as const, value: values[0] };
+}
+
+function selectedAsOf(rows: InitialStockScopeRow[], value: string | null | undefined) {
+  const selected = value?.trim() ?? "";
+  const selectedDate = new Date(`${selected}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(selected) || Number.isNaN(selectedDate.getTime()) || selectedDate.toISOString().slice(0, 10) !== selected) {
+    return { ok: false as const, message: "Pilih Tanggal posisi saldo awal terlebih dulu." };
+  }
+  const sourceDates = [...new Set(rows.map((row) => row.asOf).filter((date): date is string => Boolean(date)))];
+  if (sourceDates.length > 1) {
+    return { ok: false as const, message: "File memuat lebih dari satu tanggal saldo. Pisahkan file per tanggal." };
+  }
+  if (sourceDates[0] && sourceDates[0] !== selected) {
+    return { ok: false as const, message: `Tanggal posisi saldo awal ${selected} berbeda dengan tanggal di file ${sourceDates[0]}.` };
+  }
+  return { ok: true as const, value: sourceDates[0] ?? selected };
 }
 
 export function resolveInitialStockSourceScope(
   rows: InitialStockScopeRow[],
   branches: InitialStockBranchOption[],
   warehouses: InitialStockWarehouseOption[],
+  selectedAsOfValue?: string | null,
 ): InitialStockSourceScope {
   const branchSource = oneSourceValue(rows, "branchName", "cabang");
   if (!branchSource.ok) return branchSource;
   const warehouseSource = oneSourceValue(rows, "warehouseName", "gudang");
   if (!warehouseSource.ok) return warehouseSource;
-  const dateSource = oneSourceValue(rows, "asOf", "tanggal");
+  const dateSource = selectedAsOf(rows, selectedAsOfValue);
   if (!dateSource.ok) return dateSource;
 
   const branch = branches.find((item) => [item.code, item.name].some((value) => scopeKey(value) === scopeKey(branchSource.value)));
@@ -200,10 +212,12 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     headers.set(normalizeHeader(cellText(cell.value)), column);
   });
 
+  const isCombinedItemWorkbook = headers.has(normalizeHeader("Kuantitas Saldo Awal"));
   const columns = {
     code: findColumn(headers, ["Kode Barang", "Kode", "Item Code"]),
     qty: findColumn(headers, ["Kuantitas", "Qty", "Jumlah", "Kuantitas Saldo Awal"]),
-    unit: findColumn(headers, ["Satuan", "Unit", "Satuan Saldo Awal"]),
+    balanceUnit: isCombinedItemWorkbook ? findColumn(headers, ["Satuan Saldo Awal"]) : findColumn(headers, ["Satuan", "Unit"]),
+    masterUnit: isCombinedItemWorkbook ? findColumn(headers, ["Satuan"]) : null,
     unitCost: findColumn(headers, ["HPP", "Harga Pokok", "Unit Cost", "Biaya Satuan", "Nilai Satuan"]),
     batchNo: findColumn(headers, ["Batch", "No Batch", "Batch No"]),
     expDate: findColumn(headers, ["Expiry", "Tanggal Kadaluarsa", "Exp Date", "Kadaluarsa"]),
@@ -211,11 +225,9 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     warehouseName: findColumn(headers, ["Gudang Saldo Awal", "Gudang"]),
     asOf: findColumn(headers, ["Per Tanggal", "Tanggal Saldo"]),
   };
-  const isCombinedItemWorkbook = headers.has(normalizeHeader("Kuantitas Saldo Awal"));
   const missing = [
     ["Kode Barang", columns.code],
     ["Kuantitas", columns.qty],
-    ["Satuan", columns.unit],
     ["HPP", columns.unitCost],
   ].filter(([, column]) => !column).map(([name]) => name);
   if (missing.length) return { rows: [], errors: [`Kolom wajib tidak ditemukan: ${missing.join(", ")}`] };
@@ -230,7 +242,13 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     const rawQtyCell = row.getCell(columns.qty!).value;
     const qtyMasihRumus = formulaTanpaNilai(rawQtyCell);
     const rawQty = numberValue(rawQtyCell);
-    const unit = cellText(row.getCell(columns.unit!).value);
+    // Pada file gabungan, saldo nol tidak pernah diposting. Lewati sebelum
+    // menilai HPP/satuan/tanggal agar sisa pembulatan sumber tidak mengunci
+    // seluruh impor master dan saldo yang benar-benar ada.
+    if (isCombinedItemWorkbook && !qtyMasihRumus && Number.isFinite(rawQty) && rawQty === 0) continue;
+    const balanceUnit = columns.balanceUnit ? cellText(row.getCell(columns.balanceUnit).value) : "";
+    const masterUnit = columns.masterUnit ? cellText(row.getCell(columns.masterUnit).value) : "";
+    const unit = balanceUnit || masterUnit;
     const unitCostCell = row.getCell(columns.unitCost!).value;
     const hppMasihRumus = formulaTanpaNilai(unitCostCell);
     const unitCost = numberValue(unitCostCell);
@@ -239,7 +257,7 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     const branchName = columns.branchName ? cellText(row.getCell(columns.branchName).value) || null : null;
     const warehouseName = columns.warehouseName ? cellText(row.getCell(columns.warehouseName).value) || null : null;
     const asOf = columns.asOf ? excelDate(row.getCell(columns.asOf).value) : null;
-    const hasBalanceValue = [cellText(rawQtyCell), unit, cellText(unitCostCell)].some(Boolean);
+    const hasBalanceValue = [cellText(rawQtyCell), balanceUnit, cellText(unitCostCell)].some(Boolean);
     if (isCombinedItemWorkbook && !hasBalanceValue) continue;
     if (!itemCode && !unit && !Number.isFinite(rawQty) && !Number.isFinite(unitCost)) continue;
     if (!itemCode) errors.push(`Baris ${rowNo}: Kode Barang wajib diisi`);

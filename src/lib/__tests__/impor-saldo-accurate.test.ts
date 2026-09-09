@@ -40,6 +40,37 @@ describe("duplicateStockKeys", () => {
 });
 
 describe("bacaWorkbookSaldoAwal", () => {
+  it("melewati saldo nol sebelum HPP pembulatan negatif divalidasi", async () => {
+    const parsed = await bacaWorkbookSaldoAwal(await workbook([
+      ["Kode Barang", "Satuan", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],
+      ["SKU-NOL", "PCS", 0, "", -0.000006],
+      ["SKU-ISI", "PCS", 3, "PCS", 15_000],
+    ]));
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]).toMatchObject({ itemCode: "SKU-ISI", qty: 3, unit: "PCS", unitCost: 15_000 });
+  });
+
+  it("memakai Satuan master bila Satuan Saldo Awal kosong pada qty positif", async () => {
+    const parsed = await bacaWorkbookSaldoAwal(await workbook([
+      ["Kode Barang", "Satuan", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],
+      ["SKU-1", "PCS", 2, "", 15_000],
+    ]));
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows[0]).toMatchObject({ itemCode: "SKU-1", qty: 2, unit: "PCS" });
+  });
+
+  it("menolak HPP negatif pada saldo positif", async () => {
+    const parsed = await bacaWorkbookSaldoAwal(await workbook([
+      ["Kode Barang", "Satuan", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],
+      ["SKU-1", "PCS", 2, "", -0.000523],
+    ]));
+
+    expect(parsed.errors).toEqual(["Baris 2: HPP harus angka nol atau lebih"]);
+  });
+
   it("membaca kolom saldo awal dari file Barang dan Jasa Accurate", async () => {
     const parsed = await bacaWorkbookSaldoAwal(await workbook([
       ["Kode Barang", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],
@@ -84,7 +115,7 @@ describe("resolveInitialStockSourceScope", () => {
   const warehouses = [{ id: "warehouse-pdry", branch_id: "branch-pdry", code: "WH_PDRY", name: "WH PDRY" }];
 
   it("memilih cabang, gudang, dan tanggal dari file Accurate", () => {
-    expect(resolveInitialStockSourceScope(rows, branches, warehouses)).toEqual({
+    expect(resolveInitialStockSourceScope(rows, branches, warehouses, "2024-12-20")).toEqual({
       ok: true,
       branch: branches[0],
       warehouse: warehouses[0],
@@ -101,8 +132,18 @@ describe("resolveInitialStockSourceScope", () => {
     expect(resolveInitialStockSourceScope([{ ...rows[0], asOf: null }], branches, warehouses))
       .toMatchObject({
         ok: false,
-        message: expect.stringContaining("Kolom Per Tanggal kosong"),
+        message: expect.stringContaining("Tanggal posisi saldo awal"),
       });
+  });
+
+  it("memakai tanggal posisi saldo awal saat Per Tanggal kosong", () => {
+    expect(resolveInitialStockSourceScope([{ ...rows[0], asOf: null }], branches, warehouses, "2026-09-09"))
+      .toEqual({ ok: true, branch: branches[0], warehouse: warehouses[0], asOf: "2026-09-09" });
+  });
+
+  it("menolak tanggal posisi yang berbeda dari tanggal di file", () => {
+    expect(resolveInitialStockSourceScope(rows, branches, warehouses, "2026-09-09"))
+      .toMatchObject({ ok: false, message: expect.stringContaining("berbeda dengan tanggal di file") });
   });
 });
 
