@@ -96,6 +96,14 @@ describe("resolveInitialStockSourceScope", () => {
     expect(resolveInitialStockSourceScope([...rows, { ...rows[0], row: 3, warehouseName: "WH LAIN" }], branches, warehouses))
       .toMatchObject({ ok: false, message: expect.stringContaining("lebih dari satu gudang") });
   });
+
+  it("menjelaskan langkah perbaikan bila tanggal saldo kosong", () => {
+    expect(resolveInitialStockSourceScope([{ ...rows[0], asOf: null }], branches, warehouses))
+      .toMatchObject({
+        ok: false,
+        message: expect.stringContaining("Kolom Per Tanggal kosong"),
+      });
+  });
 });
 
 describe("resolveSaldoAwalRows", () => {

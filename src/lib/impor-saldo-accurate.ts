@@ -121,7 +121,12 @@ function scopeKey(value: string) {
 
 function oneSourceValue(rows: InitialStockScopeRow[], key: keyof InitialStockScopeRow, label: string) {
   const values = [...new Set(rows.map((row) => row[key]).filter((value): value is string => Boolean(value)))];
-  if (!values.length) return { ok: false as const, message: `File belum memuat ${label} saldo.` };
+  if (!values.length) {
+    const message = key === "asOf"
+      ? "Kolom Per Tanggal kosong. Isi satu tanggal saldo yang sama pada semua baris, sesuai tanggal stok terakhir dari sumber."
+      : `File belum memuat ${label} saldo.`;
+    return { ok: false as const, message };
+  }
   if (values.length > 1) return { ok: false as const, message: `File memuat lebih dari satu ${label}. Pisahkan file per ${label}.` };
   if (rows.some((row) => !row[key])) return { ok: false as const, message: `Sebagian baris belum memuat ${label} saldo.` };
   return { ok: true as const, value: values[0] };

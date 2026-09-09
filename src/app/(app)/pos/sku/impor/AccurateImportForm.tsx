@@ -354,8 +354,11 @@ export function AccurateImportForm({
 
       {stockFailure && (
         <div role="alert" style={{ marginTop: 12, padding: 13, border: ".5px solid #fca5a5", borderRadius: 9, background: "#fef2f2", color: "#b91c1c" }}>
-          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-alert-circle" /> Import belum selesai</div>
+          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-alert-circle" /> Saldo stok awal belum siap</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>{oneClickStockState?.message}</div>
+          <div style={{ fontSize: 10.5, marginTop: 7, color: "#9f1239" }}>
+            Barang dan jasa sudah terbaca. Lengkapi data saldo pada file, lalu pilih <b>Cek perubahan</b> lagi agar tombol Import Sekali aktif.
+          </div>
         </div>
       )}
 
