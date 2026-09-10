@@ -333,7 +333,10 @@ export function AccurateImportForm({
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, alignItems: "center", marginTop: 12 }}>
         <Link href="/pos/sku/impor/template" className="btn-def" style={{ justifyContent: "center", textDecoration: "none" }}>
-          <i className="ti ti-download" /> Download format Excel
+          <i className="ti ti-download" /> Format Barang &amp; Jasa
+        </Link>
+        <Link href="/pos/sku/impor/template?jenis=kategori" className="btn-def" style={{ justifyContent: "center", textDecoration: "none" }}>
+          <i className="ti ti-download" /> Format Kategori &amp; Subkategori
         </Link>
         <label className="btn-def" style={{ cursor: "pointer", justifyContent: "center" }}>
           <i className="ti ti-file-spreadsheet" /> Pilih Barang &amp; Jasa .xlsx

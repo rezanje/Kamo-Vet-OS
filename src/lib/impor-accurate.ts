@@ -384,9 +384,12 @@ export async function bacaWorkbookKategoriAccurate(
     if (header) columns.set(header, column);
   });
   const nameColumn = columns.get(normalizedHeader("Nama"));
-  const parentColumn = columns.get(normalizedHeader("Sub Kategori"));
+  // Export lama Accurate memakai "Sub Kategori", sedangkan format VetOS
+  // memakai nama yang lebih jelas: kategori induknya.
+  const parentColumn = columns.get(normalizedHeader("Induk Kategori"))
+    ?? columns.get(normalizedHeader("Sub Kategori"));
   if (!nameColumn || !parentColumn) {
-    return { rows: [], errors: ["Kolom wajib tidak ditemukan: Nama, Sub Kategori"] };
+    return { rows: [], errors: ["Kolom wajib tidak ditemukan: Nama, Induk Kategori"] };
   }
 
   const rows: AccurateCategory[] = [];

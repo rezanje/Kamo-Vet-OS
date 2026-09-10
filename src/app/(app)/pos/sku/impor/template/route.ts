@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { buatTemplateImporBarang } from "@/lib/template-impor-barang";
+import { buatTemplateImporBarang, buatTemplateKategoriImporBarang } from "@/lib/template-impor-barang";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 401 });
@@ -14,11 +14,14 @@ export async function GET() {
     return NextResponse.json({ error: "Akses impor tidak diizinkan" }, { status: 403 });
   }
 
-  const workbook = await buatTemplateImporBarang();
+  const isCategoryTemplate = new URL(request.url).searchParams.get("jenis") === "kategori";
+  const workbook = isCategoryTemplate ? await buatTemplateKategoriImporBarang() : await buatTemplateImporBarang();
   return new NextResponse(workbook, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": 'attachment; filename="Format-Impor-VetOS.xlsx"',
+      "Content-Disposition": isCategoryTemplate
+        ? 'attachment; filename="Format-Kategori-Subkategori-VetOS.xlsx"'
+        : 'attachment; filename="Format-Impor-Barang-VetOS.xlsx"',
       "Cache-Control": "no-store",
     },
   });
