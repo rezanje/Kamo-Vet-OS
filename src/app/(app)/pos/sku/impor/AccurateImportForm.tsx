@@ -306,6 +306,9 @@ export function AccurateImportForm({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, alignItems: "center", marginTop: 12 }}>
+        <Link href="/pos/sku/impor/template" className="btn-def" style={{ justifyContent: "center", textDecoration: "none" }}>
+          <i className="ti ti-download" /> Download format Excel
+        </Link>
         <label className="btn-def" style={{ cursor: "pointer", justifyContent: "center" }}>
           <i className="ti ti-file-spreadsheet" /> Pilih Barang &amp; Jasa .xlsx
           <input
