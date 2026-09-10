@@ -123,6 +123,15 @@ describe("resolveInitialStockSourceScope", () => {
     });
   });
 
+  it("mencocokkan nama gudang file dengan kode gudang lama yang memakai awalan WH", () => {
+    const legacyBranch = [{ id: "branch-vet-pdry", code: "VET_PDRY", name: "Klinik Panduraya" }];
+    const legacyWarehouse = [{ id: "warehouse-vet-pdry", branch_id: "branch-vet-pdry", code: "WH_VET_PDRY", name: "WH VET PDRY" }];
+    const legacyRows = [{ ...rows[0], branchName: "Klinik Panduraya", warehouseName: "VET PDRY" }];
+
+    expect(resolveInitialStockSourceScope(legacyRows, legacyBranch, legacyWarehouse, "2024-12-20"))
+      .toEqual({ ok: true, branch: legacyBranch[0], warehouse: legacyWarehouse[0], asOf: "2024-12-20" });
+  });
+
   it("menolak file yang mencampur gudang", () => {
     expect(resolveInitialStockSourceScope([...rows, { ...rows[0], row: 3, warehouseName: "WH LAIN" }], branches, warehouses))
       .toMatchObject({ ok: false, message: expect.stringContaining("lebih dari satu gudang") });

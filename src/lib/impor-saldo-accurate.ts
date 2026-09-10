@@ -115,8 +115,18 @@ function normalizeHeader(value: string) {
   return value.toLowerCase().replace(/[\s_/-]+/g, "").replace(/[()]/g, "");
 }
 
-function scopeKey(value: string) {
-  return value.trim().toLocaleLowerCase("id-ID");
+function scopeKeys(value: string) {
+  const normalized = value
+    .trim()
+    .toLocaleLowerCase("id-ID")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  return [normalized, normalized.replace(/^(wh|warehouse)\s+/, "")];
+}
+
+function sameScope(left: string, right: string) {
+  const leftKeys = scopeKeys(left);
+  return scopeKeys(right).some((key) => leftKeys.includes(key));
 }
 
 function oneSourceValue(rows: InitialStockScopeRow[], key: Exclude<keyof InitialStockScopeRow, "asOf">, label: string) {
@@ -156,10 +166,10 @@ export function resolveInitialStockSourceScope(
   const dateSource = selectedAsOf(rows, selectedAsOfValue);
   if (!dateSource.ok) return dateSource;
 
-  const branch = branches.find((item) => [item.code, item.name].some((value) => scopeKey(value) === scopeKey(branchSource.value)));
+  const branch = branches.find((item) => [item.code, item.name].some((value) => sameScope(value, branchSource.value)));
   if (!branch) return { ok: false, message: `Cabang ${branchSource.value} dari file belum tersedia di VetOS.` };
   const warehouse = warehouses.find((item) => item.branch_id === branch.id
-    && [item.code, item.name].some((value) => scopeKey(value) === scopeKey(warehouseSource.value)));
+    && [item.code, item.name].some((value) => sameScope(value, warehouseSource.value)));
   if (!warehouse) return { ok: false, message: `Gudang ${warehouseSource.value} dari file belum tersedia pada cabang ${branch.name}.` };
   return { ok: true, branch, warehouse, asOf: dateSource.value };
 }
