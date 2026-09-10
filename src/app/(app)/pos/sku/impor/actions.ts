@@ -31,6 +31,7 @@ import {
 } from "@/lib/impor-accurate-lanjutan";
 import {
   bacaWorkbookSaldoAwal,
+  initialStockScopeMappingKeys,
   reconcileInitialStock,
   resolveInitialStockSourceScope,
   resolveSaldoAwalRows,
@@ -943,13 +944,53 @@ async function loadInitialScopeFromFile(supabase: any,
   selectedAsOf: string,
   selectedScope: InitialStockScopeSelection | null = null,
 ) {
-  const [{ data: branches, error: branchError }, { data: warehouses, error: warehouseError }] = await Promise.all([
+  const sourceKeys = initialStockScopeMappingKeys(rows);
+  const mappingQuery = sourceKeys
+    ? supabase.from("initial_stock_scope_mappings")
+      .select("branch_id,warehouse_id")
+      .eq("source_branch_key", sourceKeys.branchKey)
+      .eq("source_warehouse_key", sourceKeys.warehouseKey)
+      .maybeSingle()
+    : Promise.resolve({ data: null, error: null });
+  const [{ data: branches, error: branchError }, { data: warehouses, error: warehouseError }, mapping] = await Promise.all([
     supabase.from("branches").select("id,code,name").eq("is_active", true),
     supabase.from("warehouses").select("id,branch_id,code,name").eq("is_active", true),
+    mappingQuery,
   ]);
   if (branchError) throw new Error(branchError.message);
   if (warehouseError) throw new Error(warehouseError.message);
-  return resolveInitialStockSourceScope(rows, branches ?? [], warehouses ?? [], selectedAsOf, selectedScope);
+  if (mapping.error) throw new Error(mapping.error.message);
+  const rememberedSelection = mapping.data
+    ? { branchId: String(mapping.data.branch_id), warehouseId: String(mapping.data.warehouse_id) }
+    : null;
+  return resolveInitialStockSourceScope(
+    rows,
+    branches ?? [],
+    warehouses ?? [],
+    selectedAsOf,
+    selectedScope ?? rememberedSelection,
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function rememberInitialStockScope(supabase: any,
+  rows: Awaited<ReturnType<typeof bacaWorkbookSaldoAwal>>["rows"],
+  selectedScope: InitialStockScopeSelection | null,
+) {
+  if (!selectedScope) return;
+  const keys = initialStockScopeMappingKeys(rows);
+  if (!keys) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sesi login kedaluwarsa.");
+  const { error } = await supabase.from("initial_stock_scope_mappings").upsert({
+    source_branch_key: keys.branchKey,
+    source_warehouse_key: keys.warehouseKey,
+    branch_id: selectedScope.branchId,
+    warehouse_id: selectedScope.warehouseId,
+    confirmed_by: user.id,
+    confirmed_at: new Date().toISOString(),
+  }, { onConflict: "source_branch_key,source_warehouse_key" });
+  if (error) throw new Error(error.message);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1034,6 +1075,7 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
     if (barang.errors.length) return initialStockStateError(barang.errors.join(" "));
     const scope = await loadInitialScopeFromFile(supabase, saldo.rows, selectedAsOf, getInitialStockScopeSelection(formData));
     if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
+    await rememberInitialStockScope(supabase, saldo.rows, getInitialStockScopeSelection(formData));
     const { warehouse, asOf } = scope;
     const existing = await muatMasterSaldoAwal(supabase);
     const projected = new Map(existing);
@@ -1086,6 +1128,7 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
     const scope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf, getInitialStockScopeSelection(formData));
     if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
+    await rememberInitialStockScope(supabase, parsed.rows, getInitialStockScopeSelection(formData));
     const { branch, warehouse, asOf } = scope;
     const master = await muatMasterSaldoAwal(supabase);
     const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);

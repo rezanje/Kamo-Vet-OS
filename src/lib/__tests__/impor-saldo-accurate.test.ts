@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { bacaWorkbookSaldoAwal, duplicateStockKeys, reconcileInitialStock, resolveInitialStockSourceScope, resolveSaldoAwalRows, toBaseStock } from "../impor-saldo-accurate";
+import { bacaWorkbookSaldoAwal, duplicateStockKeys, initialStockScopeMappingKeys, reconcileInitialStock, resolveInitialStockSourceScope, resolveSaldoAwalRows, toBaseStock } from "../impor-saldo-accurate";
 
 async function workbook(rows: unknown[][]) {
   const wb = new ExcelJS.Workbook();
@@ -152,6 +152,12 @@ describe("resolveInitialStockSourceScope", () => {
       branchId: "branch-vet-pdry",
       warehouseId: "warehouse-vet-pdry",
     })).toEqual({ ok: true, branch: legacyBranch[0], warehouse: legacyWarehouse[0], asOf: "2024-12-20" });
+  });
+
+  it("membuat kunci pemetaan yang stabil hanya untuk satu tujuan file", () => {
+    expect(initialStockScopeMappingKeys([{ ...rows[0], branchName: " Klinik  Panduraya ", warehouseName: " VET   PDRY " }]))
+      .toEqual({ branchKey: "klinik panduraya", warehouseKey: "vet pdry" });
+    expect(initialStockScopeMappingKeys([...rows, { ...rows[0], row: 3, warehouseName: "WH LAIN" }])).toBeNull();
   });
 
   it("menolak file yang mencampur gudang", () => {

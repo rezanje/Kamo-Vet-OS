@@ -132,6 +132,31 @@ function scopeKey(value: string) {
   return value.trim().toLocaleLowerCase("id-ID").replace(/\s+/g, " ");
 }
 
+export type InitialStockScopeMappingKeys = {
+  branchKey: string;
+  warehouseKey: string;
+};
+
+/**
+ * Kunci stabil dari satu tujuan saldo di file. Tidak memakai pencocokan
+ * longgar: keputusan "ini sama" disimpan hanya untuk pasangan sumber yang
+ * persis sama agar tidak mengarahkan stok baru ke gudang yang keliru.
+ */
+export function initialStockScopeMappingKeys(
+  rows: InitialStockScopeRow[],
+): InitialStockScopeMappingKeys | null {
+  const oneValue = (key: "branchName" | "warehouseName") => {
+    if (rows.some((row) => !row[key])) return null;
+    const values = [...new Set(rows.map((row) => scopeKey(row[key]!)))];
+    if (values.length !== 1) return null;
+    return values[0];
+  };
+  const branch = oneValue("branchName");
+  const warehouse = oneValue("warehouseName");
+  if (!branch || !warehouse) return null;
+  return { branchKey: branch, warehouseKey: warehouse };
+}
+
 function scopeCandidateKey(value: string) {
   return scopeKey(value)
     .replace(/[_-]+/g, " ")
