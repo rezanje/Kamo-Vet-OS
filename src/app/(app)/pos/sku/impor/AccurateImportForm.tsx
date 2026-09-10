@@ -103,10 +103,17 @@ export function AccurateImportForm({
   const successProblemCount = importComplete
     ? oneClickStockState?.rows.filter((row) => row.status === "rejected").length ?? 0
     : initialReceipt?.problemCount ?? 0;
+  const successMasterCount = importComplete
+    ? (state?.summary.Baru ?? 0) + (state?.summary.Update ?? 0)
+    : null;
+  const successMasterProblemCount = importComplete
+    ? state?.summary.Ditolak ?? 0
+    : 0;
   const showSuccessReceipt = importComplete || Boolean(initialReceipt && !receiptDismissed);
   const stockFailure = Boolean(oneClickStockState && !oneClickStockState.ok && !pending && !skipInitialStock);
   const canCheck = files.length === 1 && !pending && !previewReady && !importComplete;
   const canImportOnce = previewReady && !pending;
+  const readyStockCount = oneClickStockState?.rows.filter((row) => row.status === "valid").length ?? 0;
   const shownPercentage = progress
     ? Math.min(70, 35 + Math.round(progress.percentage * 0.35))
     : oneClickPercentage;
@@ -445,10 +452,13 @@ export function AccurateImportForm({
 
       {showSuccessReceipt && !pending && (
         <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
-          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Import terakhir berhasil</div>
+          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Import selesai</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>
-            Barang dan jasa sudah diperbarui. {successStockCount} saldo stok masuk.
-            {successProblemCount > 0 ? ` ${successProblemCount} baris bermasalah dilewati untuk diperbaiki.` : ""}
+            {successMasterCount != null
+              ? `${successMasterCount.toLocaleString("id-ID")} barang dan jasa sudah disimpan.`
+              : "Barang dan jasa sudah diperbarui."} {successStockCount.toLocaleString("id-ID")} saldo stok masuk.
+            {successMasterProblemCount > 0 ? ` ${successMasterProblemCount} barang ditahan untuk diperbaiki.` : ""}
+            {successProblemCount > 0 ? ` ${successProblemCount} saldo bermasalah dilewati untuk diperbaiki.` : ""}
           </div>
           <Link href="/pos/stok" className="btn-acc" style={{ display: "inline-flex", marginTop: 9, background: "#15803d", textDecoration: "none" }}>
             <i className="ti ti-box" /> Buka halaman Stok
@@ -571,6 +581,18 @@ export function AccurateImportForm({
           presetState={oneClickStockState}
           onPresetStateChange={setOneClickStockState}
         />
+      )}
+
+      {previewReady && !pending && !importComplete && (
+        <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
+          <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Siap dilanjutkan</div>
+          <div style={{ fontSize: 10.5, marginTop: 4 }}>
+            Master sudah dicek dan {readyStockCount.toLocaleString("id-ID")} saldo aman siap masuk. Tekan tombol ini untuk menyimpan semuanya.
+          </div>
+          <button type="button" className="btn-acc" onClick={importSekali} style={{ marginTop: 9, background: "#15803d" }}>
+            <i className="ti ti-database-import" /> Lanjutkan Import Sekali
+          </button>
+        </div>
       )}
     </div>
   );

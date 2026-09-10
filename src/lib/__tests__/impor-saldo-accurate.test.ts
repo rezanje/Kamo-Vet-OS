@@ -93,6 +93,16 @@ describe("bacaWorkbookSaldoAwal", () => {
     }]);
   });
 
+  it("mempertahankan pecahan angka Excel untuk qty dan HPP", async () => {
+    const parsed = await bacaWorkbookSaldoAwal(await workbook([
+      ["Kode Barang", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],
+      ["SKU-PECAHAN", 2.5, "PCS", 4_350.88],
+    ]));
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows[0]).toMatchObject({ qty: 2.5, unitCost: 4_350.88 });
+  });
+
   it("meringkas rumus tanpa nilai tersimpan agar pengguna tahu file sumbernya belum lengkap", async () => {
     const parsed = await bacaWorkbookSaldoAwal(await workbook([
       ["Kode Barang", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],

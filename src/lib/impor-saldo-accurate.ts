@@ -245,6 +245,13 @@ function excelDate(value: ExcelJS.CellValue | undefined): string | null {
 }
 
 function numberValue(value: ExcelJS.CellValue | undefined) {
+  // Nilai numerik dari Excel harus dipakai apa adanya. Menghapus titik pada
+  // angka desimal (mis. 4.350,88 yang sudah dibaca Excel sebagai 4350.88)
+  // mengubah HPP menjadi angka yang sangat besar.
+  if (typeof value === "number") return value;
+  if (value && typeof value === "object" && "result" in value) {
+    return numberValue((value as { result?: ExcelJS.CellValue }).result);
+  }
   const text = cellText(value).replace(/\./g, "").replace(/,/g, ".");
   return Number(text);
 }

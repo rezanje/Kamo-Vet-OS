@@ -748,9 +748,14 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     revalidatePath("/pos/sku");
     revalidatePath(BACK);
     return {
-      ok: summary.Ditolak === parsed.rejected.length,
+      // Baris yang ditolak tidak membatalkan barang yang sudah tersimpan.
+      // Saldo berikutnya tetap akan memeriksa ulang master yang benar-benar ada,
+      // lalu hanya memposting saldo untuk barang yang aman.
+      ok: true,
       phase: "done",
-      message: `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. ${parsedCategories.rows.filter((row) => row.parent_name).length} relasi subkategori diterapkan. Stok tidak diubah.`,
+      message: summary.Ditolak > 0
+        ? `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. ${summary.Ditolak} barang ditahan untuk diperbaiki. Barang yang aman sudah disimpan; saldo akan dilanjutkan hanya untuk barang yang siap.`
+        : `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. Master tersimpan; saldo stok sedang dilanjutkan.`,
       hierarchy_count: parsedCategories.rows.filter((row) => row.parent_name).length,
       rows,
       summary,
