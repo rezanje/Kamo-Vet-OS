@@ -9,6 +9,7 @@ import {
 import {
   type AccuratePreviewStatus,
 } from "@/lib/impor-accurate";
+import { canProceedWithMasterOnly } from "@/lib/impor-saldo-accurate";
 import {
   konfirmasiImporAccurate,
   postSaldoAwalAccurate,
@@ -113,6 +114,11 @@ export function AccurateImportForm({
     : 0;
   const showSuccessReceipt = importComplete || Boolean(initialReceipt && !receiptDismissed);
   const stockFailure = Boolean(oneClickStockState && !oneClickStockState.ok && !isBusy && !skipInitialStock);
+  const canSkipInitialStock = canProceedWithMasterOnly({
+    masterReady: Boolean(state?.ok && state.run_id),
+    stockCheckComplete: oneClickStockState !== null,
+    stockReady: Boolean(oneClickStockState?.ok),
+  });
   const canCheck = files.length === 1 && !isBusy && !previewReady && !importComplete;
   const canImportOnce = previewReady && !isBusy;
   const readyStockCount = oneClickStockState?.rows.filter((row) => row.status === "valid").length ?? 0;
@@ -481,8 +487,18 @@ export function AccurateImportForm({
               <div style={{ fontSize: 10, marginTop: 7, color: "#9f1239" }}>Pilih kandidat hanya bila lo yakin itu gudang sama. Kalau beda, saldo tidak masuk dan tombol Import Sekali hanya menyimpan master barang.</div>
             </div>
           ) : (
-            <div style={{ fontSize: 10.5, marginTop: 7, color: "#9f1239" }}>
-              Barang dan jasa sudah terbaca. Pilih Tanggal posisi saldo awal atau perbaiki data saldo yang disebutkan, lalu pilih <b>Cek perubahan</b> lagi agar tombol Import Sekali aktif.
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10.5, color: "#9f1239" }}>
+                Barang dan jasa sudah terbaca. Saldo dari file ini ditahan sampai masalah saldo dibereskan.
+              </div>
+              {canSkipInitialStock && (
+                <button type="button" className="btn-def" disabled={isBusy} style={{ marginTop: 9 }} onClick={() => {
+                  setSkipInitialStock(true);
+                  setOneClickStatus("Saldo ditahan. Hanya master Barang & Jasa yang akan diimpor.");
+                }}>
+                  <i className="ti ti-player-stop" /> Impor barang saja, stok nanti
+                </button>
+              )}
             </div>
           )}
         </div>

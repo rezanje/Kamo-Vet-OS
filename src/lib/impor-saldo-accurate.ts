@@ -98,6 +98,15 @@ export function reconcileInitialStock(value: ReconcileInput) {
   };
 }
 
+/** Master tetap boleh disimpan bila pemeriksaan stok sudah selesai tetapi stok ditahan. */
+export function canProceedWithMasterOnly(input: {
+  masterReady: boolean;
+  stockCheckComplete: boolean;
+  stockReady: boolean;
+}) {
+  return input.masterReady && input.stockCheckComplete && !input.stockReady;
+}
+
 export const stockKey = (row: StockKeyRow) => [
   row.warehouseId,
   row.itemId,

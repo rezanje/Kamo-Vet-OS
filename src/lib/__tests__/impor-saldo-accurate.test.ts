@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { bacaWorkbookSaldoAwal, duplicateStockKeys, initialStockScopeMappingKeys, reconcileInitialStock, resolveInitialStockSourceScope, resolveSaldoAwalRows, toBaseStock } from "../impor-saldo-accurate";
+import { bacaWorkbookSaldoAwal, canProceedWithMasterOnly, duplicateStockKeys, initialStockScopeMappingKeys, reconcileInitialStock, resolveInitialStockSourceScope, resolveSaldoAwalRows, toBaseStock } from "../impor-saldo-accurate";
 
 async function workbook(rows: unknown[][]) {
   const wb = new ExcelJS.Workbook();
@@ -13,6 +13,15 @@ describe("toBaseStock", () => {
   it("mengubah qty dan HPP ke satuan dasar tanpa mengubah nilai", () => {
     expect(toBaseStock({ qty: 2, factor: 25, unitCost: 450_000 }))
       .toEqual({ baseQty: 50, baseUnitCost: 18_000, value: 900_000 });
+  });
+});
+
+describe("canProceedWithMasterOnly", () => {
+  it("membolehkan master diimpor saat stok tertahan setelah pemeriksaan master lolos", () => {
+    expect(canProceedWithMasterOnly({ masterReady: true, stockCheckComplete: true, stockReady: false })).toBe(true);
+    expect(canProceedWithMasterOnly({ masterReady: true, stockCheckComplete: true, stockReady: true })).toBe(false);
+    expect(canProceedWithMasterOnly({ masterReady: true, stockCheckComplete: false, stockReady: false })).toBe(false);
+    expect(canProceedWithMasterOnly({ masterReady: false, stockCheckComplete: true, stockReady: false })).toBe(false);
   });
 });
 
