@@ -6,6 +6,7 @@ import {
   buatMatriksItemAccurate,
   buatPayloadItemAccurate,
   buatPreviewAccurate,
+  ringkasPreviewAccurate,
   rencanaIndukKategoriAccurate,
   type AccurateItem,
 } from "../impor-accurate";
@@ -298,6 +299,23 @@ describe("buatPreviewAccurate", () => {
       ["BAD", "Ditolak"],
     ]);
     expect(hasil[2].changed_fields).toEqual(["sell_price"]);
+  });
+});
+
+describe("ringkasPreviewAccurate", () => {
+  it("membatasi data tampilan tanpa menyembunyikan baris yang perlu perhatian", () => {
+    const hasil = ringkasPreviewAccurate([
+      { row_no: 1, status: "Baru" as const },
+      { row_no: 2, status: "Baru" as const },
+      { row_no: 3, status: "Ditolak" as const },
+      { row_no: 4, status: "Dilewati" as const },
+    ], 3);
+
+    expect(hasil).toEqual([
+      { row_no: 1, status: "Baru" },
+      { row_no: 3, status: "Ditolak" },
+      { row_no: 4, status: "Dilewati" },
+    ]);
   });
 });
 

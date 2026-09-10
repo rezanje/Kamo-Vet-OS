@@ -12,6 +12,7 @@ import {
   buatMatriksItemAccurate,
   buatPayloadItemAccurate,
   buatPreviewAccurate,
+  ringkasPreviewAccurate,
   rencanaIndukKategoriAccurate,
   type AccurateCategory,
   type AccurateIssue,
@@ -118,6 +119,7 @@ export type AccurateImportState = {
   message: string;
   hierarchy_count: number;
   rows: AccuratePreviewRow[];
+  total_rows: number;
   summary: Record<AccuratePreviewStatus, number>;
   new_masters: {
     categories: string[];
@@ -191,6 +193,7 @@ function stateError(message: string): AccurateImportState {
     message,
     hierarchy_count: 0,
     rows: [],
+    total_rows: 0,
     summary: emptySummary(),
     new_masters: { categories: [], brands: [], units: [], suppliers: [] },
     run_id: null,
@@ -452,7 +455,10 @@ async function findOrCreateImportRun(supabase: any, input: {
     source_code: row.code,
     status: row.status === "Baru" || row.status === "Update" ? "valid" : row.status === "Sama" ? "same" : row.status === "Dilewati" ? "skipped" : "rejected",
     reason: row.reason,
-    payload: row,
+    // Identitas dan status audit sudah disimpan pada kolom sendiri. Jangan
+    // menyimpan seluruh matriks tampilan ribuan kali; itu memperlambat
+    // pemeriksaan file besar tanpa dipakai saat impor dilanjutkan.
+    payload: { name: row.name, changed_fields: row.changed_fields },
   }));
   if (rowPayload.length) {
     const rowsInserted = await supabase.from("import_run_rows").insert(rowPayload);
@@ -522,7 +528,8 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
         ? "Master dari file ini sudah pernah diimpor. Lanjutkan cek saldo stok awal dari file yang sama di bawah."
         : `${parsed.rows.length} baris siap dari ${files.length} file. ${parsed.skipped.length} duplikat sama dilewati, ${parsed.rejected.length} konflik ditandai. ${hierarchyCount} relasi subkategori ditemukan.`,
       hierarchy_count: hierarchyCount,
-      rows,
+      rows: ringkasPreviewAccurate(rows),
+      total_rows: rows.length,
       summary,
       new_masters: newMasters(parsed.rows, master, parsedCategories.rows),
       run_id: importRun.id,
@@ -757,7 +764,8 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
         ? `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. ${summary.Ditolak} barang ditahan untuk diperbaiki. Barang yang aman sudah disimpan; saldo akan dilanjutkan hanya untuk barang yang siap.`
         : `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. Master tersimpan; saldo stok sedang dilanjutkan.`,
       hierarchy_count: parsedCategories.rows.filter((row) => row.parent_name).length,
-      rows,
+      rows: ringkasPreviewAccurate(rows),
+      total_rows: rows.length,
       summary,
       new_masters: { categories: [], brands: [], units: [], suppliers: [] },
       run_id: runId,

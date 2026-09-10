@@ -62,6 +62,7 @@ export function AccurateImportForm({
   const [initialStockAsOf, setInitialStockAsOf] = useState("");
   const [scopeSelection, setScopeSelection] = useState<{ branchId: string; warehouseId: string } | null>(null);
   const [skipInitialStock, setSkipInitialStock] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
 
@@ -97,6 +98,7 @@ export function AccurateImportForm({
     && (skipInitialStock || (oneClickStockState?.ok && oneClickStockState.phase === "preview")),
   );
   const importComplete = Boolean(oneClickStockState?.ok && oneClickStockState.phase === "done");
+  const isBusy = pending || isChecking;
   const successStockCount = importComplete
     ? oneClickStockState?.rows.filter((row) => row.status === "valid").length ?? 0
     : initialReceipt?.stockCount ?? 0;
@@ -110,13 +112,14 @@ export function AccurateImportForm({
     ? state?.summary.Ditolak ?? 0
     : 0;
   const showSuccessReceipt = importComplete || Boolean(initialReceipt && !receiptDismissed);
-  const stockFailure = Boolean(oneClickStockState && !oneClickStockState.ok && !pending && !skipInitialStock);
-  const canCheck = files.length === 1 && !pending && !previewReady && !importComplete;
-  const canImportOnce = previewReady && !pending;
+  const stockFailure = Boolean(oneClickStockState && !oneClickStockState.ok && !isBusy && !skipInitialStock);
+  const canCheck = files.length === 1 && !isBusy && !previewReady && !importComplete;
+  const canImportOnce = previewReady && !isBusy;
   const readyStockCount = oneClickStockState?.rows.filter((row) => row.status === "valid").length ?? 0;
   const shownPercentage = progress
     ? Math.min(70, 35 + Math.round(progress.percentage * 0.35))
     : oneClickPercentage;
+  const pemeriksaanBelumTerukur = isChecking && shownPercentage < 60;
 
   const toggleMatrixColumn = (column: AccurateMatrixColumn) => {
     setVisibleMatrixColumns((current) => (
@@ -132,7 +135,7 @@ export function AccurateImportForm({
     data.append("scope_warehouse_id", selection.warehouseId);
   };
 
-  const cekPerubahanSekali = (selection = scopeSelection) => {
+  const cekPerubahanSekali = async (selection = scopeSelection) => {
     if (files.length !== 1) {
       setLocalError("Cek perubahan dan saldo memakai satu file Excel yang sama.");
       return;
@@ -144,7 +147,8 @@ export function AccurateImportForm({
     setOneClickStockState(null);
     setFlowMode("checking");
     setOneClickPercentage(10);
-    startTransition(async () => {
+    setIsChecking(true);
+    try {
       const masterData = new FormData();
       masterData.append("files", file);
       if (categoryFile) masterData.append("category_file", categoryFile);
@@ -158,6 +162,9 @@ export function AccurateImportForm({
       }
       setOneClickPercentage(60);
       setOneClickStatus("Mengecek saldo stok awal…");
+      // Beri browser kesempatan menggambar tahap berikutnya sebelum
+      // pemeriksaan saldo dimulai, terutama untuk file ribuan baris.
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       const stockData = new FormData();
       stockData.append("initial_stock_file", file);
       stockData.append("initial_stock_as_of", initialStockAsOf);
@@ -166,7 +173,16 @@ export function AccurateImportForm({
       setOneClickStockState(stockPreview);
       setOneClickPercentage(100);
       setOneClickStatus(stockPreview.ok ? "Pemeriksaan selesai. Import Sekali sudah bisa dijalankan." : stockPreview.message);
-    });
+    } catch {
+      setState(null);
+      setOneClickStockState(null);
+      setOneClickPercentage(0);
+      setOneClickStatus("Pemeriksaan terputus. Tidak ada barang atau stok yang disimpan.");
+      setLocalError("Pemeriksaan belum selesai karena sambungan ke sistem terputus. Coba Cek perubahan lagi; data belum diimpor.");
+    } finally {
+      setIsChecking(false);
+      setFlowMode("idle");
+    }
   };
 
   const importSekali = () => {
@@ -181,11 +197,12 @@ export function AccurateImportForm({
     setFlowMode("importing");
     setOneClickPercentage(5);
     startTransition(async () => {
+      try {
       let masterDone = masterPreview;
       if (masterPreview.phase === "preview") {
         setOneClickStatus("Menyimpan master Barang & Jasa…");
         setOneClickPercentage(35);
-        setProgress({ phase: "menyiapkan", completed: 0, total: masterPreview.rows.length, percentage: 0 });
+        setProgress({ phase: "menyiapkan", completed: 0, total: masterPreview.total_rows, percentage: 0 });
         startProgressPolling(masterRunId);
         const confirmData = new FormData();
         confirmData.append("files", file);
@@ -258,6 +275,15 @@ export function AccurateImportForm({
         });
         window.history.replaceState(window.history.state, "", `/pos/sku/impor?${params.toString()}`);
       }
+      } catch {
+        stopProgressPolling();
+        setProgress(null);
+        setOneClickPercentage(0);
+        setOneClickStatus("Hasil impor belum diterima dari sistem.");
+        setLocalError("Proses impor terputus sebelum hasilnya diterima. Jangan unggah file baru; muat ulang halaman lalu Cek perubahan dengan file yang sama agar statusnya dipastikan.");
+      } finally {
+        setFlowMode("idle");
+      }
     });
   };
 
@@ -285,7 +311,7 @@ export function AccurateImportForm({
         {[
           { number: 1, label: "Pilih file", active: files.length === 0, done: files.length === 1 },
           { number: 2, label: "Cek perubahan", active: files.length === 1 && !previewReady && !importComplete, done: previewReady || importComplete },
-          { number: 3, label: "Import Sekali", active: previewReady || (pending && flowMode === "importing"), done: importComplete },
+          { number: 3, label: "Import Sekali", active: previewReady || (isBusy && flowMode === "importing"), done: importComplete },
         ].map((step) => (
           <div key={step.number} style={{
             display: "flex", alignItems: "center", gap: 7, padding: "8px 9px", borderRadius: 8,
@@ -355,12 +381,12 @@ export function AccurateImportForm({
           />
         </label>
         <button type="button" className="btn-acc" disabled={!canCheck}
-          onClick={() => cekPerubahanSekali()} style={{ background: canCheck ? "var(--posb)" : "#94a3b8", cursor: canCheck ? "pointer" : "not-allowed" }}>
-          <i className={`ti ${pending && flowMode === "checking" ? "ti-loader-2" : "ti-eye"}`} /> {pending && flowMode === "checking" ? "Memproses…" : "Cek perubahan"}
+          onClick={() => { void cekPerubahanSekali(); }} style={{ background: canCheck ? "var(--posb)" : "#94a3b8", cursor: canCheck ? "pointer" : "not-allowed" }}>
+          <i className={`ti ${isChecking ? "ti-loader-2" : "ti-eye"}`} style={isChecking ? { animation: "btn-spin .8s linear infinite" } : undefined} /> {isChecking ? "Memproses…" : "Cek perubahan"}
         </button>
         <button type="button" className="btn-acc" disabled={!canImportOnce}
           onClick={importSekali} style={{ background: canImportOnce ? "#15803d" : "#94a3b8", cursor: canImportOnce ? "pointer" : "not-allowed" }}>
-          <i className={`ti ${pending && flowMode === "importing" ? "ti-loader-2" : "ti-database-import"}`} /> {pending && flowMode === "importing" ? "Mengimpor…" : "Import Sekali"}
+          <i className={`ti ${pending && flowMode === "importing" ? "ti-loader-2" : "ti-database-import"}`} style={pending && flowMode === "importing" ? { animation: "btn-spin .8s linear infinite" } : undefined} /> {pending && flowMode === "importing" ? "Mengimpor…" : "Import Sekali"}
         </button>
         {files.length > 0 && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {files[0].name}</span>}
         {categoryFile && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name}</span>}
@@ -395,14 +421,20 @@ export function AccurateImportForm({
         </div>
       )}
 
-      {pending && (
+      {isBusy && (
         <div role="status" aria-live="polite" style={{ marginTop: 12, padding: 11, border: ".5px solid #93c5fd", borderRadius: 8, background: "#eff6ff", color: "#1e3a8a" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, fontWeight: 800 }}>
-            <span>{oneClickStatus || (flowMode === "checking" ? "Mengecek file…" : "Memulai impor…")}</span>
-            <span>{shownPercentage}%</span>
+            <span><i className="btn-spin" /> {oneClickStatus || (flowMode === "checking" ? "Mengecek file…" : "Memulai impor…")}</span>
+            <span>{pemeriksaanBelumTerukur ? "Sedang diproses" : `${shownPercentage}%`}</span>
           </div>
           <div style={{ height: 7, overflow: "hidden", borderRadius: 999, background: "#bfdbfe", marginTop: 8 }}>
-            <div style={{ width: `${shownPercentage}%`, height: "100%", borderRadius: "inherit", background: "#2563eb", transition: "width .25s ease" }} />
+            <div style={{
+              width: pemeriksaanBelumTerukur ? "100%" : `${shownPercentage}%`, height: "100%", borderRadius: "inherit",
+              background: pemeriksaanBelumTerukur ? "linear-gradient(90deg, #2563eb, #60a5fa, #2563eb)" : "#2563eb",
+              backgroundSize: pemeriksaanBelumTerukur ? "200% 100%" : undefined,
+              animation: pemeriksaanBelumTerukur ? "sk-pulse 1.1s ease-in-out infinite" : undefined,
+              transition: "width .25s ease",
+            }} />
           </div>
           {progress && <div style={{ marginTop: 6, fontSize: 10.5 }}>
             {progress.total > 0
@@ -412,7 +444,7 @@ export function AccurateImportForm({
         </div>
       )}
 
-      {previewReady && !pending && (
+      {previewReady && !isBusy && (
         <div role="status" style={{ marginTop: 12, padding: 11, border: ".5px solid #86efac", borderRadius: 8, background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 800 }}>
           <i className="ti ti-circle-check" /> {skipInitialStock ? "Saldo ditahan sesuai pilihan. Import Sekali hanya menyimpan master Barang & Jasa." : "Pemeriksaan selesai. Tombol Import Sekali sudah aktif."}
         </div>
@@ -430,12 +462,12 @@ export function AccurateImportForm({
               </div>
               <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
                 {oneClickStockState.scope_clarification.candidates.map((candidate) => (
-                  <button key={candidate.warehouse.id} type="button" className="btn-def" disabled={pending}
-                    onClick={() => cekPerubahanSekali({ branchId: candidate.branch.id, warehouseId: candidate.warehouse.id })}>
+                  <button key={candidate.warehouse.id} type="button" className="btn-def" disabled={isBusy}
+                    onClick={() => { void cekPerubahanSekali({ branchId: candidate.branch.id, warehouseId: candidate.warehouse.id }); }}>
                     <i className="ti ti-link" /> Ini sama: {candidate.branch.name} · {candidate.warehouse.name}
                   </button>
                 ))}
-                <button type="button" className="btn-def" disabled={pending} onClick={() => {
+                <button type="button" className="btn-def" disabled={isBusy} onClick={() => {
                   setScopeSelection(null);
                   setSkipInitialStock(true);
                   setOneClickStatus("Saldo ditahan. Hanya master Barang & Jasa yang akan diimpor.");
@@ -453,7 +485,7 @@ export function AccurateImportForm({
         </div>
       )}
 
-      {showSuccessReceipt && !pending && (
+      {showSuccessReceipt && !isBusy && (
         <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
           <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Import selesai</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>
@@ -492,6 +524,12 @@ export function AccurateImportForm({
               Tampilkan yang sama
             </label>
           </div>
+
+          {state.total_rows > state.rows.length && (
+            <div style={{ marginTop: 9, padding: "8px 10px", borderRadius: 8, background: "#eff6ff", color: "#1e40af", fontSize: 10.5 }}>
+              Menampilkan {state.rows.length.toLocaleString("id-ID")} contoh dari {state.total_rows.toLocaleString("id-ID")} baris. Seluruh file tetap diperiksa dan akan diimpor saat lo melanjutkan.
+            </div>
+          )}
 
           {state.phase === "preview" && (
             <div style={{ marginTop: 10, padding: 10, background: "#f8fafc", border: ".5px solid #cbd5e1", borderRadius: 8, color: "#334155" }}>
@@ -586,7 +624,7 @@ export function AccurateImportForm({
         />
       )}
 
-      {previewReady && !pending && !importComplete && (
+      {previewReady && !isBusy && !importComplete && (
         <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
           <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Siap dilanjutkan</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>

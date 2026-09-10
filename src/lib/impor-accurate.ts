@@ -535,6 +535,25 @@ export function buatPreviewAccurate(
   return preview.sort((a, b) => a.row_no - b.row_no);
 }
 
+/**
+ * File Accurate dapat berisi ribuan baris. Ringkasan tetap menghitung seluruh
+ * file, tetapi browser hanya perlu menerima contoh yang cukup untuk ditinjau.
+ * Baris yang perlu perhatian selalu didahulukan supaya tidak tersembunyi oleh
+ * ribuan data normal di awal file.
+ */
+export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_no" | "status">>(
+  rows: T[],
+  batas = 200,
+): T[] {
+  if (!Number.isInteger(batas) || batas < 1) throw new Error("Batas tampilan preview tidak valid");
+  if (rows.length <= batas) return rows;
+
+  const perluPerhatian = rows.filter((row) => row.status === "Dilewati" || row.status === "Ditolak");
+  const sampelLain = rows.filter((row) => row.status !== "Dilewati" && row.status !== "Ditolak");
+  return [...perluPerhatian.slice(0, batas), ...sampelLain.slice(0, Math.max(0, batas - perluPerhatian.length))]
+    .sort((a, b) => a.row_no - b.row_no);
+}
+
 /** Payload hanya master barang. Sengaja tak punya qty/gudang/layer stok. */
 export function buatPayloadItemAccurate(item: AccurateItem, refs: AccurateItemRefs) {
   const punyaStok = item.item_type === "Persediaan";
