@@ -27,6 +27,19 @@ export type RekamMedisImporHeld = Pick<RekamMedisImporRow, "source_key" | "sourc
   reason: string;
 };
 
+export type RekamMedisExistingOwner = { id: string; name: string; phone: string | null };
+export type RekamMedisExistingPet = { id: string; customer_id: string; name: string };
+export type RekamMedisIdentityCandidate = {
+  customer_id: string;
+  customer_name: string;
+  customer_phone: string | null;
+  pet_id: string | null;
+  pet_name: string | null;
+};
+export type RekamMedisIdentityClarification = Pick<RekamMedisImporRow, "source_key" | "source_file" | "source_sheet" | "owner_name" | "phone" | "patient_name"> & {
+  candidates: RekamMedisIdentityCandidate[];
+};
+
 export type RekamMedisWorkbookResult = {
   rows: RekamMedisImporRow[];
   held: RekamMedisImporHeld[];
@@ -98,6 +111,43 @@ const cleanMultiline = (value: unknown): string => String(value ?? "")
   .join("\n")
   .replace(/^:\s*/, "");
 const key = (value: unknown) => clean(value).toLocaleLowerCase("id-ID").replace(/[.:]/g, "").replace(/\s+/g, " ");
+const phoneKey = (value: unknown) => clean(value).replace(/\D/g, "");
+
+export function klarifikasiIdentitasRekamMedis(
+  rows: RekamMedisImporRow[],
+  owners: RekamMedisExistingOwner[],
+  pets: RekamMedisExistingPet[],
+): RekamMedisIdentityClarification[] {
+  return rows.flatMap((row) => {
+    const ownerName = key(row.owner_name);
+    const ownerPhone = phoneKey(row.phone);
+    const exact = owners.filter((owner) => key(owner.name) === ownerName && phoneKey(owner.phone) === ownerPhone);
+    if (exact.length === 1) return [];
+
+    const possible = owners.filter((owner) => key(owner.name) === ownerName || phoneKey(owner.phone) === ownerPhone);
+    if (!possible.length) return [];
+    const patient = key(row.patient_name);
+    const candidates = possible.map((owner) => {
+      const pet = pets.find((item) => item.customer_id === owner.id && key(item.name) === patient) ?? null;
+      return {
+        customer_id: owner.id,
+        customer_name: owner.name,
+        customer_phone: owner.phone,
+        pet_id: pet?.id ?? null,
+        pet_name: pet?.name ?? null,
+      };
+    });
+    return [{
+      source_key: row.source_key,
+      source_file: row.source_file,
+      source_sheet: row.source_sheet,
+      owner_name: row.owner_name,
+      phone: row.phone,
+      patient_name: row.patient_name,
+      candidates,
+    }];
+  });
+}
 
 function cellText(cell: ExcelJS.Cell): string {
   try {

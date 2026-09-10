@@ -33,6 +33,8 @@ import {
   reconcileInitialStock,
   resolveInitialStockSourceScope,
   resolveSaldoAwalRows,
+  type InitialStockScopeClarification,
+  type InitialStockScopeSelection,
   type ResolvedSaldoAwal,
   type SaldoAwalMasterItem,
 } from "@/lib/impor-saldo-accurate";
@@ -163,6 +165,7 @@ export type InitialStockState = {
   source_qty: number;
   source_value: number;
   checks: InitialStockCheck[];
+  scope_clarification: InitialStockScopeClarification | null;
 };
 
 type MasterAccurate = {
@@ -221,7 +224,7 @@ function groupStateError(message: string): GroupImportState {
   return { ok: false, phase: "preview", message, complete: 0, incomplete: 0, rejected: 0, unknown: 0, errors: [] };
 }
 
-function initialStockStateError(message: string): InitialStockState {
+function initialStockStateError(message: string, scopeClarification: InitialStockScopeClarification | null = null): InitialStockState {
   return {
     ok: false,
     phase: "preview",
@@ -236,6 +239,7 @@ function initialStockStateError(message: string): InitialStockState {
     source_qty: 0,
     source_value: 0,
     checks: [],
+    scope_clarification: scopeClarification,
   };
 }
 
@@ -864,6 +868,12 @@ function getInitialStockAsOf(formData: FormData) {
   return String(formData.get("initial_stock_as_of") ?? "").trim();
 }
 
+function getInitialStockScopeSelection(formData: FormData): InitialStockScopeSelection | null {
+  const branchId = String(formData.get("scope_branch_id") ?? "").trim();
+  const warehouseId = String(formData.get("scope_warehouse_id") ?? "").trim();
+  return branchId && warehouseId ? { branchId, warehouseId } : null;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function muatMasterSaldoAwal(supabase: any): Promise<ReadonlyMap<string, SaldoAwalMasterItem>> {
   const rows = await loadAll(supabase, "items", "id,code,unit,item_type,track_expiry,item_units(unit,factor)");
@@ -918,6 +928,7 @@ async function loadInitialScope(supabase: any, branchId: string, warehouseId: st
 async function loadInitialScopeFromFile(supabase: any,
   rows: Awaited<ReturnType<typeof bacaWorkbookSaldoAwal>>["rows"],
   selectedAsOf: string,
+  selectedScope: InitialStockScopeSelection | null = null,
 ) {
   const [{ data: branches, error: branchError }, { data: warehouses, error: warehouseError }] = await Promise.all([
     supabase.from("branches").select("id,code,name").eq("is_active", true),
@@ -925,9 +936,7 @@ async function loadInitialScopeFromFile(supabase: any,
   ]);
   if (branchError) throw new Error(branchError.message);
   if (warehouseError) throw new Error(warehouseError.message);
-  const scope = resolveInitialStockSourceScope(rows, branches ?? [], warehouses ?? [], selectedAsOf);
-  if (!scope.ok) throw new Error(scope.message);
-  return scope;
+  return resolveInitialStockSourceScope(rows, branches ?? [], warehouses ?? [], selectedAsOf, selectedScope);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1010,7 +1019,9 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
     ]);
     if (saldo.errors.length) return initialStockStateError(saldo.errors.join(" "));
     if (barang.errors.length) return initialStockStateError(barang.errors.join(" "));
-    const { warehouse, asOf } = await loadInitialScopeFromFile(supabase, saldo.rows, selectedAsOf);
+    const scope = await loadInitialScopeFromFile(supabase, saldo.rows, selectedAsOf, getInitialStockScopeSelection(formData));
+    if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
+    const { warehouse, asOf } = scope;
     const existing = await muatMasterSaldoAwal(supabase);
     const projected = new Map(existing);
     for (const item of barang.rows) {
@@ -1043,6 +1054,7 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
       source_qty: summary.source_qty,
       source_value: summary.source_value,
       checks: [],
+      scope_clarification: null,
     };
   } catch (error) {
     return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal diperiksa.");
@@ -1059,12 +1071,14 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     const selectedAsOf = getInitialStockAsOf(formData);
     const parsed = await bacaWorkbookSaldoAwal(bytes);
     if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
-    const { branch, warehouse, asOf } = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf);
+    const scope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf, getInitialStockScopeSelection(formData));
+    if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
+    const { branch, warehouse, asOf } = scope;
     const master = await muatMasterSaldoAwal(supabase);
     const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);
     const sourceHash = await hashFiles([
       { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v3:${asOf}`) },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v4:${branch.id}:${warehouse.id}:${asOf}`) },
     ]);
     const summary = initialStockSummary(resolved);
     const runId = await createInitialStockRun(supabase, {
@@ -1093,6 +1107,7 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
       source_qty: summary.source_qty,
       source_value: summary.source_value,
       checks: [],
+      scope_clarification: null,
     };
   } catch (error) {
     return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal dibaca.");
@@ -1140,13 +1155,14 @@ export async function postSaldoAwalAccurate(formData: FormData): Promise<Initial
     const bytes = new Uint8Array(await file.arrayBuffer());
     const parsed = await bacaWorkbookSaldoAwal(bytes);
     if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
-    const fileScope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf);
+    const fileScope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf, getInitialStockScopeSelection(formData));
+    if (!fileScope.ok) return initialStockStateError(fileScope.message, fileScope.clarification ?? null);
     if (fileScope.branch.id !== branchId || fileScope.warehouse.id !== warehouseId || fileScope.asOf !== asOf) {
       return initialStockStateError("File, tanggal posisi, atau tujuan batch berubah. Jalankan preview lagi.");
     }
     const sourceHash = await hashFiles([
       { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v3:${asOf}`) },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v4:${fileScope.branch.id}:${fileScope.warehouse.id}:${asOf}`) },
     ]);
     const run = await supabase.from("import_runs")
       .select("id,kind,status,source_hash,branch_id,warehouse_id,as_of_date,summary")
@@ -1185,6 +1201,7 @@ export async function postSaldoAwalAccurate(formData: FormData): Promise<Initial
       source_qty: sourceQty,
       source_value: sourceValue,
       checks,
+      scope_clarification: null,
     };
   } catch (error) {
     return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal diposting.");

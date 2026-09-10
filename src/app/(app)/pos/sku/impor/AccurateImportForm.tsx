@@ -60,6 +60,8 @@ export function AccurateImportForm({
   const [receiptDismissed, setReceiptDismissed] = useState(false);
   const [oneClickStockState, setOneClickStockState] = useState<InitialStockState | null>(null);
   const [initialStockAsOf, setInitialStockAsOf] = useState("");
+  const [scopeSelection, setScopeSelection] = useState<{ branchId: string; warehouseId: string } | null>(null);
+  const [skipInitialStock, setSkipInitialStock] = useState(false);
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
 
@@ -92,8 +94,7 @@ export function AccurateImportForm({
     && initialStockAsOf
     && state?.ok
     && state.run_id
-    && oneClickStockState?.ok
-    && oneClickStockState.phase === "preview",
+    && (skipInitialStock || (oneClickStockState?.ok && oneClickStockState.phase === "preview")),
   );
   const importComplete = Boolean(oneClickStockState?.ok && oneClickStockState.phase === "done");
   const successStockCount = importComplete
@@ -103,7 +104,7 @@ export function AccurateImportForm({
     ? oneClickStockState?.rows.filter((row) => row.status === "rejected").length ?? 0
     : initialReceipt?.problemCount ?? 0;
   const showSuccessReceipt = importComplete || Boolean(initialReceipt && !receiptDismissed);
-  const stockFailure = Boolean(oneClickStockState && !oneClickStockState.ok && !pending);
+  const stockFailure = Boolean(oneClickStockState && !oneClickStockState.ok && !pending && !skipInitialStock);
   const canCheck = files.length === 1 && !pending && !previewReady && !importComplete;
   const canImportOnce = previewReady && !pending;
   const shownPercentage = progress
@@ -118,13 +119,21 @@ export function AccurateImportForm({
     ));
   };
 
-  const cekPerubahanSekali = () => {
+  const isiPilihanTujuan = (data: FormData, selection = scopeSelection) => {
+    if (!selection) return;
+    data.append("scope_branch_id", selection.branchId);
+    data.append("scope_warehouse_id", selection.warehouseId);
+  };
+
+  const cekPerubahanSekali = (selection = scopeSelection) => {
     if (files.length !== 1) {
       setLocalError("Cek perubahan dan saldo memakai satu file Excel yang sama.");
       return;
     }
     const file = files[0];
     setLocalError("");
+    setScopeSelection(selection);
+    setSkipInitialStock(false);
     setOneClickStockState(null);
     setFlowMode("checking");
     setOneClickPercentage(10);
@@ -145,6 +154,7 @@ export function AccurateImportForm({
       const stockData = new FormData();
       stockData.append("initial_stock_file", file);
       stockData.append("initial_stock_as_of", initialStockAsOf);
+      isiPilihanTujuan(stockData, selection);
       const stockPreview = await preflightSaldoAwalSekali(stockData);
       setOneClickStockState(stockPreview);
       setOneClickPercentage(100);
@@ -153,7 +163,7 @@ export function AccurateImportForm({
   };
 
   const importSekali = () => {
-    if (!previewReady || !state?.run_id || !oneClickStockState?.ok || files.length !== 1) {
+    if (!previewReady || !state?.run_id || (!skipInitialStock && !oneClickStockState?.ok) || files.length !== 1) {
       setLocalError("Jalankan Cek perubahan sampai selesai sebelum Import Sekali.");
       return;
     }
@@ -187,12 +197,25 @@ export function AccurateImportForm({
         return;
       }
 
+      if (skipInitialStock) {
+        setOneClickStockState({
+          ok: true, phase: "done", message: "Master Barang & Jasa berhasil disimpan. Saldo dari file ini tidak diimpor.",
+          branch_id: null, warehouse_id: null, as_of: null, run_id: null, master_run_id: masterDone.run_id,
+          source_hash: null, rows: [], source_qty: 0, source_value: 0, checks: [], scope_clarification: null,
+        });
+        setOneClickPercentage(100);
+        setOneClickStatus("Master Barang & Jasa berhasil disimpan. Saldo ditahan.");
+        window.history.replaceState(window.history.state, "", "/pos/sku/impor?import_success=1&stock_count=0&problem_count=0");
+        return;
+      }
+
       setOneClickStatus("Menyiapkan saldo stok awal…");
       setOneClickPercentage(75);
       const stockPreviewData = new FormData();
       stockPreviewData.append("initial_stock_file", file);
       stockPreviewData.append("master_run_id", masterDone.run_id);
       stockPreviewData.append("initial_stock_as_of", initialStockAsOf);
+      isiPilihanTujuan(stockPreviewData);
       const stockPreview = await previewSaldoAwalAccurate(stockPreviewData);
       setOneClickStockState(stockPreview);
       if (!stockPreview.ok || !stockPreview.run_id || !stockPreview.branch_id || !stockPreview.warehouse_id || !stockPreview.as_of) {
@@ -211,6 +234,7 @@ export function AccurateImportForm({
       stockPostData.append("as_of", stockPreview.as_of);
       stockPostData.append("initial_stock_as_of", initialStockAsOf);
       stockPostData.append("confirm_scope", "on");
+      isiPilihanTujuan(stockPostData);
       const postedStock = await postSaldoAwalAccurate(stockPostData);
       const postedRows = stockPreview.rows.filter((row) => row.status === "valid").length;
       const problemRows = stockPreview.rows.filter((row) => row.status === "rejected").length;
@@ -286,6 +310,8 @@ export function AccurateImportForm({
               setFiles(selected ? [selected] : []);
               setState(null);
               setOneClickStockState(null);
+              setScopeSelection(null);
+              setSkipInitialStock(false);
               setOneClickStatus("");
               setOneClickPercentage(0);
               setFlowMode("idle");
@@ -309,6 +335,8 @@ export function AccurateImportForm({
               setCategoryFile(event.target.files?.[0] ?? null);
               setState(null);
               setOneClickStockState(null);
+              setScopeSelection(null);
+              setSkipInitialStock(false);
               setOneClickStatus("");
               setOneClickPercentage(0);
               setFlowMode("idle");
@@ -317,7 +345,7 @@ export function AccurateImportForm({
           />
         </label>
         <button type="button" className="btn-acc" disabled={!canCheck}
-          onClick={cekPerubahanSekali} style={{ background: canCheck ? "var(--posb)" : "#94a3b8", cursor: canCheck ? "pointer" : "not-allowed" }}>
+          onClick={() => cekPerubahanSekali()} style={{ background: canCheck ? "var(--posb)" : "#94a3b8", cursor: canCheck ? "pointer" : "not-allowed" }}>
           <i className={`ti ${pending && flowMode === "checking" ? "ti-loader-2" : "ti-eye"}`} /> {pending && flowMode === "checking" ? "Memproses…" : "Cek perubahan"}
         </button>
         <button type="button" className="btn-acc" disabled={!canImportOnce}
@@ -339,6 +367,8 @@ export function AccurateImportForm({
           onChange={(event) => {
             setInitialStockAsOf(event.target.value);
             setOneClickStockState(null);
+            setScopeSelection(null);
+            setSkipInitialStock(false);
             setOneClickStatus("");
             setLocalError("");
           }}
@@ -374,7 +404,7 @@ export function AccurateImportForm({
 
       {previewReady && !pending && (
         <div role="status" style={{ marginTop: 12, padding: 11, border: ".5px solid #86efac", borderRadius: 8, background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 800 }}>
-          <i className="ti ti-circle-check" /> Pemeriksaan selesai. Tombol Import Sekali sudah aktif.
+          <i className="ti ti-circle-check" /> {skipInitialStock ? "Saldo ditahan sesuai pilihan. Import Sekali hanya menyimpan master Barang & Jasa." : "Pemeriksaan selesai. Tombol Import Sekali sudah aktif."}
         </div>
       )}
 
@@ -382,9 +412,34 @@ export function AccurateImportForm({
         <div role="alert" style={{ marginTop: 12, padding: 13, border: ".5px solid #fca5a5", borderRadius: 9, background: "#fef2f2", color: "#b91c1c" }}>
           <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-alert-circle" /> Saldo stok awal belum siap</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>{oneClickStockState?.message}</div>
-          <div style={{ fontSize: 10.5, marginTop: 7, color: "#9f1239" }}>
-            Barang dan jasa sudah terbaca. Pilih Tanggal posisi saldo awal atau perbaiki data saldo yang disebutkan, lalu pilih <b>Cek perubahan</b> lagi agar tombol Import Sekali aktif.
-          </div>
+          {oneClickStockState?.scope_clarification ? (
+            <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "white", border: ".5px solid #fecaca", color: "#7f1d1d" }}>
+              <div style={{ fontSize: 11, fontWeight: 900 }}>Pilih tujuan saldo — sistem tidak akan menebak.</div>
+              <div style={{ fontSize: 10.5, marginTop: 4 }}>
+                Dari file: <b>{oneClickStockState.scope_clarification.sourceBranch}</b> · <b>{oneClickStockState.scope_clarification.sourceWarehouse}</b>
+              </div>
+              <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
+                {oneClickStockState.scope_clarification.candidates.map((candidate) => (
+                  <button key={candidate.warehouse.id} type="button" className="btn-def" disabled={pending}
+                    onClick={() => cekPerubahanSekali({ branchId: candidate.branch.id, warehouseId: candidate.warehouse.id })}>
+                    <i className="ti ti-link" /> Ini sama: {candidate.branch.name} · {candidate.warehouse.name}
+                  </button>
+                ))}
+                <button type="button" className="btn-def" disabled={pending} onClick={() => {
+                  setScopeSelection(null);
+                  setSkipInitialStock(true);
+                  setOneClickStatus("Saldo ditahan. Hanya master Barang & Jasa yang akan diimpor.");
+                }}>
+                  <i className="ti ti-player-stop" /> Beda, impor master saja
+                </button>
+              </div>
+              <div style={{ fontSize: 10, marginTop: 7, color: "#9f1239" }}>Pilih kandidat hanya bila lo yakin itu gudang sama. Kalau beda, saldo tidak masuk dan tombol Import Sekali hanya menyimpan master barang.</div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 10.5, marginTop: 7, color: "#9f1239" }}>
+              Barang dan jasa sudah terbaca. Pilih Tanggal posisi saldo awal atau perbaiki data saldo yang disebutkan, lalu pilih <b>Cek perubahan</b> lagi agar tombol Import Sekali aktif.
+            </div>
+          )}
         </div>
       )}
 

@@ -123,13 +123,25 @@ describe("resolveInitialStockSourceScope", () => {
     });
   });
 
-  it("mencocokkan nama gudang file dengan kode gudang lama yang memakai awalan WH", () => {
+  it("meminta keputusan saat nama gudang file hanya mirip dengan gudang lama", () => {
     const legacyBranch = [{ id: "branch-vet-pdry", code: "VET_PDRY", name: "Klinik Panduraya" }];
     const legacyWarehouse = [{ id: "warehouse-vet-pdry", branch_id: "branch-vet-pdry", code: "WH_VET_PDRY", name: "WH VET PDRY" }];
     const legacyRows = [{ ...rows[0], branchName: "Klinik Panduraya", warehouseName: "VET PDRY" }];
 
     expect(resolveInitialStockSourceScope(legacyRows, legacyBranch, legacyWarehouse, "2024-12-20"))
-      .toEqual({ ok: true, branch: legacyBranch[0], warehouse: legacyWarehouse[0], asOf: "2024-12-20" });
+      .toMatchObject({
+        ok: false,
+        clarification: {
+          sourceBranch: "Klinik Panduraya",
+          sourceWarehouse: "VET PDRY",
+          candidates: [{ branch: legacyBranch[0], warehouse: legacyWarehouse[0] }],
+        },
+      });
+
+    expect(resolveInitialStockSourceScope(legacyRows, legacyBranch, legacyWarehouse, "2024-12-20", {
+      branchId: "branch-vet-pdry",
+      warehouseId: "warehouse-vet-pdry",
+    })).toEqual({ ok: true, branch: legacyBranch[0], warehouse: legacyWarehouse[0], asOf: "2024-12-20" });
   });
 
   it("menolak file yang mencampur gudang", () => {

@@ -14,6 +14,7 @@ export function RekamMedisImportForm() {
   const [state, setState] = useState<RekamMedisImportState | null>(null);
   const [error, setError] = useState("");
   const [tahapProgres, setTahapProgres] = useState<TahapProgresImporRekamMedis | null>(null);
+  const [identityDecisions, setIdentityDecisions] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const visibleRows = useMemo(() => (state?.rows ?? []).slice(0, 200), [state]);
   const summary = useMemo(() => {
@@ -22,7 +23,9 @@ export function RekamMedisImportForm() {
     const pets = new Set(rows.map((row) => `${row.owner_name?.toLocaleLowerCase("id-ID")}::${row.phone?.replace(/\D/g, "")}::${row.patient_name?.toLocaleLowerCase("id-ID")}`));
     return { owners: owners.size, pets: pets.size };
   }, [state]);
-  const canConfirm = bolehKonfirmasiImporRekamMedis(state?.rows.length ?? 0, approved);
+  const clarificationComplete = (state?.clarifications ?? []).every((row) => Boolean(identityDecisions[row.source_key]));
+  const selectedRows = (state?.rows ?? []).filter((row) => identityDecisions[row.source_key] !== "skip").length;
+  const canConfirm = bolehKonfirmasiImporRekamMedis(selectedRows, approved) && clarificationComplete;
   const progres = tahapProgres ? infoProgresImporRekamMedis(tahapProgres) : null;
 
   const data = () => {
@@ -31,6 +34,15 @@ export function RekamMedisImportForm() {
       form.append("files", file);
       form.append("paths", file.webkitRelativePath || file.name);
     });
+    const decisions = Object.entries(identityDecisions).flatMap(([source_key, decision]) => {
+      if (decision === "skip") return [{ source_key, decision: "skip" }];
+      try {
+        return [{ source_key, decision: JSON.parse(decision) }];
+      } catch {
+        return [];
+      }
+    });
+    form.set("identity_decisions", JSON.stringify(decisions));
     if (approved) form.set("approved", "true");
     return form;
   };
@@ -50,6 +62,8 @@ export function RekamMedisImportForm() {
 
   const runImport = () => {
     if (!approved) return setError("Centang persetujuan impor setelah meninjau hasil cek.");
+    if (!clarificationComplete) return setError("Tentukan keputusan untuk setiap data yang mirip lebih dulu.");
+    if (!selectedRows) return setError("Tidak ada riwayat yang dipilih untuk diimpor.");
     setError("");
     setTahapProgres("simpan");
     startTransition(async () => {
@@ -71,13 +85,13 @@ export function RekamMedisImportForm() {
           <i className="ti ti-folder" /> Pilih folder rekam medis
           <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} onChange={(event) => {
             const selected = Array.from(event.target.files ?? []).filter((file) => file.name.toLowerCase().endsWith(".xlsx") && !file.name.startsWith("~$"));
-            setFiles(selected); setState(null); setApproved(false); setError(selected.length ? "" : "Folder tidak berisi kartu medis .xlsx.");
+            setFiles(selected); setState(null); setApproved(false); setIdentityDecisions({}); setError(selected.length ? "" : "Folder tidak berisi kartu medis .xlsx.");
           }} />
         </label>
         <label className="btn-def" style={{ cursor: "pointer" }}>
           <i className="ti ti-files" /> Pilih file satuan
           <input type="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }} onChange={(event) => {
-            setFiles(Array.from(event.target.files ?? [])); setState(null); setApproved(false); setError("");
+            setFiles(Array.from(event.target.files ?? [])); setState(null); setApproved(false); setIdentityDecisions({}); setError("");
           }} />
         </label>
         <button type="button" className="btn-acc" disabled={pending || !files.length} onClick={runPreview} style={{ background: "var(--posb)" }}>
@@ -101,6 +115,34 @@ export function RekamMedisImportForm() {
             <span style={{ fontSize: 10.5, fontWeight: 800, color: "#b91c1c", background: "#fee2e2", borderRadius: 999, padding: "5px 9px" }}>Ditahan {state.held.length}</span>
             <span style={{ fontSize: 10.5, fontWeight: 800, color: "#475569", background: "#f1f5f9", borderRadius: 999, padding: "5px 9px" }}>Sheet dilewati {state.ignored_sheets}</span>
           </div>
+          {state.clarifications.length > 0 && (
+            <div style={{ marginTop: 10, padding: 11, borderRadius: 8, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
+              <div style={{ fontSize: 11.5, fontWeight: 900 }}><i className="ti ti-git-compare" /> {state.clarifications.length} data mirip perlu keputusan</div>
+              <div style={{ fontSize: 10.5, marginTop: 4 }}>Sistem tidak akan menggabungkan pemilik atau anabul hanya karena namanya mirip atau nomor teleponnya sama.</div>
+              <div style={{ display: "grid", gap: 8, marginTop: 9 }}>
+                {state.clarifications.map((clarification) => (
+                  <div key={clarification.source_key} style={{ padding: 9, borderRadius: 7, background: "white", border: ".5px solid #fde68a" }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800 }}>
+                      Dari file: {clarification.owner_name} · {clarification.phone} · anabul {clarification.patient_name}
+                    </div>
+                    <select
+                      value={identityDecisions[clarification.source_key] ?? ""}
+                      onChange={(event) => setIdentityDecisions((current) => ({ ...current, [clarification.source_key]: event.target.value }))}
+                      style={{ marginTop: 7, width: "100%", maxWidth: 560, padding: "7px 8px", borderRadius: 6, border: ".5px solid #d6d3d1", background: "white", fontSize: 10.5 }}
+                    >
+                      <option value="">Pilih keputusan…</option>
+                      {clarification.candidates.map((candidate) => (
+                        <option key={`${candidate.customer_id}-${candidate.pet_id ?? "baru"}`} value={JSON.stringify({ customer_id: candidate.customer_id, pet_id: candidate.pet_id })}>
+                          Ini sama: {candidate.customer_name} · {candidate.customer_phone || "tanpa nomor"} · {candidate.pet_name ? `anabul ${candidate.pet_name}` : "buat anabul baru"}
+                        </option>
+                      ))}
+                      <option value="skip">Beda — jangan impor riwayat ini</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ marginTop: 10, maxHeight: 390, overflow: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
             <table className="dt" style={{ width: "100%", minWidth: 1120 }}>
               <thead><tr><th>File / sheet</th><th>Hewan</th><th>Owner</th><th>Tanggal</th><th>Catatan kunjungan</th><th>Isi medis</th><th>Status</th></tr></thead>
@@ -118,7 +160,7 @@ export function RekamMedisImportForm() {
           {state.rows.length > visibleRows.length && <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>Menampilkan 200 riwayat pertama dari {state.rows.length} riwayat siap cek.</div>}
           {state.phase === "preview" && <div style={{ marginTop: 12, display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 6 }}><input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} /> Saya sudah meninjau hasil cek dan setuju menyimpan riwayat yang siap. Data yang ditahan tidak ikut disimpan.</label>
-            <button type="button" className="btn-acc" disabled={pending || !state.ok || !canConfirm} onClick={runImport} style={{ background: "#15803d" }}><i className="ti ti-database-import" /> {pending ? "Mengimpor…" : "Simpan riwayat yang siap"}</button>
+            <button type="button" className="btn-acc" disabled={pending || !state.ok || !canConfirm} onClick={runImport} style={{ background: "#15803d" }}><i className="ti ti-database-import" /> {pending ? "Mengimpor…" : `Simpan ${selectedRows} riwayat yang siap`}</button>
           </div>}
           {state.phase === "done" && <div className="p2ban" style={{ marginTop: 12, background: "#ecfdf5", border: ".5px solid #86efac", color: "#166534" }}><i className="ti ti-check" /> {state.message}</div>}
         </>

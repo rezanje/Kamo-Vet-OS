@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
+import { klarifikasiIdentitasRekamMedis } from "../impor-rekam-medis";
 
 async function kartu(rows: Array<[number, number, unknown]>, name = "KARTU MEDIS PASIEN") {
   const book = new ExcelJS.Workbook();
@@ -286,6 +287,25 @@ describe("bacaWorkbookRekamMedis", () => {
 describe("bolehKonfirmasiImporRekamMedis", () => {
   it("tetap mengizinkan riwayat aman disimpan saat ada riwayat lain yang ditahan", async () => {
     await expect(bolehKonfirmasi(14, true)).resolves.toBe(true);
+  });
+});
+
+describe("klarifikasiIdentitasRekamMedis", () => {
+  const row = {
+    source_key: "rek-1", source_file: "Mochi.xlsx", source_sheet: "01012025", record_no: null, record_date: "2025-01-01",
+    patient_name: "Mochi", owner_name: "Rani", phone: "081234567890", address: null, species: null, breed: null,
+    gender: null, dob: null, doctor: null, note: null, anamnesis: null, clinical_findings: null, diagnosis: null, therapy: null, warning: [],
+  };
+
+  it("menahan pilihan ketika nomor sama tetapi nama pemilik berbeda", () => {
+    expect(klarifikasiIdentitasRekamMedis([row], [{ id: "owner-1", name: "Rani Putri", phone: "081234567890" }], []))
+      .toMatchObject([{ source_key: "rek-1", candidates: [{ customer_id: "owner-1", pet_id: null }] }]);
+  });
+
+  it("tidak meminta keputusan saat pemilik dan anabul sudah cocok persis", () => {
+    expect(klarifikasiIdentitasRekamMedis([row], [{ id: "owner-1", name: "Rani", phone: "081234567890" }], [
+      { id: "pet-1", customer_id: "owner-1", name: "Mochi" },
+    ])).toEqual([]);
   });
 });
 

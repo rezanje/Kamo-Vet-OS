@@ -50,10 +50,23 @@ type InitialStockScopeRow = Pick<SaldoAwalDraft, "branchName" | "warehouseName" 
 
 export type InitialStockBranchOption = { id: string; code: string; name: string };
 export type InitialStockWarehouseOption = { id: string; branch_id: string; code: string; name: string };
+export type InitialStockScopeCandidate = {
+  branch: InitialStockBranchOption;
+  warehouse: InitialStockWarehouseOption;
+};
+export type InitialStockScopeClarification = {
+  sourceBranch: string;
+  sourceWarehouse: string;
+  candidates: InitialStockScopeCandidate[];
+};
+export type InitialStockScopeSelection = {
+  branchId: string;
+  warehouseId: string;
+};
 
 export type InitialStockSourceScope =
   | { ok: true; branch: InitialStockBranchOption; warehouse: InitialStockWarehouseOption; asOf: string }
-  | { ok: false; message: string };
+  | { ok: false; message: string; clarification?: InitialStockScopeClarification };
 
 export type ResolvedSaldoAwal = SaldoAwalDraft & {
   itemId: string;
@@ -115,18 +128,23 @@ function normalizeHeader(value: string) {
   return value.toLowerCase().replace(/[\s_/-]+/g, "").replace(/[()]/g, "");
 }
 
-function scopeKeys(value: string) {
-  const normalized = value
-    .trim()
-    .toLocaleLowerCase("id-ID")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
-  return [normalized, normalized.replace(/^(wh|warehouse)\s+/, "")];
+function scopeKey(value: string) {
+  return value.trim().toLocaleLowerCase("id-ID").replace(/\s+/g, " ");
 }
 
-function sameScope(left: string, right: string) {
-  const leftKeys = scopeKeys(left);
-  return scopeKeys(right).some((key) => leftKeys.includes(key));
+function scopeCandidateKey(value: string) {
+  return scopeKey(value)
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^(wh|warehouse)\s+/, "");
+}
+
+function isExactScope(value: string, source: string) {
+  return scopeKey(value) === scopeKey(source);
+}
+
+function isScopeCandidate(value: string, source: string) {
+  return scopeCandidateKey(value) === scopeCandidateKey(source);
 }
 
 function oneSourceValue(rows: InitialStockScopeRow[], key: Exclude<keyof InitialStockScopeRow, "asOf">, label: string) {
@@ -158,6 +176,7 @@ export function resolveInitialStockSourceScope(
   branches: InitialStockBranchOption[],
   warehouses: InitialStockWarehouseOption[],
   selectedAsOfValue?: string | null,
+  selectedScope?: InitialStockScopeSelection | null,
 ): InitialStockSourceScope {
   const branchSource = oneSourceValue(rows, "branchName", "cabang");
   if (!branchSource.ok) return branchSource;
@@ -166,12 +185,42 @@ export function resolveInitialStockSourceScope(
   const dateSource = selectedAsOf(rows, selectedAsOfValue);
   if (!dateSource.ok) return dateSource;
 
-  const branch = branches.find((item) => [item.code, item.name].some((value) => sameScope(value, branchSource.value)));
-  if (!branch) return { ok: false, message: `Cabang ${branchSource.value} dari file belum tersedia di VetOS.` };
-  const warehouse = warehouses.find((item) => item.branch_id === branch.id
-    && [item.code, item.name].some((value) => sameScope(value, warehouseSource.value)));
-  if (!warehouse) return { ok: false, message: `Gudang ${warehouseSource.value} dari file belum tersedia pada cabang ${branch.name}.` };
-  return { ok: true, branch, warehouse, asOf: dateSource.value };
+  const exactBranches = branches.filter((item) => [item.code, item.name].some((value) => isExactScope(value, branchSource.value)));
+  const candidateBranches = exactBranches.length
+    ? exactBranches
+    : branches.filter((item) => [item.code, item.name].some((value) => isScopeCandidate(value, branchSource.value)));
+  if (!candidateBranches.length) return { ok: false, message: `Cabang ${branchSource.value} dari file belum tersedia di VetOS.` };
+
+  const exactCandidates = candidateBranches.flatMap((branch) => warehouses
+    .filter((warehouse) => warehouse.branch_id === branch.id
+      && [warehouse.code, warehouse.name].some((value) => isExactScope(value, warehouseSource.value)))
+    .map((warehouse) => ({ branch, warehouse })));
+  if (exactCandidates.length === 1) {
+    return { ok: true, branch: exactCandidates[0].branch, warehouse: exactCandidates[0].warehouse, asOf: dateSource.value };
+  }
+
+  const candidates = candidateBranches.flatMap((branch) => warehouses
+    .filter((warehouse) => warehouse.branch_id === branch.id
+      && [warehouse.code, warehouse.name].some((value) => isScopeCandidate(value, warehouseSource.value)))
+    .map((warehouse) => ({ branch, warehouse })));
+  if (!candidates.length) {
+    const branch = candidateBranches[0];
+    return { ok: false, message: `Gudang ${warehouseSource.value} dari file belum tersedia pada cabang ${branch.name}.` };
+  }
+
+  const selected = candidates.find((candidate) => candidate.branch.id === selectedScope?.branchId
+    && candidate.warehouse.id === selectedScope?.warehouseId);
+  if (selected) return { ok: true, branch: selected.branch, warehouse: selected.warehouse, asOf: dateSource.value };
+
+  return {
+    ok: false,
+    message: "Nama tujuan saldo di file perlu diklarifikasi sebelum impor dilanjutkan.",
+    clarification: {
+      sourceBranch: branchSource.value,
+      sourceWarehouse: warehouseSource.value,
+      candidates,
+    },
+  };
 }
 
 function findColumn(headers: Map<string, number>, aliases: string[]) {
