@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { pivotStokPerGudang, type StokBaris } from "@/lib/laporan";
+import { ResetSimulasiForm } from "./ResetSimulasiForm";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -19,6 +20,10 @@ export default async function StokPage({
 }) {
   const { wh, error, success } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+    : { data: null };
 
   const { data: warehousesRaw } = await supabase
     .from("warehouses")
@@ -71,7 +76,7 @@ export default async function StokPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success === "1" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Stok berhasil ditambahkan.</div>}
+      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "1" ? "Stok berhasil ditambahkan." : success}</div>}
 
       {/* pilih gudang: chip Link, ?wh=id */}
       <div className="crm-sec" style={{ paddingBottom: 12 }}>
@@ -203,6 +208,8 @@ export default async function StokPage({
         </Link>
       </div>
       )}
+
+      <ResetSimulasiForm role={profile?.role} />
 
     </>
   );
