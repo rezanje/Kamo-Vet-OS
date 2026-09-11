@@ -6,6 +6,7 @@ import {
 
 const master = (): MasterImpor => ({
   kategori: new Map([["makanan / pakan", "kat-1"], ["jasa", "kat-2"]]),
+  indukKategori: new Map([["kat-1", null], ["kat-2", null]]),
   merek: new Map([["royal canin", "mrk-1"]]),
   satuan: new Set(["pcs", "box", "tindakan"]),
   kodeTerpakai: new Set(["itm-011"]),
@@ -138,5 +139,46 @@ describe("pemeriksaan baris", () => {
     );
     expect(siap).toHaveLength(0);
     expect(salah[0].pesan).toContain("rincian komponen");
+  });
+
+  it("subkategori dipakai saat cocok dengan kategori induknya", () => {
+    const m = {
+      ...master(),
+      kategori: new Map([
+        ["makanan", "kat-induk"],
+        ["pakan", "kat-anak"],
+        ["makanan / pakan", "kat-1"],
+        ["jasa", "kat-2"],
+      ]),
+      indukKategori: new Map([["kat-induk", null], ["kat-anak", "kat-induk"], ["kat-1", null], ["kat-2", null]]),
+    };
+    const r = bacaCsv([
+      "kode,nama,kategori,subkategori,jenis,merek,satuan,harga_jual,harga_beli,stok_minimum,upc,kategori_tindakan",
+      "SNK-3,Snack Tuna,Makanan,Pakan,Persediaan,Royal Canin,pcs,8000,5500,20,,",
+    ].join("\n"));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const { siap, salah } = periksaBaris(r.baris, m);
+    expect(salah).toHaveLength(0);
+    expect(siap[0].category_id).toBe("kat-anak");
+  });
+
+  it("subkategori ditolak bila bukan bagian dari kategori induk", () => {
+    const m = {
+      ...master(),
+      kategori: new Map([["makanan", "kat-induk"], ["pakan", "kat-anak"], ["jasa", "kat-2"]]),
+      indukKategori: new Map([["kat-induk", null], ["kat-anak", "kat-induk"], ["kat-2", null]]),
+    };
+    const r = bacaCsv([
+      "kode,nama,kategori,subkategori,jenis,merek,satuan,harga_jual,harga_beli,stok_minimum,upc,kategori_tindakan",
+      "SNK-4,Snack Tuna,Jasa,Pakan,Persediaan,Royal Canin,pcs,8000,5500,20,,",
+    ].join("\n"));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const { siap, salah } = periksaBaris(r.baris, m);
+    expect(siap).toHaveLength(0);
+    expect(salah[0].pesan).toContain("bukan bagian dari kategori");
   });
 });

@@ -19,7 +19,7 @@ export type { BarisCsv, BarisSalah, HasilBaca } from "./impor-csv";
 export const bacaCsv = (isi: string): HasilBaca => bacaCsvUmum(isi, KOLOM_IMPOR, KOLOM_WAJIB);
 
 export const KOLOM_IMPOR = [
-  "kode", "nama", "kategori", "jenis", "merek", "satuan",
+  "kode", "nama", "kategori", "subkategori", "jenis", "merek", "satuan",
   "harga_jual", "harga_beli", "stok_minimum", "upc", "kategori_tindakan",
 ] as const;
 
@@ -28,9 +28,9 @@ export const KOLOM_WAJIB = ["kode", "nama", "kategori", "harga_jual"] as const;
 /** Contoh isi file, dipakai tombol "Unduh contoh" di layar impor. */
 export const CONTOH_CSV = [
   KOLOM_IMPOR.join(","),
-  "SNK-001,Snack Creamy Tuna 15gr,Makanan / Pakan,Persediaan,Royal Canin,pcs,8000,5500,20,,",
-  "SNK-002,Snack Creamy Salmon 15gr,Makanan / Pakan,Persediaan,Royal Canin,pcs,8000,5500,20,,",
-  "JSA-010,Vaksin Rabies,Jasa,Jasa,,tindakan,150000,0,0,,Vaksinasi",
+  "SNK-001,Snack Creamy Tuna 15gr,Makanan / Pakan,,Persediaan,Royal Canin,pcs,8000,5500,20,,",
+  "SNK-002,Snack Creamy Salmon 15gr,Makanan / Pakan,,Persediaan,Royal Canin,pcs,8000,5500,20,,",
+  "JSA-010,Vaksin Rabies,Jasa,,Jasa,,tindakan,150000,0,0,,Vaksinasi",
 ].join("\n");
 
 // ── Pemeriksaan per baris ─────────────────────────────────────────────────────
@@ -38,6 +38,8 @@ export const CONTOH_CSV = [
 export type MasterImpor = {
   /** nama kategori (huruf kecil) → id. Nama bertingkat pakai nama anaknya saja. */
   kategori: Map<string, string>;
+  /** id kategori → id induk. Dipakai agar subkategori tidak salah masuk ke induk lain. */
+  indukKategori: Map<string, string | null>;
   merek: Map<string, string>;
   satuan: Set<string>;
   /** kode barang yang SUDAH ada di sistem, huruf kecil. */
@@ -88,8 +90,19 @@ export function periksaBaris(baris: BarisCsv[], master: MasterImpor): HasilPerik
     const isJasa = jenis === "Jasa";
 
     const katTeks = (d.kategori ?? "").trim();
-    const categoryId = master.kategori.get(katTeks.toLowerCase());
-    if (!categoryId) { tolak(`Kategori "${katTeks || "(kosong)"}" belum terdaftar`); continue; }
+    const subkatTeks = (d.subkategori ?? "").trim();
+    const categoryId = master.kategori.get((subkatTeks || katTeks).toLowerCase());
+    if (!categoryId) {
+      tolak(`${subkatTeks ? "Subkategori" : "Kategori"} "${subkatTeks || katTeks || "(kosong)"}" belum terdaftar`);
+      continue;
+    }
+    if (subkatTeks) {
+      const indukId = master.kategori.get(katTeks.toLowerCase());
+      if (!indukId || master.indukKategori.get(categoryId) !== indukId) {
+        tolak(`Subkategori "${subkatTeks}" bukan bagian dari kategori "${katTeks || "(kosong)"}"`);
+        continue;
+      }
+    }
 
     const merekTeks = (d.merek ?? "").trim();
     let brandId: string | null = null;
