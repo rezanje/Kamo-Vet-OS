@@ -142,7 +142,18 @@ export function BarangMatrixTable({ rows, bolehKelola }: { rows: BarangMatrixRow
             {rows.map((row, index) => (
               <tr key={row.id}>
                 <td style={stickyCell(0, 42, { color: "var(--tm)" })}>{index + 1}</td>
-                <td style={stickyCell(42, 220, { fontWeight: 600 })}>{row.name}</td>
+                <td style={stickyCell(42, 220, { fontWeight: 600 })}>
+                  {bolehKelola ? (
+                    <Link
+                      href={`/pos/sku/${row.id}`}
+                      title={`Buka ${row.name}`}
+                      style={{ color: "#1d4ed8", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%" }}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</span>
+                      <i className="ti ti-chevron-right" aria-hidden="true" style={{ flexShrink: 0 }} />
+                    </Link>
+                  ) : row.name}
+                </td>
                 <td style={stickyCell(262, 112, { color: "var(--tm)" })}>{row.code || "—"}</td>
                 {selectedColumns.map((column) => (
                   <td key={column.key} style={{ fontSize: 10.5, whiteSpace: "nowrap" }}>
