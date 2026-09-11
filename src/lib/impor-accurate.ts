@@ -21,6 +21,7 @@ export type AccurateItem = {
   name: string;
   item_type: ItemType;
   category_name: string;
+  subcategory_name?: string | null;
   brand_name: string | null;
   unit: string;
   sell_price: number;
@@ -71,6 +72,7 @@ export type AccurateIssue = {
 
 export type AccurateWorkbookResult = {
   rows: AccurateItem[];
+  categories: AccurateCategory[];
   skipped: AccurateIssue[];
   rejected: AccurateIssue[];
   errors: string[];
@@ -257,6 +259,7 @@ function parseDataRow(
       name,
       item_type: itemType,
       category_name: category,
+      subcategory_name: text(get("Subkategori")) || null,
       brand_name: text(get("Merek Barang")) || null,
       unit: baseUnit,
       sell_price: sellPrice,
@@ -283,14 +286,14 @@ export async function bacaWorkbookAccurate(bytes: Uint8Array): Promise<AccurateW
   const worksheet = namedWorksheet
     ?? workbook.worksheets.find((candidate) => isItemWorksheet(mapColumns(candidate)));
   if (!worksheet) {
-    return { rows: [], skipped: [], rejected: [], errors: ["Sheet dengan kolom Barang & Jasa tidak ditemukan"] };
+    return { rows: [], categories: [], skipped: [], rejected: [], errors: ["Sheet dengan kolom Barang & Jasa tidak ditemukan"] };
   }
 
   const columns = mapColumns(worksheet);
   const missing = REQUIRED_HEADERS.filter((header) => !columns.has(normalizedHeader(header)));
   if (missing.length > 0) {
     return {
-      rows: [], skipped: [], rejected: [],
+      rows: [], categories: [], skipped: [], rejected: [],
       errors: [`Kolom wajib tidak ditemukan: ${missing.join(", ")}`],
     };
   }
@@ -339,7 +342,70 @@ export async function bacaWorkbookAccurate(bytes: Uint8Array): Promise<AccurateW
   }
 
   rejected.sort((a, b) => a.row_no - b.row_no);
-  return { rows: uniqueRows, skipped, rejected, errors: [] };
+  const categorized = bentukKategoriDariMaster(uniqueRows);
+  return { rows: categorized.items, categories: categorized.categories, skipped, rejected, errors: [] };
+}
+
+type RencanaKategoriMaster = {
+  items: AccurateItem[];
+  categories: AccurateCategory[];
+};
+
+/**
+ * Export Barang & Jasa menyimpan induk dan anak pada kolom terpisah. Anak
+ * dengan nama sama di induk berbeda diberi penanda induk supaya tetap unik
+ * di VetOS tanpa mengubah tujuan barangnya.
+ */
+function bentukKategoriDariMaster(items: AccurateItem[]): RencanaKategoriMaster {
+  const parents = new Map<string, { name: string; row_no: number }>();
+  const childParents = new Map<string, Map<string, { parent_name: string; row_no: number }>>();
+
+  for (const item of items) {
+    const parentKey = item.category_name.toLowerCase();
+    if (!parents.has(parentKey)) parents.set(parentKey, { name: item.category_name, row_no: item.row_no });
+    const child = item.subcategory_name?.trim();
+    if (!child || child.toLowerCase() === parentKey) continue;
+    const childKey = child.toLowerCase();
+    const groupedParents = childParents.get(childKey) ?? new Map();
+    if (!groupedParents.has(parentKey)) {
+      groupedParents.set(parentKey, { parent_name: item.category_name, row_no: item.row_no });
+    }
+    childParents.set(childKey, groupedParents);
+  }
+
+  const namesByPair = new Map<string, string>();
+  const childRows: AccurateCategory[] = [];
+  for (const [childKey, groupedParents] of childParents) {
+    const childName = items.find((item) => item.subcategory_name?.trim().toLowerCase() === childKey)?.subcategory_name?.trim();
+    if (!childName) continue;
+    const needsParentName = groupedParents.size > 1 || parents.has(childKey);
+    for (const [parentKey, parent] of groupedParents) {
+      const name = needsParentName ? `${childName} — ${parent.parent_name}` : childName;
+      namesByPair.set(`${parentKey}\u0000${childKey}`, name);
+      childRows.push({
+        row_no: parent.row_no,
+        name,
+        parent_name: parents.get(parentKey)?.name ?? parent.parent_name,
+      });
+    }
+  }
+
+  const categories: AccurateCategory[] = [
+    ...[...parents.values()].map((parent) => ({ row_no: parent.row_no, name: parent.name, parent_name: null })),
+    ...childRows,
+  ].sort((a, b) => a.row_no - b.row_no || Number(Boolean(a.parent_name)) - Number(Boolean(b.parent_name)));
+
+  return {
+    items: items.map((item) => {
+      const child = item.subcategory_name?.trim();
+      if (!child || child.toLowerCase() === item.category_name.toLowerCase()) return item;
+      return {
+        ...item,
+        category_name: namesByPair.get(`${item.category_name.toLowerCase()}\u0000${child.toLowerCase()}`) ?? item.category_name,
+      };
+    }),
+    categories,
+  };
 }
 
 function sameAccurateItem(left: AccurateItem, right: AccurateItem) {
@@ -348,6 +414,7 @@ function sameAccurateItem(left: AccurateItem, right: AccurateItem) {
     name: item.name.trim().toLowerCase(),
     item_type: item.item_type,
     category_name: item.category_name.trim().toLowerCase(),
+    subcategory_name: item.subcategory_name?.trim().toLowerCase() ?? null,
     brand_name: item.brand_name?.trim().toLowerCase() ?? null,
     unit: item.unit.trim().toLowerCase(),
     sell_price: Number(item.sell_price),

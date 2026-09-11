@@ -310,7 +310,7 @@ export function AccurateImportForm({
 
       <div className="p2ban" style={{ marginTop: 12, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
           <i className="ti ti-alert-triangle" /> Grup Accurate masuk sebagai nonaktif sampai rincian komponennya tersedia.
-        Tambahkan export Kategori Barang supaya relasi induk/subkategori ikut diimpor.
+        Kalau file Barang &amp; Jasa punya kolom Subkategori, kategori induk dan subkategori otomatis ikut terbentuk.
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7, marginTop: 12 }}>
@@ -398,7 +398,7 @@ export function AccurateImportForm({
           <i className={`ti ${pending && flowMode === "importing" ? "ti-loader-2" : "ti-database-import"}`} style={pending && flowMode === "importing" ? { animation: "btn-spin .8s linear infinite" } : undefined} /> {pending && flowMode === "importing" ? "Mengimpor…" : "Import Sekali"}
         </button>
         {files.length > 0 && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {files[0].name}</span>}
-        {categoryFile && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name}</span>}
+        {categoryFile && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name} — dipakai bila file Barang &amp; Jasa tidak punya Subkategori.</span>}
       </div>
 
       <label style={{ display: "block", marginTop: 10, maxWidth: 300 }}>

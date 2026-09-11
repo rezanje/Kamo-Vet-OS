@@ -43,6 +43,38 @@ describe("bacaWorkbookAccurate", () => {
     });
   });
 
+  it("membentuk kategori induk dan subkategori langsung dari master produk", async () => {
+    const bytes = await workbook([
+      ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Subkategori", "Satuan"],
+      ["A-1", "Kalung Aksesori", "INV", "ACCESORIS", "COLLAR", "PCS"],
+      ["A-2", "Kalung Alkes", "INV", "ALKES", "COLLAR", "PCS"],
+      ["A-3", "Konsultasi", "SVC", "KONSULTASI", "KONSULTASI", "JASA"],
+      ["A-4", "Alkes Obat", "INV", "OBAT", "ALKES", "PCS"],
+    ]);
+
+    const hasil = await bacaWorkbookAccurate(bytes);
+
+    expect(hasil.rows.map((row) => row.category_name)).toEqual([
+      "COLLAR — ACCESORIS",
+      "COLLAR — ALKES",
+      "KONSULTASI",
+      "ALKES — OBAT",
+    ]);
+    expect(hasil.categories.map((row) => [row.name, row.parent_name])).toEqual(expect.arrayContaining([
+      ["ACCESORIS", null],
+      ["ALKES", null],
+      ["KONSULTASI", null],
+      ["OBAT", null],
+      ["COLLAR — ACCESORIS", "ACCESORIS"],
+      ["COLLAR — ALKES", "ALKES"],
+      ["ALKES — OBAT", "OBAT"],
+    ]));
+    expect(hasil.categories).not.toContainEqual(expect.objectContaining({
+      name: "KONSULTASI",
+      parent_name: "KONSULTASI",
+    }));
+  });
+
   it("mengabaikan harga satuan lanjutan yang tidak punya satuan dan rasio", async () => {
     const bytes = await workbook([
       [

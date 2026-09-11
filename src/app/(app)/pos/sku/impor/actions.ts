@@ -370,7 +370,7 @@ async function muatMasterGrup(supabase: any): Promise<Map<string, GroupMasterLit
 }
 
 async function bacaUploads(files: File[]): Promise<{
-  parsed: { rows: AccurateItem[]; skipped: AccurateIssue[]; rejected: AccurateIssue[]; errors: string[] };
+  parsed: { rows: AccurateItem[]; categories: AccurateCategory[]; skipped: AccurateIssue[]; rejected: AccurateIssue[]; errors: string[] };
   bytes: { name: string; data: Uint8Array }[];
 }> {
   const parsed = await Promise.all(files.map(async (file) => ({
@@ -404,6 +404,7 @@ async function bacaUploads(files: File[]): Promise<{
   return {
     parsed: {
       rows: rows.filter((row) => !duplicateCodes.has(row.code.trim().toLowerCase())),
+      categories: results.flatMap(({ result }) => result.categories),
       skipped: results.flatMap(({ file, result }) => result.skipped.map((row) => ({ ...row, source: `${file.name}:${row.row_no}` }))),
       rejected: [
         ...results.flatMap(({ file, result }) => result.rejected.map((row) => ({ ...row, source: `${file.name}:${row.row_no}` }))),
@@ -506,14 +507,18 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     const upload = await bacaUploads(files);
     const parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
-    const parsedCategories = categoryFile
+    const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
+    const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
       : { rows: [], errors: [] };
     if (parsedCategories.errors.length) return stateError(parsedCategories.errors.join(" "));
+    const categories = pakaiKategoriDariMaster ? parsed.categories : parsedCategories.rows;
     const master = await muatMasterAccurate(supabase);
     const rows = buatPreviewAccurate(parsed, master.items);
-    const hierarchyCount = parsedCategories.rows.filter((row) => row.parent_name).length;
-    const categoryBytes = categoryFile ? [{ name: `category:${categoryFile.name}`, data: new Uint8Array(await categoryFile.arrayBuffer()) }] : [];
+    const hierarchyCount = categories.filter((row) => row.parent_name).length;
+    const categoryBytes = !pakaiKategoriDariMaster && categoryFile
+      ? [{ name: `category:${categoryFile.name}`, data: new Uint8Array(await categoryFile.arrayBuffer()) }]
+      : [];
     const sourceParts = [...upload.bytes, ...categoryBytes];
     const sourceHash = await hashFiles(sourceParts);
     const summary = summarize(rows);
@@ -534,7 +539,7 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
       rows: ringkasPreviewAccurate(rows),
       total_rows: rows.length,
       summary,
-      new_masters: newMasters(parsed.rows, master, parsedCategories.rows),
+      new_masters: newMasters(parsed.rows, master, categories),
       run_id: importRun.id,
       source_hash: sourceHash,
       source_fingerprint: fingerprintInput(sourceParts.map((part) => ({ name: part.name, size: part.data.byteLength }))),
@@ -673,11 +678,15 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const upload = await bacaUploads(files);
     const parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
-    const parsedCategories = categoryFile
+    const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
+    const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
       : { rows: [], errors: [] };
     if (parsedCategories.errors.length) return stateError(parsedCategories.errors.join(" "));
-    const categoryBytes = categoryFile ? [{ name: `category:${categoryFile.name}`, data: new Uint8Array(await categoryFile.arrayBuffer()) }] : [];
+    const categories = pakaiKategoriDariMaster ? parsed.categories : parsedCategories.rows;
+    const categoryBytes = !pakaiKategoriDariMaster && categoryFile
+      ? [{ name: `category:${categoryFile.name}`, data: new Uint8Array(await categoryFile.arrayBuffer()) }]
+      : [];
     const sourceParts = [...upload.bytes, ...categoryBytes];
     const sourceHash = await hashFiles(sourceParts);
     const runId = String(formData.get("run_id") ?? "");
@@ -690,11 +699,11 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     }
     const master = await muatMasterAccurate(supabase);
 
-    for (const category of parsedCategories.rows) {
+    for (const category of categories) {
       await ensureCategory(supabase, master, category.name);
     }
     const categoryUpdates = rencanaIndukKategoriAccurate(
-      parsedCategories.rows,
+      categories,
       [...master.categories.values()],
     );
     for (const update of categoryUpdates) {
@@ -766,7 +775,7 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
       message: summary.Ditolak > 0
         ? `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. ${summary.Ditolak} barang ditahan untuk diperbaiki. Barang yang aman sudah disimpan; saldo akan dilanjutkan hanya untuk barang yang siap.`
         : `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. Master tersimpan; saldo stok sedang dilanjutkan.`,
-      hierarchy_count: parsedCategories.rows.filter((row) => row.parent_name).length,
+      hierarchy_count: categories.filter((row) => row.parent_name).length,
       rows: ringkasPreviewAccurate(rows),
       total_rows: rows.length,
       summary,
