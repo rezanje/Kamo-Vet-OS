@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, type ItemUnit } from "@/lib/satuan";
 import { ITEM_TYPES } from "@/lib/barang";
 import { BARANG_FIELDS } from "./data";
-import { flatOptions, labelPath, type KategoriRow } from "@/lib/kategori";
+import { buildTree, labelPath, type KategoriRow } from "@/lib/kategori";
 import { BarangMatrixTable, type BarangMatrixRow } from "./BarangMatrixTable";
 
 type Rel<T> = T | T[] | null;
@@ -27,9 +27,9 @@ type Row = {
 export default async function BarangJasaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; kat?: string; jenis?: string; cari?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kat?: string; induk?: string; jenis?: string; cari?: string }>;
 }) {
-  const { error, success, kat, jenis, cari } = await searchParams;
+  const { error, success, kat, induk, jenis, cari } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -37,15 +37,19 @@ export default async function BarangJasaPage({
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   const bolehKelola = profile?.role === "OWNER" || profile?.role === "ADMIN";
 
-  // Kategori bertingkat: chip filter & kolom kategori pakai label "Induk › Anak"
-  // supaya dua anak bernama mirip di induk berbeda tidak tertukar.
   const { data: categories } = await supabase
     .from("item_categories").select("id, name, parent_id, is_active").order("name");
   const katRows = (categories ?? []) as KategoriRow[];
-  const cats = flatOptions(katRows); // chip filter: hanya kategori aktif
+  const tree = buildTree(katRows.filter((row) => row.is_active));
+  const selectedTree = tree.find((row) => row.induk.id === induk)
+    ?? tree.find((row) => row.anak.some((anak) => anak.id === kat))
+    ?? null;
+  const selectedSubcategory = selectedTree?.anak.find((anak) => anak.id === kat) ?? null;
 
   let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name), suppliers(nama)`).order("name").limit(500);
-  if (kat) q = q.eq("category_id", kat);
+  if (selectedSubcategory) q = q.eq("category_id", selectedSubcategory.id);
+  else if (selectedTree) q = q.in("category_id", [selectedTree.induk.id, ...selectedTree.anak.map((anak) => anak.id)]);
+  else if (kat) q = q.eq("category_id", kat);
   if (jenis) q = q.eq("item_type", jenis);
   // `cari` datang dari pencarian global di topbar — layar langsung terbuka
   // menyorot barang yang dicari, bukan 500 baris yang harus ditelusuri lagi.
@@ -80,16 +84,6 @@ export default async function BarangJasaPage({
     tindakan_kategori: row.tindakan_kategori,
   }));
 
-  const filterHref = (next: { kat?: string; jenis?: string }) => {
-    const p = new URLSearchParams();
-    const k = "kat" in next ? next.kat : kat;
-    const j = "jenis" in next ? next.jenis : jenis;
-    if (k) p.set("kat", k);
-    if (j) p.set("jenis", j);
-    const s = p.toString();
-    return s ? `/pos/sku?${s}` : "/pos/sku";
-  };
-
   return (
     <>
       <div style={{ marginBottom: 4 }}>
@@ -121,28 +115,39 @@ export default async function BarangJasaPage({
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "1" ? "Barang tersimpan." : success}</div>}
       {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah master barang. Kamu bisa melihat daftarnya saja.</div>}
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-        <Link href={filterHref({ jenis: undefined })} className="back-btn" style={chip(!jenis)}>Semua jenis</Link>
-        {ITEM_TYPES.map((t) => (
-          <Link key={t} href={filterHref({ jenis: t })} className="back-btn" style={chip(jenis === t)}>{t}</Link>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        <Link href={filterHref({ kat: undefined })} className="back-btn" style={chip(!kat)}>Semua kategori</Link>
-        {cats.map((c) => (
-          <Link key={c.id} href={filterHref({ kat: c.id })} className="back-btn" style={chip(kat === c.id)}>{c.label}</Link>
-        ))}
-      </div>
+      <form action="/pos/sku" className="crm-sec" style={{ marginBottom: 12, padding: 12 }}>
+        {cari && <input type="hidden" name="cari" value={cari} />}
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ width: 150 }}>
+            <label className="flab">Jenis</label>
+            <select className="fi" name="jenis" defaultValue={jenis ?? ""}>
+              <option value="">Semua jenis</option>
+              {ITEM_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 220 }}>
+            <label className="flab">Kategori induk</label>
+            <select className="fi" name="induk" defaultValue={selectedTree?.induk.id ?? ""}>
+              <option value="">Semua kategori</option>
+              {tree.map(({ induk: parent }) => <option key={parent.id} value={parent.id}>{parent.name}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 230 }}>
+            <label className="flab">Subkategori</label>
+            <select className="fi" name="kat" defaultValue={selectedSubcategory?.id ?? ""} disabled={!selectedTree?.anak.length}>
+              <option value="">Semua subkategori</option>
+              {(selectedTree?.anak ?? []).map((child) => <option key={child.id} value={child.id}>{child.name}</option>)}
+            </select>
+          </div>
+          <button type="submit" className="btn-acc" style={{ background: "var(--posb)" }}><i className="ti ti-filter" /> Terapkan</button>
+          <Link href="/pos/sku" className="btn-def" style={{ textDecoration: "none" }}>Reset</Link>
+        </div>
+        <div style={{ fontSize: 10, color: "var(--td)", marginTop: 7 }}>
+          Pilih kategori induk, lalu tekan Terapkan untuk membuka pilihan subkategori.
+        </div>
+      </form>
 
       <BarangMatrixTable rows={matrixRows} bolehKelola={bolehKelola} />
     </>
   );
-}
-
-function chip(active: boolean): React.CSSProperties {
-  return {
-    padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, textDecoration: "none",
-    border: ".5px solid var(--bd)", background: active ? "#2563eb" : "#fff", color: active ? "#fff" : "var(--tm)",
-  };
 }

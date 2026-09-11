@@ -79,7 +79,8 @@ export function ImporForm() {
         ))}
         <br />
         Yang bertanda <b style={{ color: "#b91c1c" }}>*</b> wajib ada. Urutan kolom bebas, kolom lain diabaikan.
-        Kategori, merek, dan satuan harus sudah terdaftar lebih dulu — barisnya dilewati kalau belum ada,
+        Kategori wajib diisi. Subkategori opsional; kalau diisi, harus sesuai kategori pada baris yang sama.
+        Kategori, subkategori, merek, dan satuan harus sudah terdaftar lebih dulu — barisnya dilewati kalau belum ada,
         dan barang dengan kode yang sudah dipakai tidak ditimpa.
       </div>
 

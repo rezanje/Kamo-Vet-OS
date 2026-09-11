@@ -58,7 +58,7 @@ async function assertBolehKelola() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function muatMaster(supabase: any): Promise<MasterImpor> {
   const [{ data: kat }, { data: merek }, { data: satuan }, { data: items }] = await Promise.all([
-    supabase.from("item_categories").select("id, name").eq("is_active", true),
+    supabase.from("item_categories").select("id, name, parent_id").eq("is_active", true),
     supabase.from("brands").select("id, name"),
     supabase.from("units").select("nama").eq("is_active", true),
     supabase.from("items").select("code"),
@@ -66,6 +66,8 @@ async function muatMaster(supabase: any): Promise<MasterImpor> {
 
   return {
     kategori: new Map(((kat ?? []) as { id: string; name: string }[]).map((k) => [k.name.toLowerCase(), k.id])),
+    indukKategori: new Map(((kat ?? []) as { id: string; parent_id: string | null }[])
+      .map((k) => [k.id, k.parent_id] as const)),
     merek: new Map(((merek ?? []) as { id: string; name: string }[]).map((b) => [b.name.toLowerCase(), b.id])),
     satuan: new Set(((satuan ?? []) as { nama: string }[]).map((u) => u.nama.toLowerCase())),
     kodeTerpakai: new Set(((items ?? []) as { code: string | null }[])
