@@ -8,6 +8,7 @@ import { CariGlobal } from "@/components/CariGlobal";
 import { KlinikTopbar } from "@/components/KlinikTopbar";
 import { getOpenShift } from "@/lib/shift";
 import { NavigationFeedback } from "@/components/NavigationFeedback";
+import { ReleaseNotice } from "@/components/ReleaseNotice";
 
 export default async function AppLayout({
   children,
@@ -57,6 +58,7 @@ export default async function AppLayout({
         />
       )}
       <div className="main">
+        <ReleaseNotice version={process.env.VERCEL_GIT_COMMIT_SHA ?? "local"} />
         {isStaff ? (
           <KlinikTopbar fullName={profile?.full_name ?? "Staff"} branchName={staffBranch?.branchName ?? "—"} />
         ) : (

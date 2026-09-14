@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   HOME_TAB, closeTab, nextActive, openTab, tabLabel, type PageTab,
 } from "@/lib/tabs";
@@ -54,18 +54,21 @@ const serverSnapshot = () => EMPTY;
 // gonta-ganti tanpa balik ke sidebar. Umur tab = satu sesi tab browser.
 export function PageTabs() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const query = searchParams.toString();
+  const currentHref = query ? `${pathname}?${query}` : pathname;
   const router = useRouter();
   const tabs = useSyncExternalStore(subscribe, read, serverSnapshot);
 
   // Sinkronisasi ke sistem luar (sessionStorage) — memang tugasnya effect.
   useEffect(() => {
-    write(openTab(read(), { href: pathname, label: tabLabel(pathname) }));
-  }, [pathname]);
+    write(openTab(read(), { href: currentHref, label: tabLabel(pathname) }));
+  }, [pathname, currentHref]);
 
   function handleClose(e: React.MouseEvent, href: string) {
     e.preventDefault();
     e.stopPropagation();
-    const target = pathname === href ? nextActive(tabs, href) : null;
+    const target = currentHref === href ? nextActive(tabs, href) : null;
     write(closeTab(tabs, href));
     if (target) router.push(target);
   }
@@ -75,11 +78,11 @@ export function PageTabs() {
   return (
     <div className="ptabs no-print">
       {all.map((t) => {
-        const on = pathname === t.href;
+        const on = currentHref === t.href;
         return (
           <div key={t.href} className={`ptab${on ? " on" : ""}`}>
             {/* Link beneran biar bisa keyboard & ctrl+klik buka tab browser baru. */}
-            <Link href={t.href} className="ptab-l" title={t.href}>
+            <Link href={t.href} prefetch={false} className="ptab-l" title={t.href}>
               {t.label}
             </Link>
             {t.href !== HOME_TAB.href && (

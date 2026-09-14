@@ -16,9 +16,10 @@ export async function sendWA(phone: string, message: string): Promise<WaResult> 
       method: "POST",
       headers: { Authorization: token, "Content-Type": "application/json" },
       body: JSON.stringify({ target, message }),
+      signal: AbortSignal.timeout(15000),
     });
     const body = (await res.json().catch(() => ({}))) as { status?: boolean; reason?: string };
-    if (!res.ok || body.status === false) return { ok: false, reason: body.reason ?? `HTTP ${res.status}` };
+    if (!res.ok || body.status !== true) return { ok: false, reason: body.reason ?? "Provider belum mengonfirmasi pengiriman" };
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "network error" };

@@ -89,8 +89,8 @@ export async function jalankanWaEngine(supabase: Db, now = new Date()) {
 
   const visitRows = (visits ?? []) as Visit[];
   for (const visit of visitRows) {
-    const owner = ownerById.get(visit.customer_id);
     const pet = petById.get(visit.pet_id);
+    const owner = pet ? ownerById.get(pet.customer_id) : undefined;
     if (!owner || !pet) continue;
     const visitDate = tanggalWIB(visit.created_at);
     if (visitDate === geserHari(today, -30) && visit.poli.toLowerCase().includes("groom")) add({ customerId: owner.id, petId: pet.id, branchId: visit.branch_id, phone: owner.phone, message: pesan("post_grooming", owner.name, pet.name), trigger: "post_grooming", subject: visit.id });
@@ -99,8 +99,8 @@ export async function jalankanWaEngine(supabase: Db, now = new Date()) {
 
   const fups = (followUps ?? []) as FollowUp[];
   for (const fup of fups) {
-    const owner = fup.customer_id ? ownerById.get(fup.customer_id) : null;
     const pet = petById.get(fup.pet_id);
+    const owner = pet ? ownerById.get(pet.customer_id) : undefined;
     if (!owner || !pet || fup.jenis !== "Vaksin") continue;
     if (fup.tanggal === geserHari(today, 30)) add({ customerId: owner.id, petId: pet.id, branchId: fup.branch_id, phone: owner.phone, message: pesan("vaccination_due", owner.name, pet.name, `Jadwal vaksinnya ${fup.tanggal}.`), trigger: "vaccination_due", subject: fup.id });
     if (fup.tanggal === geserHari(today, -7)) add({ customerId: owner.id, petId: pet.id, branchId: fup.branch_id, phone: owner.phone, message: pesan("vaccination_overdue", owner.name, pet.name, `Jadwal sebelumnya ${fup.tanggal}.`), trigger: "vaccination_overdue", subject: fup.id });

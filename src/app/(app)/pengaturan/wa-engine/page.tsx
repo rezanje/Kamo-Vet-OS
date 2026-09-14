@@ -32,6 +32,7 @@ export default async function WaEnginePage({ searchParams }: { searchParams: Pro
       {sp.success === "run" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pemeriksaan selesai: {sp.sent ?? 0} terkirim, {sp.failed ?? 0} gagal, {sp.created ?? 0} pesan baru.</div>}
 
       <div className="crm-sec">
+        <p role="status">{process.env.FONNTE_TOKEN ? "Koneksi pengiriman sudah dikonfigurasi. Penerimaan pesan tetap perlu diuji pada nomor yang disetujui." : "Pengiriman belum siap: akun WhatsApp pengirim perlu dihubungkan oleh admin."}</p>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>TRIGGER RETENSI</div>
         <form action={simpanWaSettings}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, marginBottom: 14 }}>
