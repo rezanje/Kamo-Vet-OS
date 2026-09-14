@@ -5,6 +5,8 @@ pengguna/cabang. Gunakan akun serta data uji yang disetujui penanggung jawab
 cabang. Jangan memakai pelanggan, pasien, stok, poin, atau nomor WhatsApp nyata
 sebelum skenario terkait dinyatakan lulus.
 
+Teks siap kirim ke user: [Pesan trial untuk user](./PESAN-TRIAL-UNTUK-USER.md).
+
 ## Mulai dari sini
 
 Urutan trial yang paling aman:
@@ -118,8 +120,9 @@ Jangan menjalankan pengiriman massal sebagai tes.
 
 ## 7. Performa dan versi baru
 
-Status: perbaikan pemuatan menu dan pemberitahuan versi sudah dirilis; keluhan lemot
-belum dinyatakan selesai sebelum pengukuran 1 versus 10 tab dilakukan.
+Status: perbaikan pemuatan menu, pemberitahuan versi, dan tanggal catatan WIB sudah
+dirilis; keluhan lemot belum dinyatakan selesai sebelum pengukuran 1 versus 10 tab
+dilakukan.
 
 Bedakan tab menu dalam aplikasi dan tab browser. Tab menu menyimpan alamat,
 bukan sepuluh halaman aktif sekaligus. Login tetap memakai sesi.

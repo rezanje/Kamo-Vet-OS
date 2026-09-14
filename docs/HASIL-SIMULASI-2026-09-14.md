@@ -49,8 +49,9 @@ Tidak menjalankan SQL produksi; perubahan SQL tetap diserahkan ke Reza.
 - BLOCKED billing: produksi menunjukkan tidak ada master tarif kategori Rawat Inap. Kode memilih tarif aktif global pertama berdasarkan nama, bukan tarif khusus data uji/cabang. Jangan membuat tarif fiktif aktif untuk melewati hambatan: bisa memengaruhi pasien lain.
 - BLOCKED consent: tidak ada template aktif di cabang uji. Isi persetujuan resmi perlu berasal dari klinik. Tidak ada tanda tangan nyata yang dibuat.
 - BUG tanggal: input 14 September pukul 23.50 pada catatan tampil tanggal 15 September di daftar. Reproduksi dengan zona waktu server UTC menghasilkan waktu 15 September pukul 06.50 WIB.
-- Perbaikan LOKAL: input tanggal/jam diberi zona WIB eksplisit pada simpan/edit; daftar menggunakan tanggal laporan dan jam WIB. Tidak mengoreksi data lama massal.
-- Verifikasi perbaikan lokal: 115 berkas / 1.115 tes lulus; build lulus; diff check bersih. Belum commit/push/deploy, belum verifikasi perbaikan tanggal di produksi.
+- Perbaikan: input tanggal/jam diberi zona WIB eksplisit pada simpan/edit; daftar menggunakan tanggal laporan dan jam WIB. Tidak mengoreksi data lama massal.
+- Rilis produksi: commit 75af006 berhasil dideploy setelah push ke main. Verifikasi ulang di produksi dengan catatan baru berinput 14 September pukul 23.55: daftar tampil 14 September pukul 23.55. Catatan lama juga menampilkan tanggal laporan 14 September; jam simpan historisnya tetap 06.50 WIB karena data lama sudah telanjur menyimpan waktu yang salah. Tidak diubah massal.
+- Verifikasi: 115 berkas / 1.115 tes lulus; build lulus; diff check bersih; deployment produksi sukses.
 - Simpan rekam medis sebelum status pemeriksaan ditolak pada tahap penyelesaian, tetapi sebagian catatan tampaknya telah tersimpan. Perlu audit atomicity dan pencegahan pengulangan sebelum mengklaim alur gagal aman sepenuhnya.
 
 Data simulasi tetap tersimpan (termasuk rawat inap berstatus stabil), bukan data nyata. Belum ada transaksi stok, pembayaran, pengiriman WA, SQL produksi, atau perubahan akses. Penanganan data uji perlu dicatat sebelum rilis operasional.
