@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { simpanKaryawan } from "./actions";
+import { bolehKelolaMaster } from "@/lib/master-guard";
+import { simpanKaryawan, simpanPenugasanCabang } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -19,6 +20,13 @@ type EmployeeRow = {
   status: string;
   branches: Rel<{ name: string }>;
 };
+type AssignmentRow = {
+  employee_id: string;
+  branch_id: string;
+  role: "PRIMARY" | "SECONDARY";
+  effective_date: string;
+  branches: Rel<{ name: string }>;
+};
 
 const STATUS_LIST = ["Aktif", "Nonaktif"];
 
@@ -29,6 +37,7 @@ export default async function KaryawanPage({
 }) {
   const { error, success, cari } = await searchParams;
   const supabase = await createClient();
+  const bolehKelola = await bolehKelolaMaster();
 
   const { data: branches } = await supabase
     .from("branches")
@@ -44,6 +53,18 @@ export default async function KaryawanPage({
     .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
     .order("nama");
   const rows = (rowsRaw ?? []) as unknown as EmployeeRow[];
+  const { data: assignmentsRaw } = await supabase
+    .from("employee_branch_assignments")
+    .select("employee_id, branch_id, role, effective_date, branches(name)")
+    .order("role")
+    .order("effective_date");
+  const assignments = (assignmentsRaw ?? []) as unknown as AssignmentRow[];
+  const assignmentsByEmployee = new Map<string, AssignmentRow[]>();
+  for (const assignment of assignments) {
+    const list = assignmentsByEmployee.get(assignment.employee_id) ?? [];
+    list.push(assignment);
+    assignmentsByEmployee.set(assignment.employee_id, list);
+  }
 
   const total = rows.length;
   const aktif = rows.filter((r) => r.status === "Aktif").length;
@@ -67,6 +88,11 @@ export default async function KaryawanPage({
       {success === "1" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Data karyawan berhasil disimpan.
+        </div>
+      )}
+      {success === "assignment" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Penugasan cabang berhasil disimpan.
         </div>
       )}
 
@@ -140,9 +166,44 @@ export default async function KaryawanPage({
         </form>
       </div>
 
+      {bolehKelola && (
+        <div className="crm-sec">
+          <SecHeader num="02" title="PENUGASAN LINTAS CABANG" desc="Satu dokter atau tenaga medis bisa dijadwalkan di beberapa cabang." />
+          <form action={simpanPenugasanCabang}>
+            <div className="grid2">
+              <div>
+                <label className="flab">Karyawan *</label>
+                <select className="fi" name="employee_id" required>
+                  <option value="">Pilih karyawan aktif</option>
+                  {rows.filter((r) => r.status === "Aktif").map((r) => <option key={r.id} value={r.id}>{r.nama} · {r.jabatan ?? "—"}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="flab">Cabang *</label>
+                <select className="fi" name="branch_id" required>
+                  <option value="">Pilih cabang</option>
+                  {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="flab">Jenis Penugasan</label>
+                <select className="fi" name="role" defaultValue="SECONDARY">
+                  <option value="SECONDARY">Cabang tambahan</option>
+                </select>
+              </div>
+              <div>
+                <label className="flab">Mulai Berlaku</label>
+                <input className="fi" name="effective_date" type="date" />
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}><button type="submit" className="btn-acc"><i className="ti ti-git-branch" /> Simpan Penugasan</button></div>
+          </form>
+        </div>
+      )}
+
       {/* 02 DAFTAR KARYAWAN */}
       <div className="crm-sec">
-        <SecHeader num="02" title="DAFTAR KARYAWAN" desc="Seluruh karyawan diurutkan berdasarkan nama." />
+        <SecHeader num="03" title="DAFTAR KARYAWAN" desc="Seluruh karyawan diurutkan berdasarkan nama." />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 780 }}>
             <thead>
@@ -152,6 +213,7 @@ export default async function KaryawanPage({
                 <th>Jabatan</th>
                 <th>Departemen</th>
                 <th>Cabang</th>
+                <th>Penugasan</th>
                 <th style={{ textAlign: "right" }}>Gaji Pokok</th>
                 <th>Status</th>
               </tr>
@@ -159,6 +221,7 @@ export default async function KaryawanPage({
             <tbody>
               {rows.map((r) => {
                 const br = one(r.branches);
+                const tugas = assignmentsByEmployee.get(r.id) ?? [];
                 return (
                   <tr key={r.id}>
                     <td style={{ fontFamily: "monospace", fontSize: 10, color: "var(--tm)" }}>
@@ -168,6 +231,9 @@ export default async function KaryawanPage({
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.jabatan ?? "—"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.departemen ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
+                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                      {tugas.length ? tugas.map((t) => `${one(t.branches)?.name ?? "—"}${t.role === "PRIMARY" ? " (utama)" : ""}`).join(", ") : "—"}
+                    </td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
                       {rp(Number(r.gaji_pokok))}
                     </td>
@@ -182,7 +248,7 @@ export default async function KaryawanPage({
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}
                   >
                     Belum ada data karyawan. Tambahkan karyawan pertama di atas.

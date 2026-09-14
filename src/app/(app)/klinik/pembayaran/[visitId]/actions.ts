@@ -18,6 +18,7 @@ import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { kirimStrukWa } from "@/lib/wa-engine";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null; diskon_persen?: number };
 
@@ -192,7 +193,7 @@ export async function bayarVisit(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, todayIso());
   if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
-  const { data: v } = await supabase.from("visits").select("branch_id, customer_id").eq("id", visitId).maybeSingle();
+  const { data: v } = await supabase.from("visits").select("branch_id, customer_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
 
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
@@ -427,6 +428,17 @@ export async function bayarVisit(formData: FormData) {
       customerId: v?.customer_id ?? null, ref: invoiceNo,
       dipakai: poinDipakai, totalDibayar: total,
       rupiahPerPoin: poin.rupiahPerPoin, saldoAwal: poin.saldo,
+    });
+  }
+
+  const customer = v?.customers as { name?: string; phone?: string } | { name?: string; phone?: string }[] | null;
+  const pet = v?.pets as { name?: string } | { name?: string }[] | null;
+  const cust = Array.isArray(customer) ? customer[0] : customer;
+  const patient = Array.isArray(pet) ? pet[0] : pet;
+  if (paidStatus === "Lunas" && v?.customer_id && cust?.phone) {
+    await kirimStrukWa(supabase, {
+      invoiceNo, customerId: v.customer_id, phone: cust.phone, customerName: cust.name ?? "Kak", petName: patient?.name,
+      total, items: rows.map((r) => ({ deskripsi: r.deskripsi, qty: r.qty, harga: r.harga })),
     });
   }
 

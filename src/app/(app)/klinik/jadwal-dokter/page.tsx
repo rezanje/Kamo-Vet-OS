@@ -17,10 +17,11 @@ export default async function JadwalDokterPage({
   const mulai = /^\d{4}-\d{2}-\d{2}$/.test(sp.mulai ?? "") ? sp.mulai! : hariIni;
   const hari = rentangTujuhHari(mulai);
 
-  const [{ data: branchData }, { data: allEmp }, { data: shiftData }] = await Promise.all([
+  const [{ data: branchData }, { data: allEmp }, { data: shiftData }, { data: assignmentData }] = await Promise.all([
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif").order("nama"),
     supabase.from("work_shifts").select("id, nama, is_libur, jam_masuk, jam_pulang").eq("is_active", true),
+    supabase.from("employee_branch_assignments").select("employee_id, branch_id"),
   ]);
   const branches = (branchData ?? []) as { id: string; name: string }[];
 
@@ -33,8 +34,13 @@ export default async function JadwalDokterPage({
   const cabang = branches.some((b) => b.id === sp.cabang)
     ? sp.cabang!
     : branches.find((b) => semuaMedis.some((e) => e.branch_id === b.id))?.id ?? branches[0]?.id ?? "";
+  const assignedTo = new Set(
+    ((assignmentData ?? []) as { employee_id: string; branch_id: string }[])
+      .filter((a) => a.branch_id === cabang)
+      .map((a) => a.employee_id),
+  );
 
-  const medis = semuaMedis.filter((e) => e.branch_id === cabang);
+  const medis = semuaMedis.filter((e) => assignedTo.has(e.id) || (!assignmentData?.length && e.branch_id === cabang));
   const shiftById = new Map(
     ((shiftData ?? []) as { id: string; nama: string; is_libur: boolean; jam_masuk: string | null; jam_pulang: string | null }[])
       .map((s) => [s.id, { nama: s.nama, jam: jamRingkas(s.jam_masuk, s.jam_pulang), libur: s.is_libur }]),

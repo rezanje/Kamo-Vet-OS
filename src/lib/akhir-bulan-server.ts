@@ -8,6 +8,7 @@ import { catchUpDepreciation } from "@/lib/depreciation";
 import { postRecurringCatchUp } from "@/lib/recurring";
 import { hariIniWIB } from "@/lib/tanggal";
 import { bolehKunci, periodeSelesai, ringkasHasil, tanggalTerakhir, type HasilAkhirBulan } from "@/lib/akhir-bulan";
+import { jalankanPerawatanLoyalty } from "@/lib/loyalty-server";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -31,6 +32,7 @@ export async function jalankanAkhirBulan(
   // penguncian ikut jalan, semua jurnal bulan itu harus sudah masuk sebelum dikunci.
   const penyusutan = await catchUpDepreciation(supabase);
   const jurnalBerulang = await postRecurringCatchUp(supabase);
+  await jalankanPerawatanLoyalty(supabase);
 
   const { data: lock } = await supabase
     .from("accounting_locks")

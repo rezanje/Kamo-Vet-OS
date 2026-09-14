@@ -76,6 +76,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Follow up", icon: "ti-calendar-event", ...A, href: "/klinik/follow-up" },
     { label: "Bahan baku klinik", icon: "ti-flask-2", ...B, href: "/klinik/bahan-baku" },
     { label: "Jadwal dokter", icon: "ti-calendar-event", ...B, nw: true, href: "/klinik/jadwal-dokter" },
+    { label: "Maintenance alat medis", icon: "ti-tool", ...B, nw: true, href: "/klinik/maintenance" },
     { label: "Booking online", icon: "ti-calendar-plus", ...G, nw: true, href: "/klinik/booking" },
   ],
   crm: [
@@ -115,7 +116,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Aturan gaji", icon: "ti-adjustments-dollar", ...B, href: "/pengaturan/gaji" },
     { label: "Operasional Klinik", icon: "ti-activity-heartbeat", ...A, nw: true, href: "/pengaturan/operasional-klinik" },
     { label: "Alert Operasional", icon: "ti-bell-ringing", ...R, nw: true, href: "/pengaturan/alert-operasional" },
-    { label: "WA Engine (7 trigger)", icon: "ti-brand-whatsapp", ...B },
+    { label: "WA Engine (7 trigger)", icon: "ti-brand-whatsapp", ...B, href: "/pengaturan/wa-engine" },
   ],
   perusahaan: [
     { label: "Cabang", icon: "ti-building-community", ...B, href: "/perusahaan/cabang" },
