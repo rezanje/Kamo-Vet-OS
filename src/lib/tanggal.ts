@@ -50,3 +50,11 @@ export function tanggalWIB(iso: string): string {
   if (Number.isNaN(d.getTime())) return "";
   return new Date(d.getTime() + 7 * 36e5).toISOString().slice(0, 10);
 }
+
+// Input formulir klinik selalu WIB, bukan zona waktu proses server.
+export function waktuInputWIB(tanggal: string, jam: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(jam)) return null;
+  const stamp = new Date(`${tanggal}T${jam}:00+07:00`);
+  if (Number.isNaN(stamp.getTime()) || tanggalWIB(stamp.toISOString()) !== tanggal) return null;
+  return stamp;
+}

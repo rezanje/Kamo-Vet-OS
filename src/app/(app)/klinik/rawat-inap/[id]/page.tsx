@@ -112,7 +112,7 @@ export default async function RawatInapDetailPage({
     ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(rec.visit_id as string).slice(0, 3).toUpperCase()}`
     : "—";
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" });
-  const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" });
 
   return (
     <>
@@ -300,7 +300,7 @@ export default async function RawatInapDetailPage({
             <tbody>
               {(logs ?? []).map((l, i) => (
                 <tr key={i}>
-                  <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{fmtDate(l.created_at)}</td>
+                  <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{fmtDate(l.log_date ?? l.created_at)}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)", whiteSpace: "nowrap" }}>{fmtT(l.created_at)}</td>
                   <td style={{ fontSize: 11.5 }}>
                     {l.condition_note}

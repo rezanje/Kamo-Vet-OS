@@ -8,7 +8,7 @@ import { stockDeductions } from "@/lib/compounding";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
-import { hariIniWIB } from "@/lib/tanggal";
+import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -171,7 +171,7 @@ export async function addDailyLogPos(formData: FormData) {
   if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
 
   // 1) log harian (append-only). Tanggal+waktu dari form (default = sekarang di client).
-  const stamp = logDate && logTime ? new Date(`${logDate}T${logTime}`) : null;
+  const stamp = waktuInputWIB(logDate, logTime);
   const { error: logErr } = await supabase.from("inpatient_daily_logs").insert({
     inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
     doctor_name: doctorName, created_by: user?.id ?? null,
@@ -365,7 +365,7 @@ export async function updateDailyLog(formData: FormData) {
     .from("inpatient_records").select("discharged_at").eq("id", recordId).maybeSingle();
   if (rec?.discharged_at) redirect(`${back}?error=${encodeURIComponent("Rawat inap sudah ditutup — catatan tidak bisa diubah lagi")}`);
 
-  const stamp = logDate && logTime ? new Date(`${logDate}T${logTime}`) : null;
+  const stamp = waktuInputWIB(logDate, logTime);
   const { error: upErr } = await supabase.from("inpatient_daily_logs").update({
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
     updated_at: new Date().toISOString(), updated_by: user?.id ?? null,

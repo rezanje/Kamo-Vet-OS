@@ -1,9 +1,27 @@
 # Panduan trial operasional VetOS
 
-Status: skenario siap dipakai; kelulusan pengguna dan cabang belum diklaim.
-Gunakan akun serta data uji yang disetujui penanggung jawab cabang.
+Status: DEMO/TRIAL TERBATAS; belum siap operasional penuh dan belum ada kelulusan
+pengguna/cabang. Gunakan akun serta data uji yang disetujui penanggung jawab
+cabang. Jangan memakai pelanggan, pasien, stok, poin, atau nomor WhatsApp nyata
+sebelum skenario terkait dinyatakan lulus.
+
+## Mulai dari sini
+
+Urutan trial yang paling aman:
+
+1. Buka dashboard dan halaman riwayat secara baca saja. Pastikan cabang yang dipilih benar.
+2. Coba maintenance dengan alat uji berlabel `SIMULASI QA`.
+3. Coba transfer anabul uji yang punya dua pemilik fiktif. Pastikan riwayat tetap ada dan transfer dari tab lama ditolak.
+4. Coba registrasi, antrian, rekam medis, dan catatan rawat inap dengan data uji. Jangan lanjut pembayaran dulu.
+5. Setelah itu baru uji import, stok, akses cabang, loyalty, dan cetakan secara didampingi.
+6. WhatsApp dan performa diuji paling akhir karena butuh konfigurasi pengirim/penerima dan pengukuran khusus.
+
+Setiap langkah dicatat sebagai `LULUS`, `GAGAL`, atau `TERTUNDA`. Status
+`TERTUNDA` bukan bug; artinya prasyarat bisnis atau konfigurasi belum tersedia.
 
 ## 1. Import → penjualan → kartu stok
+
+Status: bisa diuji dengan data uji terpisah; belum terbukti end-to-end di produksi.
 
 1. Buka https://kamo-vet-os.vercel.app/pos/sku/impor.
 2. Unduh template barang dari https://kamo-vet-os.vercel.app/pos/sku/impor/template.
@@ -28,6 +46,8 @@ Kartu stok: https://kamo-vet-os.vercel.app/pos/kartu-stok
 
 ## 2. Import rekam medis
 
+Status: bisa diuji dengan arsip uji; hasil import dan deduplikasi belum dinyatakan lulus.
+
 https://kamo-vet-os.vercel.app/klinik/rekam-medis/impor
 
 Pilih satu arsip uji → cek pratinjau pemilik/hewan/tanggal → import → buka riwayat.
@@ -35,6 +55,9 @@ Cocokkan jumlah kunjungan, tanggal, diagnosis, tindakan dan obat terhadap arsip.
 Coba file dengan sel kosong dan import ulang; catat penolakan/duplikasi.
 
 ## 3. Transfer anabul
+
+Status: fitur dan perlindungan tab lama sudah terbukti dengan data simulasi; preservasi
+tagihan/poin pada data historis masih perlu diuji dengan fixture yang sesuai.
 
 https://kamo-vet-os.vercel.app/crm/pelanggan
 
@@ -45,6 +68,9 @@ Riwayat mencatat pemilik asal/tujuan, petugas dan waktu. Ulangi dari tab lama:
 permintaan basi harus ditolak. Akun staf tidak boleh melakukan transfer.
 
 ## 4. Rawat inap, persetujuan, dan cetakan
+
+Status: alur dasar bisa dicoba; billing otomatis tertunda sampai tarif resmi tersedia,
+dan persetujuan tertunda sampai template resmi cabang tersedia.
 
 Rawat inap: https://kamo-vet-os.vercel.app/klinik/rawat-inap
 
@@ -60,6 +86,9 @@ nama cabang/pasien, tanggal, rincian, total, tanda tangan, lebar kertas, dan
 pemisahan halaman. Hasil printer fisik perlu konfirmasi pengguna.
 
 ## 5. Maintenance, dokter cabang, dan loyalty
+
+Status: maintenance sudah dicoba dengan data fiktif; dokter lintas cabang, batas akses,
+dan expiry/downgrade loyalty masih perlu uji terarah.
 
 https://kamo-vet-os.vercel.app/klinik/maintenance
 
@@ -77,6 +106,8 @@ seluruh pelanggan untuk trial. Cocokkan perubahan dengan riwayat poin.
 
 ## 6. WhatsApp
 
+Status: mesin dan tujuh trigger tersedia; pengiriman produksi belum aktif.
+
 https://kamo-vet-os.vercel.app/pengaturan/wa-engine
 
 Pengiriman menggunakan Fonnte. Akun pengirim dan nomor penerima uji harus
@@ -86,6 +117,9 @@ Uji setelah transfer: reminder hewan ditujukan kepada pemilik sekarang.
 Jangan menjalankan pengiriman massal sebagai tes.
 
 ## 7. Performa dan versi baru
+
+Status: perbaikan pemuatan menu dan pemberitahuan versi sudah dirilis; keluhan lemot
+belum dinyatakan selesai sebelum pengukuran 1 versus 10 tab dilakukan.
 
 Bedakan tab menu dalam aplikasi dan tab browser. Tab menu menyimpan alamat,
 bukan sepuluh halaman aktif sekaligus. Login tetap memakai sesi.
