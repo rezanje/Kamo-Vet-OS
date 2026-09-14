@@ -1,10 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { assertMasterAdmin } from "@/lib/master-guard";
 
 export async function simpanKaryawan(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await assertMasterAdmin("/hris/karyawan", "data karyawan");
 
   const nama = String(formData.get("nama") ?? "").trim();
   const nik = String(formData.get("nik") ?? "").trim() || null;
@@ -59,7 +59,7 @@ export async function simpanKaryawan(formData: FormData) {
 }
 
 export async function simpanPenugasanCabang(formData: FormData) {
-  const supabase = await assertHrisManager("/hris/karyawan");
+  const supabase = await assertMasterAdmin("/hris/karyawan", "penugasan cabang");
   const employeeId = String(formData.get("employee_id") ?? "").trim();
   const branchId = String(formData.get("branch_id") ?? "").trim();
   const role = String(formData.get("role") ?? "SECONDARY").trim();

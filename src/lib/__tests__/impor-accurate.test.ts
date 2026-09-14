@@ -310,6 +310,7 @@ const itemAccurate: AccurateItem = {
 describe("buatPreviewAccurate", () => {
   it("membedakan barang baru, sama, update, dilewati, dan ditolak", () => {
     const hasil = buatPreviewAccurate({
+      categories: [],
       rows: [
         itemAccurate,
         { ...itemAccurate, row_no: 3, code: "SKU-2" },
