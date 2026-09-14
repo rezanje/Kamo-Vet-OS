@@ -32,7 +32,7 @@ export default async function RegistrasiPage({
 
   // Ditandai siapa yang memang jaga hari ini — pendaftaran sering menugaskan
   // dokter yang ternyata libur, dan baru ketahuan saat pasien sudah menunggu.
-  const dokter = await daftarDokter(supabase, { tanggal: hariIniWIB() });
+  const dokter = await daftarDokter(supabase, { tanggal: hariIniWIB(), branchId: shift?.branch_id ?? null });
 
   // Datang dari booking online: isian awal diambil dari pesanan pelanggan supaya
   // staf tidak mengetik ulang. Booking yang sudah dipakai mendaftar tidak boleh

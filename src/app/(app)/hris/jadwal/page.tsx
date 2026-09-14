@@ -39,14 +39,17 @@ export default async function JadwalPage({
   const awalBulan = hari[0]?.tanggal ?? `${bulan}-01`;
   const akhirBulan = hari[hari.length - 1]?.tanggal ?? `${bulan}-28`;
 
-  const [{ data: empData }, { data: shiftData }] = await Promise.all([
-    supabase.from("employees").select("id, nama, jabatan").eq("status", "Aktif")
-      .eq("branch_id", cabang).order("nama"),
+  const [{ data: empData }, { data: shiftData }, { data: assignmentData }] = await Promise.all([
+    supabase.from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif")
+      .order("nama"),
     supabase.from("work_shifts").select("id, nama, warna, is_libur, jam_masuk, jam_pulang, branch_id")
       .eq("is_active", true).or(`branch_id.is.null,branch_id.eq.${cabang}`).order("is_libur").order("jam_masuk"),
+    supabase.from("employee_branch_assignments").select("employee_id, branch_id").eq("branch_id", cabang),
   ]);
 
-  const karyawan = (empData ?? []) as KaryawanBaris[];
+  const assignedIds = new Set(((assignmentData ?? []) as { employee_id: string }[]).map((a) => a.employee_id));
+  const karyawan = ((empData ?? []) as (KaryawanBaris & { branch_id?: string | null })[])
+    .filter((e) => assignedIds.has(e.id) || (!assignmentData?.length && e.branch_id === cabang));
   const shifts: ShiftOpsi[] = ((shiftData ?? []) as {
     id: string; nama: string; warna: string; is_libur: boolean;
     jam_masuk: string | null; jam_pulang: string | null;

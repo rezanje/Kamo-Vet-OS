@@ -18,11 +18,22 @@ export type PilihanDokter = { id: string; nama: string; jabatan: string | null; 
  */
 export async function daftarDokter(
   supabase: AnyClient,
-  konteks?: { tanggal?: string },
+  konteks?: { tanggal?: string; branchId?: string | null },
 ): Promise<PilihanDokter[]> {
   const { data } = await supabase
-    .from("employees").select("id, nama, jabatan").eq("status", "Aktif").order("nama");
-  const semua = (data ?? []) as PilihanDokter[];
+    .from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif").order("nama");
+  const semua = (data ?? []) as (PilihanDokter & { branch_id: string | null })[];
+
+  if (konteks?.branchId && semua.length) {
+    const { data: assignments } = await supabase
+      .from("employee_branch_assignments").select("employee_id")
+      .eq("branch_id", konteks.branchId)
+      .in("employee_id", semua.map((e) => e.id));
+    const assigned = new Set((assignments ?? []).map((r: { employee_id: string }) => r.employee_id));
+    for (let i = semua.length - 1; i >= 0; i--) {
+      if (!assigned.has(semua[i].id) && semua[i].branch_id !== konteks.branchId) semua.splice(i, 1);
+    }
+  }
 
   if (konteks?.tanggal && semua.length) {
     const { data: jadwal } = await supabase

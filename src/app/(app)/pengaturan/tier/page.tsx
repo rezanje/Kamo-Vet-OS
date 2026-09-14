@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { updateTierSettings, tutupPoinTahunan } from "./actions";
+import { updateTierSettings, tutupPoinTahunan, jalankanPerawatanLoyaltyAction } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -12,8 +12,8 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/pengaturan");
 
-  const { data: cfg } = await supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min").eq("id", 1).maybeSingle();
-  const c = cfg ?? { bronze_min: 1000000, silver_min: 5000000, gold_min: 15000000, platinum_min: 50000000 };
+  const { data: cfg } = await supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min, points_expiry_enabled, points_expiry_months, tier_downgrade_enabled, tier_downgrade_days").eq("id", 1).maybeSingle();
+  const c = cfg ?? { bronze_min: 1000000, silver_min: 5000000, gold_min: 15000000, platinum_min: 50000000, points_expiry_enabled: false, points_expiry_months: 12, tier_downgrade_enabled: false, tier_downgrade_days: 180 };
 
   // Angka poin beredar dipakai supaya penutupan tidak ditekan buta.
   const { data: poinRows } = await supabase.from("customers").select("points").gt("points", 0);
@@ -51,7 +51,28 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>Saat ini: {rp(r.v)}</div>
           </div>
         ))}
-        <button type="submit" className="btn-acc" style={{ marginTop: 6 }}>Simpan Threshold</button>
+        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Aturan expiry & downgrade</div>
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5, marginBottom: 8 }}>
+          <input type="checkbox" name="points_expiry_enabled" defaultChecked={!!c.points_expiry_enabled} /> Aktifkan expiry poin
+        </label>
+        <div className="fg">
+          <label className="flab">Poin hangus setelah (bulan)</label>
+          <input className="fi" name="points_expiry_months" type="number" min={1} max={120} defaultValue={c.points_expiry_months} />
+        </div>
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5, margin: "10px 0 8px" }}>
+          <input type="checkbox" name="tier_downgrade_enabled" defaultChecked={!!c.tier_downgrade_enabled} /> Aktifkan downgrade tier
+        </label>
+        <div className="fg">
+          <label className="flab">Turun satu tingkat setelah tidak transaksi (hari)</label>
+          <input className="fi" name="tier_downgrade_days" type="number" min={1} max={3650} defaultValue={c.tier_downgrade_days} />
+        </div>
+        <button type="submit" className="btn-acc" style={{ marginTop: 6 }}>Simpan Aturan Loyalty</button>
+      </form>
+
+      <form action={jalankanPerawatanLoyaltyAction} className="crm-sec" style={{ maxWidth: 460, marginTop: 14 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Jalankan perawatan sekarang</div>
+        <div style={{ fontSize: 11, color: "var(--td)", marginBottom: 9 }}>Proses sama dijalankan otomatis tiap awal bulan.</div>
+        {bolehTutup && <button type="submit" className="btn-def" style={{ color: "var(--posb)" }}>Jalankan sekarang</button>}
       </form>
 
       {/* Tutup poin akhir tahun (permintaan Pak Andri, meeting 14 Agustus). */}

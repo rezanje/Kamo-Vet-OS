@@ -49,6 +49,7 @@ const LAINLAIN: { label: string; href?: string }[] = [
   // sini — staf harus hafal URL-nya. Dilaporkan tim 2026-08-11.
   { label: "Booking online", href: "/klinik/booking" },
   { label: "Jadwal dokter", href: "/klinik/jadwal-dokter" },
+  { label: "Maintenance alat medis", href: "/klinik/maintenance" },
   { label: "Pengeluaran", href: "/klinik/pengeluaran" },
   { label: "Permintaan barang", href: "/klinik/permintaan" },
   { label: "Penerimaan barang", href: "/klinik/penerimaan" },

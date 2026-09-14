@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { jalankanPerawatanLoyalty } from "@/lib/loyalty-server";
 
 export async function updateTierSettings(formData: FormData) {
   const supabase = await createClient();
@@ -18,9 +19,33 @@ export async function updateTierSettings(formData: FormData) {
     redirect(`/pengaturan/tier?error=${encodeURIComponent("Threshold harus naik: Bronze < Silver < Gold < Platinum")}`);
   }
 
-  await supabase.from("tier_settings").update({ bronze_min, silver_min, gold_min, platinum_min }).eq("id", 1);
+  const pointsExpiryEnabled = formData.get("points_expiry_enabled") === "on";
+  const pointsExpiryMonths = Math.max(1, Math.min(120, Number(formData.get("points_expiry_months")) || 12));
+  const downgradeEnabled = formData.get("tier_downgrade_enabled") === "on";
+  const downgradeDays = Math.max(1, Math.min(3650, Number(formData.get("tier_downgrade_days")) || 180));
+
+  const { error } = await supabase.from("tier_settings").update({
+    bronze_min, silver_min, gold_min, platinum_min,
+    points_expiry_enabled: pointsExpiryEnabled,
+    points_expiry_months: pointsExpiryMonths,
+    tier_downgrade_enabled: downgradeEnabled,
+    tier_downgrade_days: downgradeDays,
+  }).eq("id", 1);
+  if (error) redirect("/pengaturan/tier?error=" + encodeURIComponent("Gagal menyimpan aturan loyalty"));
   revalidatePath("/pengaturan/tier");
   redirect("/pengaturan/tier?success=1");
+}
+
+export async function jalankanPerawatanLoyaltyAction() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  if (!me || me.role !== "OWNER") {
+    redirect("/pengaturan/tier?error=" + encodeURIComponent("Hanya OWNER yang bisa menjalankan perawatan loyalty"));
+  }
+  const hasil = await jalankanPerawatanLoyalty(supabase);
+  revalidatePath("/pengaturan/tier");
+  redirect("/pengaturan/tier?success=" + encodeURIComponent("Perawatan selesai: " + hasil.expiredPoints + " poin hangus, " + hasil.downgradedCustomers + " tier turun"));
 }
 
 
