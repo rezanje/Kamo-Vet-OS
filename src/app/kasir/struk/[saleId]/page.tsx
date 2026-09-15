@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton, AutoPrint } from "@/components/PrintButton";
 import { lineDiscount } from "@/lib/pos-calc";
+import { ClearKasirDraft } from "@/components/ClearKasirDraft";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -34,6 +35,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
     <>
       <style>{`@media print { @page { size: 80mm auto; margin: 3mm; } .pos-topbar { display: none !important; } }`}</style>
       {autoPrint && <AutoPrint />}
+      <ClearKasirDraft />
 
       <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}>
         <Link href="/kasir" className="back-btn"><i className="ti ti-arrow-left" /> Transaksi baru</Link>

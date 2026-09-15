@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { getAccountBalances } from "@/lib/ledger";
+import { getAccountBalances, nilaiSeksi } from "@/lib/ledger";
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 import { AkunGroup, PetunjukKlikAkun, bikinHrefAkun } from "../AkunGroup";
@@ -28,7 +28,9 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
 
   // Akun induk ikut dikirim ke tampilan supaya subtotalnya muncul, tapi TIDAK ikut
   // dijumlah — saldonya penjumlahan rinciannya, kalau ikut ditambah jadi dobel.
-  const isi = (tipe: string) => balances.filter((b) => b.type === tipe && (b.saldo !== 0 || b.is_header));
+  const isi = (tipe: string) => balances
+    .filter((b) => b.type === tipe && (b.saldo !== 0 || b.is_header))
+    .map((b) => ({ ...b, saldo: nilaiSeksi(b) }));
   const totalDetail = (rows: typeof balances) =>
     rows.filter((b) => !b.is_header).reduce((a, b) => a + b.saldo, 0);
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
-import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/ledger";
+import { getAccountBalances, getAccountLedger, getAccountOpening, nilaiSeksi } from "@/lib/ledger";
 import { AKUN_LABA_DITAHAN, buildClosingLines } from "@/lib/tutup-buku";
 import { hariIniWIB } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
@@ -47,8 +47,8 @@ export default async function LabaDitahanPage({
   // Laba periode yang BELUM ditutup — dihitung dari akun pendapatan & beban yang
   // masih bersaldo. Setelah tutup buku, akun-akun itu nol dan angka ini ikut nol.
   const { laba: labaBelumDitutup } = buildClosingLines(balances);
-  const pendapatan = balances.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + b.saldo, 0);
-  const beban = balances.filter((b) => b.type === "BEBAN").reduce((a, b) => a + b.saldo, 0);
+  const pendapatan = balances.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + nilaiSeksi(b), 0);
+  const beban = balances.filter((b) => b.type === "BEBAN").reduce((a, b) => a + nilaiSeksi(b), 0);
 
   const closedUntil = (lock?.closed_until as string | null) ?? null;
   const adaPenutupan = mutasi.some((m) => m.source === "closing");

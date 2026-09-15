@@ -37,7 +37,7 @@ export function nilaiSeksi(b: { type: string; normal: string; saldo: number }): 
 
 type RawLine = {
   account_id: string; debit: number; credit: number;
-  journal_entries: { tanggal: string; branch_id: string | null; source: string; no_jurnal: string | null; deskripsi: string | null } | null;
+  journal_entries: { tanggal: string; branch_id: string | null; source: string; source_ref: string | null; no_jurnal: string | null; deskripsi: string | null } | null;
 };
 
 // Satu jalur query untuk semua laporan — join inner ke journal_entries supaya
@@ -50,7 +50,7 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
 
   let q = supabase
     .from("journal_lines")
-    .select("account_id, debit, credit, journal_entries!inner(tanggal, branch_id, source, no_jurnal, deskripsi)");
+    .select("account_id, debit, credit, journal_entries!inner(tanggal, branch_id, source, source_ref, no_jurnal, deskripsi)");
   if (f?.from) q = q.gte("journal_entries.tanggal", f.from);
   if (f?.to) q = q.lte("journal_entries.tanggal", f.to);
   if (f?.branchId) q = q.eq("journal_entries.branch_id", f.branchId);
@@ -89,7 +89,7 @@ export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter):
     .sort((x, y) => (TYPE_ORDER.indexOf(x.type) - TYPE_ORDER.indexOf(y.type)) || x.code.localeCompare(y.code));
 }
 
-export type LedgerLine = { tanggal: string; no_jurnal: string; deskripsi: string; source: string; debit: number; credit: number };
+export type LedgerLine = { tanggal: string; no_jurnal: string; deskripsi: string; source: string; source_ref: string; debit: number; credit: number };
 
 // Tanggal sehari sebelum `tanggal` — dipakai untuk memotong "posisi sebelum periode".
 // String-math, bukan new Date(), supaya tidak bergeser di server non-WIB.
@@ -133,6 +133,7 @@ export async function getAccountLedger(supabase: AnyClient, code: string, f?: Le
       no_jurnal: r.journal_entries?.no_jurnal ?? "",
       deskripsi: r.journal_entries?.deskripsi ?? "",
       source: r.journal_entries?.source ?? "manual",
+      source_ref: r.journal_entries?.source_ref ?? "",
       debit: Number(r.debit),
       credit: Number(r.credit),
     }));
@@ -240,6 +241,7 @@ export async function getCashLedgerPerAccount(
       no_jurnal: l.journal_entries?.no_jurnal ?? "",
       deskripsi: l.journal_entries?.deskripsi ?? "",
       source: l.journal_entries?.source ?? "manual",
+      source_ref: l.journal_entries?.source_ref ?? "",
       debit: Number(l.debit),
       credit: Number(l.credit),
     });

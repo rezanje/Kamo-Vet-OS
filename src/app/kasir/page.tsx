@@ -11,6 +11,7 @@ import { stokEfektifGrup, type JenisKomponen } from "@/lib/grup-barang";
 import type { ItemType } from "@/lib/barang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 import { hariIniWIB } from "@/lib/tanggal";
+import { daftarPenjual } from "@/lib/penjual";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -204,6 +205,8 @@ export default async function KasirPage({
     };
   });
 
+  const salespeople = await daftarPenjual(supabase, shift.branch_id);
+
   type CustRaw = {
     id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
     category_id: string | null;
@@ -252,6 +255,7 @@ export default async function KasirPage({
       promoHitung={promoHitung}
       aturanDiskon={aturanPerGolongan}
       infoBarang={Object.fromEntries(infoBarang)}
+      salespeople={salespeople}
       error={error}
     />
   );

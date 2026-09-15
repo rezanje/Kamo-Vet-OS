@@ -15,6 +15,8 @@ import {
 } from "@/lib/harga-golongan";
 import { hitungPromoKeranjang, loadPromoAktif, totalPotonganPromo } from "@/lib/promo-hitung";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { penjualValid } from "@/lib/penjual";
+import { jurnalPenjualanInklusif } from "@/lib/penjualan-jurnal";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -31,8 +33,12 @@ export async function checkoutSale(formData: FormData) {
   const metode = String(formData.get("metode") ?? "Tunai");
   const discount = Number(formData.get("discount")) || 0;
   const bayar = Number(formData.get("bayar")) || 0;
+  const salespersonId = String(formData.get("salespersonId") ?? "");
 
   if (!branchId) redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih cabang dulu")}`);
+  if (!(await penjualValid(supabase, salespersonId, branchId))) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih tenaga penjual atau pelaksana yang bertugas di cabang ini")}`);
+  }
 
   let cart: CartLine[] = [];
   try {
@@ -145,6 +151,7 @@ export async function checkoutSale(formData: FormData) {
       subtotal, discount: discount + potonganPromo, diskon_kategori: diskonKategori,
       total, metode_bayar: metode, bayar, kembali, poin_earned: poin,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
+      salesperson_id: salespersonId,
     })
     .select("id").single();
   if (saleErr || !sale) redirect(`/pos/transaksi?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
@@ -185,7 +192,7 @@ export async function checkoutSale(formData: FormData) {
   // Accounting: Dr Kas/Bank; Cr Pendapatan (+ PPN Keluaran bila Mode PKP aktif).
   // Harga POS = PPN-inklusif (standar retail).
   const kasCode = await kodeAkunBayar(supabase, metode, branchId);
-  const { dpp: dppPos, ppn: ppnPos } = splitPpnInklusif(total, await getPajakSettings(supabase));
+  const pajak = await getPajakSettings(supabase);
   const todayIso = hariIniWIB();
   await postJournal(supabase, {
     tanggal: todayIso,
@@ -193,11 +200,10 @@ export async function checkoutSale(formData: FormData) {
     source: "sale",
     sourceRef: noStruk,
     branchId,
-    lines: [
-      { code: kasCode, debit: total, credit: 0 },
-      { code: "4101", debit: 0, credit: dppPos },
-      ...(ppnPos > 0 ? [{ code: "2201", debit: 0, credit: ppnPos }] : []),
-    ],
+    lines: jurnalPenjualanInklusif({
+      kasCode, subtotal, total,
+      splitPajak: (nilai) => splitPpnInklusif(nilai, pajak),
+    }),
   });
 
   // HPP = cost FIFO riil dari layer yang terkonsumsi (bukan buy_price statis).

@@ -21,13 +21,9 @@ export const SISI_WAJAR: Record<TipeAkun, "D" | "K"> = {
 };
 
 /**
- * Akun kontra (saldo normalnya berlawanan dengan kelompoknya) hanya masuk akal di
- * neraca — contohnya 1509 Akumulasi Penyusutan yang bertipe ASET tapi bersaldo
- * kredit, dan sudah ditangani `nilaiSeksi` di lib/ledger.
- *
- * Untuk PENDAPATAN & BEBAN tidak boleh: Laba Rugi, dashboard, dan jurnal penutup
- * membaca saldo mentah tanpa lewat `nilaiSeksi`, jadi akun kontra di dua kelompok
- * itu akan menggandakan angkanya saat tutup buku.
+ * Akun kontra buatan pengguna dibatasi ke neraca. Akun sistem 4102 adalah
+ * pengecualian terkontrol untuk diskon penjualan; laporan dan tutup buku sudah
+ * menghitung sisi Debit-nya sebagai pengurang pendapatan.
  */
 export const BOLEH_KONTRA: TipeAkun[] = ["ASET", "LIABILITAS", "EKUITAS"];
 
@@ -60,6 +56,7 @@ export const KODE_SISTEM: Record<string, string> = {
   "3101": "modal pemilik (saldo awal & saldo awal rekening)",
   "3201": "laba ditahan (target jurnal penutup)",
   "4101": "pendapatan penjualan produk",
+  "4102": "diskon penjualan — pengurang pendapatan bruto",
   "4201": "pendapatan jasa klinik",
   "4301": "pendapatan bunga bank (rekonsiliasi)",
   "4302": "laba pelepasan aset tetap",

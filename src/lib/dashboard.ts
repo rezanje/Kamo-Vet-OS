@@ -1,5 +1,5 @@
 // Agregat dashboard keuangan (ala Accurate). Read-only, hitung di JS.
-import { getAccountBalances } from "./ledger";
+import { getAccountBalances, nilaiSeksi } from "./ledger";
 import { kodeSemuaRekening } from "./kas-akun";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,16 +58,16 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   ]);
 
   // ── Laba/Rugi ──
-  const bal = balances as { code: string; type: string; saldo: number }[];
-  const pendapatan = bal.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + b.saldo, 0);
-  const hpp = bal.filter((b) => b.code === "5101").reduce((a, b) => a + b.saldo, 0);
-  const pengeluaran = bal.filter((b) => b.type === "BEBAN" && b.code !== "5101").reduce((a, b) => a + b.saldo, 0);
+  const bal = balances as { code: string; name: string; type: string; normal: string; saldo: number }[];
+  const pendapatan = bal.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + nilaiSeksi(b), 0);
+  const hpp = bal.filter((b) => b.code === "5101").reduce((a, b) => a + nilaiSeksi(b), 0);
+  const pengeluaran = bal.filter((b) => b.type === "BEBAN" && b.code !== "5101").reduce((a, b) => a + nilaiSeksi(b), 0);
   const laba = pendapatan - hpp - pengeluaran;
 
   // ── Beban breakdown (opex, top 5 + lainnya) ──
-  const bebanAll = (balances as { code: string; name: string; type: string; saldo: number }[])
-    .filter((b) => b.type === "BEBAN" && b.code !== "5101" && b.saldo > 0)
-    .map((b) => ({ name: b.name, amount: b.saldo }))
+  const bebanAll = bal
+    .filter((b) => b.type === "BEBAN" && b.code !== "5101" && nilaiSeksi(b) > 0)
+    .map((b) => ({ name: b.name, amount: nilaiSeksi(b) }))
     .sort((a, b) => b.amount - a.amount);
   const beban = bebanAll.slice(0, 5);
   const lainnya = bebanAll.slice(5).reduce((a, b) => a + b.amount, 0);

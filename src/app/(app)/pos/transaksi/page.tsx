@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { PosClient, type Item, type Cust } from "./PosClient";
+import { daftarPenjual } from "@/lib/penjual";
 
 export default async function TransaksiPage({
   searchParams,
@@ -11,10 +12,11 @@ export default async function TransaksiPage({
   const { error } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: items }, { data: customers }, { data: branches }] = await Promise.all([
+  const [{ data: items }, { data: customers }, { data: branches }, salespeople] = await Promise.all([
     supabase.from("items").select("id, name, unit, sell_price, target_species").eq("is_active", true).order("name"),
     supabase.from("customers").select("id, name, phone, points, customer_categories(nama, diskon_persen), pets(id, name, species)").order("name"),
     supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
+    daftarPenjual(supabase, ""),
   ]);
 
   // Satuan berjenjang: kasir pilih pcs/box saat menambah ke keranjang.
@@ -76,6 +78,7 @@ export default async function TransaksiPage({
         items={katalog}
         customers={pelanggan}
         branches={branches ?? []}
+        salespeople={salespeople}
         hargaPerCabang={hargaPerCabang}
       />
     </>

@@ -31,6 +31,7 @@ type SaleRow = {
   created_at: string;
   branch_id: string | null;
   cashier_id: string | null;
+  salesperson_id: string | null;
   total: number;
   sale_items: SaleItemRow[] | null;
 };
@@ -45,6 +46,7 @@ type InvoiceRow = {
   id: string;
   paid_at: string;
   total: number;
+  salesperson_id: string | null;
   visits: { branch_id: string | null; doctor_id: string | null } | { branch_id: string | null; doctor_id: string | null }[] | null;
   invoice_items: { item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
 };
@@ -82,7 +84,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
     supabase.from("sales")
-      .select("id, created_at, branch_id, cashier_id, total, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)")
+      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)")
       .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`),
     supabase.from("employees").select("id, profile_id").not("profile_id", "is", null),
     supabase.from("items").select("id, category_id"),
@@ -107,7 +109,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   const infoStruk = new Map<string, { employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number> }>();
 
   for (const s of sales) {
-    const employeeId = s.cashier_id ? empPerProfile.get(s.cashier_id) ?? null : null;
+    const employeeId = s.salesperson_id ?? (s.cashier_id ? empPerProfile.get(s.cashier_id) ?? null : null);
     const items = s.sale_items ?? [];
 
     const subtotalPer = items.map((it) => lineSubtotal({
@@ -189,13 +191,13 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
   const { data: invData } = await supabase
     .from("invoices")
-    .select("id, paid_at, total, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp)")
+    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp)")
     .eq("paid_status", "Lunas")
     .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`);
 
   for (const inv of (invData ?? []) as InvoiceRow[]) {
     const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
-    const employeeId = v?.doctor_id ?? null;
+    const employeeId = inv.salesperson_id ?? v?.doctor_id ?? null;
     const items = inv.invoice_items ?? [];
 
     // Baris tagihan klinik tidak punya diskon per baris; potongannya cuma di kepala
@@ -307,14 +309,14 @@ async function infoStrukLuarPeriode(
   empPerProfile: Map<string, string>,
 ): Promise<{ employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number> } | null> {
   const { data } = await supabase
-    .from("sales").select("branch_id, cashier_id, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
+    .from("sales").select("branch_id, cashier_id, salesperson_id, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
   if (!data) return null;
   const hppPerUnit = new Map<string, number>();
   for (const it of (data.sale_items ?? []) as { item_id: string | null; qty: number; hpp: number | null }[]) {
     if (it.item_id && it.hpp !== null && Number(it.qty) > 0) hppPerUnit.set(it.item_id, Number(it.hpp) / Number(it.qty));
   }
   return {
-    employeeId: data.cashier_id ? empPerProfile.get(data.cashier_id) ?? null : null,
+    employeeId: data.salesperson_id ?? (data.cashier_id ? empPerProfile.get(data.cashier_id) ?? null : null),
     branchId: data.branch_id,
     hppPerUnit,
   };

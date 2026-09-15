@@ -10,6 +10,7 @@ import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
 import { toBaseQty } from "@/lib/satuan";
 import { jurnalFakturJual, jurnalPengiriman, pesananSelesai, prefixFakturJual, sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import { alokasiHppFaktur, type BarisKirimanHpp } from "@/lib/hpp-rincian";
 
 const LIST = "/penjualan/pesanan";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
@@ -216,6 +217,20 @@ export async function buatFakturJual(formData: FormData) {
   const dpp = tagih.reduce((a, b) => a + b.kali_ini * Number(b.harga), 0);
   const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
 
+  const { data: kirimanData } = await supabase
+    .from("sales_deliveries")
+    .select("tanggal, created_at, sales_delivery_items(order_item_id, qty, hpp)")
+    .eq("order_id", id)
+    .order("tanggal")
+    .order("created_at");
+  const lapisanHpp: BarisKirimanHpp[] = (kirimanData ?? []).flatMap((delivery: {
+    sales_delivery_items: { order_item_id: string | null; qty: number; hpp: number | null }[] | null;
+  }) => (delivery.sales_delivery_items ?? []).map((item) => ({
+    orderItemId: item.order_item_id,
+    qty: Number(item.qty),
+    hpp: item.hpp === null ? null : Number(item.hpp),
+  })));
+
   const { data: { user } } = await supabase.auth.getUser();
 
   // Seri nomor dipisah per unit bisnis: FJ untuk petshop, FJK untuk klinik
@@ -232,9 +247,15 @@ export async function buatFakturJual(formData: FormData) {
   if (error || !inv) gagal(error?.message ?? "Gagal menyimpan faktur");
 
   for (const b of tagih) {
+    const hpp = alokasiHppFaktur({
+      orderItemId: b.id,
+      qtySudahFaktur: Number(b.qty_faktur),
+      qtyFakturBaru: b.kali_ini,
+      kiriman: lapisanHpp,
+    });
     await supabase.from("sales_invoice_items").insert({
       invoice_id: inv!.id, order_item_id: b.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.kali_ini, harga: b.harga,
+      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.kali_ini, harga: b.harga, hpp,
     });
     await supabase.from("sales_order_items")
       .update({ qty_faktur: Number(b.qty_faktur) + b.kali_ini }).eq("id", b.id);
