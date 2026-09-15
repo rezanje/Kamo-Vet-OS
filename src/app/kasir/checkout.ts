@@ -20,6 +20,8 @@ import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
+import { penjualValid } from "@/lib/penjual";
+import { jurnalPenjualanInklusif } from "@/lib/penjualan-jurnal";
 import {
   expandBarisGrup,
   kebutuhanStokCheckout,
@@ -54,6 +56,10 @@ export async function checkoutKasir(formData: FormData) {
   const branchId = shift!.branch_id;
   const customerId = String(formData.get("customerId") ?? "") || null;
   if (!customerId) redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu sebelum bayar")}`);
+  const salespersonId = String(formData.get("salespersonId") ?? "");
+  if (!(await penjualValid(supabase, salespersonId, branchId))) {
+    redirect(`/kasir?error=${encodeURIComponent("Pilih tenaga penjual atau pelaksana yang aktif di cabang ini")}`);
+  }
   const metode = String(formData.get("metode") ?? "");
   if (!metode) redirect(`/kasir?error=${encodeURIComponent("Pilih metode pembayaran dulu")}`);
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
@@ -401,6 +407,7 @@ export async function checkoutKasir(formData: FormData) {
       total, metode_bayar: metode, bayar: metode === "Tunai" ? bayar : total,
       kembali, poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
       cashier_id: user?.id ?? null, shift_id: shift!.id,
+      salesperson_id: salespersonId,
     })
     .select("id").single();
   if (saleErr || !sale) redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
@@ -487,16 +494,15 @@ export async function checkoutKasir(formData: FormData) {
 
   // Jurnal: pendapatan (PPN-inklusif, dipisah) + HPP. Total sudah net semua potongan.
   const kasCode = await kodeAkunBayar(supabase, metode, branchId);
-  const { dpp, ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
+  const pajak = await getPajakSettings(supabase);
   const todayIso = hariIniWIB();
   if (total > 0) {
     await postJournal(supabase, {
       tanggal: todayIso, deskripsi: `Penjualan POS ${noStruk}`, source: "sale", sourceRef: noStruk, branchId,
-      lines: [
-        { code: kasCode, debit: total, credit: 0 },
-        { code: "4101", debit: 0, credit: dpp },
-        ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
-      ],
+      lines: jurnalPenjualanInklusif({
+        kasCode, subtotal, total,
+        splitPajak: (nilai) => splitPpnInklusif(nilai, pajak),
+      }),
     });
   }
   // HPP = cost FIFO riil dari layer yang terkonsumsi (bukan buy_price statis).

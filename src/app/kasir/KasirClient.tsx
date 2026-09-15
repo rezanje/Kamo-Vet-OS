@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { checkoutKasir } from "./checkout";
 import { tambahCustomerKasir } from "./actions";
@@ -13,6 +13,8 @@ import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import type { ItemType } from "@/lib/barang";
+import { bacaDraftKasir, KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draft";
+import type { PilihanPenjual } from "@/lib/penjual";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -81,12 +83,13 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 
 export function KasirClient({
   branchName, items, customers, vouchers, hariIni, promos = [], promoHitung = [],
-  aturanDiskon = {}, infoBarang = {}, error,
+  aturanDiskon = {}, infoBarang = {}, salespeople = [], error,
 }: {
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
+  salespeople?: PilihanPenjual[];
   error?: string;
 }) {
   const [q, setQ] = useState("");
@@ -96,6 +99,7 @@ export function KasirClient({
   const [cartRaw, setCart] = useState<CartLine[]>([]);
   const [custQ, setCustQ] = useState("");
   const [cust, setCust] = useState<CustRow | null>(null);
+  const [salespersonId, setSalespersonId] = useState("");
   const [diskon, setDiskon] = useState(0);
   const [diskonPct, setDiskonPct] = useState(false);
   const [poin, setPoin] = useState(0);
@@ -106,6 +110,61 @@ export function KasirClient({
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addPending, startAdd] = useTransition();
   const router = useRouter();
+  const draftSiap = useRef(false);
+
+  useEffect(() => {
+    const draft = bacaDraftKasir(window.sessionStorage.getItem(KASIR_DRAFT_KEY));
+    const timer = window.setTimeout(() => {
+      if (!draft) {
+        draftSiap.current = true;
+        return;
+      }
+      const customer = customers.find((c) => c.id === draft.customerId) ?? null;
+      setCust(customer);
+      setCustQ(customer?.name ?? "");
+      setSalespersonId(salespeople.some((p) => p.id === draft.salespersonId) ? draft.salespersonId : "");
+      setMetode(draft.metode);
+      setDiskon(draft.diskon);
+      setDiskonPct(draft.diskonPct);
+      setPoin(draft.poin);
+      setVoucher(draft.voucher);
+      setBayar(draft.bayar);
+      setCart(draft.cart.flatMap((line) => {
+        const item = items.find((i) => i.id === line.item_id);
+        if (!item) return [];
+        const unit = item.satuan?.find((u) => u.unit === line.satuan);
+        return [{
+          ...line,
+          nama: item.name,
+          harga: unit?.sell_price ?? item.harga,
+          hargaNormal: unit?.sell_price ?? item.harga,
+          minJual: Math.max(1, Number(item.minJual) || 0),
+          satuan: unit?.unit ?? line.satuan,
+          faktor: unit?.factor ?? (Number(line.faktor) || 1),
+          opsiSatuan: item.satuan,
+          tiers: item.tiers ?? [],
+          stok: item.stok,
+          modal: Number(item.modal) || 0,
+          groupComponents: item.groupComponents,
+        } as CartLine];
+      }));
+      draftSiap.current = true;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [customers, items, salespeople]);
+
+  useEffect(() => {
+    if (!draftSiap.current) return;
+    if (cartRaw.length === 0) {
+      window.sessionStorage.removeItem(KASIR_DRAFT_KEY);
+      return;
+    }
+    const draft: KasirDraft = {
+      version: 1, savedAt: Date.now(), customerId: cust?.id ?? "", salespersonId,
+      metode, diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
+    };
+    window.sessionStorage.setItem(KASIR_DRAFT_KEY, JSON.stringify(draft));
+  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -280,7 +339,7 @@ export function KasirClient({
   // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
-  const canPay = cart.length > 0 && !!metode && !kurang && !voucherInvalid && !!cust && dibawahMin.length === 0;
+  const canPay = cart.length > 0 && !!metode && !!salespersonId && !kurang && !voucherInvalid && !!cust && dibawahMin.length === 0;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
@@ -476,6 +535,7 @@ export function KasirClient({
         {/* KERANJANG BELANJA */}
         <form action={checkoutKasir} className="card">
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
+          <input type="hidden" name="salespersonId" value={salespersonId} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />
           <input type="hidden" name="diskon" value={diskonVal} />
           <input type="hidden" name="poinDigunakan" value={poinUsed} />
@@ -576,6 +636,15 @@ export function KasirClient({
           </div>
 
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
+            <div style={{ marginBottom: 8 }}>
+              <label className="flab">Tenaga penjual / pelaksana *</label>
+              <select className="fi" value={salespersonId} onChange={(e) => setSalespersonId(e.target.value)} required>
+                <option value="">Pilih nama</option>
+                {salespeople.map((person) => (
+                  <option key={person.id} value={person.id}>{person.nama}{person.jabatan ? ` — ${person.jabatan}` : ""}</option>
+                ))}
+              </select>
+            </div>
             {/* Peringatan, bukan larangan (permintaan Pak Andri, meeting 14 Agustus). */}
             {peringatan.stokKurang.length > 0 && (
               <div style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>

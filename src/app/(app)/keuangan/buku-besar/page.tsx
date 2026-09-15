@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/ledger";
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
+import { NoDok } from "@/components/NoDok";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -106,12 +107,12 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 560 }}>
               <thead>
-                <tr><th>Tanggal</th><th>No. Jurnal</th><th>Keterangan</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>Saldo</th></tr>
+                <tr><th>Tanggal</th><th>No. Jurnal</th><th>Dokumen</th><th>Keterangan</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>Saldo</th></tr>
               </thead>
               <tbody>
                 {dari && (
                   <tr>
-                    <td colSpan={5} style={{ fontSize: 11, fontStyle: "italic", color: "var(--tm)" }}>Saldo awal per {fmtDate(dari)}</td>
+                    <td colSpan={6} style={{ fontSize: 11, fontStyle: "italic", color: "var(--tm)" }}>Saldo awal per {fmtDate(dari)}</td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--tm)" }}>{rp(saldoAwal)}</td>
                   </tr>
                 )}
@@ -119,6 +120,12 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                   <tr key={i}>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(l.tanggal)}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{l.no_jurnal}</td>
+                    <td style={{ fontSize: 10.5 }}>
+                      <NoDok nomor={l.source_ref} />
+                      {selected.code === "5101" && l.source_ref && (
+                        <Link href={`/keuangan/buku-besar/hpp/${encodeURIComponent(l.source_ref)}`} style={{ display: "block", fontSize: 9.5, color: "#2563eb", marginTop: 2 }}>Rincian HPP</Link>
+                      )}
+                    </td>
                     <td style={{ fontSize: 11.5 }}>{l.deskripsi}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{l.debit ? rp(l.debit) : "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{l.credit ? rp(l.credit) : "—"}</td>
@@ -126,7 +133,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                   </tr>
                 ))}
                 {ledgerRows.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada mutasi.</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada mutasi.</td></tr>
                 )}
               </tbody>
             </table>

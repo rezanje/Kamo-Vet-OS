@@ -2,7 +2,7 @@
 
 export const AKUN_LABA_DITAHAN = "3201";
 
-type Balance = { code: string; type: string; saldo: number };
+type Balance = { code: string; type: string; saldo: number; normal?: string };
 export type ClosingLine = { code: string; debit: number; credit: number };
 
 // Jurnal penutup: nol-kan semua akun PENDAPATAN & BEBAN, selisih (laba/rugi) ke Laba Ditahan.
@@ -15,11 +15,17 @@ export function buildClosingLines(balances: Balance[]): { lines: ClosingLine[]; 
   for (const b of balances) {
     if (b.saldo === 0) continue;
     if (b.type === "PENDAPATAN") {
-      totalPendapatan += b.saldo;
-      lines.push(b.saldo > 0 ? { code: b.code, debit: b.saldo, credit: 0 } : { code: b.code, debit: 0, credit: -b.saldo });
+      const kreditBersih = b.normal === "D" ? -b.saldo : b.saldo;
+      totalPendapatan += kreditBersih;
+      lines.push(kreditBersih > 0
+        ? { code: b.code, debit: kreditBersih, credit: 0 }
+        : { code: b.code, debit: 0, credit: -kreditBersih });
     } else if (b.type === "BEBAN") {
-      totalBeban += b.saldo;
-      lines.push(b.saldo > 0 ? { code: b.code, debit: 0, credit: b.saldo } : { code: b.code, debit: -b.saldo, credit: 0 });
+      const debitBersih = b.normal === "K" ? -b.saldo : b.saldo;
+      totalBeban += debitBersih;
+      lines.push(debitBersih > 0
+        ? { code: b.code, debit: 0, credit: debitBersih }
+        : { code: b.code, debit: -debitBersih, credit: 0 });
     }
   }
 

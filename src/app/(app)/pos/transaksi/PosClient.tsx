@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { diskonGolongan } from "@/lib/harga-golongan";
+import { bacaDraftPos, POS_DRAFT_KEY, type PosDraft } from "@/lib/pos-draft";
+import type { PilihanPenjual } from "@/lib/penjual";
 
 export type Item = { id: string; name: string; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
@@ -28,8 +30,8 @@ const lineKey = (l: { item_id: string; satuan: string }) => `${l.item_id}::${l.s
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, hargaPerCabang = {} }: {
-  items: Item[]; customers: Cust[]; branches: Branch[]; hargaPerCabang?: HargaPerCabang;
+export function PosClient({ items, customers, branches, salespeople, hargaPerCabang = {} }: {
+  items: Item[]; customers: Cust[]; branches: Branch[]; salespeople: PilihanPenjual[]; hargaPerCabang?: HargaPerCabang;
 }) {
   const [branchId, setBranchId] = useState("");
   const [q, setQ] = useState("");
@@ -40,6 +42,58 @@ export function PosClient({ items, customers, branches, hargaPerCabang = {} }: {
   const [metode, setMetode] = useState("Tunai");
   const [discount, setDiscount] = useState(0);
   const [bayar, setBayar] = useState(0);
+  const [salespersonId, setSalespersonId] = useState("");
+  const draftReady = useRef(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const draft = bacaDraftPos(sessionStorage.getItem(POS_DRAFT_KEY));
+      if (draft) {
+        const branchExists = branches.some((branch) => branch.id === draft.branchId);
+        const branch = branchExists ? draft.branchId : "";
+        const customer = customers.find((candidate) => candidate.id === draft.customerId) ?? null;
+        const restoredCart = draft.cart.flatMap((line): Line[] => {
+          const item = items.find((candidate) => candidate.id === line.item_id);
+          const unit = item?.units.find((candidate) => candidate.unit === line.satuan);
+          if (!item || !unit) return [];
+          const price = hargaPerCabang[branch]?.[`${item.id}|${unit.unit}`] ?? unit.sell_price;
+          return [{ ...line, nama: item.name, target_species: item.target_species, harga: price, faktor: unit.factor }];
+        });
+        setBranchId(branch);
+        setCust(customer);
+        setCustQ(customer?.name ?? "");
+        setPetId(customer?.pets.some((pet) => pet.id === draft.petId) ? draft.petId : "");
+        setSalespersonId(salespeople.some((person) => person.id === draft.salespersonId) ? draft.salespersonId : "");
+        setMetode(draft.metode || "Tunai");
+        setDiscount(draft.discount);
+        setBayar(draft.bayar);
+        setCart(restoredCart);
+      }
+      draftReady.current = true;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [branches, customers, hargaPerCabang, items, salespeople]);
+
+  useEffect(() => {
+    if (!draftReady.current) return;
+    if (!cart.length) {
+      sessionStorage.removeItem(POS_DRAFT_KEY);
+      return;
+    }
+    const draft: PosDraft = {
+      version: 1,
+      savedAt: Date.now(),
+      branchId,
+      customerId: cust?.id ?? "",
+      petId,
+      salespersonId,
+      metode,
+      discount,
+      bayar,
+      cart,
+    };
+    sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
+  }, [branchId, bayar, cart, cust?.id, discount, metode, petId, salespersonId]);
 
   // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
   const katalog = useMemo(() => {
@@ -114,7 +168,7 @@ export function PosClient({ items, customers, branches, hargaPerCabang = {} }: {
   const kembali = Math.max(0, bayar - total);
   const poin = cust ? Math.floor(total / 1000) : 0;
   const kurang = metode === "Tunai" && bayar < total;
-  const canPay = branchId && cart.length > 0 && !kurang;
+  const canPay = branchId && salespersonId && cart.length > 0 && !kurang;
 
   const pickCust = (c: Cust) => { setCust(c); setCustQ(c.name); setPetId(""); };
   const clearCust = () => { setCust(null); setCustQ(""); setPetId(""); };
@@ -124,6 +178,7 @@ export function PosClient({ items, customers, branches, hargaPerCabang = {} }: {
       <input type="hidden" name="branchId" value={branchId} />
       <input type="hidden" name="customerId" value={cust?.id ?? ""} />
       <input type="hidden" name="petId" value={petId} />
+      <input type="hidden" name="salespersonId" value={salespersonId} />
       <input type="hidden" name="metode" value={metode} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="bayar" value={bayar} />
@@ -192,6 +247,18 @@ export function PosClient({ items, customers, branches, hargaPerCabang = {} }: {
               )}
             </div>
           )}
+
+          <div>
+            <label className="flab">Tenaga penjual / pelaksana *</label>
+            <select className="fi" value={salespersonId} onChange={(e) => setSalespersonId(e.target.value)} required>
+              <option value="">Pilih dokter, groomer, atau staf</option>
+              {salespeople.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.nama}{person.jabatan ? ` — ${person.jabatan}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Items */}
           {cart.map((l) => {

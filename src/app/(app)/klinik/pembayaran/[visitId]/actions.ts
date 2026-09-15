@@ -19,6 +19,7 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { kirimStrukWa } from "@/lib/wa-engine";
+import { balikJurnalPenjualan, jurnalPenjualanKlinik } from "@/lib/penjualan-jurnal";
 
 type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null; diskon_persen?: number };
 
@@ -102,16 +103,35 @@ async function kembalikanStokObat(
 // Baris jurnal invoice klinik (dipakai posting normal + pembalikan saat edit/void).
 // kasCode diserahkan pemanggil: posting baru memakai peta rekening, pembalikan memakai
 // akun yang dipakai jurnal aslinya.
-function invoiceJournalLines(inv: { total: number; dpp: number; tax: number; dp_amount: number; paid_status: string }, kasCode: string, reverse = false) {
+function invoiceJournalLines(inv: { subtotal: number; discount: number; total: number; tax: number; dp_amount: number; paid_status: string }, kasCode: string, reverse = false) {
+  const cashReceived = inv.paid_status === "Lunas" ? inv.total : inv.paid_status === "DP" ? inv.dp_amount : 0;
+  const lines = jurnalPenjualanKlinik({
+    kasCode, subtotal: inv.subtotal, discount: inv.discount,
+    total: inv.total, tax: inv.tax, cashReceived,
+  });
+  return reverse ? balikJurnalPenjualan(lines) : lines;
+}
+
+function invoiceJournalLinesLegacy(inv: { total: number; dpp: number; tax: number; dp_amount: number; paid_status: string }, kasCode: string) {
   const cashReceived = inv.paid_status === "Lunas" ? inv.total : inv.paid_status === "DP" ? inv.dp_amount : 0;
   const piutang = Math.max(0, inv.total - cashReceived);
-  const lines = [
+  return [
     ...(cashReceived > 0 ? [{ code: kasCode, debit: cashReceived, credit: 0 }] : []),
     ...(piutang > 0 ? [{ code: "1201", debit: piutang, credit: 0 }] : []),
     { code: "4201", debit: 0, credit: inv.dpp },
     ...(inv.tax > 0 ? [{ code: "2201", debit: 0, credit: inv.tax }] : []),
   ];
-  return reverse ? lines.map((l) => ({ code: l.code, debit: l.credit, credit: l.debit })) : lines;
+}
+
+async function jurnalPakaiDiskonTerpisah(supabase: Awaited<ReturnType<typeof createClient>>, sourceRef: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("journal_entries")
+    .select("journal_lines(coa_accounts(code))")
+    .eq("source_ref", sourceRef);
+  return (data ?? []).some((entry) => (entry.journal_lines ?? []).some((line: { coa_accounts: { code: string } | { code: string }[] | null }) => {
+    const account = Array.isArray(line.coa_accounts) ? line.coa_accounts[0] : line.coa_accounts;
+    return account?.code === "4102";
+  }));
 }
 
 const todayIso = () => hariIniWIB();
@@ -193,7 +213,7 @@ export async function bayarVisit(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, todayIso());
   if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
-  const { data: v } = await supabase.from("visits").select("branch_id, customer_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
+  const { data: v } = await supabase.from("visits").select("branch_id, customer_id, doctor_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
 
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
@@ -289,7 +309,7 @@ export async function bayarVisit(formData: FormData) {
     // kali — sekali saat shift asal ditutup, sekali lagi di shift yang baru.
     const { error: upErr } = await supabase
       .from("invoices")
-      .update({ subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, voucher_code: voucherCode })
+      .update({ subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, voucher_code: voucherCode, salesperson_id: v?.doctor_id ?? null })
       .eq("id", existing.id);
     if (upErr) redirect(`${back}?error=${encodeURIComponent(upErr.message)}`);
 
@@ -314,6 +334,7 @@ export async function bayarVisit(formData: FormData) {
 
     // §7 edge case: buku besar wajib re-sync — balikkan jurnal lama, posting ulang yang baru.
     const oldDpp = Math.max(0, Number(existing.subtotal) - Number(existing.discount));
+    const oldPakaiDiskonTerpisah = await jurnalPakaiDiskonTerpisah(supabase, existing.invoice_no);
     const kasLama = await kodeKasJurnalAsal(
       supabase, "klinik", existing.invoice_no,
       await kodeAkunBayar(supabase, existing.metode_bayar, v?.branch_id ?? null),
@@ -322,12 +343,14 @@ export async function bayarVisit(formData: FormData) {
     await postJournal(supabase, {
       tanggal: todayIso(), deskripsi: `Pembalikan edit invoice ${existing.invoice_no}`, source: "klinik-edit",
       sourceRef: existing.invoice_no, branchId: v?.branch_id ?? null,
-      lines: invoiceJournalLines({ total: Number(existing.total), dpp: oldDpp, tax: Number(existing.tax), dp_amount: Number(existing.dp_amount), paid_status: existing.paid_status }, kasLama, true),
+      lines: oldPakaiDiskonTerpisah
+        ? invoiceJournalLines({ subtotal: Number(existing.subtotal), discount: Number(existing.discount), total: Number(existing.total), tax: Number(existing.tax), dp_amount: Number(existing.dp_amount), paid_status: existing.paid_status }, kasLama, true)
+        : balikJurnalPenjualan(invoiceJournalLinesLegacy({ total: Number(existing.total), dpp: oldDpp, tax: Number(existing.tax), dp_amount: Number(existing.dp_amount), paid_status: existing.paid_status }, kasLama)),
     });
     await postJournal(supabase, {
       tanggal: todayIso(), deskripsi: `Posting ulang invoice ${existing.invoice_no} (edit)`, source: "klinik-edit",
       sourceRef: existing.invoice_no, branchId: v?.branch_id ?? null,
-      lines: invoiceJournalLines({ total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus }, kasBaru),
+      lines: invoiceJournalLines({ subtotal, discount, total, tax, dp_amount: dpAmount, paid_status: paidStatus }, kasBaru),
     });
 
     // Jurnal HPP juga wajib ikut re-sync — kalau hanya pendapatannya yang dibalik,
@@ -363,7 +386,7 @@ export async function bayarVisit(formData: FormData) {
 
   const { data: inv, error: invErr } = await supabase
     .from("invoices")
-    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, shift_id: klinikShift.id, voucher_code: voucherCode })
+    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: v?.doctor_id ?? null })
     .select("id").single();
   if (invErr || !inv) {
     redirect(`${back}?error=${encodeURIComponent(invErr?.message ?? "Gagal simpan invoice")}`);
@@ -400,7 +423,7 @@ export async function bayarVisit(formData: FormData) {
     sourceRef: invoiceNo,
     branchId: v?.branch_id ?? null,
     lines: invoiceJournalLines(
-      { total, dpp, tax, dp_amount: dpAmount, paid_status: paidStatus },
+      { subtotal, discount, total, tax, dp_amount: dpAmount, paid_status: paidStatus },
       await kodeAkunBayar(supabase, metode, v?.branch_id ?? null),
     ),
   });
@@ -493,6 +516,7 @@ export async function bayarRombongan(formData: FormData) {
   type Siap = {
     b: typeof belum[number];
     branchId: string | null;
+    salespersonId: string | null;
     rows: Awaited<ReturnType<typeof barisTagihanVisit>>;
     subtotal: number;
     potonganNonVoucher: number;
@@ -501,7 +525,7 @@ export async function bayarRombongan(formData: FormData) {
 
   for (const b of belum) {
     const { data: v } = await supabase
-      .from("visits").select("branch_id, customer_id, poli").eq("id", b.visitId).maybeSingle();
+      .from("visits").select("branch_id, customer_id, doctor_id, poli").eq("id", b.visitId).maybeSingle();
     if (!v) { dilewati.push(b.hewan); continue; }
 
     // §6.3: tindakan berisiko wajib punya persetujuan bertanda tangan. Berlaku per
@@ -531,7 +555,7 @@ export async function bayarRombongan(formData: FormData) {
     const potonganPet = await hitungPotonganKlinik(supabase, {
       branchId: v.branch_id ?? null, customerId: v.customer_id ?? null, rows,
     });
-    siap.push({ b, branchId: v.branch_id ?? null, rows, subtotal, potonganNonVoucher: potonganPet.total });
+    siap.push({ b, branchId: v.branch_id ?? null, salespersonId: v.doctor_id ?? null, rows, subtotal, potonganNonVoucher: potonganPet.total });
   }
 
   // Voucher dihitung dari GABUNGAN tagihan seluruh hewan (setelah promo & golongan),
@@ -572,7 +596,7 @@ export async function bayarRombongan(formData: FormData) {
   let poinTerpakaiRupiah = 0;
   let totalDibayarRombongan = 0;
   for (const [idx, s] of siap.entries()) {
-    const { b, rows, subtotal, branchId } = s;
+    const { b, rows, subtotal, branchId, salespersonId } = s;
     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
     const dpp = Math.max(0, subtotal - discount);
     const { tax, total } = tambahPpn(dpp, pajakSettings);
@@ -585,6 +609,7 @@ export async function bayarRombongan(formData: FormData) {
         dp_amount: 0, dp_date: null, paid_status: "Lunas", metode_bayar: metode,
         paid_at: new Date().toISOString(), shift_id: klinikShift.id,
         voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null,
+        salesperson_id: salespersonId,
       })
       .select("id").single();
     if (invErr || !inv) {
@@ -610,7 +635,7 @@ export async function bayarRombongan(formData: FormData) {
       tanggal: todayIso(), deskripsi: `Pendapatan jasa klinik ${invoiceNo}`, source: "klinik",
       sourceRef: invoiceNo, branchId: branchId,
       lines: invoiceJournalLines(
-        { total, dpp, tax, dp_amount: 0, paid_status: "Lunas" },
+        { subtotal, discount, total, tax, dp_amount: 0, paid_status: "Lunas" },
         await kodeAkunBayar(supabase, metode, branchId),
       ),
     });
@@ -661,7 +686,7 @@ export async function voidAndReissue(formData: FormData) {
 
   const { data: inv } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, shift_id")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, shift_id, salesperson_id")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!inv) redirect(`${back}?error=${encodeURIComponent("Invoice aktif tidak ditemukan")}`);
   // Boleh void: invoice lunas, ATAU invoice yang sudah menerima pelunasan piutang
@@ -683,17 +708,23 @@ export async function voidAndReissue(formData: FormData) {
   // 2) balikkan jurnal invoice lama (buku besar tetap sinkron — §7 edge case).
   const dpp = Math.max(0, Number(inv!.subtotal) - Number(inv!.discount));
   const { data: v } = await supabase.from("visits").select("branch_id, customer_id").eq("id", visitId).maybeSingle();
+  const pakaiDiskonTerpisah = await jurnalPakaiDiskonTerpisah(supabase, inv!.invoice_no);
+  const kasAsal = await kodeKasJurnalAsal(
+    supabase, "klinik", inv!.invoice_no,
+    await kodeAkunBayar(supabase, inv!.metode_bayar, v?.branch_id ?? null),
+  );
   await postJournal(supabase, {
     tanggal: todayIso(), deskripsi: `Void invoice ${inv!.invoice_no}`, source: "klinik-void",
     sourceRef: inv!.invoice_no, branchId: v?.branch_id ?? null,
-    lines: invoiceJournalLines(
-      { total: Number(inv!.total), dpp, tax: Number(inv!.tax), dp_amount: Number(inv!.dp_amount), paid_status: inv!.paid_status },
-      await kodeKasJurnalAsal(
-        supabase, "klinik", inv!.invoice_no,
-        await kodeAkunBayar(supabase, inv!.metode_bayar, v?.branch_id ?? null),
-      ),
-      true,
-    ),
+    lines: pakaiDiskonTerpisah
+      ? invoiceJournalLines({
+        subtotal: Number(inv!.subtotal), discount: Number(inv!.discount), total: Number(inv!.total),
+        tax: Number(inv!.tax), dp_amount: Number(inv!.dp_amount), paid_status: inv!.paid_status,
+      }, kasAsal, true)
+      : balikJurnalPenjualan(invoiceJournalLinesLegacy({
+        total: Number(inv!.total), dpp, tax: Number(inv!.tax),
+        dp_amount: Number(inv!.dp_amount), paid_status: inv!.paid_status,
+      }, kasAsal)),
   });
 
   // 2b) invoice belum-lunas dengan pelunasan parsial: jurnal pelunasannya (Dr kas / Cr piutang)
@@ -723,6 +754,7 @@ export async function voidAndReissue(formData: FormData) {
       visit_id: visitId, invoice_no: newNo, subtotal: inv!.subtotal, discount: inv!.discount, tax: inv!.tax,
       total: inv!.total, dp_amount: 0, dp_date: null, paid_status: "Belum Lunas", metode_bayar: inv!.metode_bayar,
       paid_at: null, reissued_from: inv!.id, shift_id: inv!.shift_id,
+      salesperson_id: inv!.salesperson_id,
     })
     .select("id").single();
   if (newErr || !newInv) redirect(`${back}?error=${encodeURIComponent(newErr?.message ?? "Gagal terbitkan ulang")}`);
@@ -736,6 +768,15 @@ export async function voidAndReissue(formData: FormData) {
       item_id: l.item_id, hpp: l.hpp,
     })),
   );
+
+  await postJournal(supabase, {
+    tanggal: todayIso(), deskripsi: `Terbit ulang invoice ${newNo}`, source: "klinik-reissue",
+    sourceRef: newNo, branchId: v?.branch_id ?? null,
+    lines: invoiceJournalLines({
+      subtotal: Number(inv!.subtotal), discount: Number(inv!.discount), total: Number(inv!.total),
+      tax: Number(inv!.tax), dp_amount: 0, paid_status: "Belum Lunas",
+    }, await kodeAkunBayar(supabase, inv!.metode_bayar, v?.branch_id ?? null)),
+  });
 
   await supabase.from("invoice_edit_log").insert({
     invoice_id: inv!.id, edited_by: user?.id ?? null, field_changed: "voided",

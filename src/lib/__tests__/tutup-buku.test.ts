@@ -32,4 +32,14 @@ describe("buildClosingLines", () => {
   it("semua nol -> tidak ada baris", () => {
     expect(buildClosingLines([{ code: "4101", type: "PENDAPATAN", saldo: 0 }]).lines).toHaveLength(0);
   });
+
+  it("akun diskon kontra pendapatan mengurangi laba dan ditutup ke kredit", () => {
+    const { lines, laba } = buildClosingLines([
+      { code: "4101", type: "PENDAPATAN", normal: "K", saldo: 1_000 },
+      { code: "4102", type: "PENDAPATAN", normal: "D", saldo: 100 },
+    ]);
+    expect(laba).toBe(900);
+    expect(lines).toContainEqual({ code: "4102", debit: 0, credit: 100 });
+    expect(lines).toContainEqual({ code: "3201", debit: 0, credit: 900 });
+  });
 });

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
+import { ClearPosDraft } from "@/components/ClearPosDraft";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -33,6 +34,7 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
 
   return (
     <>
+      <ClearPosDraft />
       <style>{`@media print { @page { size: 80mm auto; margin: 3mm; } }`}</style>
 
       <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
