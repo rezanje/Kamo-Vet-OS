@@ -117,6 +117,9 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                       {selected.code === "5101" && l.source_ref && (
                         <Link href={`/keuangan/buku-besar/hpp/${encodeURIComponent(l.source_ref)}`} style={{ display: "block", fontSize: 9.5, color: "#2563eb", marginTop: 2 }}>Rincian HPP</Link>
                       )}
+                      {selected.code === "5101" && l.source_ref && (
+                        <Link href={`/keuangan/buku-besar/hpp/${encodeURIComponent(l.source_ref)}`} style={{ display: "block", fontSize: 9.5, color: "#2563eb", marginTop: 2 }}>Rincian HPP</Link>
+                      )}
                     </td>
                     <td style={{ fontSize: 11.5 }}>{l.deskripsi}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{l.debit ? rp(l.debit) : "—"}</td>
