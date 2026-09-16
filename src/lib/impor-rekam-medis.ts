@@ -54,6 +54,12 @@ export function pilahRiwayatTersimpan<T extends Pick<RekamMedisImporRow, "source
   return { baru, sudah_ada: rows.length - baru.length };
 }
 
+export function bagiBatchImporRekamMedis<T>(rows: T[], ukuran = 25): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < rows.length; index += ukuran) batches.push(rows.slice(index, index + ukuran));
+  return batches;
+}
+
 export function bolehKonfirmasiImporRekamMedis(riwayatSiap: number, disetujui: boolean) {
   return riwayatSiap > 0 && disetujui;
 }
@@ -383,7 +389,8 @@ export async function bacaWorkbookRekamMedis(bytes: Uint8Array, fileName: string
 }
 
 export async function bacaWorkbooksRekamMedis(files: RekamMedisFile[]): Promise<RekamMedisWorkbookResult> {
-  const parsed = await Promise.all(files.map((file) => bacaWorkbookRekamMedis(file.bytes, file.fileName, file.sourcePath)));
+  const parsed: RekamMedisWorkbookResult[] = [];
+  for (const file of files) parsed.push(await bacaWorkbookRekamMedis(file.bytes, file.fileName, file.sourcePath));
   const rows = completeProfiles(parsed.flatMap((result) => result.rows));
   const held = parsed.flatMap((result) => result.held);
   const seen = new Map<string, string>();
