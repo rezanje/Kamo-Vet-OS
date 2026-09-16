@@ -35,6 +35,13 @@ export type RekamMedisWorkbookResult = {
 
 export type RekamMedisFile = { fileName: string; sourcePath?: string; bytes: Uint8Array };
 
+export function bagiBatchImporRekamMedis<T>(rows: T[], ukuran = 25): T[][] {
+  if (!Number.isInteger(ukuran) || ukuran < 1) throw new Error("Ukuran batch harus lebih dari 0.");
+  const batches: T[][] = [];
+  for (let index = 0; index < rows.length; index += ukuran) batches.push(rows.slice(index, index + ukuran));
+  return batches;
+}
+
 export function pilahRiwayatTersimpan<T extends Pick<RekamMedisImporRow, "source_key">>(rows: T[], existingKeys: Iterable<string>) {
   const existing = new Set(existingKeys);
   const baru = rows.filter((row) => !existing.has(row.source_key));
@@ -289,7 +296,7 @@ function heldReason(row: RekamMedisImporRow): string | null {
 
 export async function bacaWorkbookRekamMedis(bytes: Uint8Array, fileName: string, sourcePath?: string): Promise<RekamMedisWorkbookResult> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(Buffer.from(bytes) as never);
+  await workbook.xlsx.load(bytes as never);
   const rows: RekamMedisImporRow[] = [];
   const held: RekamMedisImporHeld[] = [];
   let ignored = 0;
@@ -333,7 +340,10 @@ export async function bacaWorkbookRekamMedis(bytes: Uint8Array, fileName: string
 }
 
 export async function bacaWorkbooksRekamMedis(files: RekamMedisFile[]): Promise<RekamMedisWorkbookResult> {
-  const parsed = await Promise.all(files.map((file) => bacaWorkbookRekamMedis(file.bytes, file.fileName, file.sourcePath)));
+  const parsed: RekamMedisWorkbookResult[] = [];
+  for (const file of files) {
+    parsed.push(await bacaWorkbookRekamMedis(file.bytes, file.fileName, file.sourcePath));
+  }
   const rows = completeProfiles(parsed.flatMap((result) => result.rows));
   const held = parsed.flatMap((result) => result.held);
   const seen = new Map<string, string>();

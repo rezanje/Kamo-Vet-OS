@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
   bacaWorkbooksRekamMedis,
-  bolehKonfirmasiImporRekamMedis,
   pilahRiwayatTersimpan,
   type RekamMedisImporHeld,
   type RekamMedisImporRow,
@@ -26,8 +25,20 @@ export type RekamMedisImportState = {
   ignored_sheets: number;
 };
 
+export type RekamMedisBatchResult = {
+  ok: boolean;
+  message: string;
+  tersimpan: number;
+  sudah_ada: number;
+};
+
 const empty = (message: string): RekamMedisImportState => ({
-  ok: false, phase: "preview", message, rows: [], held: [], ignored_sheets: 0,
+  ok: false,
+  phase: "preview",
+  message,
+  rows: [],
+  held: [],
+  ignored_sheets: 0,
 });
 
 async function assertBolehImpor() {
@@ -46,7 +57,7 @@ function files(formData: FormData): Array<{ file: File; sourcePath: string }> {
   if (!uploads.length) throw new Error("Pilih minimal satu file .xlsx.");
   if (uploads.some((file) => !file.name.toLowerCase().endsWith(".xlsx"))) throw new Error("Semua file harus berformat .xlsx.");
   if (uploads.some((file) => file.size > MAX_FILE_BYTES)) throw new Error("Satu file maksimal 5 MB.");
-  if (uploads.reduce((sum, file) => sum + file.size, 0) > MAX_BATCH_BYTES) throw new Error("Total file maksimal 30 MB per impor.");
+  if (uploads.reduce((sum, file) => sum + file.size, 0) > MAX_BATCH_BYTES) throw new Error("Total file maksimal 30 MB per cek.");
   const sourcePaths = formData.getAll("paths");
   return uploads.map((file, index) => {
     const candidate = typeof sourcePaths[index] === "string" ? sourcePaths[index].replace(/\\/g, "/") : file.name;
@@ -76,7 +87,7 @@ export async function previewImporRekamMedis(formData: FormData): Promise<RekamM
       phase: "preview",
       message: result.rows.length
         ? `${result.rows.length} riwayat siap dicek. ${result.held.length} riwayat ditahan.`
-        : "Tidak ada riwayat yang aman untuk diimpor.",
+        : "Tidak ada riwayat yang aman untuk dicek.",
       ...result,
     };
   } catch (error) {
@@ -84,19 +95,61 @@ export async function previewImporRekamMedis(formData: FormData): Promise<RekamM
   }
 }
 
-export async function konfirmasiImporRekamMedis(formData: FormData): Promise<RekamMedisImportState> {
+function cleanText(value: unknown, max: number): string | null {
+  const text = String(value ?? "").trim();
+  return text ? text.slice(0, max) : null;
+}
+
+function validasiRows(input: unknown): RekamMedisImporRow[] {
+  if (!Array.isArray(input) || input.length === 0) throw new Error("Tidak ada riwayat yang siap disimpan.");
+  if (input.length > 50) throw new Error("Terlalu banyak riwayat dalam satu kiriman.");
+  return input.map((candidate) => {
+    if (!candidate || typeof candidate !== "object") throw new Error("Format riwayat tidak valid.");
+    const row = candidate as Partial<RekamMedisImporRow>;
+    const recordDate = cleanText(row.record_date, 10);
+    const normalized: RekamMedisImporRow = {
+      source_key: cleanText(row.source_key, 500) ?? "",
+      source_file: cleanText(row.source_file, 255) ?? "",
+      source_sheet: cleanText(row.source_sheet, 255) ?? "",
+      record_no: cleanText(row.record_no, 100),
+      record_date: recordDate,
+      patient_name: cleanText(row.patient_name, 160),
+      owner_name: cleanText(row.owner_name, 160),
+      phone: cleanText(row.phone, 40),
+      address: cleanText(row.address, 1_000),
+      species: cleanText(row.species, 100),
+      breed: cleanText(row.breed, 100),
+      gender: cleanText(row.gender, 50),
+      dob: cleanText(row.dob, 10),
+      doctor: cleanText(row.doctor, 160),
+      note: cleanText(row.note, 5_000),
+      anamnesis: cleanText(row.anamnesis, 10_000),
+      clinical_findings: cleanText(row.clinical_findings, 10_000),
+      diagnosis: cleanText(row.diagnosis, 10_000),
+      therapy: cleanText(row.therapy, 10_000),
+      warning: Array.isArray(row.warning) ? row.warning.map((warning) => String(warning).slice(0, 255)).slice(0, 20) : [],
+    };
+    if (!normalized.source_key || !normalized.source_file || !normalized.source_sheet || !normalized.patient_name || !normalized.owner_name || !normalized.phone) {
+      throw new Error("Ada riwayat yang kehilangan identitas wajib. Cek ulang file.");
+    }
+    if (!recordDate || !/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) throw new Error("Ada tanggal riwayat yang tidak valid.");
+    return normalized;
+  });
+}
+
+export async function simpanBatchImporRekamMedis(
+  input: RekamMedisImporRow[],
+  finalBatch = false,
+): Promise<RekamMedisBatchResult> {
   try {
     const supabase = await assertBolehImpor();
-    if (String(formData.get("approved") ?? "") !== "true") throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
-    const result = await baca(formData);
-    if (!bolehKonfirmasiImporRekamMedis(result.rows.length, true)) throw new Error("Tidak ada riwayat yang aman untuk diimpor.");
-
+    const rows = validasiRows(input);
     const { data: existing, error: existingError } = await supabase
       .from("visits").select("legacy_source_key")
-      .in("legacy_source_key", result.rows.map((row) => row.source_key));
+      .in("legacy_source_key", rows.map((row) => row.source_key));
     if (existingError) throw new Error(existingError.message);
     const { baru, sudah_ada } = pilahRiwayatTersimpan(
-      result.rows,
+      rows,
       (existing ?? []).flatMap((row) => row.legacy_source_key ? [row.legacy_source_key] : []),
     );
 
@@ -123,11 +176,22 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
       });
       if (error) throw new Error(error.message);
     }
-    revalidatePath("/klinik/antrian");
-    revalidatePath("/crm/pelanggan");
-    const existingMessage = sudah_ada ? ` ${sudah_ada} riwayat sudah ada dan tidak digandakan.` : "";
-    return { ok: true, phase: "done", message: `${baru.length} riwayat baru berhasil disimpan.${existingMessage}`, ...result };
+    if (finalBatch) {
+      revalidatePath("/klinik/antrian");
+      revalidatePath("/crm/pelanggan");
+    }
+    return {
+      ok: true,
+      message: `${baru.length} riwayat disimpan.`,
+      tersimpan: baru.length,
+      sudah_ada,
+    };
   } catch (error) {
-    return empty(error instanceof Error ? error.message : "Impor gagal.");
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Impor gagal.",
+      tersimpan: 0,
+      sudah_ada: 0,
+    };
   }
 }
