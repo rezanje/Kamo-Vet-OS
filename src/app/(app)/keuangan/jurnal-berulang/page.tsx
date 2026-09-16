@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { RecurringForm } from "./RecurringForm";
 import { NoDok } from "@/components/NoDok";
-import { toggleRecurring } from "./actions";
+import { jalankanSekarang, toggleRecurring } from "./actions";
 
 type Row = {
   id: string;
@@ -12,6 +12,11 @@ type Row = {
   day_of_month: number;
   is_active: boolean;
   last_posted: string | null;
+  frequency: "daily" | "monthly";
+  start_date: string;
+  repeat_count: number;
+  run_count: number;
+  status: "active" | "completed" | "inactive";
   lines: { code: string; debit: number; credit: number }[];
   branches: { name: string } | null;
 };
@@ -27,7 +32,7 @@ export default async function JurnalBerulangPage({
   const supabase = await createClient();
 
   const [{ data: rjs }, { data: accounts }, { data: branches }, { data: jurnalRows }] = await Promise.all([
-    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
+    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, is_active, last_posted, frequency, start_date, repeat_count, run_count, status, lines, branches(name)").order("created_at", { ascending: false }),
     supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").order("name"),
     // Riwayat jalannya: tiap posting menulis jurnal ber-source "recurring" dengan
@@ -77,7 +82,7 @@ export default async function JurnalBerulangPage({
         <SecHeader
           num="01"
           title="DAFTAR TRANSAKSI BERULANG"
-          desc="Otomatis diposting tiap bulan (catch-up saat halaman Jurnal Umum dibuka)."
+          desc="Jadwal Harian/Bulanan, riwayat per periode, dan batas pengulangan."
         />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
@@ -85,7 +90,7 @@ export default async function JurnalBerulangPage({
               <tr>
                 <th>Nama</th>
                 <th>Cabang</th>
-                <th style={{ textAlign: "center" }}>Tgl</th>
+                <th>Jadwal</th>
                 <th style={{ textAlign: "right" }}>Nilai</th>
                 <th style={{ width: 200 }}>Sudah berjalan</th>
                 <th>Terakhir Posting</th>
@@ -105,7 +110,7 @@ export default async function JurnalBerulangPage({
                       {r.deskripsi && <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{r.deskripsi}</div>}
                     </td>
                     <td style={{ fontSize: 11 }}>{r.branches?.name ?? "Pusat"}</td>
-                    <td style={{ textAlign: "center", fontSize: 11.5 }}>{r.day_of_month}</td>
+                    <td style={{ fontSize: 11.5 }}>{r.frequency === "daily" ? "Harian" : `Bulanan · tgl ${r.day_of_month}`}<div style={{ color: "var(--td)", fontSize: 9.5 }}>mulai {r.start_date}</div></td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(nilai)}</td>
                     {/* Rincian tiap kali jalan — sampai nomor jurnalnya, dan nomor itu
                         bisa diklik ke jurnalnya (permintaan Bu Nisa 14 Agustus). */}
@@ -116,7 +121,7 @@ export default async function JurnalBerulangPage({
                         <details>
                           <summary style={{ cursor: "pointer", listStyle: "none", fontWeight: 600 }}>
                             <i className="ti ti-chevron-right" style={{ fontSize: 11, verticalAlign: "-1px" }} />
-                            {jalan.length}x · total {rp(jalan.reduce((a, j) => a + j.nilai, 0))}
+                            {r.run_count}/{r.repeat_count}x · total {rp(jalan.reduce((a, j) => a + j.nilai, 0))}
                           </summary>
                           <div style={{ marginTop: 5 }}>
                             {jalan.map((j) => (
@@ -134,15 +139,16 @@ export default async function JurnalBerulangPage({
                       )}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.last_posted ?? "Belum pernah"}</td>
-                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{r.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                    <td><span className={`bge ${r.status === "active" ? "g" : "x"}`}>{r.status === "active" ? "Aktif" : r.status === "completed" ? "Selesai" : "Nonaktif"}</span></td>
                     <td>
-                      <form action={toggleRecurring}>
+                      {r.status === "active" && <form action={jalankanSekarang} style={{ marginBottom: 4 }}><input type="hidden" name="id" value={r.id} /><button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>Jalankan Sekarang</button></form>}
+                      {r.status !== "completed" && <form action={toggleRecurring}>
                         <input type="hidden" name="id" value={r.id} />
-                        <input type="hidden" name="aktif" value={r.is_active ? "0" : "1"} />
+                        <input type="hidden" name="aktif" value={r.status === "active" ? "0" : "1"} />
                         <button type="submit" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
-                          {r.is_active ? "Nonaktifkan" : "Aktifkan"}
+                          {r.status === "active" ? "Nonaktifkan" : "Aktifkan"}
                         </button>
-                      </form>
+                      </form>}
                     </td>
                   </tr>
                 );

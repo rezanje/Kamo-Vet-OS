@@ -88,14 +88,14 @@ export type DraftAkun = {
 /** Validasi akun BARU. Mengembalikan pesan error, atau null kalau lolos. */
 export function validasiAkunBaru(d: DraftAkun): string | null {
   const code = d.code.trim();
-  if (!/^\d{4}$/.test(code)) return "Kode akun harus 4 angka, contoh 5403.";
+  if (!/^\d{4,6}$/.test(code)) return "Kode akun harus 4–6 angka, contoh 5403 atau 540301.";
 
   const tipe = d.type as TipeAkun;
   if (!TIPE_AKUN.includes(tipe)) return "Kelompok akun tidak dikenal.";
 
   const harusnya = DIGIT_TIPE[code[0]];
   if (harusnya !== tipe) {
-    return `Kode ${code} berawalan ${code[0]}, yang berarti kelompok ${harusnya}. Ganti kodenya jadi ${Object.keys(DIGIT_TIPE).find((k) => DIGIT_TIPE[k] === tipe)}xxx, atau ganti kelompoknya.`;
+    return `Kode ${code} berawalan ${code[0]}, yang berarti kelompok ${harusnya}. Gunakan awalan ${Object.keys(DIGIT_TIPE).find((k) => DIGIT_TIPE[k] === tipe)}, atau ganti kelompoknya.`;
   }
 
   const angka = Number(code);

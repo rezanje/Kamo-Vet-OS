@@ -3,177 +3,88 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { buildFakturLangsungLines } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
-import { stockIn } from "@/lib/inventory";
-import { loadUnitOptions, pickUnit, toBaseQty, toBaseCost } from "@/lib/satuan";
+import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { parseLampiran } from "@/lib/dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
-import { jurnalTersimpan } from "@/lib/jurnal-guard";
+import { kodeAkunBayar } from "@/lib/kas-akun";
+import { validateDirectPurchaseLines, type DirectPurchaseLine } from "@/lib/direct-purchase-lines";
+import { buildMixedDirectPurchaseLines } from "@/lib/faktur-beli";
 
 const BARU = "/pembelian/faktur/langsung";
 const LIST = "/pembelian/faktur";
+type ClientLine = { kind: "stock" | "fixed_asset"; item_id?: string; qty?: number; price?: number; unit?: string; expiry_date?: string; name?: string; category_id?: string; useful_life_months?: number; residual_value?: number; location?: string };
 
-type BarisInput = { item_id: string; qty: number; harga: number; satuan?: string; exp_date?: string };
-
-/**
- * Faktur Pembelian Langsung — beli barang tanpa PO, barang masuk di dokumen yang sama.
- *
- * Sengaja BUKAN "faktur kosong": kalau faktur tidak membawa barang masuk, akan ada
- * tagihan yang barangnya tidak ketahuan ke mana. Karena itu gudang tujuan wajib
- * dipilih dan stok langsung bertambah di sini.
- *
- * Yang TIDAK dibuat: dokumen penerimaan (goods_receipts). Tabel itu menuntut PO dan
- * kebijakan aksesnya menyaring lewat PO, jadi mustahil tanpa merombaknya — sementara
- * jejak barang masuknya sudah dijamin Kartu Stok yang ditulis otomatis oleh stockIn.
- */
 export async function buatFakturLangsung(formData: FormData) {
   const supabase = await createClient();
   const gagal: (msg: string) => never = (msg) => redirect(`${BARU}?error=${encodeURIComponent(msg)}`);
-
-  const supplier_id = String(formData.get("supplier_id") ?? "").trim();
-  const warehouse_id = String(formData.get("warehouse_id") ?? "").trim();
-  const no_faktur_pemasok = String(formData.get("no_faktur_pemasok") ?? "").trim() || null;
+  const supplierId = String(formData.get("supplier_id") ?? "").trim();
+  const warehouseId = String(formData.get("warehouse_id") ?? "").trim() || null;
+  let branchId = String(formData.get("branch_id") ?? "").trim() || null;
   const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
-  const jatuh_tempo = String(formData.get("jatuh_tempo") ?? "").trim() || tanggal;
-  const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
-  const surat_jalan = String(formData.get("surat_jalan") ?? "").trim().slice(0, 60) || null;
-  const lampiran = parseLampiran(formData.get("lampiran"));
-
-  if (!supplier_id) gagal("Pilih pemasok dulu.");
-  if (!warehouse_id) gagal("Pilih gudang tujuan — barangnya harus masuk ke suatu tempat.");
-
-  let items: BarisInput[] = [];
-  try { items = JSON.parse(String(formData.get("items") ?? "[]")) as BarisInput[]; } catch { items = []; }
-  items = items.filter((it) => it.item_id && Number(it.qty) > 0 && Number(it.harga) >= 0);
-  if (items.length === 0) gagal("Isi minimal 1 barang dengan jumlah lebih dari 0.");
-
-  // Jurnal WAJIB bisa terbit. postJournal menelan error, jadi periode terkunci dicek
-  // lebih dulu — kalau tidak, stok bertambah & utang tercatat tanpa jurnal apa pun.
+  const jatuhTempo = String(formData.get("jatuh_tempo") ?? "").trim() || tanggal;
+  const funding = String(formData.get("funding") ?? "accounts_payable");
+  if (!supplierId) gagal("Pilih pemasok dulu.");
+  if (!(["accounts_payable", "cash", "bank"] as string[]).includes(funding)) gagal("Sumber pembayaran tidak valid.");
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) gagal(pesanPeriode);
 
-  const { data: gudang } = await supabase
-    .from("warehouses").select("id, branch_id").eq("id", warehouse_id).eq("is_active", true).maybeSingle();
-  if (!gudang) gagal("Gudang tidak ditemukan atau sudah nonaktif.");
-
-  // Satuan & faktor DITETAPKAN ULANG dari master: faktor kiriman klien tidak boleh
-  // dipercaya — faktor palsu bikin stok bertambah lebih banyak dari yang dibeli.
-  const ids = [...new Set(items.map((i) => i.item_id))];
-  const [{ data: master }, unitMap] = await Promise.all([
-    supabase.from("items").select("id, name, item_type").in("id", ids),
+  let input: ClientLine[] = [];
+  try { input = JSON.parse(String(formData.get("items") ?? "[]")) as ClientLine[]; } catch { gagal("Rincian faktur tidak valid."); }
+  const ids = [...new Set(input.filter((l) => l.kind === "stock" && l.item_id).map((l) => String(l.item_id)))];
+  const [{ data: itemRows }, unitMap] = await Promise.all([
+    ids.length ? supabase.from("items").select("id, name, item_type").in("id", ids) : Promise.resolve({ data: [] }),
     loadUnitOptions(supabase, ids),
   ]);
-  const namaMap = new Map(((master ?? []) as { id: string; name: string; item_type: string }[])
-    .map((m) => [m.id, m]));
-
-  const rows = items.map((it) => {
-    const m = namaMap.get(it.item_id);
-    const u = pickUnit(unitMap.get(it.item_id) ?? [], it.satuan);
-    const exp = String(it.exp_date ?? "").trim();
-    return {
-      item_id: it.item_id,
-      nama: (m?.name ?? "").slice(0, 160) || "—",
-      berstok: (m?.item_type ?? "Persediaan") === "Persediaan",
-      qty: Number(it.qty),
-      harga: Number(it.harga) || 0,
-      satuan: u.unit,
-      faktor: u.factor,
-      exp_date: /^\d{4}-\d{2}-\d{2}$/.test(exp) ? exp : null,
-    };
-  });
-  if (rows.some((r) => !namaMap.has(r.item_id))) gagal("Ada barang yang tidak ada di master — pilih ulang dari daftar.");
-  if (rows.some((r) => !r.berstok)) {
-    gagal("Faktur langsung khusus BARANG yang masuk gudang. Tagihan jasa/biaya dicatat lewat Buku Besar → Pencatatan Beban.");
-  }
-
-  const total = rows.reduce((a, r) => a + r.qty * r.harga, 0);
-  if (total <= 0) gagal("Nilai faktur nol.");
-
-  const no_faktur = await nextNoFakturLangsung(supabase);
-  const { data: { user } } = await supabase.auth.getUser();
-
-  const { data: doc, error } = await supabase
-    .from("purchase_invoices")
-    .insert({
-      no_faktur, no_faktur_pemasok, po_id: null, supplier_id,
-      branch_id: gudang.branch_id, warehouse_id, surat_jalan,
-      tanggal, jatuh_tempo, total, keterangan, created_by: user?.id ?? null,
-    })
-    .select("id").single();
-  if (error || !doc) gagal(`Gagal menyimpan faktur: ${error?.message ?? "unknown"}`);
-
-  const { error: itemsErr } = await supabase.from("purchase_invoice_items").insert(
-    rows.map((r) => ({
-      invoice_id: doc!.id, item_id: r.item_id, nama: r.nama,
-      qty: r.qty, harga: r.harga, satuan: r.satuan, faktor: r.faktor, exp_date: r.exp_date,
-    })),
-  );
-  if (itemsErr) {
-    await supabase.from("purchase_invoices").delete().eq("id", doc!.id);
-    gagal("Gagal menyimpan rincian faktur.");
-  }
-
-  // Berkas surat jalan / nota pemasok menempel ke fakturnya.
-  if (lampiran.length) {
-    await supabase.from("document_attachments").insert(
-      lampiran.map((l) => ({ ...l, modul: "pembelian", ref_id: doc!.id, uploaded_by: user?.id ?? null })),
-    );
-  }
-
-  // Persediaan dinilai sebesar DPP — PPN Masukan bisa dikreditkan, jadi bukan bagian
-  // harga pokok barang. Nilai lapisan stok memakai dasar yang SAMA supaya saldo
-  // Persediaan di buku besar dan nilai stok riil tidak berpisah. Mode PKP mati →
-  // dpp = total, jadi tidak ada bedanya.
-  const { dpp, ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
-  const rasioDpp = total > 0 ? dpp / total : 1;
-
-  try {
-    for (const r of rows) {
-      await stockIn(supabase, {
-        warehouseId: warehouse_id, itemId: r.item_id,
-        qty: toBaseQty(r.qty, r.faktor),
-        unitCost: toBaseCost(r.harga * rasioDpp, r.faktor),
-        // Sumber dibedakan dari "purchase" supaya faktur PO tidak ikut menyesuaikan
-        // harga lapisan milik faktur langsung.
-        source: "faktur-langsung", ref: no_faktur,
-        tanggal, expDate: r.exp_date,
-      });
+  const itemMap = new Map(((itemRows ?? []) as { id: string; name: string; item_type: string }[]).map((r) => [r.id, r]));
+  const lines: DirectPurchaseLine[] = [];
+  for (const line of input) {
+    if (line.kind === "stock" && line.item_id && Number(line.qty) > 0) {
+      const master = itemMap.get(line.item_id);
+      if (!master || master.item_type !== "Persediaan") continue;
+      const unit = pickUnit(unitMap.get(line.item_id) ?? [], line.unit);
+      lines.push({ kind: "stock", itemId: line.item_id, name: master.name, qty: Number(line.qty), price: Number(line.price) || 0, unit: unit.unit, factor: unit.factor, expiryDate: /^\d{4}-\d{2}-\d{2}$/.test(line.expiry_date ?? "") ? line.expiry_date! : null });
+      continue;
     }
-  } catch (e) {
-    await supabase.from("purchase_invoices").delete().eq("id", doc!.id);
-    gagal(`Faktur dibatalkan — stok gagal ditambah (${e instanceof Error ? e.message : "gagal"}).`);
+    if (line.kind === "fixed_asset") lines.push({ kind: "fixed_asset", name: String(line.name ?? "").trim(), categoryId: String(line.category_id ?? ""), usefulLifeMonths: Number(line.useful_life_months), residualValue: Number(line.residual_value) || 0, price: Number(line.price) || 0, location: String(line.location ?? "").trim() || null });
   }
+  try { validateDirectPurchaseLines(lines, warehouseId); } catch (e) { gagal(e instanceof Error ? e.message : "Rincian faktur tidak valid"); }
 
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Faktur pembelian langsung ${no_faktur}`,
-    source: "purchase-invoice",
-    sourceRef: no_faktur,
-    branchId: gudang.branch_id,
-    lines: buildFakturLangsungLines(total, ppn),
+  if (warehouseId) {
+    const { data: warehouse } = await supabase.from("warehouses").select("branch_id").eq("id", warehouseId).eq("is_active", true).maybeSingle();
+    if (!warehouse) gagal("Gudang tidak valid.");
+    if (branchId && branchId !== warehouse.branch_id) gagal("Gudang dan cabang harus sama.");
+    branchId = String(warehouse.branch_id);
+  }
+  if (!branchId) gagal("Cabang/lokasi faktur wajib dipilih.");
+  const stockGross = lines.filter((l) => l.kind === "stock").reduce((sum, l) => sum + l.qty * l.price, 0);
+  const assetGross = lines.filter((l) => l.kind === "fixed_asset").reduce((sum, l) => sum + l.price, 0);
+  const total = stockGross + assetGross;
+  const { ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
+  const creditCode = funding === "accounts_payable" ? "2101" : await kodeAkunBayar(supabase, funding === "cash" ? "Tunai" : "Transfer", branchId, String(formData.get("account_id") ?? "").trim() || null);
+  const journal = buildMixedDirectPurchaseLines(stockGross, assetGross, ppn, creditCode);
+  if (!journal.length || Math.round(journal.reduce((s, l) => s + l.debit, 0)) !== Math.round(total)) gagal("Jurnal faktur tidak seimbang.");
+
+  const noFaktur = await nextNoFakturLangsung(supabase);
+  const rpcLines = lines.map((line) => line.kind === "stock" ? { kind: line.kind, item_id: line.itemId, name: line.name, qty: line.qty, price: line.price, unit: line.unit, factor: line.factor, expiry_date: line.expiryDate } : { kind: line.kind, name: line.name, category_id: line.categoryId, useful_life_months: line.usefulLifeMonths, residual_value: line.residualValue, price: line.price, location: line.location });
+  const { data: invoiceId, error } = await supabase.rpc("create_direct_purchase_invoice", {
+    p_no_faktur: noFaktur, p_no_faktur_pemasok: String(formData.get("no_faktur_pemasok") ?? ""), p_supplier_id: supplierId,
+    p_branch_id: branchId, p_warehouse_id: warehouseId, p_tanggal: tanggal, p_jatuh_tempo: jatuhTempo,
+    p_keterangan: String(formData.get("keterangan") ?? ""), p_surat_jalan: String(formData.get("surat_jalan") ?? ""),
+    p_lines: rpcLines, p_ppn: ppn, p_credit_code: creditCode, p_payment_method: funding === "cash" ? "Tunai" : "Transfer",
   });
-
-  // postJournal best-effort: untuk uang yang berpindah, keberadaan jurnalnya wajib
-  // diverifikasi. Stok sudah bertambah di sini, jadi kalau jurnalnya tidak ada,
-  // fakturnya dibatalkan supaya tidak ada utang tanpa pembukuan.
-  if (!(await jurnalTersimpan(supabase, "purchase-invoice", no_faktur))) {
-    await supabase.from("purchase_invoices").delete().eq("id", doc!.id);
-    gagal("Faktur dibatalkan — jurnalnya gagal tersimpan. Coba lagi, dan laporkan kalau berulang.");
-  }
-
-  revalidatePath(LIST);
-  revalidatePath("/keuangan/hutang");
-  redirect(`${LIST}?success=${encodeURIComponent(`Faktur ${no_faktur} tersimpan — stok sudah bertambah.`)}`);
+  if (error || !invoiceId) gagal(`Faktur, aset, stok, dan jurnal dibatalkan: ${error?.message ?? "gagal"}`);
+  const { data: { user } } = await supabase.auth.getUser();
+  const lampiran = parseLampiran(formData.get("lampiran"));
+  if (lampiran.length) await supabase.from("document_attachments").insert(lampiran.map((l) => ({ ...l, modul: "pembelian", ref_id: invoiceId, uploaded_by: user?.id ?? null })));
+  revalidatePath(LIST); revalidatePath("/keuangan/hutang"); revalidatePath("/keuangan/aset");
+  redirect(`${LIST}?success=${encodeURIComponent(`Faktur ${noFaktur} tersimpan lengkap.`)}`);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function nextNoFakturLangsung(supabase: any) {
-  const { nomor } = await nomorBerikutnya(supabase, "FB", hariIniWIB(), {
-    table: "purchase_invoices", column: "no_faktur",
-  });
+  const { nomor } = await nomorBerikutnya(supabase, "FB", hariIniWIB(), { table: "purchase_invoices", column: "no_faktur" });
   return nomor;
 }

@@ -8,6 +8,7 @@ import { estimatedWaitMinutes } from "@/lib/queue";
 import { hariIniWIB } from "@/lib/tanggal";
 import { UlasanBadge } from "@/components/UlasanBadge";
 import { serviceDurations } from "@/lib/operasional-klinik";
+import { resolveOperationalScope, visitScopeFilter } from "@/lib/operational-access";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -50,6 +51,8 @@ export default async function AntrianPage({
 }) {
   const { filter = "aktif", success, tanggal = "", cabang = "" } = await searchParams;
   const supabase = await createClient();
+  const scope = await resolveOperationalScope(supabase);
+  const scopeFilter = visitScopeFilter(scope);
 
   // Antrian hari lain & per cabang (permintaan Pak Andri, meeting 14 Agustus):
   // dulu layar ini selalu memakai antrian berjalan seluruh cabang, jadi menengok
@@ -69,6 +72,7 @@ export default async function AntrianPage({
   if (filter === "diperiksa") query = query.eq("status", "Diperiksa");
   if (filter === "selesai") query = query.eq("status", "Selesai");
   if (cabang) query = query.eq("branch_id", cabang);
+  if (scopeFilter) query = query.or(scopeFilter);
 
   // 4 query independen → jalan barengan (kurangi latency berurutan).
   // Kartu angka & "berikutnya dipanggil" ikut hari + cabang yang sedang dilihat,
@@ -80,17 +84,24 @@ export default async function AntrianPage({
     .gte("created_at", mulaiHari).lte("created_at", akhirHari)
     .order("created_at", { ascending: true });
   if (cabang) qWaiting = qWaiting.eq("branch_id", cabang);
+  if (scopeFilter) qWaiting = qWaiting.or(scopeFilter);
 
   let qHari = supabase.from("visits").select("status")
     .gte("created_at", mulaiHari).lte("created_at", akhirHari);
   if (cabang) qHari = qHari.eq("branch_id", cabang);
+  if (scopeFilter) qHari = qHari.or(scopeFilter);
+
+  let qCabang = supabase.from("branches").select("id, name").eq("is_active", true).order("name");
+  if (scope.branchIds !== null) {
+    qCabang = scope.branchIds.length ? qCabang.in("id", scope.branchIds) : qCabang.eq("id", "00000000-0000-0000-0000-000000000000");
+  }
 
   const [{ data: visits }, { data: allWaiting }, { data: today }, { data: cabangList }, { data: voucherAktif }] =
     await Promise.all([
       query,
       qWaiting,
       qHari,
-      supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+      qCabang,
       // Pengingat voucher untuk admin klinik (permintaan Pak Aldi, meeting 14
       // Agustus): voucher hari-ini-saja tidak ada gunanya kalau petugas depan
       // tidak tahu harus menawarkannya.

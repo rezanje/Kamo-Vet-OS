@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { simpanKaryawan, simpanPenugasanCabang } from "./actions";
 import { tampilkanKaryawan } from "@/lib/karyawan-master";
+import { resolveOperationalScope } from "@/lib/operational-access";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -28,16 +29,21 @@ export default async function KaryawanPage({
   const { error, success, cari } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
+  const scope = await resolveOperationalScope(supabase);
 
-  const { data: branches } = await supabase
+  let branchQuery = supabase
     .from("branches")
     .select("id, name")
     .eq("is_active", true)
     .order("name");
+  if (scope.branchIds !== null) {
+    branchQuery = scope.branchIds.length ? branchQuery.in("id", scope.branchIds) : branchQuery.eq("id", "00000000-0000-0000-0000-000000000000");
+  }
+  const { data: branches } = await branchQuery;
 
   // Nama cabang dipetakan di aplikasi. Master karyawan tetap muncul bila relasi
   // cabang di database belum terbaca oleh layar daftar.
-  const [{ data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
+  const [{ data: rowsRaw, error: employeeQueryError }, { data: assignmentsRaw, error: assignmentQueryError }] = await Promise.all([
     supabase
       .from("employees")
       .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branch_id")
@@ -59,6 +65,9 @@ export default async function KaryawanPage({
   const total = rows.length;
   const aktif = rows.filter((r) => r.status === "Aktif").length;
   const nonaktif = rows.filter((r) => r.status === "Nonaktif").length;
+  const loadError = employeeQueryError || assignmentQueryError
+    ? "Data karyawan belum dapat dimuat. Periksa hak akses cabang atau coba lagi."
+    : null;
 
   return (
     <>
@@ -73,6 +82,11 @@ export default async function KaryawanPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+      {loadError && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {loadError}
         </div>
       )}
       {success === "1" && (

@@ -6,18 +6,19 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { isMarketplace } from "@/lib/online";
+import { jurnalPenjualanInklusif, jurnalPenjualanKlinik } from "@/lib/penjualan-jurnal";
 
 const back = "/keuangan/sinkron";
 
 type MissingInvoice = {
-  invoice_no: string; tanggal: string; total: number; dpp: number; tax: number;
+  invoice_no: string; tanggal: string; subtotal: number; discount: number; total: number; dpp: number; tax: number;
   cashReceived: number; piutang: number; metode_bayar: string; branch_id: string | null;
 };
 type MissingSale = {
-  no_struk: string; tanggal: string; total: number; metode_bayar: string; branch_id: string | null;
+  no_struk: string; tanggal: string; subtotal: number; total: number; metode_bayar: string; branch_id: string | null;
 };
 type MissingSaleOnline = {
-  no_struk: string; tanggal: string; total: number; channel: string; branch_id: string | null;
+  no_struk: string; tanggal: string; subtotal: number; total: number; channel: string; branch_id: string | null;
 };
 
 // Cari transaksi operasional yang TIDAK punya jurnal (drift buku besar).
@@ -58,7 +59,7 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
     const piutang = Math.max(0, Number(i.total) - cashAtIssue); // posisi piutang saat terbit
     return {
       invoice_no: i.invoice_no, tanggal: String(i.created_at).slice(0, 10),
-      total: Number(i.total), dpp, tax: Number(i.tax),
+      subtotal: Number(i.subtotal), discount: Number(i.discount), total: Number(i.total), dpp, tax: Number(i.tax),
       cashReceived: cashAtIssue, piutang,
       metode_bayar: i.metode_bayar ?? "Tunai", branch_id: v?.branch_id ?? null,
     };
@@ -68,13 +69,13 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
   // Dipisah dari arm "sale" biasa (akun beda) = false positive + repost dengan akun salah kalau digabung.
   const { data: sls } = await supabase
     .from("sales")
-    .select("no_struk, total, metode_bayar, branch_id, created_at")
+    .select("no_struk, subtotal, total, metode_bayar, branch_id, created_at")
     .is("channel", null);
   const sales: MissingSale[] = (sls ?? [])
     .filter((s) => s.no_struk && !saleRefs.has(s.no_struk) && Number(s.total) > 0)
     .map((s) => ({
       no_struk: s.no_struk, tanggal: String(s.created_at).slice(0, 10),
-      total: Number(s.total), metode_bayar: s.metode_bayar ?? "Tunai", branch_id: s.branch_id ?? null,
+      subtotal: Number(s.subtotal), total: Number(s.total), metode_bayar: s.metode_bayar ?? "Tunai", branch_id: s.branch_id ?? null,
     }));
 
   // Order online (channel terisi) — postJournal juga best-effort di sini (lihat actions.ts online),
@@ -82,13 +83,13 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
   // pendapatan tidak pernah tercatat. Tanpa arm ini tidak ada halaman lain yang mendeteksinya.
   const { data: slsOnline } = await supabase
     .from("sales")
-    .select("no_struk, total, channel, branch_id, created_at")
+    .select("no_struk, subtotal, total, channel, branch_id, created_at")
     .not("channel", "is", null);
   const salesOnline: MissingSaleOnline[] = (slsOnline ?? [])
     .filter((s) => s.no_struk && s.channel && !saleOnlineRefs.has(s.no_struk) && Number(s.total) > 0)
     .map((s) => ({
       no_struk: s.no_struk, tanggal: String(s.created_at).slice(0, 10),
-      total: Number(s.total), channel: s.channel as string, branch_id: s.branch_id ?? null,
+      subtotal: Number(s.subtotal), total: Number(s.total), channel: s.channel as string, branch_id: s.branch_id ?? null,
     }));
 
   return { invoices, sales, salesOnline };
@@ -174,12 +175,7 @@ export async function perbaikiDrift() {
       source: "klinik",
       sourceRef: i.invoice_no,
       branchId: i.branch_id,
-      lines: [
-        ...(i.cashReceived > 0 ? [{ code: kasCode, debit: i.cashReceived, credit: 0 }] : []),
-        ...(i.piutang > 0 ? [{ code: "1201", debit: i.piutang, credit: 0 }] : []),
-        { code: "4201", debit: 0, credit: i.dpp },
-        ...(i.tax > 0 ? [{ code: "2201", debit: 0, credit: i.tax }] : []),
-      ],
+      lines: jurnalPenjualanKlinik({ kasCode, subtotal: i.subtotal, discount: i.discount, total: i.total, tax: i.tax, cashReceived: i.cashReceived }),
     });
     n += 1;
   }
@@ -187,18 +183,13 @@ export async function perbaikiDrift() {
   const pajak = await getPajakSettings(supabase);
   for (const s of sales) {
     const kasCode = await kodeAkunBayar(supabase, s.metode_bayar, s.branch_id);
-    const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
     await postJournal(supabase, {
       tanggal: s.tanggal,
       deskripsi: `Sinkronisasi: penjualan POS ${s.no_struk}`,
       source: "sale",
       sourceRef: s.no_struk,
       branchId: s.branch_id,
-      lines: [
-        { code: kasCode, debit: s.total, credit: 0 },
-        { code: "4101", debit: 0, credit: dpp },
-        ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
-      ],
+      lines: jurnalPenjualanInklusif({ kasCode, subtotal: s.subtotal, total: s.total, splitPajak: (nilai) => splitPpnInklusif(nilai, pajak) }),
     });
     n += 1;
   }
@@ -207,18 +198,13 @@ export async function perbaikiDrift() {
     // Marketplace ditahan platform → piutang (1202); WA langsung ke bank (1102) — sama seperti
     // jurnal asli di penjualan/online/actions.ts.
     const debitCode = isMarketplace(s.channel) ? "1202" : await kodeAkunBayar(supabase, "Transfer", s.branch_id);
-    const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
     await postJournal(supabase, {
       tanggal: s.tanggal,
       deskripsi: `Sinkronisasi: penjualan online ${s.channel} ${s.no_struk}`,
       source: "sale-online",
       sourceRef: s.no_struk,
       branchId: s.branch_id,
-      lines: [
-        { code: debitCode, debit: s.total, credit: 0 },
-        { code: "4101", debit: 0, credit: dpp },
-        ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
-      ],
+      lines: jurnalPenjualanInklusif({ kasCode: debitCode, subtotal: s.subtotal, total: s.total, splitPajak: (nilai) => splitPpnInklusif(nilai, pajak) }),
     });
     n += 1;
   }
