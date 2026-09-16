@@ -29,4 +29,3 @@ describe("migrasi akses operasional", () => {
     expect(migration).toContain("using (public.user_can_access_employee(employee_id))");
   });
 });
-

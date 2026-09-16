@@ -21,4 +21,3 @@ describe("assetPurchaseJournal", () => {
     expect(() => assertNewAssetFunding("opening_balance")).toThrow(/Kas, Bank, atau Hutang Usaha/);
   });
 });
-

@@ -160,4 +160,3 @@ $$;
 
 revoke all on function public.create_direct_purchase_invoice(text, text, uuid, uuid, uuid, date, date, text, text, jsonb, numeric, text, text) from public;
 grant execute on function public.create_direct_purchase_invoice(text, text, uuid, uuid, uuid, date, date, text, text, jsonb, numeric, text, text) to authenticated;
-

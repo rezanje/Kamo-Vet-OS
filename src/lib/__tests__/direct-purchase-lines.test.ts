@@ -17,4 +17,3 @@ describe("baris faktur pembelian langsung", () => {
     expect(partitionDirectPurchaseLines([asset, { ...asset, name: "X-Ray" }]).assets.map((x) => x.name)).toEqual(["USG", "X-Ray"]);
   });
 });
-

@@ -26,4 +26,3 @@ export function partitionDirectPurchaseLines(lines: DirectPurchaseLine[]) {
     assets: lines.filter((line): line is DirectAssetLine => line.kind === "fixed_asset"),
   };
 }
-

@@ -25,4 +25,3 @@ export function AccountLedgerRow({ row, href, selected }: {
     </tr>
   );
 }
-

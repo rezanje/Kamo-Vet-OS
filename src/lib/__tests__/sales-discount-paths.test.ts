@@ -20,4 +20,3 @@ describe("seluruh jalur posting diskon penjualan", () => {
     expect(syncAction).toContain("lines: jurnalPenjualanInklusif");
   });
 });
-

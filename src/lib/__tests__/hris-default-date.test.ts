@@ -16,4 +16,3 @@ describe("tanggal default HRIS", () => {
     }
   });
 });
-

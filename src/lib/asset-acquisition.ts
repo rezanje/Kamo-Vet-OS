@@ -20,4 +20,3 @@ export function assertNewAssetFunding(value: string): asserts value is AssetFund
     throw new Error("Pembelian baru wajib memakai Kas, Bank, atau Hutang Usaha");
   }
 }
-
