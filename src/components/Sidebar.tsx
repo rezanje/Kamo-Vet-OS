@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { MODULES } from "@/lib/nav";
 import { modulDiizinkan, type AturanTersimpan } from "@/lib/akses";
 import { logout } from "@/app/login/actions";
+import { useEffect, useState } from "react";
 
 type Props = {
   branches: { code: string; name: string }[];
@@ -21,6 +22,16 @@ function activeModule(pathname: string): string {
 
 export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCollapsed(window.localStorage.getItem("vetos:sidebar-collapsed") === "1"), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const toggleCollapsed = () => setCollapsed((current) => {
+    const next = !current;
+    window.localStorage.setItem("vetos:sidebar-collapsed", next ? "1" : "0");
+    return next;
+  });
   const active = activeModule(pathname);
   const initials = fullName
     .split(" ")
@@ -30,7 +41,7 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
     .toUpperCase();
 
   return (
-    <div className="sb">
+    <div className={`sb${collapsed ? " collapsed" : ""}`}>
       <div className="sb-logo">
         <div className="sb-mark">
           <i className="ti ti-paw" />
@@ -39,6 +50,9 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
           <div>VetOS</div>
           <div>PT Kamo Group</div>
         </div>
+        <button type="button" className="sb-toggle" onClick={toggleCollapsed} title={collapsed ? "Perbesar menu" : "Kecilkan menu"}>
+          <i className={`ti ti-chevron-${collapsed ? "right" : "left"}`} />
+        </button>
       </div>
 
       {/* ponytail: branch selector is display-only for now — global branch
@@ -65,6 +79,7 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
               key={m.id}
               href={href}
               className={`sbi${active === m.id ? " on" : ""}`}
+              title={m.label}
             >
               <i className={`ti ${m.icon}`} />
               <span>{m.label}</span>

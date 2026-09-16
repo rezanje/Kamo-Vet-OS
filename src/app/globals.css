@@ -36,7 +36,7 @@ body {
   font-size: 13px; background: var(--bg); height: 100vh;
   display: flex; overflow: hidden; width: 100%; color: var(--tx);
 }
-.sb { width: 185px; background: var(--sb); display: flex; flex-direction: column; height: 100vh; flex-shrink: 0; }
+.sb { width: 185px; background: var(--sb); display: flex; flex-direction: column; height: 100vh; flex-shrink: 0; transition: width .18s ease; }
 .sb-logo { padding: 14px 14px 12px; border-bottom: .5px solid rgba(255,255,255,.07); display: flex; align-items: center; gap: 10px; }
 .sb-mark { width: 32px; height: 32px; background: var(--acc); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .sb-mark i { color: #fff; font-size: 17px; }
@@ -53,6 +53,14 @@ body {
 .sbi span { font-size: 11.5px; color: rgba(255,255,255,.62); }
 .sbi.on span { color: #fff; font-weight: 500; }
 .sb-user { padding: 10px 13px; border-top: .5px solid rgba(255,255,255,.07); display: flex; align-items: center; gap: 8px; }
+.sb-toggle { margin-left: auto; background: rgba(255,255,255,.08); border: 0; border-radius: 5px; color: rgba(255,255,255,.75); width: 22px; height: 22px; cursor: pointer; flex-shrink: 0; }
+.sb.collapsed { width: 58px; }
+.sb.collapsed .sb-logo { padding-left: 13px; padding-right: 13px; flex-wrap: wrap; justify-content: center; }
+.sb.collapsed .sb-brand, .sb.collapsed .sb-branch, .sb.collapsed .sbi span, .sb.collapsed .sb-user > div:nth-child(2), .sb.collapsed .sb-user form { display: none; }
+.sb.collapsed .sb-toggle { margin: 2px 0 0; }
+.sb.collapsed .sbi { justify-content: center; padding-left: 0; padding-right: 0; }
+.sb.collapsed .sbi i { margin: 0; }
+.sb.collapsed .sb-user { justify-content: center; padding-left: 0; padding-right: 0; }
 .av { width: 28px; height: 28px; border-radius: 50%; background: var(--acc); display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #fff; font-weight: 500; flex-shrink: 0; }
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .topbar { height: 42px; background: #fff; border-bottom: .5px solid var(--bd); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
