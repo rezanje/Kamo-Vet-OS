@@ -72,15 +72,38 @@ export type KatalogItem = {
   kategori: string; stok?: number; units: ItemUnit[];
 };
 
-export async function loadKatalogPermintaan(supabase: AnyClient): Promise<KatalogItem[]> {
-  const { data: items } = await supabase
-    .from("items")
-    .select("id, code, name, unit, sell_price, buy_price, item_categories(name)")
-    .eq("is_active", true)
-    .eq("item_type", "Persediaan")
-    .order("name");
+export function cariKatalogPermintaan(
+  items: KatalogItem[],
+  query: string,
+  selectedId = "",
+  limit = 100,
+): KatalogItem[] {
+  const q = query.trim().toLocaleLowerCase("id-ID");
+  const matches = q
+    ? items.filter((item) => `${item.code} ${item.name}`.toLocaleLowerCase("id-ID").includes(q))
+    : items;
+  const visible = matches.slice(0, Math.max(1, limit));
+  const selected = selectedId ? items.find((item) => item.id === selectedId) : undefined;
+  return selected && !visible.some((item) => item.id === selected.id) ? [...visible, selected] : visible;
+}
 
-  const rows = (items ?? []) as Record<string, unknown>[];
+export async function loadKatalogPermintaan(supabase: AnyClient): Promise<KatalogItem[]> {
+  const rows: Record<string, unknown>[] = [];
+  const pageSize = 1_000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("items")
+      .select("id, code, name, unit, sell_price, buy_price, item_categories(name)")
+      .eq("is_active", true)
+      .eq("item_type", "Persediaan")
+      .order("name")
+      .order("id")
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const page = (data ?? []) as Record<string, unknown>[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
   const extras = await loadItemUnits(supabase, rows.map((i) => String(i.id)));
   return rows.map((i) => {
     const kat = i.item_categories as { name?: string } | { name?: string }[] | null;

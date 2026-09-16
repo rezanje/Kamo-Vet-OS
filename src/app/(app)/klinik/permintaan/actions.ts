@@ -5,8 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
-
-type ItemInput = { nama: string; qty_diminta: number };
+import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
 
 export async function buatPermintaanKlinik(formData: FormData) {
   const supabase = await createClient();
@@ -20,12 +19,12 @@ export async function buatPermintaanKlinik(formData: FormData) {
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const back = "/klinik/permintaan/baru";
 
-  let items: ItemInput[] = [];
-  try { items = JSON.parse(String(formData.get("items") ?? "[]")); } catch { items = []; }
-  items = items.filter((it) => (it.nama ?? "").trim().length > 0);
+  const input = parseBarisInput(formData.get("items"));
+  const master = await loadMasterPermintaan(supabase, input.map((item) => String(item.item_id ?? "")));
+  const prepared = siapkanBaris(input, master);
 
-  if (!from_branch_id || !to_warehouse_id || items.length === 0) {
-    redirect(`${back}?error=${encodeURIComponent("Gudang tujuan & minimal 1 item wajib diisi")}`);
+  if (!from_branch_id || !to_warehouse_id || prepared.error) {
+    redirect(`${back}?error=${encodeURIComponent(prepared.error ?? "Gudang tujuan & minimal 1 item wajib diisi")}`);
   }
 
   // Formatnya dibaca dari master penomoran; bawaannya PRM-YYYYMMDD-NNNN,
@@ -41,7 +40,7 @@ export async function buatPermintaanKlinik(formData: FormData) {
   if (error || !req) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal simpan permintaan")}`);
 
   await supabase.from("stock_request_items").insert(
-    items.map((it) => ({ request_id: (req as { id: string }).id, nama: String(it.nama).slice(0, 160), qty_diminta: Number(it.qty_diminta) || 0 })),
+    prepared.rows.map((item) => ({ request_id: (req as { id: string }).id, ...item })),
   );
 
   redirect("/klinik/permintaan?success=1");
