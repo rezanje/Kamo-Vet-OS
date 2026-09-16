@@ -6,7 +6,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { simpanKategoriAset, toggleKategoriAset } from "./actions";
 
 type Kat = {
-  id: string; nama: string; umur_bulan: number;
+  id: string; nama: string;
   akun_beban: string; akun_akumulasi: string; is_active: boolean;
 };
 
@@ -20,7 +20,7 @@ export default async function KategoriAsetPage({
   const bolehKelola = await bolehKelolaMaster();
 
   const [{ data }, { data: asetRows }, { data: akunRows }] = await Promise.all([
-    supabase.from("asset_categories").select("id, nama, umur_bulan, akun_beban, akun_akumulasi, is_active").order("nama"),
+    supabase.from("asset_categories").select("id, nama, akun_beban, akun_akumulasi, is_active").order("nama"),
     supabase.from("fixed_assets").select("category_id").not("category_id", "is", null),
     supabase.from("coa_accounts").select("code, name").order("code"),
   ]);
@@ -38,7 +38,7 @@ export default async function KategoriAsetPage({
   return (
     <MasterPage
       back="/aset-tetap" icon="ti-category" title="KATEGORI ASET"
-      desc="Umur penyusutan & akun jurnal otomatis per kategori"
+      desc="Kelompok aset dan akun jurnal penyusutan"
       error={error} success={success} successMsg="Kategori tersimpan."
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah kategori aset."
@@ -50,12 +50,6 @@ export default async function KategoriAsetPage({
             <div>
               <label className="flab">{editing ? "Ubah nama kategori" : "Kategori baru"}</label>
               <input className="fi" name="nama" defaultValue={editing?.nama ?? ""} maxLength={60} placeholder="mis. Peralatan Medis" required />
-            </div>
-            <div>
-              <label className="flab">Umur penyusutan (bulan) *</label>
-              <input className="fi" name="umur_bulan" type="number" min={1} step={1}
-                defaultValue={editing?.umur_bulan ?? 48} required />
-              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>48 bulan = 4 tahun.</div>
             </div>
           </div>
           <div className="frow" style={{ marginTop: 10 }}>
@@ -87,7 +81,6 @@ export default async function KategoriAsetPage({
             <thead>
               <tr>
                 <th style={{ width: 30 }}>No.</th><th>Kategori</th>
-                <th style={{ width: 90 }}>Umur</th>
                 <th style={{ width: 90 }}>Beban</th>
                 <th style={{ width: 100 }}>Akumulasi</th>
                 <th style={{ width: 90 }}>Dipakai</th><th style={{ width: 80 }}>Status</th>
@@ -99,7 +92,6 @@ export default async function KategoriAsetPage({
                 <tr key={k.id}>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{k.nama}</td>
-                  <td style={{ fontSize: 11 }}>{k.umur_bulan} bln</td>
                   <td style={{ fontSize: 11 }}>{k.akun_beban}</td>
                   <td style={{ fontSize: 11 }}>{k.akun_akumulasi}</td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pakai.get(k.id) ?? 0} aset</td>
@@ -121,7 +113,7 @@ export default async function KategoriAsetPage({
                 </tr>
               ))}
               {kategori.length === 0 && (
-                <tr><td colSpan={bolehKelola ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                <tr><td colSpan={bolehKelola ? 7 : 6} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                   Belum ada kategori.
                 </td></tr>
               )}

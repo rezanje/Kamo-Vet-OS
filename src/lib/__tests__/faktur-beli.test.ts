@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFakturLangsungLines, buildFakturLines, formatNoFaktur, sisaFakturable } from "../faktur-beli";
+import { buildFakturLangsungLines, buildFakturLines, buildMixedDirectPurchaseLines, formatNoFaktur, sisaFakturable } from "../faktur-beli";
 
 describe("formatNoFaktur", () => {
   it("format FB.YYYY.MM.NNNNN", () => {
@@ -96,5 +96,17 @@ describe("buildFakturLangsungLines", () => {
     const l = buildFakturLangsungLines(100_000, 999_999);
     expect(l.reduce((a, x) => a + x.debit, 0)).toBe(100_000);
     expect(l.reduce((a, x) => a + x.credit, 0)).toBe(100_000);
+  });
+});
+
+describe("buildMixedDirectPurchaseLines", () => {
+  it("memisahkan persediaan, aset, PPN, dan sumber kredit", () => {
+    const lines = buildMixedDirectPurchaseLines(555_000, 555_000, 110_000, "1102");
+    expect(lines).toEqual([
+      { code: "1301", debit: 500_000, credit: 0 },
+      { code: "1501", debit: 500_000, credit: 0 },
+      { code: "1105", debit: 110_000, credit: 0 },
+      { code: "1102", debit: 0, credit: 1_110_000 },
+    ]);
   });
 });

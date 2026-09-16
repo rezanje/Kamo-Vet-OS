@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatRecurring } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Account = { code: string; name: string };
 type Branch = { id: string; name: string };
@@ -27,7 +28,7 @@ export function RecurringForm({ accounts, branches }: { accounts: Account[]; bra
     <form action={buatRecurring}>
       <input type="hidden" name="lines" value={JSON.stringify(rows)} />
       <div className="crm-sec">
-        <SecHeader num="02" title="BUAT JURNAL BERULANG" desc="Jurnal langganan (sewa, iuran, dsb) yang otomatis diposting tiap bulan pada tanggal terpilih." />
+        <SecHeader num="02" title="BUAT JURNAL BERULANG" desc="Jadwal Harian atau Bulanan dengan jumlah pengulangan yang pasti." />
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           <div className="fg" style={{ flex: 2, minWidth: 200, marginBottom: 0 }}>
@@ -38,6 +39,9 @@ export function RecurringForm({ accounts, branches }: { accounts: Account[]; bra
             <label className="flab">Tgl posting *</label>
             <input className="fi" type="number" name="day_of_month" min={1} max={28} defaultValue={1} required />
           </div>
+          <div className="fg" style={{ width: 130, marginBottom: 0 }}><label className="flab">Periode *</label><select className="fi" name="frequency" defaultValue="monthly" required><option value="daily">Harian</option><option value="monthly">Bulanan</option></select></div>
+          <div className="fg" style={{ width: 150, marginBottom: 0 }}><label className="flab">Tanggal mulai *</label><input className="fi" type="date" name="start_date" defaultValue={hariIniWIB()} required /></div>
+          <div className="fg" style={{ width: 130, marginBottom: 0 }}><label className="flab">Jumlah pengulangan *</label><input className="fi" type="number" name="repeat_count" min={1} step={1} required /></div>
           <div className="fg" style={{ flex: 1, minWidth: 160, marginBottom: 0 }}>
             <label className="flab">Cabang</label>
             <select className="fi" name="branch_id">

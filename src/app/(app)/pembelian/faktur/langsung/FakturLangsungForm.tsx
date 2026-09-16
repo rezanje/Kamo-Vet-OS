@@ -13,20 +13,25 @@ type ItemOpsi = {
   trackExpiry: boolean; satuan: SatuanOpsi[];
 };
 type Baris = { key: number; item_id: string; qty: number; harga: number; satuan: string; exp_date: string };
+type AssetBaris = { key: number; name: string; category_id: string; useful_life_months: number; residual_value: number; price: number; location: string };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export function FakturLangsungForm({
-  suppliers, warehouses, items,
+  suppliers, warehouses, items, branches, categories, accounts,
 }: {
   suppliers: { id: string; nama: string; terminHari: number }[];
   warehouses: { id: string; label: string }[];
   items: ItemOpsi[];
+  branches: { id: string; name: string }[];
+  categories: { id: string; name: string }[];
+  accounts: { id: string; label: string }[];
 }) {
   const [supplierId, setSupplierId] = useState("");
   const [tanggal, setTanggal] = useState(hariIniWIB());
   const [jatuhTempo, setJatuhTempo] = useState(geserHari(hariIniWIB(), 30));
   const [baris, setBaris] = useState<Baris[]>([{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" }]);
+  const [aset, setAset] = useState<AssetBaris[]>([]);
 
   const itemMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
@@ -65,12 +70,17 @@ export function FakturLangsungForm({
   };
 
   const isi = baris.filter((r) => r.item_id && r.qty > 0);
-  const total = isi.reduce((a, r) => a + r.qty * r.harga, 0);
-  const payload = isi.map((r) => ({
-    item_id: r.item_id, qty: r.qty, harga: r.harga,
+  const total = isi.reduce((a, r) => a + r.qty * r.harga, 0) + aset.reduce((a, r) => a + Math.max(0, r.price), 0);
+  const payload = [...isi.map((r) => ({
+    kind: "stock", item_id: r.item_id, qty: r.qty, price: r.harga,
     satuan: r.satuan || undefined,
-    exp_date: r.exp_date || undefined,
-  }));
+    unit: r.satuan || undefined, expiry_date: r.exp_date || undefined,
+  })), ...aset.filter((r) => r.name && r.category_id && r.price > 0).map((r) => ({
+    kind: "fixed_asset", name: r.name, category_id: r.category_id,
+    useful_life_months: r.useful_life_months, residual_value: r.residual_value,
+    price: r.price, location: r.location,
+  }))];
+  const setAsset = (key: number, patch: Partial<AssetBaris>) => setAset((rows) => rows.map((r) => r.key === key ? { ...r, ...patch } : r));
 
   return (
     <form action={buatFakturLangsung}>
@@ -92,12 +102,15 @@ export function FakturLangsungForm({
             </select>
           </div>
           <div className="fg">
-            <label className="flab">Gudang tujuan *</label>
-            <select className="fi" name="warehouse_id" required defaultValue="">
-              <option value="">— pilih gudang —</option>
+            <label className="flab">Gudang tujuan (wajib bila ada stok)</label>
+            <select className="fi" name="warehouse_id" defaultValue="">
+              <option value="">— tanpa gudang (aset saja) —</option>
               {warehouses.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
             </select>
           </div>
+          <div className="fg"><label className="flab">Cabang/lokasi *</label><select className="fi" name="branch_id" required defaultValue=""><option value="">— pilih cabang —</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+          <div className="fg"><label className="flab">Sumber pembayaran *</label><select className="fi" name="funding" required defaultValue="accounts_payable"><option value="accounts_payable">Hutang Usaha</option><option value="cash">Kas</option><option value="bank">Bank</option></select></div>
+          <div className="fg"><label className="flab">Rekening Kas/Bank</label><select className="fi" name="account_id" defaultValue=""><option value="">— sesuai peta pembayaran —</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}</select></div>
           <div className="fg">
             <label className="flab">No. faktur pemasok</label>
             <input className="fi" name="no_faktur_pemasok" placeholder="Nomor di kertas fakturnya" />
@@ -128,6 +141,20 @@ export function FakturLangsungForm({
             <LampiranPicker folder="pembelian" />
           </div>
         </div>
+      </div>
+
+      <div className="crm-sec">
+        <SecHeader num="03" title="ASET TETAP" desc="Setiap baris membuat satu aset individual dan tidak menambah stok." />
+        {aset.map((r) => <div key={r.key} className="frow" style={{ marginBottom: 10 }}>
+          <div><label className="flab">Nama aset</label><input className="fi" value={r.name} onChange={(e) => setAsset(r.key, { name: e.target.value })} /></div>
+          <div><label className="flab">Kategori</label><select className="fi" value={r.category_id} onChange={(e) => setAsset(r.key, { category_id: e.target.value })}><option value="">— pilih —</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div><label className="flab">Umur (bulan)</label><input className="fi" type="number" min={1} value={r.useful_life_months} onChange={(e) => setAsset(r.key, { useful_life_months: Number(e.target.value) })} /></div>
+          <div><label className="flab">Harga</label><input className="fi" type="number" min={1} value={r.price} onChange={(e) => setAsset(r.key, { price: Number(e.target.value) })} /></div>
+          <div><label className="flab">Nilai sisa</label><input className="fi" type="number" min={0} value={r.residual_value} onChange={(e) => setAsset(r.key, { residual_value: Number(e.target.value) })} /></div>
+          <div><label className="flab">Lokasi fisik</label><input className="fi" value={r.location} onChange={(e) => setAsset(r.key, { location: e.target.value })} /></div>
+          <button type="button" className="btn-def" onClick={() => setAset((rows) => rows.filter((x) => x.key !== r.key))}>Hapus</button>
+        </div>)}
+        <button type="button" className="btn-def" onClick={() => setAset((rows) => [...rows, { key: Math.max(0, ...rows.map((x) => x.key)) + 1, name: "", category_id: "", useful_life_months: 48, residual_value: 0, price: 0, location: "" }])}><i className="ti ti-plus" /> Tambah baris aset</button>
       </div>
 
       <div className="crm-sec">
@@ -213,8 +240,8 @@ export function FakturLangsungForm({
         </div>
 
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
-          Faktur ini khusus <b>barang yang masuk gudang</b>. Tagihan jasa atau biaya
-          (listrik, sewa, service) dicatat lewat Buku Besar → Pencatatan Beban.
+          Baris barang menambah stok gudang; baris aset membuat aset individual tanpa memengaruhi stok.
+          Tagihan jasa atau biaya dicatat lewat Buku Besar → Pencatatan Beban.
           Isi tanggal kadaluarsa untuk barang bermasa simpan — kalau dikosongkan,
           barangnya tidak akan muncul di Monitor Kadaluarsa.
         </div>

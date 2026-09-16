@@ -2,12 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export async function simpanAbsensi(formData: FormData) {
   const supabase = await createClient();
 
   const employeeId = String(formData.get("employee_id") ?? "").trim();
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || "2026-07-01";
+  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const jamMasuk = String(formData.get("jam_masuk") ?? "").trim() || null;
   const jamPulang = String(formData.get("jam_pulang") ?? "").trim() || null;
   const status = String(formData.get("status") ?? "Hadir");
