@@ -115,7 +115,7 @@ export default async function CoaPage({
               title={sedangEdit ? `UBAH AKUN ${sedangEdit.code}` : "TAMBAH AKUN"}
               desc={sedangEdit
                 ? "Kode akun tidak bisa diubah — seluruh pencatatan mencarinya lewat kode itu."
-                : "Kode 4 angka. Angka pertama menentukan kelompoknya: 1 aset, 2 liabilitas, 3 ekuitas, 4 pendapatan, 5 beban."}
+                : "Kode 4–6 angka. Angka pertama menentukan kelompoknya: 1 aset, 2 liabilitas, 3 ekuitas, 4 pendapatan, 5 beban."}
               action={sedangEdit
                 ? <Link href="/keuangan/coa" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>Batal</Link>
                 : undefined}
@@ -123,7 +123,7 @@ export default async function CoaPage({
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
               <div className="fg">
                 <label className="flab">Kode akun *</label>
-                <input className="fi" name="code" required maxLength={4} inputMode="numeric"
+                <input className="fi" name="code" required minLength={4} maxLength={6} inputMode="numeric" pattern="[0-9]{4,6}"
                   placeholder="5403" defaultValue={sedangEdit?.code ?? ""}
                   readOnly={!!sedangEdit}
                   style={sedangEdit ? { background: "var(--bg2, #f3f4f6)", color: "var(--tm)" } : undefined} />

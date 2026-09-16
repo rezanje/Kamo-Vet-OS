@@ -1,8 +1,7 @@
 // Jurnal Berulang — catch-up bulanan (pola penyusutan): posting semua bulan tertinggal.
 // Idempotent via last_posted (YYYY-MM). Dipanggil lazy dari halaman Jurnal Umum.
 
-import { postJournal } from "./posting";
-import { jurnalTersimpan } from "./jurnal-guard";
+import { hariIniWIB } from "./tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -12,6 +11,38 @@ type RJ = {
   id: string; nama: string; deskripsi: string | null; day_of_month: number;
   branch_id: string | null; lines: RJLine[]; is_active: boolean; last_posted: string | null;
 };
+
+export type RecurringFrequency = "daily" | "monthly";
+
+function addOccurrence(startDate: string, frequency: RecurringFrequency, offset: number): string {
+  const [year, month, day] = startDate.split("-").map(Number);
+  if (frequency === "daily") {
+    const date = new Date(Date.UTC(year, month - 1, day + offset));
+    return date.toISOString().slice(0, 10);
+  }
+  const targetMonth = month - 1 + offset;
+  const targetYear = year + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  return `${targetYear}-${String(normalizedMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
+
+export function dueRecurringOccurrences(
+  startDate: string,
+  frequency: RecurringFrequency,
+  runCount: number,
+  repeatCount: number,
+  today: string,
+  limit = 31,
+): string[] {
+  const due: string[] = [];
+  for (let offset = runCount; offset < repeatCount && due.length < limit; offset++) {
+    const date = addOccurrence(startDate, frequency, offset);
+    if (date > today) break;
+    due.push(date);
+  }
+  return due;
+}
 
 const MAX_CATCHUP = 12; // ponytail: batas mundur 12 bulan
 
@@ -44,35 +75,15 @@ function bulanSebelum(periode: string): string {
 }
 
 export async function postRecurringCatchUp(supabase: AnyClient): Promise<{ nama: string; periode: string }[]> {
-  const { data } = await supabase.from("recurring_journals").select("*").eq("is_active", true);
+  const { data } = await supabase.from("recurring_journals").select("*").eq("status", "active");
   const posted: { nama: string; periode: string }[] = [];
-  const now = new Date();
+  const today = hariIniWIB();
 
-  for (const rj of (data ?? []) as RJ[]) {
-    const periods = periodeTertinggal(rj.last_posted, now, rj.day_of_month);
-    // last_posted hanya boleh maju sejauh periode yang jurnalnya BENAR-BENAR ada.
-    // postJournal best-effort: kalau bulan ke-2 gagal (periode terkunci, akun hilang),
-    // menaikkan last_posted ke bulan terakhir bikin bulan itu hilang selamanya.
-    let terakhirSukses: string | null = null;
-    for (const periode of periods) {
-      const tanggal = `${periode}-${String(rj.day_of_month).padStart(2, "0")}`;
-      const ref = `${rj.id.slice(0, 8)}-${periode}`;
-      await postJournal(supabase, {
-        tanggal,
-        deskripsi: `${rj.nama} (jurnal berulang ${periode})${rj.deskripsi ? ` — ${rj.deskripsi}` : ""}`,
-        source: "recurring",
-        sourceRef: ref,
-        branchId: rj.branch_id,
-        lines: (rj.lines ?? []).map((l) => ({ code: l.code, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
-      });
-      if (!(await jurnalTersimpan(supabase, "recurring", ref))) break;
-      terakhirSukses = periode;
-      posted.push({ nama: rj.nama, periode });
-    }
-    if (terakhirSukses) {
-      await supabase.from("recurring_journals")
-        .update({ last_posted: terakhirSukses })
-        .eq("id", rj.id);
+  for (const rj of (data ?? []) as (RJ & { frequency: RecurringFrequency; start_date: string; run_count: number; repeat_count: number })[]) {
+    for (const tanggal of dueRecurringOccurrences(rj.start_date, rj.frequency, rj.run_count, rj.repeat_count, today)) {
+      const { error } = await supabase.rpc("run_recurring_occurrence", { p_schedule_id: rj.id, p_run_date: tanggal });
+      if (error) break;
+      posted.push({ nama: rj.nama, periode: tanggal });
     }
   }
   return posted;

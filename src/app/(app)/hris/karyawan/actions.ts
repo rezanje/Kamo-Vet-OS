@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export async function simpanKaryawan(formData: FormData) {
   const supabase = await assertMasterAdmin("/hris/karyawan", "data karyawan");
@@ -48,7 +49,7 @@ export async function simpanKaryawan(formData: FormData) {
       employee_id: created.id,
       branch_id: branchId,
       role: "PRIMARY",
-      effective_date: tglMasuk || new Date().toISOString().slice(0, 10),
+      effective_date: tglMasuk || hariIniWIB(),
     }, { onConflict: "employee_id,branch_id" });
     if (assignmentError) {
       redirect(`/hris/karyawan?error=${encodeURIComponent("Karyawan tersimpan, tetapi penugasan cabang belum tersimpan")}`);
@@ -63,7 +64,7 @@ export async function simpanPenugasanCabang(formData: FormData) {
   const employeeId = String(formData.get("employee_id") ?? "").trim();
   const branchId = String(formData.get("branch_id") ?? "").trim();
   const role = String(formData.get("role") ?? "SECONDARY").trim();
-  const effectiveDate = String(formData.get("effective_date") ?? "").trim() || new Date().toISOString().slice(0, 10);
+  const effectiveDate = String(formData.get("effective_date") ?? "").trim() || hariIniWIB();
 
   if (!employeeId || !branchId || role !== "SECONDARY") {
     redirect(`/hris/karyawan?error=${encodeURIComponent("Pilih karyawan, cabang, dan jenis penugasan")}`);
