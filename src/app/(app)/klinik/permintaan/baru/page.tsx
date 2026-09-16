@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { PermintaanFormKlinik } from "./PermintaanFormKlinik";
+import { loadKatalogPermintaan } from "@/lib/permintaan";
 
 export default async function KlinikPermintaanBaruPage({
   searchParams,
@@ -17,8 +18,10 @@ export default async function KlinikPermintaanBaruPage({
   if (!shift) redirect("/klinik/shift");
 
   // Gudang tujuan: semua gudang aktif (DC/pusat + gudang cabang lain).
-  const { data: warehouses } = await supabase
-    .from("warehouses").select("id, name").eq("is_active", true).order("name");
+  const [{ data: warehouses }, items] = await Promise.all([
+    supabase.from("warehouses").select("id, name").eq("is_active", true).order("name"),
+    loadKatalogPermintaan(supabase),
+  ]);
 
   return (
     <>
@@ -28,7 +31,7 @@ export default async function KlinikPermintaanBaruPage({
         <span style={{ fontSize: 13, fontWeight: 500 }}>Permintaan Baru</span>
       </div>
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      <PermintaanFormKlinik branchName={shift.branchName} warehouses={warehouses ?? []} />
+      <PermintaanFormKlinik branchName={shift.branchName} warehouses={warehouses ?? []} items={items} />
     </>
   );
 }

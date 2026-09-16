@@ -83,7 +83,7 @@ function MatrixValue({ row, column }: { row: BarangMatrixRow; column: AccurateMa
   }
 }
 
-export function BarangMatrixTable({ rows, bolehKelola }: { rows: BarangMatrixRow[]; bolehKelola: boolean }) {
+export function BarangMatrixTable({ rows, bolehKelola, startNumber = 0 }: { rows: BarangMatrixRow[]; bolehKelola: boolean; startNumber?: number }) {
   const [visibleColumns, setVisibleColumns] = useState<AccurateMatrixColumn[]>(ALL_COLUMNS);
   const selectedColumns = useMemo(
     () => ACCURATE_MATRIX_COLUMNS.filter((column) => visibleColumns.includes(column.key)),
@@ -141,7 +141,7 @@ export function BarangMatrixTable({ rows, bolehKelola }: { rows: BarangMatrixRow
           <tbody>
             {rows.map((row, index) => (
               <tr key={row.id}>
-                <td style={stickyCell(0, 42, { color: "var(--tm)" })}>{index + 1}</td>
+                <td style={stickyCell(0, 42, { color: "var(--tm)" })}>{startNumber + index + 1}</td>
                 <td style={stickyCell(42, 220, { fontWeight: 600 })}>
                   {bolehKelola ? (
                     <Link
