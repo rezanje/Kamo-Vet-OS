@@ -34,6 +34,7 @@ async function daftar(formData: FormData): Promise<string[]> {
   const branchId = String(formData.get("branchId") ?? "");
   const kontrol = String(formData.get("kontrol") ?? "baru");
   const tujuanKontrol = String(formData.get("tujuanKontrol") ?? "").trim();
+  if (!doctorId) redirect(`/klinik/registrasi?error=${encodeURIComponent("Pilih dokter, groomer, atau pelaksana kunjungan")}`);
 
   const dibaca = bacaPets(formData.get("pets"));
   if (!dibaca.ok) {

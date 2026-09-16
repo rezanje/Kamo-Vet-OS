@@ -153,7 +153,8 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
           <div className="frow" style={{ marginBottom: 12 }}>
             <div>
               <label className="flab">Sumber dana</label>
-              <select className="fi" name="sumber" defaultValue="saldo-awal">
+              <select className="fi" name="sumber" defaultValue="" required>
+                <option value="" disabled>Pilih sumber dana</option>
                 <option value="saldo-awal">Saldo awal (tanpa jurnal)</option>
                 <option value="Tunai">Kas (jurnal otomatis)</option>
                 <option value="Bank">Bank (jurnal otomatis)</option>

@@ -48,10 +48,12 @@ export default async function RekamMedisPage({
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
-  const dokterOpsi = await daftarDokter(supabase);
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
+  // Opsi dokter hanya dipakai oleh form pemeriksaan baru, bukan saat membaca
+  // rekam medis yang sudah tersimpan.
+  const dokterOpsi = recorded ? [] : await daftarDokter(supabase, { branchId: visit.branch_id });
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
@@ -116,7 +118,7 @@ export default async function RekamMedisPage({
   let obatItems: ItemLiteFull[] = [];
   let bahanItems: ItemLiteFull[] = [];
   let jasaItems: ItemLiteFull[] = [];
-  {
+  if (!recorded) {
     const { data: itemRows } = await supabase
       .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori")
       .eq("is_active", true).order("name").limit(400);

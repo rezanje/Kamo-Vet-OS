@@ -6,14 +6,14 @@
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { pickUnit } from "@/lib/satuan";
-import type { KatalogItem } from "@/lib/permintaan";
+import { cariKatalogPermintaan, type KatalogItem } from "@/lib/permintaan";
 import { buatPermintaan } from "../actions";
 
 type Branch = { id: string; name: string };
 type Warehouse = { id: string; name: string };
-type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: string };
+type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: string; cari: string };
 
-const blank: Row = { item_id: "", qty_diminta: 1, satuan: "", catatan: "" };
+const blank: Row = { item_id: "", qty_diminta: 1, satuan: "", catatan: "", cari: "" };
 
 export function PermintaanForm({
   branches, warehouses, items,
@@ -28,7 +28,11 @@ export function PermintaanForm({
 
   const setItem = (i: number, id: string) => {
     const it = byId.get(id);
-    set(i, { item_id: id, satuan: it?.units[0]?.unit ?? "" });
+    set(i, {
+      item_id: id,
+      satuan: it?.units[0]?.unit ?? "",
+      cari: it ? `${it.code ? `${it.code} — ` : ""}${it.name}` : "",
+    });
   };
 
   const add = () => setRows((rs) => [...rs, { ...blank }]);
@@ -74,14 +78,22 @@ export function PermintaanForm({
             {rows.map((r, i) => {
               const it = byId.get(r.item_id);
               const opts = it?.units ?? [];
+              const visibleItems = cariKatalogPermintaan(items, r.cari, r.item_id);
               const faktor = it ? pickUnit(opts, r.satuan).factor : 1;
               const dasar = opts[0]?.unit;
               return (
                 <div key={i}>
+                  <input
+                    className="fi"
+                    value={r.cari}
+                    placeholder="Ketik kode atau nama barang…"
+                    onChange={(event) => set(i, { cari: event.target.value, item_id: "", satuan: "" })}
+                    style={{ marginBottom: 5 }}
+                  />
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <select className="fi" value={r.item_id} onChange={(e) => setItem(i, e.target.value)} style={{ flex: 2 }}>
-                      <option value="">Pilih barang...</option>
-                      {items.map((m) => (
+                      <option value="">{r.cari ? "Pilih hasil pencarian…" : "Pilih barang…"}</option>
+                      {visibleItems.map((m) => (
                         <option key={m.id} value={m.id}>{m.code ? `${m.code} — ` : ""}{m.name}</option>
                       ))}
                     </select>
@@ -116,7 +128,7 @@ export function PermintaanForm({
             })}
           </div>
           <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
-            Hanya barang berjenis Persediaan yang muncul — jasa tidak punya stok, jadi tidak bisa diminta.
+            Ketik kode atau nama untuk mencari seluruh master barang. Hanya barang berjenis Persediaan yang muncul — jasa tidak punya stok, jadi tidak bisa diminta.
             Baris tanpa barang diabaikan saat disimpan.
           </div>
         </div>

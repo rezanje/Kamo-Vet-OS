@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { stockIn, stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockIn, stockOut } from "@/lib/inventory";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -123,6 +123,11 @@ export async function mulaiProduksi(formData: FormData) {
   const kurang = bahanKurang(kebutuhan, stok);
   if (kurang.length > 0) {
     gagal(`Stok bahan tidak cukup: ${kurang.map((k) => `${k.nama ?? k.item_id} (butuh ${k.butuh}, ada ${k.ada})`).join(", ")}`);
+  }
+  try {
+    await pastikanStokSiap(supabase, warehouseId, kebutuhan.map((k) => ({ itemId: k.item_id, qty: k.qty })));
+  } catch (error) {
+    gagal(error instanceof Error ? error.message : "Gagal memeriksa modal bahan produksi");
   }
 
   const { data: { user } } = await supabase.auth.getUser();

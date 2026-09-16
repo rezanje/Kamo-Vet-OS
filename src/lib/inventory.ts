@@ -174,6 +174,52 @@ export type StockOutOpts = {
   source: string; ref?: string | null;
 };
 
+// Pemeriksaan sebelum dokumen penjualan dibuat. stockOut mengulang pemeriksaan
+// saat eksekusi; pemeriksaan awal mencegah transaksi setengah jadi pada stok kurang.
+export async function pastikanStokSiap(
+  supabase: AnyClient,
+  warehouseId: string | null,
+  kebutuhan: { itemId: string; qty: number }[],
+): Promise<void> {
+  const jumlah = new Map<string, number>();
+  for (const baris of kebutuhan) {
+    if (!Number.isFinite(baris.qty) || baris.qty <= 0) throw new StockError("Jumlah barang tidak valid");
+    jumlah.set(baris.itemId, (jumlah.get(baris.itemId) ?? 0) + baris.qty);
+  }
+  const ids = [...jumlah.keys()];
+  if (ids.length === 0) return;
+  const { data: items, error: itemErr } = await supabase.from("items")
+    .select("id, name, item_type, buy_price").in("id", ids);
+  orThrow(itemErr, "baca master barang");
+  if ((items ?? []).length !== ids.length) throw new StockError("Ada barang yang tidak ditemukan");
+  const barang = (items ?? []).filter((item: { item_type: string }) => item.item_type === "Persediaan") as
+    { id: string; name: string; buy_price: number }[];
+  if (barang.length === 0) return;
+  if (!warehouseId) throw new StockError("Cabang belum punya gudang aktif");
+
+  const persediaanIds = barang.map((item) => item.id);
+  const [{ data: saldo, error: saldoErr }, { data: lapisan, error: lapisanErr }] = await Promise.all([
+    supabase.from("stock").select("item_id, qty")
+      .eq("warehouse_id", warehouseId).in("item_id", persediaanIds),
+    supabase.from("stock_layers").select("item_id, qty_left, unit_cost, exp_date, tanggal, created_at")
+      .eq("warehouse_id", warehouseId).in("item_id", persediaanIds).gt("qty_left", 0),
+  ]);
+  orThrow(saldoErr, "baca saldo stok");
+  orThrow(lapisanErr, "baca modal stok");
+  const tersedia = new Map<string, number>((saldo ?? []).map((row: { item_id: string; qty: number }) => [row.item_id, Number(row.qty)]));
+  for (const item of barang) {
+    const perlu = jumlah.get(item.id) ?? 0;
+    if ((tersedia.get(item.id) ?? 0) + Number.EPSILON < perlu) {
+      throw new StockError(`Stok ${item.name} tidak cukup: perlu ${perlu}, tersedia ${tersedia.get(item.id) ?? 0}`);
+    }
+    const layers = urutFefo((lapisan ?? []).filter((row: { item_id: string }) => row.item_id === item.id) as (Layer & LapisanFefo)[]);
+    const { takes, shortfall } = consumeLayers(layers, perlu);
+    if (takes.some((take) => Number(take.unit_cost) <= 0) || (shortfall > 0 && Number(item.buy_price) <= 0)) {
+      throw new StockError(`Modal ${item.name} belum tercatat. Lengkapi harga beli sebelum menjual.`);
+    }
+  }
+}
+
 // Stok keluar: konsumsi layer FIFO, turunkan qty, kembalikan total cost (HPP riil).
 // Shortfall (layer tidak cukup) dihargai items.buy_price — tidak membuat layer negatif.
 // `takes` & `shortfall` dikembalikan supaya pemanggil yang memindahkan barang bisa
@@ -182,9 +228,17 @@ export async function stockOut(
   supabase: AnyClient,
   o: StockOutOpts,
 ): Promise<{ cost: number; takes: Consumption["takes"]; shortfall: number; hargaBeli: number }> {
+  if (!Number.isFinite(o.qty)) throw new StockError("Jumlah stok keluar tidak valid");
   if (o.qty <= 0) return { cost: 0, takes: [], shortfall: 0, hargaBeli: 0 };
   // Jasa tidak mengurangi stok DAN tidak punya HPP persediaan — cost 0, bukan error.
   if (!(await punyaStok(supabase, o.itemId))) return { cost: 0, takes: [], shortfall: 0, hargaBeli: 0 };
+
+  const { data: saldo, error: saldoErr } = await supabase.from("stock").select("qty")
+    .eq("warehouse_id", o.warehouseId).eq("item_id", o.itemId).maybeSingle();
+  orThrow(saldoErr, "baca saldo stok");
+  if (Number(saldo?.qty ?? 0) + Number.EPSILON < o.qty) {
+    throw new StockError(`Stok tidak cukup: perlu ${o.qty}, tersedia ${Number(saldo?.qty ?? 0)}`);
+  }
 
   const { data: layersRaw, error: layerErr } = await supabase
     .from("stock_layers")
@@ -203,20 +257,26 @@ export async function stockOut(
 
   const { takes, cost, shortfall } = consumeLayers(layers as Layer[], o.qty);
 
+  let extra = 0;
+  let hargaBeli = 0;
+  if (shortfall > 0) {
+    const { data: item, error: itemErr } = await supabase.from("items")
+      .select("buy_price").eq("id", o.itemId).maybeSingle();
+    orThrow(itemErr, "baca harga beli");
+    hargaBeli = Number(item?.buy_price) || 0;
+    extra = shortfall * hargaBeli;
+  }
+  if (["sale", "sale-group", "sale-online", "sales-delivery", "klinik", "racik", "produksi"].includes(o.source)
+    && ((shortfall > 0 && hargaBeli <= 0) || takes.some((t) => Number(t.unit_cost) <= 0))) {
+    throw new StockError("Modal barang belum tercatat. Lengkapi harga beli sebelum stok dikeluarkan.");
+  }
+
   for (const t of takes) {
     const layer = layers.find((l: Layer) => l.id === t.id);
     const { error } = await supabase.from("stock_layers")
       .update({ qty_left: Number(layer?.qty_left ?? 0) - t.qty })
       .eq("id", t.id);
     orThrow(error, "kurangi lapisan stok");
-  }
-
-  let extra = 0;
-  let hargaBeli = 0;
-  if (shortfall > 0) {
-    const { data: item } = await supabase.from("items").select("buy_price").eq("id", o.itemId).maybeSingle();
-    hargaBeli = Number(item?.buy_price) || 0;
-    extra = shortfall * hargaBeli;
   }
 
   await adjustStockQty(supabase, o.warehouseId, o.itemId, -o.qty);

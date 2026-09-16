@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
-import { stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockOut } from "@/lib/inventory";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
@@ -133,6 +133,14 @@ export async function buatPengiriman(formData: FormData) {
 
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) gagal(pesanPeriode);
+
+  try {
+    await pastikanStokSiap(supabase, gudang ?? null, kirim.filter((b) => b.item_id).map((b) => ({
+      itemId: b.item_id!, qty: toBaseQty(b.kali_ini, b.faktor ?? 1),
+    })));
+  } catch (error) {
+    gagal(error instanceof Error ? error.message : "Gagal memeriksa stok pengiriman");
+  }
 
   const { data: { user } } = await supabase.auth.getUser();
   const no = await nextNoDokumen(supabase, "DO");

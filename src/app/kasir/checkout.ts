@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
-import { stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockOut } from "@/lib/inventory";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
 import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
@@ -387,6 +387,11 @@ export async function checkoutKasir(formData: FormData) {
         return `${namaStok.get(need.item_id) ?? need.item_id} butuh ${need.qty_dasar}, tersedia ${stock}`;
       }).join("; ");
       redirect(`/kasir?error=${encodeURIComponent(`Stok tidak cukup: ${detail}`)}`);
+    }
+    try {
+      await pastikanStokSiap(supabase, wh.id, kebutuhanStok.map((need) => ({ itemId: need.item_id, qty: need.qty_dasar })));
+    } catch (error) {
+      redirect(`/kasir?error=${encodeURIComponent(error instanceof Error ? error.message : "Gagal memeriksa modal barang")}`);
     }
   }
 

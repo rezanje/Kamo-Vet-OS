@@ -5,13 +5,66 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nextStatus, stockDeductions, type RecipeStatus } from "@/lib/compounding";
 
-import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockInAtBuyPrice, stockOut } from "@/lib/inventory";
+import { hargaCabang, loadHargaCabang } from "@/lib/harga-cabang";
+
+export type BahanRacikan = {
+  id: string;
+  name: string;
+  unit: string;
+  sell_price: number;
+  stok: number;
+};
 
 // helper: gudang utama cabang (pola sama dgn checkout kasir).
 async function branchWarehouse(supabase: Awaited<ReturnType<typeof createClient>>, branchId: string) {
   const { data: wh } = await supabase
     .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   return wh?.id ?? null;
+}
+
+// Bahan racikan hanya dibaca saat dokter membuka pembuat racikan dari rekam medis
+// yang sudah tersimpan. Halaman riwayat tidak perlu menunggu katalog, stok, dan
+// harga cabang sebelum informasi pasien bisa dibuka.
+export async function bahanRacikanUntukKunjungan(visitId: string): Promise<BahanRacikan[]> {
+  const supabase = await createClient();
+  const [{ data: visit }, { data: items }] = await Promise.all([
+    supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle(),
+    supabase.from("items")
+      .select("id, name, unit, sell_price")
+      .eq("is_active", true)
+      .eq("is_compound_material", true)
+      .order("name")
+      .limit(400),
+  ]);
+  if (!visit || !items?.length) return [];
+
+  const ids = items.map((item) => item.id as string);
+  const [{ data: warehouse }, hargaMap] = await Promise.all([
+    supabase.from("warehouses")
+      .select("id")
+      .eq("branch_id", visit.branch_id)
+      .eq("is_active", true)
+      .order("type")
+      .limit(1)
+      .maybeSingle(),
+    loadHargaCabang(supabase, visit.branch_id, ids),
+  ]);
+  const { data: stockRows } = warehouse
+    ? await supabase.from("stock").select("item_id, qty").eq("warehouse_id", warehouse.id).in("item_id", ids)
+    : { data: [] as { item_id: string; qty: number }[] };
+  const stokByItem = new Map<string, number>();
+  for (const stock of stockRows ?? []) {
+    stokByItem.set(stock.item_id as string, (stokByItem.get(stock.item_id as string) ?? 0) + Number(stock.qty));
+  }
+
+  return items.map((item) => ({
+    id: item.id as string,
+    name: item.name as string,
+    unit: (item.unit as string) || "pcs",
+    sell_price: hargaCabang(hargaMap, item.id as string, item.unit as string, Number(item.sell_price)),
+    stok: stokByItem.get(item.id as string) ?? 0,
+  }));
 }
 
 // delta>0 = kembalikan bahan (layer baru @buy_price); delta<0 = potong bahan (FIFO).
@@ -48,6 +101,15 @@ export async function addRacikan(formData: FormData) {
   const ings = bahan.filter((b) => b.item_id && Number(b.qty) > 0);
   if (ings.length === 0) redirect(`${back}?error=${encodeURIComponent("Minimal 1 bahan racikan")}`);
 
+  const { data: visit } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+  const whId = visit ? await branchWarehouse(supabase, visit.branch_id) : null;
+  try {
+    await pastikanStokSiap(supabase, whId, stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))
+      .map((d) => ({ itemId: d.item_id, qty: d.qty })));
+  } catch (error) {
+    redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Gagal memeriksa stok racikan")}`);
+  }
+
   const total = ings.reduce((a, b) => a + (Number(b.harga) || 0) * (Number(b.qty) || 0), 0);
 
   const { data: recipe, error: rErr } = await supabase
@@ -69,11 +131,7 @@ export async function addRacikan(formData: FormData) {
   if (iErr) redirect(`${back}?error=${encodeURIComponent(iErr.message)}`);
 
   // §2: potong stok bahan di gudang cabang.
-  const { data: visit } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
-  if (visit) {
-    const whId = await branchWarehouse(supabase, visit.branch_id);
-    if (whId) for (const d of stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))) await adjustStock(supabase, whId, d.item_id, -d.qty);
-  }
+  if (whId) for (const d of stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))) await adjustStock(supabase, whId, d.item_id, -d.qty);
 
   redirect(`/klinik/rekam-medis/${visitId}?racikan=dibuat`);
 }

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, hariRawatInap, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
 import { stockDeductions } from "@/lib/compounding";
-import { stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -213,6 +213,15 @@ export async function addDailyLogPos(formData: FormData) {
     const { data: wh } = visitRow
       ? await supabase.from("warehouses").select("id").eq("branch_id", visitRow.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle()
       : { data: null };
+
+    const kebutuhan = stockDeductions(racikan.flatMap((r) => (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).map((b) => ({
+      item_id: b.item_id, quantity: Number(b.qty),
+    }))));
+    try {
+      await pastikanStokSiap(supabase, wh?.id ?? null, kebutuhan.map((d) => ({ itemId: d.item_id, qty: d.qty })));
+    } catch (error) {
+      redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Gagal memeriksa stok racikan")}`);
+    }
 
     for (const r of racikan) {
       const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);

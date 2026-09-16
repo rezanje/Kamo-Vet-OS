@@ -11,7 +11,7 @@ import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { bacaPoinPelanggan, catatPoinKlinik, poinTerpakai, RUPIAH_PER_POIN } from "@/lib/poin-klinik";
-import { stockIn, stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockIn, stockOut } from "@/lib/inventory";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -376,6 +376,16 @@ export async function bayarVisit(formData: FormData) {
   }
 
   // ---- jalur CREATE (invoice pertama utk visit ini) ----
+  const { data: gudang, error: gudangErr } = await supabase.from("warehouses").select("id")
+    .eq("branch_id", v?.branch_id ?? "").eq("is_active", true).order("type").limit(1).maybeSingle();
+  if (gudangErr) redirect(`${back}?error=${encodeURIComponent("Gagal membaca gudang klinik")}`);
+  try {
+    await pastikanStokSiap(supabase, gudang?.id ?? null, rows.filter((l) => l.jenis !== "jasa" && l.item_id).map((l) => ({
+      itemId: l.item_id!, qty: Number(l.qty),
+    })));
+  } catch (error) {
+    redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Gagal memeriksa stok obat")}`);
+  }
   const invoiceNo = await nextInvoiceNo(supabase);
 
   const { data: inv, error: invErr } = await supabase

@@ -8,6 +8,7 @@ import { ITEM_TYPES } from "@/lib/barang";
 import { BARANG_FIELDS } from "./data";
 import { toggleBarang } from "./actions";
 import { buildTree, labelPath, type KategoriRow } from "@/lib/kategori";
+import { infoHalaman } from "@/lib/pagination";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -28,9 +29,9 @@ type Row = {
 export default async function BarangJasaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; kat?: string; induk?: string; jenis?: string; cari?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kat?: string; induk?: string; jenis?: string; cari?: string; hal?: string }>;
 }) {
-  const { error, success, kat, induk, jenis, cari } = await searchParams;
+  const { error, success, kat, induk, jenis, cari, hal } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -47,7 +48,10 @@ export default async function BarangJasaPage({
     ?? null;
   const selectedSubcategory = selectedTree?.anak.find((anak) => anak.id === kat) ?? null;
 
-  let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name)`).order("name").limit(500);
+  const requestedPage = Math.max(1, Number.parseInt(hal ?? "1", 10) || 1);
+  const pageSize = 100;
+  const requestedFrom = (requestedPage - 1) * pageSize;
+  let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name)`, { count: "exact" }).order("name");
   if (selectedSubcategory) q = q.eq("category_id", selectedSubcategory.id);
   else if (selectedTree) q = q.in("category_id", [selectedTree.induk.id, ...selectedTree.anak.map((anak) => anak.id)]);
   else if (kat) q = q.eq("category_id", kat);
@@ -56,13 +60,34 @@ export default async function BarangJasaPage({
   // menyorot barang yang dicari, bukan 500 baris yang harus ditelusuri lagi.
   if (cari) q = q.or(`name.ilike.%${cari}%,code.ilike.%${cari}%`);
 
-  const { data: items } = await q;
+  const { data: items, count } = await q.range(requestedFrom, requestedFrom + pageSize - 1);
+  const pageInfo = infoHalaman(hal, count ?? 0, pageSize);
+  if (requestedPage !== pageInfo.page) {
+    const params = new URLSearchParams();
+    if (jenis) params.set("jenis", jenis);
+    if (induk) params.set("induk", induk);
+    if (kat) params.set("kat", kat);
+    if (cari) params.set("cari", cari);
+    if (pageInfo.page > 1) params.set("hal", String(pageInfo.page));
+    const query = params.toString();
+    redirect(query ? `/pos/sku?${query}` : "/pos/sku");
+  }
   const baseRows = (items ?? []) as unknown as Row[];
   const unitMap = await loadItemUnits(supabase, baseRows.map((r) => r.id));
   const rows: Row[] = baseRows.map((r) => ({ ...r, units: unitMap.get(r.id) ?? [] }));
   // Kolom kategori dipetakan dari SEMUA kategori (termasuk yang nonaktif) — barang
   // lama tetap menunjukkan kategorinya, bukan tanda strip.
   const namaKat = new Map(katRows.map((c) => [c.id, labelPath(c.id, katRows)]));
+  const pageHref = (page: number) => {
+    const params = new URLSearchParams();
+    if (jenis) params.set("jenis", jenis);
+    if (induk) params.set("induk", induk);
+    if (kat) params.set("kat", kat);
+    if (cari) params.set("cari", cari);
+    if (page > 1) params.set("hal", String(page));
+    const query = params.toString();
+    return query ? `/pos/sku?${query}` : "/pos/sku";
+  };
 
   return (
     <>
@@ -96,8 +121,11 @@ export default async function BarangJasaPage({
       {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah master barang. Kamu bisa melihat daftarnya saja.</div>}
 
       <form action="/pos/sku" className="crm-sec" style={{ marginBottom: 12, padding: 12 }}>
-        {cari && <input type="hidden" name="cari" value={cari} />}
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ width: 230 }}>
+            <label className="flab">Cari barang</label>
+            <input className="fi" name="cari" defaultValue={cari ?? ""} placeholder="Kode atau nama barang" />
+          </div>
           <div style={{ width: 150 }}>
             <label className="flab">Jenis</label>
             <select className="fi" name="jenis" defaultValue={jenis ?? ""}>
@@ -143,7 +171,7 @@ export default async function BarangJasaPage({
             <tbody>
               {rows.map((it, i) => (
                 <tr key={it.id}>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
+                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pageInfo.from + i + 1}</td>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                     {it.name}
                     <div style={{ fontSize: 9, color: "var(--tm)" }}>
@@ -197,6 +225,18 @@ export default async function BarangJasaPage({
           </table>
         </div>
       </div>
+      {(count ?? 0) > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 10 }}>
+          <span style={{ fontSize: 10.5, color: "var(--tm)" }}>
+            Menampilkan {pageInfo.from + 1}–{Math.min(pageInfo.from + rows.length, count ?? 0)} dari {(count ?? 0).toLocaleString("id-ID")} barang
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {pageInfo.page > 1 && <Link href={pageHref(pageInfo.page - 1)} className="btn-def" style={{ textDecoration: "none" }}>← Sebelumnya</Link>}
+            <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Halaman {pageInfo.page} / {pageInfo.totalPages}</span>
+            {pageInfo.page < pageInfo.totalPages && <Link href={pageHref(pageInfo.page + 1)} className="btn-def" style={{ textDecoration: "none" }}>Berikutnya →</Link>}
+          </div>
+        </div>
+      )}
     </>
   );
 }

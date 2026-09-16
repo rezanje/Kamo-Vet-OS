@@ -38,6 +38,10 @@ export function RecurringForm({ accounts, branches }: { accounts: Account[]; bra
             <label className="flab">Tgl posting *</label>
             <input className="fi" type="number" name="day_of_month" min={1} max={28} defaultValue={1} required />
           </div>
+          <div className="fg" style={{ width: 150, marginBottom: 0 }}>
+            <label className="flab">Berapa kali (opsional)</label>
+            <input className="fi" type="number" name="max_occurrences" min={1} max={1200} placeholder="Tanpa batas" />
+          </div>
           <div className="fg" style={{ flex: 1, minWidth: 160, marginBottom: 0 }}>
             <label className="flab">Cabang</label>
             <select className="fi" name="branch_id">

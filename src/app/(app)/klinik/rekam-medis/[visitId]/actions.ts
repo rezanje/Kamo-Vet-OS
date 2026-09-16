@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stockDeductions } from "@/lib/compounding";
-import { stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
 import { resolveDokter } from "@/lib/dokter";
@@ -45,6 +45,7 @@ export async function simpanRekamMedis(formData: FormData) {
   // tidak pernah mengirimnya, jadi setiap simpan rekam medis justru MENGHAPUS nama
   // dokter yang sudah diisi saat registrasi.
   const { doctorId, nama: dokter } = await resolveDokter(supabase, String(formData.get("doctor_id") ?? "").trim() || null);
+  if (!doctorId) redirect(`/klinik/rekam-medis/${visitId}?error=${encodeURIComponent("Pilih dokter, groomer, atau pelaksana")}`);
   const beratRaw = formData.get("berat");
   const berat = beratRaw ? Number(beratRaw) : null;
   const suhuRaw = formData.get("suhu");
@@ -162,6 +163,15 @@ export async function simpanRekamMedis(formData: FormData) {
     const { data: wh } = visitRow
       ? await supabase.from("warehouses").select("id").eq("branch_id", visitRow.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle()
       : { data: null };
+
+    const kebutuhan = stockDeductions(racikan.flatMap((r) => (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).map((b) => ({
+      item_id: b.item_id, quantity: Number(b.qty),
+    }))));
+    try {
+      await pastikanStokSiap(supabase, wh?.id ?? null, kebutuhan.map((d) => ({ itemId: d.item_id, qty: d.qty })));
+    } catch (error) {
+      redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Gagal memeriksa stok racikan")}`);
+    }
 
     for (const r of racikan) {
       const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);

@@ -73,19 +73,20 @@ describe("postJournal guards", () => {
 
   it("jurnal seimbang → insert header + lines", async () => {
     const c = makeClient();
-    await postJournal(c, {
+    const ok = await postJournal(c, {
       tanggal: "2026-07-15", deskripsi: "jual", source: "sale",
       lines: [
         { code: "1101", debit: 1000, credit: 0 },
         { code: "4101", debit: 0, credit: 1000 },
       ],
     });
+    expect(ok).toBe(true);
     const tables = c.inserted.map((i) => i.table);
     expect(tables).toContain("journal_entries");
     expect(tables).toContain("journal_lines");
   });
 
-  it("tidak pernah melempar error (best-effort)", async () => {
+  it("tidak pernah melempar error (best-effort) dan melapor gagal", async () => {
     const broken = { from() { throw new Error("db down"); } };
     await expect(postJournal(broken, {
       tanggal: "2026-07-15", deskripsi: "x", source: "manual",
@@ -93,7 +94,7 @@ describe("postJournal guards", () => {
         { code: "1101", debit: 1, credit: 0 },
         { code: "4101", debit: 0, credit: 1 },
       ],
-    })).resolves.toBeUndefined();
+    })).resolves.toBe(false);
   });
 });
 
