@@ -29,21 +29,22 @@ export async function nextSeqJurnal(supabase: AnyClient, tanggal: string): Promi
 }
 
 /**
- * Best-effort accounting post. Never throws — accounting must not break the primary transaction.
+ * Best-effort accounting post. Returns success so callers with mandatory journals
+ * can undo their own record when posting fails.
  */
-export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<void> {
+export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<boolean> {
   try {
     const { tanggal, deskripsi, source, sourceRef, branchId, lines } = opts;
 
     // Filter to only lines with actual amounts.
     const active = lines.filter((l) => l.debit > 0 || l.credit > 0);
-    if (active.length < 1) return;
+    if (active.length < 1) return false;
 
     const totalDebit = active.reduce((a, l) => a + l.debit, 0);
     const totalKredit = active.reduce((a, l) => a + l.credit, 0);
 
     // Defensive: never post an unbalanced or zero entry.
-    if (totalDebit === 0 || Math.round(totalDebit) !== Math.round(totalKredit)) return;
+    if (totalDebit === 0 || Math.round(totalDebit) !== Math.round(totalKredit)) return false;
 
     // Resolve account codes → ids.
     const codes = [...new Set(active.map((l) => l.code))];
@@ -51,7 +52,7 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
       .from("coa_accounts")
       .select("id, code, is_header")
       .in("code", codes);
-    if (accErr || !accounts) return;
+    if (accErr || !accounts) return false;
 
     const codeToId: Record<string, string> = {};
     for (const row of accounts as { id: string; code: string; is_header?: boolean }[]) {
@@ -60,14 +61,14 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
       // lagi lewat penjumlahan anaknya.
       if (row.is_header) {
         console.error(`[jurnal] akun ${row.code} adalah akun induk — tidak boleh dijurnal`);
-        return;
+        return false;
       }
       codeToId[row.code] = row.id;
     }
 
     // If any line's code is missing, abort.
     for (const l of active) {
-      if (!codeToId[l.code]) return;
+      if (!codeToId[l.code]) return false;
     }
 
     // Generate no_jurnal = JRN-YYYYMM-NNNN from tanggal's year+month.
@@ -92,9 +93,9 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
         .select("id")
         .single();
       if (data) { entry = data; break; }
-      if (entryErr?.code !== "23505") return; // error lain: menyerah (best-effort)
+      if (entryErr?.code !== "23505") return false; // error lain: menyerah (best-effort)
     }
-    if (!entry) return;
+    if (!entry) return false;
 
     // Insert journal_lines.
     const lineRows = active.map((l) => ({
@@ -107,9 +108,12 @@ export async function postJournal(supabase: AnyClient, opts: PostOpts): Promise<
     if (lineErr) {
       // jangan tinggalkan header tanpa baris — hapus supaya tidak jadi entri yatim.
       await supabase.from("journal_entries").delete().eq("id", entry.id);
+      return false;
     }
+    return true;
   } catch (err) {
     // Best-effort: swallow any error so the primary transaction is never blocked.
     console.error("[postJournal] accounting error (ignored):", err);
+    return false;
   }
 }

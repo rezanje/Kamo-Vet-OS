@@ -3,6 +3,7 @@
 
 import { postJournal } from "./posting";
 import { jurnalTersimpan } from "./jurnal-guard";
+import { hariIniWIB } from "./tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -11,6 +12,7 @@ type RJLine = { code: string; debit: number; credit: number };
 type RJ = {
   id: string; nama: string; deskripsi: string | null; day_of_month: number;
   branch_id: string | null; lines: RJLine[]; is_active: boolean; last_posted: string | null;
+  max_occurrences: number | null;
 };
 
 const MAX_CATCHUP = 12; // ponytail: batas mundur 12 bulan
@@ -46,9 +48,18 @@ function bulanSebelum(periode: string): string {
 export async function postRecurringCatchUp(supabase: AnyClient): Promise<{ nama: string; periode: string }[]> {
   const { data } = await supabase.from("recurring_journals").select("*").eq("is_active", true);
   const posted: { nama: string; periode: string }[] = [];
-  const now = new Date();
+  const now = new Date(`${hariIniWIB()}T12:00:00Z`);
 
   for (const rj of (data ?? []) as RJ[]) {
+    const { count, error: hitungErr } = await supabase.from("journal_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("source", "recurring").like("source_ref", `${rj.id.slice(0, 8)}-%`);
+    if (hitungErr) { console.error("[jurnal berulang] gagal hitung riwayat:", hitungErr); continue; }
+    let jumlah = count ?? 0;
+    if (rj.max_occurrences && jumlah >= rj.max_occurrences) {
+      await supabase.from("recurring_journals").update({ is_active: false }).eq("id", rj.id);
+      continue;
+    }
     const periods = periodeTertinggal(rj.last_posted, now, rj.day_of_month);
     // last_posted hanya boleh maju sejauh periode yang jurnalnya BENAR-BENAR ada.
     // postJournal best-effort: kalau bulan ke-2 gagal (periode terkunci, akun hilang),
@@ -57,21 +68,28 @@ export async function postRecurringCatchUp(supabase: AnyClient): Promise<{ nama:
     for (const periode of periods) {
       const tanggal = `${periode}-${String(rj.day_of_month).padStart(2, "0")}`;
       const ref = `${rj.id.slice(0, 8)}-${periode}`;
-      await postJournal(supabase, {
-        tanggal,
-        deskripsi: `${rj.nama} (jurnal berulang ${periode})${rj.deskripsi ? ` — ${rj.deskripsi}` : ""}`,
-        source: "recurring",
-        sourceRef: ref,
-        branchId: rj.branch_id,
-        lines: (rj.lines ?? []).map((l) => ({ code: l.code, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
-      });
+      const sudahAda = await jurnalTersimpan(supabase, "recurring", ref);
+      if (!sudahAda) {
+        await postJournal(supabase, {
+          tanggal,
+          deskripsi: `${rj.nama} (jurnal berulang ${periode})${rj.deskripsi ? ` — ${rj.deskripsi}` : ""}`,
+          source: "recurring",
+          sourceRef: ref,
+          branchId: rj.branch_id,
+          lines: (rj.lines ?? []).map((l) => ({ code: l.code, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
+        });
+      }
       if (!(await jurnalTersimpan(supabase, "recurring", ref))) break;
       terakhirSukses = periode;
-      posted.push({ nama: rj.nama, periode });
+      if (!sudahAda) { jumlah++; posted.push({ nama: rj.nama, periode }); }
+      if (rj.max_occurrences && jumlah >= rj.max_occurrences) break;
     }
-    if (terakhirSukses) {
+    if (terakhirSukses || (rj.max_occurrences && jumlah >= rj.max_occurrences)) {
       await supabase.from("recurring_journals")
-        .update({ last_posted: terakhirSukses })
+        .update({
+          ...(terakhirSukses ? { last_posted: terakhirSukses } : {}),
+          ...(rj.max_occurrences && jumlah >= rj.max_occurrences ? { is_active: false } : {}),
+        })
         .eq("id", rj.id);
     }
   }

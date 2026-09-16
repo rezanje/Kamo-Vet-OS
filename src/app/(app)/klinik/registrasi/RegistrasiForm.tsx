@@ -205,9 +205,9 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
           </div>
           <div className="frow">
             <div>
-              <label className="flab">Dokter</label>
-              <select className="fi" name="doctor_id" defaultValue="">
-                <option value="">— belum ditentukan —</option>
+              <label className="flab">Dokter / pelaksana *</label>
+              <select className="fi" name="doctor_id" defaultValue="" required>
+                <option value="">— pilih dokter, groomer, atau pelaksana —</option>
                 {dokter.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.nama}{d.jabatan ? ` · ${d.jabatan}` : ""}{d.jaga ? " · jaga hari ini" : ""}

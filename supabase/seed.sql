@@ -16,14 +16,14 @@ insert into branches (code, name, type, is_active) values
   ('SRKN',     'Kamo Petshop Surken',       'PETSHOP', true),
   ('TKI',      'Kamo Petshop TKI/Kopo',     'PETSHOP', true),
   ('VET_CIAW', 'Kamo Pets Clinic Ciawi',    'KLINIK',  true),
-  ('VET_CMGG', 'Kamo Klinik Cimanggu',      'KLINIK',  true),
-  ('VET_CMS',  'Pets Klinik Ciomas',        'KLINIK',  true),
-  ('VET_GRDA', 'HPY Garuda',                'KLINIK',  true),
-  ('VET_GRLG', 'HPY Pets Clinic Gerlong',   'KLINIK',  true),
-  ('VET_PDRY', 'Klinik Panduraya',          'KLINIK',  true),
+  ('VET_CMGG', 'Kamo Pets Clinic Cimanggu', 'KLINIK',  true),
+  ('VET_CMS',  'Kamo Pets Clinic Ciomas',   'KLINIK',  true),
+  ('VET_GRDA', 'Kamo Pets Clinic Garuda',   'KLINIK',  true),
+  ('VET_GRLG', 'Kamo Pets Clinic Gerlong',  'KLINIK',  true),
+  ('VET_PDRY', 'Kamo Pets Clinic Panduraya','KLINIK',  true),
   ('VET_RE',   'VET RE',                    'KLINIK',  false),
-  ('VET_SRKN', 'Pet Clinic Surken',         'KLINIK',  true),
-  ('VET_TKI',  'Kamo Klinik TKI',           'KLINIK',  true);
+  ('VET_SRKN', 'Kamo Pets Clinic Surken',   'KLINIK',  true),
+  ('VET_TKI',  'Kamo Pets Clinic TKI',      'KLINIK',  true);
 
 -- warehouses; branch_id resolved by branch code.
 -- ponytail: system warehouses (Transit, Expired) have no single owning branch in Accurate;
@@ -199,6 +199,7 @@ insert into coa_accounts (code, name, type, normal_balance) values
   ('3101','Modal Pemilik','EKUITAS','K'),
   ('3201','Laba Ditahan','EKUITAS','K'),
   ('4101','Pendapatan Penjualan Produk','PENDAPATAN','K'),
+  ('4102','Diskon Penjualan','PENDAPATAN','D'),
   ('4201','Pendapatan Jasa Klinik','PENDAPATAN','K'),
   ('5101','Beban Pokok Penjualan','BEBAN','D'),
   ('5201','Beban Gaji & Tunjangan','BEBAN','D'),

@@ -1,0 +1,6 @@
+personality = "friendly"
+
+[mcp_servers]
+
+[mcp_servers.supabase]
+url = "https://mcp.supabase.com/mcp?project_ref=koaglxcyjqfmgfzxszkj"

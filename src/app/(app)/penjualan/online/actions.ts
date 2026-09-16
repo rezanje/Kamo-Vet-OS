@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
-import { stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockOut } from "@/lib/inventory";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { hitungKomisi, isChannel, isMarketplace, totalOnline } from "@/lib/online";
 import { formatDokumen, formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
@@ -103,6 +103,12 @@ export async function buatPenjualanOnline(formData: FormData) {
   if (whErr) console.error("[buatPenjualanOnline] gagal query gudang (RLS?):", whErr);
   if (whErr || !wh) fail("Gudang online tidak ditemukan atau tidak aktif.");
   const branchId = wh!.branch_id;
+
+  try {
+    await pastikanStokSiap(supabase, warehouseId, items.map((item) => ({ itemId: item.item_id, qty: item.qty })));
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "Gagal memeriksa stok order online.");
+  }
 
   const total = totalOnline(items);
   if (total <= 0) fail("Total order harus lebih dari nol.");

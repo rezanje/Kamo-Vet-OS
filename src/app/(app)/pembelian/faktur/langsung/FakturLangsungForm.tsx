@@ -12,7 +12,7 @@ type ItemOpsi = {
   id: string; code: string; name: string; hargaBeli: number;
   trackExpiry: boolean; satuan: SatuanOpsi[];
 };
-type Baris = { key: number; item_id: string; qty: number; harga: number; satuan: string; exp_date: string };
+type Baris = { key: number; item_id: string; qty: number; harga: number; satuan: string; exp_date: string; cari: string };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -26,7 +26,7 @@ export function FakturLangsungForm({
   const [supplierId, setSupplierId] = useState("");
   const [tanggal, setTanggal] = useState(hariIniWIB());
   const [jatuhTempo, setJatuhTempo] = useState(geserHari(hariIniWIB(), 30));
-  const [baris, setBaris] = useState<Baris[]>([{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" }]);
+  const [baris, setBaris] = useState<Baris[]>([{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "", cari: "" }]);
 
   const itemMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
@@ -55,6 +55,7 @@ export function FakturLangsungForm({
       satuan: dasar?.unit ?? "",
       harga: dasar?.buy_price || it?.hargaBeli || 0,
       exp_date: "",
+      cari: it ? `${it.code} · ${it.name}` : "",
     });
   };
 
@@ -152,12 +153,18 @@ export function FakturLangsungForm({
             <tbody>
               {baris.map((r) => {
                 const it = itemMap.get(r.item_id);
+                const query = r.cari.trim().toLocaleLowerCase("id-ID");
+                const matches = (query ? items.filter((item) => `${item.code} ${item.name}`.toLocaleLowerCase("id-ID").includes(query)) : items).slice(0, 100);
+                const visible = it && !matches.some((item) => item.id === it.id) ? [...matches, it] : matches;
                 return (
                   <tr key={r.key}>
                     <td>
+                      <input className="fi" value={r.cari} placeholder="Ketik kode atau nama…"
+                        onChange={(e) => set(r.key, { cari: e.target.value, item_id: "", satuan: "", harga: 0, exp_date: "" })}
+                        style={{ marginBottom: 4 }} />
                       <select className="fi" value={r.item_id} onChange={(e) => gantiBarang(r.key, e.target.value)}>
-                        <option value="">— pilih barang —</option>
-                        {items.map((i) => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}
+                        <option value="">{query ? "— pilih hasil pencarian —" : "— pilih barang —"}</option>
+                        {visible.map((i) => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}
                       </select>
                     </td>
                     <td>
@@ -206,7 +213,7 @@ export function FakturLangsungForm({
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, gap: 10, flexWrap: "wrap" }}>
           <button type="button" className="btn-def"
-            onClick={() => setBaris((b) => [...b, { key: Math.max(0, ...b.map((x) => x.key)) + 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" }])}>
+            onClick={() => setBaris((b) => [...b, { key: Math.max(0, ...b.map((x) => x.key)) + 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "", cari: "" }])}>
             <i className="ti ti-plus" /> Tambah baris
           </button>
           <span style={{ fontSize: 13, fontWeight: 700 }}>Total faktur: {rp(total)}</span>

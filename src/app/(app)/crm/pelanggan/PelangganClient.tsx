@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { updateKategoriPelanggan, updateUlasanPelanggan } from "./actions";
+import { useRouter } from "next/navigation";
+import { detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
 export type PetRow = {
@@ -144,6 +145,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
   cariAwal?: string;
 }) {
+  const router = useRouter();
   const awal = cariAwal.trim().toLowerCase();
   const [selId, setSelId] = useState<string | null>(
     (awal ? customers.find((c) => c.name.toLowerCase().includes(awal)) : null)?.id
@@ -151,6 +153,19 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   );
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState(cariAwal);
+  const [detailByCustomer, setDetailByCustomer] = useState<Record<string, DetailPelanggan>>({});
+  const detailRef = useRef<HTMLDivElement>(null);
+
+  const pilihPelanggan = (id: string) => {
+    setSelId(id);
+    requestAnimationFrame(() => {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  const bukaRiwayatMedis = (petId: string) => {
+    router.push(`/klinik/rekam-medis?pet=${encodeURIComponent(petId)}`);
+  };
 
   const agg = useMemo(() => {
     const total = customers.length;
@@ -167,6 +182,20 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   }, [customers, q]);
 
   const sel = customers.find((c) => c.id === selId) ?? null;
+  const detail = sel ? detailByCustomer[sel.id] ?? null : null;
+
+  useEffect(() => {
+    if (!sel || detailByCustomer[sel.id]) return;
+    let active = true;
+    void detailPelanggan(sel.id)
+      .then((loaded) => {
+        if (active) setDetailByCustomer((current) => ({ ...current, [sel.id]: loaded }));
+      })
+      .catch(() => {
+        if (active) setDetailByCustomer((current) => ({ ...current, [sel.id]: { purchases: [], ledger: [], stat: null } }));
+      });
+    return () => { active = false; };
+  }, [sel, detailByCustomer]);
 
   return (
     <>
@@ -271,7 +300,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
               </thead>
               <tbody>
                 {filtered.map((c, i) => (
-                  <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, transition: "background .1s" }} onClick={() => setSelId(c.id)}>
+                  <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, transition: "background .1s" }} onClick={() => pilihPelanggan(c.id)}>
                     <td style={{ color: "var(--td)", fontSize: 11 }}>{i + 1}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -286,7 +315,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <td style={{ textAlign: "center" }}>{c.pets.length}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(c.created_at)}</td>
                     <td>
-                      <button className="back-btn" title="Lihat detail" onClick={(e) => { e.stopPropagation(); setSelId(c.id); }}>
+                      <button className="back-btn" title="Buka detail & anabul" aria-label={`Buka detail ${c.name}`} onClick={(e) => { e.stopPropagation(); pilihPelanggan(c.id); }}>
                         <i className="ti ti-eye" />
                       </button>
                     </td>
@@ -303,7 +332,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
       </div>
 
       {/* Section 03: Pets + detail */}
-      <div className="crm-sec">
+      <div ref={detailRef} className="crm-sec" style={{ scrollMarginTop: 96 }}>
         <SecHeader num="03" title="DATA ANABUL PELANGGAN" desc="Rincian hewan peliharaan (anabul) yang terdaftar pada pelanggan terpilih." />
         {!sel ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>Pilih pelanggan untuk lihat detail.</div>
@@ -367,13 +396,13 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <span style={{ fontSize: 11, fontWeight: 500, textAlign: "right", maxWidth: 180 }}>{row.val}</span>
                   </div>
                 ))}
-                {isAdmin && sel.stat && (
+                {isAdmin && detail?.stat && (
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 6 }}>RINCIAN TRANSAKSI (ADMIN)</div>
                     {[
-                      { unit: "Petshop", count: sel.stat.petshopCount, total: sel.stat.petshopTotal },
-                      { unit: "Online (WA)", count: sel.stat.onlineCount, total: sel.stat.onlineTotal },
-                      { unit: "Klinik", count: sel.stat.klinikCount, total: sel.stat.klinikTotal },
+                      { unit: "Petshop", count: detail.stat.petshopCount, total: detail.stat.petshopTotal },
+                      { unit: "Online (WA)", count: detail.stat.onlineCount, total: detail.stat.onlineTotal },
+                      { unit: "Klinik", count: detail.stat.klinikCount, total: detail.stat.klinikTotal },
                     ].map((u) => (
                       <div key={u.unit} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
                         <span>{u.unit}</span>
@@ -401,7 +430,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <span style={{ fontWeight: 600, fontSize: 12, letterSpacing: ".03em" }}>DAFTAR ANABUL</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 10, color: "var(--td)" }}>{sel.pets.length} ekor</span>
+                    <span style={{ fontSize: 10, color: "var(--td)" }}>{sel.pets.length} ekor · klik anabul untuk riwayat</span>
                     <Link href={`/crm/anabul/baru?customer=${sel.id}`} className="btn-acc" style={{ fontSize: 10, padding: "4px 9px" }}>
                       <i className="ti ti-plus" /> Tambah anabul
                     </Link>
@@ -412,12 +441,12 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <thead>
                       <tr>
                         <th>No.</th><th>Nama</th><th>Jenis</th><th>Ras</th><th>Kelamin</th>
-                        <th>Usia</th><th>Gol. Darah</th><th>Steril</th><th>Status</th>
+                        <th>Usia</th><th>Gol. Darah</th><th>Steril</th><th>Status</th><th />
                       </tr>
                     </thead>
                     <tbody>
                       {sel.pets.map((p, i) => (
-                        <tr key={p.id}>
+                        <tr key={p.id} tabIndex={0} role="link" aria-label={`Buka riwayat medis ${p.name}`} style={{ cursor: "pointer" }} onClick={() => bukaRiwayatMedis(p.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); bukaRiwayatMedis(p.id); } }}>
                           <td style={{ color: "var(--td)", fontSize: 11 }}>{i + 1}</td>
                           <td style={{ fontWeight: 500 }}>{p.name}</td>
                           <td style={{ color: "var(--tm)" }}>{p.species ?? "—"}</td>
@@ -431,10 +460,16 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           <td>{p.golongan_darah ? <span className="bge r">{p.golongan_darah}</span> : <span style={{ color: "var(--td)" }}>—</span>}</td>
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.sterilisasi ?? "—"}</td>
                           <td><span className={`bge ${p.status === "Aktif" ? "g" : p.status === "RIP" ? "x" : "o"}`}>{p.status}</span></td>
+                          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                            {isAdmin && <Link href={`/crm/anabul/transfer?pet=${encodeURIComponent(p.id)}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} className="btn-def" style={{ textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>Transfer pemilik</Link>}
+                            <Link href={`/klinik/rekam-medis?pet=${encodeURIComponent(p.id)}`} onClick={(e) => e.stopPropagation()} className="btn-def" style={{ textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>
+                              <i className="ti ti-notes-medical" /> Riwayat medis
+                            </Link>
+                          </td>
                         </tr>
                       ))}
                       {sel.pets.length === 0 && (
-                        <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada anabul terdaftar</td></tr>
+                        <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada anabul terdaftar</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -464,7 +499,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                       <tr><th>Tanggal</th><th>Produk</th><th>Anabul</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Total</th><th>Cabang</th></tr>
                     </thead>
                     <tbody>
-                      {sel.purchases.map((p, i) => (
+                      {(detail?.purchases ?? []).map((p, i) => (
                         <tr key={i}>
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(p.tgl)}</td>
                           <td style={{ fontWeight: 500 }}>{p.produk}</td>
@@ -474,7 +509,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.cabang}</td>
                         </tr>
                       ))}
-                      {sel.purchases.length === 0 && (
+                      {!detail && (
+                        <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}><i className="ti ti-loader-2 ti-spin" /> Memuat riwayat pelanggan…</td></tr>
+                      )}
+                      {detail && detail.purchases.length === 0 && (
                         <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada transaksi.</td></tr>
                       )}
                     </tbody>
@@ -507,7 +545,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                       <table className="tbl">
                         <thead><tr><th>Tanggal</th><th>Deskripsi</th><th style={{ textAlign: "right" }}>Poin</th><th style={{ textAlign: "right" }}>Saldo</th></tr></thead>
                         <tbody>
-                          {sel.ledger.map((l, i) => (
+                          {(detail?.ledger ?? []).map((l, i) => (
                             <tr key={i}>
                               <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(l.tgl)}</td>
                               <td style={{ fontSize: 11 }}>{l.desc}</td>
@@ -515,7 +553,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                               <td style={{ textAlign: "right", fontSize: 11 }}>{fmt(l.saldo)}</td>
                             </tr>
                           ))}
-                          {sel.ledger.length === 0 && (
+                          {!detail && (
+                            <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}><i className="ti ti-loader-2 ti-spin" /> Memuat riwayat poin…</td></tr>
+                          )}
+                          {detail && detail.ledger.length === 0 && (
                             <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada riwayat poin.</td></tr>
                           )}
                         </tbody>

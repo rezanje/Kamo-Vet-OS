@@ -1,0 +1,16 @@
+Migration inventory:
+  active: instruction files - 2 found
+    - CLAUDE.md
+    - AGENTS.md
+  active: skills - 1 found
+    - grill-me
+  inactive: command sources - none found
+  inactive: subagents - none found
+Migration surfaces:
+  active: AGENTS.md - 1 instruction file(s) found.
+  inactive: skills - Not selected by CLI flags.
+  active: MCP config - 1 MCP server(s) converted into config.toml.
+  inactive: subagents - Not selected by CLI flags.
+Migration report:
+  symlinked: AGENTS.md - Linked to /Users/rezanje/Gen_Dev_Studio/VET_OS/CLAUDE.md.
+  rewritten: .codex/config.toml - Converted 1 MCP server entries.

@@ -71,9 +71,11 @@ export async function buatReturBeli(formData: FormData) {
       if (r.item_id) sudah[r.item_id] = (sudah[r.item_id] ?? 0) + Number(r.qty);
 
   const sisa = sisaRetur(sumber, sudah);
-  for (const it of items) {
-    if ((sisa[it.item_id] ?? 0) < Number(it.qty))
-      fail(`Qty retur melebihi sisa yang bisa diretur (sisa ${sisa[it.item_id] ?? 0}).`);
+  const totalPerBarang = new Map<string, number>();
+  for (const it of items) totalPerBarang.set(it.item_id, (totalPerBarang.get(it.item_id) ?? 0) + Number(it.qty));
+  for (const [itemId, qty] of totalPerBarang) {
+    if ((sisa[itemId] ?? 0) < qty)
+      fail(`Qty retur melebihi sisa yang bisa diretur (sisa ${sisa[itemId] ?? 0}).`);
   }
 
   const rows = items.map((it) => ({ item_id: it.item_id, qty: Number(it.qty), harga: harga[it.item_id] ?? 0 }));
@@ -100,12 +102,12 @@ export async function buatReturBeli(formData: FormData) {
   if (total > sisaHutang)
     fail(`Nilai retur (Rp ${Math.round(total).toLocaleString("id-ID")}) melebihi sisa hutang PO (Rp ${Math.round(sisaHutang).toLocaleString("id-ID")}).`);
 
-  // validasi stok gudang cukup utk dikeluarkan
-  for (const it of items) {
+  // Item yang sama bisa muncul beberapa kali; cek total kebutuhan sebelum dokumen dibuat.
+  for (const [itemId, qty] of totalPerBarang) {
     const { data: st } = await supabase
       .from("stock").select("qty")
-      .eq("warehouse_id", po!.to_warehouse_id).eq("item_id", it.item_id).maybeSingle();
-    if (!st || Number(st.qty) < Number(it.qty)) {
+      .eq("warehouse_id", po!.to_warehouse_id).eq("item_id", itemId).maybeSingle();
+    if (!st || Number(st.qty) < qty) {
       fail(`Stok di gudang tidak cukup untuk retur (ada ${st ? Number(st.qty) : 0}).`);
     }
   }

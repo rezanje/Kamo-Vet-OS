@@ -10,6 +10,7 @@ type Row = {
   nama: string;
   deskripsi: string | null;
   day_of_month: number;
+  max_occurrences: number | null;
   is_active: boolean;
   last_posted: string | null;
   lines: { code: string; debit: number; credit: number }[];
@@ -26,23 +27,27 @@ export default async function JurnalBerulangPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: rjs }, { data: accounts }, { data: branches }, { data: jurnalRows }] = await Promise.all([
-    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
+  const [{ data: rjs }, { data: accounts }, { data: branches }] = await Promise.all([
+    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, max_occurrences, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
     supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").order("name"),
-    // Riwayat jalannya: tiap posting menulis jurnal ber-source "recurring" dengan
-    // ref "<8 huruf pertama id>-<YYYY-MM>" (lib/recurring.ts). Dari situ jumlah
-    // berjalan dan nomor jurnal tiap bulan bisa ditarik tanpa tabel baru.
-    supabase.from("journal_entries")
-      .select("no_jurnal, tanggal, source_ref, journal_lines(debit)")
-      .eq("source", "recurring")
-      .order("tanggal", { ascending: false }),
   ]);
   const rows = (rjs ?? []) as unknown as Row[];
 
   type JurnalRow = { no_jurnal: string; tanggal: string; source_ref: string | null; journal_lines: { debit: number }[] };
+  // Riwayat dipakai sebagai penghitung batas. Ambil semua halaman agar batas tidak
+  // terlihat belum tercapai hanya karena API memotong hasil di 1000 baris.
+  const jurnalRows: JurnalRow[] = [];
+  for (let awal = 0; ; awal += 500) {
+    const { data, error: riwayatErr } = await supabase.from("journal_entries")
+      .select("no_jurnal, tanggal, source_ref, journal_lines(debit)")
+      .eq("source", "recurring").order("id").range(awal, awal + 499);
+    if (riwayatErr) throw new Error(`Gagal memuat riwayat jurnal berulang: ${riwayatErr.message}`);
+    jurnalRows.push(...((data ?? []) as unknown as JurnalRow[]));
+    if ((data?.length ?? 0) < 500) break;
+  }
   const riwayat = new Map<string, { no_jurnal: string; tanggal: string; periode: string; nilai: number }[]>();
-  for (const j of (jurnalRows ?? []) as unknown as JurnalRow[]) {
+  for (const j of jurnalRows) {
     const ref = j.source_ref ?? "";
     const pisah = ref.lastIndexOf("-", ref.length - 4);   // "<id8>-YYYY-MM"
     if (pisah <= 0) continue;
@@ -88,6 +93,7 @@ export default async function JurnalBerulangPage({
                 <th style={{ textAlign: "center" }}>Tgl</th>
                 <th style={{ textAlign: "right" }}>Nilai</th>
                 <th style={{ width: 200 }}>Sudah berjalan</th>
+                <th>Batas</th>
                 <th>Terakhir Posting</th>
                 <th>Status</th>
                 <th></th>
@@ -133,23 +139,24 @@ export default async function JurnalBerulangPage({
                         </details>
                       )}
                     </td>
+                    <td style={{ fontSize: 11 }}>{r.max_occurrences ? `${jalan.length}/${r.max_occurrences} kali` : "Tanpa batas"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.last_posted ?? "Belum pernah"}</td>
-                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{r.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{r.max_occurrences && jalan.length >= r.max_occurrences ? "Selesai" : r.is_active ? "Aktif" : "Nonaktif"}</span></td>
                     <td>
-                      <form action={toggleRecurring}>
+                      {!(r.max_occurrences && jalan.length >= r.max_occurrences) && <form action={toggleRecurring}>
                         <input type="hidden" name="id" value={r.id} />
                         <input type="hidden" name="aktif" value={r.is_active ? "0" : "1"} />
                         <button type="submit" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
                           {r.is_active ? "Nonaktifkan" : "Aktifkan"}
                         </button>
-                      </form>
+                      </form>}
                     </td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  <td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     Belum ada jurnal berulang.
                   </td>
                 </tr>

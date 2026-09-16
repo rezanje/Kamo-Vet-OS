@@ -7,7 +7,7 @@ import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
-import { stockOut } from "@/lib/inventory";
+import { pastikanStokSiap, stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import {
@@ -121,6 +121,17 @@ export async function checkoutSale(formData: FormData) {
   const total = Math.max(0, subtotal - potonganPromo - diskonKategori - discount);
   const kembali = Math.max(0, bayar - total);
 
+  const { data: wh, error: whErr } = await supabase.from("warehouses").select("id")
+    .eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
+  if (whErr) redirect(`/pos/transaksi?error=${encodeURIComponent("Gagal membaca gudang cabang")}`);
+  try {
+    await pastikanStokSiap(supabase, wh?.id ?? null, rows.filter((r) => r.item_id).map((r) => ({
+      itemId: r.item_id!, qty: toBaseQty(r.qty, r.faktor),
+    })));
+  } catch (error) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Gagal memeriksa stok")}`);
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
 
   // §2.1: tautkan ke shift kasir yang sedang terbuka (kalau ada) untuk rekonsiliasi kas.
@@ -168,8 +179,6 @@ export async function checkoutSale(formData: FormData) {
 
   // Stok keluar via FIFO — total cost jadi HPP riil (PRD §10.2).
   let hppFifo = 0;
-  const { data: wh } = await supabase
-    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   if (wh) {
     for (const r of rows) {
       if (!r.item_id) continue;

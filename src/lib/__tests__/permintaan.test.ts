@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBarisInput, siapkanBaris, type MasterItem } from "../permintaan";
+import { cariKatalogPermintaan, parseBarisInput, siapkanBaris, type KatalogItem, type MasterItem } from "../permintaan";
 
 const pcs = { unit: "pcs", factor: 1, sell_price: 0, buy_price: 0 };
 const box = { unit: "box", factor: 12, sell_price: 0, buy_price: 0 };
@@ -50,5 +50,25 @@ describe("parseBarisInput", () => {
     expect(parseBarisInput("{bukan json")).toEqual([]);
     expect(parseBarisInput('{"a":1}')).toEqual([]);
     expect(parseBarisInput('[{"item_id":"b1"}]')).toEqual([{ item_id: "b1" }]);
+  });
+});
+
+describe("cariKatalogPermintaan", () => {
+  const katalog = Array.from({ length: 1_205 }, (_, index): KatalogItem => ({
+    id: `id-${index}`,
+    code: index === 1_104 ? "ZZ-TARGET" : `SKU-${index}`,
+    name: index === 1_104 ? "Vitamin Target Paling Akhir" : `Barang ${index}`,
+    unit: "pcs",
+    kategori: "Umum",
+    units: [pcs],
+  }));
+
+  it("menemukan barang di atas urutan 1000 lewat nama atau kode", () => {
+    expect(cariKatalogPermintaan(katalog, "target").map((item) => item.id)).toEqual(["id-1104"]);
+    expect(cariKatalogPermintaan(katalog, "zz-target").map((item) => item.id)).toEqual(["id-1104"]);
+  });
+
+  it("tetap menyertakan barang terpilih saat hasil dibatasi", () => {
+    expect(cariKatalogPermintaan(katalog, "", "id-1104", 50).some((item) => item.id === "id-1104")).toBe(true);
   });
 });

@@ -69,6 +69,13 @@ async function progres(tahap: "baca" | "simpan") {
     .infoProgresImporRekamMedis(tahap);
 }
 
+async function bagiBatch<T>(rows: T[], ukuran: number) {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("bagiBatchImporRekamMedis");
+  return (loaded as { bagiBatchImporRekamMedis: <R>(r: R[], u: number) => R[][] })
+    .bagiBatchImporRekamMedis(rows, ukuran);
+}
+
 const lengkap = [
   [2, 1, "No. Rek Med"], [2, 2, "RM-100"], [2, 4, "Tanggal Rek"], [2, 5, "2025-03-04"],
   [3, 1, "Nama Pasien"], [3, 2, "Mochi"], [3, 4, "Nama Pemilik"], [3, 5, "Rani"],
@@ -293,5 +300,15 @@ describe("infoProgresImporRekamMedis", () => {
   it("membedakan progres saat membaca dan menyimpan", async () => {
     await expect(progres("baca")).resolves.toMatchObject({ label: "Membaca kartu medis…" });
     await expect(progres("simpan")).resolves.toMatchObject({ label: "Menyimpan riwayat aman…" });
+  });
+});
+
+describe("bagiBatchImporRekamMedis", () => {
+  it("membagi hasil baca lokal jadi kiriman kecil", async () => {
+    await expect(bagiBatch([1, 2, 3, 4, 5], 2)).resolves.toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it("menolak ukuran batch yang tidak aman", async () => {
+    await expect(bagiBatch([1], 0)).rejects.toThrow("Ukuran batch");
   });
 });

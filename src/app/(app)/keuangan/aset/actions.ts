@@ -21,7 +21,7 @@ export async function tambahAset(formData: FormData) {
   const harga = Number(formData.get("harga")) || 0;
   const nilaiSisa = Number(formData.get("nilai_sisa")) || 0;
   const umurBulan = Number(formData.get("umur_bulan")) || 0;
-  const sumber = String(formData.get("sumber") ?? "saldo-awal"); // Tunai / Bank / saldo-awal
+  const sumber = String(formData.get("sumber") ?? ""); // Tunai / Bank / saldo-awal
   const branchId = String(formData.get("branch_id") ?? "").trim() || null;
 
   if (!nama || harga <= 0 || umurBulan <= 0) {
@@ -29,6 +29,9 @@ export async function tambahAset(formData: FormData) {
   }
   if (nilaiSisa >= harga) {
     redirect(`${back}?error=${encodeURIComponent("Nilai sisa harus lebih kecil dari harga perolehan")}`);
+  }
+  if (!["Tunai", "Bank", "saldo-awal"].includes(sumber)) {
+    redirect(`${back}?error=${encodeURIComponent("Pilih sumber dana aset")}`);
   }
 
   const pesanPeriode = await cekPeriode(supabase, tanggal);
@@ -43,25 +46,33 @@ export async function tambahAset(formData: FormData) {
     kategori = kat.nama as string;
   }
 
-  const { error } = await supabase.from("fixed_assets").insert({
+  const kasCode = sumber === "saldo-awal" ? null : await kodeAkunBayar(
+    supabase, sumber, branchId, String(formData.get("account_id") ?? "").trim() || null,
+  );
+
+  const { data: aset, error } = await supabase.from("fixed_assets").insert({
     nama, kategori, category_id: categoryId, tanggal_perolehan: tanggal, harga_perolehan: harga,
     nilai_sisa: nilaiSisa, umur_bulan: umurBulan, branch_id: branchId,
-  });
+  }).select("id").single();
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
 
-  if (sumber !== "saldo-awal") {
-    const kasCode = await kodeAkunBayar(supabase, sumber, branchId, String(formData.get("account_id") ?? "").trim() || null);
-    await postJournal(supabase, {
+  if (kasCode) {
+    const tercatat = await postJournal(supabase, {
       tanggal,
       deskripsi: `Pembelian aset tetap: ${nama}`,
       source: "asset",
-      sourceRef: null,
+      sourceRef: aset!.id,
       branchId,
       lines: [
         { code: "1501", debit: harga, credit: 0 },
         { code: kasCode, debit: 0, credit: harga },
       ],
     });
+    if (!tercatat) {
+      const { error: batalError } = await supabase.from("fixed_assets").delete().eq("id", aset!.id);
+      if (batalError) console.error("[aset] gagal membatalkan aset tanpa jurnal:", batalError);
+      redirect(`${back}?error=${encodeURIComponent("Aset belum tersimpan karena pencatatan keuangan gagal. Coba lagi atau hubungi admin.")}`);
+    }
   }
 
   redirect(`${back}?success=aset`);

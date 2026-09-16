@@ -168,10 +168,10 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
                 {/* Dokter dipilih di sini, bukan cuma ditampilkan: dialah yang
                     dicatat sebagai penanggung jawab kunjungan dan dapat insentif. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter</span>
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Pelaksana</span>
                   <select className="fi" name="doctor_id" defaultValue={patient.dokterId ?? ""}
-                    style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
-                    <option value="">— belum ditentukan —</option>
+                    required style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
+                    <option value="">— pilih dokter / pelaksana —</option>
                     {dokterOpsi.map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
                   </select>
                 </div>
