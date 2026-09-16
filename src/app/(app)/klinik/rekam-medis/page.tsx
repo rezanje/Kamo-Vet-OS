@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
+import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 type Rel<T> = T | T[] | null;
@@ -56,12 +57,13 @@ export default async function DaftarRekamMedisPage({
     const owner = one(visit.customers);
     const branch = one(visit.branches);
     const medical = one(visit.medical_records);
+    const invalidImportedOwner = Boolean(visit.legacy_source_key) && isPlaceholderOwnerName(owner?.name);
     return {
       id: visit.id,
       date: visit.created_at,
-      ownerName: owner?.name ?? "—",
+      ownerName: invalidImportedOwner ? "Pemilik perlu verifikasi" : owner?.name ?? "—",
       petName: pet?.name ?? "—",
-      phone: owner?.phone ?? "",
+      phone: invalidImportedOwner ? "" : owner?.phone ?? "",
       species: pet?.species ?? null,
       breed: pet?.breed ?? null,
       doctor: visit.dokter,
@@ -96,7 +98,7 @@ export default async function DaftarRekamMedisPage({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(150px, 1fr))", gap: 12, marginBottom: 14 }}>
-        <Stat icon="ti-notes-medical" label="RIWAYAT TERSIMPAN" value={rows.length} color="var(--posb)" bg="#eff6ff" />
+        <Stat icon="ti-medical-cross" label="RIWAYAT TERSIMPAN" value={rows.length} color="var(--posb)" bg="#eff6ff" />
         <Stat icon="ti-paw" label="HEWAN TERCATAT" value={pets} color="#16a34a" bg="#e8f5ee" />
         <Stat icon="ti-file-import" label="HASIL IMPORT" value={imported} color="#7c3aed" bg="#f3f0ff" />
       </div>

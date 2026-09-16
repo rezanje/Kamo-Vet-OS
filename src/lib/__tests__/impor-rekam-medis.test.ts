@@ -113,6 +113,16 @@ describe("bacaWorkbookRekamMedis", () => {
     });
   });
 
+  it("menahan kartu bila nama pemilik ternyata nama folder unduhan", async () => {
+    const folderUnduhan = lengkap.map(([row, column, value]) => (
+      row === 3 && column === 5 ? [row, column, "drive-download-20260907T083654Z"] : [row, column, value]
+    )) as Array<[number, number, unknown]>;
+    const hasil = await baca(await kartu(folderUnduhan));
+
+    expect(hasil.rows).toEqual([]);
+    expect(hasil.held[0]?.reason).toContain("nama pemilik");
+  });
+
   it("memakai tanggal nama tab saat berbeda dengan tanggal kartu", async () => {
     const tanggalLama = [[1, 1, "KARTU MEDIS PASIEN"], ...lengkap.map(([row, column, value]) => (
       row === 2 && column === 5 ? [row, column, "16/12/2024"] : [row, column, value]

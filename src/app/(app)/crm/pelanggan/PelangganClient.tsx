@@ -461,7 +461,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                             {isAdmin && <Link href={`/crm/anabul/transfer?pet=${encodeURIComponent(p.id)}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} className="btn-def" style={{ textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>Transfer pemilik</Link>}
                             <Link href={`/klinik/rekam-medis?pet=${encodeURIComponent(p.id)}`} onClick={(e) => e.stopPropagation()} className="btn-def" style={{ textDecoration: "none", padding: "4px 8px", fontSize: 10 }}>
-                              <i className="ti ti-notes-medical" /> Riwayat medis
+                              <i className="ti ti-medical-cross" /> Riwayat medis
                             </Link>
                           </td>
                         </tr>
