@@ -2,13 +2,12 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { simpanAbsensi } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
-
-const TODAY = "2026-07-01";
 
 const STATUS_LIST = ["Hadir", "Izin", "Sakit", "Alpha", "Cuti"] as const;
 type StatusKey = (typeof STATUS_LIST)[number];
@@ -45,12 +44,12 @@ export default async function AbsensiPage({
   searchParams: Promise<{ tgl?: string; error?: string; success?: string }>;
 }) {
   const { tgl, error, success } = await searchParams;
-  const tanggalFilter = tgl && tgl.match(/^\d{4}-\d{2}-\d{2}$/) ? tgl : TODAY;
+  const tanggalFilter = tgl && tgl.match(/^\d{4}-\d{2}-\d{2}$/) ? tgl : hariIniWIB();
 
   const supabase = await createClient();
 
   // ponytail: hanya karyawan aktif yang bisa dipilih di form absensi.
-  const { data: empRaw } = await supabase
+  const { data: empRaw, error: employeeQueryError } = await supabase
     .from("employees")
     .select("id, nama, jabatan, status")
     .eq("status", "Aktif")
@@ -58,7 +57,7 @@ export default async function AbsensiPage({
   const employees = (empRaw ?? []) as unknown as EmployeeRow[];
 
   // ponytail: join employees untuk kolom Karyawan + Jabatan di tabel absensi.
-  const { data: attRaw } = await supabase
+  const { data: attRaw, error: attendanceQueryError } = await supabase
     .from("attendance")
     .select("id, employee_id, tanggal, jam_masuk, jam_pulang, status, keterangan, employees(nama, jabatan)")
     .eq("tanggal", tanggalFilter)
@@ -70,6 +69,9 @@ export default async function AbsensiPage({
   const cntIzin = rows.filter((r) => r.status === "Izin" || r.status === "Cuti").length;
   const cntSakit = rows.filter((r) => r.status === "Sakit").length;
   const cntAlpha = rows.filter((r) => r.status === "Alpha").length;
+  const loadError = employeeQueryError || attendanceQueryError
+    ? "Data absensi belum dapat dimuat. Periksa hak akses cabang atau coba lagi."
+    : null;
 
   const fmtTgl = (d: string) =>
     new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta",
@@ -94,6 +96,11 @@ export default async function AbsensiPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+      {loadError && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {loadError}
         </div>
       )}
       {success === "1" && (

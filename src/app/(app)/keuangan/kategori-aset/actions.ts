@@ -10,14 +10,10 @@ export async function simpanKategoriAset(formData: FormData) {
   const supabase = await assertMasterAdmin(BACK, "kategori aset");
   const id = String(formData.get("id") ?? "").trim();
   const nama = String(formData.get("nama") ?? "").trim().slice(0, 60);
-  const umurBulan = Number(formData.get("umur_bulan"));
   const akunBeban = String(formData.get("akun_beban") ?? "").trim();
   const akunAkumulasi = String(formData.get("akun_akumulasi") ?? "").trim();
 
   if (!nama) redirect(`${BACK}?error=${encodeURIComponent("Nama kategori wajib diisi")}`);
-  if (!Number.isInteger(umurBulan) || umurBulan <= 0) {
-    redirect(`${BACK}?error=${encodeURIComponent("Umur penyusutan harus lebih dari 0 bulan")}`);
-  }
   if (!akunBeban || !akunAkumulasi) {
     redirect(`${BACK}?error=${encodeURIComponent("Akun beban & akun akumulasi wajib dipilih")}`);
   }
@@ -30,7 +26,7 @@ export async function simpanKategoriAset(formData: FormData) {
     redirect(`${BACK}?error=${encodeURIComponent("Akun yang dipilih tidak ada di daftar akun")}`);
   }
 
-  const patch = { nama, umur_bulan: umurBulan, akun_beban: akunBeban, akun_akumulasi: akunAkumulasi };
+  const patch = { nama, akun_beban: akunBeban, akun_akumulasi: akunAkumulasi };
   const { error } = id
     ? await supabase.from("asset_categories").update(patch).eq("id", id)
     : await supabase.from("asset_categories").insert(patch);

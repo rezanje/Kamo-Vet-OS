@@ -52,6 +52,24 @@ export function buildFakturLangsungLines(total: number, ppn = 0): JurnalLine[] {
   ];
 }
 
+export function buildMixedDirectPurchaseLines(
+  stockGross: number,
+  assetGross: number,
+  ppn: number,
+  creditCode = "2101",
+): JurnalLine[] {
+  const total = Math.max(0, stockGross) + Math.max(0, assetGross);
+  if (total <= 0) return [];
+  const tax = Math.max(0, Math.min(ppn, total));
+  const ratio = (total - tax) / total;
+  return [
+    ...(stockGross > 0 ? [{ code: "1301", debit: stockGross * ratio, credit: 0 }] : []),
+    ...(assetGross > 0 ? [{ code: "1501", debit: assetGross * ratio, credit: 0 }] : []),
+    ...(tax > 0 ? [{ code: "1105", debit: tax, credit: 0 }] : []),
+    { code: creditCode, debit: 0, credit: total },
+  ];
+}
+
 // Sisa qty PO yang masih boleh difakturkan per item (reuse pola sisaRetur).
 export function sisaFakturable(
   qtyPO: Record<string, number>,

@@ -5,6 +5,7 @@ import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/l
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 import { NoDok } from "@/components/NoDok";
+import { AccountLedgerRow } from "./AccountLedgerRow";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -74,17 +75,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
               <tr><th>Kode</th><th>Nama Akun</th><th>Tipe</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>Saldo</th><th /></tr>
             </thead>
             <tbody>
-              {balances.map((b) => (
-                <tr key={b.code} style={{ background: selected?.code === b.code ? "rgba(217,119,87,.06)" : undefined }}>
-                  <td style={{ fontFamily: "monospace", fontSize: 11, color: "var(--tm)" }}>{b.code}</td>
-                  <td style={{ fontSize: 12 }}>{b.name}</td>
-                  <td style={{ fontSize: 10, color: "var(--tm)" }}>{b.type}</td>
-                  <td style={{ textAlign: "right", fontSize: 11 }}>{b.debit ? rp(b.debit) : "—"}</td>
-                  <td style={{ textAlign: "right", fontSize: 11 }}>{b.credit ? rp(b.credit) : "—"}</td>
-                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(b.saldo)}</td>
-                  <td><Link href={`/keuangan/buku-besar${qs(`akun=${b.code}`)}`} className="back-btn" style={{ fontSize: 11 }} title="Lihat mutasi"><i className="ti ti-eye" /></Link></td>
-                </tr>
-              ))}
+              {balances.map((b) => <AccountLedgerRow key={b.code} row={b} href={`/keuangan/buku-besar${qs(`akun=${b.code}`)}`} selected={selected?.code === b.code} />)}
             </tbody>
             <tfoot>
               <tr style={{ borderTop: "2px solid #16213e" }}>
@@ -107,12 +98,12 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 560 }}>
               <thead>
-                <tr><th>Tanggal</th><th>No. Jurnal</th><th>Dokumen</th><th>Keterangan</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>Saldo</th></tr>
+                <tr><th>Tanggal</th><th>No. Jurnal</th>{!cabang && <th>Cabang</th>}<th>Dokumen</th><th>Keterangan</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>Saldo</th></tr>
               </thead>
               <tbody>
                 {dari && (
                   <tr>
-                    <td colSpan={6} style={{ fontSize: 11, fontStyle: "italic", color: "var(--tm)" }}>Saldo awal per {fmtDate(dari)}</td>
+                    <td colSpan={!cabang ? 7 : 6} style={{ fontSize: 11, fontStyle: "italic", color: "var(--tm)" }}>Saldo awal per {fmtDate(dari)}</td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600, color: "var(--tm)" }}>{rp(saldoAwal)}</td>
                   </tr>
                 )}
@@ -120,6 +111,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                   <tr key={i}>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(l.tanggal)}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{l.no_jurnal}</td>
+                    {!cabang && <td style={{ fontSize: 10.5 }}>{l.branch_name}</td>}
                     <td style={{ fontSize: 10.5 }}>
                       <NoDok nomor={l.source_ref} />
                       {selected.code === "5101" && l.source_ref && (
@@ -133,7 +125,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                   </tr>
                 ))}
                 {ledgerRows.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada mutasi.</td></tr>
+                  <tr><td colSpan={!cabang ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "14px 0", fontSize: 11 }}>Belum ada mutasi.</td></tr>
                 )}
               </tbody>
             </table>
