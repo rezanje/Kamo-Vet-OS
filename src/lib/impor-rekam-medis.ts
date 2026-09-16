@@ -119,6 +119,10 @@ const cleanMultiline = (value: unknown): string => String(value ?? "")
 const key = (value: unknown) => clean(value).toLocaleLowerCase("id-ID").replace(/[.:]/g, "").replace(/\s+/g, " ");
 const phoneKey = (value: unknown) => clean(value).replace(/\D/g, "");
 
+export function isPlaceholderOwnerName(value: string | null | undefined) {
+  return /(?:^|[-_\s])drive[-_\s]?download(?:[-_\s]|$)/i.test(clean(value));
+}
+
 export function klarifikasiIdentitasRekamMedis(
   rows: RekamMedisImporRow[],
   owners: RekamMedisExistingOwner[],
@@ -302,6 +306,7 @@ function looksLikeCard(sheet: ExcelJS.Worksheet) {
 function rowFromCard(cells: Grid, fileName: string, sheetName: string, sourcePath?: string): RekamMedisImporRow {
   const sourceIdentity = identityFromPath(sourcePath);
   const filePatient = patientFromFile(fileName);
+  const ownerName = sourceIdentity?.ownerName ?? findValue(cells, ["nama pemilik"]);
   const cardDate = findDate(cells, ["tanggal rek", "tanggal pemeriksaan", "tanggal"]);
   const tabDate = dateFromSheetName(sheetName);
   const warning = cardDate && tabDate && cardDate !== tabDate
@@ -317,7 +322,9 @@ function rowFromCard(cells: Grid, fileName: string, sheetName: string, sourcePat
     record_no: findValue(cells, ["no rek med", "no rekam medis", "no rm"]),
     record_date: tabDate ?? cardDate,
     patient_name: findValue(cells, ["nama pasien"]) ?? filePatient,
-    owner_name: sourceIdentity?.ownerName ?? findValue(cells, ["nama pemilik"]),
+    // Nama folder unduhan bukan identitas pemilik. Tahan dulu supaya tidak
+    // tersimpan sebagai pelanggan palsu dan bisa diklarifikasi saat impor.
+    owner_name: isPlaceholderOwnerName(ownerName) ? null : ownerName,
     phone: sourceIdentity?.phone ?? findValue(cells, ["no telepon", "no telp", "no hp"]),
     address: findValue(cells, ["alamat"]),
     species: findValue(cells, ["jenis hewan", "spesies"]),
