@@ -1,18 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { getAccountBalances, nilaiSeksi } from "../ledger";
+import { getAccountBalances, getAccountLedger, nilaiSeksi } from "../ledger";
 
 // Mock supabase minimal: coa_accounts tetap, journal_lines difilter oleh chain gte/lte/eq/in
 // persis seperti fetchLines() memanggilnya (query-builder chainable + thenable).
 type Line = {
   account_id: string; debit: number; credit: number;
-  journal_entries: { tanggal: string; branch_id: string | null; source: string; no_jurnal: string | null; deskripsi: string | null };
+  journal_entries: { tanggal: string; branch_id: string | null; source: string; source_ref?: string | null; no_jurnal: string | null; deskripsi: string | null; branches?: { name: string } | null };
 };
 
 function makeClient(accounts: { id: string; code: string; name: string; type: string; normal_balance: string }[], lines: Line[]) {
   return {
     from(table: string) {
       if (table === "coa_accounts") {
-        return { select: async () => ({ data: accounts }) };
+        const builder = {
+          select() { return builder; },
+          eq(_col: string, val: string) { return Promise.resolve({ data: accounts.filter((a) => a.code === val) }); },
+          then(resolve: (v: { data: typeof accounts }) => void) { return resolve({ data: accounts }); },
+        };
+        return builder;
       }
       if (table === "journal_lines") {
         let rows = lines;
@@ -57,6 +62,14 @@ describe("getAccountBalances — filter branchIds", () => {
     const c = makeClient(accounts, lines);
     const bal = await getAccountBalances(c, { branchIds: ["b1"] });
     expect(bal.find((b) => b.code === "4101")?.saldo).toBe(100_000);
+  });
+});
+
+describe("getAccountLedger — asal cabang", () => {
+  it("membawa nama cabang di rincian akun", async () => {
+    const source = [{ ...lines[0], journal_entries: { ...lines[0].journal_entries, source_ref: "INV-1", branches: { name: "Klinik A" } } }];
+    const ledger = await getAccountLedger(makeClient(accounts, source), "4101");
+    expect(ledger[0]).toMatchObject({ no_jurnal: "J1", source_ref: "INV-1", branch_id: "b1", branch_name: "Klinik A" });
   });
 });
 

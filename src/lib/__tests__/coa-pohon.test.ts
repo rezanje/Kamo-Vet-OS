@@ -37,6 +37,12 @@ describe("susunPohon", () => {
 });
 
 describe("saldoDenganRollup", () => {
+  it("kode 4–6 digit tetap dikelompokkan lewat akun induk, bukan panjang kode", () => {
+    const rows = [akun("a", "5400", { is_header: true }), akun("b", "540301", { parent_id: "a" })];
+    const saldo = saldoDenganRollup(susunPohon(rows), new Map([["b", 425]]));
+    expect(saldo.get("a")).toBe(425);
+  });
+
   it("saldo induk = jumlah rinciannya, bukan angka simpanannya sendiri", () => {
     const rows = [
       akun("a", "5300", { is_header: true }),

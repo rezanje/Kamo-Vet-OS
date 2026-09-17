@@ -11,9 +11,13 @@ describe("validasiAkunBaru", () => {
     expect(baru()).toBeNull();
   });
 
-  it("kode harus 4 angka", () => {
-    expect(baru({ code: "540" })).toMatch(/4 angka/);
-    expect(baru({ code: "54O3" })).toMatch(/4 angka/);
+  it("kode buatan pengguna menerima 4 sampai 6 angka", () => {
+    expect(baru({ code: "5403" })).toBeNull();
+    expect(baru({ code: "54031" })).toBeNull();
+    expect(baru({ code: "540301" })).toBeNull();
+    expect(baru({ code: "540" })).toMatch(/4–6 angka/);
+    expect(baru({ code: "5403001" })).toMatch(/4–6 angka/);
+    expect(baru({ code: "54O3" })).toMatch(/4–6 angka/);
   });
 
   it("angka pertama harus cocok dengan kelompoknya", () => {
