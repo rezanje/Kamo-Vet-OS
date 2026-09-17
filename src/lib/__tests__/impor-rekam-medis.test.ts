@@ -91,6 +91,13 @@ async function jalankanTerbatas<T, R>(items: T[], batas: number, kerja: (item: T
     .jalankanTerbatasImporRekamMedis(items, batas, kerja);
 }
 
+async function rencanaSimpanBesar(jumlahRiwayat: number) {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("rencanaSimpanBesarRekamMedis");
+  return (loaded as { rencanaSimpanBesarRekamMedis: (jumlah: number) => unknown })
+    .rencanaSimpanBesarRekamMedis(jumlahRiwayat);
+}
+
 const lengkap = [
   [2, 1, "No. Rek Med"], [2, 2, "RM-100"], [2, 4, "Tanggal Rek"], [2, 5, "2025-03-04"],
   [3, 1, "Nama Pasien"], [3, 2, "Mochi"], [3, 4, "Nama Pemilik"], [3, 5, "Rani"],
@@ -383,5 +390,15 @@ describe("jalankanTerbatasImporRekamMedis", () => {
 
     expect(hasil).toEqual([10, 20, 30, 40]);
     expect(puncak).toBe(2);
+  });
+});
+
+describe("rencanaSimpanBesarRekamMedis", () => {
+  it("membatasi 19 ribu riwayat menjadi batch kecil yang berjalan paralel", async () => {
+    await expect(rencanaSimpanBesar(19_000)).resolves.toEqual({
+      ukuranBatch: 50,
+      batasBersamaan: 3,
+      jumlahBatch: 380,
+    });
   });
 });

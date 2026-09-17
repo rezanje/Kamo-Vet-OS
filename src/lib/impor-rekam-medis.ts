@@ -60,6 +60,18 @@ export function bagiBatchImporRekamMedis<T>(rows: T[], ukuran = 25): T[][] {
   return batches;
 }
 
+export const UKURAN_BATCH_SIMPAN_REKAM_MEDIS = 50;
+export const BERSAMAAN_BATCH_SIMPAN_REKAM_MEDIS = 3;
+
+export function rencanaSimpanBesarRekamMedis(jumlahRiwayat: number) {
+  const jumlah = Math.max(0, Math.floor(jumlahRiwayat));
+  return {
+    ukuranBatch: UKURAN_BATCH_SIMPAN_REKAM_MEDIS,
+    batasBersamaan: BERSAMAAN_BATCH_SIMPAN_REKAM_MEDIS,
+    jumlahBatch: Math.ceil(jumlah / UKURAN_BATCH_SIMPAN_REKAM_MEDIS),
+  };
+}
+
 export function bagiBerkasImporRekamMedis<T extends { size: number }>(berkas: T[], batasBytes: number): T[][] {
   if (!Number.isFinite(batasBytes) || batasBytes <= 0) throw new Error("Batas ukuran batch harus lebih dari 0.");
   const batches: T[][] = [];

@@ -150,6 +150,37 @@ function resolveIdentityDecisions(clarifications: RekamMedisIdentityClarificatio
   return { mappings, skipped };
 }
 
+function resolveBatchIdentityDecisions(rows: RekamMedisImporRow[], decisions: RekamMedisIdentityDecision[]) {
+  const validSourceKeys = new Set(rows.map((row) => row.source_key));
+  const mappings = new Map<string, Exclude<RekamMedisIdentityDecision["decision"], "skip">>();
+  const skipped = new Set<string>();
+  for (const item of decisions) {
+    if (!validSourceKeys.has(item.source_key)) continue;
+    if (item.decision === "skip") skipped.add(item.source_key);
+    else mappings.set(item.source_key, item.decision);
+  }
+  return { mappings, skipped };
+}
+
+async function validasiMappingBatch(supabase: Awaited<ReturnType<typeof createClient>>, mappings: Map<string, { customer_id: string; pet_id: string | null }>) {
+  const pilihan = [...mappings.values()];
+  if (!pilihan.length) return;
+  const customerIds = [...new Set(pilihan.map((item) => item.customer_id))];
+  const petIds = [...new Set(pilihan.flatMap((item) => item.pet_id ? [item.pet_id] : []))];
+  const [{ data: customers, error: customerError }, { data: pets, error: petError }] = await Promise.all([
+    supabase.from("customers").select("id").in("id", customerIds),
+    petIds.length ? supabase.from("pets").select("id,customer_id").in("id", petIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (customerError) throw new Error(customerError.message);
+  if (petError) throw new Error(petError.message);
+  const customersFound = new Set((customers ?? []).map((item) => String(item.id)));
+  const petsFound = new Map((pets ?? []).map((item) => [String(item.id), String(item.customer_id)]));
+  for (const item of pilihan) {
+    if (!customersFound.has(item.customer_id)) throw new Error("Pemilik yang dipilih sudah tidak tersedia. Cek data lagi.");
+    if (item.pet_id && petsFound.get(item.pet_id) !== item.customer_id) throw new Error("Anabul yang dipilih tidak cocok dengan pemilik. Cek data lagi.");
+  }
+}
+
 function cleanText(value: unknown, max: number): string | null {
   const text = String(value ?? "").trim();
   return text ? text.slice(0, max) : null;
@@ -278,8 +309,8 @@ export async function simpanBatchImporRekamMedis(
     if (!approved) throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
     const rows = validasiRows(input);
     const decisions = parseIdentityDecisions(decisionsInput);
-    const clarifications = await loadIdentityClarifications(supabase, rows);
-    const resolved = resolveIdentityDecisions(clarifications, decisions);
+    const resolved = resolveBatchIdentityDecisions(rows, decisions);
+    await validasiMappingBatch(supabase, resolved.mappings);
     const rowsToImport = rows.filter((row) => !resolved.skipped.has(row.source_key));
     if (!rowsToImport.length) {
       return { ok: true, message: "Tidak ada riwayat baru di batch ini.", tersimpan: 0, sudah_ada: 0, dilewati: resolved.skipped.size };
