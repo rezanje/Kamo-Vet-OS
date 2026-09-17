@@ -15,6 +15,7 @@ import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import type { ItemType } from "@/lib/barang";
 import { bacaDraftKasir, KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
+import { BATAS_KATEGORI_KASIR, kategoriKasirTerlihat } from "@/lib/kasir-kategori";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -94,6 +95,7 @@ export function KasirClient({
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
+  const [kategoriDibuka, setKategoriDibuka] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 8;
   const [cartRaw, setCart] = useState<CartLine[]>([]);
@@ -180,6 +182,11 @@ export function KasirClient({
   };
 
   const kategoris = useMemo(() => ["Semua", ...new Set(items.map((i) => i.kategori))], [items]);
+  const kategoriTerlihat = useMemo(
+    () => kategoriKasirTerlihat(kategoris, kategoriDibuka, kat),
+    [kategoris, kategoriDibuka, kat],
+  );
+  const adaKategoriTersembunyi = kategoris.length > BATAS_KATEGORI_KASIR;
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -454,13 +461,26 @@ export function KasirClient({
               <i className="ti ti-search" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 12 }} />
             </div>
           </div>
-          <div style={{ padding: "0 15px 10px", display: "flex", gap: 14, flexWrap: "wrap", borderBottom: ".5px solid var(--bd)" }}>
-            {kategoris.map((k) => (
+          <div style={{ padding: "0 15px 10px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderBottom: ".5px solid var(--bd)" }}>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+            {kategoriTerlihat.map((k) => (
               <button key={k} type="button" onClick={() => { setKat(k); setPage(1); }}
                 className={`kpos-catTab ${kat === k ? "on" : ""}`}>
                 {k}
               </button>
             ))}
+            </div>
+            {adaKategoriTersembunyi && (
+              <button
+                type="button"
+                className="btn-def"
+                onClick={() => setKategoriDibuka((dibuka) => !dibuka)}
+                style={{ padding: "4px 9px", fontSize: 10.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <i className={`ti ${kategoriDibuka ? "ti-chevron-up" : "ti-chevron-down"}`} />
+                {kategoriDibuka ? "Ciutkan kategori" : `Lihat ${kategoris.length - BATAS_KATEGORI_KASIR} kategori lagi`}
+              </button>
+            )}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
