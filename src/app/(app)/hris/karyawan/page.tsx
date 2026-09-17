@@ -3,11 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { simpanKaryawan, simpanPenugasanCabang } from "./actions";
+import { tampilkanKaryawan } from "@/lib/karyawan-master";
 
-type Rel<T> = T | T[] | null;
-function one<T>(r: Rel<T>): T | null {
-  return Array.isArray(r) ? (r[0] ?? null) : r;
-}
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 type EmployeeRow = {
@@ -18,14 +15,7 @@ type EmployeeRow = {
   departemen: string | null;
   gaji_pokok: number;
   status: string;
-  branches: Rel<{ name: string }>;
-};
-type AssignmentRow = {
-  employee_id: string;
-  branch_id: string;
-  role: "PRIMARY" | "SECONDARY";
-  effective_date: string;
-  branches: Rel<{ name: string }>;
+  branch_id: string | null;
 };
 
 const STATUS_LIST = ["Aktif", "Nonaktif"];
@@ -45,26 +35,26 @@ export default async function KaryawanPage({
     .eq("is_active", true)
     .order("name");
 
-  // ponytail: join branch name untuk kolom Cabang; order by nama.
-  const { data: rowsRaw } = await supabase
-    .from("employees")
-    .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branches(name)")
-    // `cari` datang dari pencarian global di topbar.
-    .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
-    .order("nama");
-  const rows = (rowsRaw ?? []) as unknown as EmployeeRow[];
-  const { data: assignmentsRaw } = await supabase
-    .from("employee_branch_assignments")
-    .select("employee_id, branch_id, role, effective_date, branches(name)")
-    .order("role")
-    .order("effective_date");
-  const assignments = (assignmentsRaw ?? []) as unknown as AssignmentRow[];
-  const assignmentsByEmployee = new Map<string, AssignmentRow[]>();
-  for (const assignment of assignments) {
-    const list = assignmentsByEmployee.get(assignment.employee_id) ?? [];
-    list.push(assignment);
-    assignmentsByEmployee.set(assignment.employee_id, list);
-  }
+  // Nama cabang dipetakan di aplikasi. Master karyawan tetap muncul bila relasi
+  // cabang di database belum terbaca oleh layar daftar.
+  const [{ data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branch_id")
+      // `cari` datang dari pencarian global di topbar.
+      .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
+      .order("nama"),
+    supabase
+      .from("employee_branch_assignments")
+      .select("employee_id, branch_id, role, effective_date")
+      .order("role")
+      .order("effective_date"),
+  ]);
+  const rows = tampilkanKaryawan(
+    (rowsRaw ?? []) as unknown as EmployeeRow[],
+    (branches ?? []) as { id: string; name: string }[],
+    (assignmentsRaw ?? []) as { employee_id: string; branch_id: string; role: "PRIMARY" | "SECONDARY"; effective_date: string }[],
+  );
 
   const total = rows.length;
   const aktif = rows.filter((r) => r.status === "Aktif").length;
@@ -220,8 +210,7 @@ export default async function KaryawanPage({
             </thead>
             <tbody>
               {rows.map((r) => {
-                const br = one(r.branches);
-                const tugas = assignmentsByEmployee.get(r.id) ?? [];
+                const tugas = r.assignments;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontFamily: "monospace", fontSize: 10, color: "var(--tm)" }}>
@@ -230,9 +219,9 @@ export default async function KaryawanPage({
                     <td style={{ fontWeight: 500, fontSize: 12 }}>{r.nama}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.jabatan ?? "—"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.departemen ?? "—"}</td>
-                    <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
+                    <td style={{ fontSize: 11 }}>{r.branchName}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
-                      {tugas.length ? tugas.map((t) => `${one(t.branches)?.name ?? "—"}${t.role === "PRIMARY" ? " (utama)" : ""}`).join(", ") : "—"}
+                      {tugas.length ? tugas.map((t) => `${t.branchName}${t.role === "PRIMARY" ? " (utama)" : ""}`).join(", ") : "—"}
                     </td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
                       {rp(Number(r.gaji_pokok))}
