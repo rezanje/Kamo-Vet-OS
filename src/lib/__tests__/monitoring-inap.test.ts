@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ringkasPerHari, streakBuruk, trenAngka, trenOrdinal, statusSuhu, peringatan,
   normalOrdinal, skorOrdinal,
+  nilaiPantauUntukDatabase,
   type LaporanHarian,
 } from "../monitoring-inap";
 
@@ -33,6 +34,18 @@ describe("skala Baik/Sedang/Buruk", () => {
     expect(skorOrdinal("Sedang")).toBe(2);
     expect(skorOrdinal("Buruk")).toBe(1);
     expect(skorOrdinal(null)).toBeNull();
+  });
+
+  it("nilai baru tersimpan dalam format yang diterima database lama", () => {
+    expect(nilaiPantauUntukDatabase("makan", "Baik")).toBe("habis");
+    expect(nilaiPantauUntukDatabase("minum", "Sedang")).toBe("sedikit");
+    expect(nilaiPantauUntukDatabase("bab", "Buruk")).toBe("tidak ada");
+    expect(nilaiPantauUntukDatabase("pipis", "Baik")).toBe("normal");
+  });
+
+  it("nilai tidak dikenal tidak pernah dikirim ke database", () => {
+    expect(nilaiPantauUntukDatabase("bab", "aneh")).toBeNull();
+    expect(nilaiPantauUntukDatabase("bab", "")).toBeNull();
   });
 });
 

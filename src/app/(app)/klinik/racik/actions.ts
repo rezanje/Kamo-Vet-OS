@@ -21,7 +21,9 @@ export async function bahanRacikanUntukKunjungan(visitId: string): Promise<Bahan
   const supabase = await createClient();
   const [{ data: visit }, { data: items }] = await Promise.all([
     supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle(),
-    supabase.from("items").select("id, name, unit, sell_price").eq("is_active", true).eq("is_compound_material", true).order("name").limit(400),
+    supabase.from("items").select("id, name, unit, sell_price")
+      .eq("is_active", true).eq("item_type", "Persediaan").eq("is_compound_material", true)
+      .order("name").limit(1000),
   ]);
   if (!visit || !items?.length) return [];
   const ids = items.map((item) => item.id as string);

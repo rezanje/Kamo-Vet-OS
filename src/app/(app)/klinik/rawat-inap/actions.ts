@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { nilaiPantauUntukDatabase } from "@/lib/monitoring-inap";
 import { canTransition, hariRawatInap, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
 import { stockDeductions } from "@/lib/compounding";
 import { stockOut } from "@/lib/inventory";
@@ -116,7 +117,10 @@ function bacaPemantauan(formData: FormData) {
     return Number.isFinite(n) ? n : null;
   };
   return {
-    makan: teks("makan"), minum: teks("minum"), bab: teks("bab"), pipis: teks("pipis"),
+    makan: nilaiPantauUntukDatabase("makan", teks("makan")),
+    minum: nilaiPantauUntukDatabase("minum", teks("minum")),
+    bab: nilaiPantauUntukDatabase("bab", teks("bab")),
+    pipis: nilaiPantauUntukDatabase("pipis", teks("pipis")),
     berat: angka("berat"), suhu: angka("suhu"), foto_url: teks("foto_url"),
     komunikasi_owner: teks("komunikasi_owner"), komunikasi_via: teks("komunikasi_via"),
   };

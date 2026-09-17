@@ -37,6 +37,22 @@ export function normalOrdinal(v: string | null | undefined): NilaiOrdinal | null
   return cocok ?? PETA_LAMA[t.toLowerCase()] ?? null;
 }
 
+export type JenisPantau = "makan" | "minum" | "bab" | "pipis";
+
+// Database produksi lama masih membatasi nilai per jenis. Simpan dengan nilai
+// kompatibel, lalu normalOrdinal membaca kembali sebagai Baik/Sedang/Buruk.
+const NILAI_DATABASE: Record<JenisPantau, Record<NilaiOrdinal, string>> = {
+  makan: { Baik: "habis", Sedang: "sebagian", Buruk: "tidak mau" },
+  minum: { Baik: "normal", Sedang: "sedikit", Buruk: "tidak mau" },
+  bab: { Baik: "normal", Sedang: "keras", Buruk: "tidak ada" },
+  pipis: { Baik: "normal", Sedang: "sedikit", Buruk: "tidak ada" },
+};
+
+export function nilaiPantauUntukDatabase(jenis: JenisPantau, value: string | null | undefined): string | null {
+  const ordinal = normalOrdinal(value);
+  return ordinal ? NILAI_DATABASE[jenis][ordinal] : null;
+}
+
 /** Baik 3 · Sedang 2 · Buruk 1 — dipakai grafik dan pembanding antar hari. */
 export function skorOrdinal(v: string | null | undefined): number | null {
   const n = normalOrdinal(v);

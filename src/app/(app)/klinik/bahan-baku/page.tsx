@@ -21,6 +21,7 @@ export default async function BahanBakuPage() {
     .from("items")
     .select("id, code, name, sell_price, is_compound_material, item_categories(name)")
     .eq("is_active", true)
+    .eq("item_type", "Persediaan")
     .order("name");
 
   const items: ItemRow[] = (data ?? []).map((i) => ({

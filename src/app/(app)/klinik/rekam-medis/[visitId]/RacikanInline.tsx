@@ -33,7 +33,6 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
   const delBahan = (id: string) => setBahan(bahan.filter((b) => b.item_id !== id));
   const bukaRacikan = () => {
     setLoadError("");
-    if (items.length) return setOpen(true);
     startTransition(async () => {
       try {
         setItems(await bahanRacikanUntukKunjungan(visitId));
