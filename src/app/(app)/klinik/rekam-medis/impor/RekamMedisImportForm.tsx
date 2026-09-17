@@ -10,9 +10,11 @@ import {
 import {
   bagiBerkasImporRekamMedis,
   bagiBatchImporRekamMedis,
+  jalankanTerbatasImporRekamMedis,
   bolehKonfirmasiImporRekamMedis,
   cariRiwayatImporRekamMedis,
   infoProgresImporRekamMedis,
+  rencanaSimpanBesarRekamMedis,
   type TahapProgresImporRekamMedis,
 } from "@/lib/impor-rekam-medis";
 
@@ -191,15 +193,23 @@ export function RekamMedisImportForm() {
     setTahapProgres("simpan");
     startTransition(async () => {
       try {
-        const batches = bagiBatchImporRekamMedis(state?.rows ?? [], 25);
+        const rencana = rencanaSimpanBesarRekamMedis(selectedRows);
+        const batches = bagiBatchImporRekamMedis(state?.rows ?? [], rencana.ukuranBatch);
         const decisions = decisionPayload(identityDecisions);
         setDetailProgres({ current: 0, total: batches.length });
+        const hasil = await jalankanTerbatasImporRekamMedis(
+          batches.map((batch, index) => ({ batch, index })),
+          rencana.batasBersamaan,
+          async ({ batch, index }) => {
+            const result = await simpanBatchImporRekamMedis(batch, decisions, true, index === batches.length - 1);
+            setDetailProgres((current) => ({ ...current, current: current.current + 1 }));
+            return result;
+          },
+        );
         let tersimpan = 0;
         let sudahAda = 0;
         let dilewati = 0;
-        for (let index = 0; index < batches.length; index += 1) {
-          setDetailProgres({ current: index + 1, total: batches.length });
-          const result = await simpanBatchImporRekamMedis(batches[index], decisions, true, index === batches.length - 1);
+        for (const result of hasil) {
           if (!result.ok) throw new Error(result.message);
           tersimpan += result.tersimpan;
           sudahAda += result.sudah_ada;

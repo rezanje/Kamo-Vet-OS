@@ -16,6 +16,7 @@ import type { ItemType } from "@/lib/barang";
 import { bacaDraftKasir, KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
 import { BATAS_KATEGORI_KASIR, kategoriKasirTerlihat } from "@/lib/kasir-kategori";
+import { nomorHalamanKasirTerlihat } from "@/lib/kasir-halaman";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -200,7 +201,7 @@ export function KasirClient({
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageRows = shown.slice(pageStart, pageStart + PAGE_SIZE);
-  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+  const pageNumbers = nomorHalamanKasirTerlihat(totalPages, safePage);
 
   const custHits = useMemo(() => {
     const s = custQ.trim().toLowerCase();
@@ -542,7 +543,9 @@ export function KasirClient({
               <button type="button" className="kpos-pagebtn" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>
                 <i className="ti ti-chevron-left" />
               </button>
-              {pageNumbers.map((n) => (
+              {pageNumbers.map((n, index) => n === "…" ? (
+                <span key={`ellipsis-${index}`} style={{ padding: "0 2px", color: "var(--td)", fontSize: 12 }}>…</span>
+              ) : (
                 <button key={n} type="button" className={`kpos-pagebtn ${n === safePage ? "on" : ""}`} onClick={() => setPage(n)}>{n}</button>
               ))}
               <button type="button" className="kpos-pagebtn" disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}>
