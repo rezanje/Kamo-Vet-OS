@@ -8,7 +8,6 @@ import {
   type RekamMedisImportState,
 } from "./actions";
 import {
-  bagiBerkasImporRekamMedis,
   bagiBatchImporRekamMedis,
   jalankanTerbatasImporRekamMedis,
   bolehKonfirmasiImporRekamMedis,
@@ -17,8 +16,6 @@ import {
   rencanaSimpanBesarRekamMedis,
   type TahapProgresImporRekamMedis,
 } from "@/lib/impor-rekam-medis";
-
-const UKURAN_BATCH_FILE = 25 * 1024 * 1024;
 
 function pesanError(cause: unknown, fallback: string) {
   const message = cause instanceof Error ? cause.message : "";
@@ -100,7 +97,9 @@ export function RekamMedisImportForm() {
     if (!files.length) return setError("Pilih file kartu medis .xlsx terlebih dulu.");
     setError("");
     setTahapProgres("baca");
-    const fileBatches = bagiBerkasImporRekamMedis(files, UKURAN_BATCH_FILE);
+    // Satu workbook per request. ExcelJS bisa berat walau total file kecil;
+    // mengirim beberapa workbook sekaligus membuat fungsi produksi timeout.
+    const fileBatches = files.map((file) => [file]);
     setDetailProgres({ current: 0, total: fileBatches.length });
     startTransition(async () => {
       const rows: RekamMedisImportState["rows"] = [];
@@ -238,7 +237,7 @@ export function RekamMedisImportForm() {
         <i className="ti ti-shield-check" /> Pilih folder utama yang berisi folder owner. Sistem membaca owner dari folder, nama hewan dari kartu, dan setiap sheet sebagai satu histori bersama untuk semua cabang klinik.
       </div>
       <div className="p2ban" style={{ marginTop: 8, background: "#f8fafc", border: ".5px solid #cbd5e1", color: "#475569" }}>
-        <i className="ti ti-info-circle" /> Tidak ada batas jumlah file. Excel tidak dikonversi ulang; sistem membagi otomatis per maksimal 25 MB supaya folder besar tetap diproses bertahap. Batas ukuran: 5 MB per file.
+        <i className="ti ti-info-circle" /> Tidak ada batas jumlah file. Excel tidak dikonversi ulang; sistem mengecek satu file per permintaan supaya folder besar tetap stabil. Batas ukuran: 5 MB per file.
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
         <label className="btn-def" style={{ cursor: "pointer" }}>
