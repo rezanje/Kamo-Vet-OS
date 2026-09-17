@@ -60,6 +60,47 @@ export function bagiBatchImporRekamMedis<T>(rows: T[], ukuran = 25): T[][] {
   return batches;
 }
 
+export function bagiBerkasImporRekamMedis<T extends { size: number }>(berkas: T[], batasBytes: number): T[][] {
+  if (!Number.isFinite(batasBytes) || batasBytes <= 0) throw new Error("Batas ukuran batch harus lebih dari 0.");
+  const batches: T[][] = [];
+  let batch: T[] = [];
+  let ukuranBatch = 0;
+  for (const file of berkas) {
+    if (!Number.isFinite(file.size) || file.size < 0) throw new Error("Ukuran file tidak valid.");
+    if (batch.length && ukuranBatch + file.size > batasBytes) {
+      batches.push(batch);
+      batch = [];
+      ukuranBatch = 0;
+    }
+    batch.push(file);
+    ukuranBatch += file.size;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
+export function cariRiwayatImporRekamMedis<T extends Partial<Pick<RekamMedisImporRow, "owner_name" | "patient_name" | "source_file" | "source_sheet">>>(rows: T[], query: string): T[] {
+  const needle = key(query);
+  if (!needle) return rows;
+  return rows.filter((row) => [row.owner_name, row.patient_name, row.source_file, row.source_sheet]
+    .some((value) => key(value).includes(needle)));
+}
+
+export async function jalankanTerbatasImporRekamMedis<T, R>(items: T[], batas: number, kerja: (item: T) => Promise<R>): Promise<R[]> {
+  if (!Number.isInteger(batas) || batas < 1) throw new Error("Batas proses bersamaan harus lebih dari 0.");
+  const hasil = new Array<R>(items.length);
+  let indexBerikutnya = 0;
+  const worker = async () => {
+    while (true) {
+      const index = indexBerikutnya++;
+      if (index >= items.length) return;
+      hasil[index] = await kerja(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(batas, items.length) }, worker));
+  return hasil;
+}
+
 export function bolehKonfirmasiImporRekamMedis(riwayatSiap: number, disetujui: boolean) {
   return riwayatSiap > 0 && disetujui;
 }

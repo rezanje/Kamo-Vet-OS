@@ -8,11 +8,15 @@ import {
   type RekamMedisImportState,
 } from "./actions";
 import {
+  bagiBerkasImporRekamMedis,
   bagiBatchImporRekamMedis,
   bolehKonfirmasiImporRekamMedis,
+  cariRiwayatImporRekamMedis,
   infoProgresImporRekamMedis,
   type TahapProgresImporRekamMedis,
 } from "@/lib/impor-rekam-medis";
+
+const UKURAN_BATCH_FILE = 25 * 1024 * 1024;
 
 function pesanError(cause: unknown, fallback: string) {
   const message = cause instanceof Error ? cause.message : "";
@@ -73,8 +77,12 @@ export function RekamMedisImportForm() {
   const [tahapProgres, setTahapProgres] = useState<TahapProgresImporRekamMedis | null>(null);
   const [identityDecisions, setIdentityDecisions] = useState<Record<string, string>>({});
   const [detailProgres, setDetailProgres] = useState({ current: 0, total: 0 });
+  const [kataKunciReview, setKataKunciReview] = useState("");
   const [pending, startTransition] = useTransition();
-  const visibleRows = useMemo(() => (state?.rows ?? []).slice(0, 200), [state]);
+  const filteredRows = useMemo(() => cariRiwayatImporRekamMedis(state?.rows ?? [], kataKunciReview), [state?.rows, kataKunciReview]);
+  const filteredHeld = useMemo(() => cariRiwayatImporRekamMedis(state?.held ?? [], kataKunciReview), [state?.held, kataKunciReview]);
+  const visibleRows = useMemo(() => filteredRows.slice(0, 200), [filteredRows]);
+  const visibleHeld = useMemo(() => filteredHeld.slice(0, 200), [filteredHeld]);
   const summary = useMemo(() => {
     const rows = state?.rows ?? [];
     const owners = new Set(rows.map((row) => `${row.owner_name?.toLocaleLowerCase("id-ID")}::${row.phone?.replace(/\D/g, "")}`));
@@ -90,7 +98,8 @@ export function RekamMedisImportForm() {
     if (!files.length) return setError("Pilih file kartu medis .xlsx terlebih dulu.");
     setError("");
     setTahapProgres("baca");
-    setDetailProgres({ current: 0, total: files.length });
+    const fileBatches = bagiBerkasImporRekamMedis(files, UKURAN_BATCH_FILE);
+    setDetailProgres({ current: 0, total: fileBatches.length });
     startTransition(async () => {
       const rows: RekamMedisImportState["rows"] = [];
       const held: RekamMedisImportState["held"] = [];
@@ -98,19 +107,22 @@ export function RekamMedisImportForm() {
       let ignoredSheets = 0;
       const errors: string[] = [];
       try {
-        for (let index = 0; index < files.length; index += 1) {
-          const file = files[index];
-          setDetailProgres({ current: index + 1, total: files.length });
+        for (let index = 0; index < fileBatches.length; index += 1) {
+          const batch = fileBatches[index];
+          setDetailProgres({ current: index + 1, total: fileBatches.length });
           const form = new FormData();
-          form.append("files", file);
-          form.append("paths", file.webkitRelativePath || file.name);
+          batch.forEach((file) => {
+            form.append("files", file);
+            form.append("paths", file.webkitRelativePath || file.name);
+          });
           let result: RekamMedisImportState;
           try {
             result = await previewImporRekamMedis(form);
           } catch (cause) {
             const message = pesanError(cause, "File gagal dicek.");
-            errors.push(`${file.name}: ${message}`);
-            held.push({ source_key: `error::${index}::${file.name}`, source_file: file.name, source_sheet: "—", reason: message });
+            const namaBatch = batch.length === 1 ? batch[0].name : `${batch.length} file`;
+            errors.push(`${namaBatch}: ${message}`);
+            held.push({ source_key: `error::${index}::${namaBatch}`, source_file: namaBatch, source_sheet: "—", reason: message });
             continue;
           }
           rows.push(...result.rows);
@@ -118,8 +130,9 @@ export function RekamMedisImportForm() {
           clarifications.push(...result.clarifications);
           ignoredSheets += result.ignored_sheets;
           if (!result.ok && result.rows.length === 0 && result.held.length === 0) {
-            errors.push(`${file.name}: ${result.message}`);
-            held.push({ source_key: `error::${index}::${file.name}`, source_file: file.name, source_sheet: "—", reason: result.message });
+            const namaBatch = batch.length === 1 ? batch[0].name : `${batch.length} file`;
+            errors.push(`${namaBatch}: ${result.message}`);
+            held.push({ source_key: `error::${index}::${namaBatch}`, source_file: namaBatch, source_sheet: "—", reason: result.message });
           }
         }
 
@@ -215,7 +228,7 @@ export function RekamMedisImportForm() {
         <i className="ti ti-shield-check" /> Pilih folder utama yang berisi folder owner. Sistem membaca owner dari folder, nama hewan dari kartu, dan setiap sheet sebagai satu histori bersama untuk semua cabang klinik.
       </div>
       <div className="p2ban" style={{ marginTop: 8, background: "#f8fafc", border: ".5px solid #cbd5e1", color: "#475569" }}>
-        <i className="ti ti-info-circle" /> Tidak ada batas jumlah file. Sistem mengecek satu per satu supaya folder besar tidak membuat halaman berhenti. Batas ukuran: 5 MB per file.
+        <i className="ti ti-info-circle" /> Tidak ada batas jumlah file. Excel tidak dikonversi ulang; sistem membagi otomatis per maksimal 25 MB supaya folder besar tetap diproses bertahap. Batas ukuran: 5 MB per file.
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
         <label className="btn-def" style={{ cursor: "pointer" }}>
@@ -254,6 +267,13 @@ export function RekamMedisImportForm() {
             <span style={{ fontSize: 10.5, fontWeight: 800, color: "#b91c1c", background: "#fee2e2", borderRadius: 999, padding: "5px 9px" }}>Ditahan {state.held.length}</span>
             <span style={{ fontSize: 10.5, fontWeight: 800, color: "#475569", background: "#f1f5f9", borderRadius: 999, padding: "5px 9px" }}>Sheet dilewati {state.ignored_sheets}</span>
           </div>
+          <input
+            className="fi"
+            value={kataKunciReview}
+            onChange={(event) => setKataKunciReview(event.target.value)}
+            placeholder="Cari nama owner, hewan, atau file…"
+            style={{ marginTop: 10, maxWidth: 420 }}
+          />
           {state.clarifications.length > 0 && (
             <div style={{ marginTop: 10, padding: 11, borderRadius: 8, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
               <div style={{ fontSize: 11.5, fontWeight: 900 }}><i className="ti ti-git-compare" /> {state.clarifications.length} data mirip perlu keputusan</div>
@@ -292,11 +312,11 @@ export function RekamMedisImportForm() {
                   <td style={{ fontSize: 10.5, minWidth: 260 }}><details><summary style={{ cursor: "pointer", fontWeight: 700 }}>Lihat isi</summary><div style={{ marginTop: 5, whiteSpace: "pre-wrap", lineHeight: 1.45 }}><b>Anamnesa:</b> {row.anamnesis || "—"}<br /><b>Gambaran klinis:</b> {row.clinical_findings || "—"}<br /><b>Diagnosa:</b> {row.diagnosis || "—"}<br /><b>Terapi:</b> {row.therapy || "—"}</div></details></td>
                   <td style={{ fontSize: 10.5 }}>{row.warning.join(", ") || "Siap"}</td>
                 </tr>)}
-                {state.held.map((row) => <tr key={row.source_key} style={{ background: "#fff7f7" }}><td>{row.source_file} — {row.source_sheet}</td><td colSpan={6} style={{ color: "#b91c1c" }}>{row.reason}</td></tr>)}
+                {visibleHeld.map((row) => <tr key={row.source_key} style={{ background: "#fff7f7" }}><td>{row.source_file} — {row.source_sheet}</td><td colSpan={6} style={{ color: "#b91c1c" }}>{row.reason}</td></tr>)}
               </tbody>
             </table>
           </div>
-          {state.rows.length > visibleRows.length && <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>Menampilkan 200 riwayat pertama dari {state.rows.length} riwayat siap cek.</div>}
+          {(filteredRows.length > visibleRows.length || filteredHeld.length > visibleHeld.length) && <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>Menampilkan maksimal 200 hasil pencarian. Sempitkan kata kunci untuk melihat data lain.</div>}
           {state.phase === "preview" && <div style={{ marginTop: 12, display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 6 }}><input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} /> Saya sudah meninjau hasil cek dan setuju menyimpan riwayat yang siap. Data yang ditahan tidak ikut disimpan.</label>
             <button type="button" className="btn-acc" disabled={pending || Boolean(tahapProgres) || !state.ok || !canConfirm} onClick={runImport} style={{ background: "#15803d" }}>{pending || tahapProgres ? <span className="btn-spin" /> : <i className="ti ti-database-import" />} {pending || tahapProgres ? "Menyimpan…" : `Simpan ${selectedRows} riwayat yang siap`}</button>

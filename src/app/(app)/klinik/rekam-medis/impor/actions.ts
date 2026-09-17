@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   bacaWorkbooksRekamMedis,
   bolehKonfirmasiImporRekamMedis,
+  jalankanTerbatasImporRekamMedis,
   klarifikasiIdentitasRekamMedis,
   pilahRiwayatTersimpan,
   type RekamMedisIdentityClarification,
@@ -18,6 +19,8 @@ const MAX_BATCH_BYTES = 30 * 1024 * 1024;
 type ImportRpcClient = {
   rpc: (name: "import_legacy_medical_record_resolved", args: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
 };
+
+const BERSAMAAN_SIMPAN = 4;
 
 export type RekamMedisImportState = {
   ok: boolean;
@@ -229,7 +232,7 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
     );
 
     const importClient = supabase as unknown as ImportRpcClient;
-    for (const row of baru) {
+    await jalankanTerbatasImporRekamMedis(baru, BERSAMAAN_SIMPAN, async (row) => {
       const mapping = decisions.mappings.get(row.source_key);
       const { error } = await importClient.rpc("import_legacy_medical_record_resolved", {
         p_source_key: row.source_key,
@@ -253,7 +256,7 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
         p_pet_id: mapping?.pet_id ?? null,
       });
       if (error) throw new Error(error.message);
-    }
+    });
     revalidatePath("/klinik/antrian");
     revalidatePath("/crm/pelanggan");
     const existingMessage = sudah_ada ? ` ${sudah_ada} riwayat sudah ada dan tidak digandakan.` : "";
@@ -292,7 +295,7 @@ export async function simpanBatchImporRekamMedis(
     );
 
     const importClient = supabase as unknown as ImportRpcClient;
-    for (const row of baru) {
+    await jalankanTerbatasImporRekamMedis(baru, BERSAMAAN_SIMPAN, async (row) => {
       const mapping = resolved.mappings.get(row.source_key);
       const { error } = await importClient.rpc("import_legacy_medical_record_resolved", {
         p_source_key: row.source_key,
@@ -316,7 +319,7 @@ export async function simpanBatchImporRekamMedis(
         p_pet_id: mapping?.pet_id ?? null,
       });
       if (error) throw new Error(error.message);
-    }
+    });
     if (finalBatch) {
       revalidatePath("/klinik/antrian");
       revalidatePath("/crm/pelanggan");

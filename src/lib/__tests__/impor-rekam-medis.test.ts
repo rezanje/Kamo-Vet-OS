@@ -70,6 +70,27 @@ async function progres(tahap: "baca" | "simpan") {
     .infoProgresImporRekamMedis(tahap);
 }
 
+async function bagiBerkas<T extends { size: number }>(berkas: T[], ukuran: number) {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("bagiBerkasImporRekamMedis");
+  return (loaded as { bagiBerkasImporRekamMedis: <R extends { size: number }>(b: R[], u: number) => R[][] })
+    .bagiBerkasImporRekamMedis(berkas, ukuran);
+}
+
+async function cariRiwayat(rows: Array<Record<string, unknown>>, query: string) {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("cariRiwayatImporRekamMedis");
+  return (loaded as { cariRiwayatImporRekamMedis: (r: typeof rows, q: string) => typeof rows })
+    .cariRiwayatImporRekamMedis(rows, query);
+}
+
+async function jalankanTerbatas<T, R>(items: T[], batas: number, kerja: (item: T) => Promise<R>) {
+  const loaded = await import("../impor-rekam-medis").catch(() => ({}));
+  expect(loaded).toHaveProperty("jalankanTerbatasImporRekamMedis");
+  return (loaded as { jalankanTerbatasImporRekamMedis: <I, O>(i: I[], b: number, k: (item: I) => Promise<O>) => Promise<O[]> })
+    .jalankanTerbatasImporRekamMedis(items, batas, kerja);
+}
+
 const lengkap = [
   [2, 1, "No. Rek Med"], [2, 2, "RM-100"], [2, 4, "Tanggal Rek"], [2, 5, "2025-03-04"],
   [3, 1, "Nama Pasien"], [3, 2, "Mochi"], [3, 4, "Nama Pemilik"], [3, 5, "Rani"],
@@ -323,5 +344,44 @@ describe("infoProgresImporRekamMedis", () => {
   it("membedakan progres saat membaca dan menyimpan", async () => {
     await expect(progres("baca")).resolves.toMatchObject({ label: "Membaca kartu medis…" });
     await expect(progres("simpan")).resolves.toMatchObject({ label: "Menyimpan riwayat aman…" });
+  });
+});
+
+describe("bagiBerkasImporRekamMedis", () => {
+  it("mengelompokkan file sesuai ukuran batch tanpa mengubah urutan", async () => {
+    const berkas = [{ name: "a.xlsx", size: 16 }, { name: "b.xlsx", size: 10 }, { name: "c.xlsx", size: 15 }];
+    await expect(bagiBerkas(berkas, 25)).resolves.toEqual([
+      [berkas[0]],
+      [berkas[1], berkas[2]],
+    ]);
+  });
+});
+
+describe("cariRiwayatImporRekamMedis", () => {
+  it("mencari owner, hewan, atau nama file tanpa membedakan huruf", async () => {
+    const riwayat = [
+      { owner_name: "Aldi Saputra", patient_name: "Mochi", source_file: "Mochi.xlsx" },
+      { owner_name: "Nisa", patient_name: "Boba", source_file: "Boba.xlsx" },
+    ];
+
+    await expect(cariRiwayat(riwayat, "ALDI")).resolves.toEqual([riwayat[0]]);
+    await expect(cariRiwayat(riwayat, "boba.xlsx")).resolves.toEqual([riwayat[1]]);
+  });
+});
+
+describe("jalankanTerbatasImporRekamMedis", () => {
+  it("membatasi pekerjaan bersamaan dan mempertahankan urutan hasil", async () => {
+    let aktif = 0;
+    let puncak = 0;
+    const hasil = await jalankanTerbatas([1, 2, 3, 4], 2, async (item) => {
+      aktif += 1;
+      puncak = Math.max(puncak, aktif);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      aktif -= 1;
+      return item * 10;
+    });
+
+    expect(hasil).toEqual([10, 20, 30, 40]);
+    expect(puncak).toBe(2);
   });
 });
