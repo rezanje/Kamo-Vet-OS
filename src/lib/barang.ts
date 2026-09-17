@@ -53,6 +53,12 @@ export function validasiBarang(d: BarangDraft): string | null {
   return null;
 }
 
+/** Satuan dasar wajib datang dari pilihan master, bukan diisi diam-diam. */
+export function validasiSatuanDasar(raw: unknown): string | null {
+  const unit = String(raw ?? "").trim();
+  return unit ? null : "Satuan dasar wajib dipilih";
+}
+
 // Error DB → bahasa manusia. Yang tidak dikenali dilewatkan apa adanya supaya
 // masalah tak terduga tetap kelihatan, bukan ditelan jadi "terjadi kesalahan".
 const UNIQUE_MSG: Record<string, string> = {

@@ -4,6 +4,7 @@ import {
   ITEM_TYPES,
   pickItemType,
   validasiBarang,
+  validasiSatuanDasar,
   pesanSimpanGagal,
   type BarangDraft,
 } from "../barang";
@@ -67,6 +68,18 @@ describe("validasiBarang", () => {
 
   it("barang non-jasa tidak dipaksa punya kategori tindakan", () => {
     expect(validasiBarang(draft({ itemType: "Non-Persediaan" }))).toBeNull();
+  });
+});
+
+describe("validasiSatuanDasar", () => {
+  it("menolak satuan kosong, supaya tidak diam-diam menjadi pcs", () => {
+    expect(validasiSatuanDasar("")).toBe("Satuan dasar wajib dipilih");
+    expect(validasiSatuanDasar("  ")).toBe("Satuan dasar wajib dipilih");
+    expect(validasiSatuanDasar(null)).toBe("Satuan dasar wajib dipilih");
+  });
+
+  it("menerima satuan yang dipilih", () => {
+    expect(validasiSatuanDasar("kg")).toBeNull();
   });
 });
 

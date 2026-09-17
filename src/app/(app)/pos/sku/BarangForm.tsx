@@ -61,7 +61,7 @@ export function BarangForm({
 
   // Satuan dasar & harga dasar dipantau di state supaya panel satuan berjenjang bisa
   // menampilkan perbandingan harga per satuan dasar sambil diketik.
-  const [baseUnit, setBaseUnit] = useState(editing?.unit ?? "pcs");
+  const [baseUnit, setBaseUnit] = useState(editing?.unit ?? "");
   const [baseSell, setBaseSell] = useState<number>(Number(editing?.sell_price) || 0);
   const [units, setUnits] = useState<ItemUnit[]>(editing?.units ?? []);
   // Harga bertingkat: "beli minimal sekian → harga sekian". Beda dari satuan
@@ -76,7 +76,8 @@ export function BarangForm({
   const isJasa = itemType === "Jasa";
   const isGroup = itemType === "Grup";
   const punyaStok = itemType === "Persediaan";
-  const dasar = (baseUnit.trim() || (isJasa ? "tindakan" : "pcs")).trim();
+  const dasar = baseUnit.trim();
+  const labelDasar = dasar || "satuan dasar";
 
   const setUnit = (i: number, patch: Partial<ItemUnit>) =>
     setUnits((us) => us.map((u, j) => (j === i ? { ...u, ...patch } : u)));
@@ -92,9 +93,6 @@ export function BarangForm({
 
   const gantiJenis = (v: ItemType) => {
     setItemType(v);
-    // Satuan default ikut jenis selama belum diutak-atik manual.
-    if (v === "Jasa" && baseUnit === "pcs") setBaseUnit("tindakan");
-    if (v !== "Jasa" && baseUnit === "tindakan") setBaseUnit("pcs");
     if (v !== "Grup" && tab === "Rincian Grup") setTab("Umum");
   };
 
@@ -186,9 +184,10 @@ export function BarangForm({
             <select className="fi" name="unit" value={baseUnit} onChange={(e) => setBaseUnit(e.target.value)} required>
               {/* Satuan lama yang sudah dinonaktifkan tetap ditawarkan saat mengedit
                   barang yang memakainya — kalau tidak, nilainya hilang diam-diam. */}
-              {baseUnit && !satuanMaster.some((u) => u.nama === baseUnit) && (
+              {editing && baseUnit && !satuanMaster.some((u) => u.nama === baseUnit) && (
                 <option value={baseUnit}>{baseUnit} (nonaktif)</option>
               )}
+              {!baseUnit && <option value="">— pilih satuan dasar —</option>}
               {satuanMaster.map((u) => <option key={u.id} value={u.nama}>{u.nama}</option>)}
             </select>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
@@ -221,13 +220,13 @@ export function BarangForm({
       <div data-tab="Penjualan / Pembelian" style={{ display: tab === "Penjualan / Pembelian" ? "block" : "none" }}>
         <div className="frow">
           <div>
-            <label className="flab">Harga jual * <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
+            <label className="flab">Harga jual * <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
             <input className="fi" name="sell_price" type="number" min={0} step="any"
               value={baseSell || ""} onChange={(e) => setBaseSell(Number(e.target.value))} required />
           </div>
           {!isGroup && (
             <div>
-              <label className="flab">Harga beli / modal <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
+              <label className="flab">Harga beli / modal <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
               <input className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
             </div>
           )}
@@ -240,7 +239,7 @@ export function BarangForm({
               <div>
                 <div style={{ fontSize: 11.5, fontWeight: 700 }}><i className="ti ti-discount-2" /> Harga bertingkat (beli banyak)</div>
                 <div style={{ fontSize: 9.5, color: "var(--td)" }}>
-                  Harga per {dasar} kalau belinya minimal sekian. Yang dipakai tingkat tertinggi yang tercapai;
+                  Harga per {labelDasar} kalau belinya minimal sekian. Yang dipakai tingkat tertinggi yang tercapai;
                   di bawah semua tingkat berarti harga normal {rp(baseSell)}.
                 </div>
               </div>
@@ -258,17 +257,17 @@ export function BarangForm({
             {tiers.map((t, i) => (
               <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 6 }}>
                 <div style={{ width: 150 }}>
-                  {i === 0 && <label className="flab">Beli minimal ({dasar})</label>}
+                  {i === 0 && <label className="flab">Beli minimal ({labelDasar})</label>}
                   <input className="fi" type="number" min={1} step="any" value={t.min_qty || ""}
                     onChange={(e) => setTier(i, { min_qty: Number(e.target.value) })} placeholder="12" />
                 </div>
                 <div style={{ flex: 1, minWidth: 120 }}>
-                  {i === 0 && <label className="flab">Harga per {dasar}</label>}
+                  {i === 0 && <label className="flab">Harga per {labelDasar}</label>}
                   <input className="fi" type="number" min={0} step="any" value={t.harga || ""}
                     onChange={(e) => setTier(i, { harga: Number(e.target.value) })} placeholder="0" />
                   {baseSell > 0 && Number(t.harga) > 0 && Number(t.harga) < baseSell && (
                     <div style={{ fontSize: 9, color: "#15803d", marginTop: 2 }}>
-                      lebih murah {rp(baseSell - Number(t.harga))}/{dasar}
+                      lebih murah {rp(baseSell - Number(t.harga))}/{labelDasar}
                     </div>
                   )}
                 </div>
@@ -295,7 +294,7 @@ export function BarangForm({
 
             {units.length === 0 && (
               <div style={{ fontSize: 10.5, color: "var(--td)", padding: "6px 0" }}>
-                Belum ada. Barang ini hanya dijual per <b>{dasar}</b>.
+                Belum ada. Barang ini hanya dijual per <b>{labelDasar}</b>.
               </div>
             )}
 
@@ -318,7 +317,7 @@ export function BarangForm({
                     </select>
                   </div>
                   <div style={{ width: 104, flexShrink: 0 }}>
-                    {i === 0 && <label className="flab">Isi ({dasar})</label>}
+                    {i === 0 && <label className="flab">Isi ({labelDasar})</label>}
                     <input className="fi" type="number" min={0} step="any" value={u.factor || ""}
                       onChange={(e) => setUnit(i, { factor: Number(e.target.value) })} placeholder="12" />
                   </div>
@@ -328,8 +327,8 @@ export function BarangForm({
                       onChange={(e) => setUnit(i, { sell_price: Number(e.target.value) })} placeholder="0" />
                     {f > 0 && Number(u.sell_price) > 0 && (
                       <div style={{ fontSize: 9, color: hemat < 0 ? "#15803d" : "var(--td)", marginTop: 2 }}>
-                        ≈ {rp(perDasar)}/{dasar}
-                        {hemat < 0 ? ` · lebih murah ${rp(Math.abs(hemat))}/${dasar}` : ""}
+                        ≈ {rp(perDasar)}/{labelDasar}
+                        {hemat < 0 ? ` · lebih murah ${rp(Math.abs(hemat))}/${labelDasar}` : ""}
                       </div>
                     )}
                   </div>
@@ -365,7 +364,7 @@ export function BarangForm({
               </div>
             </div>
             <div>
-              <label className="flab">Minimum jual <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {dasar}</span></label>
+              <label className="flab">Minimum jual <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
               <input className="fi" name="min_sell_qty" type="number" min={0} step="any"
                 defaultValue={editing?.min_sell_qty ?? 0} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
@@ -399,7 +398,7 @@ export function BarangForm({
               <div>
                 <label className="flab">Satuan beli</label>
                 <select className="fi" name="buy_unit" defaultValue={editing?.buy_unit ?? ""}>
-                  <option value="">Ikut satuan dasar ({dasar})</option>
+                  <option value="">Ikut satuan dasar ({labelDasar})</option>
                   {satuanMaster.map((u) => <option key={u.id} value={u.nama}>{u.nama}</option>)}
                 </select>
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions, parseUnitDrafts } from "@/lib/satuan";
 import { rapikanTingkat } from "@/lib/harga-tingkat";
-import { pickItemType, validasiBarang, pesanSimpanGagal } from "@/lib/barang";
+import { pickItemType, validasiBarang, validasiSatuanDasar, pesanSimpanGagal } from "@/lib/barang";
 import {
   normalisasiKomponenGrup,
   parseKomponenGrupDrafts,
@@ -49,12 +49,38 @@ export async function simpanBarang(formData: FormData) {
 
   const isJasa = draft.itemType === "Jasa";
   const isGroup = draft.itemType === "Grup";
-  const unit = String(formData.get("unit") ?? "").trim() || (isJasa ? "tindakan" : "pcs");
+  const unit = String(formData.get("unit") ?? "").trim();
+  const unitError = validasiSatuanDasar(unit);
+  if (unitError) gagal(unitError);
+  const { data: unitMaster, error: unitMasterError } = await supabase
+    .from("units")
+    .select("nama")
+    .eq("is_active", true)
+    .ilike("nama", unit)
+    .maybeSingle();
+  if (unitMasterError) gagal(pesanSimpanGagal(unitMasterError.message));
+  let unitResmi = String(unitMaster?.nama ?? "").trim();
+  if (!unitResmi && id) {
+    // Barang lama boleh tetap dibuka/disimpan walau satuannya sudah dinonaktifkan.
+    // Barang baru atau perubahan ke satuan nonaktif tetap ditolak.
+    const { data: lama, error: lamaError } = await supabase
+      .from("items")
+      .select("unit")
+      .eq("id", id)
+      .maybeSingle();
+    if (lamaError) gagal(pesanSimpanGagal(lamaError.message));
+    const unitLama = String(lama?.unit ?? "").trim();
+    if (unitLama.toLowerCase() !== unit.toLowerCase()) {
+      gagal("Satuan dasar belum terdaftar atau sudah nonaktif");
+    }
+    unitResmi = unitLama;
+  }
+  if (!unitResmi) gagal("Satuan dasar belum terdaftar atau sudah nonaktif");
   const upc = String(formData.get("upc") ?? "").trim();
   const brandId = String(formData.get("brand_id") ?? "").trim();
 
   // Satuan berjenjang: jasa tidak punya kemasan, sisanya divalidasi (faktor > 0, tanpa dobel).
-  const { rows: unitRows, error: unitErr } = parseUnitDrafts(formData.get("units"), unit);
+  const { rows: unitRows, error: unitErr } = parseUnitDrafts(formData.get("units"), unitResmi);
   if (unitErr) gagal(unitErr);
   const units = isJasa || isGroup ? [] : unitRows;
 
@@ -106,7 +132,7 @@ export async function simpanBarang(formData: FormData) {
     item_type: draft.itemType,
     brand_id: brandId || null,
     upc: upc || null,
-    unit,
+    unit: unitResmi,
     sell_price: draft.sellPrice,
     buy_price: isGroup ? 0 : draft.buyPrice,
     // Jasa & non-persediaan tidak dilacak stoknya — jangan simpan ambang yang tak dipakai.
