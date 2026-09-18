@@ -44,6 +44,34 @@ export function errorAnabulKembar(message: string | null | undefined): boolean {
   return !!message && message.includes("pets_nama_unik_per_pemilik");
 }
 
+// Pagar salah ketik yang sangat mencolok. Ini bukan diagnosis atau batas medis;
+// angka di atas sengaja dipakai hanya untuk menahan data yang hampir pasti keliru
+// sebelum ikut tersimpan di kartu pasien dan rekam medis.
+const BATAS_BERAT_WAJAR: Record<string, number> = {
+  Kucing: 15,
+  Anjing: 100,
+  Kelinci: 10,
+  Burung: 5,
+};
+
+export function batasBeratWajar(spesies: string | null | undefined): number | null {
+  return BATAS_BERAT_WAJAR[String(spesies ?? "").trim()] ?? null;
+}
+
+export function pesanBeratTidakWajar(
+  spesies: string | null | undefined,
+  berat: number | null | undefined,
+): string | null {
+  if (berat === null || berat === undefined) return null;
+  if (!Number.isFinite(berat) || berat <= 0) return "Berat badan harus lebih dari 0 kg.";
+
+  const batas = batasBeratWajar(spesies);
+  if (batas !== null && berat > batas) {
+    return `Berat ${berat} kg tidak wajar untuk ${String(spesies).toLowerCase()}. Periksa lagi sebelum menyimpan.`;
+  }
+  return null;
+}
+
 /**
  * Status reproduksi anabul (permintaan drh. Ilham, 25 Agustus 2026).
  *

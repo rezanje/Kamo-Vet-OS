@@ -9,6 +9,7 @@ import { PetPhotoUpload } from "@/components/PetPhotoUpload";
 import { FollowUpTable } from "@/components/FollowUpTable";
 import { kategoriWajibConsent } from "@/lib/tindakan";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
+import { batasBeratWajar } from "@/lib/anabul";
 
 export type ItemLite = {
   id: string; name: string; unit: string; sell_price: number; stok: number;
@@ -201,7 +202,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
           </ExamField>
           <ExamField icon="ti-weight" color="#0891b2" label="Berat Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
-              <input className="fi" name="berat" type="number" step="0.1" defaultValue={currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
+              <input className="fi" name="berat" type="number" step="0.1" min={0} max={batasBeratWajar(patient.species) ?? undefined} defaultValue={currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
               <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderLeft: "none", borderRadius: "0 6px 6px 0", padding: "6px 10px", fontSize: 11, color: "var(--tm)" }}>kg</span>
             </div>
           </ExamField>

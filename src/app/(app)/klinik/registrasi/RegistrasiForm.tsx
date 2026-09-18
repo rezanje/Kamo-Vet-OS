@@ -1,6 +1,6 @@
 "use client";
 
-import { STATUS_REPRODUKSI } from "@/lib/anabul";
+import { batasBeratWajar, STATUS_REPRODUKSI } from "@/lib/anabul";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -342,7 +342,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
             </div>
             <div>
               <label className="flab">Berat badan (kg)</label>
-              <input className="fi" type="number" step="0.1" min={0} placeholder="12.5" value={pet.weight ?? ""} onChange={(e) => setPet({ weight: e.target.value ? Number(e.target.value) : null })} />
+              <input className="fi" type="number" step="0.1" min={0} max={batasBeratWajar(pet.species) ?? undefined} placeholder="12.5" value={pet.weight ?? ""} onChange={(e) => setPet({ weight: e.target.value ? Number(e.target.value) : null })} />
             </div>
           </div>
           <div className="frow">

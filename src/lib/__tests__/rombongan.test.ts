@@ -45,6 +45,12 @@ describe("bacaPets", () => {
     expect(baca([pet({ weight: "gemuk" as never })]).ok).toBe(false);
   });
 
+  it("menolak berat yang tidak wajar untuk spesiesnya", () => {
+    const r = baca([pet({ species: "Kucing", weight: 75 })]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.pesan).toContain("75 kg");
+  });
+
   it("jumlah hewan dibatasi", () => {
     const banyak = Array.from({ length: MAKS_HEWAN + 1 }, (_, i) => pet({ name: `Kucing ${i}` }));
     expect(baca(banyak).ok).toBe(false);

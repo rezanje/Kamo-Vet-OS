@@ -7,6 +7,7 @@ import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
 import { resolveDokter } from "@/lib/dokter";
+import { pesanBeratTidakWajar } from "@/lib/anabul";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
@@ -67,6 +68,11 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   const back = `/klinik/rekam-medis/${visitId}`;
+  if (berat !== null) {
+    const { data: pet } = await supabase.from("pets").select("species").eq("id", petId).maybeSingle();
+    const pesanBerat = pesanBeratTidakWajar(pet?.species ?? null, berat);
+    if (pesanBerat) redirect(`${back}?error=${encodeURIComponent(pesanBerat)}`);
+  }
   const providerId = String(formData.get("provider_id") ?? "").trim();
   if (providerId) {
     const provider = await supabase.rpc("set_visit_service_state", {

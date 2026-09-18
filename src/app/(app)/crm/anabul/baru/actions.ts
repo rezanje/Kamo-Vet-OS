@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
+import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar, pesanBeratTidakWajar } from "@/lib/anabul";
 
 export async function simpanAnabul(formData: FormData) {
   const supabase = await createClient();
@@ -27,6 +27,11 @@ export async function simpanAnabul(formData: FormData) {
     redirect(
       `/crm/anabul/baru?error=${encodeURIComponent("Pelanggan dan nama anabul wajib diisi")}&customer=${customerId}`
     );
+  }
+
+  const pesanBerat = pesanBeratTidakWajar(species, weight);
+  if (pesanBerat) {
+    redirect(`/crm/anabul/baru?error=${encodeURIComponent(pesanBerat)}&customer=${customerId}`);
   }
 
   // Layar ini artinya "tambah anabul BARU" — beda dari registrasi klinik yang

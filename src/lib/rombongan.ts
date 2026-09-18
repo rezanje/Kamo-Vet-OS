@@ -1,3 +1,5 @@
+import { pesanBeratTidakWajar } from "./anabul";
+
 // Pendaftaran rombongan — satu pemilik membawa beberapa hewan dalam satu kedatangan.
 // Murni, dites di __tests__/rombongan.test.ts
 //
@@ -82,8 +84,9 @@ export function bacaPets(raw: unknown): HasilBaca {
     const berat = beratMentah === null || beratMentah === undefined || beratMentah === ""
       ? null
       : Number(beratMentah);
-    if (berat !== null && (!Number.isFinite(berat) || berat < 0)) {
-      return { ok: false, pesan: `Berat badan hewan ke-${urutan} tidak valid.` };
+    const pesanBerat = pesanBeratTidakWajar(species, berat);
+    if (pesanBerat) {
+      return { ok: false, pesan: `Berat badan hewan ke-${urutan}: ${pesanBerat}` };
     }
 
     pets.push({

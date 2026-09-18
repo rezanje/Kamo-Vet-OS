@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { samaNama } from "../anabul";
+import { pesanBeratTidakWajar, samaNama } from "../anabul";
 import { nomorHpValid, digitHp } from "../kontak";
 
 // samaNama harus persis mengikuti aturan index `pets_nama_unik_per_pemilik`
@@ -18,6 +18,16 @@ describe("samaNama", () => {
   it("nama berbeda tetap berbeda", () => {
     expect(samaNama("Michi", "Miche")).toBe(false);
     expect(samaNama("Michi", "Michi 2")).toBe(false);
+  });
+});
+
+describe("pesanBeratTidakWajar", () => {
+  it("flags a cat weight that is clearly outside a normal range", () => {
+    expect(pesanBeratTidakWajar("Kucing", 75)).toContain("75 kg");
+  });
+
+  it("keeps a normal cat weight valid", () => {
+    expect(pesanBeratTidakWajar("Kucing", 4.2)).toBeNull();
   });
 });
 
