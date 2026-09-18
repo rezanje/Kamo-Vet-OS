@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
+import { SubmitButton } from "@/components/SubmitButton";
 import { terimaBarang } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -49,9 +50,9 @@ export function TerimaForm({ sourceTransferId, rows }: { sourceTransferId: strin
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-          <button type="submit" className="btn-acc" disabled={payload.length === 0}>
-            <i className="ti ti-package-import" /> Terima barang
-          </button>
+          <SubmitButton className="btn-acc" disabled={payload.length === 0} icon="ti-package-import" pendingText="Menyimpan penerimaan…">
+            Terima barang
+          </SubmitButton>
         </div>
       </div>
     </form>

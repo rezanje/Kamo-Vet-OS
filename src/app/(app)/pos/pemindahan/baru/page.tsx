@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { PemindahanForm } from "./PemindahanForm";
 
 export default async function PemindahanBaruPage({
@@ -10,9 +11,9 @@ export default async function PemindahanBaruPage({
   const { error } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: whs }, { data: items }] = await Promise.all([
+  const [{ data: whs }, items] = await Promise.all([
     supabase.from("warehouses").select("id, name").eq("is_active", true).neq("type", "TRANSIT").order("name"),
-    supabase.from("items").select("id, code, name, unit").eq("is_active", true).order("name"),
+    loadKatalogPermintaan(supabase),
   ]);
 
   return (
@@ -31,7 +32,7 @@ export default async function PemindahanBaruPage({
         </div>
       )}
 
-      <PemindahanForm warehouses={whs ?? []} items={items ?? []} />
+      <PemindahanForm warehouses={whs ?? []} items={items} />
     </>
   );
 }

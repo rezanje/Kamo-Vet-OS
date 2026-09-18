@@ -173,7 +173,7 @@ export default async function StokPage({
                   );
                 })}
                 {stock.length === 0 && (
-                  <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada stok di gudang ini. Tambahkan lewat Stok Masuk di bawah.</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada stok di gudang ini. Stok akan bertambah lewat penerimaan pembelian, pemindahan masuk, atau penyesuaian stok.</td></tr>
                 )}
               </tbody>
             </table>

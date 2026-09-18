@@ -87,7 +87,6 @@ export async function checkoutKasir(formData: FormData) {
   // (migrasi 0073), jadi layar kasir yang sudah lama terbuka tidak boleh menentukan
   // harga sendiri. Baris tanpa item_id (ketikan manual) tetap pakai harga yang diisi.
   const cartIds = [...new Set(rows.map((l) => l.item_id).filter(Boolean))];
-  const namaStok = new Map<string, string>();
   if (cartIds.length > 0) {
     const [{ data: itemsHarga }, hargaMap, unitMap] = await Promise.all([
       supabase.from("items").select("id, nama:name, unit, item_type, sell_price, min_sell_qty, is_active").in("id", cartIds),
@@ -104,8 +103,6 @@ export async function checkoutKasir(formData: FormData) {
       ((itemsHarga ?? []) as ItemHarga[])
         .map((i) => [i.id, i]),
     );
-    for (const item of pusat.values()) namaStok.set(item.id, item.nama);
-
     const groupIds = [...new Set(rows
       .map((line) => line.item_id ? pusat.get(line.item_id) : undefined)
       .filter((item): item is ItemHarga => item?.item_type === "Grup")
@@ -138,8 +135,6 @@ export async function checkoutKasir(formData: FormData) {
     const componentById = new Map(
       ((componentItemsRaw ?? []) as ComponentMaster[]).map((component) => [component.id, component]),
     );
-    for (const component of componentById.values()) namaStok.set(component.id, component.name);
-
     const recipeByGroup = new Map<string, ResepKomponenCheckout[]>();
     for (const groupId of groupIds) {
       const rawForGroup = recipeRows.filter((recipe) => recipe.group_item_id === groupId);
@@ -352,9 +347,8 @@ export async function checkoutKasir(formData: FormData) {
   const kembali = metode === "Tunai" ? Math.max(0, bayar - total) : 0;
   if (metode === "Tunai" && bayar < total) redirect(`/kasir?error=${encodeURIComponent("Uang bayar kurang")}`);
 
-  // Preflight seluruh kebutuhan dalam satuan dasar SEBELUM sales dibuat. Barang
-  // langsung dan komponen dari beberapa Grup digabung agar item sama tidak lolos
-  // karena diperiksa per baris.
+  // Cabang tetap wajib punya gudang aktif untuk mencatat stok keluar. Bila stok
+  // kurang, layar kasir mengingatkan tetapi owner boleh melanjutkan transaksi.
   const kebutuhanStok = kebutuhanStokCheckout(rows.map((row) => ({
     item_id: row.item_id,
     item_type: row.item_type ?? "Non-Persediaan",
@@ -369,27 +363,6 @@ export async function checkoutKasir(formData: FormData) {
   if (kebutuhanStok.length > 0 && !wh) {
     redirect(`/kasir?error=${encodeURIComponent("Cabang belum punya gudang aktif untuk memotong stok")}`);
   }
-  if (wh && kebutuhanStok.length > 0) {
-    const { data: stockRows, error: stockErr } = await supabase.from("stock")
-      .select("item_id, qty").eq("warehouse_id", wh.id)
-      .in("item_id", kebutuhanStok.map((row) => row.item_id));
-    if (stockErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca stok: ${stockErr.message}`)}`);
-    const available = new Map(
-      ((stockRows ?? []) as { item_id: string; qty: number }[])
-        .map((stock) => [stock.item_id, Number(stock.qty)]),
-    );
-    const shortages = kebutuhanStok.filter((need) =>
-      (available.get(need.item_id) ?? 0) + Number.EPSILON < need.qty_dasar,
-    );
-    if (shortages.length > 0) {
-      const detail = shortages.map((need) => {
-        const stock = available.get(need.item_id) ?? 0;
-        return `${namaStok.get(need.item_id) ?? need.item_id} butuh ${need.qty_dasar}, tersedia ${stock}`;
-      }).join("; ");
-      redirect(`/kasir?error=${encodeURIComponent(`Stok tidak cukup: ${detail}`)}`);
-    }
-  }
-
   // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
   const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {
     table: "sales", column: "no_struk",

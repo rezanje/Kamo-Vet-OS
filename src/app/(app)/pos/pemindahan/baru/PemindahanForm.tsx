@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
+import { SubmitButton } from "@/components/SubmitButton";
 import { buatKirim } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -93,15 +94,15 @@ export function PemindahanForm({ warehouses, items }: { warehouses: Warehouse[];
             })}
           </div>
           <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
-            Barang harus dipilih dari daftar (master SKU). Baris kosong diabaikan.
+            Ketik kode atau nama barang. Seluruh master barang persediaan tersedia; baris kosong diabaikan.
           </div>
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <button type="submit" className="btn-acc" disabled={payload.length === 0}>
-          <i className="ti ti-truck-delivery" /> Kirim barang
-        </button>
+        <SubmitButton className="btn-acc" disabled={payload.length === 0} icon="ti-truck-delivery" pendingText="Menyimpan pemindahan…">
+          Kirim barang
+        </SubmitButton>
       </div>
     </form>
   );

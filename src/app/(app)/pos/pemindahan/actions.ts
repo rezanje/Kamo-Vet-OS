@@ -98,11 +98,18 @@ export async function buatKirim(formData: FormData) {
   }
 
   // stok: asal -> Transit (cost FIFO ikut barang)
-  for (const it of items) {
-    await transferStock(supabase, {
-      fromWarehouseId: from_warehouse_id, toWarehouseId: transitId,
-      itemId: it.item_id, qty: Number(it.qty), source: "transfer", ref: no_pemindahan, tanggal,
-    });
+  try {
+    for (const it of items) {
+      await transferStock(supabase, {
+        fromWarehouseId: from_warehouse_id, toWarehouseId: transitId,
+        itemId: it.item_id, qty: Number(it.qty), source: "transfer", ref: no_pemindahan, tanggal,
+      });
+    }
+  } catch {
+    revalidatePath("/pos/pemindahan");
+    redirect(`/pos/pemindahan/${doc!.id}?error=` + encodeURIComponent(
+      `Pemindahan ${no_pemindahan} belum selesai diproses. Cek Kartu Stok sebelum mengulang.`,
+    ));
   }
 
   revalidatePath("/pos/pemindahan");
@@ -177,11 +184,18 @@ export async function terimaBarang(formData: FormData) {
   }
 
   // stok: Transit -> tujuan (cost FIFO ikut barang)
-  for (const it of items) {
-    await transferStock(supabase, {
-      fromWarehouseId: transitId, toWarehouseId: kirim!.to_warehouse_id,
-      itemId: it.item_id, qty: Number(it.qty), source: "transfer", ref: no_pemindahan, tanggal,
-    });
+  try {
+    for (const it of items) {
+      await transferStock(supabase, {
+        fromWarehouseId: transitId, toWarehouseId: kirim!.to_warehouse_id,
+        itemId: it.item_id, qty: Number(it.qty), source: "transfer", ref: no_pemindahan, tanggal,
+      });
+    }
+  } catch {
+    revalidatePath("/pos/pemindahan");
+    redirect(`/pos/pemindahan/${doc!.id}?error=` + encodeURIComponent(
+      `Penerimaan ${no_pemindahan} belum selesai diproses. Cek Kartu Stok sebelum mengulang.`,
+    ));
   }
 
   // update status dokumen Kirim

@@ -2,9 +2,9 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
-  HOME_TAB, closeTab, nextActive, openTab, tabLabel, type PageTab,
+  HOME_TAB, closeTab, nextActive, normaliseTabs, openTab, tabLabel, type PageTab,
 } from "@/lib/tabs";
 
 const STORE_KEY = "vetos.tabs";
@@ -22,7 +22,10 @@ function read(): PageTab[] {
   loaded = true;
   try {
     const raw = sessionStorage.getItem(STORE_KEY);
-    if (raw) store = JSON.parse(raw) as PageTab[];
+    if (raw) {
+      store = normaliseTabs(JSON.parse(raw));
+      sessionStorage.setItem(STORE_KEY, JSON.stringify(store));
+    }
   } catch {
     // storage penuh / diblokir — jalan tanpa tab tersimpan.
   }
@@ -54,9 +57,7 @@ const serverSnapshot = () => EMPTY;
 // gonta-ganti tanpa balik ke sidebar. Umur tab = satu sesi tab browser.
 export function PageTabs() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const query = searchParams.toString();
-  const currentHref = query ? `${pathname}?${query}` : pathname;
+  const currentHref = pathname;
   const router = useRouter();
   const tabs = useSyncExternalStore(subscribe, read, serverSnapshot);
 

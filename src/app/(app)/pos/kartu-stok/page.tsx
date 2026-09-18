@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { susunKartuStok, labelSource, type Mutasi } from "@/lib/kartu-stok";
 import { hariIniWIB } from "@/lib/tanggal";
+import { loadKatalogPermintaan } from "@/lib/permintaan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -32,11 +33,10 @@ export default async function KartuStokPage({
   const sampai = sp.sampai || todayWib();
   const supabase = await createClient();
 
-  const [{ data: itemRows }, { data: whRows }] = await Promise.all([
-    supabase.from("items").select("id, code, name, unit").eq("item_type", "Persediaan").eq("is_active", true).order("name"),
+  const [items, { data: whRows }] = await Promise.all([
+    loadKatalogPermintaan(supabase),
     supabase.from("warehouses").select("id, code, name").eq("is_active", true).order("code"),
   ]);
-  const items = (itemRows ?? []) as { id: string; code: string; name: string; unit: string }[];
   const gudangs = (whRows ?? []) as { id: string; code: string; name: string }[];
 
   const itemId = items.some((i) => i.id === sp.item) ? sp.item! : "";

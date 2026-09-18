@@ -81,6 +81,21 @@ export function openTab(tabs: PageTab[], tab: PageTab, max = MAX_TABS): PageTab[
   return next.slice(next.length - max);
 }
 
+/** Satu halaman hanya boleh punya satu tab; query adalah filter halaman, bukan tab baru. */
+export function normaliseTabs(raw: unknown, max = MAX_TABS): PageTab[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const tabs: PageTab[] = [];
+  for (const value of raw) {
+    if (!value || typeof value !== "object" || typeof value.href !== "string") continue;
+    const href = value.href.split(/[?#]/)[0] || HOME_TAB.href;
+    if (href === HOME_TAB.href || seen.has(href)) continue;
+    seen.add(href);
+    tabs.push({ href, label: tabLabel(href) });
+  }
+  return tabs.slice(-max);
+}
+
 /** Tutup tab. Dashboard tidak bisa ditutup. */
 export function closeTab(tabs: PageTab[], href: string): PageTab[] {
   if (href === HOME_TAB.href) return tabs;

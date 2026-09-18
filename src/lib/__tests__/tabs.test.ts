@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  tabLabel, openTab, closeTab, nextActive, HOME_TAB, type PageTab,
+  tabLabel, openTab, closeTab, nextActive, normaliseTabs, HOME_TAB, type PageTab,
 } from "../tabs";
 
 const t = (href: string): PageTab => ({ href, label: tabLabel(href) });
@@ -59,6 +59,16 @@ describe("openTab", () => {
     let tabs: PageTab[] = [];
     for (let i = 0; i < 4; i++) tabs = openTab(tabs, t(`/m${i}`), 3);
     expect(tabs.map((x) => x.href)).toEqual(["/m1", "/m2", "/m3"]);
+  });
+});
+
+describe("normaliseTabs", () => {
+  it("menyatukan tab halaman yang sama walau query filternya berbeda", () => {
+    expect(normaliseTabs([
+      t("/pos/stok?gudang=a"),
+      t("/pos/stok?gudang=b"),
+      t("/pos/kartu-stok?item=barang-1"),
+    ]).map((tab) => tab.href)).toEqual(["/pos/stok", "/pos/kartu-stok"]);
   });
 });
 
