@@ -5,7 +5,7 @@ import { KategoriUmur } from "./KategoriUmur";
 import { depreciationPerMonth } from "@/lib/aging";
 import { catchUpDepreciation } from "@/lib/depreciation";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
-import { tambahAset, jalankanPenyusutan } from "./actions";
+import { tambahPembelianAset, tambahSaldoAwalAset, jalankanPenyusutan } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -63,9 +63,9 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
         </div>
       )}
 
-      {success === "aset" && (
+      {(success === "pembelian" || success === "saldo-awal") && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Aset tersimpan{" "}— jurnal pembelian otomatis (kecuali saldo awal).
+          <i className="ti ti-circle-check" /> {success === "pembelian" ? "Pembelian aset dan jurnal tersimpan." : "Saldo awal aset tersimpan tanpa jurnal historis."}
         </div>
       )}
       {success === "susut" && (
@@ -125,8 +125,8 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
       </div>
 
       <div className="crm-sec">
-        <SecHeader num="02" title="TAMBAH ASET TETAP" desc="Aset baru dari kas/bank dijurnal otomatis; aset lama pilih 'Saldo awal'." />
-        <form action={tambahAset}>
+        <SecHeader num="02" title="PEMBELIAN ASET BARU" desc="Aset dan jurnal pembelian disimpan sebagai satu transaksi." />
+        <form action={tambahPembelianAset}>
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Nama aset</label>
@@ -153,8 +153,8 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
           <div className="frow" style={{ marginBottom: 12 }}>
             <div>
               <label className="flab">Sumber dana</label>
-              <select className="fi" name="sumber" defaultValue="saldo-awal">
-                <option value="saldo-awal">Saldo awal (tanpa jurnal)</option>
+              <select className="fi" name="sumber" defaultValue="" required>
+                <option value="">— pilih sumber dana —</option>
                 <option value="Tunai">Kas (jurnal otomatis)</option>
                 <option value="Bank">Bank (jurnal otomatis)</option>
               </select>
@@ -168,7 +168,24 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
               </select>
             </div>
           </div>
-          <button type="submit" className="pay-btn"><i className="ti ti-plus" /> Simpan Aset</button>
+          <button type="submit" className="pay-btn"><i className="ti ti-plus" /> Simpan Pembelian &amp; Jurnal</button>
+        </form>
+      </div>
+
+      <div className="crm-sec">
+        <SecHeader num="03" title="SALDO AWAL ASET" desc="Khusus aset yang sudah dimiliki sebelum memakai VetOS. Tidak membuat jurnal historis." />
+        <form action={tambahSaldoAwalAset}>
+          <div className="frow" style={{ marginBottom: 10 }}>
+            <div><label className="flab">Nama aset</label><input className="fi" name="nama" required /></div>
+            <div><label className="flab">Tanggal perolehan</label><input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} required /></div>
+          </div>
+          <div className="frow" style={{ marginBottom: 10 }}><KategoriUmur kategori={asetKategori} /></div>
+          <div className="frow" style={{ marginBottom: 10 }}>
+            <div><label className="flab">Harga perolehan</label><input className="fi" type="number" name="harga" min={1} step="any" required /></div>
+            <div><label className="flab">Nilai sisa</label><input className="fi" type="number" name="nilai_sisa" min={0} step="any" defaultValue={0} /></div>
+            <div><label className="flab">Cabang</label><select className="fi" name="branch_id" defaultValue=""><option value="">— Pusat / tanpa cabang —</option>{(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+          </div>
+          <button type="submit" className="btn-def"><i className="ti ti-history" /> Simpan Saldo Awal Tanpa Jurnal</button>
         </form>
       </div>
     </>
