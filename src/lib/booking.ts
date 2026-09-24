@@ -38,6 +38,16 @@ export function composeBookingScheduledAt(tanggal: string, jam: string): string 
   return `${tanggal}T${jam}:00+07:00`;
 }
 
+/** Label keterlambatan mengikuti hari kalender WIB, bukan tanggal UTC server. */
+export function bookingTimeStatus(tanggal: string, jam: string, now: Date): "future" | "today-past-time" | "past-date" {
+  const hariWIB = new Date(now.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+  if (tanggal < hariWIB) return "past-date";
+  if (tanggal === hariWIB && new Date(composeBookingScheduledAt(tanggal, jam)).getTime() < now.getTime()) {
+    return "today-past-time";
+  }
+  return "future";
+}
+
 export function validasiBooking(d: BookingDraft, hariIni: string): string | null {
   if (!d.branchId) return "Pilih klinik tujuan";
   if (!(POLI_BOOKING as readonly string[]).includes(d.poli)) return "Layanan tidak dikenal";

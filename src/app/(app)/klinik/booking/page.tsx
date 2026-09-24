@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { composeBookingScheduledAt, LABEL_STATUS_BOOKING, BADGE_STATUS_BOOKING } from "@/lib/booking";
+import { bookingTimeStatus, LABEL_STATUS_BOOKING, BADGE_STATUS_BOOKING } from "@/lib/booking";
 import { konfirmasiBooking, tolakBooking, batalkanBooking } from "./actions";
 import { NoShowButton } from "./NoShowButton";
 
@@ -38,7 +38,7 @@ export default async function BookingKlinikPage({
     branches: Rel<{ name: string }>;
   };
   const semua = (data ?? []) as Row[];
-  const nowMs = new Date().getTime();
+  const sekarang = new Date();
 
   const cocok = (r: Row) =>
     tab === "selesai" ? !!r.visit_id
@@ -94,7 +94,8 @@ export default async function BookingKlinikPage({
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {baris.map((b) => {
-              const lewat = new Date(composeBookingScheduledAt(b.tanggal, b.jam)).getTime() < nowMs && !b.visit_id;
+              const statusWaktu = bookingTimeStatus(b.tanggal, b.jam, sekarang);
+              const lewat = statusWaktu !== "future" && !b.visit_id;
               return (
                 <div key={b.id} className="card" style={{ borderColor: lewat ? "#fecaca" : undefined }}>
                   <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -131,7 +132,7 @@ export default async function BookingKlinikPage({
                     <span className={`bge ${BADGE_STATUS_BOOKING[b.status] ?? ""}`}>
                       {b.visit_id ? "Sudah didaftarkan" : b.attendance_outcome === "no_show" ? "Tidak hadir" : LABEL_STATUS_BOOKING[b.status] ?? b.status}
                     </span>
-                    {lewat && <span className="bge r">Tanggalnya sudah lewat</span>}
+                    {lewat && <span className="bge r">{statusWaktu === "past-date" ? "Tanggal booking sudah lewat" : "Jam booking sudah lewat"}</span>}
 
                     {!b.visit_id && (
                       <>

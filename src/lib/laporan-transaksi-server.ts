@@ -1,9 +1,9 @@
 // Penarikan data untuk laporan transaksi dasar. Dipisah dari halamannya karena
 // dipakai dua laporan sekaligus (per cabang & per hari) — angkanya wajib sama.
-import { createClient } from "@/lib/supabase/server";
-import { tanggalWIB } from "@/lib/tanggal";
-import { batasTanggalWIB } from "@/lib/laporan-transaksi";
-import type { Trx } from "@/lib/laporan-transaksi";
+import { createClient } from "./supabase/server";
+import { tanggalWIB } from "./tanggal";
+import { batasTanggalWIB } from "./laporan-transaksi";
+import type { Trx } from "./laporan-transaksi";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -24,7 +24,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   // jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
 
-  const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] =
+  const [hasilSales, hasilInvoices, hasilReturs, hasilCabang] =
     await Promise.all([
       supabase.from("sales")
         .select("id, customer_id, total, channel, created_at, branches(name), sale_items(id)")
@@ -39,6 +39,17 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
       supabase.from("sales_returns").select("sale_id, total"),
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     ]);
+
+  // Jangan tampilkan omzet parsial sebagai laporan yang tampak lengkap jika satu
+  // sumber gagal dibaca (misalnya join invoice klinik berubah atau RLS menolak).
+  if (hasilSales.error) throw new Error("Gagal membaca penjualan kasir.", { cause: hasilSales.error });
+  if (hasilInvoices.error) throw new Error("Gagal membaca tagihan klinik.", { cause: hasilInvoices.error });
+  if (hasilReturs.error) throw new Error("Gagal membaca retur penjualan.", { cause: hasilReturs.error });
+  if (hasilCabang.error) throw new Error("Gagal membaca daftar cabang.", { cause: hasilCabang.error });
+  const { data: sales } = hasilSales;
+  const { data: invoices } = hasilInvoices;
+  const { data: returs } = hasilReturs;
+  const { data: cabangList } = hasilCabang;
 
   const returPerStruk = new Map<string, number>();
   for (const r of (returs ?? []) as { sale_id: string; total: number }[]) {
@@ -100,7 +111,7 @@ export type TrxRiwayat = {
 export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[]; terpotong: boolean }> {
   const supabase = await createClient();
   const akhir = `${sampai}T23:59:59+07:00`;
-  const [{ data: sales }, { data: invoices }] = await Promise.all([
+  const [hasilSales, hasilInvoices] = await Promise.all([
     supabase.from("sales")
       .select("customer_id, total, created_at, branches(name)")
       .lte("created_at", akhir).limit(BATAS),
@@ -108,6 +119,10 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
       .select("total, created_at, visits(customer_id, branches(name))")
       .is("voided_at", null).lte("created_at", akhir).limit(BATAS),
   ]);
+  if (hasilSales.error) throw new Error("Gagal membaca riwayat penjualan kasir.", { cause: hasilSales.error });
+  if (hasilInvoices.error) throw new Error("Gagal membaca riwayat tagihan klinik.", { cause: hasilInvoices.error });
+  const { data: sales } = hasilSales;
+  const { data: invoices } = hasilInvoices;
 
   type S = { customer_id: string | null; total: number; created_at: string; branches: Rel<{ name: string }> };
   type I = { total: number; created_at: string; visits: Rel<{ customer_id: string | null; branches: Rel<{ name: string }> }> };

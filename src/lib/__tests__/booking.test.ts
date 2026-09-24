@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeBookingScheduledAt, validasiBooking, normalPhone, type BookingDraft } from "../booking";
+import { bookingTimeStatus, composeBookingScheduledAt, validasiBooking, normalPhone, type BookingDraft } from "../booking";
 
 const dasar: BookingDraft = {
   branchId: "b1", poli: "Poli Umum", tanggal: "2026-08-10", jam: "09:00",
@@ -49,5 +49,27 @@ describe("validasiBooking", () => {
 describe("composeBookingScheduledAt", () => {
   it("membentuk instant Asia/Jakarta tanpa bergantung locale browser", () => {
     expect(composeBookingScheduledAt("2026-08-31", "09:30")).toBe("2026-08-31T09:30:00+07:00");
+  });
+});
+
+describe("bookingTimeStatus", () => {
+  it("tidak menganggap booking pagi ini lewat karena waktu UTC masih tanggal kemarin", () => {
+    expect(bookingTimeStatus("2026-09-22", "09:00", new Date("2026-09-21T18:30:00Z")))
+      .toBe("future");
+  });
+
+  it("melabeli jam lewat pada tanggal WIB yang sama", () => {
+    expect(bookingTimeStatus("2026-09-22", "09:00", new Date("2026-09-22T05:00:00Z")))
+      .toBe("today-past-time");
+  });
+
+  it("melabeli tanggal lewat hanya setelah hari WIB berganti", () => {
+    expect(bookingTimeStatus("2026-09-22", "09:00", new Date("2026-09-22T17:30:00Z")))
+      .toBe("past-date");
+  });
+
+  it("pada detik yang sama booking belum lewat", () => {
+    expect(bookingTimeStatus("2026-09-22", "09:00", new Date("2026-09-22T02:00:00Z")))
+      .toBe("future");
   });
 });
