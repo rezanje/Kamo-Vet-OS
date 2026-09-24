@@ -1,7 +1,7 @@
 # VetOS Open Items — Integrity and Reporting Design
 
 **Date:** 2026-09-24  
-**Baseline:** `origin/main` at `686afd7`  
+**Baseline:** `origin/main` at `58d9e6f`
 **Delivery constraint:** review branch only; no production data changes, backfill, merge, or deployment.
 
 ## Purpose
@@ -14,16 +14,16 @@ The initial production-facing goal is that a clinic invoice can never leave inve
 
 | Item | Finding on `main` | Decision |
 | --- | --- | --- |
-| BUG-01 / BUG-09 | Ordinary clinic medicines call `stockOut` at invoice time and swallow failures. Compounding ingredients instead call `stockOut` when the medical record or inline recipe is saved; the compound invoice line deliberately has no `item_id`. `postJournal` is best-effort and also swallows failures. | Separate the two issue points and join their cost to an invoice exactly once; a UI preflight alone cannot guarantee atomic posting. |
-| BUG-02 | Booking compares the scheduled instant with `now`; the UI always labels any past instant as a past *date*. | Implement a date-vs-time classification. |
-| BUG-03 | `tarikTransaksi` already includes non-void clinic invoices. | Do not rewrite; add a regression test and require authenticated real-data verification. |
-| BUG-04 | Multi-unit support exists in the reviewed purchase, sales-document, and request forms. | Audit each documented form and add coverage only where a path is missing or inconsistent. |
+| BUG-01 / BUG-09 | Ordinary clinic medicines call `stockOut` at invoice time and compounding ingredients issue earlier. | Draft PR #6 adds an atomic clinic issue/posting path; concurrency, lifecycle, and authenticated production-read verification remain open. |
+| BUG-02 | Booking used to label every past instant as a past date. | Fixed in merged PR #5 on `main`. |
+| BUG-03 | `tarikTransaksi` already includes non-void clinic invoices. | Merged PR #5 adds regression coverage and fails closed on invoice-query errors; authenticated real-data verification remains open. |
+| BUG-04 | Multi-unit support exists in PO, direct-purchase, sales-document, and request forms, but PO invoice rows lose their source-row identity and unit. | Implement the missing PO invoice contract: row link, UOM/factor snapshot, base-unit remaining quantity, and safe layer repricing. |
 | BUG-10 | Merged in PR #4 (`289e127`) as itemized clinic/compound reporting. | No duplicate implementation. |
 | BUG-07 / BUG-08 | Fixed-asset and recurring-journal screens already exist. The stronger atomic asset and bounded-recurring changes are on divergent old branches, not `main`. | Keep out of this change set pending focused reconciliation and a precise recurrence definition. |
 | REQ-02 / REQ-03 | Compounds are currently created per medical record; there is no official company catalogue or compound margin report. | Plan after inventory integrity and valuation basis are established. |
 | REQ-04 | Visibility of HPP is a policy decision. | No access-control change without owner decision. |
 
-## Phase A — Atomic clinic inventory and HPP
+## Phase A — Atomic clinic inventory and HPP (draft PR #6)
 
 ### Problem
 
@@ -55,17 +55,21 @@ The user sees the failed item and the reason (for example, insufficient stock), 
 
 ## Phase B — Booking and reporting regressions
 
-### BUG-02
+### BUG-02 — completed in PR #5
 
 Classify a booking as `future`, `today-past-time`, or `past-date` in a pure helper based on Jakarta time. The UI keeps the red treatment but uses `Jam booking sudah lewat` only for the second state and `Tanggal booking sudah lewat` only for the third.
 
-### BUG-03 and BUG-10
+### BUG-03 — completed in PR #5; BUG-10 was already in PR #4
 
 Add regression coverage around the transaction aggregation contract: non-void clinic invoices contribute branch revenue and channel counts. BUG-10 remains unchanged because its implementation is already in the baseline.
 
 ### BUG-04
 
-Create a route-by-route checklist for purchase invoice/PO, sales invoice/order, and both stock-request forms. Reuse the existing `unitOptions`/`pickUnit` contract; do not build a second unit model. Only forms proven missing that contract enter a later bounded change.
+The form audit found that PO, direct purchase, sales order/invoice, and stock-request forms already carry the existing `satuan`/`faktor` contract. The remaining defect is purchase invoice from PO: rows were grouped by `item_id`, prior billed quantity could not be mapped when the same SKU appeared in multiple units, and the invoice line did not keep its unit snapshot.
+
+The bounded change in `codex/purchase-invoice-units` adds nullable `po_item_id` for legacy compatibility, links new invoice lines to one PO row, stores its unit and factor snapshot, and computes billed remainder in base units. Legacy unlinked invoices are mapped only when that SKU appears once in the PO; ambiguous rows are blocked for finance review. The invoice RPC locks the PO and rechecks quantity, price, and factor before inserting the invoice, layer changes, and balanced journal in one transaction. Before changing layers it locks the affected aggregate stock rows in the same order as stock-in/out. Partial FIFO layer repricing checks expected state. PKP layer cost is based on DPP because recoverable input VAT is not inventory cost. If two PO rows have the same old base cost but differ in new base cost while stock remains, invoicing is blocked because existing stock layers cannot identify which PO row they came from. No existing invoice is backfilled.
+
+Validation covers per-row remaining quantity, legacy ambiguity, base-unit factor snapshots, partial layer splits, PPN/DPP layer value, overbilling rejection, atomic invoice/journal rollback, atomic stock-in/out, and stale-layer rejection in local PGlite under an authenticated role with RLS enabled. Full Supabase-local testing and two-session concurrency tests remain outstanding. This change preserves existing stock-shortfall behavior; preventing negative stock remains in the separate BUG-01 track.
 
 ## Subsequent, separate phases
 
@@ -90,4 +94,5 @@ Introduce owner/admin-managed compound templates with immutable versioned ingred
 
 - No data correction, production backfill, production migration run, merge, or deployment.
 - No import of the divergent `codex/p0-p2-stabilization` / `codex/full-stabilization-release` branches.
+- No production migration, backfill, merge, deployment, or sensitive HPP visibility change.
 - No authenticated production-data verification without explicitly supplied access.

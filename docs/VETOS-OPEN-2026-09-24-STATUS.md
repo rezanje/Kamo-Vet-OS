@@ -1,18 +1,18 @@
 # VetOS OPEN — status kerja dan batas review
 
-Tanggal audit: 24 September 2026. Sumber: tab `Report` (14 entri OPEN) dan repo `rezanje/Kamo-Vet-OS`, `main` pada `686afd7`. Spreadsheet hanya dibaca. Branch review ini tidak menjalankan migrasi atau mengubah data produksi.
+Tanggal audit: 24 September 2026. Sumber: tab `Report` (14 entri OPEN) dan repo `rezanje/Kamo-Vet-OS`, `main` pada `58d9e6f`. Spreadsheet hanya dibaca. Branch review terpisah; tidak ada migrasi atau perubahan data produksi.
 
 | Entri | Temuan terverifikasi | Status pada branch review / berikutnya |
 | --- | --- | --- |
-| BUG-01 | Obat klinik dipotong setelah invoice tersimpan; error `stockOut` ditangkap lalu proses berlanjut. Jurnal `postJournal` juga tidak wajib sukses. | **Terblokir untuk rilis.** Kontrak error, desain dua transaksi, dan rencana SQL ada; RPC atomik belum dibuat/diuji. Prioritas pertama saat Postgres isolasi tersedia. |
-| BUG-02 | Perbandingan waktu booking dulu menyebut semua waktu lampau “tanggal lewat”. | **Diperbaiki pada branch ini.** Status hari ini dengan jam lewat dan tanggal lewat dipisah, diuji termasuk batas hari WIB. |
-| BUG-03 | `tarikTransaksi` di `main` sudah mengambil invoice klinik belum void. Error query sebelumnya diabaikan sehingga laporan parsial bisa terlihat sah. | **Pengaman pada branch ini.** Test agregasi POS+klinik dan fail closed untuk error invoice. Data autentik di aplikasi belum diverifikasi. |
-| BUG-04 | PO, faktur langsung, pesanan jual, permintaan barang sudah mempunyai satuan/faktor. Form faktur pembelian **dari PO** tidak menampilkan satuan dan menggabungkan baris berdasarkan `item_id`; PO menyimpan satuan/faktor, faktur dari PO hanya menyimpan qty/harga. | **Masih terbuka, butuh perubahan terukur.** Hubungkan tiap baris faktur ke baris PO, pertahankan satuan/faktor historis, dan hitung sisa dalam satuan dasar untuk kasus item sama dengan kemasan berbeda. Uji jurnal dan repricing layer per satuan. Jangan menambahkan dropdown yang hanya mengubah label tanpa mengubah hitungan. |
+| BUG-01 | Obat klinik dipotong setelah invoice tersimpan; jalur racikan memakai titik potong berbeda. | **PR #6 draft, belum merge/deploy.** Mengikat pengeluaran klinik/racikan dan HPP ke transaksi atomik. Uji konkurensi dua sesi serta baca data produksi belum dilakukan. |
+| BUG-02 | Perbandingan waktu booking dulu menyebut semua waktu lampau “tanggal lewat”. | **Selesai di main** melalui PR #5; status jam lewat hari ini dan tanggal lampau dibedakan. |
+| BUG-03 | `tarikTransaksi` sudah mengambil invoice klinik non-void; error query harus gagal tertutup agar laporan parsial tidak tampak sah. | **Selesai di main** melalui PR #5; tes agregasi dan error query tersedia. Verifikasi baca data autentik belum dilakukan. |
+| BUG-04 | PO, faktur langsung, pesanan jual, permintaan barang sudah mempunyai satuan/faktor. Form faktur pembelian **dari PO** tidak menampilkan satuan dan menggabungkan baris berdasarkan `item_id`. | **Perbaikan disiapkan di branch `codex/purchase-invoice-units`.** Tiap baris tersambung ke baris PO dan menyimpan satuan/faktor. RPC invoker mengunci PO, menghitung ulang sisa, menyimpan faktur, menyesuaikan layer, dan mem-posting jurnal dalam satu transaksi. HPP layer PKP memakai DPP. Stok masuk/keluar juga memakai RPC berurutan agar saldo/layer tak tertimpa pembaruan usang. Review kedua berjalan; belum merge/deploy. |
 | BUG-05 | Ada tombol tunggu submit dan beberapa status draft/unpaid, tetapi error simpan lintas modul tidak mempunyai draft/retry idempotent tunggal. | **Audit saja.** Tentukan jenis transaksi, siapa dapat melanjutkan, masa simpan draft, cara deduplikasi posting, dan apa yang dianggap pending. |
 | BUG-06 | Ada 19 halaman laporan spesifik di bawah `/laporan` ditambah indeks; pencarian kode tidak menemukan tombol CSV/Excel/PDF pada halaman itu. | **Audit saja.** Petakan bentuk tabular versus grafik untuk tiap halaman, hak akses, filter, batas baris, dan format PDF sebelum ekspor menyeluruh. |
 | BUG-07 | Menu `/aset-tetap` dan `/keuangan/aset` sudah ada; `tambahAset` mencatat aset dan jurnal pembelian atau saldo awal. | **Fungsi dasar di main.** Posting aset tunai/bank masih terpisah dan best-effort; pembelian aset dari faktur langsung serta posting atomik terdapat di branch lama yang belum merged. Rekonsiliasi terpisah diperlukan. |
 | BUG-08 | Menu `Jurnal Berulang`, hari 1–28, aktif/nonaktif, dan proses catch-up bulanan sudah ada. | **Fungsi dasar di main; definisi request belum lengkap.** Branch lama punya batas pengulangan. Butuh aturan mulai/akhir, frekuensi, jeda, persetujuan, replay, dan idempotensi sebelum mengubah jadwal. |
-| BUG-09 | Bahan racikan dipotong saat resep dibuat, tetapi biaya FIFO aktual tidak tersimpan pada baris untuk ditempel ke invoice. | **Terblokir bersama BUG-01.** Rencana mengikat biaya historis ke resep, lalu menjurnal HPP sekali pada faktur; void/reissue juga harus aman. |
+| BUG-09 | Bahan racikan dipotong saat resep dibuat, tetapi biaya FIFO aktual tidak tersimpan pada baris untuk ditempel ke invoice. | **PR #6 draft, belum merge/deploy.** Mencatat HPP bahan saat issue dan menautkannya ke invoice klinik; lifecycle edit/void tetap perlu review dan uji. |
 | BUG-10 | PR #4, commit `289e127`, sudah merged ke `main`; laporan rinci per barang memiliki Klinik > Racikan. | **Sudah ada.** Tidak diimplementasikan ulang; masih perlu cek baca data nyata memakai login. |
 | REQ-1 | Stok dan layer FIFO tersedia, layar stok menunjukkan qty, belum ada laporan nilai/HPP per barang berdasarkan layer aktif. | **Belum dibuat.** Setelah posting stok/HPP akurat, rancang agregasi per barang/gudang dan rekonsiliasi stock versus layer, lalu putuskan akses nilai stok bersamaan REQ-4. |
 | REQ-2 | Racikan saat ini ditulis per rekam medis, bukan katalog resmi berversi dari perusahaan. | **Belum dibuat.** Perlu master/revisi resep, aturan pengecualian pasien, dan jejak versi pada transaksi. |
@@ -26,7 +26,7 @@ Tanggal audit: 24 September 2026. Sumber: tab `Report` (14 entri OPEN) dan repo 
 
 ## Gate pekerjaan berikutnya
 
-1. Siapkan Postgres/Supabase **lokal terisolasi** dan uji migrasi/RPC dengan role authenticated, RLS, dua checkout stok terakhir yang bersaing, resep bahan kedua kurang, retry, edit dan void. Lingkungan eksekusi saat ini tidak memiliki Postgres, `psql`, Docker, atau Supabase CLI; instalasi via apt juga gagal karena hak sistem. Kontrak TypeScript saja belum memperbaiki BUG-01/09.
-2. Lakukan uji aplikasi dengan akun resmi pada data yang boleh dibaca untuk BUG-03/10. Jangan mengubah data nyata dalam verifikasi.
-3. Pecah BUG-04 dan rekonsiliasi aset/berulang dari branch lama menjadi PR terpisah dengan pengujian basis hitung dan migrasi lokal sebelum digabung.
-4. Minta keputusan pemilik khusus REQ-4; rincian BUG-05/06/08 memerlukan definisi lingkup sebelum implementasi menyeluruh.
+1. Selesaikan review PR #6; uji konflik stok dua sesi dan siklus edit/void pada Supabase lokal sebelum menggabungkan.
+2. Selesaikan review kedua BUG-04; validasi migrasi/RPC sudah lulus di PGlite, sedangkan uji konkurensi dua sesi Supabase lokal masih belum dilakukan.
+3. Lakukan verifikasi baca data autentik untuk BUG-03/10 tanpa mengubah data nyata.
+4. BUG-05/06/08 tetap perlu definisi lingkup. REQ-4 menunggu keputusan eksplisit pemilik; visibilitas HPP tidak diubah.

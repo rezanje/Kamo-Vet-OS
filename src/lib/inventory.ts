@@ -1,9 +1,7 @@
 import { hariIniWIB } from "./tanggal";
-import { urutFefo, type LapisanFefo } from "./kadaluarsa-batch";
 // Inventori FIFO — SATU pintu untuk semua mutasi stok (PRD §10.2).
 // consumeLayers = pure (dites); stockIn/stockOut/transfer = wrapper supabase.
-// ponytail: mutasi JS read-then-update mengikuti pola existing repo; kalau race
-// jadi masalah nyata di produksi, pindahkan ke RPC Postgres satu transaksi.
+// Mutasi keluar dijalankan di RPC agar konsisten dengan repricing layer faktur.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -75,38 +73,6 @@ function orThrow(error: { message?: string } | null, what: string) {
   if (error) throw new StockError(`${what}: ${error.message ?? "gagal"}`);
 }
 
-// Kartu stok (migrasi 0074): satu baris per mutasi, ditulis di pintu yang sama
-// dengan perubahan qty supaya tidak ada mutasi yang lolos tanpa jejak.
-// Gagal mencatat jejak TIDAK membatalkan mutasinya — stok yang benar lebih penting
-// daripada kartu stok yang lengkap; kegagalannya tetap muncul di log server.
-async function catatMutasi(
-  supabase: AnyClient,
-  o: { warehouseId: string; itemId: string; qty: number; unitCost: number; source: string; ref?: string | null; tanggal?: string },
-) {
-  const { error } = await supabase.from("stock_moves").insert({
-    tanggal: o.tanggal ?? hariIniWIB(),
-    warehouse_id: o.warehouseId, item_id: o.itemId, qty: o.qty,
-    unit_cost: o.unitCost, source: o.source, source_ref: o.ref ?? null,
-  });
-  if (error) console.error("[kartu-stok] gagal catat mutasi:", error.message);
-}
-
-async function adjustStockQty(supabase: AnyClient, warehouseId: string, itemId: string, delta: number) {
-  const { data: st, error: readErr } = await supabase
-    .from("stock").select("qty")
-    .eq("warehouse_id", warehouseId).eq("item_id", itemId).maybeSingle();
-  orThrow(readErr, "baca stok");
-  if (st) {
-    const { error } = await supabase.from("stock")
-      .update({ qty: Number(st.qty) + delta, updated_at: new Date().toISOString() })
-      .eq("warehouse_id", warehouseId).eq("item_id", itemId);
-    orThrow(error, "ubah stok");
-  } else {
-    const { error } = await supabase.from("stock").insert({ warehouse_id: warehouseId, item_id: itemId, qty: delta });
-    orThrow(error, "buat stok");
-  }
-}
-
 // Jasa & Non-Persediaan tidak punya stok: memindahkannya bukan error pemakai,
 // cuma tidak ada artinya. Dilewati DIAM-DIAM di sini supaya penjualan yang
 // mencampur barang & jasa tetap jalan — trigger DB (0081) tinggal jadi jaring
@@ -147,26 +113,17 @@ export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void
   if (o.qty <= 0) return;
   if (!(await punyaStok(supabase, o.itemId))) return;
 
-  // Stok minus ditutup DULU; sisanya baru jadi lapisan siap jual.
-  const { data: st } = await supabase
-    .from("stock").select("qty")
-    .eq("warehouse_id", o.warehouseId).eq("item_id", o.itemId).maybeSingle();
-  const { jadiLapisan } = porsiPenutupMinus(Number(st?.qty) || 0, o.qty);
-
-  if (jadiLapisan > 0) {
-    const { error } = await supabase.from("stock_layers").insert({
-      warehouse_id: o.warehouseId, item_id: o.itemId,
-      tanggal: o.tanggal ?? hariIniWIB(),
-      qty_in: jadiLapisan, qty_left: jadiLapisan, unit_cost: o.unitCost,
-      source: o.source, source_ref: o.ref ?? null,
-      exp_date: o.expDate || null,
-    });
-    orThrow(error, "catat lapisan stok masuk");
-  }
-  // Saldo tetap naik sebanyak yang datang — porsi penutup minus mengangkat
-  // saldonya dari negatif ke nol, bukan menghilang.
-  await adjustStockQty(supabase, o.warehouseId, o.itemId, o.qty);
-  await catatMutasi(supabase, { ...o, qty: o.qty });
+  const { error } = await supabase.rpc("stock_in_fifo", {
+    p_warehouse_id: o.warehouseId,
+    p_item_id: o.itemId,
+    p_qty: o.qty,
+    p_unit_cost: o.unitCost,
+    p_source: o.source,
+    p_source_ref: o.ref ?? null,
+    p_tanggal: o.tanggal ?? hariIniWIB(),
+    p_exp_date: o.expDate ?? null,
+  });
+  orThrow(error, "catat stok masuk");
 }
 
 export type StockOutOpts = {
@@ -186,45 +143,33 @@ export async function stockOut(
   // Jasa tidak mengurangi stok DAN tidak punya HPP persediaan — cost 0, bukan error.
   if (!(await punyaStok(supabase, o.itemId))) return { cost: 0, takes: [], shortfall: 0, hargaBeli: 0 };
 
-  const { data: layersRaw, error: layerErr } = await supabase
-    .from("stock_layers")
-    .select("id, qty_left, unit_cost, exp_date, tanggal, created_at")
-    .eq("warehouse_id", o.warehouseId).eq("item_id", o.itemId)
-    .gt("qty_left", 0)
-    .order("tanggal", { ascending: true })
-    .order("created_at", { ascending: true });
-  orThrow(layerErr, "baca lapisan stok");
-
-  // FEFO: yang paling dekat kadaluarsa keluar duluan (permintaan Pak Faisal,
-  // meeting 14 Agustus). Tanpa ini barang bertanggal dekat mengendap di gudang
-  // sampai basi, sementara kiriman baru yang masih lama justru terjual.
-  // Lapisan tanpa tanggal tetap urut masuk-duluan seperti FIFO lama.
-  const layers = urutFefo((layersRaw ?? []) as (Layer & LapisanFefo)[]);
-
-  const { takes, cost, shortfall } = consumeLayers(layers as Layer[], o.qty);
-
-  for (const t of takes) {
-    const layer = layers.find((l: Layer) => l.id === t.id);
-    const { error } = await supabase.from("stock_layers")
-      .update({ qty_left: Number(layer?.qty_left ?? 0) - t.qty })
-      .eq("id", t.id);
-    orThrow(error, "kurangi lapisan stok");
-  }
-
-  let extra = 0;
-  let hargaBeli = 0;
-  if (shortfall > 0) {
-    const { data: item } = await supabase.from("items").select("buy_price").eq("id", o.itemId).maybeSingle();
-    hargaBeli = Number(item?.buy_price) || 0;
-    extra = shortfall * hargaBeli;
-  }
-
-  await adjustStockQty(supabase, o.warehouseId, o.itemId, -o.qty);
-  await catatMutasi(supabase, {
-    ...o, qty: -o.qty,
-    unitCost: o.qty > 0 ? (cost + extra) / o.qty : 0,
+  const { data, error } = await supabase.rpc("stock_out_fifo", {
+    p_warehouse_id: o.warehouseId,
+    p_item_id: o.itemId,
+    p_qty: o.qty,
+    p_source: o.source,
+    p_source_ref: o.ref ?? null,
+    p_tanggal: hariIniWIB(),
   });
-  return { cost: cost + extra, takes, shortfall, hargaBeli };
+  orThrow(error, "keluarkan stok");
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    cost?: number | string;
+    takes?: { id: string; qty: number | string; unit_cost: number | string; exp_date?: string | null }[];
+    shortfall?: number | string;
+    harga_beli?: number | string;
+  } | null;
+  if (!result) throw new StockError("keluarkan stok: hasil transaksi kosong");
+  return {
+    cost: Number(result.cost) || 0,
+    takes: (result.takes ?? []).map((take) => ({
+      id: take.id,
+      qty: Number(take.qty) || 0,
+      unit_cost: Number(take.unit_cost) || 0,
+      exp_date: take.exp_date ?? null,
+    })),
+    shortfall: Number(result.shortfall) || 0,
+    hargaBeli: Number(result.harga_beli) || 0,
+  };
 }
 
 // Stok masuk dgn cost = items.buy_price (penerimaan internal / penyesuaian manual).
