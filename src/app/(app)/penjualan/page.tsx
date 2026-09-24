@@ -288,6 +288,9 @@ export default async function PenjualanPage({
           num="03"
           title="PENJUALAN PER BARANG (POS + ONLINE)"
           desc="20 barang omzet terbesar dari retail POS dan Online — invoice klinik tidak ikut dihitung. Omzet di sini dihitung sebelum diskon transaksi, jadi wajar sedikit lebih besar dari baris POS + Online Seksi 01. Ikut filter periode di atas."
+          action={<Link href="/laporan/penjualan-barang" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+            <i className="ti ti-list-details" /> Rincian semua barang &amp; racikan klinik
+          </Link>}
         />
         {topProduk.length === 0 ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>
