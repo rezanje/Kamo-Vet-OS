@@ -72,7 +72,7 @@ export default async function PembayaranPage({
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at")
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at, request_key")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
@@ -379,7 +379,7 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {!bolehTagih ? null : invoice && !lunas ? (
+      {!bolehTagih ? null : invoice && !lunas && !invoice.request_key ? (
         <PembayaranForm
           visitId={visit.id}
           requestKey={invoiceRequestKey}
@@ -398,6 +398,11 @@ export default async function PembayaranPage({
         />
       ) : invoice ? (
         <>
+          {invoice.request_key && (
+            <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+              <i className="ti ti-lock" /> Invoice sudah diposting. Koreksi edit/void ditahan sementara agar stok dan jurnal tidak terpisah; hubungi keuangan untuk peninjauan.
+            </div>
+          )}
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
             {invoice.paid_status === "DP" && ` — DP ${rp(invoice.dp_amount)}, sisa ${rp(invoice.total - invoice.dp_amount)}`}
@@ -415,7 +420,7 @@ export default async function PembayaranPage({
                 <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
               </span>
               <span style={{ display: "flex", gap: 5 }}>
-                {!lunas && (
+                {!lunas && !invoice.request_key && (
                   <Link href={`/klinik/pembayaran/${visit.id}?edit=1`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-pencil" /> Edit Invoice
@@ -459,7 +464,7 @@ export default async function PembayaranPage({
           </div>
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {lunas && (
+          {lunas && !invoice.request_key && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
