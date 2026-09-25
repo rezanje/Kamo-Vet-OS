@@ -1,15 +1,26 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { sisaFakturable } from "@/lib/faktur-beli";
-import { qtyDiterima } from "@/lib/penerimaan";
+import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { FakturForm, type PoOption } from "./FakturForm";
+
+type Rel<T> = T | T[] | null;
+const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
 
 type PoRow = {
   id: string;
   no_po: string | null;
   tanggal: string;
   suppliers: { nama: string; termin_hari: number | null } | null;
-  purchase_order_items: { item_id: string | null; qty: number; qty_terima: number | null; harga_beli: number; nama: string }[] | null;
+  purchase_order_items: {
+    id: string; item_id: string | null; qty: number; qty_terima: number | null;
+    harga_beli: number; nama: string; satuan: string | null; faktor: number | null;
+    items: Rel<{ unit: string | null }>;
+  }[] | null;
+};
+
+type InvoiceRow = {
+  po_id: string | null;
+  purchase_invoice_items: { po_item_id: string | null; item_id: string | null; qty: number; faktor: number | null }[] | null;
 };
 
 export default async function FakturBaruPage({
@@ -20,41 +31,70 @@ export default async function FakturBaruPage({
   const { error } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: pos }, { data: invs }] = await Promise.all([
+  const [{ data: pos, error: poError }, { data: invs, error: invoiceReadError }] = await Promise.all([
     supabase
       .from("purchase_orders")
-      .select("id, no_po, tanggal, suppliers(nama, termin_hari), purchase_order_items(item_id, qty, qty_terima, harga_beli, nama)")
+      .select("id, no_po, tanggal, suppliers(nama, termin_hari), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, nama, satuan, faktor, items(unit))")
       .eq("status", "Diterima")
       .order("created_at", { ascending: false })
       .limit(100),
-    supabase.from("purchase_invoices").select("po_id, purchase_invoice_items(item_id, qty)"),
+    supabase.from("purchase_invoices").select("po_id, purchase_invoice_items(po_item_id, item_id, qty, faktor)"),
   ]);
 
-  // akumulasi qty terfakturkan per PO per item
-  const invoiced: Record<string, Record<string, number>> = {};
-  for (const d of (invs ?? []) as unknown as { po_id: string; purchase_invoice_items: { item_id: string | null; qty: number }[] | null }[]) {
-    const m = (invoiced[d.po_id] ??= {});
-    for (const r of d.purchase_invoice_items ?? [])
-      if (r.item_id) m[r.item_id] = (m[r.item_id] ?? 0) + Number(r.qty);
+  const loadError = poError
+    ? "Daftar PO tidak dapat dimuat. Muat ulang sebelum membuat faktur."
+    : invoiceReadError
+      ? "Faktur lama tidak dapat diperiksa. Muat ulang sebelum membuat faktur."
+      : null;
+
+  const invoiceRows = (invs ?? []) as unknown as InvoiceRow[];
+  const invoicesByPo = new Map<string, InvoiceRow[]>();
+  for (const invoice of invoiceRows) {
+    if (!invoice.po_id) continue;
+    const rows = invoicesByPo.get(invoice.po_id) ?? [];
+    rows.push(invoice);
+    invoicesByPo.set(invoice.po_id, rows);
   }
 
-  const options: PoOption[] = ((pos ?? []) as unknown as PoRow[]).map((p) => {
-    const qtyPO: Record<string, number> = {};
-    const meta: Record<string, { nama: string; harga: number }> = {};
-    // dasar faktur = qty yang benar-benar diterima, bukan qty pesanan
-    for (const r of p.purchase_order_items ?? []) {
-      if (!r.item_id) continue;
-      qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + qtyDiterima(r);
-      meta[r.item_id] = { nama: r.nama, harga: Number(r.harga_beli) || 0 };
-    }
-    const sisa = sisaFakturable(qtyPO, invoiced[p.id] ?? {});
+  const options: PoOption[] = loadError ? [] : ((pos ?? []) as unknown as PoRow[]).map((p) => {
+    const poItems = (p.purchase_order_items ?? []).map((r) => ({
+      id: r.id,
+      item_id: r.item_id,
+      diterima: Number(r.qty_terima ?? r.qty) || 0,
+      faktor: Number(r.faktor),
+    }));
+    const billed = (invoicesByPo.get(p.id) ?? []).flatMap((invoice) => invoice.purchase_invoice_items ?? []);
+    const remaining = sisaFakturablePerBaris(poItems, billed);
+    const ambiguousIds = new Set(remaining.legacyAmbiguousItemIds);
+    const invalidIds = new Set(remaining.invalidPoItemIds);
+    const itemName = new Map((p.purchase_order_items ?? []).map((r) => [r.item_id ?? r.id, r.nama]));
+    const warningParts = [
+      ...(remaining.invalidLinkedLines ? ["Ada baris faktur lama dengan tautan PO tidak valid; minta keuangan meninjau PO ini."] : []),
+      ...remaining.legacyAmbiguousItemIds.map((id) => `${itemName.get(id) ?? "Barang"}: faktur lama tidak dapat dipetakan ke satuan/baris PO karena SKU muncul lebih dari sekali.`),
+    ];
     return {
       id: p.id,
       label: `${p.no_po ?? p.id.slice(0, 8)} — ${p.suppliers?.nama ?? "Tanpa pemasok"} (${p.tanggal})`,
       terminHari: Number(p.suppliers?.termin_hari ?? 30),
-      items: Object.entries(sisa).map(([item_id, qty]) => ({
-        item_id, sisa: qty, nama: meta[item_id]?.nama ?? "—", harga_po: meta[item_id]?.harga ?? 0,
-      })),
+      warning: warningParts.join(" ") || null,
+      items: (p.purchase_order_items ?? []).flatMap((r) => {
+        if (!r.item_id) return [];
+        const blockedReason = remaining.invalidLinkedLines
+          ? "Tertahan karena ada tautan faktur PO yang tidak valid."
+          : ambiguousIds.has(r.item_id)
+            ? "Tertahan: faktur lama tidak menyimpan baris PO dan satuan SKU ini ambigu."
+            : invalidIds.has(r.id)
+              ? "Tertahan: faktor satuan PO atau faktur tidak valid."
+              : null;
+        const qtyLeft = remaining.sisaPerBaris[r.id] ?? 0;
+        if (!blockedReason && qtyLeft <= 0) return [];
+        const factor = Number(r.faktor);
+        const satuan = r.satuan || one(r.items)?.unit || "unit";
+        return [{
+          po_item_id: r.id, item_id: r.item_id, sisa: qtyLeft, nama: r.nama,
+          harga_po: Number(r.harga_beli) || 0, satuan, faktor: factor, blockedReason,
+        }];
+      }),
     };
   }).filter((o) => o.items.length > 0);
 
@@ -71,6 +111,11 @@ export default async function FakturBaruPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+      {loadError && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {loadError}
         </div>
       )}
 

@@ -10,7 +10,11 @@ export type PoOption = {
   label: string;
   /** Termin bawaan pemasoknya — jatuh tempo ikut menyesuaikan saat PO dipilih. */
   terminHari: number;
-  items: { item_id: string; nama: string; harga_po: number; sisa: number }[];
+  warning: string | null;
+  items: {
+    po_item_id: string; item_id: string; nama: string; harga_po: number; sisa: number;
+    satuan: string; faktor: number; blockedReason: string | null;
+  }[];
 };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -33,16 +37,16 @@ export function FakturForm({ options }: { options: PoOption[] }) {
     setPoId(id);
     const o = options.find((x) => x.id === id);
     // default: fakturkan semua sisa dengan harga PO — edit yang beda dari faktur pemasok.
-    setQty(Object.fromEntries((o?.items ?? []).map((it) => [it.item_id, it.sisa])));
-    setHarga(Object.fromEntries((o?.items ?? []).map((it) => [it.item_id, it.harga_po])));
+    setQty(Object.fromEntries((o?.items ?? []).filter((it) => !it.blockedReason).map((it) => [it.po_item_id, it.sisa])));
+    setHarga(Object.fromEntries((o?.items ?? []).filter((it) => !it.blockedReason).map((it) => [it.po_item_id, it.harga_po])));
     setTempo(plusDays(today, o?.terminHari ?? 30));
   };
 
   const payload = (po?.items ?? [])
     .map((it) => ({
-      item_id: it.item_id,
-      qty: Number(qty[it.item_id]) || 0,
-      harga: Number(harga[it.item_id]) || 0,
+      po_item_id: it.po_item_id,
+      qty: Number(qty[it.po_item_id]) || 0,
+      harga: Number(harga[it.po_item_id]) || 0,
     }))
     .filter((r) => r.qty > 0);
   const total = payload.reduce((a, r) => a + r.qty * r.harga, 0);
@@ -86,23 +90,36 @@ export function FakturForm({ options }: { options: PoOption[] }) {
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <SecHeader num="02" title="RINCIAN TAGIHAN" desc="Terisi dari PO — ubah qty/harga sesuai faktur pemasok bila beda." />
           {!po && <div style={{ fontSize: 11, color: "var(--td)", padding: "12px 0" }}>Pilih PO dulu.</div>}
+          {po?.warning && (
+            <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", marginBottom: 8 }}>
+              <i className="ti ti-alert-triangle" /> {po.warning}
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(po?.items ?? []).map((it) => {
-              const beda = (Number(harga[it.item_id]) || 0) !== it.harga_po;
+              const beda = (Number(harga[it.po_item_id]) || 0) !== it.harga_po;
               return (
-                <div key={it.item_id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <div key={it.po_item_id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <span style={{ flex: 1, fontSize: 11.5 }}>
                     {it.nama}{" "}
-                    <span style={{ color: "var(--td)", fontSize: 10.5 }}>PO @{rp(it.harga_po)} · maks {it.sisa}</span>
+                    <span style={{ color: "var(--td)", fontSize: 10.5 }}>
+                      PO @ {rp(it.harga_po)}/{it.satuan} · {it.blockedReason ? "sisa belum dapat dihitung" : `sisa ${it.sisa} ${it.satuan}`} · {it.faktor > 0 ? `1 ${it.satuan} = ${it.faktor} unit dasar` : "faktor satuan tidak valid"}
+                    </span>
                   </span>
-                  <input className="fi" type="number" min={0} max={it.sisa} step="any"
-                    value={qty[it.item_id] ?? 0}
-                    onChange={(e) => setQty((m) => ({ ...m, [it.item_id]: Number(e.target.value) }))}
-                    style={{ width: 74 }} title="Qty faktur" />
-                  <input className="fi" type="number" min={0} step="any"
-                    value={harga[it.item_id] ?? 0}
-                    onChange={(e) => setHarga((m) => ({ ...m, [it.item_id]: Number(e.target.value) }))}
-                    style={{ width: 110, borderColor: beda ? "#f59e0b" : undefined }} title="Harga faktur / unit" />
+                  {it.blockedReason ? (
+                    <span style={{ width: 250, fontSize: 10.5, color: "#92400e" }}>{it.blockedReason}</span>
+                  ) : (
+                    <>
+                      <input className="fi" type="number" min={0} max={it.sisa} step="any"
+                        value={qty[it.po_item_id] ?? 0}
+                        onChange={(e) => setQty((m) => ({ ...m, [it.po_item_id]: Number(e.target.value) }))}
+                        style={{ width: 74 }} title={`Qty faktur dalam ${it.satuan}`} />
+                      <input className="fi" type="number" min={0} step="any"
+                        value={harga[it.po_item_id] ?? 0}
+                        onChange={(e) => setHarga((m) => ({ ...m, [it.po_item_id]: Number(e.target.value) }))}
+                        style={{ width: 110, borderColor: beda ? "#f59e0b" : undefined }} title={`Harga faktur per ${it.satuan}`} />
+                    </>
+                  )}
                 </div>
               );
             })}
