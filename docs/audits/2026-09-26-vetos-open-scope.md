@@ -6,14 +6,14 @@ Audit kode `main` pada 26 September 2026. Ini inventaris pekerjaan, bukan bukti 
 
 | Alur | Keadaan kode | Verifikasi berikutnya |
 | --- | --- | --- |
-| PO pembelian | `pembelian/baru/POForm.tsx` memilih satuan SKU dan menyimpan faktor. | PR #7 memerlukan kolom `purchase_invoice_items.po_item_id` serta RPC yang belum terpasang di produksi. Uji PO → faktur → penerimaan dengan dua satuan SKU sama setelah migrasi terarah. |
+| PO pembelian | `pembelian/baru/POForm.tsx` memilih satuan SKU dan menyimpan faktor. | Kolom `po_item_id` dan empat RPC inti #7/#8 telah dilaporkan terpasang terarah 26 September; uji PO → faktur → penerimaan dengan dua satuan SKU sama serta jurnal masih diperlukan. |
 | Faktur langsung | `pembelian/faktur/langsung/FakturLangsungForm.tsx` memilih satuan dan harga beli. | Uji konversi stok, lapisan, dan jurnal pada cabang demo. |
 | Faktur dari PO dan penerimaan | Satuan mengikuti baris PO, bukan pilihan bebas baru; sisa/tagihan dihitung dalam satuan PO. | Uji baris PO sama dengan satuan berbeda dan faktur parsial. |
 | Penawaran/pesanan penjualan | `penjualan/BarisJualForm.tsx` dipakai keduanya, memilih satuan, faktor, dan harga dari master. | Uji konversi penawaran → pesanan → pengiriman/faktur dengan SKU dua satuan. |
 | Permintaan barang | `pos/permintaan/baru/PermintaanForm.tsx` memilih satuan master; penyimpanan tetap perlu diuji end-to-end. | Uji persetujuan/penerimaan dan stok dasar. |
 | POS/shift kasir | `pos/transaksi/PosClient.tsx` dan `kasir/KasirClient.tsx` punya pilihan satuan. | Uji campuran box dan pcs barang sama, termasuk stok dan HPP. |
 
-Kesimpulan: beberapa form sudah menyediakan satuan, jadi jangan membuat ulang UI secara menyeluruh. BUG-04 tetap terbuka sampai alur per dokumen dan dependensi basis data #7 lulus uji. Periksa juga formulir dokumen lain yang disebut pelapor dengan contoh konkret bila cakupan bertambah.
+Kesimpulan: beberapa form sudah menyediakan satuan, jadi jangan membuat ulang UI secara menyeluruh. BUG-04 tetap terbuka sampai alur per dokumen lulus uji bisnis. Migrasi `20260924121000_atomic_purchase_layer_reprice` sengaja tidak dipasang karena tidak dipakai aplikasi. Periksa juga formulir dokumen lain yang disebut pelapor dengan contoh konkret bila cakupan bertambah.
 
 ## BUG-05 — transaksi gagal simpan
 
