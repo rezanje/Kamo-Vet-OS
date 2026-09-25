@@ -10,6 +10,8 @@ psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/clinic_compound_issue.sql
 psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/clinic_invoice_post.sql
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/official_compound_catalog.sql
 ```
 
 The SQL tests cover failure rollback and serial last-unit protection. A true
@@ -30,3 +32,21 @@ posting SQL suites passed there. This verifies PostgreSQL syntax and the tested
 transaction cases, but it is not a complete `supabase db reset` and does not
 verify concurrent sessions. The repository's Supabase CLI, Docker, and local
 PostgreSQL server were unavailable in that environment.
+
+The official catalog test checks OWNER-only publishing, blocked self promotion,
+immutable revisions and issued snapshots, dosage and ingredient validation,
+doctor access to the active version, idempotent issuance, and blocked inactive
+or stale versions. Its migration and test also ran in isolated PGlite with a
+minimal test-only clinic-issue stub; full clinic stock/RLS integration requires
+the local Supabase command above after PR #6 is ready.
+
+For the outstanding true two-session catalog retry check, create a fresh
+formula/version, funded VET stock and medical record in the local Supabase
+database. In session A, `begin`, set the authenticated JWT role/user, call
+`clinic_issue_official_compound` with request key `catalog-race`, then keep
+the transaction open. In session B, `begin`, set the same JWT role/user and
+call the same RPC with identical arguments; it should block on the unique
+request key. Commit A, then check that B returns the *same* recipe ID and
+commit B. There must be one recipe, one `compound_official_usage`, and one
+set of ingredient stock issues. Repeat B with a changed dosage instruction;
+it must return `IDEMPOTENCY_CONFLICT`. Never run this against production.
