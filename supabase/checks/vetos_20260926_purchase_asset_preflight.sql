@@ -1,5 +1,6 @@
--- READ ONLY. Run against project koaglxcyjqfmgfzxszkj before considering
--- migrations 20260924120000, 121000, 122000, and 123000.
+-- READ ONLY. Postflight for project koaglxcyjqfmgfzxszkj after targeted
+-- migrations 20260924120000, 122000, and 123000. Migration 121000 was
+-- deliberately excluded; its reprice function is not called by the app.
 -- Do not infer installation from supabase_migrations.schema_migrations alone:
 -- September functions already exist in production without matching history.
 
@@ -50,7 +51,6 @@ left join information_schema.columns c
 where c.column_name is null order by e.table_name, e.column_name;
 
 with expected(signature) as (values
-  ('public.reprice_purchase_invoice_layers(jsonb,jsonb)'),
   ('public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric)'),
   ('public.stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)'),
   ('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'),
@@ -58,6 +58,10 @@ with expected(signature) as (values
 )
 select 'function' as object_type, signature, to_regprocedure(signature)::text as actual
 from expected order by signature;
+
+-- Expected absent in this rollout; check it separately to detect future drift.
+select 'excluded_optional_function' as object_type,
+       to_regprocedure('public.reprice_purchase_invoice_layers(jsonb,jsonb)')::text as actual;
 
 select conrelid::regclass::text as relation, conname, contype,
        pg_get_constraintdef(oid) as definition
