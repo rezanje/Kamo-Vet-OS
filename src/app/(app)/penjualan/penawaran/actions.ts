@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
+import { validasiSatuanJual } from "@/lib/penjualan-satuan";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/penjualan/penawaran";
@@ -18,7 +19,9 @@ export async function buatPenawaran(formData: FormData) {
   const berlaku = String(formData.get("berlaku_sampai") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
-  const baris = bacaBaris(formData.get("items"));
+  const parsed = bacaBaris(formData.get("items"));
+  const { rows: baris, error: satuanError } = await validasiSatuanJual(supabase, parsed);
+  if (satuanError) gagal(satuanError);
   if (!customerId) gagal("Pilih pelanggan dulu");
   if (baris.length === 0) gagal("Isi minimal satu baris barang atau jasa");
   if (berlaku && berlaku < tanggal) gagal("Masa berlaku selesai sebelum tanggal penawaran");
@@ -77,6 +80,8 @@ export async function jadikanPesanan(formData: FormData) {
   const baris = (q!.sales_quotation_items ?? []) as
     { item_id: string | null; nama: string; satuan: string | null; faktor: number | null; qty: number; harga: number }[];
   if (baris.length === 0) gagal("Penawaran ini tidak punya baris");
+  const { error: satuanError } = await validasiSatuanJual(supabase, baris.map((row) => ({ ...row, faktor: row.faktor ?? 1 })));
+  if (satuanError) gagal(satuanError);
 
   const { data: { user } } = await supabase.auth.getUser();
   const no = await nextNoDokumen(supabase, "SO");

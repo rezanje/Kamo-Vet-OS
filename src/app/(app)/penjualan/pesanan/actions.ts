@@ -7,6 +7,7 @@ import { stockOut } from "@/lib/inventory";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
+import { validasiSatuanJual } from "@/lib/penjualan-satuan";
 import { toBaseQty } from "@/lib/satuan";
 import { jurnalFakturJual, jurnalPengiriman, pesananSelesai, prefixFakturJual, sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -56,7 +57,9 @@ export async function buatPesanan(formData: FormData) {
   const rencana = String(formData.get("rencana_kirim") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
-  const baris = bacaBaris(formData.get("items"));
+  const parsed = bacaBaris(formData.get("items"));
+  const { rows: baris, error: satuanError } = await validasiSatuanJual(supabase, parsed);
+  if (satuanError) gagal(satuanError);
   if (!customerId) gagal("Pilih pelanggan dulu");
   if (baris.length === 0) gagal("Isi minimal satu baris barang atau jasa");
 
