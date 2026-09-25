@@ -7,8 +7,17 @@ import { nextStatus, type RecipeStatus } from "@/lib/compounding";
 
 import { hargaCabang, loadHargaCabang } from "@/lib/harga-cabang";
 import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams, type ClinicVoidCompoundParams } from "@/lib/klinik-posting";
+import { loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 
 export type BahanRacikan = { id: string; name: string; unit: string; sell_price: number; stok: number };
+
+export async function katalogRacikanUntukKunjungan(visitId: string) {
+  const supabase = await createClient();
+  const { data: visit, error } = await supabase.from("visits")
+    .select("id").eq("id", visitId).maybeSingle();
+  if (error || !visit) throw new Error("Kunjungan tidak tersedia.");
+  return loadKatalogRacikan();
+}
 
 export async function bahanRacikanUntukKunjungan(visitId: string): Promise<BahanRacikan[]> {
   const supabase = await createClient();
@@ -52,6 +61,19 @@ export async function addRacikan(formData: FormData) {
   const recipeName = String(formData.get("recipe_name") ?? "").trim();
   const form = String(formData.get("dosage_form") ?? "").trim() || null;
   const aturan = String(formData.get("aturan_pakai") ?? "").trim() || null;
+  const officialVersionId = String(formData.get("official_version_id") ?? "").trim();
+  if (officialVersionId) {
+    if (!medicalRecordId || !visitId || !requestKey) return redirect(`${back}?error=${encodeURIComponent("Kunjungan racikan tidak valid")}`);
+    const { error } = await supabase.rpc("clinic_issue_official_compound", {
+      p_medical_record_id: medicalRecordId,
+      p_visit_id: visitId,
+      p_formula_version_id: officialVersionId,
+      p_request_key: requestKey,
+      p_dosage_instruction: aturan,
+    });
+    if (error) return redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+    return redirect(`${back}?racikan=dibuat`);
+  }
   if (!medicalRecordId || !recipeName) {
     redirect(`${back}?error=${encodeURIComponent("Lengkapi nama racikan")}`);
   }

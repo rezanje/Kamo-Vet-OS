@@ -13,6 +13,7 @@ type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
+  official_version_id?: string;
 };
 
 type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
@@ -140,7 +141,8 @@ export async function simpanRekamMedis(formData: FormData) {
     return opts ? pickUnit(opts, r.satuan).factor : 1;
   };
 
-  if (resep.some((r) => r.jenis === "racikan" && (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
+  if (resep.some((r) => r.jenis === "racikan" && !r.official_version_id &&
+    (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
     redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
 
@@ -171,9 +173,20 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   // Racikan, BOM, layer issue, HPP history, and stock move share one database transaction.
-  const racikan = resep.filter((r) => r.jenis === "racikan" && (r.ingredients ?? []).length > 0);
+  const racikan = resep.filter((r) => r.jenis === "racikan" && (r.official_version_id || (r.ingredients ?? []).length > 0));
   if (racikan.length) {
     for (const r of racikan) {
+      if (r.official_version_id) {
+        const { error: officialError } = await supabase.rpc("clinic_issue_official_compound", {
+          p_medical_record_id: mr!.id,
+          p_visit_id: visitId,
+          p_formula_version_id: r.official_version_id,
+          p_request_key: r.key ?? "",
+          p_dosage_instruction: r.aturan_pakai ?? null,
+        });
+        if (officialError) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(officialError))}`);
+        continue;
+      }
       const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
       if (ings.length === 0) continue;
       const params: ClinicIssueCompoundParams = {

@@ -5,6 +5,7 @@ import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { CONDITION_LABEL, type Condition } from "@/lib/inpatient";
 import { CatatanForm } from "./CatatanForm";
+import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -52,6 +53,8 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
     ),
   }));
   const bahanItems = items.filter((i) => i.is_compound_material);
+  const katalogRacikan = await loadKatalogRacikan();
+  const bolehManual = await bolehRacikKhusus();
 
   const noRM = visit
     ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(rec.visit_id as string).slice(0, 3).toUpperCase()}`
@@ -78,6 +81,8 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
         backHref={`/klinik/rawat-inap/${id}`}
         items={items}
         bahanItems={bahanItems}
+        katalogRacikan={katalogRacikan}
+        bolehManual={bolehManual}
         patient={{
           name: pet?.name ?? "—",
           species: pet?.species ?? "—",
