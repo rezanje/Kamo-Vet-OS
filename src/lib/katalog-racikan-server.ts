@@ -21,3 +21,11 @@ export async function loadKatalogRacikan(includeInactive = false): Promise<Katal
     ...v, ingredients: v.ingredients as BahanKatalog[],
   })));
 }
+
+export async function bolehRacikKhusus(): Promise<boolean> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  return data?.role === "OWNER" || data?.role === "ADMIN";
+}

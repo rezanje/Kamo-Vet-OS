@@ -207,6 +207,34 @@ begin
 end;
 $function$;
 
+-- The legacy custom-issue RPC remains available to OWNER/ADMIN for an exceptional
+-- patient recipe. Move the stock-writing implementation out of the exposed API:
+-- doctors must go through the company-version RPC, which supplies the immutable
+-- ingredient snapshot itself. Revoking only the old function would also block
+-- the official function's internal call.
+create schema if not exists clinic_private;
+revoke all on schema clinic_private from public, anon, authenticated, service_role;
+alter function public.clinic_issue_compound(uuid,uuid,jsonb,text) set schema clinic_private;
+revoke all on function clinic_private.clinic_issue_compound(uuid,uuid,jsonb,text)
+  from public, anon, authenticated, service_role;
+
+create function public.clinic_issue_compound(
+  p_medical_record_id uuid, p_visit_id uuid, p_recipe jsonb, p_request_key text
+) returns uuid language plpgsql security definer set search_path = '' as $function$
+begin
+  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'authenticated'
+     or auth.uid() is null or not exists (
+       select 1 from public.profiles p where p.id = auth.uid() and p.role in ('OWNER','ADMIN')
+     ) then
+    raise exception using errcode='P0001', message='ACCESS_DENIED: racikan khusus pasien hanya untuk pemilik/admin';
+  end if;
+  return clinic_private.clinic_issue_compound(p_medical_record_id,p_visit_id,p_recipe,p_request_key);
+end;
+$function$;
+revoke all on function public.clinic_issue_compound(uuid,uuid,jsonb,text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.clinic_issue_compound(uuid,uuid,jsonb,text) to authenticated;
+
 create function public.clinic_issue_official_compound(
   p_medical_record_id uuid, p_visit_id uuid, p_formula_version_id uuid,
   p_request_key text, p_dosage_instruction text default null
@@ -252,7 +280,7 @@ begin
   if v_formula.id is null then
     raise exception using errcode='P0001', message='RECIPE_INVALID: katalog sudah berubah atau nonaktif, muat ulang';
   end if;
-  v_recipe_id := public.clinic_issue_compound(
+  v_recipe_id := clinic_private.clinic_issue_compound(
     p_medical_record_id, p_visit_id,
     jsonb_build_object(
       'recipe_name', v_formula.name,

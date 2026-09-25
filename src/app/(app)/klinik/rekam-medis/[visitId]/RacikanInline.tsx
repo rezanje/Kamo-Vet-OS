@@ -11,8 +11,8 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 // Builder racikan ringkas — field & alur sama seperti tab "Racikan" di form pemeriksaan,
 // tapi berdiri sendiri utk nambah racikan setelah rekam medis tersimpan (recorded view).
-export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
-  visitId: string; medicalRecordId: string; bahanItems: ItemLite[];
+export function RacikanInline({ visitId, medicalRecordId, bahanItems, bolehManual }: {
+  visitId: string; medicalRecordId: string; bahanItems: ItemLite[]; bolehManual: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ItemLite[]>(bahanItems);
@@ -85,7 +85,7 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
         setSelectedVersion(versionId);
         setAturan(formula?.dosage_instruction ?? "");
       }}>
-        <option value="">Racikan khusus pasien (manual)</option>
+        <option value="">{bolehManual ? "Racikan khusus pasien (manual)" : "Pilih resep resmi"}</option>
         {catalog.map((formula) => <option key={formula.version_id} value={formula.version_id}>
           {formula.code} · {formula.name} (v{formula.version})
         </option>)}
@@ -94,18 +94,18 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
         <strong>{selected.name} · {selected.dosage_form}</strong>
         <div>{selected.ingredients.map((ingredient) => `${ingredient.name} ${ingredient.quantity} ${ingredient.unit}`).join(" · ")}</div>
         <div>Estimasi bahan {rp(katalogTotal(selected.ingredients))}. Stok diperiksa saat menyimpan.</div>
-      </div> : <input className="fi" name="recipe_name" placeholder="Nama racikan (mis. Puyer Batuk)" value={nama} onChange={(e) => setNama(e.target.value)} />}
+      </div> : bolehManual ? <input className="fi" name="recipe_name" placeholder="Nama racikan (mis. Puyer Batuk)" value={nama} onChange={(e) => setNama(e.target.value)} /> : null}
       <div style={{ display: "flex", gap: 6 }}>
-        {!selected && <select className="fi" name="dosage_form" value={form} onChange={(e) => setForm(e.target.value)} style={{ fontSize: 11.5 }}>
+        {!selected && bolehManual && <select className="fi" name="dosage_form" value={form} onChange={(e) => setForm(e.target.value)} style={{ fontSize: 11.5 }}>
           {["sirup", "nebul", "salep", "puyer", "kapsul", "lainnya"].map((f) => <option key={f} value={f}>{f}</option>)}
         </select>}
         {selected
           ? <><input type="hidden" name="aturan_pakai" value={selected.dosage_instruction ?? ""} />
             <span style={{ fontSize: 11 }}>Aturan pakai resmi: {selected.dosage_instruction ?? "Tidak ditetapkan"}. Untuk aturan lain, gunakan racikan khusus pasien.</span></>
-          : <input className="fi" name="aturan_pakai" placeholder="Aturan pakai (opsional)" value={aturan} onChange={(e) => setAturan(e.target.value)} />}
+          : bolehManual ? <input className="fi" name="aturan_pakai" placeholder="Aturan pakai (opsional)" value={aturan} onChange={(e) => setAturan(e.target.value)} /> : null}
       </div>
 
-      {!selected && <>
+      {!selected && bolehManual && <>
       <div style={{ position: "relative" }}>
         <input className="fi" placeholder="Cari bahan baku..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingRight: 28 }} />
         <i className="ti ti-search" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 13 }} />
@@ -141,8 +141,8 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
       )}
       </>}
 
-      <button type="submit" disabled={!selected && (!nama.trim() || bahan.length === 0)}
-        className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!selected && (!nama.trim() || bahan.length === 0)) ? .5 : 1 }}>
+      <button type="submit" disabled={!selected && (!bolehManual || !nama.trim() || bahan.length === 0)}
+        className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!selected && (!bolehManual || !nama.trim() || bahan.length === 0)) ? .5 : 1 }}>
         <i className="ti ti-plus" /> Simpan racikan
       </button>
     </form>

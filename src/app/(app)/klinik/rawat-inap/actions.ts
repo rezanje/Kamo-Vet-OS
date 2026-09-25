@@ -153,6 +153,7 @@ type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string;
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
+  official_version_id?: string;
 };
 export async function addDailyLogPos(formData: FormData) {
   const supabase = await createClient();
@@ -194,7 +195,8 @@ export async function addDailyLogPos(formData: FormData) {
   let resep: ResepItem[] = [];
   try { resep = JSON.parse(String(formData.get("resep") ?? "[]")); } catch { resep = []; }
   const racikan = resep.filter((r) => r.jenis === "racikan");
-  if (racikan.some((r) => (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
+  if (racikan.some((r) => !r.official_version_id &&
+    (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
     redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
   if (racikan.length && !mrId) {
@@ -219,6 +221,17 @@ export async function addDailyLogPos(formData: FormData) {
   // 2b) Racikan, BOM, layer issue, HPP history, and stock move share one database transaction.
   if (mrId && racikan.length) {
     for (const r of racikan) {
+      if (r.official_version_id) {
+        const { error: officialError } = await supabase.rpc("clinic_issue_official_compound", {
+          p_medical_record_id: mrId,
+          p_visit_id: rec!.visit_id,
+          p_formula_version_id: r.official_version_id,
+          p_request_key: r.key ?? "",
+          p_dosage_instruction: r.aturan_pakai ?? null,
+        });
+        if (officialError) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(officialError))}`);
+        continue;
+      }
       const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
       if (ings.length === 0) continue;
       const params: ClinicIssueCompoundParams = {

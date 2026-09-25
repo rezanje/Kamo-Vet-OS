@@ -64,7 +64,23 @@ begin
       '[{"item_id":"fb000000-0000-4000-8000-000000000001","unit":"gram"}]');
   exception when sqlstate 'P0001' then failed := true; end;
   if not failed then raise exception 'formula with missing quantity was published'; end if;
+  if public.clinic_issue_compound(
+    'fe000000-0000-4000-8000-000000000001', 'fd000000-0000-4000-8000-000000000001',
+    jsonb_build_object('recipe_name','Racikan khusus pemilik','dosage_form','puyer',
+      'ingredients',(select v.ingredients from public.compound_formula_versions v where v.id = first_version)),
+    'catalog-owner-custom') is null then
+    raise exception 'owner could not issue an exceptional patient recipe';
+  end if;
   perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000002',true);
+  failed := false;
+  begin
+    perform public.clinic_issue_compound(
+      'fe000000-0000-4000-8000-000000000001', 'fd000000-0000-4000-8000-000000000001',
+      jsonb_build_object('recipe_name','Racikan manual dokter','dosage_form','puyer',
+        'ingredients',(select v.ingredients from public.compound_formula_versions v where v.id = first_version)),
+      'catalog-doctor-custom');
+  exception when sqlstate 'P0001' then failed := true; end;
+  if not failed then raise exception 'doctor bypassed catalog via custom RPC'; end if;
   failed := false;
   begin
     perform public.publish_compound_formula(null,'BAD','Unauthorized','puyer',null,ingredients);

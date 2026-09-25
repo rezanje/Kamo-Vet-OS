@@ -8,6 +8,7 @@ import { racikanTotal, type RacikanIngredient } from "@/lib/racikan";
 import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@/lib/monitoring-inap";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { addDailyLogPos } from "../../actions";
+import { katalogTotal, type KatalogRacikan } from "@/lib/katalog-racikan";
 
 export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number; units?: ItemUnit[] };
 type CartRow = {
@@ -15,6 +16,7 @@ type CartRow = {
   faktor: number;
   jenis: "obat" | "jasa" | "racikan";
   ingredients?: RacikanIngredient[]; dosage_form?: string; aturan_pakai?: string;
+  official_version_id?: string;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -26,11 +28,13 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: {
+export function CatatanForm({ recordId, backHref, patient, items, bahanItems, katalogRacikan, bolehManual }: {
   recordId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
   bahanItems: ItemLite[];
+  katalogRacikan: KatalogRacikan[];
+  bolehManual: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("Obat");
   const [search, setSearch] = useState("");
@@ -70,6 +74,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
 
   // Builder racikan — alur & field sama seperti tab Racikan di form pemeriksaan.
   const [racikNama, setRacikNama] = useState("");
+  const [officialVersionId, setOfficialVersionId] = useState("");
   const [racikForm, setRacikForm] = useState("sirup");
   const [racikAturan, setRacikAturan] = useState("");
   const [racikBahan, setRacikBahan] = useState<RacikanIngredient[]>([]);
@@ -78,6 +83,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
   const filtered = useMemo(() => items.filter((it) => it.name.toLowerCase().includes(search.toLowerCase())).slice(0, 40), [items, search]);
   const bahanFiltered = useMemo(() => bahanItems.filter((it) => it.name.toLowerCase().includes(bahanSearch.toLowerCase())).slice(0, 40), [bahanItems, bahanSearch]);
   const racikSubtotal = racikanTotal(racikBahan);
+  const selectedFormula = katalogRacikan.find((formula) => formula.version_id === officialVersionId);
 
   const addObat = (it: ItemLite) => setCart((c) => {
     const ex = c.find((r) => r.item_id === it.id);
@@ -101,13 +107,19 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
   const setBahanQty = (id: string, qty: number) => setRacikBahan((b) => b.map((r) => (r.item_id === id ? { ...r, qty: Math.max(1, qty) } : r)));
   const delBahan = (id: string) => setRacikBahan((b) => b.filter((r) => r.item_id !== id));
   const addRacikanToCart = () => {
-    if (!racikNama.trim() || racikBahan.length === 0) return;
+    if (!selectedFormula && (!bolehManual || !racikNama.trim() || racikBahan.length === 0)) return;
     setCart((c) => [...c, {
-      key: crypto.randomUUID(), item_id: null, nama_obat: racikNama.trim(), qty: 1, satuan: "racikan", faktor: 1,
-      harga: racikanTotal(racikBahan), jenis: "racikan",
-      ingredients: racikBahan, dosage_form: racikForm, aturan_pakai: racikAturan.trim() || undefined,
+      key: crypto.randomUUID(), item_id: null, nama_obat: selectedFormula?.name ?? racikNama.trim(), qty: 1, satuan: "racikan", faktor: 1,
+      harga: selectedFormula ? katalogTotal(selectedFormula.ingredients) : racikanTotal(racikBahan), jenis: "racikan",
+      official_version_id: selectedFormula?.version_id,
+      ingredients: selectedFormula ? selectedFormula.ingredients.map((ingredient) => ({
+        item_id: ingredient.item_id, nama: ingredient.name, qty: ingredient.quantity,
+        satuan: ingredient.unit, harga: ingredient.unit_price,
+      })) : racikBahan,
+      dosage_form: selectedFormula?.dosage_form ?? racikForm,
+      aturan_pakai: selectedFormula ? (selectedFormula.dosage_instruction ?? undefined) : (racikAturan.trim() || undefined),
     }]);
-    setRacikNama(""); setRacikAturan(""); setRacikBahan([]); setBahanSearch("");
+    setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]); setBahanSearch("");
   };
 
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
@@ -359,6 +371,20 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
               {tab === "Paket" && <div style={{ fontSize: 11, color: "var(--td)", padding: "12px 0" }}>Paket bundling — dalam pengembangan.</div>}
               {tab === "Racikan" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <label className="flab">Katalog resmi perusahaan</label>
+                  <select className="fi" value={officialVersionId} onChange={(e) => setOfficialVersionId(e.target.value)}>
+                    <option value="">{bolehManual ? "Racikan khusus pasien (manual)" : "Pilih resep resmi"}</option>
+                    {katalogRacikan.map((formula) => <option key={formula.version_id} value={formula.version_id}>
+                      {formula.code} · {formula.name} (v{formula.version})
+                    </option>)}
+                  </select>
+                  {selectedFormula && <div style={{ fontSize: 11, background: "#f4f0ff", borderRadius: 8, padding: 9 }}>
+                    <strong>{selectedFormula.name} · {selectedFormula.dosage_form}</strong>
+                    <div>{selectedFormula.ingredients.map((ingredient) => `${ingredient.name} ${ingredient.quantity} ${ingredient.unit}`).join(" · ")}</div>
+                    <div>Estimasi harga bahan {rp(katalogTotal(selectedFormula.ingredients))}. Stok diperiksa saat menyimpan.</div>
+                    <div>Aturan pakai: {selectedFormula.dosage_instruction ?? "Tidak ditetapkan"}</div>
+                  </div>}
+                  {!selectedFormula && bolehManual && <>
                   <input className="fi" placeholder="Nama racikan (mis. Puyer Batuk)" value={racikNama} onChange={(e) => setRacikNama(e.target.value)} />
                   <div style={{ display: "flex", gap: 6 }}>
                     <select className="fi" value={racikForm} onChange={(e) => setRacikForm(e.target.value)} style={{ fontSize: 11.5 }}>
@@ -398,8 +424,9 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
                       </div>
                     </div>
                   )}
-                  <button type="button" onClick={addRacikanToCart} disabled={!racikNama.trim() || racikBahan.length === 0}
-                    className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!racikNama.trim() || racikBahan.length === 0) ? .5 : 1 }}>
+                  </>}
+                  <button type="button" onClick={addRacikanToCart} disabled={!selectedFormula && (!bolehManual || !racikNama.trim() || racikBahan.length === 0)}
+                    className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!selectedFormula && (!bolehManual || !racikNama.trim() || racikBahan.length === 0)) ? .5 : 1 }}>
                     <i className="ti ti-plus" /> Tambah racikan ke keranjang
                   </button>
                 </div>
