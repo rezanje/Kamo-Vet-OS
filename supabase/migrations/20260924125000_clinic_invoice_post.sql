@@ -390,13 +390,12 @@ begin
 
   insert into public.invoices (
     visit_id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date,
-    paid_status, metode_bayar, paid_at, shift_id, voucher_code, salesperson_id,
-    request_key, request_hash
+    paid_status, metode_bayar, paid_at, shift_id, voucher_code, salesperson_id
   ) values (
     p_visit_id, v_invoice_no, v_subtotal, v_discount, v_tax, v_total,
     v_dp_amount, nullif(p_invoice ->> 'dp_date', '')::date, v_paid_status,
     v_metode, case when v_paid_status = 'Lunas' then now() else null end,
-    v_shift.id, v_voucher, v_salesperson_id, v_request_key, v_hash
+    v_shift.id, v_voucher, v_salesperson_id
   ) returning id into v_invoice_id;
 
   -- Lock stock balances by item ID before consuming any FEFO/FIFO layer. This
@@ -655,6 +654,11 @@ begin
         jsonb_build_object('code','1301','debit',0,'credit',v_total_hpp)
       ));
   end if;
+
+  -- Menandai invoice selesai setelah semua baris, stok, dan jurnal tersimpan.
+  -- Trigger anti-mutasi boleh menolak INSERT baris sesudah titik ini.
+  update public.invoices set request_key = v_request_key, request_hash = v_hash
+  where id = v_invoice_id;
 
   return v_invoice_id;
 end;
