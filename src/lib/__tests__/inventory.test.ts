@@ -8,6 +8,58 @@ type FakeDb = { stock: Record<string, number>; layers: Any[] };
 
 function makeClient(db: FakeDb, failTable?: string) {
   return {
+    async rpc(name: string, args: Any) {
+      if (name === "stock_in_fifo") {
+        if (failTable === "stock_layers") return { data: null, error: { message: "ditolak" } };
+        const stockKey = `${args.p_warehouse_id}|${args.p_item_id}`;
+        const current = Number(db.stock[stockKey] ?? 0);
+        const incoming = Number(args.p_qty);
+        const layerQty = incoming - Math.min(Math.max(-current, 0), incoming);
+        db.stock[stockKey] = current + incoming;
+        if (layerQty > 0) db.layers.push({
+          id: `L${db.layers.length + 1}`,
+          warehouse_id: args.p_warehouse_id,
+          item_id: args.p_item_id,
+          tanggal: args.p_tanggal,
+          qty_in: layerQty,
+          qty_left: layerQty,
+          unit_cost: Number(args.p_unit_cost),
+          source: args.p_source,
+          source_ref: args.p_source_ref,
+          exp_date: args.p_exp_date,
+        });
+        return { data: null, error: null };
+      }
+      if (name !== "stock_out_fifo") return { data: null, error: { message: "RPC tidak dikenal" } };
+      const layers = db.layers
+        .filter((l) => l.warehouse_id === args.p_warehouse_id && l.item_id === args.p_item_id && Number(l.qty_left) > 0)
+        .sort((a, b) => {
+          const ea = a.exp_date ?? "";
+          const eb = b.exp_date ?? "";
+          if (ea && eb && ea !== eb) return ea.localeCompare(eb);
+          if (ea && !eb) return -1;
+          if (!ea && eb) return 1;
+          return String(a.tanggal ?? "").localeCompare(String(b.tanggal ?? ""))
+            || String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
+        });
+      let remaining = Number(args.p_qty);
+      let cost = 0;
+      const takes: Any[] = [];
+      for (const layer of layers) {
+        if (remaining <= 0) break;
+        const qty = Math.min(Number(layer.qty_left), remaining);
+        layer.qty_left = Number(layer.qty_left) - qty;
+        cost += qty * Number(layer.unit_cost);
+        remaining -= qty;
+        takes.push({ id: layer.id, qty, unit_cost: Number(layer.unit_cost), exp_date: layer.exp_date ?? null });
+      }
+      const hargaBeli = 1000;
+      const shortfall = Math.max(0, remaining);
+      cost += shortfall * hargaBeli;
+      const stockKey = `${args.p_warehouse_id}|${args.p_item_id}`;
+      db.stock[stockKey] = Number(db.stock[stockKey] ?? 0) - Number(args.p_qty);
+      return { data: [{ cost, takes, shortfall, harga_beli: hargaBeli }], error: null };
+    },
     from(table: string) {
       const f: Record<string, Any> = {};
       let mode = "select";

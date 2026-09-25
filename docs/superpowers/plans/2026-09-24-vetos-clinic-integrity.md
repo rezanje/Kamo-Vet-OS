@@ -30,8 +30,8 @@
 
 ## Files and responsibilities
 
-- `supabase/migrations/20260924_clinic_compound_issue.sql`: immutable issue rows; authenticated compound issue RPC; recipe void restore by historical cost.
-- `supabase/migrations/20260924_clinic_invoice_post.sql`: atomic clinic invoice CREATE; row locks, branch checks, stock-layer consumption, invoice lines, balanced revenue/HPP journals, idempotency.
+- `supabase/migrations/20260924124000_clinic_compound_issue.sql`: immutable issue rows; authenticated compound issue RPC; recipe void restore by historical cost.
+- `supabase/migrations/20260924125000_clinic_invoice_post.sql`: atomic clinic invoice CREATE; row locks, branch checks, stock-layer consumption, invoice lines, balanced revenue/HPP journals, idempotency.
 - `supabase/tests/clinic_compound_issue.sql`, `supabase/tests/clinic_invoice_post.sql`: rollback-scoped SQL integration assertions, including concurrent-session procedure documented beside tests.
 - `src/lib/klinik-posting.ts`: typed RPC inputs/results and guarded error mapping; no separate stock mathematics.
 - `src/app/(app)/klinik/rekam-medis/[visitId]/actions.ts`, `src/app/(app)/klinik/racik/actions.ts`, `src/app/(app)/klinik/rawat-inap/actions.ts`: call compound boundary; remove app-level ingredient stock issue from every recipe-creation route.
@@ -50,7 +50,7 @@
 
 ### Task 2: Compound issue and historical-cost restore
 
-**Files:** Create `supabase/migrations/20260924_clinic_compound_issue.sql`, `supabase/tests/clinic_compound_issue.sql`; modify `src/app/(app)/klinik/rekam-medis/[visitId]/actions.ts`, `src/app/(app)/klinik/racik/actions.ts`, `src/app/(app)/klinik/rawat-inap/actions.ts`, and the recipe-cart forms that supply stable request keys.
+**Files:** Create `supabase/migrations/20260924124000_clinic_compound_issue.sql`, `supabase/tests/clinic_compound_issue.sql`; modify `src/app/(app)/klinik/rekam-medis/[visitId]/actions.ts`, `src/app/(app)/klinik/racik/actions.ts`, `src/app/(app)/klinik/rawat-inap/actions.ts`, and the recipe-cart forms that supply stable request keys.
 
 **Interfaces:** Produce RPC `clinic_issue_compound(p_medical_record_id uuid,p_visit_id uuid,p_recipe jsonb,p_request_key text) returns uuid` and `clinic_void_compound(p_recipe_id uuid) returns void`. Create `compound_issues(recipe_id,ingredient_id,warehouse_id,item_id,qty,unit_cost,stock_layer_id,posted_invoice_item_id)` with unique issue identity and FK constraints; expose actual consumed costs to Task 3.
 
@@ -62,7 +62,7 @@
 
 ### Task 3: Atomic invoice and one-time HPP
 
-**Files:** Create `supabase/migrations/20260924_clinic_invoice_post.sql`, `supabase/tests/clinic_invoice_post.sql`; modify `src/app/(app)/klinik/pembayaran/[visitId]/actions.ts` and `src/lib/klinik-posting.ts`.
+**Files:** Create `supabase/migrations/20260924125000_clinic_invoice_post.sql`, `supabase/tests/clinic_invoice_post.sql`; modify `src/app/(app)/klinik/pembayaran/[visitId]/actions.ts` and `src/lib/klinik-posting.ts`.
 
 **Interfaces:** Produce RPC `clinic_post_invoice(p_visit_id uuid,p_request_key text,p_invoice jsonb,p_lines jsonb) returns uuid`. Input lines include an explicit `recipe_id` for compounds and item/unit identity for medicines. Server resolves warehouse, account IDs, existing recipe issues, and stock costs; it never trusts submitted costs or branch ID.
 
@@ -74,7 +74,7 @@
 
 ### Task 4: Historical lifecycle and release gate
 
-**Files:** Extend `supabase/migrations/20260924_clinic_invoice_post.sql`, `supabase/tests/clinic_invoice_post.sql`; modify `src/app/(app)/klinik/pembayaran/[visitId]/actions.ts`, `src/app/(app)/klinik/racik/actions.ts` and `src/lib/__tests__/klinik-posting.test.ts`.
+**Files:** Extend `supabase/migrations/20260924125000_clinic_invoice_post.sql`, `supabase/tests/clinic_invoice_post.sql`; modify `src/app/(app)/klinik/pembayaran/[visitId]/actions.ts`, `src/app/(app)/klinik/racik/actions.ts` and `src/lib/__tests__/klinik-posting.test.ts`.
 
 **Interfaces:** Produce `clinic_edit_invoice(p_invoice_id uuid,p_request_key text,p_invoice jsonb,p_lines jsonb)` and `clinic_void_reissue_invoice(p_invoice_id uuid,p_request_key text)` with exact historical cost reversal; preserve public server-action signatures for UI forms.
 

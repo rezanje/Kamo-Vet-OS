@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFakturLangsungLines, buildFakturLines, formatNoFaktur, sisaFakturable } from "../faktur-beli";
+import { buildFakturLangsungLines, buildFakturLines, formatNoFaktur, rencanakanRepriceLapisan, sisaFakturable, sisaFakturablePerBaris } from "../faktur-beli";
 
 describe("formatNoFaktur", () => {
   it("format FB.YYYY.MM.NNNNN", () => {
@@ -52,6 +52,99 @@ describe("buildFakturLines", () => {
 describe("sisaFakturable", () => {
   it("kurangi yang sudah difakturkan", () => {
     expect(sisaFakturable({ a: 5, b: 2 }, { a: 3, b: 2 })).toEqual({ a: 2 });
+  });
+});
+
+describe("sisaFakturablePerBaris", () => {
+  it("memisahkan dua baris PO untuk SKU sama dengan satuan berbeda", () => {
+    const result = sisaFakturablePerBaris(
+      [
+        { id: "po-box", item_id: "obat-a", diterima: 2, faktor: 12 },
+        { id: "po-ecer", item_id: "obat-a", diterima: 5, faktor: 1 },
+      ],
+      [{ po_item_id: "po-box", item_id: "obat-a", qty: 1, faktor: 12 }],
+    );
+
+    expect(result.sisaPerBaris).toEqual({ "po-box": 1, "po-ecer": 5 });
+    expect(result.legacyAmbiguousItemIds).toEqual([]);
+    expect(result.invalidPoItemIds).toEqual([]);
+  });
+
+  it("mengurangi faktur tertaut dalam satuan dasar memakai faktor snapshot faktur", () => {
+    const result = sisaFakturablePerBaris(
+      [{ id: "po-box", item_id: "obat-a", diterima: 3, faktor: 10 }],
+      [{ po_item_id: "po-box", item_id: "obat-a", qty: 1, faktor: 5 }],
+    );
+
+    expect(result.sisaPerBaris["po-box"]).toBe(2.5);
+  });
+
+  it("membaca faktur lama dalam satuan PO bila SKU hanya muncul sekali", () => {
+    const result = sisaFakturablePerBaris(
+      [{ id: "po-box", item_id: "obat-a", diterima: 2, faktor: 12 }],
+      [{ po_item_id: null, item_id: "obat-a", qty: 1, faktor: 1 }],
+    );
+
+    expect(result.sisaPerBaris["po-box"]).toBe(1);
+    expect(result.legacyAmbiguousItemIds).toEqual([]);
+  });
+
+  it("memblokir SKU dengan faktur lama saat beberapa baris PO membuat satuannya ambigu", () => {
+    const result = sisaFakturablePerBaris(
+      [
+        { id: "po-box", item_id: "obat-a", diterima: 2, faktor: 12 },
+        { id: "po-ecer", item_id: "obat-a", diterima: 5, faktor: 1 },
+      ],
+      [{ po_item_id: null, item_id: "obat-a", qty: 1, faktor: 1 }],
+    );
+
+    expect(result.legacyAmbiguousItemIds).toEqual(["obat-a"]);
+    expect(result.sisaPerBaris).not.toHaveProperty("po-box");
+    expect(result.sisaPerBaris).not.toHaveProperty("po-ecer");
+  });
+});
+
+describe("rencanakanRepriceLapisan", () => {
+  const layer = {
+    id: "layer-1", warehouse_id: "wh-1", item_id: "item-1", tanggal: "2026-09-24",
+    qty_in: 10, qty_left: 10, unit_cost: 10, source: "purchase", source_ref: "PO-1",
+    exp_date: "2027-01-01", batch_no: "B-1",
+  };
+
+  it("membagi lapisan bila faktur hanya mencakup sebagian stok tersisa", () => {
+    const result = rencanakanRepriceLapisan([layer], 4, 12);
+
+    expect(result.updates).toEqual([{
+      id: "layer-1", expected_qty_in: 10, expected_qty_left: 10, expected_unit_cost: 10,
+      qty_in: 6, qty_left: 6,
+    }]);
+    expect(result.inserts).toEqual([{
+      warehouse_id: "wh-1", item_id: "item-1", tanggal: "2026-09-24",
+      qty_in: 4, qty_left: 4, unit_cost: 12, source: "purchase", source_ref: "PO-1",
+      exp_date: "2027-01-01", batch_no: "B-1",
+    }]);
+    expect(result.qtyTidakTerpenuhi).toBe(0);
+  });
+
+  it("mengubah biaya seluruh sisa layer tanpa mengganti qty yang sudah terjual", () => {
+    const result = rencanakanRepriceLapisan([{ ...layer, qty_left: 5 }], 5, 12);
+
+    expect(result.updates).toEqual([{
+      id: "layer-1", expected_qty_in: 10, expected_qty_left: 5, expected_unit_cost: 10,
+      unit_cost: 12,
+    }]);
+    expect(result.inserts).toEqual([]);
+    expect(result.qtyTidakTerpenuhi).toBe(0);
+  });
+
+  it("melaporkan kuantitas faktur yang tidak lagi tersedia pada layer biaya PO", () => {
+    const result = rencanakanRepriceLapisan([{ ...layer, qty_left: 3 }], 5, 12);
+
+    expect(result.updates).toEqual([{
+      id: "layer-1", expected_qty_in: 10, expected_qty_left: 3, expected_unit_cost: 10,
+      unit_cost: 12,
+    }]);
+    expect(result.qtyTidakTerpenuhi).toBe(2);
   });
 });
 
