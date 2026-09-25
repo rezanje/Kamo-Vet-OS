@@ -12,7 +12,8 @@ import { normalizeKode, pesanVoucherDitolak, potonganVoucher } from "@/lib/vouch
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 
 type Line = {
-  deskripsi: string; qty: number; harga: number; item_id?: string | null;
+  deskripsi: string; qty: number; harga: number; item_id?: string | null; satuan?: string | null;
+  prescription_item_id?: string | null; recipe_id?: string | null;
   /** Diskon baris dalam persen — permintaan Pak Aldi, meeting 14 Agustus. */
   diskon_persen?: number;
   /**
@@ -50,8 +51,11 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v) ?? byName.get(v.trim().toLowerCase());
     set(i, it
-      ? { deskripsi: it.name, item_id: it.id, harga: it.harga }
-      : { deskripsi: v, item_id: null });
+      ? { deskripsi: it.name, item_id: it.id, harga: it.harga, satuan: it.unit, prescription_item_id: null, recipe_id: null }
+      : {
+          deskripsi: v, item_id: null, prescription_item_id: null, recipe_id: null,
+          satuan: rows[i]?.satuan === "racikan" || rows[i]?.recipe_id ? "racikan" : null,
+        });
   };
 
   return (
@@ -121,8 +125,8 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   );
 }
 
-export function PembayaranForm({ visitId, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
-  visitId: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
+  visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialDpDate?: string | null; editMode?: boolean;
@@ -188,6 +192,7 @@ export function PembayaranForm({ visitId, patient, initialObat, initialJasa, mas
   return (
     <form action={bayarVisit}>
       <input type="hidden" name="visitId" value={visitId} />
+      <input type="hidden" name="requestKey" value={requestKey} />
       <input type="hidden" name="items" value={items} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="voucherCode" value={voucher} />

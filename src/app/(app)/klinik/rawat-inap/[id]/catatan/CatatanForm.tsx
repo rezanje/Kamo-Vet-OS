@@ -103,7 +103,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems }: 
   const addRacikanToCart = () => {
     if (!racikNama.trim() || racikBahan.length === 0) return;
     setCart((c) => [...c, {
-      key: `racik-${c.length}-${racikNama}`, item_id: null, nama_obat: racikNama.trim(), qty: 1, satuan: "racikan", faktor: 1,
+      key: crypto.randomUUID(), item_id: null, nama_obat: racikNama.trim(), qty: 1, satuan: "racikan", faktor: 1,
       harga: racikanTotal(racikBahan), jenis: "racikan",
       ingredients: racikBahan, dosage_form: racikForm, aturan_pakai: racikAturan.trim() || undefined,
     }]);

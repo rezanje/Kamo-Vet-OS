@@ -82,7 +82,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
 
   const addRacikanToCart = () => {
     if (!racikNama.trim() || racikBahan.length === 0) return;
-    const key = `racik-${cart.length}-${racikNama}`;
+    const key = crypto.randomUUID();
     setCart((c) => [...c, {
       key, item_id: null, nama_obat: racikNama.trim(), qty: 1, satuan: "racikan", faktor: 1,
       harga: racikanTotal(racikBahan), jenis: "racikan",

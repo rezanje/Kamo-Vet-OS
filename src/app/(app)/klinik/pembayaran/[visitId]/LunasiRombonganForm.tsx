@@ -16,8 +16,9 @@ import type { BekalPotongan } from "@/lib/tagihan-klinik";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export function LunasiRombonganForm({ visitId, jumlahPasien, total, tertahan, bekal, promoTotal = 0 }: {
+export function LunasiRombonganForm({ visitId, requestKey, jumlahPasien, total, tertahan, bekal, promoTotal = 0 }: {
   visitId: string;
+  requestKey: string;
   jumlahPasien: number;
   /** Perkiraan total seluruh hewan — sudah termasuk promo & diskon golongan. */
   total: number;
@@ -56,6 +57,7 @@ export function LunasiRombonganForm({ visitId, jumlahPasien, total, tertahan, be
   return (
     <form action={bayarRombongan} style={{ marginTop: 10, paddingTop: 10, borderTop: ".5px solid #bfdbfe" }}>
       <input type="hidden" name="visitId" value={visitId} />
+      <input type="hidden" name="requestKey" value={requestKey} />
       <input type="hidden" name="metode_bayar" value={metode} />
       <input type="hidden" name="voucherCode" value={voucher} />
       <input type="hidden" name="poinDigunakan" value={poinDipakai} />

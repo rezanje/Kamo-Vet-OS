@@ -17,11 +17,16 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
+import { parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { balikJurnalPenjualan, jurnalPenjualanKlinik } from "@/lib/penjualan-jurnal";
 
-type Line = { deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null; diskon_persen?: number };
+type Line = {
+  deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
+  satuan?: string | null; prescription_item_id?: string | null; recipe_id?: string | null;
+  diskon_persen?: number;
+};
 
 // Obat klinik memotong stok gudang cabang & mencatat modalnya, sama seperti
 // penjualan di kasir. Sebelum migrasi 0084 ini tidak bisa dilakukan: baris
@@ -136,6 +141,34 @@ async function jurnalPakaiDiskonTerpisah(supabase: Awaited<ReturnType<typeof cre
 
 const todayIso = () => hariIniWIB();
 
+function barisUntukPosting(rows: Line[]): ClinicInvoiceLineInput[] {
+  return rows.map((row) => ({
+    description: row.deskripsi,
+    qty: row.qty,
+    price: row.harga,
+    kind: row.jenis === "jasa" ? "jasa" : "obat",
+    item_id: row.item_id ?? null,
+    unit: row.satuan ?? null,
+    prescription_item_id: row.prescription_item_id ?? null,
+    recipe_id: row.recipe_id ?? null,
+    discount_percent: row.diskon_persen ?? 0,
+  }));
+}
+
+async function postInvoiceAtomik(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: ClinicPostInvoiceParams,
+): Promise<{ invoiceNo: string | null; error: { code?: string; message: string } | null }> {
+  const { data: invoiceId, error } = await supabase.rpc("clinic_post_invoice", params);
+  if (error || !invoiceId) return { invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
+  const { data: invoice, error: readError } = await supabase
+    .from("invoices").select("invoice_no").eq("id", invoiceId).maybeSingle();
+  if (readError || !invoice?.invoice_no) {
+    return { invoiceNo: null, error: readError ?? { message: "Nomor invoice tidak terbaca setelah tersimpan" } };
+  }
+  return { invoiceNo: invoice.invoice_no, error: null };
+}
+
 async function nextInvoiceNo(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   // Nomor dilanjutkan dari yang tertinggi; race antar kasir masih dijaga unique constraint.
   // Formatnya dibaca dari master penomoran; bawaannya INV-YYYYMM-NNNN.
@@ -200,8 +233,11 @@ export async function bayarVisit(formData: FormData) {
       // item_id jasa IKUT DISIMPAN sejak promo klinik (2026-08-12): promo boleh
       // mengenai tindakan, dan tanpa item_id promo tidak punya pegangan tindakan
       // apa yang didiskon. Yang menjaga stok bukan lagi item_id kosong, tapi
-      // filter `jenis` di potongStokObat — jasa memang tidak punya lapisan stok.
+      // filter `jenis` pada posting atomik — jasa memang tidak punya lapisan stok.
       item_id: l.item_id ?? null,
+      satuan: l.satuan ?? null,
+      prescription_item_id: l.prescription_item_id ?? null,
+      recipe_id: l.recipe_id ?? null,
     }));
 
   if (rows.length === 0) {
@@ -262,10 +298,13 @@ export async function bayarVisit(formData: FormData) {
   // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
   const { data: existing } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
 
   if (existing) {
+    if (existing.request_key) {
+      redirect(`${back}?error=${encodeURIComponent("Invoice yang sudah diposting belum dapat diedit. Minta keuangan meninjau perubahan sampai pembalikan stok dan jurnal atomik tersedia.")}`);
+    }
     // §7: invoice Lunas tidak boleh diedit langsung — wajib Void & Reissue.
     if (existing.paid_status === "Lunas") {
       redirect(`${back}?error=${encodeURIComponent("Invoice lunas tidak boleh diedit — gunakan Void & Terbitkan Ulang")}`);
@@ -281,7 +320,7 @@ export async function bayarVisit(formData: FormData) {
     // item_id & hpp ikut dibaca: baris obat yang diganti harus dikembalikan stoknya
     // dengan modal yang persis sama seperti saat keluar.
     const { data: oldItems } = await supabase
-      .from("invoice_items").select("deskripsi, qty, harga, item_id, hpp").eq("invoice_id", existing.id).order("created_at");
+      .from("invoice_items").select("deskripsi, qty, harga, item_id, hpp, compound_recipe_id").eq("invoice_id", existing.id).order("created_at");
 
     const oldSnap: InvoiceSnapshot = {
       subtotal: Number(existing.subtotal), discount: Number(existing.discount), tax: Number(existing.tax),
@@ -293,6 +332,9 @@ export async function bayarVisit(formData: FormData) {
 
     if (diffs.length === 0) {
       redirect(`${back}?success=bayar`);
+    }
+    if ((oldItems ?? []).some((line) => line.compound_recipe_id)) {
+      redirect(`${back}?error=${encodeURIComponent("Perubahan invoice racikan belum didukung. Minta keuangan meninjau HPP racikan sebelum mengubahnya.")}`);
     }
     if (requiresReason(diffs) && !reason) {
       redirect(`${back}?error=${encodeURIComponent("Isi alasan perubahan — nominal/item invoice berubah (audit wajib)")}`);
@@ -382,30 +424,22 @@ export async function bayarVisit(formData: FormData) {
   }
 
   // ---- jalur CREATE (invoice pertama utk visit ini) ----
-  const invoiceNo = await nextInvoiceNo(supabase);
-
-  const { data: inv, error: invErr } = await supabase
-    .from("invoices")
-    .insert({ visit_id: visitId, invoice_no: invoiceNo, subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate, paid_status: paidStatus, metode_bayar: metode, paid_at: paidAt, shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: v?.doctor_id ?? null })
-    .select("id").single();
-  if (invErr || !inv) {
-    redirect(`${back}?error=${encodeURIComponent(invErr?.message ?? "Gagal simpan invoice")}`);
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
+  const posted = await postInvoiceAtomik(supabase, {
+    p_visit_id: visitId,
+    p_request_key: requestKey,
+    p_invoice: {
+      tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
+      paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
+      shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: v?.doctor_id ?? null,
+    },
+    p_lines: barisUntukPosting(rows),
+  });
+  if (posted.error || !posted.invoiceNo) {
+    redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(posted.error))}`);
   }
-
-  // Stok obat dipotong di sini, bukan saat resep ditulis: dokter bisa mengubah
-  // resep sampai detik terakhir, dan barang baru benar-benar keluar saat ditebus.
-  const { hppPerBaris, totalHpp } = await potongStokObat(supabase, v?.branch_id ?? null, rows, invoiceNo);
-
-  const { error: itErr } = await supabase
-    .from("invoice_items")
-    .insert(rows.map((l) => ({
-      invoice_id: inv!.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
-      diskon_persen: l.diskon_persen ?? 0,
-      item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
-    })));
-  if (itErr) {
-    redirect(`${back}?error=${encodeURIComponent(itErr.message)}`);
-  }
+  const invoiceNo = posted.invoiceNo;
 
   if (visitStatus === "Selesai") {
     const checkedOut = await supabase.rpc("set_visit_service_state", { p_visit_id: visitId, p_action: "checkout" });
@@ -413,35 +447,6 @@ export async function bayarVisit(formData: FormData) {
   } else {
     const visitUpdated = await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
     if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent(visitUpdated.error.message)}`);
-  }
-
-  // Accounting (akrual): pendapatan jasa klinik diakui saat invoice; PPN dipisah.
-  await postJournal(supabase, {
-    tanggal: todayIso(),
-    deskripsi: `Pendapatan jasa klinik ${invoiceNo}`,
-    source: "klinik",
-    sourceRef: invoiceNo,
-    branchId: v?.branch_id ?? null,
-    lines: invoiceJournalLines(
-      { subtotal, discount, total, tax, dp_amount: dpAmount, paid_status: paidStatus },
-      await kodeAkunBayar(supabase, metode, v?.branch_id ?? null),
-    ),
-  });
-
-  // Beban pokok obat yang ditebus. Tanpa ini seluruh tagihan klinik terlihat
-  // sebagai laba murni — obatnya seolah didapat gratis.
-  if (totalHpp > 0) {
-    await postJournal(supabase, {
-      tanggal: todayIso(),
-      deskripsi: `HPP obat klinik ${invoiceNo}`,
-      source: "klinik-hpp",
-      sourceRef: invoiceNo,
-      branchId: v?.branch_id ?? null,
-      lines: [
-        { code: "5101", debit: totalHpp, credit: 0 },
-        { code: "1301", debit: 0, credit: totalHpp },
-      ],
-    });
   }
 
   // Poin: dipakai & didapat dicatat saat tagihan benar-benar LUNAS. Kalau dicatat
@@ -487,6 +492,8 @@ export async function bayarRombongan(formData: FormData) {
   const visitId = String(formData.get("visitId") ?? "");
   if (!visitId) redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
   const back = `/klinik/pembayaran/${visitId}`;
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
   const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
   const poinDiminta = Number(formData.get("poinDigunakan")) || 0;
@@ -515,7 +522,6 @@ export async function bayarRombongan(formData: FormData) {
   // menangani hewan itu ambles padahal bukan porsinya.
   type Siap = {
     b: typeof belum[number];
-    branchId: string | null;
     salespersonId: string | null;
     rows: Awaited<ReturnType<typeof barisTagihanVisit>>;
     subtotal: number;
@@ -555,7 +561,7 @@ export async function bayarRombongan(formData: FormData) {
     const potonganPet = await hitungPotonganKlinik(supabase, {
       branchId: v.branch_id ?? null, customerId: v.customer_id ?? null, rows,
     });
-    siap.push({ b, branchId: v.branch_id ?? null, salespersonId: v.doctor_id ?? null, rows, subtotal, potonganNonVoucher: potonganPet.total });
+    siap.push({ b, salespersonId: v.doctor_id ?? null, rows, subtotal, potonganNonVoucher: potonganPet.total });
   }
 
   // Voucher dihitung dari GABUNGAN tagihan seluruh hewan (setelah promo & golongan),
@@ -596,56 +602,28 @@ export async function bayarRombongan(formData: FormData) {
   let poinTerpakaiRupiah = 0;
   let totalDibayarRombongan = 0;
   for (const [idx, s] of siap.entries()) {
-    const { b, rows, subtotal, branchId, salespersonId } = s;
+    const { b, rows, subtotal, salespersonId } = s;
     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
     const dpp = Math.max(0, subtotal - discount);
     const { tax, total } = tambahPpn(dpp, pajakSettings);
 
-    const invoiceNo = await nextInvoiceNo(supabase);
-    const { data: inv, error: invErr } = await supabase
-      .from("invoices")
-      .insert({
-        visit_id: b.visitId, invoice_no: invoiceNo, subtotal, discount, tax, total,
-        dp_amount: 0, dp_date: null, paid_status: "Lunas", metode_bayar: metode,
-        paid_at: new Date().toISOString(), shift_id: klinikShift.id,
-        voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null,
-        salesperson_id: salespersonId,
-      })
-      .select("id").single();
-    if (invErr || !inv) {
-      // Hewan yang gagal tidak menggagalkan yang lain — sisanya tetap terbayar,
-      // yang ini dilaporkan supaya kasir menyelesaikannya satu per satu.
-      dilewati.push(b.hewan);
+    const posted = await postInvoiceAtomik(supabase, {
+      p_visit_id: b.visitId,
+      p_request_key: `${requestKey}:${b.visitId}`,
+      p_invoice: {
+        tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: 0, dp_date: null,
+        paid_status: "Lunas", metode_bayar: metode, shift_id: klinikShift.id,
+        voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null, salesperson_id: salespersonId,
+      },
+      p_lines: barisUntukPosting(rows),
+    });
+    if (posted.error || !posted.invoiceNo) {
+      dilewati.push(`${b.hewan}: ${parseClinicPostingError(posted.error)}`);
       continue;
     }
-
-    const { hppPerBaris, totalHpp } = await potongStokObat(supabase, branchId, rows, invoiceNo);
-    await supabase.from("invoice_items").insert(rows.map((l) => ({
-      invoice_id: inv.id, deskripsi: l.deskripsi, qty: l.qty, harga: l.harga, jenis: l.jenis,
-      diskon_persen: l.diskon_persen ?? 0,
-      item_id: l.item_id, hpp: l.item_id ? (hppPerBaris.get(l.item_id) ?? 0) : null,
-    })));
-
     const checkedOut = await supabase.rpc("set_visit_service_state", { p_visit_id: b.visitId, p_action: "checkout" });
     if (checkedOut.error) redirect(`${back}?error=${encodeURIComponent(checkedOut.error.message)}`);
 
-    // Rekening kas mengikuti peta metode bayar CABANG kunjungan itu — bukan bawaan
-    // global; uang tunai cabang A tidak boleh mendarat di rekening cabang B.
-    await postJournal(supabase, {
-      tanggal: todayIso(), deskripsi: `Pendapatan jasa klinik ${invoiceNo}`, source: "klinik",
-      sourceRef: invoiceNo, branchId: branchId,
-      lines: invoiceJournalLines(
-        { subtotal, discount, total, tax, dp_amount: 0, paid_status: "Lunas" },
-        await kodeAkunBayar(supabase, metode, branchId),
-      ),
-    });
-    if (totalHpp > 0) {
-      await postJournal(supabase, {
-        tanggal: todayIso(), deskripsi: `HPP obat klinik ${invoiceNo}`, source: "klinik-hpp",
-        sourceRef: invoiceNo, branchId: branchId,
-        lines: [{ code: "5101", debit: totalHpp, credit: 0 }, { code: "1301", debit: 0, credit: totalHpp }],
-      });
-    }
     // Poin yang benar-benar terpakai dihitung dari nota yang BERHASIL terbit —
     // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan.
     poinTerpakaiRupiah += poinPerPet[idx];
@@ -686,9 +664,15 @@ export async function voidAndReissue(formData: FormData) {
 
   const { data: inv } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, shift_id, salesperson_id")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, shift_id, salesperson_id, request_key")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!inv) redirect(`${back}?error=${encodeURIComponent("Invoice aktif tidak ditemukan")}`);
+  if (inv.request_key) redirect(`${back}?error=${encodeURIComponent("Void & Reissue invoice yang sudah diposting menunggu pembalikan stok dan jurnal atomik. Minta keuangan meninjau transaksi ini.")}`);
+  const { data: racikanItems } = await supabase
+    .from("invoice_items").select("id").eq("invoice_id", inv.id).not("compound_recipe_id", "is", null).limit(1);
+  if ((racikanItems ?? []).length > 0) {
+    redirect(`${back}?error=${encodeURIComponent("Void & Reissue invoice racikan menunggu proses pembalikan HPP historis. Minta keuangan meninjau transaksi ini.")}`);
+  }
   // Boleh void: invoice lunas, ATAU invoice yang sudah menerima pelunasan piutang
   // (edit langsung diblokir untuk keduanya — jurnalnya harus di-reverse lewat sini).
   const { data: invPays } = await supabase

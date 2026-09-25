@@ -19,6 +19,7 @@ type AnyClient = any;
 
 export type BarisTagihan = {
   deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null;
+  satuan: string | null; prescription_item_id: string; recipe_id: string | null;
   /** Diskon per baris dalam persen (0–100). Meeting 14 Agustus. */
   diskon_persen?: number;
 };
@@ -59,10 +60,10 @@ export async function barisTagihanVisit(
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const { data: resep } = mr
     ? await supabase.from("prescription_items")
-        .select("nama_obat, qty, harga, jenis, item_id").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null }[] };
+        .select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[] };
 
-  const rows = ((resep ?? []) as { nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null }[])
+  const rows = ((resep ?? []) as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[])
     .map((r) => ({
       deskripsi: String(r.nama_obat ?? "").trim(),
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
@@ -72,9 +73,15 @@ export async function barisTagihanVisit(
       // promo tidak punya pegangan tindakan mana yang sedang didiskon. Stok tetap
       // aman karena pemotongan stok menyaring lewat kolom `jenis`.
       item_id: r.item_id ?? null,
+      satuan: r.satuan ?? null,
+      prescription_item_id: r.id,
+      recipe_id: r.compound_recipe_id ?? null,
     })).filter((l) => l.deskripsi);
 
-  return rows.length ? rows : [{ deskripsi: `Jasa Konsultasi ${poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null }];
+  return rows.length ? rows : [{
+    deskripsi: `Jasa Konsultasi ${poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null,
+    satuan: null, prescription_item_id: "", recipe_id: null,
+  }];
 }
 
 export type Perkiraan = {
