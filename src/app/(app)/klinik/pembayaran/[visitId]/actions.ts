@@ -298,10 +298,13 @@ export async function bayarVisit(formData: FormData) {
   // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
   const { data: existing } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
 
   if (existing) {
+    if (existing.request_key) {
+      redirect(`${back}?error=${encodeURIComponent("Invoice yang sudah diposting belum dapat diedit. Minta keuangan meninjau perubahan sampai pembalikan stok dan jurnal atomik tersedia.")}`);
+    }
     // §7: invoice Lunas tidak boleh diedit langsung — wajib Void & Reissue.
     if (existing.paid_status === "Lunas") {
       redirect(`${back}?error=${encodeURIComponent("Invoice lunas tidak boleh diedit — gunakan Void & Terbitkan Ulang")}`);
@@ -661,9 +664,10 @@ export async function voidAndReissue(formData: FormData) {
 
   const { data: inv } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, shift_id, salesperson_id")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, shift_id, salesperson_id, request_key")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!inv) redirect(`${back}?error=${encodeURIComponent("Invoice aktif tidak ditemukan")}`);
+  if (inv.request_key) redirect(`${back}?error=${encodeURIComponent("Void & Reissue invoice yang sudah diposting menunggu pembalikan stok dan jurnal atomik. Minta keuangan meninjau transaksi ini.")}`);
   const { data: racikanItems } = await supabase
     .from("invoice_items").select("id").eq("invoice_id", inv.id).not("compound_recipe_id", "is", null).limit(1);
   if ((racikanItems ?? []).length > 0) {

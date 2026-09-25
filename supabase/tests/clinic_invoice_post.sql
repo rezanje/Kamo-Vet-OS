@@ -159,6 +159,30 @@ begin
   inv_id := public.clinic_post_invoice('d6000000-0000-4000-8000-000000000001', 'invoice-test-valid', valid_invoice, valid_lines);
   retry_id := public.clinic_post_invoice('d6000000-0000-4000-8000-000000000001', 'invoice-test-valid', valid_invoice, valid_lines);
   if inv_id <> retry_id then raise exception 'idempotent retry returned a different invoice'; end if;
+  if (select request_key from public.invoices where id = inv_id) <> 'invoice-test-valid' then
+    raise exception 'posted invoice did not seal its request key';
+  end if;
+  failed := false;
+  begin
+    update public.invoices set total = 1 where id = inv_id;
+  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  if not failed then raise exception 'posted invoice amount can be edited outside atomic lifecycle'; end if;
+  failed := false;
+  begin
+    update public.invoices set voided_at = now() where id = inv_id;
+  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  if not failed then raise exception 'posted invoice can be voided without atomic reversal'; end if;
+  failed := false;
+  begin
+    update public.invoice_items set qty = 10 where invoice_id = inv_id;
+  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  if not failed then raise exception 'posted invoice line can be edited without stock and HPP reversal'; end if;
+  failed := false;
+  begin
+    insert into public.invoice_items(invoice_id, deskripsi, qty, harga, jenis)
+    values(inv_id, 'Baris tambahan tanpa jurnal', 1, 1, 'obat');
+  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  if not failed then raise exception 'posted invoice accepts an extra unjournaled line'; end if;
   if (select count(*) from public.invoice_items where invoice_id = inv_id) <> 4 then raise exception 'mixed invoice lines were not saved'; end if;
   if (select hpp from public.invoice_items where invoice_id = inv_id and deskripsi = 'Obat Unit') <> 50 then raise exception 'medicine HPP did not use selected-unit factor and FIFO layers; got %', (select hpp from public.invoice_items where invoice_id = inv_id and deskripsi = 'Obat Unit'); end if;
   if (select hpp from public.invoice_items where invoice_id = inv_id and compound_recipe_id = recipe_b) <> 16 then raise exception 'compound HPP was not attached by recipe ID'; end if;
