@@ -2,8 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
-import { sisaFakturable } from "@/lib/faktur-beli";
-import { qtyDiterima } from "@/lib/penerimaan";
+import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { NoDok } from "@/components/NoDok";
 import { bayarFaktur } from "../../pembelian/faktur/actions";
@@ -20,7 +19,7 @@ type FakturRow = {
 
 type UangMukaSiap = { id: string; no_um: string; sisa: number };
 
-type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: string; nilai: number };
+type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: string; nilai: number; warning: string | null };
 
 export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const { success, error } = await searchParams;
@@ -36,7 +35,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
       .order("jatuh_tempo"),
     supabase
       .from("purchase_orders")
-      .select("id, no_po, tanggal, total, suppliers(nama), purchase_order_items(item_id, qty, qty_terima, harga_beli)")
+      .select("id, no_po, tanggal, total, suppliers(nama), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, faktor)")
       .eq("status", "Diterima"),
     supabase.from("purchase_returns").select("po_id, total"),
   ]);
@@ -88,35 +87,47 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   ) as Record<AgingBucket, number>;
 
   // PO Diterima yang belum difakturkan penuh (saldo 2102 berjalan, nilai ~ sisa qty x harga PO)
-  const invoicedByPo: Record<string, Record<string, number>> = {};
+  const invoicedByPo = new Map<string, { po_item_id: string | null; item_id: string | null; qty: number; faktor: number | null }[]>();
+  let invoiceLineReadFailed = false;
   {
-    const { data: invItems } = await supabase
-      .from("purchase_invoices").select("po_id, purchase_invoice_items(item_id, qty)");
-    for (const d of (invItems ?? []) as unknown as { po_id: string; purchase_invoice_items: { item_id: string | null; qty: number }[] | null }[]) {
-      const m = (invoicedByPo[d.po_id] ??= {});
-      for (const r of d.purchase_invoice_items ?? [])
-        if (r.item_id) m[r.item_id] = (m[r.item_id] ?? 0) + Number(r.qty);
+    const { data: invItems, error: invoiceLineReadError } = await supabase
+      .from("purchase_invoices").select("po_id, purchase_invoice_items(po_item_id, item_id, qty, faktor)");
+    invoiceLineReadFailed = !!invoiceLineReadError;
+    for (const d of (invItems ?? []) as unknown as {
+      po_id: string | null;
+      purchase_invoice_items: { po_item_id: string | null; item_id: string | null; qty: number; faktor: number | null }[] | null;
+    }[]) {
+      if (!d.po_id) continue;
+      const lines = invoicedByPo.get(d.po_id) ?? [];
+      lines.push(...(d.purchase_invoice_items ?? []));
+      invoicedByPo.set(d.po_id, lines);
     }
   }
   const belumFaktur: PoBelum[] = ((pos ?? []) as unknown as {
     id: string; no_po: string | null; tanggal: string; total: number; suppliers: { nama: string } | null;
-    purchase_order_items: { item_id: string | null; qty: number; qty_terima: number | null; harga_beli: number }[] | null;
+    purchase_order_items: { id: string; item_id: string | null; qty: number; qty_terima: number | null; harga_beli: number; faktor: number | null }[] | null;
   }[])
     .map((p) => {
-      const qtyPO: Record<string, number> = {};
-      const harga: Record<string, number> = {};
-      // saldo GRNI 2102 = barang yang diterima & belum difakturkan
-      for (const r of p.purchase_order_items ?? []) {
-        if (!r.item_id) continue;
-        qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + qtyDiterima(r);
-        harga[r.item_id] = Number(r.harga_beli) || 0;
-      }
-      const sisa = sisaFakturable(qtyPO, invoicedByPo[p.id] ?? {});
-      const nilai = Object.entries(sisa).reduce((a, [itemId, q]) => a + q * (harga[itemId] ?? 0), 0);
-      return { id: p.id, no_po: p.no_po, supplier: p.suppliers?.nama ?? "—", tanggal: p.tanggal, nilai };
+      const poRows = (p.purchase_order_items ?? []).map((r) => ({
+        id: r.id, item_id: r.item_id, diterima: Number(r.qty_terima ?? r.qty), faktor: Number(r.faktor),
+      }));
+      const remaining = sisaFakturablePerBaris(poRows, invoicedByPo.get(p.id) ?? []);
+      const warning = invoiceLineReadFailed
+        ? "Faktur terdahulu tidak dapat dimuat; nilai sisa belum bisa dihitung."
+        : remaining.invalidLinkedLines || remaining.invalidPoItemIds.length > 0
+        ? "Tautan baris atau faktor satuan tidak valid."
+        : remaining.legacyAmbiguousItemIds.length > 0
+          ? "Faktur lama tidak dapat dipetakan ke baris PO karena SKU muncul lebih dari sekali."
+          : null;
+      const nilai = warning ? 0 : (p.purchase_order_items ?? []).reduce((sum, r) => {
+        if (!r.item_id) return sum;
+        return sum + (remaining.sisaPerBaris[r.id] ?? 0) * (Number(r.harga_beli) || 0);
+      }, 0);
+      return { id: p.id, no_po: p.no_po, supplier: p.suppliers?.nama ?? "—", tanggal: p.tanggal, nilai, warning };
     })
-    .filter((p) => p.nilai > 0);
+    .filter((p) => p.nilai > 0 || !!p.warning);
   const totalBelumFaktur = belumFaktur.reduce((a, p) => a + p.nilai, 0);
+  const poPerluTinjau = belumFaktur.filter((p) => p.warning).length;
 
   return (
     <>
@@ -254,7 +265,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         <SecHeader
           num="03"
           title="BARANG DITERIMA BELUM DIFAKTURKAN"
-          desc={`Saldo akun 2102 berjalan — PO Diterima yang belum dibuatkan faktur pemasok. Total ± ${rp(totalBelumFaktur)}.`}
+          desc={`Saldo akun 2102 berjalan — PO Diterima yang belum dibuatkan faktur pemasok. Total terhitung ± ${rp(totalBelumFaktur)}.${poPerluTinjau ? ` ${poPerluTinjau} PO lama perlu ditinjau karena satuan/baris faktur tidak dapat dipetakan.` : ""}`}
           action={
             <Link href="/pembelian/faktur/baru" className="btn-def" style={{ textDecoration: "none", fontSize: 10.5 }}>
               + Buat faktur
@@ -276,7 +287,9 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                   </td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(p.tanggal)}</td>
                   <td style={{ fontSize: 11.5 }}>{p.supplier}</td>
-                  <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(p.nilai)}</td>
+                  <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: p.warning ? "#92400e" : undefined }}>
+                    {p.warning ? "Perlu tinjauan" : rp(p.nilai)}
+                  </td>
                 </tr>
               ))}
               {belumFaktur.length === 0 && (

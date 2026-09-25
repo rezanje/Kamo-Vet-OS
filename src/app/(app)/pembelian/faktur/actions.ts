@@ -5,27 +5,25 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
-import { buildFakturLines, sisaFakturable } from "@/lib/faktur-beli";
+import { rencanakanRepriceLapisan, sisaFakturablePerBaris, type ItemFakturPoTersimpan, type LapisanStokFaktur, type PoItemUntukFaktur } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
-import { qtyDiterima } from "@/lib/penerimaan";
 import { totalRetur } from "@/lib/retur";
 import { jurnalBayarHutang, pakaiUangMuka } from "@/lib/uang-muka";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { cekPersetujuan } from "@/lib/persetujuan-server";
+import { toBaseCost, toBaseQty } from "@/lib/satuan";
 
-type ItemInput = { item_id: string; qty: number; harga: number };
+type ItemInput = { po_item_id: string; qty: number; harga: number };
+type Rel<T> = T | T[] | null;
+const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
 
-type Db = Awaited<ReturnType<typeof createClient>>;
-
-// Formatnya dibaca dari master penomoran; bawaannya FB.YYYY.MM.NNNNN.
-async function nextNoFaktur(supabase: Db) {
-  const { nomor } = await nomorBerikutnya(supabase, "FB", hariIniWIB(), {
-    table: "purchase_invoices", column: "no_faktur",
-  });
-  return nomor;
-}
+type PoLine = {
+  id: string; item_id: string | null; nama: string; qty: number; qty_terima: number | null;
+  harga_beli: number; satuan: string | null; faktor: number | null;
+  items: Rel<{ unit: string | null }>;
+};
 
 // Buat Faktur Pembelian dari PO Diterima. Harga/qty boleh beda dari PO (faktur pemasok).
 // Jurnal: Dr 2102 (nilai PO porsi difakturkan) / Cr 2101 (nilai faktur); selisih -> 1301.
@@ -39,127 +37,178 @@ export async function buatFaktur(formData: FormData) {
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
   let items: ItemInput[] = [];
-  try { items = JSON.parse(String(formData.get("items") ?? "[]")) as ItemInput[]; } catch { items = []; }
-  items = items.filter((it) => it.item_id && Number(it.qty) > 0);
+  try {
+    const parsed: unknown = JSON.parse(String(formData.get("items") ?? "[]"));
+    if (Array.isArray(parsed)) items = parsed as ItemInput[];
+  } catch { items = []; }
 
-  const fail = (msg: string) => redirect("/pembelian/faktur/baru?error=" + encodeURIComponent(msg));
+  const fail = (msg: string): never => redirect("/pembelian/faktur/baru?error=" + encodeURIComponent(msg));
 
   if (!po_id || items.length === 0) fail("Pilih PO dan minimal 1 barang.");
+  if (items.some((it) => !it || typeof it.po_item_id !== "string" || !it.po_item_id
+    || !Number.isFinite(Number(it.qty)) || Number(it.qty) < 0
+    || !Number.isFinite(Number(it.harga)) || Number(it.harga) < 0)) {
+    fail("Rincian faktur tidak valid. Muat ulang PO lalu periksa jumlah dan harga.");
+  }
+  items = items.filter((it) => Number(it.qty) > 0);
+  if (items.length === 0) fail("Isi qty faktur lebih dari 0 pada minimal 1 baris PO.");
+  if (new Set(items.map((it) => it.po_item_id)).size !== items.length) {
+    fail("Baris PO yang sama tercantum lebih dari sekali. Muat ulang faktur.");
+  }
 
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) fail(pesanPeriode);
 
-  const { data: po } = await supabase
+  const { data: po, error: poError } = await supabase
     .from("purchase_orders")
-    .select("id, no_po, status, supplier_id, branch_id, purchase_order_items(item_id, qty, qty_terima, harga_beli)")
+    .select("id, no_po, status, supplier_id, branch_id, to_warehouse_id, purchase_order_items(id, item_id, nama, qty, qty_terima, harga_beli, satuan, faktor, items(unit))")
     .eq("id", po_id).single();
-  if (!po) fail("PO tidak ditemukan.");
+  if (poError || !po) fail("PO tidak ditemukan atau tidak dapat dibaca.");
   if (po!.status !== "Diterima") fail("Hanya PO berstatus Diterima yang bisa difakturkan.");
 
-  // qty diterima (bukan qty pesanan) & harga PO per item
-  const qtyPO: Record<string, number> = {};
-  const hargaPO: Record<string, number> = {};
-  for (const r of po!.purchase_order_items ?? []) {
-    if (!r.item_id) continue;
-    qtyPO[r.item_id] = (qtyPO[r.item_id] ?? 0) + qtyDiterima(r);
-    hargaPO[r.item_id] = Number(r.harga_beli) || 0;
-  }
+  const poLines = (po!.purchase_order_items ?? []) as unknown as PoLine[];
+  const poLineById = new Map(poLines.map((line) => [line.id, line]));
+  const poMath: PoItemUntukFaktur[] = poLines.map((line) => ({
+    id: line.id,
+    item_id: line.item_id,
+    diterima: Number(line.qty_terima ?? line.qty),
+    faktor: Number(line.faktor),
+  }));
 
-  // akumulasi qty yang sudah difakturkan (multi-faktur per PO)
-  const { data: prev } = await supabase
-    .from("purchase_invoices").select("purchase_invoice_items(item_id, qty)").eq("po_id", po_id);
-  const sudah: Record<string, number> = {};
-  for (const d of prev ?? [])
-    for (const r of d.purchase_invoice_items ?? [])
-      if (r.item_id) sudah[r.item_id] = (sudah[r.item_id] ?? 0) + Number(r.qty);
-
-  const sisa = sisaFakturable(qtyPO, sudah);
-  for (const it of items) {
-    if ((sisa[it.item_id] ?? 0) < Number(it.qty))
-      fail(`Qty faktur melebihi sisa PO yang bisa difakturkan (sisa ${sisa[it.item_id] ?? 0}).`);
-  }
-
-  const rows = items.map((it) => ({ item_id: it.item_id, qty: Number(it.qty), harga: Number(it.harga) || 0 }));
-  const total = totalRetur(rows); // Σ qty × harga (fungsi generik)
-  const nilaiPOFakturkan = rows.reduce((a, r) => a + r.qty * (hargaPO[r.item_id] ?? 0), 0);
-  if (total <= 0) fail("Nilai faktur nol.");
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const no_faktur = await nextNoFaktur(supabase);
-
-  const { data: itemNames } = await supabase
-    .from("items").select("id, name").in("id", rows.map((r) => r.item_id));
-  const nameMap = new Map((itemNames ?? []).map((r) => [r.id, r.name]));
-
-  const { data: doc, error } = await supabase
+  // Baris faktur bertaut per PO item; faktur lama yang belum punya tautan
+  // dialokasikan hanya bila SKU muncul sekali di PO itu.
+  const { data: prev, error: prevError } = await supabase
     .from("purchase_invoices")
-    .insert({
-      no_faktur, no_faktur_pemasok, po_id, supplier_id: po!.supplier_id ?? null,
-      tanggal, jatuh_tempo, total, keterangan, created_by: user?.id ?? null,
-    })
-    .select("id").single();
-  if (error || !doc) fail("Gagal menyimpan faktur.");
+    .select("purchase_invoice_items(po_item_id, item_id, qty, faktor)")
+    .eq("po_id", po_id);
+  if (prevError) fail("Faktur sebelumnya tidak dapat diperiksa; coba lagi sebelum membuat faktur baru.");
+  const previousLines = ((prev ?? []) as unknown as { purchase_invoice_items: ItemFakturPoTersimpan[] | null }[])
+    .flatMap((invoice) => invoice.purchase_invoice_items ?? []);
+  const remaining = sisaFakturablePerBaris(poMath, previousLines);
+  if (remaining.invalidLinkedLines) fail("Ada faktur lama dengan tautan ke baris PO yang tidak valid. Minta keuangan meninjau PO ini.");
 
-  const { error: itemsErr } = await supabase.from("purchase_invoice_items").insert(
-    rows.map((r) => ({
-      invoice_id: doc!.id, item_id: r.item_id,
-      nama: (nameMap.get(r.item_id) ?? "").slice(0, 160) || "—",
-      qty: r.qty, harga: r.harga,
-    })),
-  );
-  if (itemsErr) {
-    console.error("faktur beli: gagal insert rincian", itemsErr);
-    await supabase.from("purchase_invoices").delete().eq("id", doc!.id);
-    fail("Gagal menyimpan rincian faktur.");
-  }
-
-  // Gudang PO dipakai menyaring lapisan yang boleh disesuaikan harganya.
-  const { data: whPO } = await supabase
-    .from("warehouses").select("id").eq("branch_id", po!.branch_id ?? "")
-    .eq("is_active", true).order("code").limit(1).maybeSingle();
-  const gudangPO = whPO?.id as string | undefined;
-
-  // Selisih harga faktur vs PO tidak cuma dijurnal ke 1301 — modal barangnya
-  // ikut disesuaikan. Kalau tidak, nilai persediaan di buku besar dan nilai stok
-  // riil pelan-pelan berpisah, dan HPP penjualan berikutnya memakai harga PO
-  // yang sudah tidak berlaku.
-  //
-  // Hanya lapisan yang MASIH ADA sisanya yang disesuaikan: barang yang telanjur
-  // terjual sebelum faktur datang sudah dibebankan dengan harga lama, dan
-  // mengubahnya berarti mengubah HPP transaksi yang sudah dibukukan.
-  for (const r of rows) {
-    const hargaPo = hargaPO[r.item_id] ?? 0;
-    if (hargaPo <= 0 || r.harga === hargaPo) continue;
-    // Gudangnya ikut disaring: tanpa itu, faktur PO cabang A bisa me-repricing
-    // lapisan cabang B yang kebetulan berharga sama.
-    let q = supabase
-      .from("stock_layers").select("id, qty_left")
-      .eq("item_id", r.item_id).eq("unit_cost", hargaPo).eq("source", "purchase")
-      .gt("qty_left", 0);
-    if (gudangPO) q = q.eq("warehouse_id", gudangPO);
-    const { data: layers } = await q.order("tanggal").order("created_at");
-    let sisaSesuaikan = r.qty;
-    for (const l of layers ?? []) {
-      if (sisaSesuaikan <= 0) break;
-      await supabase.from("stock_layers").update({ unit_cost: r.harga }).eq("id", l.id);
-      sisaSesuaikan -= Number(l.qty_left);
+  const seenItems = new Set<string>();
+  const rows = items.map((input) => {
+    const poLine = poLineById.get(input.po_item_id);
+    if (!poLine) return fail("Baris faktur bukan bagian dari PO ini.");
+    const itemId = poLine.item_id;
+    if (!itemId) return fail("Baris PO tidak terhubung ke master barang.");
+    if (seenItems.has(input.po_item_id)) fail("Baris PO yang sama tercantum lebih dari sekali.");
+    seenItems.add(input.po_item_id);
+    if (remaining.legacyAmbiguousItemIds.includes(itemId)) {
+      fail(`SKU ${poLine.nama} memiliki faktur lama yang tidak dapat dipetakan ke satuan PO. Minta keuangan meninjau faktur lama.`);
     }
+    if (remaining.invalidPoItemIds.includes(poLine.id)) fail(`Satuan atau faktor ${poLine.nama} tidak valid pada PO/faktur sebelumnya.`);
+    const maxQty = remaining.sisaPerBaris[poLine.id] ?? 0;
+    const qty = Number(input.qty);
+    if (qty > maxQty + 1e-9) fail(`Qty faktur ${poLine.nama} melebihi sisa baris PO (${maxQty}).`);
+    const faktor = Number(poLine.faktor);
+    if (!Number.isFinite(faktor) || faktor <= 0) fail(`Faktor satuan ${poLine.nama} tidak valid pada PO.`);
+    return {
+      po_item_id: poLine.id,
+      item_id: itemId,
+      nama: (poLine.nama ?? "").slice(0, 160) || "—",
+      qty,
+      harga: Number(input.harga),
+      satuan: poLine.satuan || one(poLine.items)?.unit || "unit",
+      faktor,
+      hargaPo: Number(poLine.harga_beli) || 0,
+    };
+  });
+  const total = totalRetur(rows); // Σ qty × harga (fungsi generik)
+  if (total <= 0) fail("Nilai faktur nol.");
+  const { ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
+  const rasioDpp = total > 0 ? (total - ppn) / total : 1;
+
+  const noPo = (po!.no_po as string | null) ?? po_id;
+  const warehouseId = po!.to_warehouse_id as string | null;
+
+  // Rencanakan perubahan layer sebelum invoice ditulis. Beberapa baris PO untuk
+  // SKU dan HPP dasar yang sama hanya aman digabung jika harga faktur per unit
+  // dasarnya juga sama; layer lama belum menyimpan ID baris PO.
+  const repriceRows = rows.filter((r) =>
+    Math.abs(toBaseCost(r.hargaPo, r.faktor) - toBaseCost(r.harga * rasioDpp, r.faktor)) >= 1e-9);
+  if (repriceRows.length > 0 && !warehouseId) fail("Gudang tujuan PO tidak ditemukan; harga stok tidak bisa disesuaikan dengan aman.");
+  const layersByItem = new Map<string, LapisanStokFaktur[]>();
+  for (const r of repriceRows) {
+    if (layersByItem.has(r.item_id)) continue;
+    const { data: layers, error: layerError } = await supabase
+      .from("stock_layers")
+      .select("id, warehouse_id, item_id, tanggal, qty_in, qty_left, unit_cost, source, source_ref, exp_date, batch_no")
+      .eq("warehouse_id", warehouseId!)
+      .eq("item_id", r.item_id)
+      .eq("source", "purchase")
+      .eq("source_ref", noPo)
+      .gt("qty_left", 0)
+      .order("tanggal")
+      .order("created_at");
+    if (layerError) fail("Lapisan stok PO tidak dapat diperiksa. Tidak ada faktur yang disimpan.");
+    layersByItem.set(r.item_id, (layers ?? []) as unknown as LapisanStokFaktur[]);
   }
 
-  // Mode PKP: total faktur dianggap inklusif PPN → pisahkan PPN Masukan (Dr 1105).
-  const { ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Faktur pembelian ${no_faktur} (${po!.no_po ?? po_id})`,
-    source: "purchase-invoice",
-    sourceRef: no_faktur,
-    branchId: po!.branch_id ?? null,
-    lines: buildFakturLines(nilaiPOFakturkan, total, ppn),
+  const groupsByItemAndCost = new Map<string, typeof repriceRows>();
+  for (const r of repriceRows) {
+    const oldCost = toBaseCost(r.hargaPo, r.faktor);
+    const key = `${r.item_id}:${oldCost}`;
+    const group = groupsByItemAndCost.get(key) ?? [];
+    group.push(r);
+    groupsByItemAndCost.set(key, group);
+  }
+  const layerUpdates: ReturnType<typeof rencanakanRepriceLapisan>["updates"] = [];
+  const layerInserts: ReturnType<typeof rencanakanRepriceLapisan>["inserts"] = [];
+  for (const group of groupsByItemAndCost.values()) {
+    const first = group[0];
+    const oldCost = toBaseCost(first.hargaPo, first.faktor);
+    const matchingLayers = (layersByItem.get(first.item_id) ?? [])
+      .filter((layer) => Math.abs(Number(layer.unit_cost) - oldCost) < 1e-6);
+    const newCosts: number[] = [];
+    for (const row of group) {
+      // PPN Masukan yang dapat dikreditkan bukan bagian dari harga pokok.
+      const cost = toBaseCost(row.harga * rasioDpp, row.faktor);
+      if (!newCosts.some((existing) => Math.abs(existing - cost) < 1e-9)) newCosts.push(cost);
+    }
+    if (newCosts.length > 1 && matchingLayers.some((layer) => Number(layer.qty_left) > 0)) {
+      fail(`Harga ${first.nama} berbeda untuk baris PO dengan HPP dasar sama, sementara layer stoknya belum punya tautan baris PO. Minta keuangan meninjau faktur ini.`);
+    }
+    if (newCosts.length !== 1) continue;
+    const qtyBase = group.reduce((sum, row) => sum + toBaseQty(row.qty, row.faktor), 0);
+    const plan = rencanakanRepriceLapisan(matchingLayers, qtyBase, newCosts[0]);
+    layerUpdates.push(...plan.updates);
+    layerInserts.push(...plan.inserts);
+  }
+
+  const { prefix, digit } = await nomorBerikutnya(supabase, "FB", tanggal, {
+    table: "purchase_invoices", column: "no_faktur",
   });
+  const { data: result, error: createError } = await supabase.rpc("create_purchase_invoice_from_po", {
+    p_po_id: po_id,
+    p_no_faktur_prefix: prefix,
+    p_no_faktur_digits: digit,
+    p_no_faktur_pemasok: no_faktur_pemasok,
+    p_tanggal: tanggal,
+    p_jatuh_tempo: jatuh_tempo,
+    p_keterangan: keterangan,
+    p_items: rows.map((r) => ({
+      po_item_id: r.po_item_id,
+      qty: r.qty,
+      harga: r.harga,
+      expected_harga_po: r.hargaPo,
+      expected_faktor: r.faktor,
+    })),
+    p_layer_updates: layerUpdates,
+    p_layer_inserts: layerInserts,
+    p_ppn: ppn,
+  });
+  if (createError) {
+    console.error("faktur beli: transaksi atomik gagal", createError);
+    fail("Faktur tidak tersimpan. Periksa sisa PO dan lapisan stok, lalu muat ulang sebelum mencoba lagi.");
+  }
+  const created = Array.isArray(result) ? result[0] : result;
+  if (!created?.no_faktur) fail("Faktur tidak tersimpan. Coba muat ulang halaman.");
 
   revalidatePath("/pembelian/faktur");
   revalidatePath("/keuangan/hutang");
-  redirect("/pembelian/faktur?success=" + encodeURIComponent(`Faktur ${no_faktur} tersimpan.`));
+  redirect("/pembelian/faktur?success=" + encodeURIComponent(`Faktur ${created.no_faktur} tersimpan.`));
 }
 
 // Bayar hutang per faktur. Jurnal: Dr 2101 / Cr rekening kas/bank yang dipilih.
