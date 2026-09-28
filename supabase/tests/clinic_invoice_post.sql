@@ -28,9 +28,11 @@ end;
 $$;
 grant execute on function public.test_clinic_invoice_state() to authenticated;
 
-insert into auth.users (id, raw_user_meta_data)
-values ('d1000000-0000-4000-8000-000000000001', '{"full_name":"Dokter Test"}');
+insert into auth.users (id, raw_user_meta_data) values
+  ('d1000000-0000-4000-8000-000000000001', '{"full_name":"Dokter Test"}'),
+  ('d1000000-0000-4000-8000-000000000002', '{"full_name":"Pemilik Test"}');
 update public.profiles set role = 'DOCTOR' where id = 'd1000000-0000-4000-8000-000000000001';
+update public.profiles set role = 'OWNER' where id = 'd1000000-0000-4000-8000-000000000002';
 insert into public.branches (id, code, name, type)
 values ('d2000000-0000-4000-8000-000000000001', 'INVTEST', 'Klinik Invoice Test', 'KLINIK');
 insert into public.user_branches (user_id, branch_id)
@@ -140,11 +142,14 @@ declare
     'salesperson_id', null
   );
 begin
+  -- Exceptional custom recipes are owner-only; invoice posting below remains a doctor flow.
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000002', true);
   -- Same displayed name, distinct recipe IDs and costs.
   recipe_a := public.clinic_issue_compound('d7000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000001',
     '{"recipe_name":"Racikan Kembar","dosage_form":"puyer","ingredients":[{"item_id":"d8000000-0000-4000-8000-000000000002","quantity":1,"unit":"gram","unit_price":80}]}', 'invoice-test-recipe-a');
   recipe_b := public.clinic_issue_compound('d7000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000001',
     '{"recipe_name":"Racikan Kembar","dosage_form":"puyer","ingredients":[{"item_id":"d8000000-0000-4000-8000-000000000003","quantity":2,"unit":"gram","unit_price":80}]}', 'invoice-test-recipe-b');
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
   if recipe_a = recipe_b then raise exception 'duplicate names collapsed to one recipe'; end if;
   select id into prescription_b from public.prescription_items where compound_recipe_id = recipe_b;
   if prescription_b is null then raise exception 'compound was not linked to its prescription line'; end if;
@@ -154,6 +159,16 @@ begin
     jsonb_build_object('description','Baris bebas','qty',1,'price',50,'kind','obat','item_id',null,'unit',null,'prescription_item_id',null,'recipe_id',null,'discount_percent',0),
     jsonb_build_object('description','Racikan Kembar','qty',1,'price',80,'kind','obat','item_id',null,'unit','racikan','prescription_item_id',prescription_b,'recipe_id',recipe_b,'discount_percent',0)
   );
+
+  -- A manual stock line can be the first line in a fresh invoice request.
+  state_before := public.test_clinic_invoice_state();
+  failed := false;
+  begin
+    perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000002', 'invoice-test-short',
+      small_invoice,
+      jsonb_build_array(jsonb_build_object('description','Obat Stok Kurang','qty',2,'price',50,'kind','obat','item_id','d8000000-0000-4000-8000-000000000005','discount_percent',0)));
+  exception when sqlstate 'P0001' then failed := position('STOCK_SHORT:' in sqlerrm) = 1; end;
+  if not failed or public.test_clinic_invoice_state() <> state_before then raise exception 'stock shortage did not roll back completely'; end if;
 
   state_before := public.test_clinic_invoice_state();
   inv_id := public.clinic_post_invoice('d6000000-0000-4000-8000-000000000001', 'invoice-test-valid', valid_invoice, valid_lines);
@@ -217,16 +232,7 @@ begin
   exception when sqlstate 'P0001' then failed := position('RECIPE_ID_MISSING:' in sqlerrm) = 1; end;
   if not failed then raise exception 'compound with an ambiguous or missing recipe link was billed without HPP'; end if;
 
-  -- Shortage and zero cost must fail before any partial invoice, layer, move or journal is retained.
-  state_before := public.test_clinic_invoice_state();
-  failed := false;
-  begin
-    perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000002', 'invoice-test-short',
-      small_invoice,
-      jsonb_build_array(jsonb_build_object('description','Obat Stok Kurang','qty',2,'price',50,'kind','obat','item_id','d8000000-0000-4000-8000-000000000005','discount_percent',0)));
-  exception when sqlstate 'P0001' then failed := position('STOCK_SHORT:' in sqlerrm) = 1; end;
-  if not failed or public.test_clinic_invoice_state() <> state_before then raise exception 'stock shortage did not roll back completely'; end if;
-
+  -- Zero cost must fail before any partial invoice, layer, move or journal is retained.
   failed := false;
   begin
     perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000003', 'invoice-test-zero',
@@ -237,25 +243,33 @@ begin
 
   -- Missing accounts also roll back after stock allocation attempts.
   state_before := public.test_clinic_invoice_state();
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000002', true);
   update public.coa_accounts set is_active = false where code = '5101';
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
   failed := false;
   begin
     perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000004', 'invoice-test-no-account',
       small_invoice,
       jsonb_build_array(jsonb_build_object('description','Obat Unit','qty',1,'price',100,'kind','obat','item_id','d8000000-0000-4000-8000-000000000001','unit','pcs','discount_percent',0)));
   exception when sqlstate 'P0001' then failed := position('ACCOUNT_INVALID:' in sqlerrm) = 1; end;
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000002', true);
   update public.coa_accounts set is_active = true where code = '5101';
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
   if not failed or public.test_clinic_invoice_state() <> state_before then raise exception 'missing HPP account did not roll back invoice posting'; end if;
 
   state_before := public.test_clinic_invoice_state();
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000002', true);
   update public.warehouses set is_active = false where id = 'd3000000-0000-4000-8000-000000000001';
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
   failed := false;
   begin
     perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000002', 'invoice-test-no-warehouse',
       small_invoice,
       jsonb_build_array(jsonb_build_object('description','Obat Unit','qty',1,'price',100,'kind','obat','item_id','d8000000-0000-4000-8000-000000000001','unit','pcs','discount_percent',0)));
   exception when sqlstate 'P0001' then failed := position('WAREHOUSE_MISSING:' in sqlerrm) = 1; end;
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000002', true);
   update public.warehouses set is_active = true where id = 'd3000000-0000-4000-8000-000000000001';
+  perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
   if not failed or public.test_clinic_invoice_state() <> state_before then raise exception 'missing warehouse did not roll back invoice posting'; end if;
 end;
 $$;

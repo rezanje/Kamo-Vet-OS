@@ -518,8 +518,10 @@ begin
           raise exception using errcode = 'P0001', message = 'UNIT_INVALID: satuan barang tidak ditemukan';
         end if;
       end if;
-      if v_prescription_item_id is not null and v_pi.faktor is distinct from v_factor then
-        raise exception using errcode = 'P0001', message = 'UNIT_INVALID: faktor satuan resep berbeda dari master';
+      if v_prescription_item_id is not null then
+        if v_pi.faktor is distinct from v_factor then
+          raise exception using errcode = 'P0001', message = 'UNIT_INVALID: faktor satuan resep berbeda dari master';
+        end if;
       end if;
       v_base_qty := v_qty * v_factor;
       if v_warehouse_id is null then

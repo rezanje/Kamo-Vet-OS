@@ -66,11 +66,10 @@ $$;
 grant execute on function public.test_compound_issues(uuid) to authenticated;
 
 insert into auth.users (id, raw_user_meta_data) values
-  ('10000000-0000-4000-8000-000000000001', '{"full_name":"Dokter Cabang A"}'),
+  ('10000000-0000-4000-8000-000000000001', '{"full_name":"Pemilik Cabang A"}'),
   ('10000000-0000-4000-8000-000000000002', '{"full_name":"Dokter Cabang B"}');
-update profiles set role = 'DOCTOR' where id in (
-  '10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002'
-);
+update profiles set role = 'OWNER' where id = '10000000-0000-4000-8000-000000000001';
+update profiles set role = 'DOCTOR' where id = '10000000-0000-4000-8000-000000000002';
 
 insert into branches (id, code, name, type) values
   ('20000000-0000-4000-8000-000000000001', 'TEST-A', 'Klinik Test A', 'KLINIK'),
@@ -216,21 +215,21 @@ begin
   if not failed then raise exception 'mismatched visit identity was not rejected'; end if;
   if public.test_compound_state() <> before_state then raise exception 'mismatched visit left partial state'; end if;
 
-  -- A doctor assigned to branch B cannot issue a recipe for branch A.
+  -- A doctor cannot bypass the official catalog through the custom RPC.
   perform set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
   before_state := public.test_compound_state();
   failed := false;
   begin
     perform public.clinic_issue_compound(
-      '70000000-0000-4000-8000-000000000001', '60000000-0000-4000-8000-000000000001',
-      '{"recipe_name":"Cabang Salah","dosage_form":"puyer","ingredients":[{"item_id":"80000000-0000-4000-8000-000000000001","quantity":1,"unit":"gram","unit_price":1}]}'::jsonb,
-      'issue-wrong-branch-1'
+      '70000000-0000-4000-8000-000000000002', '60000000-0000-4000-8000-000000000002',
+      '{"recipe_name":"Racikan Manual Dokter","dosage_form":"puyer","ingredients":[{"item_id":"80000000-0000-4000-8000-000000000002","quantity":1,"unit":"ml","unit_price":1}]}'::jsonb,
+      'issue-doctor-custom-blocked-1'
     );
   exception when sqlstate 'P0001' then
-    failed := position('ACCESS_DENIED:' in sqlerrm) = 1;
+    failed := position('ACCESS_DENIED: racikan khusus pasien hanya untuk pemilik/admin' in sqlerrm) = 1;
   end;
-  if not failed then raise exception 'cross-branch issue was not rejected'; end if;
-  if public.test_compound_state() <> before_state then raise exception 'cross-branch failure left partial state'; end if;
+  if not failed then raise exception 'doctor bypassed catalog through the custom RPC'; end if;
+  if public.test_compound_state() <> before_state then raise exception 'blocked doctor issue left partial state'; end if;
 
   perform set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
   before_state := public.test_compound_state();
