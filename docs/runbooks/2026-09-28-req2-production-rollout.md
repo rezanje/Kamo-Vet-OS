@@ -1,13 +1,13 @@
 # Rilis katalog racikan resmi (REQ-2)
 
-Status 28 September 2026: **belum live**. PR #9 bergantung pada PR #6; keduanya draft. Jangan merge hanya karena build Vercel hijau: halaman akan memanggil RPC yang belum terbukti tersedia di database produksi.
+Status 29 September 2026: **belum siap deploy**. PR #9 bergantung pada PR #6; keduanya tetap draft. Uji lokal sudah menemukan dan memperbaiki bug invoice manual; bukti lokal tidak membuktikan objek database produksi siap.
 
 ## Gate sebelum migrasi
 
-1. Uji SQL `supabase/tests/clinic_compound_issue.sql`, `clinic_invoice_post.sql`, `official_compound_catalog.sql`, `atomic_initial_clinic_record.sql`, dan `atomic_inpatient_daily_log.sql` pada Supabase/PostgreSQL terisolasi dengan seluruh fungsi/RLS asli. Uji dua sesi untuk stok terakhir dan retry request key. PGlite dengan stub belum memenuhi gate ini.
-2. Tuntaskan atau putuskan secara eksplisit pembatasan edit/void/reissue invoice di PR #6. Pastikan alur pembayaran piutang dan pulang rawat inap tidak membuat tagihan setengah jadi.
-3. Bandingkan objek produksi dengan migrasi di bawah. Catatan audit sebelumnya menemukan riwayat migrasi produksi tidak lengkap, sedangkan `20260924120000`, `20260924122000`, dan `20260924123000` sudah dipasang terarah. Jangan gunakan `supabase db push` massal; migrasi `20260924121000` bukan prasyarat alur ini.
-4. Pastikan backup produksi baru tersedia dan pemulihannya dapat dijalankan. Catat waktu, target pemulihan, dan SHA `main` sebelum rilis. PITR pada audit sebelumnya belum aktif.
+1. **Lulus sebagian, 29 Sep:** lima tes SQL lulus di PostgreSQL lokal 16.14 setelah semua 166 migrasi diterapkan dengan shim auth/storage serta izin tabel khusus uji. Uji dua sesi lulus untuk stok terakhir invoice dan racikan, serta retry katalog versi resmi. Ini bukan Supabase lokal penuh atau `supabase db reset`; migrasi 0068 memerlukan dua akun COA yang dimuat sebelum migrasi. Rincian ada di `supabase/tests/README.md`.
+2. **Belum lulus:** putuskan atau selesaikan batas edit/void/reissue invoice yang kini ditolak setelah posting. Pembayaran piutang lama dan penyelesaian tagihan rawat inap masih terpisah; alur bisnisnya perlu aman sebelum dilepas.
+3. **Belum diverifikasi ulang:** cocokkan objek produksi dengan migrasi di bawah. Audit sebelumnya menemukan riwayat migrasi tidak lengkap, sedangkan `20260924120000`, `20260924122000`, dan `20260924123000` sudah dipasang terarah. Jangan gunakan `supabase db push` massal; migrasi `20260924121000` bukan prasyarat alur ini.
+4. **Belum lulus:** pastikan backup produksi baru tersedia dan pemulihannya bisa dijalankan. Catat waktu, target pemulihan, dan SHA `main` sebelum rilis. Audit sebelumnya belum menemukan PITR aktif.
 
 ## Preflight baca saja di database produksi
 
