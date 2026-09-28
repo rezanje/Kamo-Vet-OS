@@ -126,3 +126,14 @@ export function parseClinicPostingError(error: { code?: string; message: string 
   }
   return "Transaksi belum tersimpan. Periksa apakah invoice sudah dibuat lalu coba lagi.";
 }
+
+export function parseClinicRecordError(error: { code?: string; message: string } | null): string {
+  if (error?.code === "P0001") {
+    if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
+    if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
+  }
+  const message = parseClinicPostingError(error);
+  return message.startsWith("Transaksi belum tersimpan.")
+    ? "Rekam medis belum tersimpan. Periksa data dan coba lagi."
+    : message;
+}

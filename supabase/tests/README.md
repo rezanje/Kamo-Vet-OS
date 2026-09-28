@@ -12,6 +12,8 @@ psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/clinic_invoice_post.sql
 psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/official_compound_catalog.sql
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/atomic_initial_clinic_record.sql
 ```
 
 The SQL tests cover failure rollback and serial last-unit protection. A true
@@ -39,6 +41,13 @@ doctor access to the active version, idempotent issuance, and blocked inactive
 or stale versions. Its migration and test also ran in isolated PGlite with a
 minimal test-only clinic-issue stub; full clinic stock/RLS integration requires
 the local Supabase command above after PR #6 is ready.
+
+The atomic initial-record test covers rollback when a second official formula
+fails after the first issued stock, successful record/follow-up/prescription
+and formula posting, idempotent retry, changed-payload rejection, and the
+posted-record edit guard. A focused PGlite test with isolated stubs validated
+the new migration's SQL syntax and rollback/retry/guard; the complete test
+above still needs full local Supabase with the real stock and catalog functions.
 
 For the outstanding true two-session catalog retry check, create a fresh
 formula/version, funded VET stock and medical record in the local Supabase

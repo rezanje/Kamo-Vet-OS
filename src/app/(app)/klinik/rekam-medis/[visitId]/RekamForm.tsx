@@ -41,8 +41,8 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi }: {
-  visitId: string; petId: string;
+export function RekamForm({ visitId, petId, requestKey, patient, items, bahanItems, jasaItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi }: {
+  visitId: string; petId: string; requestKey: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   bahanItems: ItemLite[];
@@ -160,6 +160,7 @@ export function RekamForm({ visitId, petId, patient, items, bahanItems, jasaItem
     <form action={simpanRekamMedis}>
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="petId" value={petId} />
+      <input type="hidden" name="request_key" value={requestKey} />
       <input type="hidden" name="resep" value={JSON.stringify(cart)} />
       <input type="hidden" name="catatan_resep" value={hasRacikan ? catatan : ""} />
 

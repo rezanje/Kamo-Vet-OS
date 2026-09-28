@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions, type ItemUnit } from "@/lib/satuan";
@@ -464,6 +465,7 @@ export default async function RekamMedisPage({
       ) : (
         <RekamForm
           visitId={visit.id}
+          requestKey={randomUUID()}
           petId={visit.pet_id}
           dokterOpsi={dokterOpsi}
           currentWeight={pet?.weight ?? null}
