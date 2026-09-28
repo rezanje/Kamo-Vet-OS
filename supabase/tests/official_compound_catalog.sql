@@ -50,7 +50,7 @@ begin
   end if;
   first_version := public.publish_compound_formula(null, 'R-01', 'Puyer Uji', 'puyer', '2x sehari', ingredients);
   select v.formula_id into v_formula_id from public.compound_formula_versions v where v.id = first_version;
-  if v_formula_id is null or (select v.ingredients->0->>'unit_price' from public.compound_formula_versions v where v.id = first_version) <> '15' then
+  if v_formula_id is null or (select (v.ingredients->0->>'unit_price')::numeric from public.compound_formula_versions v where v.id = first_version) is distinct from 15::numeric then
     raise exception 'company formula/version or selling-price snapshot missing';
   end if;
   second_version := public.publish_compound_formula(v_formula_id, 'R-01', 'Puyer Revisi', 'puyer', '3x sehari', ingredients);

@@ -14,6 +14,8 @@ psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/official_compound_catalog.sql
 psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/atomic_initial_clinic_record.sql
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/atomic_inpatient_daily_log.sql
 ```
 
 The SQL tests cover failure rollback and serial last-unit protection. A true
@@ -58,4 +60,6 @@ call the same RPC with identical arguments; it should block on the unique
 request key. Commit A, then check that B returns the *same* recipe ID and
 commit B. There must be one recipe, one `compound_official_usage`, and one
 set of ingredient stock issues. Repeat B with a changed dosage instruction;
-it must return `IDEMPOTENCY_CONFLICT`. Never run this against production.
+it must return `RECIPE_INVALID` because dosage must match the active formula.
+Reuse the same request key with a different visit or active formula version to
+verify `IDEMPOTENCY_CONFLICT`. Never run either race against production.
