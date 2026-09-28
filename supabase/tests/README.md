@@ -63,3 +63,17 @@ set of ingredient stock issues. Repeat B with a changed dosage instruction;
 it must return `RECIPE_INVALID` because dosage must match the active formula.
 Reuse the same request key with a different visit or active formula version to
 verify `IDEMPOTENCY_CONFLICT`. Never run either race against production.
+
+## Release-gate verification (2026-09-29)
+
+All five SQL suites passed on isolated PostgreSQL 16.14 with all 166 project
+migrations applied and test-only Supabase auth/storage shims plus public-table
+grants. Migration 0068 required its two pre-existing COA accounts to be loaded
+before it ran, so this is not a clean `supabase db reset` verification.
+
+Two-session races also passed locally: competing clinic invoices and custom
+compound issues each left one successful stock deduction and one `STOCK_SHORT`
+rejection. The official-catalog retry race returned the same recipe ID twice
+and created one recipe, one official-use record, and one stock issue. These
+checks used the isolated test database only; they do not verify production
+schema drift, backup recovery, or a full Supabase local stack.
