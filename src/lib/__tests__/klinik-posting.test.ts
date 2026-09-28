@@ -61,6 +61,8 @@ describe("parseClinicRecordError", () => {
   it("explains failed initial exams without exposing raw database details", () => {
     expect(parseClinicRecordError({ code: "P0001", message: "RECORD_INVALID: kunjungan belum siap" }))
       .toMatch(/Kunjungan belum siap/);
+    expect(parseClinicRecordError({ code: "P0001", message: "LOG_INVALID: rekam medis belum tersedia" }))
+      .toMatch(/rawat inap/);
     expect(parseClinicRecordError({ code: "P0001", message: "IDEMPOTENCY_CONFLICT: key" }))
       .toMatch(/Form pemeriksaan/);
     expect(parseClinicRecordError({ code: "23505", message: "sensitive database constraint" }))

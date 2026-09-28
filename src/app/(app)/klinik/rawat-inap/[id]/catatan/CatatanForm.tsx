@@ -28,8 +28,8 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, backHref, patient, items, bahanItems, katalogRacikan, bolehManual }: {
-  recordId: string; backHref: string;
+export function CatatanForm({ recordId, requestKey, backHref, patient, items, bahanItems, katalogRacikan, bolehManual }: {
+  recordId: string; requestKey: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
   bahanItems: ItemLite[];
@@ -146,6 +146,7 @@ export function CatatanForm({ recordId, backHref, patient, items, bahanItems, ka
   return (
     <form action={addDailyLogPos}>
       <input type="hidden" name="recordId" value={recordId} />
+      <input type="hidden" name="request_key" value={requestKey} />
       <input type="hidden" name="resep" value={JSON.stringify(cart)} />
       <input type="hidden" name="catatan_resep" value={catatan} />
       <input type="hidden" name="foto_url" value={fotoUrl} />

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nilaiPantauUntukDatabase } from "@/lib/monitoring-inap";
 import { canTransition, hariRawatInap, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
-import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
+import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
@@ -165,27 +165,25 @@ export async function addDailyLogPos(formData: FormData) {
   const doctorName = String(formData.get("doctor_name") ?? "").trim() || null;
   const logDate = String(formData.get("log_date") ?? "").trim();
   const logTime = String(formData.get("log_time") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "").trim();
   const newStatus = String(formData.get("new_status") ?? "").trim() as Condition | "";
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
-  if (!recordId || !conditionNote) redirect(`${back}?error=${encodeURIComponent("Isi kondisi pasien")}`);
+  if (!recordId || !conditionNote || !requestKey) redirect(`${back}?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
 
   const { data: rec } = await supabase
     .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
   if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
 
-  // 1) log harian (append-only). Tanggal+waktu dari form (default = sekarang di client).
   const stamp = waktuInputWIB(logDate, logTime);
-  const { error: logErr } = await supabase.from("inpatient_daily_logs").insert({
-    inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
-    doctor_name: doctorName, created_by: user?.id ?? null,
+  const log = {
+    condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
     ...bacaPemantauan(formData),
-    ...(logDate ? { log_date: logDate } : {}),
-    ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
-  });
-  if (logErr) redirect(`${back}?error=${encodeURIComponent(logErr.message)}`);
+    log_date: logDate || null,
+    created_at: stamp && !Number.isNaN(stamp.getTime()) ? stamp.toISOString() : null,
+  };
 
-  // 2) obat/jasa → resep visit (medical_record) supaya ikut tagihan saat pulang
+  // Resep ditautkan ke rekam medis dan disimpan bersama log dalam satu transaksi.
   let mrId = rec!.medical_record_id as string | null;
   if (!mrId) {
     const { data: mr } = await supabase.from("medical_records").select("id").eq("visit_id", rec!.visit_id)
@@ -199,56 +197,47 @@ export async function addDailyLogPos(formData: FormData) {
     (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
     redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
-  if (racikan.length && !mrId) {
-    redirect(`${back}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan racikan ke tagihan")}`);
+  if (resep.length && !mrId) {
+    redirect(`${back}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
+  let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string }[] = [];
   if (mrId && resep.length) {
     // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
     const unitOpts = await loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x));
-    const rows = resep.filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan").map((r) => ({
-      medical_record_id: mrId, nama_obat: r.nama_obat.trim(),
+    rows = resep.filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan").map((r) => ({
+      nama_obat: r.nama_obat.trim(), item_id: r.item_id ?? null,
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
-      satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
-      faktor: r.jenis === "racikan" || !r.item_id ? 1 : (unitOpts.get(r.item_id) ? pickUnit(unitOpts.get(r.item_id)!, r.satuan).factor : 1),
+      satuan: r.satuan?.trim() || "pcs",
+      faktor: !r.item_id ? 1 : (unitOpts.get(r.item_id) ? pickUnit(unitOpts.get(r.item_id)!, r.satuan).factor : 1),
       harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" — sama seperti jalur simpanRekamMedis.
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
     }));
-    if (rows.length) await supabase.from("prescription_items").insert(rows);
   }
 
-  // 2b) Racikan, BOM, layer issue, HPP history, and stock move share one database transaction.
-  if (mrId && racikan.length) {
-    for (const r of racikan) {
-      if (r.official_version_id) {
-        const { error: officialError } = await supabase.rpc("clinic_issue_official_compound", {
-          p_medical_record_id: mrId,
-          p_visit_id: rec!.visit_id,
-          p_formula_version_id: r.official_version_id,
-          p_request_key: r.key ?? "",
-          p_dosage_instruction: r.aturan_pakai ?? null,
-        });
-        if (officialError) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(officialError))}`);
-        continue;
-      }
-      const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
-      if (ings.length === 0) continue;
-      const params: ClinicIssueCompoundParams = {
-        p_medical_record_id: mrId,
-        p_visit_id: rec!.visit_id,
-        p_recipe: toClinicCompoundRecipeInput({
-          recipeName: r.nama_obat,
-          dosageInstruction: r.aturan_pakai,
-          dosageForm: r.dosage_form,
-          ingredients: ings,
-        }),
-        p_request_key: r.key ?? "",
-      };
-      const { error: recipeErr } = await supabase.rpc("clinic_issue_compound", params);
-      if (recipeErr) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(recipeErr))}`);
-    }
-  }
+  const compounds = racikan.map((r) => r.official_version_id ? {
+    official_version_id: r.official_version_id,
+    request_key: r.key ?? "",
+    dosage_instruction: r.aturan_pakai ?? null,
+  } : {
+    recipe: toClinicCompoundRecipeInput({
+      recipeName: r.nama_obat,
+      dosageInstruction: r.aturan_pakai,
+      dosageForm: r.dosage_form,
+      ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
+    }),
+    request_key: r.key ?? "",
+  });
+  const { error: saveError } = await supabase.rpc("clinic_save_inpatient_log", {
+    p_inpatient_id: recordId,
+    p_medical_record_id: mrId,
+    p_log: log,
+    p_rows: rows,
+    p_compounds: compounds,
+    p_request_key: requestKey,
+  });
+  if (saveError) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
 
   // 3) ubah kondisi kalau dipilih & beda dari sekarang
   if (newStatus && ["stabil", "kritis", "sembuh", "rip"].includes(newStatus) && newStatus !== rec!.condition_status) {

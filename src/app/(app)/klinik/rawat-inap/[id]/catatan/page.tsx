@@ -78,6 +78,7 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
 
       <CatatanForm
         recordId={id}
+        requestKey={crypto.randomUUID()}
         backHref={`/klinik/rawat-inap/${id}`}
         items={items}
         bahanItems={bahanItems}

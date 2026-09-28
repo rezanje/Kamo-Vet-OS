@@ -130,6 +130,7 @@ export function parseClinicPostingError(error: { code?: string; message: string 
 export function parseClinicRecordError(error: { code?: string; message: string } | null): string {
   if (error?.code === "P0001") {
     if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
+    if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
     if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
   }
   const message = parseClinicPostingError(error);
