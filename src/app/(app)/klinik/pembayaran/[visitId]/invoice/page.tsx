@@ -28,13 +28,19 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
 
   const { data: items } = await supabase
     .from("invoice_items").select("deskripsi, qty, harga, diskon_persen").eq("invoice_id", invoice.id).order("created_at");
+  const { data: payments } = await supabase.from("invoice_payments")
+    .select("amount, transferred_from").eq("invoice_id", invoice.id);
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(visit.branches);
   const tgl = new Date(invoice.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
   const lunas = invoice.paid_status === "Lunas";
-  const sisa = invoice.paid_status === "DP" ? invoice.total - invoice.dp_amount : lunas ? 0 : invoice.total;
+  const credit = (payments ?? []).filter((p) => p.transferred_from)
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const received = Number(invoice.dp_amount) + (payments ?? [])
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const sisa = lunas ? 0 : Math.max(0, Number(invoice.total) - received);
 
   return (
     <>
@@ -110,9 +116,10 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
             <span style={{ fontWeight: 700 }}>TOTAL</span>
             <span style={{ fontWeight: 700, fontSize: 14 }}>{rp(invoice.total)}</span>
           </div>
+          {credit > 0 && <SumRow label="Pembayaran dialihkan" value={`- ${rp(credit)}`} />}
           {invoice.paid_status === "DP" && (
             <>
-              <SumRow label="DP dibayar" value={`- ${rp(invoice.dp_amount)}`} />
+              {Number(invoice.dp_amount) > 0 && <SumRow label="DP dibayar" value={`- ${rp(invoice.dp_amount)}`} />}
               <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
                 <span style={{ color: "#b91c1c", fontWeight: 600 }}>Sisa</span>
                 <span style={{ color: "#b91c1c", fontWeight: 700 }}>{rp(sisa)}</span>

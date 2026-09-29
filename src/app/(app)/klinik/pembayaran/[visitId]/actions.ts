@@ -128,7 +128,7 @@ export async function bayarVisit(formData: FormData) {
   // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
   const { data: existing } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
 
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
@@ -168,17 +168,18 @@ export async function bayarVisit(formData: FormData) {
   // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
   const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
-  const dpAmount = paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
+  const dpAmount = existing ? Number(existing.dp_amount)
+    : paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
   const reason = String(formData.get("edit_reason") ?? "").trim() || null;
   // Visit ditutup hanya saat lunas; DP/Belum Lunas tetap tahap Pembayaran (bisa dilanjut).
   const visitStatus = paidStatus === "Lunas" ? "Selesai" : "Pembayaran";
 
   if (existing) {
-    if (existing.paid_status === "Lunas") {
+    if (existing.paid_status === "Lunas" && !existing.correction_pending) {
       redirect(`${back}?error=${encodeURIComponent("Tagihan lunas harus dibatalkan dan diterbitkan ulang")}`);
     }
-    if (paidStatus !== existing.paid_status || dpAmount !== Number(existing.dp_amount)
+    if ((!existing.correction_pending && paidStatus !== existing.paid_status)
         || metode !== existing.metode_bayar) {
       redirect(`${back}?error=${encodeURIComponent("Koreksi tidak boleh mengubah pembayaran. Gunakan layar piutang untuk pelunasan.")}`);
     }

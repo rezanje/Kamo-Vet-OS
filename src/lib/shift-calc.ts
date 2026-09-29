@@ -49,11 +49,14 @@ export function invoiceCashRows(
     total: number; dp_amount: number; paid_status: string; metode_bayar: string;
     /** Total pelunasan susulan yang tercatat untuk invoice ini. */
     dibayarSusulan?: number;
+    /** Cash collected when the first invoice was issued, carried through reissue. */
+    shift_cash_carry?: number | null;
   }[],
 ): { total: number; metode_bayar: string }[] {
   return invoices.map((i) => {
     const susulan = Number(i.dibayarSusulan) || 0;
-    const tunaiSaatTerbit = i.paid_status === "Lunas" && susulan === 0
+    const tunaiSaatTerbit = i.shift_cash_carry != null ? Number(i.shift_cash_carry)
+      : i.paid_status === "Lunas" && susulan === 0
       ? Number(i.total)
       : Number(i.dp_amount) || 0;
     return { total: tunaiSaatTerbit, metode_bayar: i.metode_bayar };

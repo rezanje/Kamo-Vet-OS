@@ -72,15 +72,21 @@ export default async function PembayaranPage({
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at, request_key")
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
     : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null }[] };
-  const { count: paymentCount } = invoice
-    ? await supabase.from("invoice_payments").select("*", { count: "exact", head: true }).eq("invoice_id", invoice.id)
-    : { count: 0 };
-  const hasPayments = (paymentCount ?? 0) > 0;
+  const { data: paymentRows } = invoice
+    ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
+    : { data: [] as { amount: number; transferred_from: string | null }[] };
+  const hasPayments = (paymentRows ?? []).some((p) => !p.transferred_from);
+  const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const paidAmount = Number(invoice?.dp_amount ?? 0) + (paymentRows ?? [])
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const canEdit = invoice && !hasPayments
+    && (invoice.correction_pending || ((paymentRows ?? []).length === 0 && invoice.paid_status !== "Lunas"));
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -383,7 +389,7 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {!bolehTagih ? null : invoice && !lunas && !hasPayments ? (
+      {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
           visitId={visit.id}
           requestKey={invoiceRequestKey}
@@ -397,6 +403,7 @@ export default async function PembayaranPage({
           catatanResep={mr?.catatan_resep ?? null}
           initialDiscount={Number(invoice.discount)}
           initialDpAmount={Number(invoice.dp_amount)}
+          initialCreditAmount={creditAmount}
           initialDpDate={invoice.dp_date}
           initialMetode={invoice.metode_bayar ?? "Tunai"}
           editMode
@@ -405,7 +412,7 @@ export default async function PembayaranPage({
         <>
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
-            {invoice.paid_status === "DP" && ` — DP ${rp(invoice.dp_amount)}, sisa ${rp(invoice.total - invoice.dp_amount)}`}
+            {invoice.paid_status === "DP" && ` — diterima ${rp(paidAmount)}, sisa ${rp(Number(invoice.total) - paidAmount)}`}
             {(editLog ?? []).length > 0 && (
               <span className="bge o" style={{ marginLeft: 8 }}><i className="ti ti-pencil" /> Diedit</span>
             )}
@@ -420,7 +427,7 @@ export default async function PembayaranPage({
                 <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
               </span>
               <span style={{ display: "flex", gap: 5 }}>
-                {!lunas && !hasPayments && (
+                {canEdit && (
                   <Link href={`/klinik/pembayaran/${visit.id}?edit=1`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-pencil" /> Edit Invoice
@@ -464,13 +471,13 @@ export default async function PembayaranPage({
           </div>
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {(lunas || hasPayments) && (
+          {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
               </div>
               <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
-                Invoice lunas tidak boleh diedit langsung. Void membatalkan invoice ini (jurnal dibalik otomatis) dan menerbitkan invoice baru berstatus Belum Lunas untuk dikoreksi.
+                Pembayaran yang sudah diterima dialihkan ke invoice baru. Setelah koreksi, sisa tagihan dihitung ulang tanpa menerima uang dua kali.
               </div>
               <form action={voidAndReissue} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <input type="hidden" name="visitId" value={visit.id} />

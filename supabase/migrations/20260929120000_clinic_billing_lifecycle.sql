@@ -38,6 +38,12 @@ drop policy if exists iel_sel on public.invoice_edit_log;
 create policy iel_sel on public.invoice_edit_log for select to authenticated
   using (exists(select 1 from public.invoices i join public.visits v on v.id=i.visit_id
     where i.id=invoice_edit_log.invoice_id and public.user_can_access_branch(v.branch_id)));
+drop policy if exists invpay_all on public.invoice_payments;
+create policy invpay_all on public.invoice_payments for all to authenticated
+  using (exists(select 1 from public.invoices i join public.visits v on v.id=i.visit_id
+    where i.id=invoice_payments.invoice_id and public.user_can_access_branch(v.branch_id)))
+  with check (exists(select 1 from public.invoices i join public.visits v on v.id=i.visit_id
+    where i.id=invoice_payments.invoice_id and public.user_can_access_branch(v.branch_id)));
 
 -- A live inpatient stay must have its calculated fee before any invoice is
 -- issued. This also serializes a checkout against concurrent invoice posting.
@@ -91,7 +97,11 @@ $function$;
 
 alter table public.invoice_payments
   add column request_key text,
-  add column request_hash text;
+  add column request_hash text,
+  add column transferred_from uuid references public.invoices(id);
+alter table public.invoices
+  add column correction_pending boolean not null default false,
+  add column shift_cash_carry numeric(15,2);
 create unique index invoice_payments_request_key_unique
   on public.invoice_payments(request_key) where request_key is not null;
 
@@ -153,8 +163,9 @@ begin
     end if;
     return v_existing.id;
   end if;
-  if v_invoice.paid_status = 'Lunas' or v_invoice.invoice_no is null then
-    raise exception using errcode='P0001', message='PAYMENT_INVALID: invoice sudah lunas atau belum bernomor';
+  if v_invoice.paid_status = 'Lunas' or v_invoice.invoice_no is null
+     or v_invoice.correction_pending then
+    raise exception using errcode='P0001', message='PAYMENT_INVALID: selesaikan koreksi tagihan sebelum menerima pembayaran';
   end if;
   select coalesce(sum(amount), 0) into v_paid from public.invoice_payments
   where invoice_id = p_invoice_id;
@@ -391,6 +402,7 @@ declare
   v_old_snapshot jsonb;
   v_reverse jsonb;
   v_sale jsonb;
+  v_credit numeric;
 begin
   if coalesce(current_setting('request.jwt.claim.role',true),'') <> 'authenticated' or v_user is null then
     raise exception using errcode='P0001', message='ACCESS_DENIED: pengguna tidak terautentikasi';
@@ -423,8 +435,9 @@ begin
   end if;
   select * into v_invoice from public.invoices where id=p_invoice_id for update;
   if v_invoice.voided_at is not null or v_invoice.request_key is null
-     or v_invoice.paid_status='Lunas'
-     or exists(select 1 from public.invoice_payments where invoice_id=p_invoice_id)
+     or (v_invoice.paid_status='Lunas' and not v_invoice.correction_pending)
+     or exists(select 1 from public.invoice_payments
+       where invoice_id=p_invoice_id and (transferred_from is null or not v_invoice.correction_pending))
      or exists(select 1 from public.invoice_items where invoice_id=p_invoice_id
                and (compound_recipe_id is not null or (jenis='obat' and item_id is null))) then
     raise exception using errcode='P0001', message='INVOICE_INVALID: tagihan ini perlu pemeriksaan keuangan';
@@ -433,10 +446,14 @@ begin
   v_discount := (p_invoice->>'discount')::numeric(15,2);
   v_tax := (p_invoice->>'tax')::numeric(15,2);
   v_total := (p_invoice->>'total')::numeric(15,2);
+  select coalesce(sum(amount),0) into v_credit from public.invoice_payments
+    where invoice_id=p_invoice_id and transferred_from is not null;
   if v_subtotal is null or v_discount is null or v_tax is null or v_total is null
      or v_subtotal<0 or v_discount<0 or v_discount>v_subtotal or v_tax<0
-     or v_total<>v_subtotal-v_discount+v_tax or v_total<v_invoice.dp_amount
-     or p_invoice->>'paid_status' is distinct from v_invoice.paid_status
+     or v_total<>v_subtotal-v_discount+v_tax or v_total<v_invoice.dp_amount+v_credit
+     or p_invoice->>'paid_status' is distinct from
+       (case when v_total=v_invoice.dp_amount+v_credit then 'Lunas'
+             when v_invoice.dp_amount+v_credit>0 then 'DP' else 'Belum Lunas' end)
      or (p_invoice->>'dp_amount')::numeric is distinct from v_invoice.dp_amount
      or p_invoice->>'metode_bayar' is distinct from v_invoice.metode_bayar then
     raise exception using errcode='P0001', message='INVOICE_INVALID: nilai koreksi tidak konsisten';
@@ -457,7 +474,7 @@ begin
     raise exception using errcode='P0001', message='LINE_INVALID: resep sama muncul lebih dari sekali';
   end if;
   if not exists(select 1 from public.journal_entries
-    where source='klinik' and source_ref=v_invoice.invoice_no)
+    where source in ('klinik','klinik-reissue') and source_ref=v_invoice.invoice_no)
      or ((select coalesce(sum(hpp),0) from public.invoice_items where invoice_id=p_invoice_id)>0
         and not exists(select 1 from public.journal_entries
           where source='klinik-hpp' and source_ref=v_invoice.invoice_no)) then
@@ -572,7 +589,7 @@ begin
       nullif(v_line->>'prescription_item_id','')::uuid,v_unit,v_factor);
   end loop;
   select coalesce(sum(hpp),0) into v_total_hpp from public.invoice_items where invoice_id=p_invoice_id;
-  v_reverse := public.clinic_reverse_journal_lines(v_invoice.invoice_no,array['klinik','klinik-edit']);
+  v_reverse := public.clinic_reverse_journal_lines(v_invoice.invoice_no,array['klinik','klinik-reissue','klinik-edit']);
   perform public.clinic_write_journal(current_date,'Pembalikan koreksi '||v_invoice.invoice_no,
     'klinik-edit',v_invoice.invoice_no,v_visit.branch_id,v_reverse);
   v_sale := jsonb_build_array(
@@ -603,7 +620,12 @@ begin
         jsonb_build_object('code','1301','debit',0,'credit',v_total_hpp)));
   end if;
   update public.invoices set subtotal=v_subtotal,discount=v_discount,tax=v_tax,total=v_total,
+    paid_status=p_invoice->>'paid_status',
+    paid_at=case when p_invoice->>'paid_status'='Lunas' then coalesce(paid_at,now()) else null end,
+    correction_pending=false,
     voucher_code=nullif(p_invoice->>'voucher_code','') where id=p_invoice_id;
+  update public.visits set status=case when p_invoice->>'paid_status'='Lunas'
+    then 'Selesai'::public.visit_status else 'Pembayaran'::public.visit_status end where id=v_visit.id;
   insert into public.invoice_edit_log(invoice_id,edited_by,field_changed,old_value,new_value,reason)
     values(p_invoice_id,v_user,'invoice',v_old_snapshot::text,
       jsonb_build_object('invoice',p_invoice,'lines',p_lines)::text,v_reason);
@@ -633,6 +655,9 @@ declare
   v_no text;
   v_new_id uuid;
   v_paid numeric;
+  v_direct numeric;
+  v_shift_cash numeric;
+  v_cash_code text;
   v_hpp numeric;
   v_lines jsonb;
 begin
@@ -669,18 +694,41 @@ begin
   end if;
   select coalesce(sum(amount),0) into v_paid from public.invoice_payments
     where invoice_id=p_invoice_id;
+  v_direct := case when v_invoice.reissued_from is not null then 0
+    when v_invoice.paid_status='Lunas' and v_paid=0 then v_invoice.total
+    else v_invoice.dp_amount end;
+  v_shift_cash := case when v_invoice.reissued_from is not null then v_invoice.shift_cash_carry
+    else v_direct end;
+  v_paid := v_paid + v_direct;
+  if v_paid>v_invoice.total then
+    raise exception using errcode='P0001', message='PAYMENT_INVALID: pembayaran melebihi tagihan'; end if;
   if v_invoice.paid_status<>'Lunas' and v_paid=0 then
     raise exception using errcode='P0001', message='INVOICE_INVALID: tagihan ini cukup dikoreksi'; end if;
   if not exists(select 1 from public.journal_entries
-       where source='klinik' and source_ref=v_invoice.invoice_no)
+       where source in ('klinik','klinik-reissue') and source_ref=v_invoice.invoice_no)
      or ((select coalesce(sum(hpp),0) from public.invoice_items where invoice_id=p_invoice_id)>0
         and not exists(select 1 from public.journal_entries
           where source='klinik-hpp' and source_ref=v_invoice.invoice_no))
-     or (v_paid>0 and (select count(*) from public.journal_entries
+     or ((select count(*) from public.journal_entries
        where source='klinik-ar' and source_ref=v_invoice.invoice_no)
-       <> (select count(*) from public.invoice_payments where invoice_id=p_invoice_id)) then
+       <> (select count(*) from public.invoice_payments
+         where invoice_id=p_invoice_id and transferred_from is null))
+     then
     raise exception using errcode='P0001', message='JOURNAL_MISSING: jurnal pembayaran tidak lengkap';
   end if;
+  if v_direct>0 then
+    select a.code into v_cash_code from public.journal_entries e
+    join public.journal_lines l on l.entry_id=e.id
+    join public.coa_accounts a on a.id=l.account_id
+    where e.source='klinik' and e.source_ref=v_invoice.invoice_no
+      and l.debit=v_direct and a.code not in ('1201','4102')
+    order by e.created_at,l.id limit 1;
+    if v_cash_code is null then
+      raise exception using errcode='P0001', message='JOURNAL_MISSING: rekening pembayaran awal tidak ditemukan'; end if;
+  end if;
+  if exists(select 1 from public.invoice_payments where invoice_id=p_invoice_id
+      and (kas_code is null or amount<=0)) then
+    raise exception using errcode='P0001', message='JOURNAL_MISSING: rekening cicilan tidak lengkap'; end if;
 
   select pola,digit into v_pattern,v_digits from public.document_numbering where jenis='INV';
   if not found then v_pattern:='INV-{YYYY}{MM}-'; v_digits:=4; end if;
@@ -698,7 +746,15 @@ begin
     raise exception using errcode='P0001', message='INVOICE_NO_INVALID: nomor tagihan terlalu panjang'; end if;
 
   v_lines := public.clinic_reverse_journal_lines(v_invoice.invoice_no,
-    array['klinik','klinik-edit','klinik-ar']);
+    array['klinik','klinik-reissue','klinik-edit']);
+  -- Keep received cash in its original account. The old receivable becomes
+  -- customer credit, then the replacement sale consumes it through the same AR.
+  if v_direct>0 then
+    select coalesce(jsonb_agg(e.value),'[]'::jsonb) into v_lines
+    from jsonb_array_elements(v_lines) e where e.value->>'code'<>v_cash_code;
+    v_lines := v_lines || jsonb_build_array(
+      jsonb_build_object('code','1201','debit',0,'credit',v_direct));
+  end if;
   perform public.clinic_write_journal(current_date,'Pembatalan '||v_invoice.invoice_no,
     'klinik-void',v_invoice.invoice_no,v_visit.branch_id,v_lines);
   v_lines := public.clinic_reverse_journal_lines(v_invoice.invoice_no,
@@ -710,10 +766,11 @@ begin
   update public.invoices set voided_at=now() where id=p_invoice_id;
   insert into public.invoices(visit_id,invoice_no,subtotal,discount,tax,total,dp_amount,
     dp_date,paid_status,metode_bayar,paid_at,shift_id,voucher_code,salesperson_id,
-    reissued_from,request_key,request_hash)
+    reissued_from,request_key,request_hash,correction_pending,shift_cash_carry)
   values(v_visit.id,v_no,v_invoice.subtotal,v_invoice.discount,v_invoice.tax,v_invoice.total,
-    0,null,'Belum Lunas',v_invoice.metode_bayar,null,v_invoice.shift_id,
-    v_invoice.voucher_code,v_invoice.salesperson_id,p_invoice_id,v_key,v_hash)
+    0,null,case when v_paid=v_invoice.total then 'Lunas' else 'DP' end,
+    v_invoice.metode_bayar,case when v_paid=v_invoice.total then now() else null end,v_invoice.shift_id,
+    v_invoice.voucher_code,v_invoice.salesperson_id,p_invoice_id,v_key,v_hash,true,v_shift_cash)
   returning id into v_new_id;
   insert into public.invoice_items(invoice_id,deskripsi,qty,harga,jenis,diskon_persen,
     item_id,hpp,prescription_item_id,satuan,faktor)
@@ -726,6 +783,19 @@ begin
     jsonb_build_object('code','2201','debit',0,'credit',v_invoice.tax));
   perform public.clinic_write_journal(current_date,'Terbit ulang '||v_no,
     'klinik-reissue',v_no,v_visit.branch_id,v_lines);
+  if v_paid>0 then
+    if v_direct>0 then
+      insert into public.invoice_payments(invoice_id,tanggal,amount,metode,catatan,
+        kas_code,created_by,transferred_from)
+      values(v_new_id,current_date,v_direct,v_invoice.metode_bayar,
+        'Dialihkan dari '||v_invoice.invoice_no,v_cash_code,v_user,p_invoice_id);
+    end if;
+    insert into public.invoice_payments(invoice_id,tanggal,amount,metode,catatan,
+      kas_code,created_by,transferred_from)
+    select v_new_id,current_date,p.amount,p.metode,
+      'Dialihkan dari '||v_invoice.invoice_no,p.kas_code,v_user,p_invoice_id
+    from public.invoice_payments p where p.invoice_id=p_invoice_id;
+  end if;
   if v_hpp>0 then
     perform public.clinic_write_journal(current_date,'HPP terbit ulang '||v_no,
       'klinik-hpp',v_no,v_visit.branch_id,jsonb_build_array(
@@ -734,7 +804,8 @@ begin
   end if;
   insert into public.invoice_edit_log(invoice_id,edited_by,field_changed,old_value,new_value,reason)
     values(p_invoice_id,v_user,'voided',v_invoice.invoice_no,v_no,v_reason);
-  update public.visits set status='Pembayaran' where id=v_visit.id;
+  update public.visits set status=case when v_paid=v_invoice.total
+    then 'Selesai'::public.visit_status else 'Pembayaran'::public.visit_status end where id=v_visit.id;
   insert into public.clinic_invoice_operations(request_key,invoice_id,request_hash,kind,result_invoice_id)
     values(v_key,p_invoice_id,v_hash,'reissue',v_new_id);
   return v_new_id;

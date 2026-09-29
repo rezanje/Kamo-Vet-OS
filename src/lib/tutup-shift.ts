@@ -57,7 +57,7 @@ export async function pemasukanShift(
     // Invoice yang dibatalkan TIDAK pernah jadi uang di laci.
     const { data: invoices } = await supabase
       .from("invoices")
-      .select("id, total, dp_amount, paid_status, metode_bayar")
+      .select("id, total, dp_amount, paid_status, metode_bayar, shift_cash_carry")
       .eq("shift_id", shift.id)
       .is("voided_at", null);
 
@@ -73,6 +73,7 @@ export async function pemasukanShift(
     return invoiceCashRows(
       ((invoices ?? []) as {
         id: string; total: number; dp_amount: number; paid_status: string; metode_bayar: string;
+        shift_cash_carry?: number | null;
       }[]).map((i) => ({ ...i, dibayarSusulan: susulan.get(i.id) ?? 0 })),
     );
   }

@@ -104,6 +104,7 @@ do $$
 declare
   inv uuid;
   replacement uuid;
+  replacement_again uuid;
   payment uuid;
   dp_invoice uuid;
   removed_invoice uuid;
@@ -159,7 +160,8 @@ begin
   perform set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000002',true);
   if exists(select 1 from public.invoices where id=inv)
      or exists(select 1 from public.invoice_items where invoice_id=inv)
-     or exists(select 1 from public.invoice_edit_log where invoice_id=inv) then
+     or exists(select 1 from public.invoice_edit_log where invoice_id=inv)
+     or exists(select 1 from public.invoice_payments where invoice_id=inv) then
     raise exception 'cross-branch invoice data was visible'; end if;
   failed:=false;
   begin
@@ -184,6 +186,10 @@ begin
   if public.clinic_receive_invoice_payment(inv,current_date,50,'Tunai','1101',null,'lifecycle-pay1')<>payment
      or (select count(*) from public.invoice_payments where invoice_id=inv)<>1 then
     raise exception 'payment retry duplicated cash'; end if;
+  perform set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000002',true);
+  if exists(select 1 from public.invoice_payments where invoice_id=inv) then
+    raise exception 'cross-branch payment was visible'; end if;
+  perform set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000001',true);
   failed:=false;
   begin
     perform public.clinic_edit_invoice(inv,'lifecycle-edit-late',edit,new_lines);
@@ -204,6 +210,9 @@ begin
   select invoice_no into new_no from public.invoices where id=replacement;
   if new_no=original_no or (select reissued_from from public.invoices where id=replacement)<>inv
      or (select hpp from public.invoice_items where invoice_id=replacement)<>6
+     or (select coalesce(sum(amount),0) from public.invoice_payments
+       where invoice_id=replacement and transferred_from=inv)<>75
+     or (select paid_status from public.invoices where id=replacement)<>'DP'
      or (select qty from public.stock where warehouse_id='e3000000-0000-4000-8000-000000000001'
         and item_id='e8000000-0000-4000-8000-000000000001')<>before_stock then
     raise exception 'reissue lost cost or moved stock'; end if;
@@ -213,16 +222,47 @@ begin
     raise exception 'void/reissue journal set incomplete'; end if;
   if exists(select 1 from public.journal_entries e join public.journal_lines l on l.entry_id=e.id
     where e.source_ref=original_no and e.source in ('klinik','klinik-edit','klinik-ar','klinik-void')
-    group by l.account_id having sum(l.debit-l.credit)<>0) then
-    raise exception 'old sale and partial payment were not fully reversed'; end if;
+    group by l.account_id having sum(l.debit-l.credit)<>0
+      and (select code from public.coa_accounts where id=l.account_id) not in ('1101','1201')) then
+    raise exception 'old sale revenue was not reversed'; end if;
+  if exists(select 1 from public.journal_entries e join public.journal_lines l on l.entry_id=e.id
+    join public.coa_accounts a on a.id=l.account_id
+    where e.source='klinik-void' and e.source_ref=original_no and a.code='1101') then
+    raise exception 'void moved received cash'; end if;
   if exists(select 1 from public.journal_entries e join public.journal_lines l on l.entry_id=e.id
     where e.source_ref=original_no and e.source in ('klinik-hpp','klinik-hpp-edit','klinik-hpp-void')
     group by l.account_id having sum(l.debit-l.credit)<>0) then
     raise exception 'old HPP was not fully reversed'; end if;
-  -- Reissued invoice remains editable and can receive a new payment.
-  perform public.clinic_receive_invoice_payment(replacement,current_date,300,'Tunai','1101',null,'lifecycle-pay2');
+  -- Correct the replacement while the original 75 remains credited.
+  failed:=false;
+  begin
+    perform public.clinic_receive_invoice_payment(replacement,current_date,10,'Tunai','1101',null,'lifecycle-pay-early');
+  exception when sqlstate 'P0001' then failed:=position('PAYMENT_INVALID:' in sqlerrm)=1; end;
+  if not failed then raise exception 'replacement accepted money before correction'; end if;
+  failed:=false;
+  begin
+    perform public.clinic_edit_invoice(replacement,'lifecycle-edit-below-credit',
+      edit || '{"subtotal":50,"total":50,"paid_status":"DP"}'::jsonb,
+      '[{"description":"Jasa koreksi","qty":1,"price":50,"kind":"jasa","discount_percent":0}]'::jsonb);
+  exception when sqlstate 'P0001' then failed:=position('INVOICE_INVALID:' in sqlerrm)=1; end;
+  if not failed then raise exception 'credit excess was accepted'; end if;
+  perform public.clinic_edit_invoice(replacement,'lifecycle-edit-reissue',
+    edit || '{"subtotal":250,"total":250,"paid_status":"DP"}'::jsonb,
+    jsonb_set(jsonb_set(new_lines,'{0,qty}','2'::jsonb),'{0,price}','125'::jsonb));
+  if (select total from public.invoices where id=replacement)<>250
+     or (select correction_pending from public.invoices where id=replacement)
+     or (select coalesce(sum(amount),0) from public.invoice_payments where invoice_id=replacement)<>75 then
+    raise exception 'credit did not survive correction'; end if;
+  perform public.clinic_receive_invoice_payment(replacement,current_date,175,'Tunai','1101',null,'lifecycle-pay2');
   if (select paid_status from public.invoices where id=replacement)<>'Lunas' then
     raise exception 'replacement did not close after full payment'; end if;
+  replacement_again := public.clinic_void_reissue_invoice(replacement,
+    'lifecycle-void-again','Koreksi kedua');
+  if (select coalesce(sum(amount),0) from public.invoice_payments
+       where invoice_id=replacement_again and transferred_from=replacement)<>250
+     or (select shift_cash_carry from public.invoices where id=replacement_again)<>0
+     or (select paid_status from public.invoices where id=replacement_again)<>'Lunas' then
+    raise exception 'second reissue lost or doubled transferred money'; end if;
 
   -- DP correction preserves receipt and historical HPP when only price changes.
   dp_invoice := public.clinic_post_invoice('e6000000-0000-4000-8000-000000000002',
@@ -257,11 +297,27 @@ begin
     and item_id='e8000000-0000-4000-8000-000000000001';
   replacement := public.clinic_void_reissue_invoice(fully_paid_invoice,
     'lifecycle-full-void','Salah tagih lunas');
-  if (select paid_status from public.invoices where id=replacement)<>'Belum Lunas'
+  if (select paid_status from public.invoices where id=replacement)<>'Lunas'
+     or (select correction_pending from public.invoices where id=replacement) is not true
+     or (select coalesce(sum(amount),0) from public.invoice_payments
+       where invoice_id=replacement and transferred_from=fully_paid_invoice)<>100
      or (select hpp from public.invoice_items where invoice_id=replacement)<>2
      or (select qty from public.stock where warehouse_id='e3000000-0000-4000-8000-000000000001'
        and item_id='e8000000-0000-4000-8000-000000000001')<>before_stock then
     raise exception 'fully paid void/reissue changed stock or cost'; end if;
+  if (select coalesce(sum(l.debit-l.credit),0) from public.journal_entries e
+       join public.journal_lines l on l.entry_id=e.id
+       join public.coa_accounts a on a.id=l.account_id
+       where a.code='1101' and e.source_ref in (
+         select invoice_no from public.invoices where id in (fully_paid_invoice,replacement)))<>100 then
+    raise exception 'fully paid reissue doubled or refunded cash'; end if;
+  perform public.clinic_edit_invoice(replacement,'lifecycle-full-edit',
+    edit || '{"subtotal":120,"total":120,"paid_status":"DP"}'::jsonb,
+    jsonb_set(jsonb_set(new_lines,'{0,qty}','1'::jsonb),'{0,price}','120'::jsonb));
+  if (select total from public.invoices where id=replacement)<>120
+     or (select paid_status from public.invoices where id=replacement)<>'DP'
+     or (select coalesce(sum(amount),0) from public.invoice_payments where invoice_id=replacement)<>100 then
+    raise exception 'fully paid correction lost the transferred credit'; end if;
 end;
 $$;
 

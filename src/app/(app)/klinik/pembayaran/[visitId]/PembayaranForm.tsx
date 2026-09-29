@@ -125,11 +125,11 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   );
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   ppnRate?: number;
-  initialDiscount?: number; initialDpAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
+  initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
 }) {
   const [obat, setObat] = useState<Line[]>(initialObat);
   const [jasa, setJasa] = useState<Line[]>(initialJasa);
@@ -175,10 +175,10 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const tax = Math.round((dpp * ppnRate) / 100);
   const total = dpp + tax;
   const dpPaid = initialDpAmount;
-  const sisa = Math.max(0, total - dpPaid);
+  const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
 
   const [bayar, setBayar] = useState(0);
-  const totalDiterima = dpPaid + bayar;
+  const totalDiterima = dpPaid + initialCreditAmount + bayar;
   const kembalian = Math.max(0, bayar - sisa);
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
@@ -199,7 +199,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="poinDigunakan" value={poinDipakai} />
       <input type="hidden" name="paid_status" value={paidStatus} />
       <input type="hidden" name="metode_bayar" value={metode} />
-      <input type="hidden" name="dp_amount" value={totalDiterima} />
+      <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
 
@@ -312,6 +312,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           <div className="card">
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>RINGKASAN PEMBAYARAN</div>
             <SumRow label="Total Tagihan" value={rp(total)} />
+            {initialCreditAmount > 0 && <SumRow label="Pembayaran dialihkan" value={rp(initialCreditAmount)} />}
             <SumRow label="Total Pembayaran" value={rp(totalDiterima)} />
             <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1px solid var(--bd)" }}>
               <span style={{ fontSize: 12, fontWeight: 700 }}>Sisa yang Harus Dibayar</span>

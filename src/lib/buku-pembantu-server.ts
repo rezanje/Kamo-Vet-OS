@@ -19,7 +19,7 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
 
   const [{ data: invs }, { data: fjs }, { data: rcs }] = await Promise.all([
     supabase.from("invoices")
-      .select("id, invoice_no, total, dp_amount, dp_date, paid_status, paid_at, created_at, visits(customer_id, customers(name)), invoice_payments(id, tanggal, amount, metode)")
+      .select("id, invoice_no, total, dp_amount, dp_date, paid_status, paid_at, created_at, visits(customer_id, customers(name)), invoice_payments(id, tanggal, amount, metode, transferred_from)")
       .is("voided_at", null).lte("created_at", batas),
     supabase.from("sales_invoices")
       .select("id, no_faktur, tanggal, total, customer_id, customers(name)")
@@ -33,7 +33,7 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
     id: string; invoice_no: string | null; total: number; dp_amount: number; dp_date: string | null;
     paid_status: string | null; paid_at: string | null; created_at: string;
     visits: Rel<{ customer_id: string | null; customers: Rel<{ name: string }> }>;
-    invoice_payments: { id: string; tanggal: string; amount: number; metode: string | null }[] | null;
+    invoice_payments: { id: string; tanggal: string; amount: number; metode: string | null; transferred_from: string | null }[] | null;
   };
 
   const out: Mutasi[] = [];
@@ -66,8 +66,10 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
       if (jumlah <= 0) continue;
       dibayar += jumlah;
       out.push({
-        tanggal: tgl(p.tanggal), pihakId, pihak, nomor, jenis: "Pembayaran",
-        keterangan: p.metode ? `Pelunasan ${p.metode}` : "Pelunasan", naik: 0, turun: jumlah, href,
+        tanggal: tgl(p.tanggal), pihakId, pihak, nomor,
+        jenis: "Pembayaran",
+        keterangan: p.transferred_from ? "Dari tagihan sebelumnya"
+          : p.metode ? `Pelunasan ${p.metode}` : "Pelunasan", naik: 0, turun: jumlah, href,
       });
     }
 
