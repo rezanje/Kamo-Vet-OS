@@ -9,6 +9,7 @@ create table public.clinic_invoice_operations (
   result_invoice_id uuid not null references public.invoices(id),
   created_at timestamptz not null default now()
 );
+alter table public.clinic_invoice_operations enable row level security;
 revoke all on public.clinic_invoice_operations from public, anon, authenticated;
 
 -- A voided invoice and its replacement may point to the same prescription.
