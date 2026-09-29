@@ -75,6 +75,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Form persetujuan", icon: "ti-file-check", ...G, href: "/klinik/persetujuan" },
     { label: "Follow up", icon: "ti-calendar-event", ...A, href: "/klinik/follow-up" },
     { label: "Bahan baku klinik", icon: "ti-flask-2", ...B, href: "/klinik/bahan-baku" },
+    { label: "Katalog racikan resmi", icon: "ti-book", ...B, href: "/klinik/katalog-racikan" },
     { label: "Jadwal dokter", icon: "ti-calendar-event", ...B, nw: true, href: "/klinik/jadwal-dokter" },
     { label: "Maintenance alat medis", icon: "ti-tool", ...B, nw: true, href: "/klinik/maintenance" },
     { label: "Booking online", icon: "ti-calendar-plus", ...G, nw: true, href: "/klinik/booking" },

@@ -114,6 +114,9 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       RECIPE_ID_MISSING: "Identitas racikan atau histori HPP belum tersedia. Minta bantuan keuangan sebelum menagih.",
       INVOICE_EXISTS: "Kunjungan sudah memiliki invoice aktif.",
       INVOICE_INVALID: "Nilai atau rincian invoice tidak konsisten.",
+      PAYMENT_INVALID: "Pembayaran tidak cocok dengan sisa piutang.",
+      JOURNAL_MISSING: "Catatan pembukuan lama belum lengkap. Minta keuangan meninjau tagihan.",
+      INPATIENT_OPEN: "Biaya rawat inap belum dihitung. Selesaikan kepulangan pasien sebelum membuat tagihan.",
       INVOICE_NO_INVALID: "Format nomor invoice tidak valid.",
       LINE_INVALID: "Rincian invoice tidak valid.",
       JOURNAL_UNBALANCED: "Jurnal invoice tidak seimbang; tidak ada perubahan yang disimpan.",
@@ -125,4 +128,16 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     if (match && match[2] && detailMessages[match[1]]) return `${detailMessages[match[1]]}: ${match[2]}`;
   }
   return "Transaksi belum tersimpan. Periksa apakah invoice sudah dibuat lalu coba lagi.";
+}
+
+export function parseClinicRecordError(error: { code?: string; message: string } | null): string {
+  if (error?.code === "P0001") {
+    if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
+    if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
+    if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
+  }
+  const message = parseClinicPostingError(error);
+  return message.startsWith("Transaksi belum tersimpan.")
+    ? "Rekam medis belum tersimpan. Periksa data dan coba lagi."
+    : message;
 }

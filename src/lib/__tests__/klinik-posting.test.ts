@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseClinicPostingError, toClinicCompoundRecipeInput } from "../klinik-posting";
+import { parseClinicPostingError, parseClinicRecordError, toClinicCompoundRecipeInput } from "../klinik-posting";
 
 describe("parseClinicPostingError", () => {
   it("identifies the medicine whose stock is insufficient", () => {
@@ -54,6 +54,19 @@ describe("parseClinicPostingError", () => {
       .toBe("Satuan barang tidak cocok: strip");
     expect(parseClinicPostingError({ code: "P0001", message: "JOURNAL_UNBALANCED: invoice" }))
       .toMatch(/tidak seimbang/);
+  });
+});
+
+describe("parseClinicRecordError", () => {
+  it("explains failed initial exams without exposing raw database details", () => {
+    expect(parseClinicRecordError({ code: "P0001", message: "RECORD_INVALID: kunjungan belum siap" }))
+      .toMatch(/Kunjungan belum siap/);
+    expect(parseClinicRecordError({ code: "P0001", message: "LOG_INVALID: rekam medis belum tersedia" }))
+      .toMatch(/rawat inap/);
+    expect(parseClinicRecordError({ code: "P0001", message: "IDEMPOTENCY_CONFLICT: key" }))
+      .toMatch(/Form pemeriksaan/);
+    expect(parseClinicRecordError({ code: "23505", message: "sensitive database constraint" }))
+      .toBe("Rekam medis belum tersimpan. Periksa data dan coba lagi.");
   });
 });
 

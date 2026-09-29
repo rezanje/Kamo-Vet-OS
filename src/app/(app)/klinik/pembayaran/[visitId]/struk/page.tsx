@@ -27,6 +27,12 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
 
   const { data: items } = await supabase
     .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at");
+  const { data: payments } = await supabase.from("invoice_payments")
+    .select("amount, transferred_from").eq("invoice_id", invoice.id);
+  const credit = (payments ?? []).filter((p) => p.transferred_from)
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const received = Number(invoice.dp_amount) + (payments ?? [])
+    .reduce((sum, p) => sum + Number(p.amount), 0);
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
@@ -76,7 +82,8 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Hr />
         <Row k="Metode" v={invoice.metode_bayar ?? "-"} />
         <Row k="Status" v={invoice.paid_status} />
-        {invoice.paid_status === "DP" && <Row k="Sisa" v={rp(invoice.total - invoice.dp_amount)} />}
+        {credit > 0 && <Row k="Dialihkan" v={rp(credit)} />}
+        {invoice.paid_status === "DP" && <Row k="Sisa" v={rp(Math.max(0, Number(invoice.total) - received))} />}
         <Hr />
         <div style={{ textAlign: "center", fontSize: 10, marginTop: 6 }}>
           Terima kasih 🐾<br />Semoga anabul sehat selalu

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { addRacikan, bahanRacikanUntukKunjungan, type BahanRacikan } from "@/app/(app)/klinik/racik/actions";
+import { addRacikan, bahanRacikanUntukKunjungan, katalogRacikanUntukKunjungan, type BahanRacikan } from "@/app/(app)/klinik/racik/actions";
+import { katalogTotal, type KatalogRacikan } from "@/lib/katalog-racikan";
 
 type ItemLite = BahanRacikan;
 type Bahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
@@ -10,11 +11,13 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 // Builder racikan ringkas — field & alur sama seperti tab "Racikan" di form pemeriksaan,
 // tapi berdiri sendiri utk nambah racikan setelah rekam medis tersimpan (recorded view).
-export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
-  visitId: string; medicalRecordId: string; bahanItems: ItemLite[];
+export function RacikanInline({ visitId, medicalRecordId, bahanItems, bolehManual }: {
+  visitId: string; medicalRecordId: string; bahanItems: ItemLite[]; bolehManual: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ItemLite[]>(bahanItems);
+  const [catalog, setCatalog] = useState<KatalogRacikan[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState("");
   const [loadError, setLoadError] = useState("");
   const [isLoading, startTransition] = useTransition();
   const [nama, setNama] = useState("");
@@ -25,6 +28,7 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
   const [bahan, setBahan] = useState<Bahan[]>([]);
 
   const subtotal = bahan.reduce((a, b) => a + b.qty * b.harga, 0);
+  const selected = catalog.find((formula) => formula.version_id === selectedVersion);
 
   const addBahan = (it: ItemLite) => {
     if (bahan.some((b) => b.item_id === it.id)) return;
@@ -36,7 +40,11 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
     setLoadError("");
     startTransition(async () => {
       try {
-        setItems(await bahanRacikanUntukKunjungan(visitId));
+        const [availableItems, availableCatalog] = await Promise.all([
+          bahanRacikanUntukKunjungan(visitId), katalogRacikanUntukKunjungan(visitId),
+        ]);
+        setItems(availableItems);
+        setCatalog(availableCatalog);
         setRequestKey(crypto.randomUUID());
         setOpen(true);
       } catch {
@@ -63,20 +71,41 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
       <input type="hidden" name="medicalRecordId" value={medicalRecordId} />
       <input type="hidden" name="requestKey" value={requestKey} />
       <input type="hidden" name="ingredients" value={JSON.stringify(bahan)} />
+      <input type="hidden" name="official_version_id" value={selectedVersion} />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: "#7c3aed" }}><i className="ti ti-flask" /> Racikan baru</span>
         <i className="ti ti-x" onClick={() => setOpen(false)} style={{ cursor: "pointer", color: "var(--td)", fontSize: 14 }} />
       </div>
 
-      <input className="fi" name="recipe_name" placeholder="Nama racikan (mis. Puyer Batuk)" value={nama} onChange={(e) => setNama(e.target.value)} />
+      <label className="flab">Katalog resmi perusahaan</label>
+      <select className="fi" value={selectedVersion} onChange={(e) => {
+        const versionId = e.target.value;
+        const formula = catalog.find((entry) => entry.version_id === versionId);
+        setSelectedVersion(versionId);
+        setAturan(formula?.dosage_instruction ?? "");
+      }}>
+        <option value="">{bolehManual ? "Racikan khusus pasien (manual)" : "Pilih resep resmi"}</option>
+        {catalog.map((formula) => <option key={formula.version_id} value={formula.version_id}>
+          {formula.code} · {formula.name} (v{formula.version})
+        </option>)}
+      </select>
+      {selected ? <div style={{ fontSize: 11, background: "#f4f0ff", borderRadius: 8, padding: 9 }}>
+        <strong>{selected.name} · {selected.dosage_form}</strong>
+        <div>{selected.ingredients.map((ingredient) => `${ingredient.name} ${ingredient.quantity} ${ingredient.unit}`).join(" · ")}</div>
+        <div>Estimasi bahan {rp(katalogTotal(selected.ingredients))}. Stok diperiksa saat menyimpan.</div>
+      </div> : bolehManual ? <input className="fi" name="recipe_name" placeholder="Nama racikan (mis. Puyer Batuk)" value={nama} onChange={(e) => setNama(e.target.value)} /> : null}
       <div style={{ display: "flex", gap: 6 }}>
-        <select className="fi" name="dosage_form" value={form} onChange={(e) => setForm(e.target.value)} style={{ fontSize: 11.5 }}>
+        {!selected && bolehManual && <select className="fi" name="dosage_form" value={form} onChange={(e) => setForm(e.target.value)} style={{ fontSize: 11.5 }}>
           {["sirup", "nebul", "salep", "puyer", "kapsul", "lainnya"].map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <input className="fi" name="aturan_pakai" placeholder="Aturan pakai (opsional)" value={aturan} onChange={(e) => setAturan(e.target.value)} />
+        </select>}
+        {selected
+          ? <><input type="hidden" name="aturan_pakai" value={selected.dosage_instruction ?? ""} />
+            <span style={{ fontSize: 11 }}>Aturan pakai resmi: {selected.dosage_instruction ?? "Tidak ditetapkan"}. Untuk aturan lain, gunakan racikan khusus pasien.</span></>
+          : bolehManual ? <input className="fi" name="aturan_pakai" placeholder="Aturan pakai (opsional)" value={aturan} onChange={(e) => setAturan(e.target.value)} /> : null}
       </div>
 
+      {!selected && bolehManual && <>
       <div style={{ position: "relative" }}>
         <input className="fi" placeholder="Cari bahan baku..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingRight: 28 }} />
         <i className="ti ti-search" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 13 }} />
@@ -110,9 +139,10 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
           </div>
         </div>
       )}
+      </>}
 
-      <button type="submit" disabled={!nama.trim() || bahan.length === 0}
-        className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!nama.trim() || bahan.length === 0) ? .5 : 1 }}>
+      <button type="submit" disabled={!selected && (!bolehManual || !nama.trim() || bahan.length === 0)}
+        className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!selected && (!bolehManual || !nama.trim() || bahan.length === 0)) ? .5 : 1 }}>
         <i className="ti ti-plus" /> Simpan racikan
       </button>
     </form>

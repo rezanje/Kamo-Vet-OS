@@ -180,23 +180,27 @@ begin
   failed := false;
   begin
     update public.invoices set total = 1 where id = inv_id;
-  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  exception when insufficient_privilege then failed := true;
+  when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
   if not failed then raise exception 'posted invoice amount can be edited outside atomic lifecycle'; end if;
   failed := false;
   begin
     update public.invoices set voided_at = now() where id = inv_id;
-  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  exception when insufficient_privilege then failed := true;
+  when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
   if not failed then raise exception 'posted invoice can be voided without atomic reversal'; end if;
   failed := false;
   begin
     update public.invoice_items set qty = 10 where invoice_id = inv_id;
-  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  exception when insufficient_privilege then failed := true;
+  when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
   if not failed then raise exception 'posted invoice line can be edited without stock and HPP reversal'; end if;
   failed := false;
   begin
     insert into public.invoice_items(invoice_id, deskripsi, qty, harga, jenis)
     values(inv_id, 'Baris tambahan tanpa jurnal', 1, 1, 'obat');
-  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
+  exception when insufficient_privilege then failed := true;
+  when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1; end;
   if not failed then raise exception 'posted invoice accepts an extra unjournaled line'; end if;
   if (select count(*) from public.invoice_items where invoice_id = inv_id) <> 4 then raise exception 'mixed invoice lines were not saved'; end if;
   if (select hpp from public.invoice_items where invoice_id = inv_id and deskripsi = 'Obat Unit') <> 50 then raise exception 'medicine HPP did not use selected-unit factor and FIFO layers; got %', (select hpp from public.invoice_items where invoice_id = inv_id and deskripsi = 'Obat Unit'); end if;

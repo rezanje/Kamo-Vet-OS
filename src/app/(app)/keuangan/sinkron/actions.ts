@@ -25,7 +25,7 @@ type MissingSaleOnline = {
 export async function findDrift(supabase: Awaited<ReturnType<typeof createClient>>): Promise<{ invoices: MissingInvoice[]; sales: MissingSale[]; salesOnline: MissingSaleOnline[] }> {
   const { data: refs } = await supabase.from("journal_entries").select("source, source_ref").not("source_ref", "is", null);
   // dipisah per jenis: jurnal HPP (sale-hpp) tidak dihitung sebagai jurnal pendapatan.
-  const klinikRefs = new Set((refs ?? []).filter((r) => r.source === "klinik" || r.source === "klinik-edit").map((r) => r.source_ref as string));
+  const klinikRefs = new Set((refs ?? []).filter((r) => ["klinik", "klinik-edit", "klinik-reissue"].includes(r.source)).map((r) => r.source_ref as string));
   const saleRefs = new Set((refs ?? []).filter((r) => r.source === "sale").map((r) => r.source_ref as string));
   const saleOnlineRefs = new Set((refs ?? []).filter((r) => r.source === "sale-online").map((r) => r.source_ref as string));
 

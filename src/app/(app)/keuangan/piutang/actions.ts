@@ -2,79 +2,32 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { hariIniWIB } from "@/lib/tanggal";
-import { cekPeriode } from "@/lib/jurnal-guard";
 
-// Terima pelunasan piutang atas invoice klinik (DP / Belum Lunas).
-// Jurnal: Dr Kas/Bank, Cr Piutang Usaha (1201). Lunas penuh → invoice Lunas, visit Selesai.
 export async function terimaPelunasan(formData: FormData) {
   const supabase = await createClient();
   const back = "/keuangan/piutang";
-
   const invoiceId = String(formData.get("invoice_id") ?? "");
-  const amount = Number(formData.get("amount")) || 0;
-  const metode = String(formData.get("metode") ?? "Tunai");
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  const amount = Number(formData.get("amount"));
+  const metode = String(formData.get("metode") ?? "");
   const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
-
-  if (!invoiceId || amount <= 0) {
-    redirect(`${back}?error=${encodeURIComponent("Nominal pelunasan tidak valid")}`);
+  if (!invoiceId || !requestKey || !Number.isFinite(amount) || amount <= 0) {
+    redirect(`${back}?error=${encodeURIComponent("Data pembayaran tidak lengkap; muat ulang halaman")}`);
   }
-
-  // Uang masuk tanpa jurnal = piutang terlihat lunas tapi kas tidak pernah bertambah
-  // di buku besar. Dicek sebelum baris pelunasan ditulis, bukan sesudah.
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
-
-  const { data: inv } = await supabase
-    .from("invoices")
-    .select("id, invoice_no, total, dp_amount, paid_status, visit_id")
-    .eq("id", invoiceId).is("voided_at", null).maybeSingle();
-  if (!inv) redirect(`${back}?error=${encodeURIComponent("Invoice tidak ditemukan")}`);
-  if (inv!.paid_status === "Lunas") redirect(`${back}?error=${encodeURIComponent("Invoice sudah lunas")}`);
-
-  const { data: pays } = await supabase
-    .from("invoice_payments").select("amount").eq("invoice_id", invoiceId);
-  const sudahDibayar = Number(inv!.dp_amount) + (pays ?? []).reduce((a, p) => a + Number(p.amount), 0);
-  const sisa = Math.max(0, Number(inv!.total) - sudahDibayar);
-
-  if (sisa <= 0) redirect(`${back}?error=${encodeURIComponent("Piutang invoice ini sudah nol")}`);
-  if (amount > sisa) redirect(`${back}?error=${encodeURIComponent(`Nominal melebihi sisa piutang (maks Rp ${Math.round(sisa).toLocaleString("id-ID")})`)}`);
-
-  const { data: v } = await supabase.from("visits").select("branch_id").eq("id", inv!.visit_id).maybeSingle();
-
-  // Rekening: pilihan manual kasir keuangan menang; kalau kosong ikut peta metode bayar.
-  const kasCode = await kodeAkunBayar(supabase, metode, v?.branch_id ?? null, accountId);
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const { error: payErr } = await supabase.from("invoice_payments").insert({
-    invoice_id: invoiceId, tanggal, amount, metode, catatan, kas_code: kasCode, created_by: user?.id ?? null,
+  const { data: inv } = await supabase.from("invoices")
+    .select("visit_id, visits(branch_id)").eq("id", invoiceId).maybeSingle();
+  if (!inv) redirect(`${back}?error=${encodeURIComponent("Tagihan tidak ditemukan")}`);
+  const visit = Array.isArray(inv.visits) ? inv.visits[0] : inv.visits;
+  const kasCode = await kodeAkunBayar(supabase, metode, visit?.branch_id ?? null, accountId);
+  const { error } = await supabase.rpc("clinic_receive_invoice_payment", {
+    p_invoice_id: invoiceId, p_tanggal: tanggal, p_amount: amount,
+    p_metode: metode, p_kas_code: kasCode, p_catatan: catatan,
+    p_request_key: requestKey,
   });
-  if (payErr) redirect(`${back}?error=${encodeURIComponent(payErr.message)}`);
-
-  // Jurnal: kas masuk, piutang berkurang.
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Pelunasan piutang ${inv!.invoice_no}`,
-    source: "klinik-ar",
-    sourceRef: inv!.invoice_no,
-    branchId: v?.branch_id ?? null,
-    lines: [
-      { code: kasCode, debit: amount, credit: 0 },
-      { code: "1201", debit: 0, credit: amount },
-    ],
-  });
-
-  // Lunas penuh → tutup invoice + visit.
-  if (amount >= sisa) {
-    await supabase.from("invoices")
-      .update({ paid_status: "Lunas", paid_at: new Date().toISOString() })
-      .eq("id", invoiceId);
-    await supabase.from("visits").update({ status: "Selesai" }).eq("id", inv!.visit_id);
-  }
-
+  if (error) redirect(`${back}?error=${encodeURIComponent("Pembayaran belum tersimpan. " + error.message)}`);
   redirect(`${back}?success=1`);
 }

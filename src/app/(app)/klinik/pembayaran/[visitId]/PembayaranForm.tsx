@@ -125,16 +125,16 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   );
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialDpDate = null, editMode = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   ppnRate?: number;
-  initialDiscount?: number; initialDpAmount?: number; initialDpDate?: string | null; editMode?: boolean;
+  initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
 }) {
   const [obat, setObat] = useState<Line[]>(initialObat);
   const [jasa, setJasa] = useState<Line[]>(initialJasa);
   const [discount, setDiscount] = useState(initialDiscount);
-  const [metode, setMetode] = useState("Tunai");
+  const [metode, setMetode] = useState(initialMetode);
   const [reason, setReason] = useState("");
   const [voucher, setVoucher] = useState("");
 
@@ -147,8 +147,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   // tetap menghitung ulang saat menyimpan — ini supaya kasir bisa menyebut angka
   // ke pemilik SEBELUM menekan bayar, bukan supaya layar menentukan uang.
   const barisPotongan = barisSemua.map((r) => ({ item_id: r.item_id ?? "", qty: r.qty, harga: hargaNetto(r) }));
-  const promoVal = hitungPromoKeranjang(bekal.promos, barisPotongan).reduce((a, p) => a + p.potongan, 0);
-  const golonganVal = diskonGolonganKeranjang(
+  const promoVal = editMode ? 0 : hitungPromoKeranjang(bekal.promos, barisPotongan).reduce((a, p) => a + p.potongan, 0);
+  const golonganVal = editMode ? 0 : diskonGolonganKeranjang(
     barisPotongan, bekal.aturanDiskon, bekal.golonganPersen, new Map(Object.entries(bekal.infoBarang)),
   );
   const dasarVoucher = Math.max(0, subtotal - promoVal);
@@ -157,7 +157,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
     dasar: dasarVoucher, adaPromoOtomatis: promoVal > 0,
     customerId: bekal.customerId, categoryId: bekal.categoryId,
   });
-  const voucherVal = voucherRow && !tolakVoucher ? potonganVoucher(dasarVoucher, voucherRow) : 0;
+  const voucherVal = !editMode && voucherRow && !tolakVoucher ? potonganVoucher(dasarVoucher, voucherRow) : 0;
   const potonganOtomatis = Math.min(subtotal, promoVal + golonganVal + voucherVal);
 
   const dppSebelumPoin = Math.max(0, subtotal - discount - potonganOtomatis);
@@ -175,10 +175,10 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const tax = Math.round((dpp * ppnRate) / 100);
   const total = dpp + tax;
   const dpPaid = initialDpAmount;
-  const sisa = Math.max(0, total - dpPaid);
+  const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
 
   const [bayar, setBayar] = useState(0);
-  const totalDiterima = dpPaid + bayar;
+  const totalDiterima = dpPaid + initialCreditAmount + bayar;
   const kembalian = Math.max(0, bayar - sisa);
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
@@ -199,7 +199,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="poinDigunakan" value={poinDipakai} />
       <input type="hidden" name="paid_status" value={paidStatus} />
       <input type="hidden" name="metode_bayar" value={metode} />
-      <input type="hidden" name="dp_amount" value={totalDiterima} />
+      <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
 
@@ -253,12 +253,12 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               {golonganVal > 0 && <SumRow label="Diskon golongan pelanggan" value={`- ${rp(golonganVal)}`} />}
 
               {/* Kode voucher: mesin & syaratnya sama dengan kasir petshop. */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", gap: 8 }}>
+              {!editMode && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", gap: 8 }}>
                 <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Kode voucher</span>
                 <input className="fi" value={voucher} placeholder="opsional"
                   onChange={(e) => setVoucher(e.target.value)}
                   style={{ width: 120, textAlign: "right", textTransform: "uppercase", borderColor: tolakVoucher ? "#fca5a5" : undefined }} />
-              </div>
+              </div>}
               {tolakVoucher && (
                 <div style={{ fontSize: 10, color: "#b91c1c", textAlign: "right", marginTop: -2 }}>{tolakVoucher}</div>
               )}
@@ -266,7 +266,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
 
               {/* Poin loyalty — sama seperti kasir petshop: 1 poin = Rp1, hanya
                   terpotong kalau tagihan dilunasi sekarang. */}
-              {bekal.poinSaldo > 0 && (
+              {!editMode && bekal.poinSaldo > 0 && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", gap: 8 }}>
                   <span style={{ fontSize: 11.5, color: "var(--tm)" }}>
                     Pakai poin <span style={{ fontSize: 9.5, color: "var(--td)" }}>(saldo {bekal.poinSaldo.toLocaleString("id-ID")})</span>
@@ -312,6 +312,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           <div className="card">
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>RINGKASAN PEMBAYARAN</div>
             <SumRow label="Total Tagihan" value={rp(total)} />
+            {initialCreditAmount > 0 && <SumRow label="Pembayaran dialihkan" value={rp(initialCreditAmount)} />}
             <SumRow label="Total Pembayaran" value={rp(totalDiterima)} />
             <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1px solid var(--bd)" }}>
               <span style={{ fontSize: 12, fontWeight: 700 }}>Sisa yang Harus Dibayar</span>
@@ -340,7 +341,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PILIH METODE PEMBAYARAN</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {METODE_BAYAR.map(({ m, ic, desc }) => (
-                <button key={m} type="button" onClick={() => setMetode(m)} style={{
+                <button key={m} type="button" disabled={editMode} onClick={() => setMetode(m)} style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", textAlign: "left",
                   border: `1.5px solid ${metode === m ? "var(--posb)" : "var(--bd)"}`, background: metode === m ? "#eff4ff" : "#fff",
                 }}>
@@ -360,7 +361,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Jumlah Bayar</span>
-              <input className="fi" type="number" min={0} step={1} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
+              <input className="fi" type="number" min={0} step={1} disabled={editMode} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
               <span style={{ fontWeight: 600, color: "#15803d" }}>Kembalian</span>
@@ -380,7 +381,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               </span>
             )}
             <SubmitButton className="btn-acc" name="finalize" value="0" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>Simpan</SubmitButton>
-            <SubmitButton className="kpos-bayar" name="finalize" value="1" icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>
+            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
           </div>
         </div>
       </div>

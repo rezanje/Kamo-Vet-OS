@@ -4,66 +4,11 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nilaiPantauUntukDatabase } from "@/lib/monitoring-inap";
-import { canTransition, hariRawatInap, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
-import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
+import { canTransition, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
+import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Db = any;
-
-/**
- * Catat biaya rawat inap ke tagihan begitu pasien pulang.
- *
- * Sebelumnya jumlah hari diketik tangan saat menutup tagihan, dan itu jalur yang
- * paling sering meleset — 10 hari tercatat 8, kadang tidak sengaja kadang tidak.
- * Sekarang jumlahnya dihitung dari jam masuk sampai jam pulang, dibulatkan ke atas
- * per 24 jam (keputusan Aldi, 19 Agustus).
- *
- * Dipanggil setelah `discharged_at` terisi. Aman dipanggil dua kali: barisnya
- * ditimpa, bukan ditambah lagi.
- */
-async function catatBiayaRawatInap(supabase: Db, recordId: string): Promise<void> {
-  const { data: rec } = await supabase
-    .from("inpatient_records")
-    .select("visit_id, admitted_at, discharged_at, visits(branch_id)")
-    .eq("id", recordId).maybeSingle();
-  if (!rec?.discharged_at) return;
-
-  // Tarifnya diambil dari master jasa berkategori Rawat Inap. Kalau klinik belum
-  // membuatnya, jangan mengarang harga — biarkan dokter mengisi manual seperti dulu.
-  const { data: jasa } = await supabase
-    .from("items")
-    .select("id, name, sell_price, unit")
-    .eq("tindakan_kategori", "Rawat Inap").eq("is_active", true)
-    .order("name").limit(1).maybeSingle();
-  if (!jasa) return;
-
-  const { data: mr } = await supabase
-    .from("medical_records").select("id").eq("visit_id", rec.visit_id)
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (!mr) return;
-
-  const hari = hariRawatInap(rec.admitted_at as string, rec.discharged_at as string);
-
-  // Baris lama untuk jasa yang sama dibuang dulu supaya menutup ulang tidak
-  // melahirkan tagihan dobel.
-  await supabase.from("prescription_items")
-    .delete().eq("medical_record_id", mr.id).eq("item_id", jasa.id);
-
-  await supabase.from("prescription_items").insert({
-    medical_record_id: mr.id,
-    item_id: jasa.id,
-    nama_obat: jasa.name,
-    qty: hari,
-    harga: Number(jasa.sell_price) || 0,
-    satuan: jasa.unit ?? "hari",
-    jenis: "jasa",
-    kategori: "Rawat Inap",
-    aturan_pakai: `Otomatis dari lama rawat inap: ${hari} hari`,
-  });
-}
 
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
 export async function admitInpatient(formData: FormData) {
@@ -153,6 +98,7 @@ type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string;
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
+  official_version_id?: string;
 };
 export async function addDailyLogPos(formData: FormData) {
   const supabase = await createClient();
@@ -164,27 +110,25 @@ export async function addDailyLogPos(formData: FormData) {
   const doctorName = String(formData.get("doctor_name") ?? "").trim() || null;
   const logDate = String(formData.get("log_date") ?? "").trim();
   const logTime = String(formData.get("log_time") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "").trim();
   const newStatus = String(formData.get("new_status") ?? "").trim() as Condition | "";
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
-  if (!recordId || !conditionNote) redirect(`${back}?error=${encodeURIComponent("Isi kondisi pasien")}`);
+  if (!recordId || !conditionNote || !requestKey) redirect(`${back}?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
 
   const { data: rec } = await supabase
     .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
   if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
 
-  // 1) log harian (append-only). Tanggal+waktu dari form (default = sekarang di client).
   const stamp = waktuInputWIB(logDate, logTime);
-  const { error: logErr } = await supabase.from("inpatient_daily_logs").insert({
-    inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
-    doctor_name: doctorName, created_by: user?.id ?? null,
+  const log = {
+    condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
     ...bacaPemantauan(formData),
-    ...(logDate ? { log_date: logDate } : {}),
-    ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
-  });
-  if (logErr) redirect(`${back}?error=${encodeURIComponent(logErr.message)}`);
+    log_date: logDate || null,
+    created_at: stamp && !Number.isNaN(stamp.getTime()) ? stamp.toISOString() : null,
+  };
 
-  // 2) obat/jasa → resep visit (medical_record) supaya ikut tagihan saat pulang
+  // Resep ditautkan ke rekam medis dan disimpan bersama log dalam satu transaksi.
   let mrId = rec!.medical_record_id as string | null;
   if (!mrId) {
     const { data: mr } = await supabase.from("medical_records").select("id").eq("visit_id", rec!.visit_id)
@@ -194,64 +138,61 @@ export async function addDailyLogPos(formData: FormData) {
   let resep: ResepItem[] = [];
   try { resep = JSON.parse(String(formData.get("resep") ?? "[]")); } catch { resep = []; }
   const racikan = resep.filter((r) => r.jenis === "racikan");
-  if (racikan.some((r) => (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
+  if (racikan.some((r) => !r.official_version_id &&
+    (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
     redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
-  if (racikan.length && !mrId) {
-    redirect(`${back}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan racikan ke tagihan")}`);
+  if (resep.length && !mrId) {
+    redirect(`${back}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
+  let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string }[] = [];
   if (mrId && resep.length) {
     // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
     const unitOpts = await loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x));
-    const rows = resep.filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan").map((r) => ({
-      medical_record_id: mrId, nama_obat: r.nama_obat.trim(),
+    rows = resep.filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan").map((r) => ({
+      nama_obat: r.nama_obat.trim(), item_id: r.item_id ?? null,
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
-      satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
-      faktor: r.jenis === "racikan" || !r.item_id ? 1 : (unitOpts.get(r.item_id) ? pickUnit(unitOpts.get(r.item_id)!, r.satuan).factor : 1),
+      satuan: r.satuan?.trim() || "pcs",
+      faktor: !r.item_id ? 1 : (unitOpts.get(r.item_id) ? pickUnit(unitOpts.get(r.item_id)!, r.satuan).factor : 1),
       harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" — sama seperti jalur simpanRekamMedis.
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
     }));
-    if (rows.length) await supabase.from("prescription_items").insert(rows);
   }
 
-  // 2b) Racikan, BOM, layer issue, HPP history, and stock move share one database transaction.
-  if (mrId && racikan.length) {
-    for (const r of racikan) {
-      const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
-      if (ings.length === 0) continue;
-      const params: ClinicIssueCompoundParams = {
-        p_medical_record_id: mrId,
-        p_visit_id: rec!.visit_id,
-        p_recipe: toClinicCompoundRecipeInput({
-          recipeName: r.nama_obat,
-          dosageInstruction: r.aturan_pakai,
-          dosageForm: r.dosage_form,
-          ingredients: ings,
-        }),
-        p_request_key: r.key ?? "",
-      };
-      const { error: recipeErr } = await supabase.rpc("clinic_issue_compound", params);
-      if (recipeErr) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(recipeErr))}`);
-    }
+  const compounds = racikan.map((r) => r.official_version_id ? {
+    official_version_id: r.official_version_id,
+    request_key: r.key ?? "",
+    dosage_instruction: r.aturan_pakai ?? null,
+  } : {
+    recipe: toClinicCompoundRecipeInput({
+      recipeName: r.nama_obat,
+      dosageInstruction: r.aturan_pakai,
+      dosageForm: r.dosage_form,
+      ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
+    }),
+    request_key: r.key ?? "",
+  });
+  if (newStatus && !["stabil", "kritis", "sembuh", "rip"].includes(newStatus)) {
+    redirect(`${back}?error=${encodeURIComponent("Status kondisi tidak valid")}`);
   }
-
-  // 3) ubah kondisi kalau dipilih & beda dari sekarang
-  if (newStatus && ["stabil", "kritis", "sembuh", "rip"].includes(newStatus) && newStatus !== rec!.condition_status) {
+  if (newStatus && newStatus !== rec!.condition_status) {
     const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-    if (canTransition((me?.role ?? "STAFF") as Role, newStatus)) {
-      await supabase.from("inpatient_status_log").insert({
-        inpatient_record_id: recordId, previous_status: rec!.condition_status, new_status: newStatus,
-        changed_by: user?.id ?? null, notes: "Diubah dari catatan harian",
-      });
-      await supabase.from("inpatient_records").update({
-        condition_status: newStatus,
-        ...(isTerminal(newStatus) ? { discharged_at: new Date().toISOString() } : {}),
-      }).eq("id", recordId);
-      if (isTerminal(newStatus)) await catatBiayaRawatInap(supabase, recordId);
+    if (!canTransition((me?.role ?? "STAFF") as Role, newStatus)) {
+      redirect(`${back}?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
     }
   }
+  const { error: saveError } = await supabase.rpc("clinic_save_inpatient_log_with_status", {
+    p_inpatient_id: recordId,
+    p_medical_record_id: mrId,
+    p_log: log,
+    p_rows: rows,
+    p_compounds: compounds,
+    p_request_key: requestKey,
+    p_new_status: newStatus && newStatus !== rec!.condition_status ? newStatus : null,
+  });
+  if (saveError) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
 
   redirect(cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log`);
 }
@@ -278,21 +219,10 @@ export async function changeCondition(formData: FormData) {
   if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
   if (rec!.condition_status === newStatus) redirect(back);
 
-  await supabase.from("inpatient_status_log").insert({
-    inpatient_record_id: recordId, previous_status: rec!.condition_status, new_status: newStatus,
-    changed_by: user?.id ?? null, notes,
+  const { error } = await supabase.rpc("clinic_change_inpatient_condition", {
+    p_inpatient_id: recordId, p_new_status: newStatus, p_notes: notes,
   });
-
-  await supabase
-    .from("inpatient_records")
-    .update({
-      condition_status: newStatus,
-      // §3: rip/sembuh otomatis keluar dari dashboard aktif; invoice TIDAK diblokir.
-      ...(isTerminal(newStatus) ? { discharged_at: new Date().toISOString() } : { discharged_at: null }),
-    })
-    .eq("id", recordId);
-
-  if (isTerminal(newStatus)) await catatBiayaRawatInap(supabase, recordId);
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(error))}`);
 
   // rip → layar review WA dulu (spec default: review sebelum kirim, bukan auto-send).
   redirect(newStatus === "rip" ? `${back}?wa=review` : `${back}?success=status`);

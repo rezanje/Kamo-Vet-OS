@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
+import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
 import { resolveDokter } from "@/lib/dokter";
@@ -13,6 +13,7 @@ type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
+  official_version_id?: string;
 };
 
 type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
@@ -72,13 +73,8 @@ export async function simpanRekamMedis(formData: FormData) {
     const pesanBerat = pesanBeratTidakWajar(pet?.species ?? null, berat);
     if (pesanBerat) redirect(`${back}?error=${encodeURIComponent(pesanBerat)}`);
   }
-  const providerId = String(formData.get("provider_id") ?? "").trim();
-  if (providerId) {
-    const provider = await supabase.rpc("set_visit_service_state", {
-      p_visit_id: visitId, p_action: "provider", p_provider_id: providerId,
-    });
-    if (provider.error) redirect(`${back}?error=${encodeURIComponent(provider.error.message)}`);
-  }
+  const providerId = String(formData.get("provider_id") ?? "").trim() || null;
+  const requestKey = String(formData.get("request_key") ?? "").trim();
 
   // Foto penunjang: path di bucket privat `medical-docs`, dikirim sbg JSON dari klien.
   let penunjangUrls: string[] = [];
@@ -89,42 +85,11 @@ export async function simpanRekamMedis(formData: FormData) {
     penunjangUrls = [];
   }
 
-  const { data: mr, error: mrErr } = await supabase
-    .from("medical_records")
-    .insert({
-      visit_id: visitId, diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang, follow_up, catatan_resep,
-      penunjang_urls: penunjangUrls.length ? penunjangUrls : null,
-    })
-    .select("id").single();
-  if (mrErr || !mr) {
-    redirect(`${back}?error=${encodeURIComponent(mrErr?.message ?? "Gagal simpan rekam medis")}`);
-  }
-
-  // Rencana follow up → worklist reminder pelanggan (/klinik/follow-up).
-  if (followUps.length) {
-    const { data: v } = await supabase
-      .from("visits").select("branch_id, pets(customer_id)").eq("id", visitId).maybeSingle();
-    const petRel = v?.pets as { customer_id: string | null } | { customer_id: string | null }[] | null;
-    const customerId = (Array.isArray(petRel) ? petRel[0] : petRel)?.customer_id ?? null;
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const { error: fuErr } = await supabase.from("follow_ups").insert(
-      followUps.map((f) => ({
-        visit_id: visitId, medical_record_id: mr!.id, pet_id: petId,
-        customer_id: customerId, branch_id: v?.branch_id ?? null,
-        jenis: f.jenis, tanggal: f.tanggal, catatan: f.catatan || null,
-        created_by: user?.id ?? null,
-      })),
-    );
-    if (fuErr) {
-      redirect(`${back}?error=${encodeURIComponent(fuErr.message)}`);
-    }
-  }
-
   // Keranjang obat & jasa (POS) datang sebagai JSON dari form client.
   let resep: ResepItem[] = [];
   try {
-    resep = JSON.parse(String(formData.get("resep") ?? "[]"));
+    const parsed = JSON.parse(String(formData.get("resep") ?? "[]"));
+    resep = Array.isArray(parsed) ? parsed : [];
   } catch {
     resep = [];
   }
@@ -140,14 +105,14 @@ export async function simpanRekamMedis(formData: FormData) {
     return opts ? pickUnit(opts, r.satuan).factor : 1;
   };
 
-  if (resep.some((r) => r.jenis === "racikan" && (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
+  if (resep.some((r) => r.jenis === "racikan" && !r.official_version_id &&
+    (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
     redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
 
   const rows = resep
     .filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan")
     .map((r) => ({
-      medical_record_id: mr!.id,
       nama_obat: r.nama_obat.trim(),
       // Tautan ke master barang (migrasi 0084) — tanpa ini stok obat klinik
       // tidak bisa dipotong dan modalnya tidak pernah tercatat.
@@ -163,49 +128,42 @@ export async function simpanRekamMedis(formData: FormData) {
       // Kategori tindakan (§6.3) — dasar penentuan wajib/tidaknya form persetujuan.
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
     }));
-  if (rows.length) {
-    const { error: piErr } = await supabase.from("prescription_items").insert(rows);
-    if (piErr) {
-      redirect(`${back}?error=${encodeURIComponent(piErr.message)}`);
-    }
-  }
-
-  // Racikan, BOM, layer issue, HPP history, and stock move share one database transaction.
-  const racikan = resep.filter((r) => r.jenis === "racikan" && (r.ingredients ?? []).length > 0);
-  if (racikan.length) {
-    for (const r of racikan) {
-      const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
-      if (ings.length === 0) continue;
-      const params: ClinicIssueCompoundParams = {
-        p_medical_record_id: mr!.id,
-        p_visit_id: visitId,
-        p_recipe: toClinicCompoundRecipeInput({
+  // Satu RPC untuk seluruh pemeriksaan. Gagal pada formula, stok, follow-up,
+  // atau status kunjungan akan me-rollback semua baris, termasuk rekam medis.
+  const racikan = resep.filter((r) => r.jenis === "racikan" &&
+    (r.official_version_id || (r.ingredients ?? []).length > 0));
+  const compounds = racikan.map((r) => r.official_version_id
+    ? {
+        official_version_id: r.official_version_id,
+        request_key: r.key ?? "",
+        dosage_instruction: r.aturan_pakai ?? null,
+      }
+    : {
+        request_key: r.key ?? "",
+        recipe: toClinicCompoundRecipeInput({
           recipeName: r.nama_obat,
           dosageInstruction: r.aturan_pakai,
           dosageForm: r.dosage_form,
-          ingredients: ings,
+          ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
         }),
-        p_request_key: r.key ?? "",
-      };
-      const { error: recipeErr } = await supabase.rpc("clinic_issue_compound", params);
-      if (recipeErr) {
-        redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(recipeErr))}`);
-      }
-    }
-  }
-
-  // berat terbaru ditarik ke kartu anabul (ponytail: single column, bukan time-series §1.2).
-  if (petId && berat && berat > 0) {
-    await supabase.from("pets").update({ weight: berat }).eq("id", petId);
-  }
-
-  // §3.4: rekam medis selesai → lanjut tahap Pembayaran. Waktu selesai dan audit
-  // layanan dicatat bersama perubahan status lewat RPC.
-  const finished = await supabase.rpc("set_visit_service_state", { p_visit_id: visitId, p_action: "finish" });
-  if (finished.error) redirect(`${back}?error=${encodeURIComponent(finished.error.message)}`);
-  const visitUpdated = await supabase.from("visits")
-    .update({ status: "Pembayaran", dokter, doctor_id: doctorId, keluhan }).eq("id", visitId);
-  if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent(visitUpdated.error.message)}`);
+      });
+  const { error: saveError } = await supabase.rpc("clinic_save_initial_record", {
+    p_visit_id: visitId,
+    p_pet_id: petId,
+    p_record: {
+      diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang,
+      follow_up, catatan_resep, penunjang_urls: penunjangUrls,
+    },
+    p_followups: followUps,
+    p_rows: rows,
+    p_compounds: compounds,
+    p_provider_id: providerId,
+    p_doctor_id: doctorId,
+    p_dokter: dokter,
+    p_keluhan: keluhan,
+    p_request_key: requestKey,
+  });
+  if (saveError) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
 
   // Tujuan setelah simpan tergantung tombol yg dipencet.
   if (next === "resep") redirect(`${back}/resep`);            // cetak resep

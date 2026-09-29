@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions, type ItemUnit } from "@/lib/satuan";
@@ -12,6 +13,7 @@ import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 import { ReferralPanel } from "./ReferralPanel";
+import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -129,6 +131,8 @@ export default async function RekamMedisPage({
   let obatItems: ItemLiteFull[] = [];
   let bahanItems: ItemLiteFull[] = [];
   let jasaItems: ItemLiteFull[] = [];
+  const katalogRacikan = !recorded ? await loadKatalogRacikan() : [];
+  const bolehManual = await bolehRacikKhusus();
   if (!recorded) {
     const { data: itemRows } = await supabase
       .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori")
@@ -411,7 +415,7 @@ export default async function RekamMedisPage({
             )}
             {mrId && (
               <div style={{ marginTop: 10 }}>
-                <RacikanInline visitId={visit.id} medicalRecordId={mrId} bahanItems={bahanItems} />
+                <RacikanInline visitId={visit.id} medicalRecordId={mrId} bahanItems={bahanItems} bolehManual={bolehManual} />
               </div>
             )}
           </div>
@@ -461,12 +465,15 @@ export default async function RekamMedisPage({
       ) : (
         <RekamForm
           visitId={visit.id}
+          requestKey={randomUUID()}
           petId={visit.pet_id}
           dokterOpsi={dokterOpsi}
           currentWeight={pet?.weight ?? null}
           items={obatItems}
           bahanItems={bahanItems}
           jasaItems={jasaItems}
+          katalogRacikan={katalogRacikan}
+          bolehManual={bolehManual}
           patient={{
             name: pet?.name ?? "—",
             species: pet?.species ?? "—",

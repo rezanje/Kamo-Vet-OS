@@ -79,6 +79,14 @@ describe("invoiceCashRows", () => {
     ]);
     expect(rows[0].total).toBe(500000);
   });
+
+  it("terbit ulang menghitung hanya uang kas shift awal, bukan kredit dan cicilan", () => {
+    const rows = invoiceCashRows([
+      { total: 500000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai",
+        dibayarSusulan: 500000, shift_cash_carry: 100000 },
+    ]);
+    expect(rows[0].total).toBe(100000);
+  });
 });
 
 describe("cashVariance", () => {
