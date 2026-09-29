@@ -77,6 +77,10 @@ export default async function PembayaranPage({
   const { data: invItems } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
     : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null }[] };
+  const { count: paymentCount } = invoice
+    ? await supabase.from("invoice_payments").select("*", { count: "exact", head: true }).eq("invoice_id", invoice.id)
+    : { count: 0 };
+  const hasPayments = (paymentCount ?? 0) > 0;
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -379,7 +383,7 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {!bolehTagih ? null : invoice && !lunas && !invoice.request_key ? (
+      {!bolehTagih ? null : invoice && !lunas && !hasPayments ? (
         <PembayaranForm
           visitId={visit.id}
           requestKey={invoiceRequestKey}
@@ -394,15 +398,11 @@ export default async function PembayaranPage({
           initialDiscount={Number(invoice.discount)}
           initialDpAmount={Number(invoice.dp_amount)}
           initialDpDate={invoice.dp_date}
+          initialMetode={invoice.metode_bayar ?? "Tunai"}
           editMode
         />
       ) : invoice ? (
         <>
-          {invoice.request_key && (
-            <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
-              <i className="ti ti-lock" /> Invoice sudah diposting. Koreksi edit/void ditahan sementara agar stok dan jurnal tidak terpisah; hubungi keuangan untuk peninjauan.
-            </div>
-          )}
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
             {invoice.paid_status === "DP" && ` — DP ${rp(invoice.dp_amount)}, sisa ${rp(invoice.total - invoice.dp_amount)}`}
@@ -420,7 +420,7 @@ export default async function PembayaranPage({
                 <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
               </span>
               <span style={{ display: "flex", gap: 5 }}>
-                {!lunas && !invoice.request_key && (
+                {!lunas && !hasPayments && (
                   <Link href={`/klinik/pembayaran/${visit.id}?edit=1`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-pencil" /> Edit Invoice
@@ -464,7 +464,7 @@ export default async function PembayaranPage({
           </div>
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {lunas && !invoice.request_key && (
+          {(lunas || hasPayments) && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
@@ -474,6 +474,8 @@ export default async function PembayaranPage({
               </div>
               <form action={voidAndReissue} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <input type="hidden" name="visitId" value={visit.id} />
+                <input type="hidden" name="invoiceId" value={invoice.id} />
+                <input type="hidden" name="requestKey" value={randomUUID()} />
                 <div style={{ flex: 1 }}>
                   <label className="flab">Alasan void *</label>
                   <input className="fi" name="reason" required placeholder="mis. salah tagih jasa rawat inap" />

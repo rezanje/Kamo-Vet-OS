@@ -16,6 +16,10 @@ psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/atomic_initial_clinic_record.sql
 psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
   -v ON_ERROR_STOP=1 -f supabase/tests/atomic_inpatient_daily_log.sql
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/clinic_billing_lifecycle.sql
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/clinic_inpatient_discharge.sql
 ```
 
 The SQL tests cover failure rollback and serial last-unit protection. A true
@@ -77,3 +81,14 @@ rejection. The official-catalog retry race returned the same recipe ID twice
 and created one recipe, one official-use record, and one stock issue. These
 checks used the isolated test database only; they do not verify production
 schema drift, backup recovery, or a full Supabase local stack.
+
+The billing lifecycle migration and its two new SQL suites passed on the same
+isolated PostgreSQL 16.14 database. Coverage includes unpaid/DP medicine edits,
+price-only HPP preservation, removed medicine stock restoration, two partial AR
+receipts followed by one balanced void, fully paid void/reissue without a second
+stock issue, request retries, overpayment and cross-branch rejection, ledger
+failure rollback, a discharge fee rounded up from 49 hours, and full daily-log
+rollback when fee insertion fails. A separate two-session AR race allowed one
+Rp150 payment against a Rp200 invoice and rejected the competing Rp150 payment;
+one receipt and one journal remained. The isolated database is not production
+or a complete Supabase stack.
