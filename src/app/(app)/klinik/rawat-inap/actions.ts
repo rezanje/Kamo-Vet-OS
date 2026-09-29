@@ -5,8 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nilaiPantauUntukDatabase } from "@/lib/monitoring-inap";
 import { canTransition, hariRawatInap, isTerminal, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
-import { stockDeductions } from "@/lib/compounding";
-import { stockOut } from "@/lib/inventory";
+import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
@@ -153,7 +152,7 @@ type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; 
 type ResepItem = {
   nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string;
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
-  item_id?: string | null; faktor?: number;
+  item_id?: string | null; faktor?: number; key?: string;
 };
 export async function addDailyLogPos(formData: FormData) {
   const supabase = await createClient();
@@ -194,10 +193,17 @@ export async function addDailyLogPos(formData: FormData) {
   }
   let resep: ResepItem[] = [];
   try { resep = JSON.parse(String(formData.get("resep") ?? "[]")); } catch { resep = []; }
+  const racikan = resep.filter((r) => r.jenis === "racikan");
+  if (racikan.some((r) => (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
+    redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
+  }
+  if (racikan.length && !mrId) {
+    redirect(`${back}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan racikan ke tagihan")}`);
+  }
   if (mrId && resep.length) {
     // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
     const unitOpts = await loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x));
-    const rows = resep.filter((r) => r.nama_obat?.trim()).map((r) => ({
+    const rows = resep.filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan").map((r) => ({
       medical_record_id: mrId, nama_obat: r.nama_obat.trim(),
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
       satuan: r.jenis === "racikan" ? "racikan" : (r.satuan?.trim() || "pcs"),
@@ -210,43 +216,24 @@ export async function addDailyLogPos(formData: FormData) {
     if (rows.length) await supabase.from("prescription_items").insert(rows);
   }
 
-  // 2b) Racikan → compounding_recipes (worklist apoteker) + BOM + potong stok bahan.
-  const racikan = resep.filter((r) => r.jenis === "racikan" && (r.ingredients ?? []).length > 0);
+  // 2b) Racikan, BOM, layer issue, HPP history, and stock move share one database transaction.
   if (mrId && racikan.length) {
-    const { data: visitRow } = await supabase.from("visits").select("branch_id").eq("id", rec!.visit_id).maybeSingle();
-    const { data: wh } = visitRow
-      ? await supabase.from("warehouses").select("id").eq("branch_id", visitRow.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle()
-      : { data: null };
-
     for (const r of racikan) {
       const ings = (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0);
       if (ings.length === 0) continue;
-      const total = ings.reduce((a, b) => a + (Number(b.harga) || 0) * (Number(b.qty) || 0), 0);
-
-      const { data: recipe, error: recipeErr } = await supabase
-        .from("compounding_recipes")
-        .insert({
-          medical_record_id: mrId, recipe_name: r.nama_obat.trim(),
-          dosage_instruction: r.aturan_pakai?.trim() || null,
-          dosage_form: r.dosage_form || null, total_price: total,
-          status: "pending", created_by: user?.id ?? null,
-        })
-        .select("id").single();
-      if (recipeErr || !recipe) redirect(`${back}?error=${encodeURIComponent(recipeErr?.message ?? "Gagal simpan racikan")}`);
-
-      const { error: ingErr } = await supabase.from("compounding_ingredients").insert(
-        ings.map((b) => ({
-          recipe_id: recipe!.id, ingredient_name: b.nama, item_id: b.item_id,
-          quantity: Number(b.qty), unit: b.satuan || "pcs", unit_price: Number(b.harga) || 0,
-        })),
-      );
-      if (ingErr) redirect(`${back}?error=${encodeURIComponent(ingErr.message)}`);
-
-      if (wh) {
-        for (const d of stockDeductions(ings.map((b) => ({ item_id: b.item_id, quantity: Number(b.qty) })))) {
-          await stockOut(supabase, { warehouseId: wh.id, itemId: d.item_id, qty: d.qty, source: "klinik", ref: null });
-        }
-      }
+      const params: ClinicIssueCompoundParams = {
+        p_medical_record_id: mrId,
+        p_visit_id: rec!.visit_id,
+        p_recipe: toClinicCompoundRecipeInput({
+          recipeName: r.nama_obat,
+          dosageInstruction: r.aturan_pakai,
+          dosageForm: r.dosage_form,
+          ingredients: ings,
+        }),
+        p_request_key: r.key ?? "",
+      };
+      const { error: recipeErr } = await supabase.rpc("clinic_issue_compound", params);
+      if (recipeErr) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(recipeErr))}`);
     }
   }
 

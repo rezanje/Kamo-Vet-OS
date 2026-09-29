@@ -20,6 +20,7 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
   const [nama, setNama] = useState("");
   const [form, setForm] = useState("sirup");
   const [aturan, setAturan] = useState("");
+  const [requestKey, setRequestKey] = useState("");
   const [search, setSearch] = useState("");
   const [bahan, setBahan] = useState<Bahan[]>([]);
 
@@ -36,6 +37,7 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
     startTransition(async () => {
       try {
         setItems(await bahanRacikanUntukKunjungan(visitId));
+        setRequestKey(crypto.randomUUID());
         setOpen(true);
       } catch {
         setLoadError("Bahan racikan belum bisa dimuat. Coba lagi.");
@@ -59,6 +61,7 @@ export function RacikanInline({ visitId, medicalRecordId, bahanItems }: {
     <form action={addRacikan} style={{ display: "flex", flexDirection: "column", gap: 8, border: ".5px solid var(--bd)", borderRadius: 10, padding: 12, marginTop: 4 }}>
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="medicalRecordId" value={medicalRecordId} />
+      <input type="hidden" name="requestKey" value={requestKey} />
       <input type="hidden" name="ingredients" value={JSON.stringify(bahan)} />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

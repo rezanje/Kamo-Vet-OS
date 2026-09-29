@@ -1,22 +1,22 @@
 # VetOS OPEN — status kerja dan batas review
 
-Tanggal audit: 24 September 2026. Sumber: tab `Report` (14 entri OPEN) dan repo `rezanje/Kamo-Vet-OS`, `main` pada `58d9e6f`. Spreadsheet hanya dibaca. Branch review terpisah; tidak ada migrasi atau perubahan data produksi.
+Tanggal audit: 25 September 2026. Sumber: tab `Report` (14 entri OPEN) dan repo `rezanje/Kamo-Vet-OS`, `main` pada `f860e92`. Spreadsheet hanya dibaca; branch review tidak mengubah data produksi.
 
 | Entri | Temuan terverifikasi | Status pada branch review / berikutnya |
 | --- | --- | --- |
-| BUG-01 | Obat klinik dipotong setelah invoice tersimpan; jalur racikan memakai titik potong berbeda. | **PR #6 draft, belum merge/deploy.** Mengikat pengeluaran klinik/racikan dan HPP ke transaksi atomik. Uji konkurensi dua sesi serta baca data produksi belum dilakukan. |
+| BUG-01 | Obat klinik dipotong setelah invoice tersimpan; jalur racikan memakai titik potong berbeda. | **PR #6 draft, belum merge/deploy.** RPC CREATE atomik tersedia; edit/void dan uji dua sesi masih gate rilis. |
 | BUG-02 | Perbandingan waktu booking dulu menyebut semua waktu lampau “tanggal lewat”. | **Selesai di main** melalui PR #5; status jam lewat hari ini dan tanggal lampau dibedakan. |
 | BUG-03 | `tarikTransaksi` sudah mengambil invoice klinik non-void; error query harus gagal tertutup agar laporan parsial tidak tampak sah. | **Selesai di main** melalui PR #5; tes agregasi dan error query tersedia. Verifikasi baca data autentik belum dilakukan. |
-| BUG-04 | PO, faktur langsung, pesanan jual, permintaan barang sudah mempunyai satuan/faktor. Form faktur pembelian **dari PO** tidak menampilkan satuan dan menggabungkan baris berdasarkan `item_id`. | **Perbaikan disiapkan di branch `codex/purchase-invoice-units`.** Tiap baris tersambung ke baris PO dan menyimpan satuan/faktor. RPC invoker mengunci PO, menghitung ulang sisa, menyimpan faktur, menyesuaikan layer, dan mem-posting jurnal dalam satu transaksi. HPP layer PKP memakai DPP. Stok masuk/keluar juga memakai RPC berurutan agar saldo/layer tak tertimpa pembaruan usang. Review kedua berjalan; belum merge/deploy. |
+| BUG-04 | Faktur dari PO dulu kehilangan satuan dan menggabungkan baris SKU yang sama. | **Merged di main** melalui PR #7; baris faktur tersambung ke baris PO dan menyimpan satuan/faktor, faktur dan jurnal lewat RPC atomik. Vercel success; uji database penuh masih perlu. |
 | BUG-05 | Ada tombol tunggu submit dan beberapa status draft/unpaid, tetapi error simpan lintas modul tidak mempunyai draft/retry idempotent tunggal. | **Audit saja.** Tentukan jenis transaksi, siapa dapat melanjutkan, masa simpan draft, cara deduplikasi posting, dan apa yang dianggap pending. |
 | BUG-06 | Ada 19 halaman laporan spesifik di bawah `/laporan` ditambah indeks; pencarian kode tidak menemukan tombol CSV/Excel/PDF pada halaman itu. | **Audit saja.** Petakan bentuk tabular versus grafik untuk tiap halaman, hak akses, filter, batas baris, dan format PDF sebelum ekspor menyeluruh. |
-| BUG-07 | Menu `/aset-tetap` dan `/keuangan/aset` sudah ada; action lama menulis aset lebih dulu lalu membuat jurnal best-effort, serta form default ke saldo awal. | **Perbaikan tahap 1 disiapkan di branch `codex/fixed-asset-purchase`, PR #8 draft.** Form pembelian sekarang terpisah dari saldo awal dan RPC menyimpan aset+jurnal atomik. Integrasi aset sebagai baris faktur pembelian langsung yang ada di branch lama belum masuk dan tetap menjadi tahap terpisah. Belum merge/deploy. |
+| BUG-07 | Menu `/aset-tetap` dan `/keuangan/aset` sudah ada; action lama menulis aset lebih dulu lalu jurnal best-effort. | **Merged di main** melalui PR #8; pembelian aset kas/bank dan jurnal atomik. Integrasi aset sebagai baris faktur pembelian langsung tetap tahap terpisah; status Vercel commit merge perlu diverifikasi. |
 | BUG-08 | Menu `Jurnal Berulang`, hari 1–28, aktif/nonaktif, dan proses catch-up bulanan sudah ada. | **Fungsi dasar di main; definisi request belum lengkap.** Branch lama punya batas pengulangan. Butuh aturan mulai/akhir, frekuensi, jeda, persetujuan, replay, dan idempotensi sebelum mengubah jadwal. |
-| BUG-09 | Bahan racikan dipotong saat resep dibuat, tetapi biaya FIFO aktual tidak tersimpan pada baris untuk ditempel ke invoice. | **PR #6 draft, belum merge/deploy.** Mencatat HPP bahan saat issue dan menautkannya ke invoice klinik; lifecycle edit/void tetap perlu review dan uji. |
+| BUG-09 | Bahan racikan dipotong saat resep dibuat, tetapi biaya FIFO aktual tidak tersimpan pada baris invoice. | **PR #6 draft, belum merge/deploy.** Biaya layer historis tercatat saat racikan dibuat dan ditautkan sekali ke invoice. Edit/void racikan diblokir sementara; uji race masih gate. |
 | BUG-10 | PR #4, commit `289e127`, sudah merged ke `main`; laporan rinci per barang memiliki Klinik > Racikan. | **Sudah ada.** Tidak diimplementasikan ulang; masih perlu cek baca data nyata memakai login. |
 | REQ-1 | Stok dan layer FIFO tersedia, layar stok menunjukkan qty, belum ada laporan nilai/HPP per barang berdasarkan layer aktif. | **Belum dibuat.** Setelah posting stok/HPP akurat, rancang agregasi per barang/gudang dan rekonsiliasi stock versus layer, lalu putuskan akses nilai stok bersamaan REQ-4. |
 | REQ-2 | Racikan saat ini ditulis per rekam medis, bukan katalog resmi berversi dari perusahaan. | **Belum dibuat.** Perlu master/revisi resep, aturan pengecualian pasien, dan jejak versi pada transaksi. |
-| REQ-3 | Laporan racikan yang ada menjelaskan penjualan, belum menyimpan modal aktual per bahan dan margin/dokter lengkap. | **Belum dibuat.** Bergantung pada BUG-09 dan identitas resep yang eksplisit. |
+| REQ-3 | Laporan racikan yang ada belum memuat biaya bahan aktual, total modal, margin, dan dokter lengkap. | **Belum dibuat.** Branch review menyiapkan identitas resep dan HPP invoice; belum ada laporan khusus dengan semua kolom yang diminta. |
 | REQ-4 | Hak lihat HPP dokter adalah kebijakan data sensitif. | **Keputusan pemilik dibutuhkan.** Tidak ada perubahan visibilitas HPP; usulan pada sheet adalah hanya OWNER/FINANCE. |
 
 ## Branch lama dan benturan
@@ -27,6 +27,6 @@ Tanggal audit: 24 September 2026. Sumber: tab `Report` (14 entri OPEN) dan repo 
 ## Gate pekerjaan berikutnya
 
 1. Selesaikan review PR #6; uji konflik stok dua sesi dan siklus edit/void pada Supabase lokal sebelum menggabungkan.
-2. Selesaikan review kedua BUG-04; validasi migrasi/RPC sudah lulus di PGlite, sedangkan uji konkurensi dua sesi Supabase lokal masih belum dilakukan.
+2. Uji PR #7/#8 pada Supabase lokal, termasuk uji konkurensi dua sesi. Build dan tes gabungan lulus tetapi database penuh belum diuji.
 3. Lakukan verifikasi baca data autentik untuk BUG-03/10 tanpa mengubah data nyata.
 4. BUG-05/06/08 tetap perlu definisi lingkup. REQ-4 menunggu keputusan eksplisit pemilik; visibilitas HPP tidak diubah.

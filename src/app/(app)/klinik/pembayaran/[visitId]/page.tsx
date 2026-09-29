@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -32,6 +33,8 @@ export default async function PembayaranPage({
 }) {
   const { visitId } = await params;
   const { error, success, lunas: lunasParam, dilewati } = await searchParams;
+  const invoiceRequestKey = randomUUID();
+  const groupRequestKey = randomUUID();
   const supabase = await createClient();
 
   const { data: visit } = await supabase
@@ -69,11 +72,11 @@ export default async function PembayaranPage({
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at")
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, created_at, request_key")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
-    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen").eq("invoice_id", invoice.id).order("created_at")
-    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number }[] };
+    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
+    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null }[] };
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -88,11 +91,15 @@ export default async function PembayaranPage({
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
   const { data: resep } = mr
-    ? await supabase.from("prescription_items").select("nama_obat, qty, harga, jenis, item_id").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null }[] };
+    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[] };
   // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
   // saat pasien menebus, dan modalnya tidak pernah tercatat.
-  const resepRows = (resep ?? []).map((r) => ({ deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0, jenis: r.jenis ?? "obat", item_id: r.item_id ?? null }));
+  const resepRows = (resep ?? []).map((r) => ({
+    deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0,
+    jenis: r.jenis ?? "obat", item_id: r.item_id ?? null, satuan: r.satuan ?? null,
+    prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
+  }));
 
   // §6.3: tindakan berisiko wajib punya consent bertanda tangan sebelum boleh ditagih.
   const { data: kategoriRows } = mr
@@ -129,7 +136,12 @@ export default async function PembayaranPage({
 
   // Split obat vs jasa dari kolom `jenis` (2 tabel gaya referensi).
   const sourceItems = invoice
-    ? (invItems ?? []).map((l) => ({ deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis ?? "obat", item_id: l.item_id ?? null, diskon_persen: Number(l.diskon_persen) || 0 }))
+    ? (invItems ?? []).map((l) => ({
+        deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga),
+        jenis: l.jenis ?? "obat", item_id: l.item_id ?? null, satuan: l.satuan ?? null,
+        prescription_item_id: l.prescription_item_id ?? null, recipe_id: l.compound_recipe_id ?? null,
+        diskon_persen: Number(l.diskon_persen) || 0,
+      }))
     : prefill;
   // Baris rawat inap jumlah harinya dihitung sistem saat pasien pulang, jadi
   // qty-nya dikunci di layar (keputusan Aldi, 19 Agustus). Koreksi nilainya lewat
@@ -328,6 +340,7 @@ export default async function PembayaranPage({
           {belumDitagih.length >= 2 && (
             <LunasiRombonganForm
               visitId={visitId}
+              requestKey={groupRequestKey}
               jumlahPasien={belumDitagih.length - tertahanConsent.length}
               total={totalAkanDitagih}
               tertahan={tertahanConsent.map((b) => b.hewan)}
@@ -366,9 +379,10 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {!bolehTagih ? null : invoice && !lunas ? (
+      {!bolehTagih ? null : invoice && !lunas && !invoice.request_key ? (
         <PembayaranForm
           visitId={visit.id}
+          requestKey={invoiceRequestKey}
           patient={patient}
           ppnRate={ppnRate}
           initialObat={initialObat}
@@ -384,6 +398,11 @@ export default async function PembayaranPage({
         />
       ) : invoice ? (
         <>
+          {invoice.request_key && (
+            <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+              <i className="ti ti-lock" /> Invoice sudah diposting. Koreksi edit/void ditahan sementara agar stok dan jurnal tidak terpisah; hubungi keuangan untuk peninjauan.
+            </div>
+          )}
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
             {invoice.paid_status === "DP" && ` — DP ${rp(invoice.dp_amount)}, sisa ${rp(invoice.total - invoice.dp_amount)}`}
@@ -401,7 +420,7 @@ export default async function PembayaranPage({
                 <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
               </span>
               <span style={{ display: "flex", gap: 5 }}>
-                {!lunas && (
+                {!lunas && !invoice.request_key && (
                   <Link href={`/klinik/pembayaran/${visit.id}?edit=1`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-pencil" /> Edit Invoice
@@ -445,7 +464,7 @@ export default async function PembayaranPage({
           </div>
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {lunas && (
+          {lunas && !invoice.request_key && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
@@ -467,6 +486,7 @@ export default async function PembayaranPage({
       ) : (
         <PembayaranForm
           visitId={visit.id}
+          requestKey={invoiceRequestKey}
           patient={patient}
           ppnRate={ppnRate}
           initialObat={initialObat}
