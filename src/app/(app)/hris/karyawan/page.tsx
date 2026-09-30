@@ -211,6 +211,7 @@ export default async function KaryawanPage({
                 <th>Penugasan</th>
                 <th style={{ textAlign: "right" }}>Gaji Pokok</th>
                 <th>Status</th>
+                {bolehKelola && <th>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -238,13 +239,17 @@ export default async function KaryawanPage({
                         {r.status}
                       </span>
                     </td>
+                    {bolehKelola && <td style={{ whiteSpace: "nowrap" }}>
+                      <Link className="btn-def" href={`/hris/karyawan/${r.id}`}>Profil</Link>{" "}
+                      <Link className="btn-def" href={`/hris/karyawan/${r.id}?edit=1`}><i className="ti ti-pencil" /> Edit</Link>
+                    </td>}
                   </tr>
                 );
               })}
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={bolehKelola ? 9 : 8}
                     style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}
                   >
                     Belum ada data karyawan. Tambahkan karyawan pertama di atas.

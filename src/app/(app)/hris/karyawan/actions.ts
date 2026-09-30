@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import { bacaEditKaryawan } from "@/lib/karyawan-edit";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 
@@ -81,4 +83,20 @@ export async function simpanPenugasanCabang(formData: FormData) {
   if (error) redirect(`/hris/karyawan?error=${encodeURIComponent("Penugasan cabang belum tersimpan")}`);
 
   redirect("/hris/karyawan?success=assignment");
+}
+
+export async function editKaryawan(formData: FormData) {
+  const id = String(formData.get("id") ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) redirect("/hris/karyawan?error=Karyawan%20tidak%20valid");
+  const back = `/hris/karyawan/${id}`;
+  const supabase = await assertMasterAdmin(back, "data karyawan");
+  let row;
+  try { row = bacaEditKaryawan(formData); }
+  catch (error) { redirect(`${back}?edit=1&error=${encodeURIComponent(error instanceof Error ? error.message : "Data tidak valid")}`); }
+  const { data, error } = await supabase.from("employees").update(row).eq("id", id).select("id").maybeSingle();
+  if (error || !data) redirect(`${back}?edit=1&error=${encodeURIComponent(error?.code === "23505" ? "NIK sudah terdaftar" : "Data karyawan gagal diperbarui")}`);
+  revalidatePath("/hris/karyawan");
+  revalidatePath(back);
+  revalidatePath("/hris/penggajian");
+  redirect(`${back}?success=1`);
 }

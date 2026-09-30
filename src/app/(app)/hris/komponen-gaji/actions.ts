@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 
@@ -44,28 +45,37 @@ export async function pasangKomponen(formData: FormData) {
 
   const employeeId = String(formData.get("employee_id") ?? "").trim();
   const componentId = String(formData.get("component_id") ?? "").trim();
+  const back = formData.get("return_to") === "profil" && /^[0-9a-f-]{36}$/i.test(employeeId) ? `/hris/karyawan/${employeeId}` : BACK;
+  const gagalPasang = (msg: string): never => redirect(`${back}?error=${encodeURIComponent(msg)}`);
   const nominalRaw = String(formData.get("nominal") ?? "").trim();
   const nominal = nominalRaw === "" ? null : Number(nominalRaw);
 
-  if (!employeeId) gagal("Pilih karyawan");
-  if (!componentId) gagal("Pilih komponen");
-  if (nominal !== null && (!Number.isFinite(nominal) || nominal < 0)) gagal("Nominal tidak valid");
+  if (!employeeId) gagalPasang("Pilih karyawan");
+  if (!componentId) gagalPasang("Pilih komponen");
+  if (nominal !== null && (!Number.isFinite(nominal) || nominal < 0)) gagalPasang("Nominal tidak valid");
 
   // Index uniknya (employee_id, component_id) penuh — upsert aman di sini.
   const { error } = await supabase
     .from("employee_salary_components")
     .upsert({ employee_id: employeeId, component_id: componentId, nominal }, { onConflict: "employee_id,component_id" });
-  if (error) gagal(error.message);
+  if (error) gagalPasang(error.message);
 
-  redirect(`${BACK}?success=1&emp=${employeeId}`);
+  revalidatePath(back);
+  revalidatePath(BACK);
+  revalidatePath("/hris/penggajian");
+  redirect(`${back}?success=${back === BACK ? "1" : "benefit"}&emp=${employeeId}`);
 }
 
 export async function lepasKomponen(formData: FormData) {
   const supabase = await assertMasterAdmin(BACK, "komponen gaji karyawan");
   const id = String(formData.get("id") ?? "").trim();
   const emp = String(formData.get("employee_id") ?? "").trim();
-  if (!id) gagal("Data tidak valid");
-
-  await supabase.from("employee_salary_components").delete().eq("id", id);
-  redirect(`${BACK}?success=1${emp ? `&emp=${emp}` : ""}`);
+  const back = formData.get("return_to") === "profil" && /^[0-9a-f-]{36}$/i.test(emp) ? `/hris/karyawan/${emp}` : BACK;
+  if (!id || !emp) redirect(`${back}?error=Data%20tidak%20valid`);
+  const { error } = await supabase.from("employee_salary_components").delete().eq("id", id).eq("employee_id", emp);
+  if (error) redirect(`${back}?error=${encodeURIComponent("Komponen gagal dilepas")}`);
+  revalidatePath(back);
+  revalidatePath(BACK);
+  revalidatePath("/hris/penggajian");
+  redirect(`${back}?success=${back === BACK ? "1" : "benefit"}&emp=${emp}`);
 }
