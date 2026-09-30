@@ -68,6 +68,11 @@ export default async function KaryawanPage({
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Master Karyawan</span>
+        {bolehKelola && (
+          <Link href="/hris/karyawan/impor" className="btn-def" style={{ marginLeft: "auto" }}>
+            <i className="ti ti-file-upload" /> Unggah Excel
+          </Link>
+        )}
       </div>
 
       {error && (
@@ -216,7 +221,9 @@ export default async function KaryawanPage({
                     <td style={{ fontFamily: "monospace", fontSize: 10, color: "var(--tm)" }}>
                       {r.nik ?? "—"}
                     </td>
-                    <td style={{ fontWeight: 500, fontSize: 12 }}>{r.nama}</td>
+                    <td style={{ fontWeight: 500, fontSize: 12 }}>
+                      {bolehKelola ? <Link href={`/hris/karyawan/${r.id}`}>{r.nama}</Link> : r.nama}
+                    </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.jabatan ?? "—"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.departemen ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.branchName}</td>
