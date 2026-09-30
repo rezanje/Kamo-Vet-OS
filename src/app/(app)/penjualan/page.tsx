@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { TileGrid } from "@/components/ModuleHome";
+import { hariIniWIB, tanggalWIB } from "@/lib/tanggal";
 
 // ponytail: format rupiah helper
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -12,12 +13,15 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-// tanggal referensi = hari ini (dulu hardcoded 2026-07-01 — bug, kartu "hari ini" selalu nol)
-const now = new Date();
-const pad = (n: number) => String(n).padStart(2, "0");
-const TODAY_STR = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-const MONTH_START = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
-const MONTH_END = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-31`;
+async function semuaBaris<T>(ambil: (awal: number, akhir: number) => Promise<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+  const hasil: T[] = [];
+  for (let awal = 0; ; awal += 1000) {
+    const { data, error } = await ambil(awal, awal + 999);
+    if (error) throw new Error(`Gagal memuat rekap penjualan: ${error.message}`);
+    hasil.push(...(data ?? []));
+    if ((data?.length ?? 0) < 1000) return hasil;
+  }
+}
 
 type SaleRow = {
   id: string;
@@ -40,7 +44,10 @@ type InvoiceRow = {
   total: number;
   paid_status: string;
   created_at: string;
+  visits: Rel<{ branch_id: string | null; branches: Rel<{ name: string }> }>;
 };
+
+type InvoiceItemRow = { invoice_id: string; deskripsi: string; qty: number; harga: number };
 
 export default async function PenjualanPage({
   searchParams,
@@ -49,29 +56,27 @@ export default async function PenjualanPage({
 }) {
   const { dari, sampai } = await searchParams;
   const supabase = await createClient();
+  const TODAY_STR = hariIniWIB();
+  const MONTH_START = `${TODAY_STR.slice(0, 7)}-01`;
+  const MONTH_END = TODAY_STR;
 
-  // ponytail: fetch semua sales + cabang; invoice tanpa nested branch (join visits→branches awkward, skip per spec)
-  const [{ data: salesRaw }, { data: saleItemsRaw }, { data: invoicesRaw }] = await Promise.all([
-    supabase
-      .from("sales")
+  // Ambil seluruh halaman; batas bawaan database 1000 baris tidak boleh memotong laporan diam-diam.
+  const [salesAll, saleItemsAll, invoicesAll, invoiceItemsAll] = await Promise.all([
+    semuaBaris<SaleRow>((awal, akhir) => supabase.from("sales")
       .select("id, branch_id, total, created_at, channel, branches(code, name)")
-      .order("created_at", { ascending: false }) as unknown as Promise<{ data: SaleRow[] | null }>,
-    supabase
-      .from("sale_items")
-      .select("sale_id, nama, qty, harga") as unknown as Promise<{ data: SaleItemRow[] | null }>,
-    // ponytail: invoice tidak perlu join branch (visit→branch nested dalam invoices tidak bersih); hanya total & tanggal
-    supabase
-      .from("invoices")
-      .select("id, total, paid_status, created_at").is("voided_at", null) as unknown as Promise<{ data: InvoiceRow[] | null }>,
+      .order("id").range(awal, akhir) as unknown as Promise<{ data: SaleRow[] | null; error: { message: string } | null }>),
+    semuaBaris<SaleItemRow>((awal, akhir) => supabase.from("sale_items")
+      .select("sale_id, nama, qty, harga").order("id").range(awal, akhir) as unknown as Promise<{ data: SaleItemRow[] | null; error: { message: string } | null }>),
+    semuaBaris<InvoiceRow>((awal, akhir) => supabase.from("invoices")
+      .select("id, total, paid_status, created_at, visits(branch_id, branches(name))")
+      .is("voided_at", null).order("id").range(awal, akhir) as unknown as Promise<{ data: InvoiceRow[] | null; error: { message: string } | null }>),
+    semuaBaris<InvoiceItemRow>((awal, akhir) => supabase.from("invoice_items")
+      .select("invoice_id, deskripsi, qty, harga").order("id").range(awal, akhir) as unknown as Promise<{ data: InvoiceItemRow[] | null; error: { message: string } | null }>),
   ]);
-
-  const salesAll = (salesRaw ?? []) as SaleRow[];
-  const saleItemsAll = (saleItemsRaw ?? []) as SaleItemRow[];
-  const invoicesAll = (invoicesRaw ?? []) as InvoiceRow[];
 
   // filter periode (laporan Penjualan ala Accurate): berlaku ke seksi per cabang & per barang
   const dalamPeriode = (iso: string) => {
-    const d = iso.slice(0, 10);
+    const d = tanggalWIB(iso);
     if (dari && d < dari) return false;
     if (sampai && d > sampai) return false;
     return true;
@@ -80,6 +85,8 @@ export default async function PenjualanPage({
   const salesIds = new Set(sales.map((s) => s.id));
   const saleItems = saleItemsAll.filter((si) => salesIds.has(si.sale_id));
   const invoices = invoicesAll.filter((inv) => dalamPeriode(inv.created_at));
+  const invoiceIds = new Set(invoices.map((inv) => inv.id));
+  const invoiceItems = invoiceItemsAll.filter((item) => invoiceIds.has(item.invoice_id));
 
   // channel null = POS retail (perilaku lama); channel terisi = order online.
   const salesPos = sales.filter((s) => !s.channel);
@@ -88,7 +95,7 @@ export default async function PenjualanPage({
 
   // ponytail: helper cek tanggal dalam rentang string YYYY-MM-DD
   const inRange = (iso: string, start: string, end: string) => {
-    const d = iso.slice(0, 10);
+    const d = tanggalWIB(iso);
     return d >= start && d <= end;
   };
 
@@ -113,15 +120,22 @@ export default async function PenjualanPage({
   const omzetBulanIni = posOmzetBulanIni + klinikOmzetBulanIni;
   const totalTransaksi = salesPos.length + salesOnline.length + invoices.length;
 
-  // ponytail: Seksi 02 — penjualan per cabang (POS only; klinik per-branch dihilangkan karena join invoices→visits→branches tidak clean)
+  // Semua kanal memakai cabang asal transaksi, termasuk invoice klinik.
   type BranchStat = { name: string; omzet: number; trx: number };
   const branchMap = new Map<string, BranchStat>();
-  for (const s of salesPos) {
+  for (const s of sales) {
     const br = one(s.branches as Rel<{ code: string; name: string }>);
     const key = s.branch_id ?? "__unknown__";
     const name = br?.name ?? "Cabang tidak diketahui";
     const prev = branchMap.get(key) ?? { name, omzet: 0, trx: 0 };
     branchMap.set(key, { name, omzet: prev.omzet + Number(s.total), trx: prev.trx + 1 });
+  }
+  for (const inv of invoices) {
+    const visit = one(inv.visits);
+    const key = visit?.branch_id ?? "__unknown__";
+    const name = one(visit?.branches ?? null)?.name ?? "Cabang tidak diketahui";
+    const prev = branchMap.get(key) ?? { name, omzet: 0, trx: 0 };
+    branchMap.set(key, { name, omzet: prev.omzet + Number(inv.total), trx: prev.trx + 1 });
   }
   const branchStats = Array.from(branchMap.values()).sort((a, b) => b.omzet - a.omzet);
 
@@ -134,6 +148,15 @@ export default async function PenjualanPage({
       nama: si.nama,
       qty: prev.qty + Number(si.qty),
       omzet: prev.omzet + Number(si.qty) * Number(si.harga),
+    });
+  }
+  for (const item of invoiceItems) {
+    const nama = item.deskripsi;
+    const prev = prodMap.get(nama) ?? { nama, qty: 0, omzet: 0 };
+    prodMap.set(nama, {
+      nama,
+      qty: prev.qty + Number(item.qty),
+      omzet: prev.omzet + Number(item.qty) * Number(item.harga),
     });
   }
   // laporan "Penjualan per Barang" ala Accurate: urut omzet, 20 teratas
@@ -250,11 +273,11 @@ export default async function PenjualanPage({
         <SecHeader
           num="02"
           title="PENJUALAN PER CABANG"
-          desc="Rekap POS per cabang. Invoice klinik per-cabang tidak ditampilkan (join invoice→visit→branch dilewati)."
+          desc="Gabungan penjualan retail, online, dan klinik per cabang."
         />
         {branchStats.length === 0 ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>
-            Belum ada data penjualan POS per cabang.
+            Belum ada data penjualan per cabang.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -264,7 +287,7 @@ export default async function PenjualanPage({
                   <th>#</th>
                   <th>Cabang</th>
                   <th style={{ textAlign: "right" }}>Transaksi</th>
-                  <th style={{ textAlign: "right" }}>Omzet POS</th>
+                  <th style={{ textAlign: "right" }}>Omzet</th>
                 </tr>
               </thead>
               <tbody>
@@ -286,11 +309,8 @@ export default async function PenjualanPage({
       <div className="crm-sec">
         <SecHeader
           num="03"
-          title="PENJUALAN PER BARANG (POS + ONLINE)"
-          desc="20 barang omzet terbesar dari retail POS dan Online — invoice klinik tidak ikut dihitung. Omzet di sini dihitung sebelum diskon transaksi, jadi wajar sedikit lebih besar dari baris POS + Online Seksi 01. Ikut filter periode di atas."
-          action={<Link href="/laporan/penjualan-barang" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
-            <i className="ti ti-list-details" /> Rincian semua barang &amp; racikan klinik
-          </Link>}
+          title="PENJUALAN PER BARANG"
+          desc="20 barang dan layanan omzet terbesar dari retail, online, dan klinik. Nilai per baris sebelum diskon, sehingga dapat berbeda dari omzet bersih di atas. Ikut filter periode."
         />
         {topProduk.length === 0 ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 12 }}>

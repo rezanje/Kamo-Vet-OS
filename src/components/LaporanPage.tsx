@@ -3,6 +3,7 @@
 // sengaja TIDAK bikin komponen filter generik yang harus dipaksa muat semuanya.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { UnduhLaporan } from "./UnduhLaporan";
 
 export function LaporanPage({
   icon, title, desc, filter, ringkasan, children,
@@ -30,15 +31,18 @@ export function LaporanPage({
         </div>
       </div>
 
+      <UnduhLaporan judul={title} />
+
       {filter && (
         <form className="crm-sec" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>{filter}</div>
         </form>
       )}
 
-      {ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}
-
-      {children}
+      <div id="laporan-isi">
+        {ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}
+        {children}
+      </div>
     </>
   );
 }
