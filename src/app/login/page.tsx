@@ -1,6 +1,16 @@
 import { login } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
+// Ditampilkan selama demo agar akun uji bisa langsung dipakai.
+const AKUN_DEMO = [
+  { role: "OWNER", email: "owner@vetos.local" },
+  { role: "ADMIN", email: "claude-test@vetos.local" },
+  { role: "FINANCE", email: "finance@vetos.local" },
+  { role: "STAFF", email: "staff@vetos.local" },
+  { role: "DOCTOR", email: "doctor@vetos.local" },
+];
+const PASSWORD_DEMO = "password123";
+
 export default async function LoginPage({
   searchParams,
 }: {
@@ -52,6 +62,28 @@ export default async function LoginPage({
             Lupa password atau belum punya akun? Hubungi admin Kamo Group.
           </p>
 
+          <section
+            aria-labelledby="akun-demo-title"
+            style={{ marginTop: 4, padding: "10px 12px", borderRadius: 6, background: "#fffbeb", border: ".5px solid #fcd34d" }}
+          >
+            <h2 id="akun-demo-title" style={{ fontSize: 11, fontWeight: 700, color: "#b45309", margin: "0 0 8px" }}>
+              Akun demo
+            </h2>
+            <table style={{ width: "100%", fontSize: 10, color: "#78350f", borderCollapse: "collapse" }}>
+              <tbody>
+                {AKUN_DEMO.map((akun) => (
+                  <tr key={akun.email}>
+                    <th scope="row" style={{ textAlign: "left", fontWeight: 700, padding: "2px 6px 2px 0", verticalAlign: "top" }}>{akun.role}</th>
+                    <td style={{ fontFamily: "var(--font-geist-mono, monospace)", padding: "2px 0", overflowWrap: "anywhere" }}>{akun.email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p style={{ fontSize: 11, color: "#78350f", margin: "8px 0 0", borderTop: ".5px solid #fcd34d", paddingTop: 6 }}>
+              Password semua akun:{" "}
+              <strong style={{ fontFamily: "var(--font-geist-mono, monospace)" }}>{PASSWORD_DEMO}</strong>
+            </p>
+          </section>
         </div>
       </form>
     </main>
