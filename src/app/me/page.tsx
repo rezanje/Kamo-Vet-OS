@@ -98,6 +98,7 @@ export default async function MePage({
         </div>
       ) : (
         <>
+          <Link href="/me/jadwal" className="btn-def" style={{marginBottom:12}}>Jadwal & pengajuan perubahan shift</Link>
           {/* 2. KPI Pribadi */}
           <div className="card" style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 8 }}><i className="ti ti-target" /> KPI PRIBADI · {monthKey}</div>

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { kumpulkanDataGaji } from "../payroll-data";
-it("voided attendance does not count as worked attendance in the existing payroll collector", async () => {
+it("approved effective shift at 08:00 prevents lateness for arrival at 08:00 in the existing collector", async () => {
   const data: Record<string, Record<string, unknown>[]> = {
     employees: [
       {
@@ -15,7 +15,7 @@ it("voided attendance does not count as worked attendance in the existing payrol
       {
         employee_id: "e1",
         tanggal: "2026-10-01",
-        work_shifts: { is_libur: false, jam_masuk: "08:00" },
+        work_shifts: { is_libur: false, jam_masuk: "07:00" },
       },
     ],
     attendance: [
@@ -23,12 +23,12 @@ it("voided attendance does not count as worked attendance in the existing payrol
         employee_id: "e1",
         tanggal: "2026-10-01",
         jam_masuk: "08:00",
-        is_void: true,
+        is_void: false,
       },
     ],
   };
   const client = {
-    rpc:async()=>({data:true,error:null}),
+    rpc: async () => ({ data: true, error: null }),
     from: (table: string) => {
       let rows = data[table] ?? [];
       const q: Record<string, unknown> = {
@@ -57,6 +57,12 @@ it("voided attendance does not count as worked attendance in the existing payrol
     },
   };
   const result = await kumpulkanDataGaji(client, "2026-10");
-  expect(result[0].rincian.hariHadir).toBe(0);
-  expect(result[0].rincian.hariBolos).toBe(1);
+  expect(result[0].rincian.menitTelat).toBe(60);
+  data.employee_schedules[0].work_shifts = {
+    is_libur: false,
+    jam_masuk: "08:00",
+  };
+  const approved = await kumpulkanDataGaji(client, "2026-10");
+  expect(approved[0].rincian.menitTelat).toBe(0);
+  expect(approved[0].rincian.potonganTelat).toBe(0);
 });

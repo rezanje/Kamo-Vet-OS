@@ -6,13 +6,22 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { AKUN_PIUTANG_KARYAWAN } from "@/lib/kasbon";
 import { jurnalPenggajian } from "@/lib/payroll";
-import { akhirBulan, kumpulkanDataGaji } from "@/lib/payroll-data";
+import { akhirBulan, kumpulkanDataGaji as collectDataGaji } from "@/lib/payroll-data";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 
 const BASE = "/hris/penggajian";
 const BOLEH = ["OWNER", "ADMIN"];
 
 const kembali = (periode: string) => `${BASE}?periode=${periode}`;
+
+async function kumpulkanDataGaji(supabase: Awaited<ReturnType<typeof assertRole>>, periode:string, adjustments:Map<string,number>) {
+  try { return await collectDataGaji(supabase, periode, adjustments); }
+  catch(error) {
+    const message=error instanceof Error && error.message.startsWith("Data gaji")
+      ? error.message : "Data gaji gagal diverifikasi. Periksa akses cabang dan sumber sebelum menghitung.";
+    redirect(`${kembali(periode)}&error=${encodeURIComponent(message)}`);
+  }
+}
 
 function periodeDari(formData: FormData): string {
   const p = String(formData.get("periode") ?? "").trim();

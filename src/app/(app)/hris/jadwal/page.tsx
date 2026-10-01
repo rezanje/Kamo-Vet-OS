@@ -51,6 +51,8 @@ export default async function JadwalPage({
         </div>
       )}
 
+      {bolehKelola && <Link href="/hris/pengajuan/jadwal" className="btn-def">Persetujuan perubahan jadwal</Link>}
+
       <div className="crm-sec">
         <SecHeader
           num="01" title={minggu ? `JADWAL ${hari[0].tanggal} — ${hari.at(-1)!.tanggal}` : `JADWAL ${namaBulan.toUpperCase()}`}

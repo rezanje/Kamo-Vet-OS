@@ -31,8 +31,8 @@ async function simpan(form:FormData, impor:boolean) {
       }
     } else {
       for(const r of hasil.rows.filter(r=>!r.shift_id)) {
-        const {error} = await supabase.from('employee_schedules').delete().eq('employee_id',r.employee_id).eq('tanggal',r.tanggal);
-        if(error) throw new Error('Sebagian perubahan belum tersimpan. Muat ulang papan jadwal.');
+        const {data,error} = await supabase.from('employee_schedules').delete().eq('employee_id',r.employee_id).eq('tanggal',r.tanggal).select('id');
+        if(error || !data?.length) throw new Error('Jadwal tidak terhapus atau akses berubah. Muat ulang papan jadwal.');
       }
       const filled = hasil.rows.filter(r=>r.shift_id);
       if(filled.length) {

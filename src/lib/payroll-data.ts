@@ -31,6 +31,14 @@ export async function kumpulkanDataGaji(
   periode: string,
   penyesuaianPer: Map<string, number> = new Map(),
 ): Promise<BarisGaji[]> {
+  // Existing callers process the entire company, including settlement. Refuse
+  // incomplete branch visibility before interpreting hidden sources as no work.
+  const scope = await supabase.rpc("hris_assert_payroll_scope");
+  if (scope.error || scope.data !== true) {
+    throw new Error(scope.error?.message?.startsWith("HRIS:")
+      ? scope.error.message.replace(/^HRIS:\s*/, "")
+      : "Data gaji gagal diverifikasi. Periksa akses cabang dan migrasi HRIS.");
+  }
   const awal = `${periode}-01`;
   const akhir = akhirBulan(periode);
 
