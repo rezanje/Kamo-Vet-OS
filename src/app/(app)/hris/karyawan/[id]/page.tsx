@@ -36,14 +36,14 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const activeTab = tab === "absensi" || tab === "gaji" ? tab : "profil";
   if(activeTab !== "profil") {
     const history = activeTab === "absensi"
-      ? await supabase.from("attendance").select("tanggal, status, jam_masuk, jam_pulang, keterangan").eq("employee_id",id).order("tanggal",{ascending:false}).limit(100)
+      ? await supabase.from("attendance").select("tanggal, status, jam_masuk, jam_pulang, keterangan, is_void").eq("employee_id",id).order("tanggal",{ascending:false}).limit(100)
       : await supabase.from("payrolls").select("periode, total, status").eq("employee_id",id).order("periode",{ascending:false}).limit(24);
     return <>
       <Link href="/hris/karyawan" className="back-btn">Kembali ke Karyawan</Link>
       <ProfilNav id={id} active={activeTab}/>
       <div className="crm-sec"><SecHeader num="01" title={activeTab === "absensi" ? "RIWAYAT ABSENSI" : "RIWAYAT GAJI"} desc={activeTab === "absensi" ? "100 catatan terakhir karyawan ini." : "24 periode terakhir. Nilai tersimpan, tanpa menghitung ulang."}/>
       {history.error ? <p role="alert">Riwayat gagal dimuat. Coba muat ulang.</p> : <div style={{overflowX:"auto"}}>
-        {activeTab === "absensi" ? <table className="tbl"><thead><tr><th>Tanggal</th><th>Status</th><th>Masuk</th><th>Pulang</th><th>Keterangan</th></tr></thead><tbody>{(history.data as {tanggal:string;status:string;jam_masuk:string|null;jam_pulang:string|null;keterangan:string|null}[]??[]).map(r=><tr key={r.tanggal}><td>{r.tanggal}</td><td>{r.status}</td><td>{r.jam_masuk??"—"}</td><td>{r.jam_pulang??"—"}</td><td>{r.keterangan??"—"}</td></tr>)}</tbody></table> : <table className="tbl"><thead><tr><th>Periode</th><th>Total tersimpan</th><th>Status</th></tr></thead><tbody>{(history.data as {periode:string;total:number;status:string}[]??[]).map(r=><tr key={r.periode}><td>{r.periode}</td><td>{rp(r.total)}</td><td>{r.status}</td></tr>)}</tbody></table>}
+        {activeTab === "absensi" ? <table className="tbl"><thead><tr><th>Tanggal</th><th>Status</th><th>Masuk</th><th>Pulang</th><th>Keterangan</th></tr></thead><tbody>{(history.data as {tanggal:string;status:string;jam_masuk:string|null;jam_pulang:string|null;keterangan:string|null;is_void?:boolean}[]??[]).map(r=><tr key={r.tanggal}><td>{r.tanggal}</td><td>{r.is_void?'Dibatalkan':r.status}</td><td>{r.jam_masuk??"—"}</td><td>{r.jam_pulang??"—"}</td><td>{r.keterangan??"—"}</td></tr>)}</tbody></table> : <table className="tbl"><thead><tr><th>Periode</th><th>Total tersimpan</th><th>Status</th></tr></thead><tbody>{(history.data as {periode:string;total:number;status:string}[]??[]).map(r=><tr key={r.periode}><td>{r.periode}</td><td>{rp(r.total)}</td><td>{r.status}</td></tr>)}</tbody></table>}
         {!history.data?.length && <p>Belum ada riwayat.</p>}
       </div>}</div>
     </>;

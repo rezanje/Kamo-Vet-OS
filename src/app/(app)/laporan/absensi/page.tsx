@@ -24,7 +24,7 @@ export default async function LaporanAbsensiPage({
   const akhir = bl === 12 ? `${th + 1}-01-01` : `${th}-${String(bl + 1).padStart(2, "0")}-01`;
 
   const [{ data: absen }, { data: karyawan }, { data: setting }, { data: cabangList }] = await Promise.all([
-    supabase.from("attendance").select("employee_id, status, jam_masuk, jam_pulang")
+    supabase.from("attendance").select("employee_id, status, jam_masuk, jam_pulang").eq("is_void", false)
       .gte("tanggal", awal).lt("tanggal", akhir),
     supabase.from("employees").select("id, nama, jabatan, status, branches(name)").order("nama"),
     supabase.from("company_settings")

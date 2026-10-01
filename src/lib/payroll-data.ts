@@ -53,7 +53,7 @@ export async function kumpulkanDataGaji(
       .select("employee_id, tanggal, work_shifts(is_libur, jam_masuk)")
       .in("employee_id", ids).gte("tanggal", awal).lte("tanggal", akhir),
     supabase.from("attendance")
-      .select("employee_id, tanggal, jam_masuk")
+      .select("employee_id, tanggal, jam_masuk").eq("is_void", false)
       .in("employee_id", ids).gte("tanggal", awal).lte("tanggal", akhir),
     supabase.from("leave_requests")
       .select("employee_id, tanggal_mulai, tanggal_selesai, status")
