@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { assertRole, bolehKelolaMaster } from "@/lib/master-guard";
 import { lepasKomponen, pasangKomponen, simpanKomponen, toggleKomponen } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -15,6 +15,7 @@ export default async function KomponenGajiPage({
 }: {
   searchParams: Promise<{ error?: string; success?: string; emp?: string }>;
 }) {
+  await assertRole("/hris", "rincian gaji", ["OWNER", "ADMIN", "FINANCE"]);
   const { error, success, emp } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();

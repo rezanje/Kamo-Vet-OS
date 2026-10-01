@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { bolehKelolaMaster } from "@/lib/master-guard";
+import { aksesCabangHRIS } from "@/lib/jadwal-scope";
+import { hariIniWIB } from "@/lib/tanggal";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { editKaryawan } from "../actions";
@@ -12,12 +14,37 @@ type Komponen = { id: string; nama: string; tipe: string; nominal: number; is_ac
 
 export default async function RincianKaryawanPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ edit?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ edit?: string; error?: string; success?: string; tab?: string }>;
 }) {
   if (!await bolehKelolaMaster()) redirect("/hris/karyawan");
   const { id } = await params;
-  const { edit, error, success } = await searchParams;
+  const { edit, error, success, tab } = await searchParams;
   const supabase = await createClient();
+  const access = await aksesCabangHRIS(supabase);
+  const identity = await supabase.from("employees").select("id, branch_id").eq("id", id).maybeSingle();
+  if (identity.error) throw new Error("Hak akses profil gagal dimuat");
+  if (!identity.data) notFound();
+  if (access.role !== "OWNER") {
+    const assignments = await supabase.from("employee_branch_assignments").select("employee_id, branch_id, effective_date").eq("employee_id",id);
+    if (assignments.error) throw new Error("Penugasan profil gagal dimuat");
+    const allowed = new Set(access.branches.map(b=>b.id));
+    if (!allowed.has(identity.data.branch_id) && !assignments.data?.some(a=>allowed.has(a.branch_id) && a.effective_date<=hariIniWIB())) redirect("/hris/karyawan?error=Cabang+tidak+diizinkan");
+  }
+  const activeTab = tab === "absensi" || tab === "gaji" ? tab : "profil";
+  if(activeTab !== "profil") {
+    const history = activeTab === "absensi"
+      ? await supabase.from("attendance").select("tanggal, status, jam_masuk, jam_pulang, keterangan").eq("employee_id",id).order("tanggal",{ascending:false}).limit(100)
+      : await supabase.from("payrolls").select("periode, total, status").eq("employee_id",id).order("periode",{ascending:false}).limit(24);
+    return <>
+      <Link href="/hris/karyawan" className="back-btn">Kembali ke Karyawan</Link>
+      <ProfilNav id={id} active={activeTab}/>
+      <div className="crm-sec"><SecHeader num="01" title={activeTab === "absensi" ? "RIWAYAT ABSENSI" : "RIWAYAT GAJI"} desc={activeTab === "absensi" ? "100 catatan terakhir karyawan ini." : "24 periode terakhir. Nilai tersimpan, tanpa menghitung ulang."}/>
+      {history.error ? <p role="alert">Riwayat gagal dimuat. Coba muat ulang.</p> : <div style={{overflowX:"auto"}}>
+        {activeTab === "absensi" ? <table className="tbl"><thead><tr><th>Tanggal</th><th>Status</th><th>Masuk</th><th>Pulang</th><th>Keterangan</th></tr></thead><tbody>{(history.data as {tanggal:string;status:string;jam_masuk:string|null;jam_pulang:string|null;keterangan:string|null}[]??[]).map(r=><tr key={r.tanggal}><td>{r.tanggal}</td><td>{r.status}</td><td>{r.jam_masuk??"—"}</td><td>{r.jam_pulang??"—"}</td><td>{r.keterangan??"—"}</td></tr>)}</tbody></table> : <table className="tbl"><thead><tr><th>Periode</th><th>Total tersimpan</th><th>Status</th></tr></thead><tbody>{(history.data as {periode:string;total:number;status:string}[]??[]).map(r=><tr key={r.periode}><td>{r.periode}</td><td>{rp(r.total)}</td><td>{r.status}</td></tr>)}</tbody></table>}
+        {!history.data?.length && <p>Belum ada riwayat.</p>}
+      </div>}</div>
+    </>;
+  }
   const [empResult, detailResult, componentsResult, assignedResult, branchesResult] = await Promise.all([
     supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, gaji_pokok, status, branch_id").eq("id", id).maybeSingle(),
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
@@ -42,6 +69,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   ] as const;
   return <>
     <Link href="/hris/karyawan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Karyawan</Link>
+    <ProfilNav id={id} active="profil"/>
     {error && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
     {success && <div role="status" className="p2ban" style={{ color: "#15803d" }}>{success === "benefit" ? "Benefit karyawan berhasil diperbarui." : "Data karyawan berhasil diperbarui."}</div>}
     <div className="crm-sec" style={{ marginTop: 12 }}>
@@ -82,4 +110,8 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
       {detailResult.error ? <p>Rincian impor gagal dimuat.</p> : !detail ? <p>Belum ada rincian dari unggahan Excel.</p> : <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12 }}>{Object.entries(fields).map(([label, value]) => <div key={label}><dt className="flab">{label}</dt><dd style={{ margin: 0, overflowWrap: "anywhere" }}>{value || "—"}</dd></div>)}</dl>}
     </div>
   </>;
+}
+
+function ProfilNav({id,active}:{id:string;active:string}) {
+ return <nav aria-label="Bagian profil karyawan" style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>{[["profil","Profil & Benefit"],["absensi","Absensi"],["gaji","Riwayat Gaji"]].map(([key,label])=><Link key={key} className="btn-def" aria-current={active===key?"page":undefined} href={`/hris/karyawan/${id}?tab=${key}`}>{label}</Link>)}</nav>;
 }

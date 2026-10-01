@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { assertRole, bolehKelolaMaster } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 import { getAturanGaji } from "@/lib/payroll-aturan";
 import { hitungPenggajian, sahkanPenggajian, simpanKoreksi } from "./actions";
@@ -26,6 +26,7 @@ export default async function PenggajianPage({
 }: {
   searchParams: Promise<{ periode?: string; success?: string; error?: string }>;
 }) {
+  await assertRole("/hris", "rincian gaji", ["OWNER", "ADMIN", "FINANCE"]);
   const sp = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
