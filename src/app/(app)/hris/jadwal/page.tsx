@@ -26,7 +26,7 @@ export default async function JadwalPage({
   const hari = hariPeriode(bulan, minggu);
   const scope = cabang ? await scopeJadwal(supabase,cabang,hari[0].tanggal,hari.at(-1)!.tanggal) : null;
   const karyawan: KaryawanBaris[] = scope?.karyawan ?? [];
-  const shifts: ShiftOpsi[] = (scope?.shifts ?? []).map(s => ({id:s.id,nama:s.nama,warna:s.warna,is_libur:s.is_libur,jam:jamRingkas(s.jam_masuk,s.jam_pulang)}));
+  const shifts: ShiftOpsi[] = (scope?.shifts ?? []).map(s => ({id:s.id,nama:s.nama,warna:s.warna,is_libur:s.is_libur,is_active:s.is_active,jam:jamRingkas(s.jam_masuk,s.jam_pulang)}));
   const awal = scope?.existing ?? {};
   const linkPeriode = (date?: string) => `/hris/jadwal?${new URLSearchParams({cabang,bulan,...(date?{minggu:date}:{})})}`;
   const terisi = Object.keys(awal).length;
@@ -80,10 +80,10 @@ export default async function JadwalPage({
         ) : (
           <JadwalBoard key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`}
             karyawan={karyawan} shifts={shifts} hari={hari} awal={awal}
-            cabang={cabang} bulan={bulan} minggu={minggu} bolehKelola={bolehKelola}
+            cabang={cabang} bulan={bulan} minggu={minggu} employeeStarts={scope?.employeeStarts ?? {}} bolehKelola={bolehKelola}
           />
         )}
-        {scope && <JadwalExcel key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`} karyawan={karyawan} shifts={shifts} awal={awal} cabang={cabang} bulan={bulan} minggu={minggu} awalTanggal={hari[0].tanggal} akhirTanggal={hari.at(-1)!.tanggal} bolehKelola={bolehKelola} />}
+        {scope && <JadwalExcel key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`} karyawan={karyawan} shifts={shifts} awal={awal} cabang={cabang} bulan={bulan} minggu={minggu} awalTanggal={hari[0].tanggal} akhirTanggal={hari.at(-1)!.tanggal} employeeStarts={scope?.employeeStarts ?? {}} bolehKelola={bolehKelola} />}
       </div>
     </>
   );

@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { simpanJadwal } from "./actions";
 
-export type ShiftOpsi = { id: string; nama: string; warna: string; is_libur: boolean; jam: string };
+export type ShiftOpsi = { id: string; nama: string; warna: string; is_libur: boolean; jam: string; is_active?: boolean };
 export type KaryawanBaris = { id: string; nama: string; jabatan: string | null };
 
 const HAPUS = "__hapus__";
 const kunci = (empId: string, tgl: string) => `${empId}|${tgl}`;
 
 export function JadwalBoard({
-  karyawan, shifts, hari, awal, cabang, bulan, minggu, bolehKelola,
+  karyawan, shifts, hari, awal, cabang, bulan, minggu, employeeStarts, bolehKelola,
 }: {
   karyawan: KaryawanBaris[];
   shifts: ShiftOpsi[];
@@ -19,17 +19,18 @@ export function JadwalBoard({
   cabang: string;
   bulan: string;
   minggu?: string;
+  employeeStarts: Record<string,string>;
   bolehKelola: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [kuas, setKuas] = useState<string>(shifts[0]?.id ?? HAPUS);
+  const [kuas, setKuas] = useState<string>(shifts.find(s=>s.is_active !== false)?.id ?? HAPUS);
   const [isi, setIsi] = useState<Record<string, string>>(awal);
   const [ubah, setUbah] = useState<Record<string, string>>({});
 
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
 
   const olesSatu = (empId: string, tgl: string) => {
-    if (!bolehKelola) return;
+    if (!bolehKelola || (employeeStarts[empId] && tgl < employeeStarts[empId])) return;
     const k = kunci(empId, tgl);
     const nilai = kuas === HAPUS ? "" : kuas;
     // Klik ulang dengan kuas yang sama = hapus, biar tidak perlu ganti kuas cuma untuk mengoreksi.
@@ -44,6 +45,7 @@ export function JadwalBoard({
     const isiBaru = { ...isi };
     const ubahBaru = { ...ubah };
     for (const h of hari) {
+      if (employeeStarts[empId] && h.tanggal < employeeStarts[empId]) continue;
       const k = kunci(empId, h.tanggal);
       isiBaru[k] = nilai;
       ubahBaru[k] = nilai;
@@ -81,7 +83,7 @@ export function JadwalBoard({
       {bolehKelola && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: "var(--tm)" }}>Kuas:</span>
-          {shifts.map((s) => (
+          {shifts.filter(s=>s.is_active !== false).map((s) => (
             <button
               key={s.id} type="button" aria-pressed={kuas === s.id} onClick={() => setKuas(s.id)}
               style={{
@@ -159,8 +161,8 @@ export function JadwalBoard({
                         fontSize: 9.5, fontWeight: 700, userSelect: "none",
                       }}
                     >
-                      <button type="button" disabled={!bolehKelola} onClick={() => olesSatu(k.id, h.tanggal)} aria-label={`${k.nama}, ${h.tanggal}, ${s ? `${s.nama} ${s.jam}` : "Kosong"}`} style={{width:"100%",minHeight:44,background:"none",border:0,color:"inherit",font:"inherit",cursor:bolehKelola?"pointer":"default"}}>
-                        <div>{s?.nama ?? "Kosong"}</div>{s && <div style={{fontSize:9,fontWeight:400}}>{s.is_libur ? "Libur" : s.jam}</div>}
+                      <button type="button" disabled={!bolehKelola || (!!employeeStarts[k.id] && h.tanggal < employeeStarts[k.id])} onClick={() => olesSatu(k.id, h.tanggal)} aria-label={`${k.nama}, ${h.tanggal}, ${s ? `${s.nama} ${s.jam}` : "Kosong"}`} style={{width:"100%",minHeight:44,background:"none",border:0,color:"inherit",font:"inherit",cursor:bolehKelola?"pointer":"default"}}>
+                        <div>{employeeStarts[k.id] && h.tanggal < employeeStarts[k.id] ? "Belum ditugaskan" : s ? `${s.nama}${s.is_active === false ? " (Nonaktif)" : ""}` : "Kosong"}</div>{s && <div style={{fontSize:9,fontWeight:400}}>{s.is_libur ? "Libur" : s.jam}</div>}
                       </button>
                     </td>
                   );

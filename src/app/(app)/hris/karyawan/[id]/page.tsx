@@ -24,11 +24,14 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const identity = await supabase.from("employees").select("id, branch_id").eq("id", id).maybeSingle();
   if (identity.error) throw new Error("Hak akses profil gagal dimuat");
   if (!identity.data) notFound();
+  const identityRow = identity.data;
   if (access.role !== "OWNER") {
     const assignments = await supabase.from("employee_branch_assignments").select("employee_id, branch_id, effective_date").eq("employee_id",id);
     if (assignments.error) throw new Error("Penugasan profil gagal dimuat");
     const allowed = new Set(access.branches.map(b=>b.id));
-    if (!allowed.has(identity.data.branch_id) && !assignments.data?.some(a=>allowed.has(a.branch_id) && a.effective_date<=hariIniWIB())) redirect("/hris/karyawan?error=Cabang+tidak+diizinkan");
+    const rows = assignments.data ?? [];
+    const primaryProven = rows.some(a=>a.branch_id===identityRow.branch_id && a.effective_date<=hariIniWIB());
+    if (!primaryProven || !rows.every(a=>allowed.has(a.branch_id) && a.effective_date<=hariIniWIB())) redirect("/hris/karyawan?error=Cabang+tidak+diizinkan");
   }
   const activeTab = tab === "absensi" || tab === "gaji" ? tab : "profil";
   if(activeTab !== "profil") {

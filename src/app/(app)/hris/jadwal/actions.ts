@@ -17,9 +17,9 @@ async function simpan(form:FormData, impor:boolean) {
     const hari = hariPeriode(bulan,minggu||undefined);
     const scope = await scopeJadwal(supabase,cabang,hari[0].tanggal,hari.at(-1)!.tanggal);
     const raw = String(form.get('rows')??'[]');
-    if(raw.length>200_000) throw new Error('Perubahan terlalu besar. Maksimal 500 sel.');
+    if(raw.length>3_000_000) throw new Error('Perubahan terlalu besar. Maksimal 10.000 sel.');
     const parsed: unknown = JSON.parse(raw);
-    const hasil = validasiJadwal(parsed,{...scope,shifts:scope.shifts.map(s=>s.id)},impor);
+    const hasil = validasiJadwal(parsed,{...scope,shifts:scope.shifts.filter(s=>s.is_active).map(s=>s.id)},impor);
     if(hasil.errors.length) throw new Error(hasil.errors.slice(0,4).join('; '));
     if(impor && form.get('konfirmasi')!=='1') throw new Error('Konfirmasikan preview sebelum menyimpan.');
     if(impor) {

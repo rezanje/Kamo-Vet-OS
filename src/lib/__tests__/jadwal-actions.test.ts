@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const state=vi.hoisted(()=>({writes:[] as unknown[],conflict:false,allowed:true}));
 vi.mock('next/navigation',()=>({redirect:(url:string)=>{throw new Error(url);}}));
 vi.mock('@/lib/master-guard',()=>({assertRole:async()=>({from:()=>({insert:async(rows:unknown)=>{if(state.conflict)return {error:{code:'23505'}};state.writes.push(rows);return {error:null};},upsert:()=>{throw new Error('unexpected upsert');},delete:()=>{throw new Error('unexpected delete');}})})}));
-vi.mock('@/lib/jadwal-scope',()=>({scopeJadwal:async()=>{if(!state.allowed)throw new Error('Cabang tidak diizinkan.');return {cabang:'b1',awal:'2026-09-28',akhir:'2026-10-04',employees:['e1'],shifts:[{id:'s1'}],existing:{},user:{id:'admin'}};}}));
+vi.mock('@/lib/jadwal-scope',()=>({scopeJadwal:async()=>{if(!state.allowed)throw new Error('Cabang tidak diizinkan.');return {cabang:'b1',awal:'2026-09-28',akhir:'2026-10-04',employees:['e1'],shifts:[{id:'s1',is_active:true}],existing:{},user:{id:'admin'}};}}));
 import { imporJadwal } from '../../app/(app)/hris/jadwal/actions';
 const row={employee_id:'e1',tanggal:'2026-10-01',shift_id:'s1',branch_id:'b1'};
 function form(rows:unknown){const f=new FormData();Object.entries({cabang:'b1',bulan:'2026-10',minggu:'2026-10-01',rows:JSON.stringify(rows),konfirmasi:'1'}).forEach(([k,v])=>f.set(k,v));return f;}

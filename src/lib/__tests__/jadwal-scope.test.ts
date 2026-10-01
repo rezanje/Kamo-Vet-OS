@@ -14,3 +14,6 @@ it('requires positive assignments and does not bypass future or other-branch ass
 it('does not infer schedule authorization when RLS hides assignments', () => {
  expect(karyawanCabang([{id:'e1',branch_id:'a'}],[],'a','2026-10-01')).toEqual([]);
 });
+it('includes employees starting before period end, not only on first day',()=>{
+ expect(karyawanCabang([{id:'e1',branch_id:'a'}],[{employee_id:'e1',branch_id:'a',effective_date:'2026-10-01'}],'a','2026-10-04').map(e=>e.id)).toEqual(['e1']);
+});

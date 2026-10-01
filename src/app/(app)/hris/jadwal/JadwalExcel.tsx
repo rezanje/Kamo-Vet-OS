@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { imporJadwal } from './actions';
 import type { KaryawanBaris, ShiftOpsi } from './JadwalBoard';
 import type { JadwalImpor } from '@/lib/jadwal-excel';
-export function JadwalExcel({karyawan,shifts,awal,cabang,bulan,minggu,awalTanggal,akhirTanggal,bolehKelola}: {
- karyawan:KaryawanBaris[];shifts:ShiftOpsi[];awal:Record<string,string>;cabang:string;bulan:string;minggu?:string;awalTanggal:string;akhirTanggal:string;bolehKelola:boolean;
+export function JadwalExcel({karyawan,shifts,awal,cabang,bulan,minggu,awalTanggal,akhirTanggal,employeeStarts,bolehKelola}: {
+ karyawan:KaryawanBaris[];shifts:ShiftOpsi[];awal:Record<string,string>;cabang:string;bulan:string;minggu?:string;awalTanggal:string;akhirTanggal:string;employeeStarts:Record<string,string>;bolehKelola:boolean;
 }) {
  const [preview,setPreview]=useState<{rows:JadwalImpor[];errors:string[];skipped:number}|null>(null);
  const [busy,setBusy]=useState(false); const [confirmed,setConfirmed]=useState(false);
@@ -24,7 +24,7 @@ export function JadwalExcel({karyawan,shifts,awal,cabang,bulan,minggu,awalTangga
    if(!file.name.toLowerCase().endsWith('.xlsx') || file.size>900*1024) throw new Error('Gunakan .xlsx maksimal 900 KB.');
    const {bacaExcelJadwal,validasiJadwal}=await import('@/lib/jadwal-excel');
    const parsed=await bacaExcelJadwal(new Uint8Array(await file.arrayBuffer()));
-   setPreview(parsed.errors.length ? {...parsed,skipped:0} : validasiJadwal(parsed.rows,{cabang,awal:awalTanggal,akhir:akhirTanggal,employees:karyawan.map(k=>k.id),shifts:shifts.map(s=>s.id),existing:awal}));
+   setPreview(parsed.errors.length ? {...parsed,skipped:0} : validasiJadwal(parsed.rows,{cabang,awal:awalTanggal,akhir:akhirTanggal,employees:karyawan.map(k=>k.id),shifts:shifts.filter(s=>s.is_active !== false).map(s=>s.id),employeeStarts,existing:awal}));
   } catch(e) {setPreview({rows:[],errors:[e instanceof Error?e.message:'File tidak terbaca.'],skipped:0});} finally {setBusy(false);}
  }
  return <section style={{marginTop:20}} aria-label="Excel jadwal">

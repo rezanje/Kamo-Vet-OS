@@ -17,15 +17,28 @@ export async function scopeJadwal(supabase: Awaited<ReturnType<typeof createClie
   if(!access.branches.some(b=>b.id===cabang)) throw new Error('Cabang tidak diizinkan.');
   const [employees,shifts,assignments] = await Promise.all([
     supabase.from('employees').select('id, nama, jabatan, branch_id').eq('status','Aktif').order('nama'),
-    supabase.from('work_shifts').select('id, nama, warna, is_libur, jam_masuk, jam_pulang, branch_id').eq('is_active',true).or(`branch_id.is.null,branch_id.eq.${cabang}`).order('jam_masuk'),
+    supabase.from('work_shifts').select('id, nama, warna, is_libur, jam_masuk, jam_pulang, branch_id, is_active').or(`branch_id.is.null,branch_id.eq.${cabang}`).order('jam_masuk'),
     supabase.from('employee_branch_assignments').select('employee_id, branch_id, effective_date'),
   ]);
   if(employees.error || shifts.error || assignments.error) throw new Error('Data jadwal gagal dimuat. Tidak ada perubahan disimpan.');
   // Require positive assignment evidence: RLS can hide other branch assignments.
-  const karyawan = karyawanCabang(employees.data??[],assignments.data??[],cabang,awal);
-  const schedules = karyawan.length ? await supabase.from('employee_schedules').select('employee_id, tanggal, shift_id').in('employee_id',karyawan.map(e=>e.id)).gte('tanggal',awal).lte('tanggal',akhir) : {data:[],error:null};
-  if(schedules.error) throw new Error('Jadwal tersimpan gagal dimuat.');
+  const karyawan = karyawanCabang(employees.data??[],assignments.data??[],cabang,akhir);
+  const employeeStarts: Record<string,string> = {};
+  for (const a of assignments.data ?? []) {
+    if (a.branch_id !== cabang || !karyawan.some(e=>e.id===a.employee_id)) continue;
+    const old = employeeStarts[a.employee_id];
+    if (!old || a.effective_date < old) employeeStarts[a.employee_id] = a.effective_date;
+  }
   const existing: Record<string,string> = {};
-  schedules.data?.forEach(r=>{existing[`${r.employee_id}|${r.tanggal}`]=r.shift_id;});
-  return {...access,karyawan,shifts:shifts.data??[],existing,cabang,awal,akhir,employees:karyawan.map(e=>e.id)};
+  if (karyawan.length) {
+    for (let offset = 0; ; offset += 1000) {
+      const schedules = await supabase.from('employee_schedules').select('employee_id, tanggal, shift_id')
+        .in('employee_id',karyawan.map(e=>e.id)).gte('tanggal',awal).lte('tanggal',akhir)
+        .order('employee_id').order('tanggal').range(offset,offset+999);
+      if(schedules.error) throw new Error('Jadwal tersimpan gagal dimuat.');
+      schedules.data?.forEach(r=>{existing[`${r.employee_id}|${r.tanggal}`]=r.shift_id;});
+      if ((schedules.data?.length ?? 0) < 1000) break;
+    }
+  }
+  return {...access,karyawan,shifts:shifts.data??[],existing,employeeStarts,cabang,awal,akhir,employees:karyawan.map(e=>e.id)};
 }
