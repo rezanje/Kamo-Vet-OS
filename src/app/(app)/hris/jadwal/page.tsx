@@ -3,72 +3,32 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
+import { hariPeriode, tanggalValid, geserTanggal } from "@/lib/jadwal-kalender";
+import { aksesCabangHRIS, scopeJadwal } from "@/lib/jadwal-scope";
+import { JadwalExcel } from "./JadwalExcel";
 import { jamRingkas } from "@/lib/shift-master";
 import { JadwalBoard, type KaryawanBaris, type ShiftOpsi } from "./JadwalBoard";
-
-const NAMA_HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
-
-// Semua tanggal dalam satu bulan, dibuat manual supaya tidak kena geser zona waktu.
-function hariDalamBulan(bulan: string) {
-  const [thn, bln] = bulan.split("-").map(Number);
-  const jumlah = new Date(thn, bln, 0).getDate();
-  return Array.from({ length: jumlah }, (_, i) => {
-    const hari = i + 1;
-    const tanggal = `${bulan}-${String(hari).padStart(2, "0")}`;
-    const dow = new Date(thn, bln - 1, hari).getDay();
-    return { tanggal, hari, namaHari: NAMA_HARI[dow], akhirPekan: dow === 0 };
-  });
-}
 
 export default async function JadwalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cabang?: string; bulan?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ cabang?: string; bulan?: string; error?: string; success?: string; minggu?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const bulan = /^\d{4}-\d{2}$/.test(sp.bulan ?? "") ? sp.bulan! : hariIniWIB().slice(0, 7);
-  const { data: branchData } = await supabase
-    .from("branches").select("id, name").eq("is_active", true).order("name");
-  const branches = (branchData ?? []) as { id: string; name: string }[];
-  const cabang = branches.some((b) => b.id === sp.cabang) ? sp.cabang! : branches[0]?.id ?? "";
-
-  const hari = hariDalamBulan(bulan);
-  const awalBulan = hari[0]?.tanggal ?? `${bulan}-01`;
-  const akhirBulan = hari[hari.length - 1]?.tanggal ?? `${bulan}-28`;
-
-  const [{ data: empData }, { data: shiftData }, { data: assignmentData }] = await Promise.all([
-    supabase.from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif")
-      .order("nama"),
-    supabase.from("work_shifts").select("id, nama, warna, is_libur, jam_masuk, jam_pulang, branch_id")
-      .eq("is_active", true).or(`branch_id.is.null,branch_id.eq.${cabang}`).order("is_libur").order("jam_masuk"),
-    supabase.from("employee_branch_assignments").select("employee_id, branch_id").eq("branch_id", cabang),
-  ]);
-
-  const assignedIds = new Set(((assignmentData ?? []) as { employee_id: string }[]).map((a) => a.employee_id));
-  const karyawan = ((empData ?? []) as (KaryawanBaris & { branch_id?: string | null })[])
-    .filter((e) => assignedIds.has(e.id) || (!assignmentData?.length && e.branch_id === cabang));
-  const shifts: ShiftOpsi[] = ((shiftData ?? []) as {
-    id: string; nama: string; warna: string; is_libur: boolean;
-    jam_masuk: string | null; jam_pulang: string | null;
-  }[]).map((s) => ({
-    id: s.id, nama: s.nama, warna: s.warna, is_libur: s.is_libur,
-    jam: jamRingkas(s.jam_masuk, s.jam_pulang),
-  }));
-
-  const { data: jadwalData } = karyawan.length
-    ? await supabase.from("employee_schedules").select("employee_id, tanggal, shift_id")
-        .in("employee_id", karyawan.map((k) => k.id))
-        .gte("tanggal", awalBulan).lte("tanggal", akhirBulan)
-    : { data: [] };
-
-  const awal: Record<string, string> = {};
-  for (const j of (jadwalData ?? []) as { employee_id: string; tanggal: string; shift_id: string }[]) {
-    awal[`${j.employee_id}|${j.tanggal}`] = j.shift_id;
-  }
-
+  const bulan = tanggalValid(`${sp.bulan}-01`) ? sp.bulan! : hariIniWIB().slice(0, 7);
+  const minggu = tanggalValid(sp.minggu) ? sp.minggu : undefined;
+  const access = await aksesCabangHRIS(supabase);
+  const branches = access.branches;
+  const cabang = branches.some(b => b.id === sp.cabang) ? sp.cabang! : branches[0]?.id ?? "";
+  const hari = hariPeriode(bulan, minggu);
+  const scope = cabang ? await scopeJadwal(supabase,cabang,hari[0].tanggal,hari.at(-1)!.tanggal) : null;
+  const karyawan: KaryawanBaris[] = scope?.karyawan ?? [];
+  const shifts: ShiftOpsi[] = (scope?.shifts ?? []).map(s => ({id:s.id,nama:s.nama,warna:s.warna,is_libur:s.is_libur,jam:jamRingkas(s.jam_masuk,s.jam_pulang)}));
+  const awal = scope?.existing ?? {};
+  const linkPeriode = (date?: string) => `/hris/jadwal?${new URLSearchParams({cabang,bulan,...(date?{minggu:date}:{})})}`;
   const terisi = Object.keys(awal).length;
   const namaBulan = new Date(`${bulan}-01T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", month: "long", year: "numeric" });
 
@@ -87,36 +47,43 @@ export default async function JadwalPage({
       )}
       {sp.success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Jadwal tersimpan.
+          <i className="ti ti-circle-check" /> Jadwal tersimpan ({sp.success} sel).
         </div>
       )}
 
       <div className="crm-sec">
         <SecHeader
-          num="01" title={`JADWAL ${namaBulan.toUpperCase()}`}
+          num="01" title={minggu ? `JADWAL ${hari[0].tanggal} — ${hari.at(-1)!.tanggal}` : `JADWAL ${namaBulan.toUpperCase()}`}
           desc={`${karyawan.length} karyawan · ${terisi} hari sudah terjadwal · telat dihitung dari jam shift orang itu`}
           action={
             <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <select className="fi" name="cabang" defaultValue={cabang} style={{ fontSize: 11, height: 30, width: 180 }}>
+              <select aria-label="Cabang" className="fi" name="cabang" defaultValue={cabang} style={{ fontSize: 11, height: 30, width: 180 }}>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
-              <input className="fi" type="month" name="bulan" defaultValue={bulan} style={{ fontSize: 11, height: 30, width: 130 }} />
+              <input aria-label="Bulan" className="fi" type="month" name="bulan" defaultValue={bulan} style={{ fontSize: 11, height: 30, width: 130 }} />
               <button type="submit" className="btn-def" style={{ height: 30, fontSize: 11 }}>Tampilkan</button>
             </form>
           }
         />
 
+        <nav aria-label="Periode jadwal" style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          <Link className="btn-def" href={linkPeriode()}>Bulan</Link>
+          <Link className="btn-def" href={linkPeriode(minggu ?? (bulan === hariIniWIB().slice(0,7) ? hariIniWIB() : `${bulan}-01`))}>Minggu</Link>
+          {minggu && <><Link className="btn-def" href={linkPeriode(geserTanggal(hari[0].tanggal,-7))}>← Minggu sebelumnya</Link><Link className="btn-def" href={linkPeriode(geserTanggal(hari[0].tanggal,7))}>Minggu berikutnya →</Link></>}
+        </nav>
+        {!cabang && <p role="alert">Belum ada cabang yang diizinkan untuk akun ini.</p>}
         {shifts.length === 0 ? (
           <div style={{ fontSize: 11, color: "var(--td)" }}>
             Belum ada shift aktif untuk cabang ini. Buat dulu di{" "}
             <Link href="/hris/shift" style={{ color: "#2563eb" }}>Master Shift</Link>.
           </div>
         ) : (
-          <JadwalBoard
+          <JadwalBoard key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`}
             karyawan={karyawan} shifts={shifts} hari={hari} awal={awal}
-            cabang={cabang} bulan={bulan} bolehKelola={bolehKelola}
+            cabang={cabang} bulan={bulan} minggu={minggu} bolehKelola={bolehKelola}
           />
         )}
+        {scope && <JadwalExcel key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`} karyawan={karyawan} shifts={shifts} awal={awal} cabang={cabang} bulan={bulan} minggu={minggu} awalTanggal={hari[0].tanggal} akhirTanggal={hari.at(-1)!.tanggal} bolehKelola={bolehKelola} />}
       </div>
     </>
   );
