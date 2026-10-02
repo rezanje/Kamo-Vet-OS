@@ -4,8 +4,15 @@
 // Dipisah dari layar supaya layar komisi, layar target, dan penggajian memakai
 // sumber angka yang sama persis.
 
+import { tanggalWIB, geserHari } from "./tanggal";
+import { sourceRows, sourceByIds } from "./source-rows";
 import { lineSubtotal } from "./pos-calc";
-import { hitungKomisi, type AturanKomisi, type BarisJual, type HasilKomisi } from "./komisi";
+import {
+  hitungKomisi,
+  type AturanKomisi,
+  type BarisJual,
+  type HasilKomisi,
+} from "./komisi";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -39,7 +46,9 @@ type SaleRow = {
 type ReturRow = {
   sale_id: string;
   tanggal: string;
-  sales_return_items: { item_id: string | null; qty: number; harga: number }[] | null;
+  sales_return_items:
+    | { item_id: string | null; qty: number; harga: number }[]
+    | null;
 };
 
 type InvoiceRow = {
@@ -47,8 +56,18 @@ type InvoiceRow = {
   paid_at: string;
   total: number;
   salesperson_id: string | null;
-  visits: { branch_id: string | null; doctor_id: string | null } | { branch_id: string | null; doctor_id: string | null }[] | null;
-  invoice_items: { item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
+  visits:
+    | { branch_id: string | null; doctor_id: string | null }
+    | { branch_id: string | null; doctor_id: string | null }[]
+    | null;
+  invoice_items:
+    | {
+        item_id: string | null;
+        qty: number;
+        harga: number;
+        hpp: number | null;
+      }[]
+    | null;
 };
 
 type FakturJualRow = {
@@ -57,7 +76,14 @@ type FakturJualRow = {
   dpp: number;
   branch_id: string | null;
   created_by: string | null;
-  sales_invoice_items: { order_item_id: string | null; item_id: string | null; qty: number; harga: number }[] | null;
+  sales_invoice_items:
+    | {
+        order_item_id: string | null;
+        item_id: string | null;
+        qty: number;
+        harga: number;
+      }[]
+    | null;
 };
 
 export type DataKomisi = {
@@ -67,7 +93,10 @@ export type DataKomisi = {
 };
 
 /** Rantai kategori sebuah barang: kategorinya sendiri + induknya (kategori 2 tingkat, migrasi 0066). */
-function rantaiKategori(catId: string | null, indukPer: Map<string, string | null>): string[] {
+function rantaiKategori(
+  catId: string | null,
+  indukPer: Map<string, string | null>,
+): string[] {
   const out: string[] = [];
   let cur = catId;
   // Batas kedalaman menjaga dari data kategori yang tanpa sengaja melingkar.
@@ -78,46 +107,102 @@ function rantaiKategori(catId: string | null, indukPer: Map<string, string | nul
   return out;
 }
 
-export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string): Promise<DataKomisi> {
+export async function kumpulkanBarisKomisi(
+  supabase: AnyClient,
+  periode: string,
+): Promise<DataKomisi> {
   const awal = awalPeriode(periode);
   const akhir = akhirPeriode(periode);
 
-  const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
-    supabase.from("sales")
-      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)")
-      .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`),
-    supabase.from("employees").select("id, profile_id").not("profile_id", "is", null),
-    supabase.from("items").select("id, category_id"),
-    supabase.from("item_categories").select("id, parent_id"),
+  const [salesData, empData, itemData, katData] = await Promise.all([
+    sourceRows<SaleRow>(
+      supabase,
+      "sales",
+      "id, created_at, branch_id, cashier_id, salesperson_id, total",
+      (q) =>
+        q
+          .gte("created_at", `${awal}T00:00:00+07:00`)
+          .lt("created_at", `${geserHari(akhir, 1)}T00:00:00+07:00`),
+    ),
+    sourceRows<{ id: string; profile_id: string }>(
+      supabase,
+      "employee_profile_directory",
+      "id,profile_id",
+      (q) => q.not("profile_id", "is", null),
+    ),
+    sourceRows<{ id: string; category_id: string | null }>(
+      supabase,
+      "items",
+      "id,category_id",
+    ),
+    sourceRows<{ id: string; parent_id: string | null }>(
+      supabase,
+      "item_categories",
+      "id,parent_id",
+    ),
   ]);
+  const saleItems = await sourceByIds<SaleItemRow & { sale_id: string }>(
+    supabase,
+    "sale_items",
+    "id,sale_id,item_id,qty,harga,item_discount_type,item_discount_value,hpp",
+    "sale_id",
+    salesData.map((r) => r.id),
+  );
+  const saleItemsBy = new Map<string, SaleItemRow[]>();
+  for (const it of saleItems) {
+    const rows = saleItemsBy.get(it.sale_id) ?? [];
+    rows.push(it);
+    saleItemsBy.set(it.sale_id, rows);
+  }
+  for (const sale of salesData)
+    sale.sale_items = saleItemsBy.get(sale.id) ?? [];
 
   const sales = (salesData ?? []) as SaleRow[];
   const empPerProfile = new Map(
-    ((empData ?? []) as { id: string; profile_id: string }[]).map((e) => [e.profile_id, e.id]),
+    ((empData ?? []) as { id: string; profile_id: string }[]).map((e) => [
+      e.profile_id,
+      e.id,
+    ]),
   );
   const katPerItem = new Map(
-    ((itemData ?? []) as { id: string; category_id: string | null }[]).map((i) => [i.id, i.category_id]),
+    ((itemData ?? []) as { id: string; category_id: string | null }[]).map(
+      (i) => [i.id, i.category_id],
+    ),
   );
   const indukPerKat = new Map(
-    ((katData ?? []) as { id: string; parent_id: string | null }[]).map((k) => [k.id, k.parent_id]),
+    ((katData ?? []) as { id: string; parent_id: string | null }[]).map((k) => [
+      k.id,
+      k.parent_id,
+    ]),
   );
 
   const baris: BarisJual[] = [];
   let omzetTanpaPenjual = 0;
 
   // Untuk baris retur: modal & pemilik struk asli.
-  const infoStruk = new Map<string, { employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number> }>();
+  const infoStruk = new Map<
+    string,
+    {
+      employeeId: string | null;
+      branchId: string | null;
+      hppPerUnit: Map<string, number>;
+    }
+  >();
 
   for (const s of sales) {
-    const employeeId = s.salesperson_id ?? (s.cashier_id ? empPerProfile.get(s.cashier_id) ?? null : null);
+    const employeeId =
+      s.salesperson_id ??
+      (s.cashier_id ? (empPerProfile.get(s.cashier_id) ?? null) : null);
     const items = s.sale_items ?? [];
 
-    const subtotalPer = items.map((it) => lineSubtotal({
-      qty: Number(it.qty),
-      harga: Number(it.harga),
-      item_discount_type: it.item_discount_type,
-      item_discount_value: Number(it.item_discount_value ?? 0),
-    }));
+    const subtotalPer = items.map((it) =>
+      lineSubtotal({
+        qty: Number(it.qty),
+        harga: Number(it.harga),
+        item_discount_type: it.item_discount_type,
+        item_discount_value: Number(it.item_discount_value ?? 0),
+      }),
+    );
     const jumlahBaris = subtotalPer.reduce((a, v) => a + v, 0);
 
     // Potongan tingkat struk (voucher, poin, diskon golongan, diskon manual kasir) tidak
@@ -128,22 +213,27 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     const hppPerUnit = new Map<string, number>();
     for (const [idx, it] of items.entries()) {
       const qty = Number(it.qty);
-      if (it.item_id && it.hpp !== null && qty > 0) hppPerUnit.set(it.item_id, Number(it.hpp) / qty);
+      if (it.item_id && it.hpp !== null && qty > 0)
+        hppPerUnit.set(it.item_id, Number(it.hpp) / qty);
 
       const kotor = subtotalPer[idx];
-      const omzet = jumlahBaris > 0 ? kotor - (potonganStruk * kotor) / jumlahBaris : kotor;
+      const omzet =
+        jumlahBaris > 0 ? kotor - (potonganStruk * kotor) / jumlahBaris : kotor;
       if (!employeeId) omzetTanpaPenjual += omzet;
 
       // Baris tanpa penjual tetap dibawa: realisasi target per cabang/kategori
       // tidak boleh kehilangan omzet cuma karena kasirnya belum terhubung ke
       // data karyawan. `hitungKomisi` yang menyaringnya.
       baris.push({
-        tanggal: s.created_at.slice(0, 10),
+        tanggal: tanggalWIB(s.created_at),
         sumber: "kasir",
         employeeId,
         branchId: s.branch_id,
         itemId: it.item_id,
-        kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
+        kategoriIds: rantaiKategori(
+          it.item_id ? (katPerItem.get(it.item_id) ?? null) : null,
+          indukPerKat,
+        ),
         qty,
         omzet,
         laba: it.hpp === null ? null : omzet - Number(it.hpp),
@@ -154,18 +244,45 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
-  const { data: returData } = await supabase
-    .from("sales_returns")
-    .select("sale_id, tanggal, sales_return_items(item_id, qty, harga)")
-    .gte("tanggal", awal).lte("tanggal", akhir);
+  const returData = await sourceRows<ReturRow & { id: string }>(
+    supabase,
+    "sales_returns",
+    "id,sale_id,tanggal",
+    (q) => q.gte("tanggal", awal).lte("tanggal", akhir),
+  );
+  const returnItems = await sourceByIds<{
+    id: string;
+    return_id: string;
+    item_id: string | null;
+    qty: number;
+    harga: number;
+  }>(
+    supabase,
+    "sales_return_items",
+    "id,return_id,item_id,qty,harga",
+    "return_id",
+    returData.map((r) => r.id),
+  );
+  const returnItemsBy = new Map<string, typeof returnItems>();
+  for (const it of returnItems) {
+    const rows = returnItemsBy.get(it.return_id) ?? [];
+    rows.push(it);
+    returnItemsBy.set(it.return_id, rows);
+  }
+  for (const r of returData)
+    r.sales_return_items = returnItemsBy.get(r.id) ?? [];
 
   for (const r of (returData ?? []) as ReturRow[]) {
     const asal = infoStruk.get(r.sale_id);
     // Struk asalnya di luar periode ini — ambil pemiliknya langsung dari struk itu.
-    const info = asal ?? (await infoStrukLuarPeriode(supabase, r.sale_id, empPerProfile));
+    const info =
+      asal ?? (await infoStrukLuarPeriode(supabase, r.sale_id, empPerProfile));
     if (!info) continue;
     if (!info.employeeId) {
-      omzetTanpaPenjual -= (r.sales_return_items ?? []).reduce((a, i) => a + Number(i.qty) * Number(i.harga), 0);
+      omzetTanpaPenjual -= (r.sales_return_items ?? []).reduce(
+        (a, i) => a + Number(i.qty) * Number(i.harga),
+        0,
+      );
     }
 
     for (const it of r.sales_return_items ?? []) {
@@ -178,7 +295,10 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
         employeeId: info.employeeId,
         branchId: info.branchId,
         itemId: it.item_id,
-        kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
+        kategoriIds: rantaiKategori(
+          it.item_id ? (katPerItem.get(it.item_id) ?? null) : null,
+          indukPerKat,
+        ),
         qty: -qty,
         omzet: -nilai,
         laba: hppUnit === undefined ? null : -(nilai - hppUnit * qty),
@@ -189,14 +309,42 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // ── Klinik: tagihan kunjungan yang sudah lunas, jadi haknya dokter ────────────
   // Dipatok pada tanggal bayar, bukan tanggal periksa: yang dikomisikan adalah uang
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
-  const { data: invData } = await supabase
-    .from("invoices")
-    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp)")
-    .eq("paid_status", "Lunas")
-    .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`);
+  const invData = await sourceRows<InvoiceRow>(
+    supabase,
+    "invoices",
+    "id,paid_at,total,salesperson_id,visits(branch_id,doctor_id)",
+    (q) =>
+      q
+        .eq("paid_status", "Lunas")
+        .is("voided_at", null)
+        .gte("paid_at", `${awal}T00:00:00+07:00`)
+        .lt("paid_at", `${geserHari(akhir, 1)}T00:00:00+07:00`),
+  );
+  const invoiceItems = await sourceByIds<{
+    id: string;
+    invoice_id: string;
+    item_id: string | null;
+    qty: number;
+    harga: number;
+    hpp: number | null;
+  }>(
+    supabase,
+    "invoice_items",
+    "id,invoice_id,item_id,qty,harga,hpp",
+    "invoice_id",
+    invData.map((r) => r.id),
+  );
+  const invoiceItemsBy = new Map<string, typeof invoiceItems>();
+  for (const it of invoiceItems) {
+    const rows = invoiceItemsBy.get(it.invoice_id) ?? [];
+    rows.push(it);
+    invoiceItemsBy.set(it.invoice_id, rows);
+  }
+  for (const invoice of invData)
+    invoice.invoice_items = invoiceItemsBy.get(invoice.id) ?? [];
 
   for (const inv of (invData ?? []) as InvoiceRow[]) {
-    const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
+    const v = Array.isArray(inv.visits) ? (inv.visits[0] ?? null) : inv.visits;
     const employeeId = inv.salesperson_id ?? v?.doctor_id ?? null;
     const items = inv.invoice_items ?? [];
 
@@ -207,20 +355,31 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     const potongan = Math.max(0, jumlahBaris - Number(inv.total));
 
     for (const [idx, it] of items.entries()) {
-      const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
+      const omzet =
+        jumlahBaris > 0
+          ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris
+          : kotorPer[idx];
       if (!employeeId) omzetTanpaPenjual += omzet;
 
       baris.push({
-        tanggal: inv.paid_at.slice(0, 10),
+        tanggal: tanggalWIB(inv.paid_at),
         sumber: "klinik",
         employeeId,
         branchId: v?.branch_id ?? null,
         itemId: it.item_id,
-        kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
+        kategoriIds: rantaiKategori(
+          it.item_id ? (katPerItem.get(it.item_id) ?? null) : null,
+          indukPerKat,
+        ),
         qty: Number(it.qty),
         omzet,
         // Jasa tidak punya modal barang — labanya utuh, bukan tidak diketahui.
-        laba: it.item_id === null ? omzet : it.hpp === null ? null : omzet - Number(it.hpp),
+        laba:
+          it.item_id === null
+            ? omzet
+            : it.hpp === null
+              ? null
+              : omzet - Number(it.hpp),
       });
     }
   }
@@ -230,20 +389,49 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // pendapatan diakui saat faktur terbit (Dr 1201 / Cr 4101), jadi omzet komisi,
   // realisasi target, dan omzet dashboard menunjuk angka yang sama. Faktur batal
   // tidak ikut. Yang dianggap penjualnya = pembuat faktur.
-  const { data: fjData } = await supabase
-    .from("sales_invoices")
-    .select("id, tanggal, dpp, branch_id, created_by, sales_invoice_items(order_item_id, item_id, qty, harga)")
-    .neq("status", "batal")
-    .gte("tanggal", awal).lte("tanggal", akhir);
+  const fjData = await sourceRows<FakturJualRow>(
+    supabase,
+    "sales_invoices",
+    "id,tanggal,dpp,branch_id,created_by",
+    (q) => q.neq("status", "batal").gte("tanggal", awal).lte("tanggal", akhir),
+  );
+  const invoiceSaleItems = await sourceByIds<{
+    id: string;
+    invoice_id: string;
+    order_item_id: string | null;
+    item_id: string | null;
+    qty: number;
+    harga: number;
+  }>(
+    supabase,
+    "sales_invoice_items",
+    "id,invoice_id,order_item_id,item_id,qty,harga",
+    "invoice_id",
+    fjData.map((r) => r.id),
+  );
+  const invoiceSaleBy = new Map<string, typeof invoiceSaleItems>();
+  for (const it of invoiceSaleItems) {
+    const rows = invoiceSaleBy.get(it.invoice_id) ?? [];
+    rows.push(it);
+    invoiceSaleBy.set(it.invoice_id, rows);
+  }
+  for (const invoice of fjData)
+    invoice.sales_invoice_items = invoiceSaleBy.get(invoice.id) ?? [];
 
   const fakturs = (fjData ?? []) as FakturJualRow[];
   const hppPerOrderItem = await hppPengiriman(
     supabase,
-    fakturs.flatMap((f) => (f.sales_invoice_items ?? []).map((it) => it.order_item_id).filter((x): x is string => !!x)),
+    fakturs.flatMap((f) =>
+      (f.sales_invoice_items ?? [])
+        .map((it) => it.order_item_id)
+        .filter((x): x is string => !!x),
+    ),
   );
 
   for (const f of fakturs) {
-    const employeeId = f.created_by ? empPerProfile.get(f.created_by) ?? null : null;
+    const employeeId = f.created_by
+      ? (empPerProfile.get(f.created_by) ?? null)
+      : null;
     const items = f.sales_invoice_items ?? [];
 
     // Baris faktur tidak punya diskon sendiri; potongan kepala faktur (kalau ada)
@@ -254,21 +442,34 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
     for (const [idx, it] of items.entries()) {
       const qty = Number(it.qty);
-      const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
+      const omzet =
+        jumlahBaris > 0
+          ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris
+          : kotorPer[idx];
       if (!employeeId) omzetTanpaPenjual += omzet;
 
-      const hppUnit = it.order_item_id ? hppPerOrderItem.get(it.order_item_id) : undefined;
+      const hppUnit = it.order_item_id
+        ? hppPerOrderItem.get(it.order_item_id)
+        : undefined;
       baris.push({
         tanggal: f.tanggal,
         sumber: "reseller",
         employeeId,
         branchId: f.branch_id,
         itemId: it.item_id,
-        kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
+        kategoriIds: rantaiKategori(
+          it.item_id ? (katPerItem.get(it.item_id) ?? null) : null,
+          indukPerKat,
+        ),
         qty,
         omzet,
         // Jasa (tanpa master barang) tidak punya modal — labanya utuh.
-        laba: it.item_id === null ? omzet : hppUnit === undefined ? null : omzet - hppUnit * qty,
+        laba:
+          it.item_id === null
+            ? omzet
+            : hppUnit === undefined
+              ? null
+              : omzet - hppUnit * qty,
       });
     }
   }
@@ -281,18 +482,33 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
  * Faktur penjualan tidak menyimpan HPP — barangnya keluar di dokumen pengiriman,
  * dan di situlah modal FIFO-nya dicatat.
  */
-async function hppPengiriman(supabase: AnyClient, orderItemIds: string[]): Promise<Map<string, number>> {
+async function hppPengiriman(
+  supabase: AnyClient,
+  orderItemIds: string[],
+): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   const ids = [...new Set(orderItemIds)];
   if (ids.length === 0) return out;
 
-  const { data } = await supabase
-    .from("sales_delivery_items")
-    .select("order_item_id, qty, hpp")
-    .in("order_item_id", ids);
+  const data = await sourceByIds<{
+    id: string;
+    order_item_id: string | null;
+    qty: number;
+    hpp: number | null;
+  }>(
+    supabase,
+    "sales_delivery_items",
+    "id,order_item_id,qty,hpp",
+    "order_item_id",
+    ids,
+  );
 
   const akum = new Map<string, { qty: number; hpp: number }>();
-  for (const d of (data ?? []) as { order_item_id: string | null; qty: number; hpp: number | null }[]) {
+  for (const d of (data ?? []) as {
+    order_item_id: string | null;
+    qty: number;
+    hpp: number | null;
+  }[]) {
     if (!d.order_item_id || d.hpp === null) continue;
     const a = akum.get(d.order_item_id) ?? { qty: 0, hpp: 0 };
     a.qty += Number(d.qty);
@@ -307,27 +523,53 @@ async function infoStrukLuarPeriode(
   supabase: AnyClient,
   saleId: string,
   empPerProfile: Map<string, string>,
-): Promise<{ employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number> } | null> {
-  const { data } = await supabase
-    .from("sales").select("branch_id, cashier_id, salesperson_id, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
-  if (!data) return null;
+): Promise<{
+  employeeId: string | null;
+  branchId: string | null;
+  hppPerUnit: Map<string, number>;
+} | null> {
+  const [data] = await sourceRows<{
+    id: string;
+    branch_id: string | null;
+    cashier_id: string | null;
+    salesperson_id: string | null;
+  }>(supabase, "sales", "id,branch_id,cashier_id,salesperson_id", (q) =>
+    q.eq("id", saleId),
+  );
+  if (!data) throw new Error("Data komisi: struk asal retur tidak tersedia");
+  const sale_items = await sourceByIds<{
+    id: string;
+    item_id: string | null;
+    qty: number;
+    hpp: number | null;
+  }>(supabase, "sale_items", "id,sale_id,item_id,qty,hpp", "sale_id", [saleId]);
   const hppPerUnit = new Map<string, number>();
-  for (const it of (data.sale_items ?? []) as { item_id: string | null; qty: number; hpp: number | null }[]) {
-    if (it.item_id && it.hpp !== null && Number(it.qty) > 0) hppPerUnit.set(it.item_id, Number(it.hpp) / Number(it.qty));
+  for (const it of (sale_items ?? []) as {
+    item_id: string | null;
+    qty: number;
+    hpp: number | null;
+  }[]) {
+    if (it.item_id && it.hpp !== null && Number(it.qty) > 0)
+      hppPerUnit.set(it.item_id, Number(it.hpp) / Number(it.qty));
   }
   return {
-    employeeId: data.salesperson_id ?? (data.cashier_id ? empPerProfile.get(data.cashier_id) ?? null : null),
+    employeeId:
+      data.salesperson_id ??
+      (data.cashier_id ? (empPerProfile.get(data.cashier_id) ?? null) : null),
     branchId: data.branch_id,
     hppPerUnit,
   };
 }
 
-export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomisi[]> {
-  const { data } = await supabase
-    .from("commission_rules")
-    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai")
-    .eq("is_active", true)
-    .order("nama");
+export async function muatAturanKomisi(
+  supabase: AnyClient,
+): Promise<AturanKomisi[]> {
+  const data = await sourceRows<Record<string, unknown>>(
+    supabase,
+    "commission_rules",
+    "id,nama,tipe,basis,sumber,persen,nominal,employee_id,branch_id,category_id,item_id,min_omzet,berlaku_dari,berlaku_sampai",
+    (q) => q.eq("is_active", true),
+  );
 
   return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
     id: String(r.id),
@@ -351,7 +593,11 @@ export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomis
 export async function komisiPeriode(
   supabase: AnyClient,
   periode: string,
-): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; omzetTanpaPenjual: number }> {
+): Promise<{
+  hasil: HasilKomisi[];
+  baris: BarisJual[];
+  omzetTanpaPenjual: number;
+}> {
   const [{ baris, omzetTanpaPenjual }, aturan] = await Promise.all([
     kumpulkanBarisKomisi(supabase, periode),
     muatAturanKomisi(supabase),

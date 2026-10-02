@@ -40,7 +40,7 @@ export default async function KaryawanPage({
   const [{ data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
     supabase
       .from("employees")
-      .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branch_id")
+      .select(bolehKelola ? "id, nik, nama, jabatan, departemen, gaji_pokok, status, branch_id" : "id, nik, nama, jabatan, departemen, status, branch_id")
       // `cari` datang dari pencarian global di topbar.
       .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
       .order("nama"),
@@ -232,7 +232,7 @@ export default async function KaryawanPage({
                       {tugas.length ? tugas.map((t) => `${t.branchName}${t.role === "PRIMARY" ? " (utama)" : ""}`).join(", ") : "—"}
                     </td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
-                      {rp(Number(r.gaji_pokok))}
+                      {bolehKelola ? rp(Number(r.gaji_pokok)) : "Terbatas"}
                     </td>
                     <td>
                       <span className={`bge ${r.status === "Aktif" ? "g" : "x"}`}>

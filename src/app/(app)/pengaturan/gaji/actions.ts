@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 
 const BACK = "/pengaturan/gaji";
-const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
+const gagal = (msg: string): never =>
+  redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 
 export async function simpanAturanGaji(formData: FormData) {
-  const supabase = await assertRole(BACK, "aturan gaji", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "aturan gaji", ["OWNER"]);
 
   const angka = (n: string) => Number(formData.get(n)) || 0;
   const row = {
@@ -22,18 +23,26 @@ export async function simpanAturanGaji(formData: FormData) {
 
   if (row.telat_blok_menit <= 0) gagal("Blok menit harus lebih dari 0");
   if (row.telat_mulai_menit < 0) gagal("Batas bawah telat tidak boleh negatif");
-  if (Object.values(row).some((v) => v < 0)) gagal("Nominal tidak boleh negatif");
+  if (Object.values(row).some((v) => v < 0))
+    gagal("Nominal tidak boleh negatif");
   if (row.telat_maks > 0 && row.telat_maks < row.telat_nominal_per_blok) {
-    gagal("Batas atas potongan lebih kecil dari satu blok — potongan jadi tidak masuk akal");
+    gagal(
+      "Batas atas potongan lebih kecil dari satu blok — potongan jadi tidak masuk akal",
+    );
   }
 
-  const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase
-    .from("payroll_settings")
-    .update({ ...row, updated_by: user?.id ?? null, updated_at: new Date().toISOString() })
-    .eq("id", true);
-  if (error) gagal(error.message);
-
+  const { error } = await supabase.rpc("hris_save_payroll_policy", {
+    p_group: String(formData.get("group_id") ?? "").trim() || null,
+    p_from: String(formData.get("effective_date") ?? "").trim(),
+    p_settings: row,
+    p_reason: String(formData.get("reason") ?? "").trim(),
+  });
+  if (error)
+    gagal(
+      error.message?.startsWith("HRIS:")
+        ? error.message.slice(5).trim()
+        : "Aturan gagal disimpan",
+    );
   revalidatePath(BACK);
   redirect(`${BACK}?success=1`);
 }

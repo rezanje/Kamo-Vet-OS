@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
+import { aksesCabangHRIS } from "@/lib/jadwal-scope";
+import { bolehUbahShift } from "@/lib/schedule-request";
 import { jamRingkas } from "@/lib/shift-master";
 import { simpanShift, toggleShift } from "./actions";
 
@@ -10,7 +12,7 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 
 type Shift = {
   id: string; nama: string; jam_masuk: string | null; jam_pulang: string | null;
-  is_libur: boolean; warna: string; is_active: boolean; branches: Rel<{ name: string }>;
+  branch_id:string|null; is_libur: boolean; warna: string; is_active: boolean; branches: Rel<{ name: string }>;
 };
 
 export default async function ShiftPage({
@@ -21,14 +23,17 @@ export default async function ShiftPage({
   const { error, success } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
+  const access = await aksesCabangHRIS(supabase);
+  const allowed = access.branches.map(b=>b.id);
 
   const [{ data }, { data: branches }] = await Promise.all([
     supabase
       .from("work_shifts")
-      .select("id, nama, jam_masuk, jam_pulang, is_libur, warna, is_active, branches(name)")
+      .select("id, nama, jam_masuk, jam_pulang, is_libur, warna, is_active, branch_id, branches(name)")
       .order("is_libur").order("jam_masuk"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
   ]);
+  const selectableBranches=(branches??[]).filter(b=>allowed.includes(b.id));
   const shifts = (data ?? []) as unknown as Shift[];
 
   return (
@@ -58,9 +63,9 @@ export default async function ShiftPage({
           <div className="frow" style={{ marginTop: 10 }}>
             <div>
               <label className="flab">Cabang</label>
-              <select className="fi" name="branch_id" defaultValue="">
-                <option value="">— Semua cabang —</option>
-                {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              <select className="fi" name="branch_id" defaultValue={access.role==='OWNER'?'':selectableBranches[0]?.id??''} required={access.role!=='OWNER'}>
+                {access.role==='OWNER'?<option value="">— Semua cabang —</option>:<option value="" disabled>Pilih cabang diizinkan</option>}
+                {selectableBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
             <div>
@@ -76,6 +81,7 @@ export default async function ShiftPage({
             </div>
           </div>
           <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 6 }}>
+            Shift semua cabang dikelola OWNER. ADMIN mengelola cabang yang ditugaskan.
             Shift yang lewat tengah malam boleh: mis. masuk 21:00 pulang 05:00.
             Hari libur terjadwal tidak dihitung bolos saat penggajian.
           </div>
@@ -116,13 +122,13 @@ export default async function ShiftPage({
                   <td><span className={`bge ${s.is_active ? "g" : "x"}`}>{s.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehKelola && (
                     <td>
-                      <form action={toggleShift}>
+                      {bolehUbahShift(access.role,s.branch_id,allowed)?<form action={toggleShift}>
                         <input type="hidden" name="id" value={s.id} />
                         <input type="hidden" name="aktif" value={s.is_active ? "1" : "0"} />
                         <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
                           {s.is_active ? "Nonaktifkan" : "Aktifkan"}
                         </SubmitButton>
-                      </form>
+                      </form>:<span>Hanya pengelola cabang / OWNER</span>}
                     </td>
                   )}
                 </tr>

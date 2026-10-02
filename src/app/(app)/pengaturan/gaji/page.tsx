@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/master-guard";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
+import { hariIniWIB } from "@/lib/tanggal";
 import { getAturanGaji, potonganTelat } from "@/lib/payroll-aturan";
 import { simpanAturanGaji } from "./actions";
 
@@ -13,7 +14,7 @@ export default async function AturanGajiPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
-  const supabase = await createClient();
+  const supabase = await assertRole("/me", "aturan gaji", ["OWNER"]);
   const a = await getAturanGaji(supabase);
   const aktif = a.telat_nominal_per_blok > 0 || a.bolos_per_hari > 0 || a.lembur_per_jam > 0;
 
@@ -41,6 +42,9 @@ export default async function AturanGajiPage({
       )}
 
       <form action={simpanAturanGaji}>
+          <label className="flab">Mulai tanggal *</label><input className="fi" type="date" name="effective_date" defaultValue={hariIniWIB()} required/>
+          <label className="flab">Alasan perubahan *</label><input className="fi" name="reason" minLength={3} maxLength={1000} required/>
+          <p>Aturan ini berlaku untuk seluruh perusahaan mulai tanggal tersebut. Aturan kelompok, keanggotaan, dan komponen per periode ada di <Link href="/hris/aturan">Aturan bertanggal</Link>.</p>
         <div className="crm-sec">
           <SecHeader
             num="01" title="POTONGAN TELAT"

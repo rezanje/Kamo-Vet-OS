@@ -1,3 +1,4 @@
+import { assertRole } from "@/lib/master-guard";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
@@ -22,6 +23,7 @@ export default async function SlipPage({
 }: {
   searchParams: Promise<{ periode?: string }>;
 }) {
+  await assertRole("/hris", "rincian gaji", ["OWNER", "ADMIN", "FINANCE"]);
   const sp = await searchParams;
   const periode = /^\d{4}-\d{2}$/.test(sp.periode ?? "") ? sp.periode! : hariIniWIB().slice(0, 7);
   const supabase = await createClient();

@@ -1,53 +1,50 @@
 "use server";
-
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-
-// ponytail: insert pengajuan cuti/lembur dengan status default Menunggu.
-export async function ajukanCuti(formData: FormData) {
-  const supabase = await createClient();
-
-  const employeeId = String(formData.get("employee_id") ?? "").trim();
-  const jenis = String(formData.get("jenis") ?? "").trim();
-  const tanggalMulai = String(formData.get("tanggal_mulai") ?? "").trim();
-  const tanggalSelesai = String(formData.get("tanggal_selesai") ?? "").trim() || null;
-  const durasi = formData.get("durasi") ? Number(formData.get("durasi")) : null;
-  const alasan = String(formData.get("alasan") ?? "").trim() || null;
-
-  // ponytail: validasi field wajib sebelum insert.
-  if (!employeeId) {
-    redirect(`/hris/cuti?error=${encodeURIComponent("Karyawan wajib dipilih")}`);
-  }
-  if (!jenis) {
-    redirect(`/hris/cuti?error=${encodeURIComponent("Jenis pengajuan wajib dipilih")}`);
-  }
-  if (!tanggalMulai) {
-    redirect(`/hris/cuti?error=${encodeURIComponent("Tanggal mulai wajib diisi")}`);
-  }
-
-  const { error } = await supabase.from("leave_requests").insert({
-    employee_id: employeeId,
-    jenis,
-    tanggal_mulai: tanggalMulai,
-    tanggal_selesai: tanggalSelesai,
-    durasi: durasi,
-    alasan,
-    status: "Menunggu",
-  });
-
-  if (error) {
-    redirect(`/hris/cuti?error=${encodeURIComponent("Gagal menyimpan pengajuan")}`);
-  }
-
-  redirect("/hris/cuti?success=1");
+import { assertRole } from "@/lib/master-guard";
+import {
+  field,
+  pesanPengajuan,
+  submitStaffRequest,
+} from "@/lib/hris-request-actions";
+const BACK = "/hris/cuti";
+export async function ajukanCuti(f: FormData) {
+  await assertRole(BACK, "pengajuan karyawan", ["OWNER", "ADMIN"]);
+  return submitStaffRequest(
+    "leave",
+    {
+      jenis: field(f, "jenis"),
+      tanggal_mulai: field(f, "tanggal_mulai"),
+      tanggal_selesai: field(f, "tanggal_selesai"),
+      alasan: field(f, "alasan"),
+    },
+    BACK,
+    field(f, "employee_id") || null,
+  );
 }
-
-// ponytail: approve atau tolak pengajuan — sama polanya seperti updateVisitStatus di antrian.
-export async function updateLeaveStatus(formData: FormData) {
-  const supabase = await createClient();
-  const id = String(formData.get("id"));
-  const status = String(formData.get("status"));
-  await supabase.from("leave_requests").update({ status }).eq("id", id);
-  revalidatePath("/hris/cuti");
+async function putuskan(f: FormData, approve: boolean) {
+  const db = await assertRole(BACK, "pengajuan cuti", ["OWNER", "ADMIN"]);
+  const { error } = await db.rpc("hris_decide_staff_request", {
+    p_kind: "leave",
+    p_id: field(f, "id"),
+    p_approve: approve,
+    p_reason: field(f, "catatan"),
+    p_tenor: 1,
+    p_account: null,
+  });
+  redirect(
+    `${BACK}?${new URLSearchParams(error ? { error: pesanPengajuan(error) } : { success: "keputusan" })}`,
+  );
+}
+export async function setujuiCuti(f: FormData) {
+  return putuskan(f, true);
+}
+export async function tolakCuti(f: FormData) {
+  return putuskan(f, false);
+}
+export async function updateLeaveStatus(f: FormData) {
+  await assertRole(BACK, "pengajuan cuti", ["OWNER", "ADMIN"]);
+  const status = field(f, "status");
+  if (!["Disetujui", "Ditolak"].includes(status))
+    redirect(`${BACK}?error=Keputusan+tidak+valid`);
+  return putuskan(f, status === "Disetujui");
 }

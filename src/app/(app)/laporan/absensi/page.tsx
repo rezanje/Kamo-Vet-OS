@@ -1,137 +1,218 @@
-import { createClient } from "@/lib/supabase/server";
-import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
+import Link from "next/link";
+import { assertRole } from "@/lib/master-guard";
+import { loadAttendanceRecap } from "@/lib/attendance-recap-server";
 import { hariIniWIB } from "@/lib/tanggal";
-import { rekapAbsensi, jamMenit, JAM_KERJA_DEFAULT, type BarisAbsensi, type JamKerja } from "@/lib/laporan-hris";
-
-type Rel<T> = T | T[] | null;
-const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
-
+import { aksesCabangHRIS } from "@/lib/jadwal-scope";
+import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
+const duration = (v: number) => `${Math.floor(v / 60)}j ${Math.floor(v % 60)}m`;
 export default async function LaporanAbsensiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periode?: string; cabang?: string }>;
+  searchParams: Promise<{
+    periode?: string;
+    cabang?: string;
+    tanggal?: string;
+  }>;
 }) {
   const sp = await searchParams;
-  const periode = sp.periode || hariIniWIB().slice(0, 7);   // YYYY-MM
-  const cabang = sp.cabang || "";
-
-  const supabase = await createClient();
-
-  // Rentang satu bulan penuh. Bulan 12 harus naik ke Januari tahun berikutnya —
-  // ditulis eksplisit supaya tidak jadi "bulan 13" yang tidak pernah cocok.
-  const [th, bl] = periode.split("-").map(Number);
-  const awal = `${periode}-01`;
-  const akhir = bl === 12 ? `${th + 1}-01-01` : `${th}-${String(bl + 1).padStart(2, "0")}-01`;
-
-  const [{ data: absen }, { data: karyawan }, { data: setting }, { data: cabangList }] = await Promise.all([
-    supabase.from("attendance").select("employee_id, status, jam_masuk, jam_pulang")
-      .gte("tanggal", awal).lt("tanggal", akhir),
-    supabase.from("employees").select("id, nama, jabatan, status, branches(name)").order("nama"),
-    supabase.from("company_settings")
-      .select("jam_masuk_standar, jam_pulang_standar, toleransi_telat_menit").maybeSingle(),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-  ]);
-
-  const jamKerja: JamKerja = setting
-    ? {
-        jamMasukStandar: String(setting.jam_masuk_standar),
-        jamPulangStandar: String(setting.jam_pulang_standar),
-        toleransiMenit: Number(setting.toleransi_telat_menit),
-      }
-    : JAM_KERJA_DEFAULT;
-
-  const rekap = rekapAbsensi((absen ?? []) as BarisAbsensi[], jamKerja);
-
-  type Emp = { id: string; nama: string; jabatan: string | null; status: string; branches: Rel<{ name: string }> };
-  const rows = ((karyawan ?? []) as unknown as Emp[])
-    .filter((e) => !cabang || one(e.branches)?.name === cabang)
-    .map((e) => ({
-      ...e,
-      cabangNama: one(e.branches)?.name ?? "—",
-      r: rekap.get(e.id) ?? {
-        employee_id: e.id, hadir: 0, izin: 0, sakit: 0, alpha: 0, cuti: 0,
-        telat: 0, menitTelat: 0, menitLembur: 0,
-      },
-    }));
-
-  const totalTelat = rows.reduce((a, r) => a + r.r.telat, 0);
-  const totalAlpha = rows.reduce((a, r) => a + r.r.alpha, 0);
-  const totalLembur = rows.reduce((a, r) => a + r.r.menitLembur, 0);
-
+  const db = await assertRole("/me", "rekap absensi", ["OWNER", "ADMIN"]);
+  let report: Awaited<ReturnType<typeof loadAttendanceRecap>> | null = null;
+  let error = "";
+  try {
+    report = await loadAttendanceRecap(db, sp);
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Rekap gagal dimuat";
+  }
+  const access = report?.access ?? (await aksesCabangHRIS(db));
+  const period = report?.period ?? sp.periode ?? hariIniWIB().slice(0, 7);
+  const branch = report?.branch ?? sp.cabang ?? "";
+  const summary = report?.result.summaries ?? [];
+  const daily = (report?.result.daily ?? []).filter(
+    (d) => !sp.tanggal || d.tanggal === sp.tanggal,
+  );
+  const branches = new Map(access.branches.map((b) => [b.id, b.name]));
   return (
     <LaporanPage
-      icon="ti-clock-check" title="REKAP ABSENSI"
-      desc={`Telat, bolos, dan lembur per karyawan. Jam kerja standar ${String(jamKerja.jamMasukStandar).slice(0, 5)}–${String(jamKerja.jamPulangStandar).slice(0, 5)}, toleransi ${jamKerja.toleransiMenit} menit.`}
+      icon="ti-clock-check"
+      title="REKAP ABSENSI"
+      desc="Berdasarkan jadwal yang berlaku, sesi masuk–pulang dan pengajuan yang disetujui. Angka keterlambatan adalah fakta waktu; aturan potongan gaji tetap terpisah."
       filter={
         <>
-          <div>
-            <label className="flab">Periode</label>
-            <input className="fi" type="month" name="periode" defaultValue={periode} />
-          </div>
-          <div style={{ minWidth: 200 }}>
-            <label className="flab">Cabang</label>
-            <select className="fi" name="cabang" defaultValue={cabang}>
-              <option value="">Semua cabang</option>
-              {(cabangList ?? []).map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
+          <label>
+            Periode
+            <input
+              className="fi"
+              type="month"
+              name="periode"
+              defaultValue={period}
+            />
+          </label>
+          <label>
+            Cabang
+            <select className="fi" name="cabang" defaultValue={branch}>
+              {access.role === "OWNER" && (
+                <option value="">Semua cabang</option>
+              )}
+              {access.branches.map((b) => (
+                <option value={b.id} key={b.id}>
+                  {b.name}
+                </option>
+              ))}
             </select>
-          </div>
-          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+          </label>
+          <button className="btn-def">Tampilkan</button>
         </>
       }
       ringkasan={
-        <KartuAngka items={[
-          { label: "Karyawan", nilai: `${rows.length} orang` },
-          { label: "Total hari telat", nilai: `${totalTelat} hari`, warna: totalTelat ? "#b45309" : undefined },
-          { label: "Total bolos (alpha)", nilai: `${totalAlpha} hari`, warna: totalAlpha ? "#b91c1c" : undefined },
-          { label: "Total lembur", nilai: jamMenit(totalLembur), warna: "#15803d" },
-        ]} />
+        <KartuAngka
+          items={[
+            { label: "Karyawan dengan catatan", nilai: String(summary.length) },
+            {
+              label: "Hari telat",
+              nilai: String(summary.reduce((s, r) => s + r.hariTelat, 0)),
+            },
+            {
+              label: "Alpha hari lewat",
+              nilai: String(summary.reduce((s, r) => s + r.bolos, 0)),
+            },
+            {
+              label: "Hari perlu koreksi",
+              nilai: String(summary.reduce((s, r) => s + r.hariBermasalah, 0)),
+            },
+          ]}
+        />
       }
     >
-      <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 900 }}>
-            <thead>
-              <tr>
-                <th style={{ width: 30 }}>No.</th><th>Karyawan</th><th style={{ width: 150 }}>Cabang</th>
-                <th style={{ width: 60, textAlign: "center" }}>Hadir</th>
-                <th style={{ width: 90, textAlign: "center" }}>Telat</th>
-                <th style={{ width: 60, textAlign: "center" }}>Izin</th>
-                <th style={{ width: 60, textAlign: "center" }}>Sakit</th>
-                <th style={{ width: 60, textAlign: "center" }}>Cuti</th>
-                <th style={{ width: 60, textAlign: "center" }}>Alpha</th>
-                <th style={{ width: 90, textAlign: "right" }}>Lembur</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((e, i) => (
-                <tr key={e.id} style={{ opacity: e.status === "Aktif" ? 1 : 0.55 }}>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>
-                    {e.nama}
-                    <div style={{ fontSize: 9.5, color: "var(--td)" }}>{e.jabatan ?? "—"}</div>
-                  </td>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{e.cabangNama}</td>
-                  <td style={{ textAlign: "center", fontSize: 11 }}>{e.r.hadir}</td>
-                  <td style={{ textAlign: "center", fontSize: 11, color: e.r.telat ? "#b45309" : "var(--td)" }}>
-                    {e.r.telat ? `${e.r.telat}x · ${jamMenit(e.r.menitTelat)}` : "—"}
-                  </td>
-                  <td style={{ textAlign: "center", fontSize: 11 }}>{e.r.izin || "—"}</td>
-                  <td style={{ textAlign: "center", fontSize: 11 }}>{e.r.sakit || "—"}</td>
-                  <td style={{ textAlign: "center", fontSize: 11 }}>{e.r.cuti || "—"}</td>
-                  <td style={{ textAlign: "center", fontSize: 11, color: e.r.alpha ? "#b91c1c" : "var(--td)", fontWeight: e.r.alpha ? 700 : 400 }}>
-                    {e.r.alpha || "—"}
-                  </td>
-                  <td style={{ textAlign: "right", fontSize: 11 }}>{jamMenit(e.r.menitLembur)}</td>
+      {error ? (
+        <p role="alert">{error}</p>
+      ) : (
+        <>
+          <Link
+            className="btn-def"
+            href={`/laporan/absensi/export?${new URLSearchParams({ periode: period, cabang: branch })}`}
+          >
+            Ekspor Excel ringkasan & harian
+          </Link>
+          <p>
+            Durasi hanya dijumlahkan untuk timestamp lengkap. Jam legacy yang
+            belum pasti ditampilkan terpisah. Lembur dibayar hanya dari
+            pengajuan yang disetujui.
+          </p>
+          <div className="crm-sec" style={{ overflowX: "auto" }}>
+            <h2>Ringkasan bulanan</h2>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Karyawan</th>
+                  <th>Terjadwal</th>
+                  <th>Hadir</th>
+                  <th>Alpha</th>
+                  <th>Cuti / izin / sakit</th>
+                  <th>Telat</th>
+                  <th>Durasi diketahui</th>
+                  <th>Hari durasi belum pasti</th>
+                  <th>Lembur disetujui</th>
+                  <th>Perlu koreksi</th>
                 </tr>
-              ))}
-              {rows.length === 0 && <TabelKosong kolom={10} pesan="Belum ada karyawan di cabang ini." />}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
-          Jam kerja standar & toleransi telat diatur di Pengaturan perusahaan.
-        </div>
-      </div>
+              </thead>
+              <tbody>
+                {summary.map((r) => (
+                  <tr key={r.employeeId}>
+                    <td>{r.nama}</td>
+                    <td>{r.hariKerja}</td>
+                    <td>{r.hadir}</td>
+                    <td>{r.bolos}</td>
+                    <td>
+                      {r.cuti} / {r.izin} / {r.sakit}
+                    </td>
+                    <td>
+                      {r.hariTelat} hari · {(r.detikTelat / 60).toFixed(2)}{" "}
+                      menit
+                    </td>
+                    <td>{duration(r.menitKerja)}</td>
+                    <td>{r.hariJamTidakDiketahui}</td>
+                    <td>{duration(r.menitLemburDisetujui)}</td>
+                    <td>{r.hariBermasalah}</td>
+                  </tr>
+                ))}
+                {!summary.length && (
+                  <TabelKosong
+                    kolom={10}
+                    pesan="Tidak ada jadwal atau catatan pada periode ini."
+                  />
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="crm-sec">
+            <h2>Rincian harian</h2>
+            <form method="get">
+              <input type="hidden" name="periode" value={period} />
+              <input type="hidden" name="cabang" value={branch} />
+              <label>
+                Tanggal (kosong untuk seluruh bulan)
+                <input
+                  className="fi"
+                  type="date"
+                  name="tanggal"
+                  defaultValue={sp.tanggal}
+                />
+              </label>
+              <button className="btn-def">Lihat harian</button>
+            </form>
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Tanggal masuk</th>
+                    <th>Karyawan</th>
+                    <th>Cabang</th>
+                    <th>Shift berlaku</th>
+                    <th>Status</th>
+                    <th>Masuk / pulang</th>
+                    <th>Durasi</th>
+                    <th>Telat</th>
+                    <th>Lembur disetujui</th>
+                    <th>Perlu koreksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {daily.map((r) => (
+                    <tr key={`${r.employeeId}|${r.tanggal}`}>
+                      <td>{r.tanggal}</td>
+                      <td>{r.nama}</td>
+                      <td>
+                        {r.branchId
+                          ? (branches.get(r.branchId) ?? r.branchId)
+                          : "Belum pasti"}
+                      </td>
+                      <td>{r.shift}</td>
+                      <td>{r.status}</td>
+                      <td>
+                        {r.masuk ?? "—"}
+                        <br />
+                        {r.pulang ?? "—"}
+                      </td>
+                      <td>
+                        {r.menitKerja === null
+                          ? "Belum diketahui"
+                          : duration(r.menitKerja)}
+                      </td>
+                      <td>{r.detikTelat.toFixed(0)} detik</td>
+                      <td>{duration(r.menitLemburDisetujui)}</td>
+                      <td>{r.flags.join("; ") || "—"}</td>
+                    </tr>
+                  ))}
+                  {!daily.length && (
+                    <TabelKosong kolom={10} pesan="Tidak ada catatan harian." />
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <Link href="/hris/absensi">Koreksi catatan melalui HR</Link>
+          </div>
+        </>
+      )}
     </LaporanPage>
   );
 }

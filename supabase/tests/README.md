@@ -92,3 +92,34 @@ rollback when fee insertion fails. A separate two-session AR race allowed one
 Rp150 payment against a Rp200 invoice and rejected the competing Rp150 payment;
 one receipt and one journal remained. The isolated database is not production
 or a complete Supabase stack.
+
+
+## HRIS board batch and concurrency (2026-10-02)
+
+Run the prepared HRIS migration chain and board contract in a disposable,
+network-isolated PostgreSQL16 container with fictional auth/data:
+
+```sh
+python3 scripts/test-hris-completion-db.py hris_schedule_swaps.sql hris_schedule_board_batch.sql
+```
+
+The board suite checks transactional delete/update/insert and audit rollback,
+exact browser cell versions, final-period and scoped-role guards, malformed or
+oversized payloads, immutable HR-only events, creator attribution, and semantic
+UUID no-ops. Including the swaps suite also seeds two fictional employees for
+independent board/board and board/approval connections and a queued ADMIN save
+behind real branch-access revocation. The runner cleans up its own container.
+It does not read remote Supabase credentials or validate production/schema drift.
+The full twelve-suite command and acceptance gates are recorded in
+`docs/reports/2026-10-02-hris-board-atomic-handoff.md`.
+
+
+The same board+swap command also runs `scripts/hris_schedule_lock_tests.py`
+after migration `20261002160000`. Eight forced two-session interleavings
+require schedule mutations to wait on the real source advisory lock before
+locking identity/request/employee/cell rows. A source-holder board transaction
+then commits without a deadlock; stale submission/approval/consent must reject,
+and permitted rejection/cancellation must complete with the correct audit.
+The earlier board race no longer accepts deadlock as a valid losing result.
+See the schedule-lock-order handoff for the original40P01 regression, current
+permissions/state/audit checks, queueing cost and the covered scope.

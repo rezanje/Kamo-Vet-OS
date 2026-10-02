@@ -10,7 +10,7 @@ export type AturanGaji = {
   telat_mulai_menit: number;
   telat_blok_menit: number;
   telat_nominal_per_blok: number;
-  telat_maks: number;      // 0 = tanpa batas atas
+  telat_maks: number; // 0 = tanpa batas atas
   bolos_per_hari: number;
   lembur_per_jam: number;
 };
@@ -38,7 +38,10 @@ export function potonganTelat(menitTelat: number, a: AturanGaji): number {
 
 // Telat dihitung dari jam shift orang itu, bukan jam kantor global.
 // Absen lebih awal = 0, bukan angka negatif.
-export function menitTelat(jamShift: string | null, jamAbsen: string | null): number {
+export function menitTelat(
+  jamShift: string | null,
+  jamAbsen: string | null,
+): number {
   if (!jamShift || !jamAbsen) return 0;
   const ke = (s: string) => {
     const [h, m] = s.slice(0, 5).split(":").map(Number);
@@ -48,21 +51,15 @@ export function menitTelat(jamShift: string | null, jamAbsen: string | null): nu
 }
 
 export async function getAturanGaji(supabase: AnyClient): Promise<AturanGaji> {
-  try {
-    const { data } = await supabase
-      .from("payroll_settings")
-      .select("telat_mulai_menit, telat_blok_menit, telat_nominal_per_blok, telat_maks, bolos_per_hari, lembur_per_jam")
-      .eq("id", true).maybeSingle();
-    if (!data) return ATURAN_KOSONG;
-    return {
-      telat_mulai_menit: Number(data.telat_mulai_menit) || 0,
-      telat_blok_menit: Number(data.telat_blok_menit) || 5,
-      telat_nominal_per_blok: Number(data.telat_nominal_per_blok) || 0,
-      telat_maks: Number(data.telat_maks) || 0,
-      bolos_per_hari: Number(data.bolos_per_hari) || 0,
-      lembur_per_jam: Number(data.lembur_per_jam) || 0,
-    };
-  } catch {
-    return ATURAN_KOSONG;
-  }
+  const { data, error } = await supabase.rpc("hris_global_payroll_policy");
+  if (error || !data) throw new Error("Data aturan gaji gagal dibaca");
+  const result = Object.fromEntries(
+    Object.keys(ATURAN_KOSONG).map((k) => [k, Number(data[k])]),
+  ) as AturanGaji;
+  if (
+    Object.values(result).some((n) => !Number.isFinite(n) || n < 0) ||
+    result.telat_blok_menit <= 0
+  )
+    throw new Error("Data aturan gaji tidak valid");
+  return result;
 }

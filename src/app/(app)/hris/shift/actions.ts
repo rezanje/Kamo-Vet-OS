@@ -27,10 +27,10 @@ export async function simpanShift(formData: FormData) {
     jam_pulang: isLibur ? null : jamPulang,
   };
 
-  const { error } = id
-    ? await supabase.from("work_shifts").update(row).eq("id", id)
-    : await supabase.from("work_shifts").insert(row);
-  if (error) gagal(error.message);
+  const { data, error } = id
+    ? await supabase.from("work_shifts").update(row).eq("id", id).select("id")
+    : await supabase.from("work_shifts").insert(row).select("id");
+  if (error || !data?.length) gagal("Shift tidak tersimpan. Periksa akses cabang; shift semua cabang hanya boleh diubah OWNER.");
 
   redirect(`${BACK}?success=1`);
 }
@@ -42,6 +42,7 @@ export async function toggleShift(formData: FormData) {
   const aktif = String(formData.get("aktif") ?? "") === "1";
   if (!id) gagal("Shift tidak valid");
 
-  const { error } = await supabase.from("work_shifts").update({ is_active: !aktif }).eq("id", id);
-  redirect(error ? `${BACK}?error=${encodeURIComponent(error.message)}` : `${BACK}?success=1`);
+  const { data, error } = await supabase.from("work_shifts").update({ is_active: !aktif }).eq("id", id).select("id");
+  if (error || !data?.length) gagal("Shift tidak berubah. Periksa akses cabang; shift semua cabang hanya boleh diubah OWNER.");
+  redirect(`${BACK}?success=1`);
 }
