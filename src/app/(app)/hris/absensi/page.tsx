@@ -90,6 +90,7 @@ export default async function AbsensiPage({
   const unresolved = (open.data ?? []) as Row[];
   return (
     <>
+      <Link href="/laporan/absensi" className="btn-def">Rekap harian / bulanan dan ekspor</Link>
       <Link className="back-btn" href="/hris">
         Kembali ke HRIS
       </Link>

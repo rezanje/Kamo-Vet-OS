@@ -25,6 +25,12 @@ try:
     code = code[code.index('\n') + 1:]
     bootstrap = subprocess.run(['python3', '-c', code], cwd=root, text=True,
                                capture_output=True, check=True).stdout
+    bootstrap += '\n' + (root / 'supabase/migrations/0019_leave.sql').read_text()
+    bootstrap += '\n' + (root / 'supabase/migrations/0015_keuangan.sql').read_text()
+    bootstrap += "\ninsert into coa_accounts(code,name,type,normal_balance)values('1101','Fiction cash','ASET','D'),('1102','Fiction bank','ASET','D');\n"
+    bootstrap += '\n' + (root / 'supabase/migrations/0068_kas_bank.sql').read_text()
+    bootstrap += '\n' + (root / 'supabase/migrations/0089_hris_pengajuan_staf.sql').read_text()
+    bootstrap += '\n' + 'grant all on public.leave_requests,public.coa_accounts,public.journal_entries,public.journal_lines,public.cash_accounts,public.cash_transfers,public.overtime_requests,public.cash_advances,public.cash_advance_installments,public.reimbursements to authenticated;'
     bootstrap += '\n'.join(p.read_text() for p in sorted((root / 'supabase/migrations').glob('20261002*.sql')))
     result = docker('exec', '-i', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1',
                     input=bootstrap, capture_output=True)
