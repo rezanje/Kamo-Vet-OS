@@ -89,7 +89,7 @@ export default async function KomisiPage({
       <div className="crm-sec">
         <SecHeader
           num="01" title="DAFTAR ATURAN"
-          desc="Beberapa aturan boleh berlaku bersamaan pada satu struk."
+          desc="Beberapa aturan boleh berlaku bersamaan pada satu struk. Aturan global hanya OWNER; HR lain perlu memilih karyawan atau cabang yang diizinkan."
         />
 
         {bolehKelola && (

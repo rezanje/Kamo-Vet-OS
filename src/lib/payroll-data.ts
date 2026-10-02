@@ -11,6 +11,15 @@ import {
 } from "./payroll";
 import { ATURAN_KOSONG, type AturanGaji } from "./payroll-aturan";
 import { komisiPeriode } from "./komisi-data";
+import {
+  resolvePayrollPolicy,
+  componentsForPeriod,
+  type PolicyVersion,
+  type PayMembership,
+  type MasterVersion,
+  type FixedVersion,
+  type VariableComponent,
+} from "./payroll-effective";
 import { sourceRows } from "./source-rows";
 import { rentangTanggal } from "./tanggal";
 
@@ -92,15 +101,45 @@ export async function kumpulkanDataGaji(
   const komisiPer = new Map(komisi.hasil.map((h) => [h.employeeId, h.komisi]));
   const karyawan = empData;
   const [
+    policies,
+    memberships,
+    masterVersions,
+    fixedVersions,
+    periodComponents,
     jadwalData,
     absenData,
     cutiData,
     lemburData,
-    kompData,
     kasbonData,
     installmentData,
     reimData,
   ] = await Promise.all([
+    sourceRows<PolicyVersion>(
+      supabase,
+      "payroll_policy_versions",
+      "id,sequence,group_id,effective_date,values:settings",
+    ),
+    sourceRows<PayMembership>(
+      supabase,
+      "employee_pay_group_memberships",
+      "id,employee_id,group_id,valid_from,valid_to",
+    ),
+    sourceRows<MasterVersion>(
+      supabase,
+      "salary_component_versions",
+      "id,sequence,component_id,effective_period,nama,tipe,nominal,is_active",
+    ),
+    sourceRows<FixedVersion>(
+      supabase,
+      "employee_salary_component_versions",
+      "id,sequence,employee_id,component_id,effective_period,nominal,is_active",
+    ),
+    sourceRows<VariableComponent>(
+      supabase,
+      "payroll_period_components",
+      "id,employee_id,periode,nama,tipe,nominal,is_active",
+      (q) => q.eq("periode", periode),
+    ),
     sourceRows<Record<string, unknown>>(
       supabase,
       "employee_schedules",
@@ -129,11 +168,6 @@ export async function kumpulkanDataGaji(
       "id,employee_id,tanggal,jam",
       (q) =>
         q.eq("status", "Disetujui").gte("tanggal", awal).lte("tanggal", akhir),
-    ),
-    sourceRows<Record<string, unknown>>(
-      supabase,
-      "employee_salary_components",
-      "id,employee_id,nominal,salary_components(id,nama,tipe,nominal,is_active)",
     ),
     sourceRows<Record<string, unknown>>(
       supabase,
@@ -232,27 +266,6 @@ export async function kumpulkanDataGaji(
     );
   }
 
-  type KompRel = { tipe: string; nominal: number; is_active: boolean };
-  const kompPer = new Map<
-    string,
-    { tipe: "tunjangan" | "potongan"; nominal: number }[]
-  >();
-  for (const k of (kompData ?? []) as {
-    employee_id: string;
-    nominal: number | null;
-    salary_components: KompRel | KompRel[] | null;
-  }[]) {
-    const c = satu(k.salary_components);
-    if (!c || !c.is_active) continue;
-    const arr = kompPer.get(k.employee_id) ?? [];
-    // nominal null = ikut nominal bawaan komponennya.
-    arr.push({
-      tipe: c.tipe as "tunjangan" | "potongan",
-      nominal: Number(k.nominal ?? c.nominal),
-    });
-    kompPer.set(k.employee_id, arr);
-  }
-
   // SEMUA kasbon berjalan per karyawan, bukan satu. Dulu memakai `set` di dalam
   // loop sehingga hanya kasbon terakhir yang terbaca — utang lainnya diam-diam
   // tidak pernah dipotong dari gaji.
@@ -301,12 +314,27 @@ export async function kumpulkanDataGaji(
       absen: absenPer.get(k.id) ?? [],
       tanggalCuti: cutiPer.get(k.id) ?? [],
       jamLembur: lemburPer.get(k.id) ?? 0,
-      komponen: kompPer.get(k.id) ?? [],
+      komponen: componentsForPeriod(
+        k.id,
+        periode,
+        masterVersions,
+        fixedVersions,
+        periodComponents,
+      ),
       reimburse: reim.total,
       komisi: komisiPer.get(k.id) ?? 0,
       kasbon,
       penyesuaian: penyesuaianPer.get(k.id) ?? 0,
       aturan,
+      aturanPerTanggal: Object.fromEntries(
+        rentangTanggal(awal, akhir).map((date) => [
+          date,
+          resolvePayrollPolicy(k.id, date, aturan, policies, memberships),
+        ]),
+      ),
+      lemburPerTanggal: lemburData
+        .filter((r) => r.employee_id === k.id)
+        .map((r) => ({ tanggal: String(r.tanggal), jam: Number(r.jam) })),
     };
     const rincian = hitungGaji(input);
     return {
@@ -320,7 +348,8 @@ export async function kumpulkanDataGaji(
         attendance: absenData.filter((r) => r.employee_id === k.id),
         leave: cutiData.filter((r) => r.employee_id === k.id),
         overtime: lemburData.filter((r) => r.employee_id === k.id),
-        components: kompData.filter((r) => r.employee_id === k.id),
+        components: input.komponen,
+        memberships: memberships.filter((r) => r.employee_id === k.id),
         advances: kasbonData.filter((r) => r.employee_id === k.id),
         reimbursements: reimData.filter((r) => r.employee_id === k.id),
         commission: {

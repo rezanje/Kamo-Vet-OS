@@ -31,19 +31,18 @@ export async function simpanAturanGaji(formData: FormData) {
     );
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const { error } = await supabase
-    .from("payroll_settings")
-    .update({
-      ...row,
-      updated_by: user?.id ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", true);
-  if (error) gagal(error.message);
-
+  const { error } = await supabase.rpc("hris_save_payroll_policy", {
+    p_group: String(formData.get("group_id") ?? "").trim() || null,
+    p_from: String(formData.get("effective_date") ?? "").trim(),
+    p_settings: row,
+    p_reason: String(formData.get("reason") ?? "").trim(),
+  });
+  if (error)
+    gagal(
+      error.message?.startsWith("HRIS:")
+        ? error.message.slice(5).trim()
+        : "Aturan gagal disimpan",
+    );
   revalidatePath(BACK);
   redirect(`${BACK}?success=1`);
 }

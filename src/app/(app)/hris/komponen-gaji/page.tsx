@@ -1,3 +1,5 @@
+import Link from "next/link";
+import {hariIniWIB}from"@/lib/tanggal";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -48,16 +50,16 @@ export default async function KomponenGajiPage({
   return (
     <MasterPage
       back="/hris" icon="ti-coin" title="KOMPONEN GAJI"
-      desc="Tunjangan & potongan tetap — dipasang sekali, dipakai tiap bulan"
+      desc="Rencana terakhir komponen tetap — perubahan bertanggal dan tersimpan dalam riwayat"
       error={error} success={success} successMsg="Komponen gaji tersimpan."
       bolehKelola={bolehKelola}
       readOnlyNote="Master komponen hanya OWNER; pemasangan per karyawan oleh HR yang diizinkan."
     >
-      <div className="crm-sec">
+      <div className="crm-sec"><Link href="/hris/aturan">Aturan bertanggal dan riwayat komponen</Link>
         <SecHeader num="01" title="DAFTAR KOMPONEN" desc="Nominal di sini jadi bawaan; per karyawan boleh beda." />
 
         {bolehGlobal && (
-          <form action={simpanKomponen} style={{ marginBottom: 12 }}>
+          <form action={simpanKomponen} style={{ marginBottom: 12 }}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
             <div className="frow">
               <div>
                 <label className="flab">Nama komponen *</label>
@@ -106,7 +108,7 @@ export default async function KomponenGajiPage({
                   <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehGlobal && (
                     <td>
-                      <form action={toggleKomponen}>
+                      <form action={toggleKomponen}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
                         <input type="hidden" name="id" value={k.id} />
                         <input type="hidden" name="aktif" value={k.is_active ? "1" : "0"} />
                         <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
@@ -150,7 +152,7 @@ export default async function KomponenGajiPage({
             </div>
 
             {bolehKelola && (
-              <form action={pasangKomponen} style={{ marginBottom: 12 }}>
+              <form action={pasangKomponen} style={{ marginBottom: 12 }}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
                 <input type="hidden" name="employee_id" value={dipilih} />
                 <div className="frow">
                   <div>
@@ -203,7 +205,7 @@ export default async function KomponenGajiPage({
                         </td>
                         {bolehKelola && (
                           <td>
-                            <form action={lepasKomponen}>
+                            <form action={lepasKomponen}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
                               <input type="hidden" name="id" value={p.id} />
                               <input type="hidden" name="employee_id" value={dipilih} />
                               <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">

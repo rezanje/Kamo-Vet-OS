@@ -41,6 +41,8 @@ export type InputGaji = {
   kasbon: KasbonBerjalan[];
   penyesuaian: number; // koreksi manual pemilik (boleh negatif)
   aturan: AturanGaji;
+  aturanPerTanggal?: Record<string, AturanGaji>;
+  lemburPerTanggal?: { tanggal: string; jam: number }[];
 };
 
 export type RincianGaji = {
@@ -76,8 +78,10 @@ export function hitungGaji(i: InputGaji): RincianGaji {
   let potTelat = 0;
   let hadir = 0;
   let bolos = 0;
+  let potBolosNominal = 0;
 
   for (const h of hariKerja) {
+    const aturanHari = i.aturanPerTanggal?.[h.tanggal] ?? i.aturan;
     const a = absenPer.get(h.tanggal);
     if (a?.jamMasuk) {
       hadir += 1;
@@ -94,11 +98,14 @@ export function hitungGaji(i: InputGaji): RincianGaji {
       menitTelatTotal += telat;
       // Potongan dihitung PER HARI supaya batas atas harian berlaku benar —
       // menjumlahkan menit sebulan lalu memotong sekali akan salah besar.
-      potTelat += potonganTelat(telat, i.aturan);
+      potTelat += potonganTelat(telat, aturanHari);
       continue;
     }
     // Tidak absen: bolos, kecuali hari itu memang cuti/izin yang sudah disetujui.
-    if (!cuti.has(h.tanggal)) bolos += 1;
+    if (!cuti.has(h.tanggal)) {
+      bolos += 1;
+      potBolosNominal += aturanHari.bolos_per_hari;
+    }
   }
 
   const tunjangan = i.komponen
@@ -108,8 +115,18 @@ export function hitungGaji(i: InputGaji): RincianGaji {
     .filter((k) => k.tipe === "potongan")
     .reduce((a, k) => a + Number(k.nominal), 0);
 
-  const upahLembur = Math.round(Number(i.jamLembur) * i.aturan.lembur_per_jam);
-  const potBolos = Math.round(bolos * i.aturan.bolos_per_hari);
+  const upahLembur = Math.round(
+    i.lemburPerTanggal
+      ? i.lemburPerTanggal.reduce(
+          (sum, l) =>
+            sum +
+            Number(l.jam) *
+              (i.aturanPerTanggal?.[l.tanggal] ?? i.aturan).lembur_per_jam,
+          0,
+        )
+      : Number(i.jamLembur) * i.aturan.lembur_per_jam,
+  );
+  const potBolos = Math.round(potBolosNominal);
   const komisi = Math.round(Number(i.komisi) || 0);
 
   // Gaji sebelum cicilan = batas atas yang bisa dipotong untuk utang.

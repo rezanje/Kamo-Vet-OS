@@ -68,6 +68,7 @@ export default async function PenggajianPage({
 
   return (
     <>
+      <Link href="/hris/aturan" className="btn-def">Aturan bertanggal, kelompok, dan komponen periode</Link>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/hris" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>

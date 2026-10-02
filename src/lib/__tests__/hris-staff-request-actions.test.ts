@@ -143,3 +143,40 @@ it("database denial is reported without a success redirect", async () => {
   state.error = { code: "P0001", message: "HRIS: Periode gaji sudah final" };
   await expect(ajukanLembur(form())).rejects.toThrow("error=Periode");
 });
+
+import {
+  buatKelompok,
+  simpanKomponenPeriode,
+} from "../../app/(app)/hris/aturan/actions";
+it("HR admin cannot change global group master", async () => {
+  state.role = "ADMIN";
+  await expect(buatKelompok(form())).rejects.toThrow("error=");
+  expect(state.rpc).toEqual([]);
+});
+it("staff cannot create their own period bonus", async () => {
+  await expect(simpanKomponenPeriode(form())).rejects.toThrow("error=");
+  expect(state.rpc).toEqual([]);
+});
+it("period component action sends only fixed audited fields without client approval status", async () => {
+  state.role = "ADMIN";
+  const f = form();
+  f.set("periode", "2026-11");
+  f.set("nama", "Fiction one off");
+  f.set("tipe", "tunjangan");
+  f.set("nominal", "50");
+  f.set("reason", "Fiction explicit scoped change");
+  await expect(simpanKomponenPeriode(f)).rejects.toThrow("success=");
+  expect(state.rpc).toEqual([
+    {
+      name: "hris_save_period_component",
+      args: {
+        p_employee: "forged",
+        p_month: "2026-11",
+        p_name: "Fiction one off",
+        p_type: "tunjangan",
+        p_amount: 50,
+        p_reason: "Fiction explicit scoped change",
+      },
+    },
+  ]);
+});
