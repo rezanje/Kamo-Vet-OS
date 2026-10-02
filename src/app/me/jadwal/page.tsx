@@ -36,6 +36,7 @@ export default async function JadwalSayaPage({
         Kembali ke dashboard pribadi
       </Link>
       <h1>Jadwal & pengajuan perubahan</h1>
+      <Link href="/me/jadwal/tukar" className="btn-def">Tukar shift dengan rekan</Link>
       <p>
         Ajukan shift lain untuk jadwal yang sudah tersedia hari ini atau
         berikutnya. Jadwal berubah setelah HR menyetujui, sebelum absensi

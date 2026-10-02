@@ -90,6 +90,7 @@ export default async function PengajuanPage({
         </div>
       )}
 
+      {bolehKelola && <Link href="/hris/pengajuan/tukar" className="btn-def">Persetujuan tukar shift</Link>}
       {bolehKelola && <Link href="/hris/pengajuan/jadwal" className="btn-def">Pengajuan perubahan jadwal</Link>}
 
       {/* ── Lembur ─────────────────────────────────────────────── */}

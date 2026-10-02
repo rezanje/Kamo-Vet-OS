@@ -1,0 +1,30 @@
+import type { ShiftJadwal } from "./schedule-request";
+export type KandidatTukar = {
+  id: string;
+  employee_id: string;
+  nama: string;
+  tanggal: string;
+  updated_at: string;
+  shift: ShiftJadwal;
+};
+export type TukarShift = {
+  id: string;
+  employee_a: string;
+  employee_b: string;
+  profile_a: string;
+  profile_b: string;
+  name_a: string;
+  name_b: string;
+  date_a: string;
+  date_b: string;
+  branch_id: string;
+  shift_a: ShiftJadwal;
+  shift_b: ShiftJadwal;
+  status: string;
+  reason: string;
+  peer_reason: string | null;
+  decision_reason: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+};
