@@ -38,6 +38,13 @@ try:
     bootstrap += '\n' + mapping[:mapping.index('alter table bank_reconciliations')]
     bootstrap += '\ngrant all on public.cashier_shifts,public.accounting_locks,public.payment_account_map to authenticated;'
     bootstrap += '\n' + 'grant all on public.leave_requests,public.coa_accounts,public.journal_entries,public.journal_lines,public.cash_accounts,public.cash_transfers,public.overtime_requests,public.cash_advances,public.cash_advance_installments,public.reimbursements to authenticated;'
+    for name in ['0005_klinik_visits','0008_klinik_pembayaran','0010_pos_sales','0006_rekam_medis','0027_item_discount_promos','0028_invoice_edit_log','0084_klinik_stok_hpp','0091_komisi_target','0092_komisi_klinik','0098_rantai_penjualan','0102_komisi_reseller','20260915190000_salesperson_and_sales_discount']:
+        bootstrap += '\n' + (root / ('supabase/migrations/' + name + '.sql')).read_text()
+    returns = (root / 'supabase/migrations/0053_returns.sql').read_text()
+    bootstrap += '\n' + returns[returns.index('create table sales_returns'):returns.index('alter table purchase_returns')]
+    bootstrap += '\n' + returns[returns.index('alter table sales_returns'):returns.index('-- demo posture')]
+    bootstrap += '\n' + returns[returns.index('create policy sr2_all'):]
+    bootstrap += '\ngrant all on public.sales,public.sale_items,public.visits,public.invoices,public.invoice_items,public.sales_returns,public.sales_return_items,public.sales_invoices,public.sales_invoice_items,public.sales_delivery_items,public.commission_rules,public.sales_targets to authenticated;'
     bootstrap += '\n'.join(p.read_text() for p in sorted((root / 'supabase/migrations').glob('20261002*.sql')))
     result = docker('exec', '-i', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1',
                     input=bootstrap, capture_output=True)
@@ -95,6 +102,72 @@ commit;
         if sql("select count(*) from schedule_swap_requests r join employee_schedules a on a.id=r.schedule_a join employee_schedules b on b.id=r.schedule_b where r.status='Disetujui' and a.shift_id=(r.shift_b->>'id')::uuid and b.shift_id=(r.shift_a->>'id')::uuid and (select count(*)from schedule_swap_events)=3") != '1':
             raise RuntimeError('Concurrent approval left inconsistent cells or events')
         print('PASS: both effective cells and exactly three audit events', flush=True)
+
+    if 'hris_payroll_settlement.sql' in suites:
+        def payroll_sql(query):
+            r = docker('exec', '-i', container, 'psql', '-U', 'postgres', '-At', '-v',
+                       'ON_ERROR_STOP=1', input=query, capture_output=True)
+            if r.returncode:
+                raise RuntimeError(r.stderr)
+            return r.stdout.strip()
+        def owner_sql(query):
+            return "begin;set local role authenticated;select set_config('request.jwt.claim.role','authenticated',true);select set_config('request.jwt.claim.sub','90000000-0000-0000-0000-000000000002',true);" + query
+        if 'hris_schedule_swaps.sql' not in suites:
+            seed = (root / 'supabase/tests/hris_attendance_review_setup.sql').read_text()
+            payroll_sql(seed + '\ncommit;')
+        payroll_sql("""
+insert into coa_accounts(code,name,type,normal_balance)values('5201','Fiction concurrent salary','BEBAN','D')on conflict(code)do nothing;
+update employees set gaji_pokok=100;
+insert into cash_advances(id,employee_id,jumlah,tenor_bulan,status,disbursed_at)values('97000000-0000-0000-0000-000000000001','92000000-0000-0000-0000-000000000001',100,2,'Disetujui',statement_timestamp());
+insert into reimbursements(id,employee_id,kategori,jumlah,status)values('97100000-0000-0000-0000-000000000001','92000000-0000-0000-0000-000000000001','Fiction race travel',20,'Disetujui');
+create function public.fixture_salary_rows(p_period text)returns jsonb language sql as $$
+with loans as(select a.*,greatest(0,round(a.jumlah-coalesce((select sum(jumlah)from cash_advance_installments where advance_id=a.id),0)))remaining,floor(round(a.jumlah)/a.tenor_bulan)due from cash_advances a where status='Disetujui'),
+inst as(select employee_id,id,case when due<=0 or remaining-due<due then remaining else due end amount from loans where remaining>0),
+inputs as(select e.id,e.gaji_pokok,coalesce((select sum(amount)from inst where employee_id=e.id),0)cicilan,coalesce((select jsonb_agg(jsonb_build_object('id',id,'jumlah',amount)order by id)from inst where employee_id=e.id),'[]'::jsonb)plans,
+coalesce((select sum(jumlah)from reimbursements where employee_id=e.id and status='Disetujui'and paid_periode is null),0)reim,
+coalesce((select jsonb_agg(id order by id)from reimbursements where employee_id=e.id and status='Disetujui'and paid_periode is null),'[]'::jsonb)reim_ids from employees e where status='Aktif'),
+rows as(select *,jsonb_build_object('gajiPokok',gaji_pokok,'tunjangan',0,'upahLembur',0,'reimburse',reim,'komisi',0,'potonganTetap',0,'potonganTelat',0,'potonganBolos',0,'cicilanKasbon',cicilan,'penyesuaian',0,'total',gaji_pokok+reim-cicilan,'hariKerja',0,'hariHadir',0,'hariBolos',0,'menitTelat',0,'jamLembur',0)r from inputs)
+select jsonb_agg(jsonb_build_object('employeeId',id,'rincian',r,'sourceSnapshot',jsonb_build_object('rincian',r,'period',p_period),'cicilanKasbon',plans,'reimburseIds',reim_ids,'catatan','')order by id)from rows
+$$;
+""")
+        def payroll_race(queries, label, expected_successes=1):
+            jobs = [subprocess.Popen([*command, 'exec', '-i', container, 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'], env=env, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in queries]
+            for job, query in zip(jobs, queries):
+                job.stdin.write(query); job.stdin.close()
+            codes=[]
+            for job in jobs:
+                job.wait(timeout=30); codes.append(job.returncode)
+                error=job.stderr.read()
+                if job.returncode and 'HRIS:' not in error:
+                    raise RuntimeError('Unexpected payroll race failure: ' + error)
+            if sum(c == 0 for c in codes) != expected_successes:
+                raise RuntimeError(label + ': unexpected winners ' + str(codes))
+            print('PASS: '+label, flush=True)
+        prepare = owner_sql("select hris_prepare_payroll('2026-10',(hris_payroll_source_state('2026-10')->>'revision')::bigint,0,fixture_salary_rows('2026-10'),'Fiction concurrent preparation');select pg_sleep(1);commit;")
+        payroll_race([prepare,prepare],'concurrent draft preparation has one complete version')
+        finalize=owner_sql("select hris_finalize_payroll('2026-10',1,null,'Fiction concurrent finalization');select pg_sleep(1);commit;")
+        payroll_race([finalize,finalize],'concurrent finalization has one payment journal and settlement')
+        if payroll_sql("select count(*)from journal_entries where source='payroll'and source_ref='2026-10'")!='1' or payroll_sql("select count(*)from payrolls where periode='2026-10'and status='final'")!='2' or payroll_sql("select jumlah from cash_advance_installments where periode='2026-10'")!='50.00' or payroll_sql("select status from reimbursements")!='Dibayar':
+            raise RuntimeError('Concurrent finalization left incomplete/duplicate money')
+        print('PASS: final slips, one 50 installment, paid reimbursement and one balanced journal',flush=True)
+        payroll_sql(owner_sql("select hris_prepare_payroll('2026-11',(hris_payroll_source_state('2026-11')->>'revision')::bigint,0,fixture_salary_rows('2026-11'),'Fiction before period close');commit;"))
+        # Force the closing writer to hold its real source/accounting lock first.
+        close_job=subprocess.Popen([*command,'exec','-i',container,'psql','-U','postgres','-At','-v','ON_ERROR_STOP=1'],env=env,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        close_job.stdin.write(owner_sql("update accounting_locks set closed_until='2026-11-30';select pg_sleep(2);commit;"));close_job.stdin.close()
+        for _ in range(100):
+            if payroll_sql("select count(*)from pg_locks where locktype='advisory'and objid=72310402 and granted")=='1':
+                break
+            time.sleep(.02)
+        else:
+            raise RuntimeError('Close writer did not acquire the source lock')
+        blocked=owner_sql("select hris_finalize_payroll('2026-11',1,null,'Fiction racing closed period');commit;")
+        payroll_race([blocked],'period close wins and payroll finalization rejects atomically',0)
+        close_job.wait(timeout=20)
+        if close_job.returncode:
+            raise RuntimeError(close_job.stderr.read())
+        if payroll_sql("select count(*)from payrolls where periode='2026-11'and status='draft'")!='2' or payroll_sql("select count(*)from journal_entries where source='payroll'and source_ref='2026-11'")!='0' or payroll_sql("select count(*)from cash_advance_installments where periode='2026-11'")!='0':
+            raise RuntimeError('Period-close race partially settled money')
+        print('PASS: period-close race leaves every draft and debt unchanged',flush=True)
 
 finally:
     docker('rm', '-f', container, capture_output=True)

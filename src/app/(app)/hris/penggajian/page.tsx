@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
-import { assertRole, bolehKelolaMaster } from "@/lib/master-guard";
+import { assertRole } from "@/lib/master-guard";
+import { sourceRows } from "@/lib/source-rows";
 import { hariIniWIB } from "@/lib/tanggal";
 import { getAturanGaji } from "@/lib/payroll-aturan";
 import { hitungPenggajian, sahkanPenggajian, simpanKoreksi } from "./actions";
@@ -18,6 +19,7 @@ type Slip = {
   hari_kerja: number; hari_hadir: number; hari_bolos: number; menit_telat: number;
   jam_lembur: number; upah_lembur: number; potongan_telat: number; potongan_bolos: number;
   cicilan_kasbon: number; reimburse: number; komisi: number; penyesuaian: number; catatan: string | null;
+  draft_version:number|null;source_snapshot:Record<string,unknown>|null;settlement_plan:Record<string,unknown>|null;
   status: string; employees: Rel<{ nama: string; jabatan: string | null }>;
 };
 
@@ -29,21 +31,25 @@ export default async function PenggajianPage({
   await assertRole("/hris", "rincian gaji", ["OWNER", "ADMIN", "FINANCE"]);
   const sp = await searchParams;
   const supabase = await createClient();
-  const bolehKelola = await bolehKelolaMaster();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id",user?.id??"").maybeSingle();
+  const bolehKelola=profile?.role==="OWNER";
 
   const periode = /^\d{4}-\d{2}$/.test(sp.periode ?? "") ? sp.periode! : hariIniWIB().slice(0, 7);
 
-  const [{ data: slipData }, { data: riwayatData }, rekening, aturan] = await Promise.all([
-    supabase.from("payrolls")
-      .select("employee_id, gaji_pokok, tunjangan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, employees(nama, jabatan)")
-      .eq("periode", periode),
-    supabase.from("payrolls").select("periode, total, status").order("periode", { ascending: false }),
-    loadRekeningAktif(supabase),
-    getAturanGaji(supabase),
-  ]);
+  let slipData:Slip[],riwayatData:{id:string;periode:string;total:number;status:string}[],rekening:Awaited<ReturnType<typeof loadRekeningAktif>>,aturan:Awaited<ReturnType<typeof getAturanGaji>>;
+  try{
+    [slipData,riwayatData,rekening,aturan]=await Promise.all([
+      sourceRows<Slip>(supabase,"payrolls","id,employee_id,draft_version,gaji_pokok,tunjangan,total,hari_kerja,hari_hadir,hari_bolos,menit_telat,jam_lembur,upah_lembur,potongan_telat,potongan_bolos,cicilan_kasbon,reimburse,komisi,penyesuaian,catatan,status,employees(nama,jabatan)",q=>q.eq("periode",periode)),
+      sourceRows<{id:string;periode:string;total:number;status:string}>(supabase,"payrolls","id,periode,total,status"),
+      loadRekeningAktif(supabase),getAturanGaji(supabase),
+    ]);
+  }catch{return <div className="crm-sec"role="alert">Data penggajian gagal dimuat lengkap. Muat ulang sebelum menilai total atau mengesahkan.</div>}
+  const {data:run}=bolehKelola?await supabase.from("hris_payroll_runs").select("version").eq("periode",periode).maybeSingle():{data:null};
 
   const slip = ((slipData ?? []) as unknown as Slip[])
     .sort((a, b) => (one(a.employees)?.nama ?? "").localeCompare(one(b.employees)?.nama ?? ""));
+  const version=run?.version??slip[0]?.draft_version??0;
   const final = slip.length > 0 && slip.every((s) => s.status === "final");
 
   const jml = (f: (s: Slip) => number) => slip.reduce((a, s) => a + Number(f(s)), 0);
@@ -122,6 +128,7 @@ export default async function PenggajianPage({
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
             <form action={hitungPenggajian}>
               <input type="hidden" name="periode" value={periode} />
+              <input type="hidden" name="version" value={version} />
               <SubmitButton className="btn-acc" icon="ti-calculator" pendingText="Menghitung…" style={{ background: "var(--posb)" }} disabled={final}>
                 {slip.length > 0 ? "Hitung ulang" : "Hitung"}
               </SubmitButton>
@@ -130,7 +137,9 @@ export default async function PenggajianPage({
             {slip.length > 0 && !final && (
               <form action={sahkanPenggajian} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <input type="hidden" name="periode" value={periode} />
+              <input type="hidden" name="version" value={version} />
                 <PilihRekening rekening={rekening} label="Gaji dibayar dari" width={170} />
+                <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="Alasan pengesahan" />
                 <SubmitButton className="btn-acc" icon="ti-lock" pendingText="Mengesahkan…" style={{ background: "#16a34a" }}>
                   Sahkan &amp; bukukan
                 </SubmitButton>
@@ -156,6 +165,7 @@ export default async function PenggajianPage({
           />
           <form action={simpanKoreksi}>
             <input type="hidden" name="periode" value={periode} />
+              <input type="hidden" name="version" value={version} />
             <div style={{ overflowX: "auto" }}>
               <table className="tbl" style={{ minWidth: 1100 }}>
                 <thead>
@@ -183,6 +193,7 @@ export default async function PenggajianPage({
                       <tr key={s.employee_id}>
                         <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                           {emp?.nama ?? "—"}
+                          <div><Link href={`/hris/penggajian/sumber?periode=${periode}&employee=${s.employee_id}`} style={{fontSize:10}}>Sumber perhitungan</Link></div>
                           {emp?.jabatan && <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{emp.jabatan}</div>}
                         </td>
                         <td style={{ fontSize: 10.5 }}>
@@ -214,8 +225,8 @@ export default async function PenggajianPage({
                               <input className="fi" name={`adj_${s.employee_id}`} type="number" step="any"
                                 defaultValue={Number(s.penyesuaian) || ""} placeholder="0"
                                 style={{ width: 110, height: 26, fontSize: 10.5 }} />
-                              <input className="fi" name={`note_${s.employee_id}`} defaultValue={s.catatan ?? ""}
-                                placeholder="alasan" style={{ width: 110, height: 24, fontSize: 10, marginTop: 3 }} />
+                              <input className="fi" name={`note_${s.employee_id}`} minLength={3} maxLength={1000} placeholder="Wajib jika ada penyesuaian" defaultValue={s.catatan ?? ""}
+                                style={{ width: 110, height: 24, fontSize: 10, marginTop: 3 }} />
                             </>
                           )}
                         </td>

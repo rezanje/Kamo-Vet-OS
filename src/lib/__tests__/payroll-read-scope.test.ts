@@ -80,5 +80,5 @@ it("the legacy Calculate action presents the scope refusal before any payroll wr
   state.client = client;
   const f = new FormData();
   f.set("periode", "2026-10");
-  await expect(hitungPenggajian(f)).rejects.toThrow("error=Data");
+  await expect(hitungPenggajian(f)).rejects.toThrow("error=Kamu");
 });

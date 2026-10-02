@@ -53,13 +53,14 @@ update work_shifts set jam_masuk='08:00' where id='94000000-0000-0000-0000-00000
 select set_config('request.jwt.claims','{"role":"authenticated","sub":"90000000-0000-0000-0000-000000000001"}',true);
 select public.hris_request_schedule_change(id,updated_at,'94000000-0000-0000-0000-000000000002','91000000-0000-0000-0000-000000000001','Fiction final lock') from employee_schedules where tanggal='2026-10-05';
 reset role;
+savepoint fiction_final_guard;
 insert into payrolls(employee_id,periode,status) values('92000000-0000-0000-0000-000000000001','2026-10','final');
 select set_config('request.jwt.claims','{"role":"authenticated","sub":"90000000-0000-0000-0000-000000000002"}',true);
 set local role authenticated;
 select pg_temp.reject(format('select public.hris_decide_schedule_change(%L,true,%L)',id,'Final period')) from schedule_change_requests where tanggal='2026-10-05';
 select pg_temp.reject('update employee_schedules set shift_id=''94000000-0000-0000-0000-000000000002'' where tanggal=''2026-10-06''');
 reset role;
-delete from payrolls;
+rollback to savepoint fiction_final_guard;
 -- Attendance recorded while approval pending prevents retiming worked history.
 select set_config('request.jwt.claims','{"role":"authenticated","sub":"90000000-0000-0000-0000-000000000001"}',true);
 set local role authenticated;

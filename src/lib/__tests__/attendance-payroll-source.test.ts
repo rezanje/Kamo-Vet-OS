@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { kumpulkanDataGaji } from "../payroll-data";
 it("voided attendance does not count as worked attendance in the existing payroll collector", async () => {
   const data: Record<string, Record<string, unknown>[]> = {
+    payroll_settings:[{id:true,telat_mulai_menit:1,telat_blok_menit:5,telat_nominal_per_blok:0,telat_maks:0,bolos_per_hari:0,lembur_per_jam:0}],
     employees: [
       {
         id: "e1",
@@ -13,6 +14,7 @@ it("voided attendance does not count as worked attendance in the existing payrol
     ],
     employee_schedules: [
       {
+        id: "source-1",
         employee_id: "e1",
         tanggal: "2026-10-01",
         work_shifts: { is_libur: false, jam_masuk: "08:00" },
@@ -20,6 +22,7 @@ it("voided attendance does not count as worked attendance in the existing payrol
     ],
     attendance: [
       {
+        id: "source-1",
         employee_id: "e1",
         tanggal: "2026-10-01",
         jam_masuk: "08:00",
@@ -28,12 +31,12 @@ it("voided attendance does not count as worked attendance in the existing payrol
     ],
   };
   const client = {
-    rpc:async()=>({data:true,error:null}),
+    rpc:async(name:string)=>({data:name==="hris_assert_payroll_scope"?true:{revision:0,version:0},error:null}),
     from: (table: string) => {
       let rows = data[table] ?? [];
       const q: Record<string, unknown> = {
         then: (resolve: (v: unknown) => unknown) =>
-          Promise.resolve({ data: rows, error: null }).then(resolve),
+          Promise.resolve({ data: rows, count:rows.length,error:null }).then(resolve),
         maybeSingle: async () => ({ data: null, error: null }),
       };
       q.eq = (key: string, value: unknown) => {
@@ -41,6 +44,7 @@ it("voided attendance does not count as worked attendance in the existing payrol
         return q;
       };
       for (const method of [
+        "range",
         "select",
         "order",
         "in",
