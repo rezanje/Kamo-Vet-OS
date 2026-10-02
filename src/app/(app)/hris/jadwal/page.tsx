@@ -80,8 +80,8 @@ export default async function JadwalPage({
             <Link href="/hris/shift" style={{ color: "#2563eb" }}>Master Shift</Link>.
           </div>
         ) : (
-          <JadwalBoard key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`}
-            karyawan={karyawan} shifts={shifts} hari={hari} awal={awal}
+          <JadwalBoard key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(scope?.existingVersions ?? {})}`}
+            karyawan={karyawan} shifts={shifts} hari={hari} awal={awal} versions={scope?.existingVersions ?? {}}
             cabang={cabang} bulan={bulan} minggu={minggu} employeeStarts={scope?.employeeStarts ?? {}} bolehKelola={bolehKelola}
           />
         )}

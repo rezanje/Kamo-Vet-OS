@@ -1,6 +1,7 @@
 import { createClient } from './supabase/server';
 import { hariIniWIB } from './tanggal';
 import { cabangDiizinkan, karyawanCabang } from './jadwal-scope-rules';
+export type ScheduleCellVersion = {id:string;updated_at:string;shift_id:string};
 export async function aksesCabangHRIS(supabase: Awaited<ReturnType<typeof createClient>>) {
   const {data:{user},error:authError} = await supabase.auth.getUser();
   if(authError || !user) throw new Error('Silakan login kembali.');
@@ -30,15 +31,23 @@ export async function scopeJadwal(supabase: Awaited<ReturnType<typeof createClie
     if (!old || a.effective_date < old) employeeStarts[a.employee_id] = a.effective_date;
   }
   const existing: Record<string,string> = {};
+  const existingVersions: Record<string,ScheduleCellVersion> = {};
   if (karyawan.length) {
     for (let offset = 0; ; offset += 1000) {
-      const schedules = await supabase.from('employee_schedules').select('employee_id, tanggal, shift_id')
+      const schedules = await supabase.from('employee_schedules').select('id, employee_id, tanggal, shift_id, updated_at')
         .in('employee_id',karyawan.map(e=>e.id)).gte('tanggal',awal).lte('tanggal',akhir)
         .order('employee_id').order('tanggal').range(offset,offset+999);
       if(schedules.error) throw new Error('Jadwal tersimpan gagal dimuat.');
-      schedules.data?.forEach(r=>{existing[`${r.employee_id}|${r.tanggal}`]=r.shift_id;});
+      for(const r of schedules.data ?? []) {
+        if(typeof r.id !== 'string' || !r.id || typeof r.updated_at !== 'string' || !r.updated_at || typeof r.shift_id !== 'string' || !r.shift_id)
+          throw new Error('Versi jadwal gagal dimuat. Muat ulang papan jadwal.');
+        const key = `${r.employee_id}|${r.tanggal}`;
+        existing[key]=r.shift_id;
+        // Keep PostgreSQL's full timestamp precision for compare-and-swap.
+        existingVersions[key]={id:r.id,updated_at:r.updated_at,shift_id:r.shift_id};
+      }
       if ((schedules.data?.length ?? 0) < 1000) break;
     }
   }
-  return {...access,karyawan,shifts:shifts.data??[],existing,employeeStarts,cabang,awal,akhir,employees:karyawan.map(e=>e.id)};
+  return {...access,karyawan,shifts:shifts.data??[],existing,existingVersions,employeeStarts,cabang,awal,akhir,employees:karyawan.map(e=>e.id)};
 }

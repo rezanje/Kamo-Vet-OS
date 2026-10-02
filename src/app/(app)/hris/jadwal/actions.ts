@@ -29,18 +29,20 @@ async function simpan(form:FormData, impor:boolean) {
         const {error} = await supabase.from('employee_schedules').insert(hasil.rows.map(r=>({employee_id:r.employee_id,tanggal:r.tanggal,shift_id:r.shift_id,created_by:scope.user.id})));
         if(error) throw new Error('Impor gagal. Jadwal mungkin telah berubah; muat ulang dan preview kembali. Tidak ada baris impor disimpan.');
       }
+      jumlah = hasil.rows.length;
     } else {
-      for(const r of hasil.rows.filter(r=>!r.shift_id)) {
-        const {data,error} = await supabase.from('employee_schedules').delete().eq('employee_id',r.employee_id).eq('tanggal',r.tanggal).select('id');
-        if(error || !data?.length) throw new Error('Jadwal tidak terhapus atau akses berubah. Muat ulang papan jadwal.');
-      }
-      const filled = hasil.rows.filter(r=>r.shift_id);
-      if(filled.length) {
-        const {error} = await supabase.from('employee_schedules').upsert(filled.map(r=>({employee_id:r.employee_id,tanggal:r.tanggal,shift_id:r.shift_id,created_by:scope.user.id})),{onConflict:'employee_id,tanggal'});
-        if(error) throw new Error('Sebagian perubahan belum tersimpan. Muat ulang papan jadwal.');
-      }
+      // Keep the browser's original cell versions: a fresh server snapshot must
+      // never make a stale browser edit appear current.
+      const {data,error} = await supabase.rpc('hris_save_schedule_batch',{
+        p_branch:cabang,p_start:hari[0].tanggal,p_end:hari.at(-1)!.tanggal,p_rows:hasil.rows,
+      });
+      if(error) throw new Error(error.message?.startsWith('JADWAL:')
+        ? `${error.message.slice(7).trim()}. Tidak ada perubahan disimpan.`
+        : 'Jadwal gagal disimpan. Muat ulang papan jadwal. Tidak ada perubahan disimpan.');
+      if(!data || !Number.isInteger(data.jumlah) || data.jumlah < 0 || data.jumlah > hasil.rows.length)
+        throw new Error('Hasil penyimpanan tidak dapat dikonfirmasi. Muat ulang papan jadwal.');
+      jumlah = data.jumlah;
     }
-    jumlah = hasil.rows.length;
   } catch(e) { message = e instanceof Error ? e.message : 'Jadwal gagal disimpan.'; }
   redirect(`${kembali}&${message?`error=${encodeURIComponent(message)}`:`success=${jumlah}`}`);
 }

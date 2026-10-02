@@ -104,6 +104,67 @@ commit;
             raise RuntimeError('Concurrent approval left inconsistent cells or events')
         print('PASS: both effective cells and exactly three audit events', flush=True)
 
+        if 'hris_schedule_board_batch.sql' in suites:
+            # Reuse the two fictional employees; no extra payroll participants.
+            branch = '91000000-0000-0000-0000-000000000001'
+            shift = '94000000-0000-0000-0000-000000000002'
+            def board_seed(days):
+                sql(f"insert into employee_schedules(employee_id,tanggal,shift_id)select id,(statement_timestamp()at time zone 'Asia/Jakarta')::date+{days},'94000000-0000-0000-0000-000000000001'from employees;")
+            def board_query(days):
+                payload = sql(f"select jsonb_agg(jsonb_build_object('employee_id',employee_id,'tanggal',tanggal,'shift_id',case when employee_id='92000000-0000-0000-0000-000000000001'then ''else '{shift}'end,'branch_id','{branch}','expected',jsonb_build_object('id',id,'updated_at',updated_at,'shift_id',shift_id))order by employee_id)from employee_schedules where tanggal=(statement_timestamp()at time zone 'Asia/Jakarta')::date+{days}")
+                return auth(2) + f"select hris_save_schedule_batch('{branch}',(statement_timestamp()at time zone 'Asia/Jakarta')::date+{days},(statement_timestamp()at time zone 'Asia/Jakarta')::date+{days},'{payload.replace(chr(39),chr(39)*2)}'::jsonb);select pg_sleep(1);commit;"
+            def board_race(queries, label):
+                jobs = [subprocess.Popen([*command,'exec','-i',container,'psql','-U','postgres','-At','-v','ON_ERROR_STOP=1'],env=env,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in queries]
+                for job, query in zip(jobs, queries):
+                    job.stdin.write(query); job.stdin.close()
+                codes=[]
+                for job in jobs:
+                    job.wait(timeout=20); codes.append(job.returncode)
+                    error=job.stderr.read()
+                    # Reversed legacy approval/source locks may abort one whole tx.
+                    if job.returncode and 'JADWAL:' not in error and 'deadlock detected' not in error:
+                        raise RuntimeError('Unexpected board race failure: '+error)
+                if sum(code==0 for code in codes)!=1:
+                    raise RuntimeError(label+': expected one complete winner '+str(codes))
+                print('PASS: '+label,flush=True)
+            board_seed(2)
+            batch=board_query(2)
+            board_race([batch,batch],'concurrent boards accept one complete batch')
+            if sql("select count(*)from schedule_board_events where jsonb_array_length(changes)=2")!='1' or sql(f"select count(*)from employee_schedules where tanggal=(statement_timestamp()at time zone 'Asia/Jakarta')::date+2 and shift_id='{shift}'")!='1':
+                raise RuntimeError('Concurrent board save left partial cells or duplicate audit')
+            board_seed(3)
+            sql(auth(4)+f"select hris_request_schedule_change(id,updated_at,'{shift}','{branch}','Fiction board versus approval')from employee_schedules where employee_id='92000000-0000-0000-0000-000000000002'and tanggal=(statement_timestamp()at time zone 'Asia/Jakarta')::date+3;commit;")
+            request=sql("select id from schedule_change_requests")
+            approval=auth(2)+f"select hris_decide_schedule_change('{request}',true,'Fiction concurrent board approval');select pg_sleep(1);commit;"
+            board_race([board_query(3),approval],'board versus approval accepts one complete transaction')
+            if sql(f"select case when r.status='Disetujui'then (select count(*)from employee_schedules where tanggal=r.tanggal)=2 and (select count(*)from schedule_board_events)=1 else r.status='Menunggu'and (select count(*)from employee_schedules where tanggal=r.tanggal)=1 and (select count(*)from schedule_board_events)=2 end from schedule_change_requests r where id='{request}'")!='t' or sql(f"select shift_id='{shift}'::uuid from employee_schedules where employee_id='92000000-0000-0000-0000-000000000002'and tanggal=(statement_timestamp()at time zone 'Asia/Jakarta')::date+3")!='t':
+                raise RuntimeError('Board/approval race left partial deletion or false approval')
+            print('PASS: losing board/approval leaves no partial cells or decision audit',flush=True)
+
+            # A real access writer holds the shared source boundary first. The
+            # queued ADMIN call must use the post-revocation permissions.
+            board_seed(4)
+            sql(f"insert into user_branches(user_id,branch_id,effective_date)values('90000000-0000-0000-0000-000000000003','{branch}','2026-01-01');")
+            stale_admin_batch=board_query(4).replace(auth(2),auth(3),1)
+            before_audits=sql('select count(*)from schedule_board_events')
+            revoke_job=subprocess.Popen([*command,'exec','-i',container,'psql','-U','postgres','-At','-v','ON_ERROR_STOP=1'],env=env,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            revoke_job.stdin.write("begin;delete from user_branches where user_id='90000000-0000-0000-0000-000000000003';select pg_sleep(2);commit;");revoke_job.stdin.close()
+            for _ in range(100):
+                if sql("select count(*)from pg_locks where locktype='advisory'and objid=72310402 and granted")=='1':
+                    break
+                time.sleep(.02)
+            else:
+                raise RuntimeError('Access writer did not acquire the source lock')
+            denied=docker('exec','-i',container,'psql','-U','postgres','-At','-v','ON_ERROR_STOP=1',input=stale_admin_batch,capture_output=True)
+            revoke_job.wait(timeout=20)
+            if revoke_job.returncode:
+                raise RuntimeError(revoke_job.stderr.read())
+            if denied.returncode==0 or 'JADWAL: Cabang tidak diizinkan' not in denied.stderr:
+                raise RuntimeError('Queued board used revoked ADMIN membership')
+            if sql('select count(*)from schedule_board_events')!=before_audits or sql("select count(*)from employee_schedules where tanggal=(statement_timestamp()at time zone 'Asia/Jakarta')::date+4 and shift_id='94000000-0000-0000-0000-000000000001'")!='2':
+                raise RuntimeError('Revoked queued board left partial cells or audit')
+            print('PASS: queued board rechecks revoked access and leaves all cells unchanged',flush=True)
+
     if 'hris_payroll_settlement.sql' in suites:
         def payroll_sql(query):
             r = docker('exec', '-i', container, 'psql', '-U', 'postgres', '-At', '-v',

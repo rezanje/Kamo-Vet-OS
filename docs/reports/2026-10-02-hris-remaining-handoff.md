@@ -114,3 +114,15 @@ The actual blank-workbook regression failed first because the Cabang worksheet w
 Ruling: include only the selected authorized branch in Excel references, deriving its name from the existing server-resolved permitted list — gives HR the ID needed for a blank template without expanding branch exposure — cost: future multi-branch imports need a separately scoped reference design.
 
 Remaining objective is blocked on outside inputs: final monetary policy/effective dates/eligible groups/caps, incentive catalog and recipient allocation, and separately identified demo with fictional roles. Three concise input questions were issued again during this continuation. The uploaded roadmap explicitly forbids inventing unresolved payroll policy. Current configured public variables do not prove a separate demo identity. Production release and real-payment adoption retain the original separate decision requirement. SQL readability remains a nonfunctional deferred Minor; it does not authorize guessing policy or writing an unknown remote target.
+
+
+## Independent board integrity follow-up (2026-10-02)
+
+While policy/catalog/demo inputs wait, the known nontransactional HR board save
+was replaced with one audited batch transaction and original browser cell
+compare-and-swap. Stale cells and any later write/audit failure reject or roll
+back the whole batch; semantic no-ops preserve versions. Fresh scope/action
+regressions, twelve SQL suites and real board/approval/access-revocation races
+extend the earlier evidence. See `2026-10-02-hris-board-atomic-handoff.md` for
+current verification, the independent review and its one fix pass, migration
+`20261002150000`, the retry limitation, and unchanged demo/release gates.

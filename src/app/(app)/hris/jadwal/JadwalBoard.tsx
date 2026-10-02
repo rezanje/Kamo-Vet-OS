@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ScheduleCellVersion } from "@/lib/jadwal-scope";
 import { simpanJadwal } from "./actions";
 
 export type ShiftOpsi = { id: string; nama: string; warna: string; is_libur: boolean; jam: string; is_active?: boolean };
@@ -10,12 +11,13 @@ const HAPUS = "__hapus__";
 const kunci = (empId: string, tgl: string) => `${empId}|${tgl}`;
 
 export function JadwalBoard({
-  karyawan, shifts, hari, awal, cabang, bulan, minggu, employeeStarts, bolehKelola,
+  karyawan, shifts, hari, awal, versions, cabang, bulan, minggu, employeeStarts, bolehKelola,
 }: {
   karyawan: KaryawanBaris[];
   shifts: ShiftOpsi[];
   hari: { tanggal: string; hari: number; namaHari: string; akhirPekan: boolean }[];
   awal: Record<string, string>;   // "empId|tanggal" → shiftId
+  versions: Record<string, ScheduleCellVersion>;
   cabang: string;
   bulan: string;
   minggu?: string;
@@ -57,7 +59,7 @@ export function JadwalBoard({
   const jumlahUbah = Object.keys(ubah).length;
   const rows = Object.entries(ubah).map(([k, v]) => {
     const [employee_id, tanggal] = k.split("|");
-    return { employee_id, tanggal, shift_id: v, branch_id: cabang };
+    return { employee_id, tanggal, shift_id: v, branch_id: cabang, expected: versions[k] ?? null };
   });
 
   useEffect(() => {

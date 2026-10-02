@@ -6,16 +6,9 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("../master-guard", () => ({
   assertRole: async () => ({
-    from: () => ({
-      delete: () => ({
-        eq: () => ({
-          eq: () => ({
-            data: [],
-            error: null,
-            select: async () => ({ data: [], error: null }),
-          }),
-        }),
-      }),
+    rpc: async () => ({
+      data: null,
+      error: { message: "JADWAL: Sel jadwal berubah. Muat ulang papan" },
     }),
   }),
 }));
@@ -31,14 +24,24 @@ vi.mock("../jadwal-scope", () => ({
   }),
 }));
 import { simpanJadwal } from "../../app/(app)/hris/jadwal/actions";
-it("a denied/changed board deletion with zero affected rows cannot claim a saved schedule", async () => {
+it("a denied/changed board deletion rejected by the atomic RPC cannot claim a saved schedule", async () => {
   const f = new FormData();
   f.set("cabang", "b");
   f.set("bulan", "2026-10");
   f.set(
     "rows",
     JSON.stringify([
-      { employee_id: "e", tanggal: "2026-10-02", shift_id: "", branch_id: "b" },
+      {
+        employee_id: "e",
+        tanggal: "2026-10-02",
+        shift_id: "",
+        branch_id: "b",
+        expected: {
+          id: "old",
+          updated_at: "2026-10-01T00:00:00.000001Z",
+          shift_id: "s",
+        },
+      },
     ]),
   );
   await expect(simpanJadwal(f)).rejects.toThrow("error=");
