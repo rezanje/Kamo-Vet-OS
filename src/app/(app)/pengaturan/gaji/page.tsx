@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/master-guard";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { getAturanGaji, potonganTelat } from "@/lib/payroll-aturan";
@@ -13,7 +13,7 @@ export default async function AturanGajiPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
-  const supabase = await createClient();
+  const supabase = await assertRole("/me", "aturan gaji", ["OWNER"]);
   const a = await getAturanGaji(supabase);
   const aktif = a.telat_nominal_per_blok > 0 || a.bolos_per_hari > 0 || a.lembur_per_jam > 0;
 

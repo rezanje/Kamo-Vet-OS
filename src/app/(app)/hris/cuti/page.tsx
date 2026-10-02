@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/master-guard";
 import { SecHeader } from "@/components/SecHeader";
-import { ajukanCuti, updateLeaveStatus } from "./actions";
+import { ajukanCuti, setujuiCuti, tolakCuti } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -32,7 +32,7 @@ const STATUS_BADGE: Record<string, string> = {
   Ditolak: "r",
 };
 
-const JENIS_LIST = ["Cuti", "Izin", "Sakit", "Lembur"];
+const JENIS_LIST = ["Cuti", "Izin", "Sakit"];
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -43,7 +43,7 @@ export default async function CutiPage({
   searchParams: Promise<{ error?: string; success?: string }>;
 }) {
   const { error, success } = await searchParams;
-  const supabase = await createClient();
+  const supabase = await assertRole("/me", "pengajuan cuti", ["OWNER", "ADMIN"]);
 
   // ponytail: karyawan aktif untuk opsi select form pengajuan.
   const { data: empRaw } = await supabase
@@ -73,7 +73,7 @@ export default async function CutiPage({
           <i className="ti ti-arrow-left" /> Kembali
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Cuti / Lembur / Izin</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Cuti / Izin / Sakit</span>
       </div>
 
       {error && (
@@ -171,7 +171,7 @@ export default async function CutiPage({
             </div>
             <div>
               <label className="flab">Alasan</label>
-              <input className="fi" name="alasan" type="text" placeholder="Keterangan pengajuan (opsional)" />
+              <input className="fi" name="alasan" required minLength={3} maxLength={1000} type="text" placeholder="Keterangan pengajuan (opsional)" />
             </div>
           </div>
           <div style={{ marginTop: 12, borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
@@ -187,7 +187,7 @@ export default async function CutiPage({
         <SecHeader
           num="02"
           title="DAFTAR PENGAJUAN"
-          desc="Seluruh pengajuan cuti, izin, dan lembur karyawan."
+          desc="Seluruh pengajuan cuti, izin, dan sakit karyawan."
         />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
@@ -224,10 +224,10 @@ export default async function CutiPage({
                     <td>
                       {l.status === "Menunggu" ? (
                         <div style={{ display: "flex", gap: 5 }}>
-                          {/* ponytail: setujui — posting id + status Disetujui ke updateLeaveStatus. */}
-                          <form action={updateLeaveStatus}>
+                          {/* ponytail: setujui — persetujuan beralasan dan tercatat. */}
+                          <form action={setujuiCuti}>
                             <input type="hidden" name="id" value={l.id} />
-                            <input type="hidden" name="status" value="Disetujui" />
+                            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="Alasan persetujuan" />
                             <button
                               type="submit"
                               className="btn-acc"
@@ -236,10 +236,10 @@ export default async function CutiPage({
                               Setujui
                             </button>
                           </form>
-                          {/* ponytail: tolak — posting id + status Ditolak ke updateLeaveStatus. */}
-                          <form action={updateLeaveStatus}>
+                          {/* ponytail: tolak — penolakan beralasan dan tercatat. */}
+                          <form action={tolakCuti}>
                             <input type="hidden" name="id" value={l.id} />
-                            <input type="hidden" name="status" value="Ditolak" />
+                            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="Alasan penolakan" />
                             <button
                               type="submit"
                               className="btn-def"
@@ -262,7 +262,7 @@ export default async function CutiPage({
                     colSpan={8}
                     style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}
                   >
-                    Belum ada pengajuan cuti / lembur / izin.
+                    Belum ada pengajuan cuti / izin / sakit.
                   </td>
                 </tr>
               )}

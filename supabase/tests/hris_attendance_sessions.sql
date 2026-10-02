@@ -89,6 +89,8 @@ do $$ declare r public.attendance;begin
  begin perform public.hris_correct_attendance(r.id,r.updated_at,r.checked_in_at,null,'Staff attempted own correction',false);raise exception 'staff correction accepted';exception when sqlstate 'P0001' then if sqlerrm not like 'ATTENDANCE:%' then raise;end if;end;
 end $$;
 update employees set profile_id='10000000-0000-0000-0000-000000000005' where id='30000000-0000-0000-0000-000000000001';
+select pg_temp.check_it((select count(*)from employees where id='30000000-0000-0000-0000-000000000001')=0,'staff cannot read another identity');
+reset role;
 select pg_temp.check_it((select profile_id='10000000-0000-0000-0000-000000000001' from employees where id='30000000-0000-0000-0000-000000000001'),'staff identity overwrite blocked');
 reset role;
 set local role anon;

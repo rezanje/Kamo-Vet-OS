@@ -19,6 +19,9 @@ export default async function KomponenGajiPage({
   const { error, success, emp } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const bolehGlobal = profile?.role === "OWNER";
 
   const [{ data: kompData }, { data: empData }, { data: pasangData }] = await Promise.all([
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("tipe").order("nama"),
@@ -48,12 +51,12 @@ export default async function KomponenGajiPage({
       desc="Tunjangan & potongan tetap — dipasang sekali, dipakai tiap bulan"
       error={error} success={success} successMsg="Komponen gaji tersimpan."
       bolehKelola={bolehKelola}
-      readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah komponen gaji."
+      readOnlyNote="Master komponen hanya OWNER; pemasangan per karyawan oleh HR yang diizinkan."
     >
       <div className="crm-sec">
         <SecHeader num="01" title="DAFTAR KOMPONEN" desc="Nominal di sini jadi bawaan; per karyawan boleh beda." />
 
-        {bolehKelola && (
+        {bolehGlobal && (
           <form action={simpanKomponen} style={{ marginBottom: 12 }}>
             <div className="frow">
               <div>
@@ -87,7 +90,7 @@ export default async function KomponenGajiPage({
                 <th>Komponen</th><th style={{ width: 170 }}>Jenis</th>
                 <th style={{ width: 140, textAlign: "right" }}>Nominal bawaan</th>
                 <th style={{ width: 80 }}>Status</th>
-                {bolehKelola && <th style={{ width: 120 }}>Aksi</th>}
+                {bolehGlobal && <th style={{ width: 120 }}>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -101,7 +104,7 @@ export default async function KomponenGajiPage({
                   </td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(Number(k.nominal))}</td>
                   <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
-                  {bolehKelola && (
+                  {bolehGlobal && (
                     <td>
                       <form action={toggleKomponen}>
                         <input type="hidden" name="id" value={k.id} />
@@ -115,7 +118,7 @@ export default async function KomponenGajiPage({
                 </tr>
               ))}
               {komponen.length === 0 && (
-                <tr><td colSpan={bolehKelola ? 5 : 4} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
+                <tr><td colSpan={bolehGlobal ? 5 : 4} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
                   Belum ada komponen gaji.
                 </td></tr>
               )}

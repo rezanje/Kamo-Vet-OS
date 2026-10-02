@@ -90,6 +90,7 @@ export default async function PengajuanPage({
         </div>
       )}
 
+      {bolehKelola && <Link href="/hris/pengajuan/selisih" className="btn-def">Selisih kas tertunda</Link>}
       {bolehKelola && <Link href="/hris/pengajuan/tukar" className="btn-def">Persetujuan tukar shift</Link>}
       {bolehKelola && <Link href="/hris/pengajuan/jadwal" className="btn-def">Pengajuan perubahan jadwal</Link>}
 
@@ -114,7 +115,7 @@ export default async function PengajuanPage({
               </div>
             </div>
             <input type="hidden" name="id" value={l.id} />
-            <input className="fi" name="catatan" placeholder="catatan (opsional)" style={{ width: 180, height: 28, fontSize: 10.5 }} />
+            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="alasan keputusan HR" style={{ width: 180, height: 28, fontSize: 10.5 }} />
             <Tombol bolehKelola={bolehKelola} tolak={tolakLembur} />
           </form>
         ))}
@@ -145,7 +146,7 @@ export default async function PengajuanPage({
                 defaultValue={k.tenor_bulan} style={{ width: 90, height: 28, fontSize: 10.5 }} />
             </div>
             <PilihRekening rekening={rekening} label="Uang keluar dari" width={150} />
-            <input className="fi" name="catatan" placeholder="catatan (opsional)" style={{ width: 150, height: 28, fontSize: 10.5 }} />
+            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="alasan keputusan HR" style={{ width: 150, height: 28, fontSize: 10.5 }} />
             <Tombol bolehKelola={bolehKelola} tolak={tolakKasbon} labelSetuju="Setujui &amp; cairkan" />
           </form>
         ))}
@@ -169,7 +170,7 @@ export default async function PengajuanPage({
               </div>
             </div>
             <input type="hidden" name="id" value={r.id} />
-            <input className="fi" name="catatan" placeholder="catatan (opsional)" style={{ width: 180, height: 28, fontSize: 10.5 }} />
+            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="alasan keputusan HR" style={{ width: 180, height: 28, fontSize: 10.5 }} />
             <Tombol bolehKelola={bolehKelola} tolak={tolakReimburse} />
           </form>
         ))}

@@ -30,6 +30,13 @@ try:
     bootstrap += "\ninsert into coa_accounts(code,name,type,normal_balance)values('1101','Fiction cash','ASET','D'),('1102','Fiction bank','ASET','D');\n"
     bootstrap += '\n' + (root / 'supabase/migrations/0068_kas_bank.sql').read_text()
     bootstrap += '\n' + (root / 'supabase/migrations/0089_hris_pengajuan_staf.sql').read_text()
+    bootstrap += '\n' + (root / 'supabase/migrations/0055_tutup_buku.sql').read_text()
+    bootstrap += '\n' + (root / 'supabase/migrations/0113_coa_header_detail.sql').read_text()
+    shift = (root / 'supabase/migrations/0011_cashier_shifts.sql').read_text()
+    bootstrap += '\n' + shift[:shift.index('alter table sales')] + shift[shift.index('alter table cashier_shifts enable row level security'): ]
+    mapping = (root / 'supabase/migrations/0085_peta_rekening_pembayaran.sql').read_text()
+    bootstrap += '\n' + mapping[:mapping.index('alter table bank_reconciliations')]
+    bootstrap += '\ngrant all on public.cashier_shifts,public.accounting_locks,public.payment_account_map to authenticated;'
     bootstrap += '\n' + 'grant all on public.leave_requests,public.coa_accounts,public.journal_entries,public.journal_lines,public.cash_accounts,public.cash_transfers,public.overtime_requests,public.cash_advances,public.cash_advance_installments,public.reimbursements to authenticated;'
     bootstrap += '\n'.join(p.read_text() for p in sorted((root / 'supabase/migrations').glob('20261002*.sql')))
     result = docker('exec', '-i', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1',

@@ -8,7 +8,12 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
-export type PilihanDokter = { id: string; nama: string; jabatan: string | null; jaga?: boolean };
+export type PilihanDokter = {
+  id: string;
+  nama: string;
+  jabatan: string | null;
+  jaga?: boolean;
+};
 
 /**
  * `tanggal` diisi → tiap pilihan ditandai apakah orangnya memang dijadwalkan masuk
@@ -21,38 +26,47 @@ export async function daftarDokter(
   konteks?: { tanggal?: string; branchId?: string | null },
 ): Promise<PilihanDokter[]> {
   const { data } = await supabase
-    .from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif").order("nama");
-  const semua = (data ?? []) as (PilihanDokter & { branch_id: string | null })[];
+    .from("employee_directory")
+    .select("id, nama, jabatan, branch_id, assigned_branch_ids")
+    .eq("status", "Aktif")
+    .order("nama");
+  const semua = (data ?? []) as (PilihanDokter & {
+    branch_id: string | null;
+    assigned_branch_ids: string[];
+  })[];
 
   if (konteks?.branchId && semua.length) {
-    const { data: assignments } = await supabase
-      .from("employee_branch_assignments").select("employee_id")
-      .eq("branch_id", konteks.branchId)
-      .in("employee_id", semua.map((e) => e.id));
-    const assigned = new Set((assignments ?? []).map((r: { employee_id: string }) => r.employee_id));
     for (let i = semua.length - 1; i >= 0; i--) {
-      if (!assigned.has(semua[i].id) && semua[i].branch_id !== konteks.branchId) semua.splice(i, 1);
+      if (
+        !semua[i].assigned_branch_ids?.includes(konteks.branchId) &&
+        semua[i].branch_id !== konteks.branchId
+      )
+        semua.splice(i, 1);
     }
   }
 
   if (konteks?.tanggal && semua.length) {
     const { data: jadwal } = await supabase
-      .from("employee_schedules")
-      .select("employee_id, work_shifts(is_libur)")
+      .from("employee_schedule_directory")
+      .select("employee_id, is_libur")
       .eq("tanggal", konteks.tanggal)
-      .in("employee_id", semua.map((e) => e.id));
-    type Row = { employee_id: string; work_shifts: { is_libur: boolean } | { is_libur: boolean }[] | null };
-    const jaga = new Set<string>();
-    for (const r of (jadwal ?? []) as Row[]) {
-      const s = Array.isArray(r.work_shifts) ? r.work_shifts[0] : r.work_shifts;
-      if (s && !s.is_libur) jaga.add(r.employee_id);
-    }
+      .in(
+        "employee_id",
+        semua.map((e) => e.id),
+      );
+    const jaga = new Set<string>(
+      ((jadwal ?? []) as { employee_id: string; is_libur: boolean }[])
+        .filter((r) => !r.is_libur)
+        .map((r) => r.employee_id),
+    );
     for (const e of semua) e.jaga = jaga.has(e.id);
   }
 
   // Dokter didahulukan, tapi staf lain tetap bisa dipilih — grooming & vaksinasi
   // kadang ditangani paramedis.
-  const dokter = semua.filter((e) => /dokter|drh/i.test(`${e.jabatan ?? ""} ${e.nama}`));
+  const dokter = semua.filter((e) =>
+    /dokter|drh/i.test(`${e.jabatan ?? ""} ${e.nama}`),
+  );
   const lain = semua.filter((e) => !dokter.includes(e));
   return [...dokter, ...lain];
 }
@@ -63,7 +77,11 @@ export async function resolveDokter(
   doctorId: string | null,
 ): Promise<{ doctorId: string | null; nama: string | null }> {
   if (!doctorId) return { doctorId: null, nama: null };
-  const { data } = await supabase.from("employees").select("id, nama").eq("id", doctorId).maybeSingle();
+  const { data } = await supabase
+    .from("employee_directory")
+    .select("id, nama")
+    .eq("id", doctorId)
+    .maybeSingle();
   if (!data) return { doctorId: null, nama: null };
   return { doctorId: data.id as string, nama: data.nama as string };
 }
