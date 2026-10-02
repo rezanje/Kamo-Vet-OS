@@ -128,3 +128,82 @@ it("voided paid clinical invoices cannot earn commission", async () => {
   expect(result.baris).toEqual([]);
   expect(result.hasil).toEqual([]);
 });
+
+it.each(["kasir", "reseller"] as const)(
+  "visible %s source maps rolling employee without reading sensitive HR rows",
+  async (source) => {
+    const data = {
+      employees: [], // RLS hides the sensitive rolling employee card.
+      employee_profile_directory: [{ id: "rolling", profile_id: "seller" }],
+      sales:
+        source === "kasir"
+          ? [
+              {
+                id: "sale",
+                created_at: "2026-10-01T08:00:00+07:00",
+                branch_id: "branch",
+                cashier_id: "seller",
+                salesperson_id: null,
+                total: 100,
+              },
+            ]
+          : [],
+      sale_items:
+        source === "kasir"
+          ? [
+              {
+                id: "line",
+                sale_id: "sale",
+                item_id: null,
+                qty: 1,
+                harga: 100,
+                hpp: 0,
+              },
+            ]
+          : [],
+      sales_invoices:
+        source === "reseller"
+          ? [
+              {
+                id: "invoice",
+                tanggal: "2026-10-01",
+                branch_id: "branch",
+                created_by: "seller",
+                dpp: 100,
+                status: "terbit",
+              },
+            ]
+          : [],
+      sales_invoice_items:
+        source === "reseller"
+          ? [
+              {
+                id: "line",
+                invoice_id: "invoice",
+                item_id: null,
+                order_item_id: null,
+                qty: 1,
+                harga: 100,
+              },
+            ]
+          : [],
+      commission_rules: [
+        {
+          id: "rule",
+          nama: "Fiction ten percent",
+          tipe: "persen",
+          basis: "omzet",
+          sumber: source,
+          persen: 10,
+          nominal: 0,
+          min_omzet: 0,
+          is_active: true,
+        },
+      ],
+    };
+    const result = await komisiPeriode(client(data), "2026-10");
+    expect(result.hasil[0]?.employeeId).toBe("rolling");
+    expect(result.hasil[0]?.komisi).toBe(10);
+    expect(result.omzetTanpaPenjual).toBe(0);
+  },
+);

@@ -39,7 +39,7 @@ export default async function KomisiPage({
       supabase.from("commission_rules")
         .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active")
         .order("nama"),
-      supabase.from("employees").select("id, nama, jabatan").eq("status", "Aktif").order("nama"),
+      supabase.from("employee_directory").select("id, nama, jabatan").eq("status", "Aktif").order("nama"),
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
       supabase.from("item_categories").select("id, name, parent_id").order("name"),
       supabase.from("items").select("id, name").eq("is_active", true).order("name"),

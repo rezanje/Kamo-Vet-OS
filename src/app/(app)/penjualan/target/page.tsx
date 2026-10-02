@@ -32,7 +32,7 @@ export default async function TargetPage({
       supabase.from("sales_targets")
         .select("id, periode, employee_id, branch_id, category_id, basis, target")
         .eq("periode", periode),
-      supabase.from("employees").select("id, nama").eq("status", "Aktif").order("nama"),
+      supabase.from("employee_directory").select("id, nama").eq("status", "Aktif").order("nama"),
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
       supabase.from("item_categories").select("id, name, parent_id").order("name"),
       kumpulkanBarisKomisi(supabase, periode),

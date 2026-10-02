@@ -126,7 +126,7 @@ export async function kumpulkanBarisKomisi(
     ),
     sourceRows<{ id: string; profile_id: string }>(
       supabase,
-      "employees",
+      "employee_profile_directory",
       "id,profile_id",
       (q) => q.not("profile_id", "is", null),
     ),

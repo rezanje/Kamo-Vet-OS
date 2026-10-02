@@ -58,9 +58,9 @@ create function public.hris_add_pay_group_member(p_employee uuid,p_group uuid,p_
  perform public.hris_config_audit('membership',p_employee,p_reason,'{}',jsonb_build_object('id',v,'group',p_group,'from',p_from,'to',p_to));return v;
 end$$;
 create function public.hris_end_pay_group_member(p_id uuid,p_to date,p_reason text)returns void language plpgsql security definer set search_path=''as $$declare old_r public.employee_pay_group_memberships;begin
- perform public.hris_config_actor();select * into old_r from public.employee_pay_group_memberships where id=p_id;
- perform public.hris_config_employee(old_r.employee_id,to_char(p_to,'YYYY-MM'),p_reason);
- select * into old_r from public.employee_pay_group_memberships where id=p_id for update;
+ perform public.hris_config_actor();select * into old_r from public.employee_pay_group_memberships where id=p_id for update;
+ -- The first changed day is after the earlier old/new inclusive end.
+ perform public.hris_config_employee(old_r.employee_id,to_char(least(old_r.valid_to,p_to)+1,'YYYY-MM'),p_reason);
  if old_r.id is null or p_to is null or p_to<old_r.valid_from then raise exception 'HRIS: Akhir keanggotaan tidak valid';end if;
  if exists(select 1 from public.employee_pay_group_memberships where employee_id=old_r.employee_id and id<>p_id and valid_from<=p_to and coalesce(valid_to,'infinity'::date)>=old_r.valid_from)then raise exception 'HRIS: Akhir kelompok bertumpang tindih';end if;
  update public.employee_pay_group_memberships set valid_to=p_to where id=p_id;

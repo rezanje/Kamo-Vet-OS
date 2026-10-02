@@ -45,6 +45,7 @@ try:
     bootstrap += '\n' + returns[returns.index('alter table sales_returns'):returns.index('-- demo posture')]
     bootstrap += '\n' + returns[returns.index('create policy sr2_all'):]
     bootstrap += '\ngrant all on public.sales,public.sale_items,public.visits,public.invoices,public.invoice_items,public.sales_returns,public.sales_return_items,public.sales_invoices,public.sales_invoice_items,public.sales_delivery_items,public.commission_rules,public.sales_targets to authenticated;'
+    bootstrap += '\n' + (root / 'supabase/migrations/20260930030129_employee_excel_import.sql').read_text()
     bootstrap += '\n'.join(p.read_text() for p in sorted((root / 'supabase/migrations').glob('20261002*.sql')))
     result = docker('exec', '-i', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1',
                     input=bootstrap, capture_output=True)

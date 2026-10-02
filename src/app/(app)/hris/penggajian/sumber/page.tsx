@@ -6,6 +6,19 @@ type Snapshot = {
   input: InputGaji;
   rincian: RincianGaji;
   commission: { rows: BarisJual[]; result: HasilKomisi | null };
+  components?: {
+    id?: string;
+    nama?: string;
+    tipe: string;
+    nominal: number;
+    source?: string;
+  }[];
+  reimbursements?: {
+    id: string;
+    tanggal: string;
+    kategori: string;
+    jumlah: number;
+  }[];
 };
 const rp = (n: number) => `Rp ${Number(n).toLocaleString("id-ID")}`;
 export default async function Page({
@@ -108,13 +121,124 @@ export default async function Page({
       </table>
       <p>
         Potongan telat {rp(r.potonganTelat)} · potongan bolos{" "}
-        {rp(r.potonganBolos)}. Aturan yang dipakai: telat mulai{" "}
-        {i.aturan.telat_mulai_menit} menit, blok {i.aturan.telat_blok_menit}{" "}
-        menit × {rp(i.aturan.telat_nominal_per_blok)}, batas harian{" "}
-        {i.aturan.telat_maks ? rp(i.aturan.telat_maks) : "tanpa batas"}; bolos{" "}
-        {rp(i.aturan.bolos_per_hari)}/hari; lembur {rp(i.aturan.lembur_per_jam)}
-        /jam.
+        {rp(r.potonganBolos)}.
       </p>
+      <h3>Aturan tersimpan per tanggal</h3>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Tanggal</th>
+            <th>Mulai telat (menit)</th>
+            <th>Blok (menit)</th>
+            <th>Potongan/blok</th>
+            <th>Batas telat/hari</th>
+            <th>Bolos/hari</th>
+            <th>Tarif lembur/jam</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(i.aturanPerTanggal
+            ? Object.entries(i.aturanPerTanggal).sort(([a], [b]) =>
+                a.localeCompare(b),
+              )
+            : [["Aturan tersimpan (tanpa tanggal)", i.aturan] as const]
+          ).map(([date, rule]) => (
+            <tr key={date}>
+              <td>{date}</td>
+              <td>{rule.telat_mulai_menit}</td>
+              <td>{rule.telat_blok_menit}</td>
+              <td>{rp(rule.telat_nominal_per_blok)}</td>
+              <td>{rule.telat_maks ? rp(rule.telat_maks) : "tanpa batas"}</td>
+              <td>{rp(rule.bolos_per_hari)}</td>
+              <td>{rp(rule.lembur_per_jam)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h3>Lembur disetujui per tanggal</h3>
+      {i.lemburPerTanggal ? (
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Jam disetujui</th>
+              <th>Tarif/jam</th>
+            </tr>
+          </thead>
+          <tbody>
+            {i.lemburPerTanggal.map((l, n) => (
+              <tr key={n}>
+                <td>{l.tanggal}</td>
+                <td>{l.jam}</td>
+                <td>
+                  {rp(
+                    (i.aturanPerTanggal?.[l.tanggal] ?? i.aturan)
+                      .lembur_per_jam,
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p>
+          Potret lama menyimpan total {i.jamLembur} jam tanpa rincian tanggal.
+        </p>
+      )}
+      <h3>Komponen tetap dan komponen periode</h3>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Komponen</th>
+            <th>Jenis</th>
+            <th>Sumber</th>
+            <th>Jumlah</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(snap.components ?? i.komponen).map((c, n) => (
+            <tr key={n}>
+              <td>{"nama" in c ? c.nama : "Komponen tersimpan"}</td>
+              <td>{c.tipe}</td>
+              <td>
+                {"source" in c
+                  ? c.source === "fixed"
+                    ? "Komponen tetap"
+                    : c.source === "period" || c.source === "variable"
+                      ? "Komponen periode"
+                      : "Sumber lama"
+                  : "Sumber lama"}
+              </td>
+              <td>{rp(c.nominal)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h3>Reimburse yang masuk slip</h3>
+      {snap.reimbursements ? (
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Pengajuan</th>
+              <th>Kategori</th>
+              <th>Jumlah</th>
+            </tr>
+          </thead>
+          <tbody>
+            {snap.reimbursements.map((c) => (
+              <tr key={c.id}>
+                <td>{c.tanggal}</td>
+                <td>{c.id}</td>
+                <td>{c.kategori}</td>
+                <td>{rp(c.jumlah)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p>Potret lama tidak menyimpan rincian pengajuan.</p>
+      )}
       <h3>Cicilan yang benar-benar dipotong</h3>
       {r.cicilanPerKasbon.length ? (
         r.cicilanPerKasbon.map((c) => (
