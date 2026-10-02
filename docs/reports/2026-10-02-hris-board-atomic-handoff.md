@@ -39,3 +39,15 @@ One fresh independent reviewer examined the new transaction contract and callers
 ## Remaining acceptance gates
 
 Migration `20261002150000_schedule_board_batch.sql` must accompany the application, after the prepared source/identity/schedule migrations. PR18 remains draft. No remote database migration, demo write, production deployment, merge or real payment has been performed. Monetary policy and incentive catalog/recipient allocation remain waiting on user input. Separate demo identity, full migration-chain validation, authenticated API/browser/GPS testing and comparison of one payroll period remain acceptance work. See `2026-10-02-hris-remaining-handoff.md` for the full prior delivery and gates.
+
+
+## Subsequent lock-order repair
+
+The schedule-specific lock-order Minor above is resolved by migration
+`20261002160000_schedule_source_lock_order.sql`. Single/swap submissions and
+all decisions/answers/cancellations now enter the existing source boundary
+before identity/request/employee/cell locks. Eight forced two-connection races
+reject deadlocks and verify complete cells, request states and audit. The
+original snapshot-conflict/reload behavior remains intentional. See
+`2026-10-02-hris-schedule-lock-order-handoff.md` for fresh verification, review,
+queueing cost and the bounded scope of this repair.

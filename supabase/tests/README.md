@@ -112,3 +112,14 @@ behind real branch-access revocation. The runner cleans up its own container.
 It does not read remote Supabase credentials or validate production/schema drift.
 The full twelve-suite command and acceptance gates are recorded in
 `docs/reports/2026-10-02-hris-board-atomic-handoff.md`.
+
+
+The same board+swap command also runs `scripts/hris_schedule_lock_tests.py`
+after migration `20261002160000`. Eight forced two-session interleavings
+require schedule mutations to wait on the real source advisory lock before
+locking identity/request/employee/cell rows. A source-holder board transaction
+then commits without a deadlock; stale submission/approval/consent must reject,
+and permitted rejection/cancellation must complete with the correct audit.
+The earlier board race no longer accepts deadlock as a valid losing result.
+See the schedule-lock-order handoff for the original40P01 regression, current
+permissions/state/audit checks, queueing cost and the covered scope.

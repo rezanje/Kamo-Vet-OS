@@ -126,3 +126,15 @@ regressions, twelve SQL suites and real board/approval/access-revocation races
 extend the earlier evidence. See `2026-10-02-hris-board-atomic-handoff.md` for
 current verification, the independent review and its one fix pass, migration
 `20261002150000`, the retry limitation, and unchanged demo/release gates.
+
+
+## Schedule source-order follow-up (2026-10-02)
+
+Migration `20261002160000` resolves the documented board-versus-approval source
+lock inversion for single/swap mutations. The latest definitions also improve
+the readability of these four RPC implementations; broader legacy SQL/page
+readability remains deferred. All twelve SQL suites, prior races and eight
+new forced lock interleavings pass; fresh application suite157files/1331tests
+passes. A fresh independent review found no actionable issues. Detailed
+scope, costs, reproduction and release gates are recorded in
+`2026-10-02-hris-schedule-lock-order-handoff.md`.

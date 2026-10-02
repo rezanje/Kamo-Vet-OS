@@ -121,8 +121,7 @@ commit;
                 for job in jobs:
                     job.wait(timeout=20); codes.append(job.returncode)
                     error=job.stderr.read()
-                    # Reversed legacy approval/source locks may abort one whole tx.
-                    if job.returncode and 'JADWAL:' not in error and 'deadlock detected' not in error:
+                    if job.returncode and 'JADWAL:' not in error:
                         raise RuntimeError('Unexpected board race failure: '+error)
                 if sum(code==0 for code in codes)!=1:
                     raise RuntimeError(label+': expected one complete winner '+str(codes))
@@ -230,6 +229,10 @@ $$;
         if payroll_sql("select count(*)from payrolls where periode='2026-11'and status='draft'")!='2' or payroll_sql("select count(*)from journal_entries where source='payroll'and source_ref='2026-11'")!='0' or payroll_sql("select count(*)from cash_advance_installments where periode='2026-11'")!='0':
             raise RuntimeError('Period-close race partially settled money')
         print('PASS: period-close race leaves every draft and debt unchanged',flush=True)
+
+    if 'hris_schedule_swaps.sql' in suites and 'hris_schedule_board_batch.sql' in suites:
+        from hris_schedule_lock_tests import run_schedule_lock_races
+        run_schedule_lock_races(command, env, container, docker)
 
 finally:
     docker('rm', '-f', container, capture_output=True)
