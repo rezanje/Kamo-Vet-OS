@@ -30,13 +30,16 @@ export function validasiJadwal(input: unknown, scope: JadwalScope, impor = true)
   });
   return {rows: errors.length ? [] : rows, errors, skipped};
 }
-export async function buatExcelJadwal(rows: JadwalImpor[], referensi: {employees?: {id:string;nama:string}[]; shifts?: {id:string;nama:string;jam:string}[]} = {}) {
+export async function buatExcelJadwal(rows: JadwalImpor[], referensi: {branch?: {id:string;name:string}; employees?: {id:string;nama:string}[]; shifts?: {id:string;nama:string;jam:string}[]} = {}) {
   if (rows.length > BATAS_BARIS_JADWAL) throw new Error('Maksimal 10.000 baris. Ekspor tampilan minggu atau lebih sedikit karyawan.');
   const book = new ExcelJS.Workbook(); const sheet = book.addWorksheet('Jadwal');
   sheet.addRow([...KOLOM]); rows.forEach(r => sheet.addRow(KOLOM.map(k => r[k])));
   sheet.columns.forEach(c => { c.width = 38; });
   const emp = book.addWorksheet('Karyawan'); emp.addRow(['ID','Nama']); referensi.employees?.forEach(e => emp.addRow([e.id,e.nama]));
   const shifts = book.addWorksheet('Shift'); shifts.addRow(['ID','Nama','Jam']); referensi.shifts?.forEach(s => shifts.addRow([s.id,s.nama,s.jam]));
+  const branch = book.addWorksheet('Cabang'); branch.addRow(['ID','Nama']);
+  branch.columns.forEach(c => { c.width = 38; });
+  if (referensi.branch) branch.addRow([referensi.branch.id, referensi.branch.name]);
   const bytes = new Uint8Array(await book.xlsx.writeBuffer());
   if (bytes.byteLength > 900 * 1024) throw new Error('Ekspor melebihi 900 KB. Gunakan tampilan minggu.');
   return bytes;

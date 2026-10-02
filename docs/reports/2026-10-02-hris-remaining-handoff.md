@@ -19,7 +19,7 @@ The original September meeting requirements file remains unavailable; the upload
 
 ## Verification
 
-Latest source tree: 156 Vitest files / 1,326 tests pass. `npm run build` exits 0 (Next15.5.25); `npx tsc --noEmit` after build exits0; `npm run lint` exits0 with12 preexisting warnings and no errors; `git diff --check` clean.
+Latest source tree after the Excel reference follow-up: 156 Vitest files / 1,327 tests pass. `npm run build` exits 0 (Next15.5.25); `npx tsc --noEmit` after build exits0; `npm run lint` exits0 with12 preexisting warnings and no errors; `git diff --check` clean.
 
 `python3 scripts/test-hris-completion-db.py hris_review_privacy.sql hris_payroll_effective.sql hris_payroll_settlement.sql hris_sensitive_access.sql hris_schedule_swaps.sql hris_attendance_recap.sql hris_schedule_requests.sql hris_attendance_sessions.sql hris_attendance_json_claims.sql hris_attendance_final_resolution.sql hris_attendance_legacy_correction.sql` passes all eleven suites. It applies actual relevant baseline and prepared migrations inside its own disposable PostgreSQL16 container with network disabled, no exposed ports/volumes, fictional identities/data, and cleanup in finally. It does not read Supabase credentials.
 
@@ -39,7 +39,7 @@ Evidence logs in this execution workspace: `/workspace/hris-review-final-test.lo
 - [ ] Run signed-off fictional pay/incentive examples and one parallel payroll period against agreed manual amounts; confirm rounding/account mapping and all residual debt before any real adoption.
 - [ ] Separate production release decision, backup and migration/deployment procedure. This draft PR is not a production-readiness claim.
 
-Deferred original roadmap scope: franchise/clinic cost allocation, continuous location tracking, quest linkage, statutory payroll/PPh21/BPJS/face verification and full product parity. Previously deferred Excel-template branch-reference sheet remains a known minor from batch1.
+Deferred original roadmap scope: franchise/clinic cost allocation, continuous location tracking, quest linkage, statutory payroll/PPh21/BPJS/face verification and full product parity. The previously deferred Excel-template branch-reference sheet was completed in the follow-up below.
 
 ## Final review
 
@@ -54,7 +54,7 @@ One fresh independent reviewer examined `b218041..69f75e5` (concentrating on the
 
 The reviewer suggested saved component/reimbursement lines as Minor. Author regraded Important against the roadmap's source-dispute requirement and included it in the same pass: saved fixed/period component amounts and dated reimburse claims render RED→GREEN. Final whole suite156files/1,326 tests, eleven SQL suites and races, build, subsequent TypeScript, lint and diff checks pass.
 
-Deferred current-review Minor: compressed SQL/pages impede future authorization review. Prior Excel-template branch-reference sheet Minor remains deferred. The component/reimbursement suggestion is resolved, not deferred.
+Deferred current-review Minor: compressed SQL/pages impede future authorization review. The prior Excel-template branch-reference sheet Minor was subsequently completed in the follow-up below. The component/reimbursement suggestion is resolved, not deferred.
 
 Declined-to-judge items were explicitly ruled on: unanswered policy/catalog/demo identity, production/live acceptance, trusted OWNER computation, conservative revision/date guards, monthly fixed components, unknown legacy baseline and separate cashier-close recovery. Their costs and remaining gates are below.
 
@@ -104,3 +104,13 @@ Every implementation ruling, in order, preserved from this plan's ledger:
 - Final: fixed hidden operational seller mapping — real komisiPeriode cash/reseller source cases RED→GREEN (0 to10); DB minimal view preserves hidden sensitive row while exposing authorized identifier mapping, no salary field or anonymous access. Name callers use safe directory.
 - Final: fixed applied-rate explanation and source details — real saved-page render RED→GREEN for saved boundary/group rates and dated approved hours; fixed/period components and dated reimburse claims shown from snapshot only, no current-config reads.
 - Final: whole one-pass fix verification: npm test156files/1,326 PASS; eleven actual SQL suites plus swap/preparation/finalization/period-close races PASS; npm run build exits0; subsequent tsc exits0; lint exits0 with12oldwarnings; diff check PASS. No second reviewer under executing-plans.
+
+## Existing-goal continuation: Excel branch reference
+
+The continuing objective was to finish remaining authorized work. Completed the blank-template branch-reference minor: template and export now include one Cabang sheet with the selected authorized branch ID/name supplied by the server, and UI instructions reference that sheet. The same Jadwal parser and server import validation remain in use. No financial rule, database migration or production action was added.
+
+The actual blank-workbook regression failed first because the Cabang worksheet was absent, then passed with its selected ID/name and empty Jadwal round-trip. Targeted14tests and full156files/1,327tests pass; fresh build, subsequent TypeScript, lint (0errors/12existingwarnings) and diff check pass. No SQL changed in this follow-up; the earlier eleven SQL contracts/races remain the recorded DB evidence and were not needlessly repeated. New logs: /workspace/hris-branch-reference-{red,green,full-test,build,lint,tsc}.log.
+
+Ruling: include only the selected authorized branch in Excel references, deriving its name from the existing server-resolved permitted list — gives HR the ID needed for a blank template without expanding branch exposure — cost: future multi-branch imports need a separately scoped reference design.
+
+Remaining objective is blocked on outside inputs: final monetary policy/effective dates/eligible groups/caps, incentive catalog and recipient allocation, and separately identified demo with fictional roles. Three concise input questions were issued again during this continuation. The uploaded roadmap explicitly forbids inventing unresolved payroll policy. Current configured public variables do not prove a separate demo identity. Production release and real-payment adoption retain the original separate decision requirement. SQL readability remains a nonfunctional deferred Minor; it does not authorize guessing policy or writing an unknown remote target.

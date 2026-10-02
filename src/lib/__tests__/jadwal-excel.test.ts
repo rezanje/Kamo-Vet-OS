@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import ExcelJS from 'exceljs';
 import { hariPeriode } from '../jadwal-kalender';
 import { validasiJadwal, buatExcelJadwal, bacaExcelJadwal } from '../jadwal-excel';
 const row = { employee_id: 'e1', tanggal: '2026-10-01', shift_id: 's1', branch_id: 'b1' };
@@ -26,4 +27,15 @@ it('skips exact stored inactive shift but rejects a new assignment to it',()=>{
  const inactive={...row,shift_id:'inactive'};
  expect(validasiJadwal([inactive],{...scope,existing:{'e1|2026-10-01':'inactive'}})).toMatchObject({rows:[],errors:[],skipped:1});
  expect(validasiJadwal([inactive],scope).errors.length).toBe(1);
+});
+
+it('blank schedule template includes the selected branch ID and name for filling branch_id', async () => {
+ const bytes = await buatExcelJadwal([], {branch: {id:'b1',name:'Fiction permitted branch'}});
+ const book = new ExcelJS.Workbook();
+ await book.xlsx.load(bytes as unknown as Parameters<typeof book.xlsx.load>[0]);
+ const branch = book.getWorksheet('Cabang');
+ expect(branch?.rowCount).toBe(2);
+ expect(branch?.getRow(2).getCell(1).text).toBe('b1');
+ expect(branch?.getRow(2).getCell(2).text).toBe('Fiction permitted branch');
+ expect((await bacaExcelJadwal(bytes)).rows).toEqual([]);
 });

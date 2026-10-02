@@ -85,7 +85,7 @@ export default async function JadwalPage({
             cabang={cabang} bulan={bulan} minggu={minggu} employeeStarts={scope?.employeeStarts ?? {}} bolehKelola={bolehKelola}
           />
         )}
-        {scope && <JadwalExcel key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`} karyawan={karyawan} shifts={shifts} awal={awal} cabang={cabang} bulan={bulan} minggu={minggu} awalTanggal={hari[0].tanggal} akhirTanggal={hari.at(-1)!.tanggal} employeeStarts={scope?.employeeStarts ?? {}} bolehKelola={bolehKelola} />}
+        {scope && <JadwalExcel key={`${cabang}|${hari[0].tanggal}|${hari.length}|${JSON.stringify(awal)}`} karyawan={karyawan} shifts={shifts} awal={awal} cabang={cabang} namaCabang={branches.find(b => b.id === cabang)!.name} bulan={bulan} minggu={minggu} awalTanggal={hari[0].tanggal} akhirTanggal={hari.at(-1)!.tanggal} employeeStarts={scope?.employeeStarts ?? {}} bolehKelola={bolehKelola} />}
       </div>
     </>
   );
