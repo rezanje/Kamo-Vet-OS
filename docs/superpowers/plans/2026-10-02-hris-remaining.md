@@ -2,6 +2,8 @@
 
 > For agentic workers: use superpowers:executing-plans inline, task by task. User has authorized completing remaining roadmap work; reuse existing isolated worktree. One fresh final reviewer after independent deliverables, one regression fix pass.
 
+Status: independent tasks1–5 and task6 local acceptance/review delivered; financial policy/catalog and separate demo/live acceptance remain gates. See docs/reports/2026-10-02-hris-remaining-handoff.md for verification and all decisions.
+
 Goal: complete swaps, recap, source/access and settlement integrity; implement changed financial/commission rules when their required inputs arrive.
 Architecture: reuse Next 15.5.25, React, Supabase tables/RLS/RPCs, current payroll and commission functions; prepared migrations only. Atomic transitions and scoped source RPCs serve existing pages/actions. Fictional local PostgreSQL and real functions/actions supply regression evidence.
 Spec: docs/superpowers/specs/2026-10-02-hris-remaining-design.md and supplied 2026-10-01 cloud roadmap.
