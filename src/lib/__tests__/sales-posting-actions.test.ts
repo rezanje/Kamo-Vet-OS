@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), guard: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("@/lib/master-guard", () => ({ assertRole: state.guard }));
-import { buatPengiriman, buatFakturJual, batalPesanan } from "../../app/(app)/penjualan/pesanan/actions";
+import { buatPengiriman, buatFakturJual, batalPesanan, recoverSalesSubmission } from "../../app/(app)/penjualan/pesanan/actions";
 import { jadikanPesanan } from "../../app/(app)/penjualan/penawaran/actions";
 const form = () => {
   const f = new FormData();
@@ -61,4 +61,18 @@ it("cancels using the same database serialization boundary as shipments", async 
   await expect(batalPesanan(form())).rejects.toThrow(/error=Sebagian/);
   expect(state.rpc).toHaveBeenCalledWith("sales_cancel_order", {p_order_id:"00000000-0000-4000-8000-000000000001"});
   expect(state.from).not.toHaveBeenCalled();
+});
+
+it("recovers a committed document using only its key and source order without posting again",async()=>{
+  const f=form();f.set("request_scope","delivery:00000000-0000-4000-8000-000000000001");
+  await expect(recoverSalesSubmission(f)).rejects.toThrow(/request_done=form-stable-key/);
+  expect(state.rpc).toHaveBeenCalledExactlyOnceWith("sales_get_posting_result",{
+    p_order_id:"00000000-0000-4000-8000-000000000001",p_kind:"delivery",p_request_key:"form-stable-key",
+  });
+  expect(state.from).not.toHaveBeenCalled();
+});
+it("keeps identity after recovery finds no committed transaction",async()=>{
+  state.rpc.mockResolvedValue({data:null,error:null});const f=form();f.set("request_scope","invoice:00000000-0000-4000-8000-000000000001");
+  await expect(recoverSalesSubmission(f)).rejects.toThrow(/error=/);
+  expect(state.rpc.mock.calls[0][0]).toBe("sales_get_posting_result");
 });

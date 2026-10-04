@@ -128,3 +128,18 @@ are blocked with a finance reconciliation message; this change does not backfill
 history or provide a reconciliation workflow. The suite proves that rejection,
 backdated mixed-cost shipments, immutable allocation rows, exact total HPP, retry
 identity, and rollback when allocation insertion fails.
+
+
+Sales account/module gates match the application's existing access-group rules:
+accounts must be active; OWNER overrides module rows; ADMIN without custom rows
+has full default access; FINANCE/STAFF require explicit `penjualan` permission.
+Disabled accounts cannot post or recover previously committed operations.
+
+Sales form identities now persist in tab-local session storage across errors,
+refreshes, and exhausted forms. Only a confirmed success retires that identity.
+When storage is unavailable the form has no usable key and posting fails closed.
+The recovery action calls the read-only `sales_get_posting_result`, which checks
+the actor, module, current order branch, and recorded posting branch. It locks
+the order before the key, matching the posting lock order. Component tests render
+the actual order page and cover a committed-response-loss/remount/recovery flow,
+independent invoice keys, exhausted forms, and confirmation-only rotation.

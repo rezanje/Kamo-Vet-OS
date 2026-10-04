@@ -84,6 +84,11 @@ do $$ declare r jsonb; retry jsonb; bad jsonb; cnt integer; begin
   retry:=sales_create_delivery('f6000000-0000-4000-8000-000000000001','sales-shipment-1',jsonb_build_object('tanggal',current_date),
     '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000002","qty":5},{"order_item_id":"f7000000-0000-4000-8000-000000000003","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000004","qty":1}]');
   if r<>retry then raise exception 'Retry identity differs'; end if;
+  -- Treat the original response as lost. Recovery sees the committed identity
+  -- using no form payload, so refreshed remaining quantities cannot repost it.
+  if sales_get_posting_result('f6000000-0000-4000-8000-000000000001','delivery','sales-shipment-1')<>r then raise exception 'Lost shipment response recovery differs'; end if;
+  if sales_get_posting_result('f6000000-0000-4000-8000-000000000001','delivery','not-committed') is not null then raise exception 'Recovery invented a transaction'; end if;
+
   if (select qty from stock where warehouse_id='f3000000-0000-4000-8000-000000000001' and item_id='f5000000-0000-4000-8000-000000000001')<>13 then raise exception 'Wrong base stock'; end if;
   if (select sum(hpp) from sales_delivery_items where delivery_id=(r->>'document_id')::uuid)<>41 then raise exception 'Wrong FIFO HPP'; end if;
   if (select count(*) from stock_moves where source_ref=r->>'document_no')<>2 then raise exception 'Retry doubled stock'; end if;
@@ -107,6 +112,8 @@ do $$ declare r jsonb; retry jsonb; bad jsonb; cnt integer; begin
   retry:=sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-1',jsonb_build_object('tanggal',current_date,'jatuh_tempo',current_date+30),
     '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":0.5},{"order_item_id":"f7000000-0000-4000-8000-000000000002","qty":5},{"order_item_id":"f7000000-0000-4000-8000-000000000003","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000004","qty":1}]');
   if r<>retry then raise exception 'Invoice retry identity differs'; end if;
+  if sales_get_posting_result('f6000000-0000-4000-8000-000000000001','invoice','sales-invoice-1')<>r then raise exception 'Lost invoice response recovery differs'; end if;
+
   if (select count(*) from sales_invoice_delivery_allocations a join sales_invoice_items ii on ii.id=a.invoice_item_id where ii.invoice_id=(r->>'document_id')::uuid)<>4 then raise exception 'Retry duplicated HPP allocations'; end if;
   if (select dpp<>175 or ppn<>19 or total<>194 from sales_invoices where id=(r->>'document_id')::uuid) then raise exception 'Price/PKP policy changed'; end if;
   if (select sum(hpp) from sales_invoice_items where invoice_id=(r->>'document_id')::uuid)<>28 then raise exception 'Partial invoice HPP incorrect'; end if;
@@ -323,6 +330,10 @@ do $$ begin
     perform sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-2',jsonb_build_object('tanggal',current_date),
       '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1.5}]');
     raise exception 'Disabled FINANCE recovered invoice';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform sales_get_posting_result('f6000000-0000-4000-8000-000000000001','invoice','sales-invoice-2');
+    raise exception 'Disabled FINANCE used read-only recovery';
   exception when insufficient_privilege then null; end;
 end $$;
 reset role;

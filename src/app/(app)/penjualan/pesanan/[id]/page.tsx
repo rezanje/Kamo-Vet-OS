@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { SalesRequestIdentity, SalesRecoveryComplete, SalesOrderRecovery } from "@/components/SalesRequestIdentity";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -26,7 +26,7 @@ export default async function DetailPesananPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; request_done?: string; request_scope?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -65,6 +65,7 @@ export default async function DetailPesananPage({
 
   return (
     <>
+      <SalesRecoveryComplete scope={sp.request_scope} requestKey={sp.request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/penjualan/pesanan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -128,7 +129,7 @@ export default async function DetailPesananPage({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {bisaKirim && (
               <form action={buatPengiriman}>
-                <input type="hidden" name="request_key" value={randomUUID()} />
+                <SalesRequestIdentity scope={`delivery:${id}`} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Kirim barang</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>
@@ -164,7 +165,7 @@ export default async function DetailPesananPage({
 
             {bisaFaktur && (
               <form action={buatFakturJual}>
-                <input type="hidden" name="request_key" value={randomUUID()} />
+                <SalesRequestIdentity scope={`invoice:${id}`} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Terbitkan faktur</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>
@@ -195,6 +196,9 @@ export default async function DetailPesananPage({
           </div>
         </div>
       )}
+
+      {boleh && (!aktif || !bisaKirim) && <SalesOrderRecovery orderId={id} kind="delivery" />}
+      {boleh && (!aktif || !bisaFaktur) && <SalesOrderRecovery orderId={id} kind="invoice" />}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader num="03" title="DOKUMEN TURUNAN" desc="Pengiriman & faktur yang lahir dari pesanan ini." />

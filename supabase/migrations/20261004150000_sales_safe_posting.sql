@@ -4,6 +4,7 @@ create table public.sales_posting_requests (
   kind text not null check(kind in ('delivery','invoice')),
   request_key text not null check(length(request_key) between 1 and 120),
   order_id uuid not null references public.sales_orders(id),
+  branch_id uuid references public.branches(id),
   payload jsonb not null,
   result jsonb not null,
   created_at timestamptz not null default now(),
@@ -156,6 +157,7 @@ begin
   perform pg_advisory_xact_lock(hashtext('vetos:sales-request:'||auth.uid()::text||':'||p_kind||':'||p_request_key)::bigint);
   select * into v_prior from public.sales_posting_requests where actor_id=auth.uid() and kind=p_kind and request_key=p_request_key;
   if found then
+    perform public.sales_assert_access(v_prior.branch_id);
     if v_prior.payload<>v_payload then raise exception 'Permintaan sudah digunakan dengan rincian berbeda. Muat ulang formulir.' using errcode='22023'; end if;
     return v_prior.result;
   end if;
@@ -279,7 +281,7 @@ begin
     update public.sales_orders set status=case when not exists(select 1 from public.sales_order_items where order_id=p_order_id and (qty_kirim<qty or qty_faktur<qty_kirim)) then 'selesai' else 'diproses' end where id=p_order_id;
   end if;
   v_result:=jsonb_build_object('document_id',v_id,'document_no',v_no);
-  insert into public.sales_posting_requests(actor_id,kind,request_key,order_id,payload,result) values(auth.uid(),p_kind,p_request_key,p_order_id,v_payload,v_result);
+  insert into public.sales_posting_requests(actor_id,kind,request_key,order_id,branch_id,payload,result) values(auth.uid(),p_kind,p_request_key,p_order_id,v_order.branch_id,v_payload,v_result);
   return v_result;
 end $$;
 revoke all on function public.sales_post_order(text,uuid,text,jsonb,jsonb) from public,anon,authenticated;
@@ -328,3 +330,27 @@ declare v_o public.sales_orders%rowtype; begin
 end $$;
 revoke all on function public.sales_cancel_order(uuid) from public,anon;
 grant execute on function public.sales_cancel_order(uuid) to authenticated;
+
+
+-- Read-only recovery waits behind the posting order lock before inspecting the
+-- actor's key. Lock order matches posting: source order, then request identity.
+create function public.sales_get_posting_result(p_order_id uuid,p_kind text,p_request_key text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_order public.sales_orders%rowtype; v_request public.sales_posting_requests%rowtype; begin
+  if p_kind not in ('delivery','invoice') or p_request_key is null or length(p_request_key) not between 1 and 120 then
+    raise exception 'Identitas transaksi tidak valid.' using errcode='22023'; end if;
+  select * into v_order from public.sales_orders where id=p_order_id for share;
+  if not found then raise exception 'Pesanan tidak ditemukan atau tidak dapat diakses.' using errcode='42501'; end if;
+  perform public.sales_assert_access(v_order.branch_id);
+  perform pg_advisory_xact_lock(hashtext('vetos:sales-request:'||auth.uid()::text||':'||p_kind||':'||p_request_key)::bigint);
+  select * into v_request from public.sales_posting_requests where actor_id=auth.uid() and kind=p_kind and request_key=p_request_key;
+  if not found then return null; end if;
+  if v_request.order_id<>p_order_id then raise exception 'Identitas bukan milik pesanan ini.' using errcode='42501'; end if;
+  perform public.sales_assert_access(v_request.branch_id);
+  if (p_kind='delivery' and not exists(select 1 from public.sales_deliveries where id=(v_request.result->>'document_id')::uuid and order_id=p_order_id))
+    or (p_kind='invoice' and not exists(select 1 from public.sales_invoices where id=(v_request.result->>'document_id')::uuid and order_id=p_order_id)) then
+    raise exception 'Dokumen hasil permintaan tidak ditemukan. Minta keuangan meninjau.'; end if;
+  return v_request.result;
+end $$;
+revoke all on function public.sales_get_posting_result(uuid,text,text) from public,anon;
+grant execute on function public.sales_get_posting_result(uuid,text,text) to authenticated;

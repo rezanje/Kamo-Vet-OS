@@ -99,7 +99,7 @@ async function postOrder(formData: FormData, kind: "delivery" | "invoice") {
   });
   if (error || !data?.document_id) gagal(error?.message ?? "Dokumen belum berhasil disimpan. Coba lagi.");
   const pesan = kind === "delivery" ? `Pengiriman ${data.document_no} tercatat.` : `Faktur ${data.document_no} dibuat.`;
-  redirect(`${detail(id)}?success=${encodeURIComponent(pesan)}`);
+  redirect(`${detail(id)}?success=${encodeURIComponent(pesan)}&request_done=${encodeURIComponent(input.requestKey)}&request_scope=${encodeURIComponent(`${kind}:${id}`)}`);
 }
 
 /** Inventory and HPP are committed with the delivery document and journal. */
@@ -107,3 +107,19 @@ export async function buatPengiriman(formData: FormData) { return postOrder(form
 
 /** Receivable/revenue and shipped-line HPP allocation commit together. */
 export async function buatFakturJual(formData: FormData) { return postOrder(formData, "invoice"); }
+
+/** Inspect an uncertain submission without issuing stock or creating an invoice. */
+export async function recoverSalesSubmission(formData: FormData) {
+  const id = String(formData.get("id") ?? "").trim();
+  const scope = String(formData.get("request_scope") ?? "");
+  const kind = scope.split(":")[0];
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  const gagal = (message: string): never => redirect(`${detail(id)}?error=${encodeURIComponent(message)}`);
+  const supabase = await assertRole(detail(id), "dokumen penjualan", BOLEH);
+  if (!["delivery", "invoice"].includes(kind) || scope !== `${kind}:${id}` || !requestKey || requestKey.length > 120) gagal("Identitas transaksi tidak valid.");
+  const { data, error } = await supabase.rpc("sales_get_posting_result", {
+    p_order_id: id, p_kind: kind, p_request_key: requestKey,
+  });
+  if (error || !data?.document_id) gagal(error?.message ?? "Belum ada transaksi tersimpan untuk formulir ini. Periksa rincian sebelum menyimpan.");
+  redirect(`${detail(id)}?success=${encodeURIComponent(`Dokumen ${data.document_no} sudah tersimpan.`)}&request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(scope)}`);
+}
