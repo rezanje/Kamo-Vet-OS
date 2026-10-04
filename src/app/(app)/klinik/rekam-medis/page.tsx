@@ -1,3 +1,6 @@
+import { readCompleteList, TABLE_PAGE_SIZE } from "@/lib/checked-list";
+import { infoHalaman } from "@/lib/pagination";
+import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
@@ -13,6 +16,7 @@ function one<T>(value: Rel<T>): T | null {
 type RekamRow = BarisDaftarRekamMedis & {
   id: string;
   date: string;
+  petId: string | null;
   species: string | null;
   breed: string | null;
   doctor: string | null;
@@ -29,20 +33,15 @@ const dateText = (iso: string) => new Date(iso).toLocaleDateString("id-ID", {
 export default async function DaftarRekamMedisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pet?: string }>;
+  searchParams: Promise<{ q?: string; pet?: string; hal?: string }>;
 }) {
-  const { q = "", pet: petId = "" } = await searchParams;
+  const { q = "", pet: petId = "", hal } = await searchParams;
   const supabase = await createClient();
-  let query = supabase
-    .from("visits")
-    .select("id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis)")
-    .order("created_at", { ascending: false });
-  if (petId) query = query.eq("pet_id", petId);
-  const { data } = await query.limit(300);
 
   type SourceRow = {
     id: string;
     created_at: string;
+    pet_id: string | null;
     dokter: string | null;
     keluhan: string | null;
     legacy_source_key: string | null;
@@ -52,7 +51,19 @@ export default async function DaftarRekamMedisPage({
     medical_records: Rel<{ diagnosis: string | null; anamnesis: string | null }>;
   };
 
-  const rows: RekamRow[] = ((data ?? []) as unknown as SourceRow[]).map((visit) => {
+  let data: SourceRow[];
+  try {
+    data = await readCompleteList<SourceRow>(async (from, to) => {
+      let query = supabase.from("visits")
+        .select("id, pet_id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis)", { count: "exact" })
+        .order("created_at", { ascending: false }).order("id");
+      if (petId) query = query.eq("pet_id", petId);
+      const result = await query.range(from, to);
+      return { ...result, data: result.data as unknown as SourceRow[] | null };
+    }, "Rekam medis");
+  } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
+
+  const rows: RekamRow[] = data.map((visit) => {
     const pet = one(visit.pets);
     const owner = one(visit.customers);
     const branch = one(visit.branches);
@@ -61,6 +72,7 @@ export default async function DaftarRekamMedisPage({
     return {
       id: visit.id,
       date: visit.created_at,
+      petId: visit.pet_id,
       ownerName: invalidImportedOwner ? "Pemilik perlu verifikasi" : owner?.name ?? "—",
       petName: pet?.name ?? "—",
       phone: invalidImportedOwner ? "" : owner?.phone ?? "",
@@ -74,7 +86,9 @@ export default async function DaftarRekamMedisPage({
     };
   });
   const filtered = saringDaftarRekamMedis(rows, q);
-  const pets = new Set(rows.map((row) => row.petName).filter((name) => name !== "—")).size;
+  const pageInfo = infoHalaman(hal, filtered.length, TABLE_PAGE_SIZE);
+  const visibleRows = filtered.slice(pageInfo.from, pageInfo.to + 1);
+  const pets = new Set(rows.map((row) => row.petId).filter(Boolean)).size;
   const imported = rows.filter((row) => row.isImported).length;
   const selectedPet = petId ? rows[0] : null;
 
@@ -131,7 +145,7 @@ export default async function DaftarRekamMedisPage({
                 <tr><th>Tanggal</th><th>Pasien</th><th>Pemilik</th><th>Ringkasan kunjungan</th><th>Diagnosa</th><th /></tr>
               </thead>
               <tbody>
-                {filtered.map((row) => (
+                {visibleRows.map((row) => (
                   <tr key={row.id}>
                     <td style={{ whiteSpace: "nowrap", fontSize: 11 }}>{dateText(row.date)}<br />
                       <span style={{ fontSize: 10, color: "var(--td)" }}>{row.branch ?? "Riwayat lama · semua cabang"}</span>
@@ -149,6 +163,7 @@ export default async function DaftarRekamMedisPage({
             </table>
           </div>
         )}
+        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId }} total={filtered.length} pageInfo={pageInfo} />
       </div>
     </>
   );

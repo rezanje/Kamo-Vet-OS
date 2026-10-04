@@ -1,3 +1,6 @@
+import { readCompleteList, readListPage, TABLE_PAGE_SIZE } from "@/lib/checked-list";
+import { infoHalaman } from "@/lib/pagination";
+import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -16,9 +19,9 @@ type StockRow = { id: string; qty: number; items: Rel<Item> };
 export default async function StokPage({
   searchParams,
 }: {
-  searchParams: Promise<{ wh?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ wh?: string; error?: string; success?: string; hal?: string }>;
 }) {
-  const { wh, error, success } = await searchParams;
+  const { wh, error, success, hal } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user
@@ -39,9 +42,16 @@ export default async function StokPage({
 
   let matrix: ReturnType<typeof pivotStokPerGudang> | null = null;
   if (matrixMode) {
-    const { data: allStock } = await supabase
-      .from("stock")
-      .select("item_id, qty, warehouses(code), items(id, code, name, unit)");
+    type MatrixSource = { id: string; item_id: string; qty: number; warehouses: Rel<{ code: string }>; items: Rel<Item> };
+    let allStock: MatrixSource[];
+    try {
+      allStock = await readCompleteList<MatrixSource>(async (from, to) => {
+        const result = await supabase.from("stock")
+          .select("id, item_id, qty, warehouses(code), items(id, code, name, unit)", { count: "exact" })
+          .order("id").range(from, to);
+        return { ...result, data: result.data as unknown as MatrixSource[] | null };
+      }, "Stok semua gudang");
+    } catch (error) { return <ListLoadFailure error={error} label="Stok semua gudang" />; }
     const rows: StokBaris[] = ((allStock ?? []) as unknown as { item_id: string; qty: number; warehouses: Rel<{ code: string }>; items: Rel<Item> }[])
       .map((s) => {
         const it = one(s.items);
@@ -58,13 +68,21 @@ export default async function StokPage({
   }
 
   let stock: StockRow[] = [];
+  let stockCount = 0;
+  let pageInfo = infoHalaman(hal, matrix?.items.length ?? 0, TABLE_PAGE_SIZE);
   if (selectedWh) {
-    const { data: stockRaw } = await supabase
-      .from("stock")
-      .select("id, qty, items(id, code, name, unit)")
-      .eq("warehouse_id", selectedWh.id)
-      .order("updated_at", { ascending: false });
-    stock = (stockRaw ?? []) as unknown as StockRow[];
+    try {
+      const result = await readListPage<StockRow>(async (from, to) => {
+        const response = await supabase.from("stock")
+          .select("id, qty, items(id, code, name, unit)", { count: "exact" })
+          .eq("warehouse_id", selectedWh.id)
+          .order("updated_at", { ascending: false }).order("id").range(from, to);
+        return { ...response, data: response.data as unknown as StockRow[] | null };
+      }, "Stok gudang", hal);
+      stock = result.rows;
+      stockCount = result.count;
+      pageInfo = result.pageInfo;
+    } catch (error) { return <ListLoadFailure error={error} label="Stok gudang" />; }
   }
 
   return (
@@ -124,7 +142,7 @@ export default async function StokPage({
                 </tr>
               </thead>
               <tbody>
-                {matrix.items.map((r) => (
+                {matrix.items.slice(pageInfo.from, pageInfo.to + 1).map((r) => (
                   <tr key={r.item_id}>
                     <td style={{ fontSize: 11, fontFamily: "var(--mono, monospace)" }}>{r.code}</td>
                     <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{r.name}</td>
@@ -142,6 +160,7 @@ export default async function StokPage({
               </tbody>
             </table>
           </div>
+          <ListPagination path="/pos/stok" query={{ wh: "all" }} total={matrix.items.length} pageInfo={pageInfo} />
         </div>
       )}
 
@@ -179,6 +198,7 @@ export default async function StokPage({
             </table>
           </div>
         )}
+        {selectedWh && <ListPagination path="/pos/stok" query={{ wh: selectedWh.id }} total={stockCount} pageInfo={pageInfo} />}
       </div>
       )}
 

@@ -1,3 +1,5 @@
+import { readCompleteList } from "@/lib/checked-list";
+import { ListLoadFailure } from "@/components/ListPagination";
 import { createClient } from "@/lib/supabase/server";
 import { PelangganClient, type CustomerRow } from "./PelangganClient";
 
@@ -8,17 +10,22 @@ export default async function PelangganPage({ searchParams }: {
   // menyorot pelanggannya, bukan daftar penuh yang harus ditelusuri lagi.
   const { cari, success, error: pesanError } = await searchParams;
   const supabase = await createClient();
-  const { data: custData } = await supabase
-    .from("customers")
-    .select(
-      "id, name, phone, email, dob, address, tier, kategori, category_id, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
-        "review_status_id, review_catatan, review_updated_at, " +
-        "customer_categories(nama, diskon_persen), customer_review_statuses(nama, warna, nada), " +
-        "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)"
-    )
-    .order("total_spending", { ascending: false });
-
-  const customers = (custData ?? []) as unknown as CustomerRow[];
+  let customers: CustomerRow[];
+  try {
+    customers = await readCompleteList<CustomerRow>(async (from, to) => {
+      const result = await supabase
+        .from("customers")
+        .select(
+          "id, name, phone, email, dob, address, tier, kategori, category_id, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
+            "review_status_id, review_catatan, review_updated_at, " +
+            "customer_categories(nama, diskon_persen), customer_review_statuses(nama, warna, nada), " +
+            "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)",
+          { count: "exact" },
+        )
+        .order("total_spending", { ascending: false }).order("id").range(from, to);
+      return { ...result, data: result.data as unknown as CustomerRow[] | null };
+    }, "Pelanggan");
+  } catch (error) { return <ListLoadFailure error={error} label="Pelanggan" />; }
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   const isAdmin = !!me && ["OWNER", "ADMIN"].includes(me.role);
