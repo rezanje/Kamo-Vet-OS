@@ -115,7 +115,7 @@ claims, omitted and foreign rows, duplicate rows, over-receipts, changed unit
 conversions, closed periods, distinct receipt journal identities, partial invoice
 FIFO splits, forced stock/journal failures and complete rollback, identical and
 conflicting retries, nonfinite amounts, current role/module/branch rejection, and
-disabled users in every supported role, and private ledger/helper permissions. The runner additionally uses independent
+disabled users in every supported role, assets moved outside the current branch scope, and private ledger/helper permissions. The runner additionally uses independent
 connections for identical receipt/invoice/bank-asset retries, competing remaining
 receipt/invoice allocations, and recovery blocked behind newly revoked role or
 branch access. No historical receipts are repaired or repriced by this migration.

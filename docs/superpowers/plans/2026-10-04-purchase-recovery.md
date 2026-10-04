@@ -55,3 +55,5 @@
 - Parent review required an explicit `profiles.is_active IS TRUE` authorization check; disabled users with valid JWTs must be rejected for both purchase posting and result recovery.
 
 - Production `npm run build` passed using fictional localhost Supabase settings; the existing Supabase middleware Edge Runtime warning and webpack cache-size warnings remain. Disabled-user SQL regression was observed failing before the active-profile guard and passing afterward.
+
+- Follow-up review: recheck the current fixed-asset branch on both identical RPC retries and read-only result recovery. The SQL regression first reproduced recovery after an asset moved outside the actor's assigned branch, then passed with the current-row authorization check.

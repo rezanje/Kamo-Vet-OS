@@ -60,6 +60,11 @@ begin
   perform public.purchase_assert_access(p_kind,v_existing.branch_id);
   if v_existing.payload is distinct from p_payload then
    raise exception 'Kunci transaksi sudah dipakai dengan rincian berbeda.';end if;
+  if p_kind='asset'then
+   select branch_id into v_branch from public.fixed_assets where id=(v_existing.result->>'asset_id')::uuid for update;
+   if not found then raise exception 'Aset hasil transaksi tidak ditemukan.';end if;
+   perform public.purchase_assert_access(p_kind,v_branch);
+  end if;
   return v_existing.result;
  end if;
  return null;
@@ -246,6 +251,10 @@ begin
  if p_kind in ('receipt','invoice')then
   select branch_id into v_branch from public.purchase_orders where id=(v_operation.payload->>'po_id')::uuid for update;
   if not found then raise exception 'PO tidak ditemukan.';end if;
+  perform public.purchase_assert_access(p_kind,v_branch);
+ elsif p_kind='asset'then
+  select branch_id into v_branch from public.fixed_assets where id=(v_operation.result->>'asset_id')::uuid for update;
+  if not found then raise exception 'Aset hasil transaksi tidak ditemukan.';end if;
   perform public.purchase_assert_access(p_kind,v_branch);
  end if;
  return v_operation.result;

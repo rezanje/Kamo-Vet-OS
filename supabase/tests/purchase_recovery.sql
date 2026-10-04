@@ -140,6 +140,20 @@ do $$declare failed boolean:=false;begin
  begin perform recover_purchase_operation('invoice','invoice-one',jsonb_build_object('po_id','dc400000-0000-4000-8000-000000000001'));exception when insufficient_privilege then failed:=true;end;
  if not failed then raise exception 'current module override was ignored';end if;
 end$$;
+-- Moving an asset changes the authorization scope for its original result.
+reset role;
+insert into branches(id,code,name,type)values('dc100000-0000-4000-8000-000000000002','PURCH-OTHER','Fiction other branch','KLINIK');
+update fixed_assets set branch_id='dc100000-0000-4000-8000-000000000002';
+delete from role_modules where role='DOCTOR';
+set local role authenticated;
+do $$declare failed boolean:=false;begin
+ begin perform get_purchase_operation_result('asset','asset-one');exception when insufficient_privilege then failed:=true;end;
+ if not failed then raise exception 'asset result recovery ignored its current branch';end if;
+ failed:=false;begin perform create_fixed_asset_purchase('Fiction asset',(select id from asset_categories where nama='Peralatan'),current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','1101','asset-one');exception when insufficient_privilege then failed:=true;end;
+ if not failed then raise exception 'asset retry ignored its current branch';end if;
+end$$;
+reset role;
+update fixed_assets set branch_id='dc100000-0000-4000-8000-000000000001';
 -- Disabled actors with a still-valid JWT cannot use any of the purchase gates.
 reset role;
 do $$declare actor_role text;failed boolean;message text;before_assets integer;before_receipts integer;begin
