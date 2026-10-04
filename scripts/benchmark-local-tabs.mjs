@@ -40,7 +40,7 @@ const report = {
   runtime: { node: process.version, chromium: browser.version(), cpu: os.cpus()[0]?.model, logicalCpus: os.cpus().length, totalMemoryBytes: os.totalmem() },
   fixture: { period: manifest.period, counts: manifest.benchmarkCounts ?? "Not supplied; results measure the existing fictional fixture only." },
   readiness: "HTTP success, requested route retained, .ct table body visible; warm local navigation; external CDN requests blocked",
-  cold: [], samples: [], summaries: [], failures,
+  completed: false, cold: [], samples: [], summaries: [], failures,
 };
 try {
   const login = await context.newPage();
@@ -62,6 +62,7 @@ try {
   for (const path of paths) {
     const page = await context.newPage();
     report.cold.push({ path, ...(await navigate(page, path)) });
+    console.log(JSON.stringify({ stage: "cold", ...report.cold.at(-1) }));
     await page.close();
   }
   for (const path of paths) {
@@ -71,6 +72,8 @@ try {
         const start = performance.now();
         const results = await Promise.all(pages.map(page => navigate(page, path)));
         report.samples.push({ path, tabs, round, allReadyMs: Math.round(performance.now() - start), results });
+        await fs.writeFile(output, JSON.stringify(report, null, 2));
+        console.log(JSON.stringify({ stage: "sample", path, tabs, round, allReadyMs: report.samples.at(-1).allReadyMs }));
         await Promise.all(pages.map(page => page.close()));
       }
       const rows = report.samples.filter(sample => sample.path === path && sample.tabs === tabs);
@@ -78,10 +81,14 @@ try {
       report.summaries.push({ path, tabs, navigations: times.length, medianMs: percentile(times, 0.5), p95Ms: percentile(times, 0.95), medianAllReadyMs: percentile(rows.map(row => row.allReadyMs), 0.5), renderedRows: [...new Set(rows.flatMap(row => row.results.map(result => result.renderedRows)))] });
     }
   }
-  await fs.writeFile(output, JSON.stringify(report, null, 2));
+  report.completed = true;
   console.log(JSON.stringify({ output, summaries: report.summaries, failures: failures.length }));
   if (failures.length) process.exitCode = 1;
+} catch (error) {
+  failures.push({ type: "benchmark", message: error.message });
+  throw error;
 } finally {
+  await fs.writeFile(output, JSON.stringify(report, null, 2));
   await context.close();
   await browser.close();
 }
