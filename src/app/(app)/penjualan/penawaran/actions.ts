@@ -67,38 +67,7 @@ export async function jadikanPesanan(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Penawaran tidak valid");
 
-  const { data: q } = await supabase
-    .from("sales_quotations")
-    .select("id, no_penawaran, customer_id, branch_id, total, catatan, sales_quotation_items(item_id, nama, satuan, faktor, qty, harga)")
-    .eq("id", id).maybeSingle();
-  if (!q) gagal("Penawaran tidak ditemukan");
-
-  const { data: sudah } = await supabase
-    .from("sales_orders").select("id, no_pesanan").eq("quotation_id", id).maybeSingle();
-  if (sudah) gagal(`Penawaran ini sudah jadi pesanan ${sudah.no_pesanan}`);
-
-  const baris = (q!.sales_quotation_items ?? []) as
-    { item_id: string | null; nama: string; satuan: string | null; faktor: number | null; qty: number; harga: number }[];
-  if (baris.length === 0) gagal("Penawaran ini tidak punya baris");
-  const { error: satuanError } = await validasiSatuanJual(supabase, baris.map((row) => ({ ...row, faktor: row.faktor ?? 1 })));
-  if (satuanError) gagal(satuanError);
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const no = await nextNoDokumen(supabase, "SO");
-
-  const { data: so, error } = await supabase.from("sales_orders").insert({
-    no_pesanan: no, quotation_id: id, customer_id: q!.customer_id, branch_id: q!.branch_id,
-    total: q!.total, catatan: q!.catatan, created_by: user?.id ?? null,
-  }).select("id").single();
-  if (error || !so) gagal(error?.message ?? "Gagal membuat pesanan");
-
-  await supabase.from("sales_order_items").insert(
-    baris.map((b) => ({
-      order_id: so!.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.qty, harga: b.harga,
-    })),
-  );
-  await supabase.from("sales_quotations").update({ status: "diterima" }).eq("id", id);
-
-  redirect(`/penjualan/pesanan/${so!.id}?success=${encodeURIComponent(`Pesanan ${no} dibuat dari ${q!.no_penawaran}.`)}`);
+  const { data, error } = await supabase.rpc("sales_convert_quotation", { p_quotation_id: id });
+  if (error || !data?.order_id) gagal(error?.message ?? "Gagal membuat pesanan");
+  redirect(`/penjualan/pesanan/${data.order_id}?success=${encodeURIComponent(`Pesanan ${data.order_no} dibuat dari penawaran.`)}`);
 }

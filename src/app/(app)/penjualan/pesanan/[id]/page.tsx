@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -87,7 +88,7 @@ export default async function DetailPesananPage({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 18px", fontSize: 11, marginBottom: 12 }}>
           <KV k="Pelanggan" v={one(so.customers as Rel<{ name: string }>)?.name ?? "—"} />
           <KV k="Cabang" v={one(so.branches as Rel<{ name: string }>)?.name ?? "—"} />
-          <KV k="Gudang pengirim" v={one(so.warehouses as Rel<{ name: string }>)?.name ?? "tanpa potong stok"} />
+          <KV k="Gudang pengirim" v={one(so.warehouses as Rel<{ name: string }>)?.name ?? "belum dipilih"} />
           <KV k="Rencana kirim" v={tgl(so.rencana_kirim)} />
           <KV k="Nilai pesanan" v={rp(Number(so.total))} />
           <KV k="Catatan" v={so.catatan ?? "—"} />
@@ -127,6 +128,7 @@ export default async function DetailPesananPage({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {bisaKirim && (
               <form action={buatPengiriman}>
+                <input type="hidden" name="request_key" value={randomUUID()} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Kirim barang</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>
@@ -149,7 +151,7 @@ export default async function DetailPesananPage({
                   <div>
                     <label className="flab">Gudang pengirim</label>
                     <select className="fi" name="warehouse_id" defaultValue={so.warehouse_id ?? ""}>
-                      <option value="">— tanpa potong stok —</option>
+                      <option value="">— pilih gudang untuk barang —</option>
                       {gudang.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
                   </div>
@@ -162,6 +164,7 @@ export default async function DetailPesananPage({
 
             {bisaFaktur && (
               <form action={buatFakturJual}>
+                <input type="hidden" name="request_key" value={randomUUID()} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Terbitkan faktur</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>
