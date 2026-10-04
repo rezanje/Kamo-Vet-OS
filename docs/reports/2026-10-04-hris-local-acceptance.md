@@ -53,6 +53,23 @@ node scripts/test-hris-local-browser.mjs --resume-fixture --followups --keep-app
 
 `--reset` discards only the three explicitly named LOCAL containers and their fictional data; never run it while the parent's shared benchmark uses this fixture. The applier resumes by full source filename. `--resume-fixture` is only a development/followup option for this exact known fixture, not a substitute for the fresh main acceptance run.
 
+## Independent launcher and interrupted benchmark
+
+After successful HRIS acceptance, the parent's repeated dev-server tab benchmark stopped with `ERR_CONNECTION_RESET`. The saved Next log ends with successful request timings and no fatal heap/crash message. Linux `/proc/92603/stat` retained raw exit status9 (SIGKILL); the cgroup reported zero OOM kills. The host loopback gateway also disappeared while Docker GoTrue/PostgREST/PostgreSQL stayed alive, and the original acceptance tool session was no longer registered. This establishes external termination, but the available evidence does not identify the sender. The benchmark script only closes its browsers and does not kill Next. Its partial dev timings are fixture observations, not completed production performance evidence.
+
+`scripts/hris-local-launcher.py` independently supervises the gateway and app, with optional detached sessions and atomic runtime state files recording observed child exits/signals. Detached sessions remove the acceptance script lifetime dependency; environment-wide SIGKILL can still terminate them, and killing the supervisor itself prevents it recording the child's final status. Readiness must be checked separately. No3108 restart was performed during diagnosis.
+
+Production browser bundles embed public Supabase settings at build time. The launcher therefore overrides inherited URL/anon/service keys with the generated fictional config during both build and startup, and requires a matching local build ID/config stamp before `start`. It never prints key values. Use the same app-root for build/start; no concurrent dev/build against that app-root's `.next` directory:
+
+```sh
+python3 scripts/hris-local-launcher.py --mode gateway --detach
+python3 scripts/hris-local-launcher.py --mode build --app-root /workspace/vetos-completion
+python3 scripts/hris-local-launcher.py --mode start --app-root /workspace/vetos-completion --port 3110 --detach
+python3 scripts/test-hris-local-launcher.py
+```
+
+Foreground mode omits `--detach`; dev mode uses `--mode dev`. Logs/state live in `/workspace/hris-local-runtime/<mode>-<port>.log` and `.state.json`; build stamps live inside ignored `.next`. Seven targeted regressions pass: remote API rejection, inherited credential overrides, missing-key rejection, unverified/stale build rejection, changed-key rebuild requirement, SIGKILL exit recording and detached startup with credential-free output. These tests use fictional keys and a fake executable, and do not restart or mutate the shared app/database.
+
 ## Rulings and limits
 
 - Ruling: user's existing-financial-rules clarification removes the need to invent or await new money policy for local completion — preserve current semantics/defaults — cost: new eligibility/catalog/split/doctor/monthly-kasbon policy is still a separate future feature.

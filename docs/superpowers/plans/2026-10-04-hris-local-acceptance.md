@@ -34,3 +34,10 @@ Files: create `scripts/test-hris-local-browser.mjs`, fictional fixture SQL and `
 - [x] Run full app tests, typecheck, lint and diff check; record exact limits and commit durable checks/results. Ruling: parent's final combined branch owns fresh build while the shared dev server stays alive for its benchmark; no standalone fresh build claim.
 
 Ruling: the user supplied implementation authority and financial-policy clarification through the parent; proceed inline without another design confirmation. Cost: local evidence is not stakeholder signoff or remote/production compatibility.
+
+### Task3 — Diagnose interrupted benchmark and make launcher independent
+
+Parent follow-up authorized diagnosis and a reproducible standalone fictional launcher; do not restart3108.
+- [x] Inspect saved logs, zombie exit status and cgroup events; report SIGKILL with unknown sender, no V8/OOM evidence.
+- [x] Add local-only independent supervised/detached gateway/build/dev/start launcher, atomic exit state and local production build stamp.
+- [x] Run seven isolated credential-free regressions, Python syntax and whitespace checks; no shared app/database restart or mutation.
