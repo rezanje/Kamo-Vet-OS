@@ -143,3 +143,21 @@ the actor, module, current order branch, and recorded posting branch. It locks
 the order before the key, matching the posting lock order. Component tests render
 the actual order page and cover a committed-response-loss/remount/recovery flow,
 independent invoice keys, exhausted forms, and confirmation-only rotation.
+
+
+Actual local GoTrue/PostgREST/Chromium coverage is available with:
+
+```sh
+node scripts/test-sales-local-browser.mjs
+```
+
+This harness refuses any API except `http://127.0.0.1:55421`, requires the local
+fake-auth manifest and database `supabase_db_vetos_hris_acceptance`, and uses app
+port 3111. Run it after the exact committed migration chain is applied. It seeds
+its own fictional user/branch/order and 2035-dated inventory/documents. It rejects
+a disabled OWNER's valid JWT, commits each actual shipment/invoice form while
+aborting its server-action response, reloads, checks the persisted original key,
+and recovers read-only. It verifies one shipment, one invoice, one allocation,
+two journals and stock38, then stores screenshots and fixture IDs under `/tmp`.
+It starts/stops its own local Next process when necessary and leaves fictional
+financial audit fixtures in the shared test database for inspection.
