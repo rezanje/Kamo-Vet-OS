@@ -6,7 +6,6 @@ import {
   resolveSalesTarget,
   salesMetrics,
   stockCoverage,
-  stockValue,
   supplierPerformance,
   type BranchPerformance,
   type Channel,
@@ -47,7 +46,6 @@ export type CustomerBlock = {
 };
 
 export type StockBlock = {
-  stockValue: number;
   coverageDays: number | null;
   lowStock: number;
   fastMoving: MovementRow[];
@@ -386,15 +384,13 @@ export async function collectStockBlock(scope: DashboardScope, filter: Dashboard
   queryError(warehouseResult);
   const warehouses = warehouseResult.data ?? [];
   const warehouseIds = warehouses.map((row: any) => row.id);
-  const [stockResult, layerResult, moveResult, itemResult] = await Promise.all([
+  const [stockResult, moveResult, itemResult] = await Promise.all([
     read(supabase.from("stock").select("warehouse_id,item_id,qty").in("warehouse_id", warehouseIds).lte("updated_at", end)),
-    read(supabase.from("stock_layers").select("warehouse_id,item_id,qty_left,unit_cost").in("warehouse_id", warehouseIds).gt("qty_left", 0).lte("tanggal", filter.to)),
     read(supabase.from("stock_moves").select("warehouse_id,item_id,qty,tanggal").in("warehouse_id", warehouseIds).gte("tanggal", start.slice(0, 10)).lte("tanggal", filter.to)),
     read(supabase.from("items").select("id,min_stock").eq("is_active", true)),
   ]);
-  for (const result of [stockResult, layerResult, moveResult, itemResult]) queryError(result);
+  for (const result of [stockResult, moveResult, itemResult]) queryError(result);
   const stockRows = stockResult.data ?? [];
-  const layers = layerResult.data ?? [];
   const moves = moveResult.data ?? [];
   const usage = new Map<string, number>();
   for (const row of moves) if (Number(row.qty) < 0) usage.set(row.item_id, (usage.get(row.item_id) ?? 0) + Math.abs(Number(row.qty)));
@@ -406,9 +402,6 @@ export async function collectStockBlock(scope: DashboardScope, filter: Dashboard
   const totalUsage = [...usage.values()].reduce((total, value) => total + value, 0);
   const minimumByItem = new Map<string, number>((itemResult.data ?? []).map((row: any) => [String(row.id), Number(row.min_stock) || 0]));
   return {
-    stockValue: stockValue(layers.map((layer: { qty_left: number; unit_cost: number }) => ({
-      qtyLeft: Number(layer.qty_left), unitCost: Number(layer.unit_cost),
-    }))),
     coverageDays: stockCoverage(totalAvailable, totalUsage),
     lowStock: stockRows.filter((row: any) => (Number(row.qty) || 0) < (minimumByItem.get(String(row.item_id)) ?? 0)).length,
     fastMoving: rankMovement(movementRows, filter.to, 90).fast,

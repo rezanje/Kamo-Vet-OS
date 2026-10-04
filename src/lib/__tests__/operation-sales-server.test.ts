@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectDashboard, collectStockBlock, resolveDashboardScope } from "../operation-sales-server";
+import { collectDashboard, resolveDashboardScope } from "../operation-sales-server";
 
 type QueryRecord = { table: string; calls: { method: string; args: unknown[] }[] };
 
@@ -49,15 +49,18 @@ function fakeSupabase(options: {
 }
 
 describe("operation sales server collector", () => {
-  it("menghitung nilai stok dari kontrak snake-case lapisan Supabase", async () => {
-    const supabase = fakeSupabase({ layers: [
+  it.each(["ADMIN", "OWNER", "FINANCE"])("tidak membaca atau menyerialisasi biaya FIFO pada dashboard %s", async role => {
+    const supabase = fakeSupabase({ role, layers: [
       { warehouse_id: "w1", item_id: "i1", qty_left: 2.5, unit_cost: 120 },
       { warehouse_id: "w1", item_id: "i1", qty_left: 3, unit_cost: 200 },
     ] });
-    const result = await collectStockBlock({ branchIds: ["b1"], branches: [] }, {
+    const result = await collectDashboard(supabase, {
       from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all",
-    }, supabase);
-    expect(result.stockValue).toBe(900);
+    });
+    expect(result.stock.status).toBe("ready");
+    expect(supabase.records.some(record => record.table === "stock_layers")).toBe(false);
+    expect(JSON.stringify(result.stock)).not.toMatch(/stockValue|unit_cost|unitCost/);
+    if (result.stock.status === "ready") expect(result.stock.data).toHaveProperty("coverageDays");
   });
   it("menolak cabang asing sebelum query blok dashboard berjalan", async () => {
     const supabase = fakeSupabase({ role: "STAFF", assignments: ["b1"] });
