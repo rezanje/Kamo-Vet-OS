@@ -9,5 +9,9 @@ export async function GET(req: Request) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY belum diset" }, { status: 501 });
   const supabase = createServiceClient(url, serviceKey, { auth: { persistSession: false } });
-  return NextResponse.json({ ok: true, hasil: await jalankanWaEngine(supabase) });
+  try {
+    return NextResponse.json({ ok: true, hasil: await jalankanWaEngine(supabase) });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Pemeriksaan WA gagal. Periksa sumber data dan riwayat pengiriman sebelum mencoba lagi." }, { status: 503 });
+  }
 }
