@@ -23,10 +23,11 @@ const channelLabel: Record<string, string> = {
   klinik: "Klinik",
 };
 
-export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics }: {
+export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics, canViewInventoryValue }: {
   data: DashboardData;
   alerts: DashboardBlock<AlertEvaluation>;
   showAlertDiagnostics: boolean;
+  canViewInventoryValue: boolean;
 }) {
   const branchName = data.scope.branches.length === 1 ? data.scope.branches[0].name : undefined;
   const detailFilter = { from: data.filter.from, to: data.filter.to, branchName };
@@ -114,7 +115,7 @@ export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics }: 
         {(stock) => (
           <Section title="04 · STOCK & OPERATION">
             <KpiGrid>
-              <KpiCard label="Nilai stok" value={rupiah(stock.stockValue)} href="/pos/stok" />
+              {canViewInventoryValue && <KpiCard label="Nilai persediaan" value="Lihat laporan FIFO" href="/laporan/nilai-persediaan" note="Nilai saat ini; tidak mengikuti periode dashboard." />}
               <KpiCard label="Coverage" value={stock.coverageDays === null ? "Data belum tersedia" : `${angka(stock.coverageDays)} hari`} />
               <KpiCard label="Stok minimum" value={`${stock.lowStock} item`} href="/pos/stok-minimum" tone={stock.lowStock ? "#b91c1c" : undefined} />
               <KpiCard label="Fast-moving" value={`${stock.fastMoving.length} item`} />

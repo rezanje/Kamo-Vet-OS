@@ -1,0 +1,756 @@
+{
+  "timestamp": "2026-10-04T17:48:11.842Z",
+  "localOnly": true,
+  "app": "http://127.0.0.1:3130",
+  "runtime": {
+    "node": "v24.19.0",
+    "chromium": "151.0.7922.173",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "logicalCpus": 5,
+    "totalMemoryBytes": 18882699264
+  },
+  "fixture": {
+    "period": "2026-10",
+    "counts": {
+      "pets": 1200,
+      "items": 1200,
+      "visits": 350,
+      "customers": 1200,
+      "stockRows": 1200,
+      "medicalRecords": 350
+    }
+  },
+  "readiness": "HTTP success, requested route retained, .ct table body visible; warm local navigation; external CDN requests blocked",
+  "completed": true,
+  "cold": [
+    {
+      "path": "/crm/pelanggan",
+      "ms": 1155,
+      "renderedRows": 1000,
+      "status": 200
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "ms": 785,
+      "renderedRows": 300,
+      "status": 200
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "ms": 742,
+      "renderedRows": 1000,
+      "status": 200
+    }
+  ],
+  "samples": [
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 1,
+      "round": 1,
+      "allReadyMs": 1172,
+      "results": [
+        {
+          "ms": 1065,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 1,
+      "round": 2,
+      "allReadyMs": 1112,
+      "results": [
+        {
+          "ms": 1061,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 1,
+      "round": 3,
+      "allReadyMs": 1111,
+      "results": [
+        {
+          "ms": 986,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 10,
+      "round": 1,
+      "allReadyMs": 6401,
+      "results": [
+        {
+          "ms": 3350,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3536,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3447,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3431,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3090,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3270,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4470,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 5987,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6304,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6079,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 10,
+      "round": 2,
+      "allReadyMs": 6491,
+      "results": [
+        {
+          "ms": 3045,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2923,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3103,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3107,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3121,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3184,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 5943,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6242,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6018,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6261,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 10,
+      "round": 3,
+      "allReadyMs": 6537,
+      "results": [
+        {
+          "ms": 3611,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3494,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3563,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3394,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3539,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3784,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6385,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 5487,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6390,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 6087,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 1,
+      "round": 1,
+      "allReadyMs": 577,
+      "results": [
+        {
+          "ms": 559,
+          "renderedRows": 300,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 1,
+      "round": 2,
+      "allReadyMs": 773,
+      "results": [
+        {
+          "ms": 761,
+          "renderedRows": 300,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 1,
+      "round": 3,
+      "allReadyMs": 885,
+      "results": [
+        {
+          "ms": 872,
+          "renderedRows": 300,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 10,
+      "round": 1,
+      "allReadyMs": 4266,
+      "results": [
+        {
+          "ms": 2337,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2215,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2682,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2048,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2689,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2661,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 4065,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3806,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3841,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 4096,
+          "renderedRows": 300,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 10,
+      "round": 2,
+      "allReadyMs": 4039,
+      "results": [
+        {
+          "ms": 2413,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2183,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2346,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2286,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 1944,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2201,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3832,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3639,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3778,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3897,
+          "renderedRows": 300,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 10,
+      "round": 3,
+      "allReadyMs": 4461,
+      "results": [
+        {
+          "ms": 2165,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2040,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 1895,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2092,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 2145,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 1975,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 4105,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3478,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 4437,
+          "renderedRows": 300,
+          "status": 200
+        },
+        {
+          "ms": 3789,
+          "renderedRows": 300,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 1,
+      "round": 1,
+      "allReadyMs": 1033,
+      "results": [
+        {
+          "ms": 1012,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 1,
+      "round": 2,
+      "allReadyMs": 971,
+      "results": [
+        {
+          "ms": 936,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 1,
+      "round": 3,
+      "allReadyMs": 1013,
+      "results": [
+        {
+          "ms": 990,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 10,
+      "round": 1,
+      "allReadyMs": 5080,
+      "results": [
+        {
+          "ms": 2573,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2284,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2258,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2375,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2521,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2292,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4976,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4975,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4616,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 5028,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 10,
+      "round": 2,
+      "allReadyMs": 4496,
+      "results": [
+        {
+          "ms": 2361,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2403,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2161,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2237,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2273,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2435,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4275,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4450,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4263,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 4188,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 10,
+      "round": 3,
+      "allReadyMs": 4046,
+      "results": [
+        {
+          "ms": 1915,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 1997,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2225,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2034,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2232,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 2144,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3902,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3960,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3991,
+          "renderedRows": 1000,
+          "status": 200
+        },
+        {
+          "ms": 3741,
+          "renderedRows": 1000,
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 1,
+      "navigations": 3,
+      "medianMs": 1061,
+      "p95Ms": 1065,
+      "medianAllReadyMs": 1112,
+      "renderedRows": [
+        1000
+      ]
+    },
+    {
+      "path": "/crm/pelanggan",
+      "tabs": 10,
+      "navigations": 30,
+      "medianMs": 3539,
+      "p95Ms": 6385,
+      "medianAllReadyMs": 6491,
+      "renderedRows": [
+        1000
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 1,
+      "navigations": 3,
+      "medianMs": 761,
+      "p95Ms": 872,
+      "medianAllReadyMs": 773,
+      "renderedRows": [
+        300
+      ]
+    },
+    {
+      "path": "/klinik/rekam-medis",
+      "tabs": 10,
+      "navigations": 30,
+      "medianMs": 2413,
+      "p95Ms": 4105,
+      "medianAllReadyMs": 4266,
+      "renderedRows": [
+        300
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 1,
+      "navigations": 3,
+      "medianMs": 990,
+      "p95Ms": 1012,
+      "medianAllReadyMs": 1013,
+      "renderedRows": [
+        1000
+      ]
+    },
+    {
+      "path": "/pos/stok?wh=b1000000-0000-4000-8000-000000000002",
+      "tabs": 10,
+      "navigations": 30,
+      "medianMs": 2403,
+      "p95Ms": 4976,
+      "medianAllReadyMs": 4496,
+      "renderedRows": [
+        1000
+      ]
+    }
+  ],
+  "failures": [],
+  "appSourceCommit": "dc729a39913fd6c506187e5339a8e255ef1f4bad"
+}

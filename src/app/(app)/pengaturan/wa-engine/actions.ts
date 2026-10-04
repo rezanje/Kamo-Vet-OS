@@ -26,7 +26,12 @@ export async function simpanWaSettings(formData: FormData) {
 
 export async function jalankanWaManual() {
   const supabase = await assertRole(BACK, "pengiriman WA", ["OWNER", "ADMIN"]);
-  const hasil = await jalankanWaEngine(supabase);
+  let hasil;
+  try {
+    hasil = await jalankanWaEngine(supabase);
+  } catch (error) {
+    redirect(`${BACK}?error=${encodeURIComponent(error instanceof Error ? error.message : "Pemeriksaan WA belum bisa diselesaikan. Periksa riwayat sebelum mencoba lagi.")}`);
+  }
   revalidatePath(BACK);
   redirect(`${BACK}?success=run&sent=${hasil.sent}&failed=${hasil.failed}&created=${hasil.created}`);
 }
