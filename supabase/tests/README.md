@@ -22,9 +22,21 @@ trusted database service_role/direct postgres maintenance. Real independent
 sessions prove committed disable/role revocation is observed after lock waits,
 and that granted authority is locked until the protected update commits.
 `--baseline` omits the new migration and must fail on disabled self-reactivation.
-Direct local PostgREST PATCH with valid JWT and independent review are separate
-release checks. These commands never read production credentials or write to a
-remote database.
+Native GoTrue/PostgREST verification uses an authorized generated local manifest:
+
+```sh
+python3 scripts/test-profile-account-admin-api.py --manifest /path/to/local-auth.json
+```
+
+The manifest contains `API_URL`, `ANON_KEY`, and `SERVICE_ROLE_KEY` for the
+fictional runtime. The harness only permits `http://127.0.0.1:55421`; never supply
+production credentials. It creates six unique fictional accounts, obtains real
+password-login JWTs, verifies profile PATCH denial/allowance and unchanged denied
+rows, then deletes those accounts and confirms profile cleanup. It checks both
+user-controlled role metadata on valid JWTs and a rejected signature after
+tampering with the top-level role. Keys, passwords and tokens are never printed.
+Independent review and production release remain separate checks. These commands
+never write to a remote database.
 
 Run these checks only against the local Supabase database. Each SQL test starts
 a transaction and rolls it back, including fixtures and test helper functions.

@@ -13,11 +13,19 @@ Executed on 2026-10-04: baseline PostgreSQL test failed because disabled FINANCE
 self-reactivation succeeded. With the migration, rollback SQL cases and all three
 two-session authorization/revocation checks passed on PostgreSQL 16. The full
 repository suite passed (131 files / 1203 tests), TypeScript passed, and lint had
-zero errors with 12 existing unrelated image/upload warnings. Independent review
-and local PostgREST verification remain separate handoff checks.
+zero errors with 12 existing unrelated image/upload warnings. These checks cover
+the repository and local PostgreSQL; native API results are recorded below.
 
 Compatibility follow-up: added the existing active DOCTOR self-role error
 contract as a failing real SQL regression. Renamed the new trigger to execute
 after the existing self-role guard. Active/disabled combined self-role edits
 still reject with unchanged profiles and P0001/ACCESS_DENIED; activation-only
 disabled edits reject with 42501.
+
+Independent review of final trigger-order commit `dff72eb` found no
+Critical/Important blocker and reran all PostgreSQL groups successfully. After
+the parent coordinated the shared fictional DDL rename, the durable native
+GoTrue/PostgREST harness passed disabled-account, personal/admin edits, claim
+spoofing, trusted service and full fixture-cleanup checks. Evidence is in
+`docs/evidence/2026-10-04-profile-account-security-verification.md`. Production
+schema release remains with the parent; no production change was made.
