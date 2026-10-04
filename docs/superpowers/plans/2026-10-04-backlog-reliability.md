@@ -28,21 +28,21 @@
 
 Files: `src/lib/wa-engine.ts`, `src/lib/__tests__/wa-engine.test.ts`, `src/lib/__tests__/helpers/wa-db.ts`, existing `wa-ownership.test.ts`.
 
-- [ ] Add failing behavior tests for settings/source/count failures, >1,000 activity rows and seven triggers using fictional data.
-- [ ] Run focused Vitest and confirm failures are caused by current incomplete reads.
-- [ ] Implement checked stable pagination; update existing fixture to support actual range/count behavior.
-- [ ] Verify all focused tests and the full application suite.
+- [x] Add failing behavior tests for settings/source/count failures, >1,000 activity rows and seven triggers using fictional data.
+- [x] Run focused Vitest and confirm failures are caused by current incomplete reads.
+- [x] Implement checked stable pagination; update existing fixture to support actual range/count behavior.
+- [x] Verify all focused tests and the full application suite.
 
 ## Task 2: Delivery log and caller failure handling
 
 Files: same engine/tests; `src/app/api/cron/wa-engine/route.ts`, `src/app/(app)/pengaturan/wa-engine/actions.ts`; real caller tests.
 
-- [ ] Add failing cases for nonduplicate insert failures, update failure after provider acceptance, provider rejection, and duplicate execution.
-- [ ] Preserve unique conflicts and current no-resend policy; expose other errors at manual/cron boundaries without private data in public errors.
-- [ ] Verify focused tests, full suite, TypeScript and lint; commit.
+- [x] Add failing cases for nonduplicate insert failures, update failure after provider acceptance, provider rejection, and duplicate execution.
+- [x] Preserve unique conflicts and current no-resend policy; expose other errors at manual/cron boundaries without private data in public errors.
+- [x] Verify focused tests, full suite, TypeScript and lint; commit.
 
 ## Task 3: Local benchmark and release record
 
-- [ ] When the local fictional stack is ready, measure authenticated customer, medical record and stock navigation in one versus ten tabs; save exact fixture/cardinality/context and errors.
-- [ ] Otherwise document the concrete missing prerequisite; do not claim performance fixed.
-- [ ] Run final build and checks, obtain one fresh branch review, fix actionable findings, publish a reviewable PR and record remaining activation/deployment gates.
+- [x] When the local fictional stack is ready, measure authenticated customer, medical record and stock navigation in one versus ten tabs; save exact fixture/cardinality/context and errors.
+- [x] Otherwise document the concrete missing prerequisite; do not claim performance fixed.
+- [x] Run final build and checks, obtain one fresh branch review, fix actionable findings, publish a reviewable PR and record remaining activation/deployment gates.
