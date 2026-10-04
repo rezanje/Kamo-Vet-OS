@@ -55,7 +55,7 @@ beforeEach(() => {
 
 describe("complete operational page sources", () => {
   it.each([
-    ["customers", CustomersPage], ["visits", MedicalPage], ["stock", StockPage],
+    ["customers", CustomersPage], ["visits", MedicalPage], ["stock", StockPage], ["warehouses", StockPage],
   ] as const)("shows an alert instead of empty data when %s source fails", async (table, page) => {
     fixture.failedTable = table;
     const html = renderToStaticMarkup(await page({ searchParams: Promise.resolve({}) }));

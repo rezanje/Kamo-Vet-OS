@@ -28,12 +28,15 @@ export default async function StokPage({
     ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
     : { data: null };
 
-  const { data: warehousesRaw } = await supabase
-    .from("warehouses")
-    .select("id, code, name, type")
-    .eq("is_active", true)
-    .order("name");
-  const warehouses = (warehousesRaw ?? []) as unknown as Warehouse[];
+  let warehouses: Warehouse[];
+  try {
+    warehouses = await readCompleteList<Warehouse>(async (from, to) => {
+      const result = await supabase.from("warehouses")
+        .select("id, code, name, type", { count: "exact" })
+        .eq("is_active", true).order("name").order("id").range(from, to);
+      return { ...result, data: result.data as unknown as Warehouse[] | null };
+    }, "Daftar gudang");
+  } catch (error) { return <ListLoadFailure error={error} label="Daftar gudang" />; }
 
   // "all" = matrix semua gudang (ala laporan Persediaan per Gudang Accurate).
   const matrixMode = wh === "all";

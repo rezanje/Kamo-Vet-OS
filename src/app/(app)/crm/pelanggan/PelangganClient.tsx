@@ -455,7 +455,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <tbody>
                       {sel.pets.map((p, i) => (
                         <tr key={p.id} tabIndex={0} role="link" aria-label={`Buka riwayat medis ${p.name}`} style={{ cursor: "pointer" }} onClick={() => bukaRiwayatMedis(p.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); bukaRiwayatMedis(p.id); } }}>
-                          <td style={{ color: "var(--td)", fontSize: 11 }}>{pageInfo.from + i + 1}</td>
+                          <td style={{ color: "var(--td)", fontSize: 11 }}>{i + 1}</td>
                           <td style={{ fontWeight: 500 }}>{p.name}</td>
                           <td style={{ color: "var(--tm)" }}>{p.species ?? "—"}</td>
                           <td style={{ fontSize: 11, color: "var(--tm)" }}>{p.breed ?? "—"}</td>

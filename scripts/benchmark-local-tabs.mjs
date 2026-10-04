@@ -19,7 +19,8 @@ const output = option("--output", "/tmp/vetos-local-tab-benchmark.json");
 const manifest = JSON.parse(await fs.readFile(option("--fixture", "/workspace/hris-local-runtime/fixture-manifest.json"), "utf8"));
 const email = process.env.VETOS_BENCHMARK_EMAIL ?? "owner@hris-fiction.local";
 const password = process.env.VETOS_BENCHMARK_PASSWORD ?? "FictionLocalOnly123!";
-const paths = ["/crm/pelanggan", "/klinik/rekam-medis", "/pos/stok"];
+const stockPath = manifest.benchmarkWarehouse ? `/pos/stok?wh=${encodeURIComponent(manifest.benchmarkWarehouse)}` : "/pos/stok";
+const paths = ["/crm/pelanggan", "/klinik/rekam-medis", stockPath];
 const percentile = (values, p) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * p) - 1];
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? "/usr/bin/chromium", headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
 const context = await browser.newContext({ baseURL: app.origin, viewport: { width: 1365, height: 900 }, locale: "id-ID", timezoneId: "Asia/Jakarta" });
@@ -54,10 +55,11 @@ try {
     const start = performance.now();
     const response = await page.goto(path, { waitUntil: "domcontentloaded", timeout: 90000 });
     await page.locator(".ct table tbody").first().waitFor({ state: "visible", timeout: 60000 });
-    if (!response?.ok() || new URL(page.url()).pathname !== new URL(path, app).pathname) {
+    const actual = new URL(page.url()), expected = new URL(path, app);
+    if (!response?.ok() || actual.pathname !== expected.pathname || actual.search !== expected.search) {
       throw new Error(`Navigation failed for ${path}: HTTP ${response?.status()}, resulting route ${new URL(page.url()).pathname}`);
     }
-    return { ms: Math.round(performance.now() - start), renderedRows: await page.locator(".ct table tbody tr").count(), status: response.status() };
+    return { ms: Math.round(performance.now() - start), renderedRows: await page.locator(".ct table tbody").first().locator("tr").count(), status: response.status() };
   };
   for (const path of paths) {
     const page = await context.newPage();
