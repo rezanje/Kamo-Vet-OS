@@ -21,6 +21,12 @@ trigger failure; WIB dates; consecutive catch-up and first-run rules; closed
 period and inactive-account rejection; disabled schedules; branch access;
 full-UUID identities and legacy reference reuse; and incomplete, missing or
 ambiguous historical markers. No legacy journal is rewritten automatically.
+The curated harness also applies the existing user-management and module-access
+migrations. Disabled OWNER accounts cannot post, recover progress or retrieve
+historical RPC results. Existing Buku Besar defaults/overrides are enforced,
+service-role cron remains allowed, and real waiting sessions reject profile or
+module revocations committed before the schedule lock is acquired. Historical
+NaN/infinite amounts are rejected instead of advancing progress.
 Apply the migration before the updated app. Deploy both together; do not continue
 using an old application version that posts recurring headers and lines itself.
 An identified historical mismatch requires reviewed accounting correction before

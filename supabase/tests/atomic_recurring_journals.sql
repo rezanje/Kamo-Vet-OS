@@ -239,4 +239,90 @@ set local role service_role;
 select set_config('request.jwt.claim.sub','',true);
 select * from post_recurring_journal_period('f5200000-0000-4000-8000-000000000001',test_recurring_period(-1));
 reset role;
+
+-- A still-valid JWT from a disabled OWNER cannot post, repair progress or read
+-- a historical RPC result, despite the legacy table policies allowing reads.
+insert into auth.users(id)values('f1800000-0000-4000-8000-000000000001');
+update profiles set role='OWNER',is_active=false where id='f1800000-0000-4000-8000-000000000001';
+insert into recurring_journals(id,nama,day_of_month,last_posted,lines)select
+ ('f5800000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'Fiction disabled-owner case '||i,1,
+ case i when 1 then null when 2 then test_recurring_period(-1) else test_recurring_period()end,
+ '[{"code":"FIC-D","debit":20,"credit":0},{"code":"FIC-K","debit":0,"credit":20}]'::jsonb
+from generate_series(1,3)i;
+select test_seed_recurring_history('f5800000-0000-4000-8000-000000000002',test_recurring_period(-1));
+select test_seed_recurring_history('f5800000-0000-4000-8000-000000000002',test_recurring_period());
+select test_seed_recurring_history('f5800000-0000-4000-8000-000000000003',test_recurring_period());
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1800000-0000-4000-8000-000000000001',true);
+do $$ declare before_state jsonb:=test_recurring_state(); i integer; begin
+ for i in 1..3 loop
+  begin
+   perform post_recurring_journal_period(('f5800000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,test_recurring_period());
+   raise exception 'Expected disabled-owner denial for case %',i;
+  exception when insufficient_privilege then null; end;
+  assert before_state=test_recurring_state(),'disabled account must not create a header or advance any progress';
+ end loop;
+end $$;
+reset role;
+-- Mirror the existing buku-besar module defaults and configured role overrides.
+insert into auth.users(id)values
+ ('f1900000-0000-4000-8000-000000000001'),('f1900000-0000-4000-8000-000000000002');
+update profiles set role='FINANCE'where id='f1900000-0000-4000-8000-000000000001';
+insert into recurring_journals(id,nama,day_of_month,lines)values
+ ('f5900000-0000-4000-8000-000000000001','Fiction finance default',1,'[{"code":"FIC-D","debit":20,"credit":0},{"code":"FIC-K","debit":0,"credit":20}]'),
+ ('f5900000-0000-4000-8000-000000000002','Fiction staff module',1,'[{"code":"FIC-D","debit":20,"credit":0},{"code":"FIC-K","debit":0,"credit":20}]');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1900000-0000-4000-8000-000000000001',true);
+select * from post_recurring_journal_period('f5900000-0000-4000-8000-000000000001',test_recurring_period());
+select set_config('request.jwt.claim.sub','f1900000-0000-4000-8000-000000000002',true);
+do $$ declare before_state jsonb:=test_recurring_state(); begin
+ begin
+  perform post_recurring_journal_period('f5900000-0000-4000-8000-000000000002',test_recurring_period());
+  raise exception 'Expected STAFF default module denial';
+ exception when insufficient_privilege then null; end;
+ assert before_state=test_recurring_state(),'STAFF without buku-besar cannot post';
+end $$;
+reset role;
+insert into role_modules(role,module_id)values('STAFF','buku-besar');
+set local role authenticated;
+select * from post_recurring_journal_period('f5900000-0000-4000-8000-000000000002',test_recurring_period());
+reset role;
+insert into role_modules(role,module_id)values('FINANCE','laporan');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1900000-0000-4000-8000-000000000001',true);
+do $$ declare before_state jsonb:=test_recurring_state(); i integer; begin
+ for i in 1..3 loop
+  begin
+   perform post_recurring_journal_period(('f5800000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,test_recurring_period());
+   raise exception 'Expected configured module denial for case %',i;
+  exception when insufficient_privilege then null; end;
+  assert before_state=test_recurring_state(),'configured module restriction must block new/recovery/replay calls';
+ end loop;
+end $$;
+reset role;
+insert into role_modules(role,module_id)values('OWNER','klinik');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select * from post_recurring_journal_period('f5800000-0000-4000-8000-000000000001',test_recurring_period());
+reset role;
+
+-- Nonfinite historic amounts cannot be acknowledged as complete accounting.
+insert into recurring_journals(id,nama,day_of_month,lines)values
+ ('f6000000-0000-4000-8000-000000000001','Fiction NaN history',1,
+ '[{"code":"FIC-D","debit":20,"credit":0},{"code":"FIC-K","debit":0,"credit":20}]');
+insert into journal_entries(id,no_jurnal,tanggal,source,source_ref)values
+ ('f6100000-0000-4000-8000-000000000001','JRN-FIC-NAN',(test_recurring_period()||'-01')::date,
+ 'recurring','f6000000-0000-4000-8000-000000000001:'||test_recurring_period());
+insert into journal_lines(entry_id,account_id,debit,credit)select 'f6100000-0000-4000-8000-000000000001',a.id,
+ case a.code when 'FIC-D' then 'NaN'::numeric else 0 end,case a.code when 'FIC-K' then 'NaN'::numeric else 0 end
+ from coa_accounts a where a.code in('FIC-D','FIC-K');
+set local role authenticated;
+do $$ declare before_state jsonb:=test_recurring_state(); begin
+ begin
+  perform post_recurring_journal_period('f6000000-0000-4000-8000-000000000001',test_recurring_period());
+  raise exception 'Expected nonfinite historical rejection';
+ exception when others then if sqlerrm not like 'RECURRING_HISTORY:%'then raise; end if; end;
+ assert before_state=test_recurring_state(),'nonfinite history cannot advance progress';
+end $$;
+reset role;
 rollback;

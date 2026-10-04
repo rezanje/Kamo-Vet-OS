@@ -24,6 +24,7 @@ declare
  v_seq bigint;
  v_number text;
  v_constraint text;
+ v_role text;
 begin
  if auth.uid() is null and current_user<>'service_role' then
   raise exception 'Sesi login diperlukan untuk posting jurnal berulang.' using errcode='42501';
@@ -33,6 +34,24 @@ begin
  end if;
  select * into v_schedule from public.recurring_journals where id=p_recurring_id for update;
  if not found then raise exception 'Jurnal berulang tidak ditemukan.' using errcode='42501'; end if;
+ -- Check after waiting for the schedule lock. A JWT can remain valid after its
+ -- profile has been disabled; legacy journal/table RLS does not check this flag.
+ if current_user<>'service_role' then
+  select p.role::text into v_role from public.profiles p
+   where p.id=auth.uid() and p.is_active for share;
+  if not found then
+   raise exception 'RECURRING_AUTH: Akun tidak aktif atau profil tidak ditemukan.' using errcode='42501';
+  end if;
+  -- Match lib/akses.ts: OWNER is never module-restricted; explicit rows
+  -- override defaults, whose buku-besar access excludes only STAFF.
+  if v_role<>'OWNER' and (
+    (exists(select 1 from public.role_modules m where m.role::text=v_role)
+      and not exists(select 1 from public.role_modules m where m.role::text=v_role and m.module_id='buku-besar'))
+    or (v_role='STAFF' and not exists(select 1 from public.role_modules m where m.role::text=v_role))
+  )then
+   raise exception 'RECURRING_MODULE: Akses Buku Besar diperlukan untuk jurnal berulang.' using errcode='42501';
+  end if;
+ end if;
  if current_user<>'service_role' and v_schedule.branch_id is not null
     and not public.user_can_access_branch(v_schedule.branch_id) then
   raise exception 'RECURRING_SCOPE: Cabang jurnal berulang tidak dapat diakses.' using errcode='42501';
@@ -58,7 +77,9 @@ begin
   if v_count<2 or v_debit<=0 or v_debit<>v_credit or nullif(btrim(v_entry.no_jurnal),'') is null
      or v_entry.tanggal<>v_date or v_entry.branch_id is distinct from v_schedule.branch_id
      or exists(select 1 from public.journal_lines where journal_lines.entry_id=v_entry.id
-       and (debit<0 or credit<0 or (debit>0 and credit>0))) then
+       and (debit<0 or credit<0 or (debit>0 and credit>0)
+         or debit::text in('NaN','Infinity','-Infinity')
+         or credit::text in('NaN','Infinity','-Infinity'))) then
    raise exception 'RECURRING_HISTORY: jurnal lama tidak lengkap atau tidak seimbang; minta keuangan meninjau.';
   end if;
  else

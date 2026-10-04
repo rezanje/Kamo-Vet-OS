@@ -42,7 +42,8 @@ grant usage on schema auth,public to authenticated,anon,service_role;
 grant execute on function auth.uid() to authenticated,service_role;
 """
     for name in ['0001_core', '0002_rls', '0015_keuangan', '0055_tutup_buku',
-                 '0059_recurring_journals', '0106_audit_keuangan', '0113_coa_header_detail']:
+                 '0059_recurring_journals', '0060_user_admin', '0101_akses_grup',
+                 '0106_audit_keuangan', '0113_coa_header_detail']:
         bootstrap += '\n' + (root / f'supabase/migrations/{name}.sql').read_text()
     bootstrap += '\ngrant all on all tables in schema public to authenticated,service_role;'
     if '--baseline' not in sys.argv:
@@ -100,5 +101,54 @@ select pg_sleep(2); commit;
     if counts != '1|2':
         raise RuntimeError('Concurrent replay left unexpected journal counts: ' + counts)
     print('PASS: two independent sessions return one journal, one pair of lines and one effective progress update', flush=True)
+
+    sql("""
+insert into auth.users(id)values('f1000000-0000-4000-8000-000000000002');
+update profiles set role='FINANCE'where id='f1000000-0000-4000-8000-000000000002';
+insert into recurring_journals(id,nama,day_of_month,lines)values
+ ('f7300000-0000-4000-8000-000000000001','Fiction disable during wait',1,'[{"code":"FIC-D","debit":100,"credit":0},{"code":"FIC-K","debit":0,"credit":100}]'),
+ ('f7300000-0000-4000-8000-000000000002','Fiction module revoke during wait',1,'[{"code":"FIC-D","debit":100,"credit":0},{"code":"FIC-K","debit":0,"credit":100}]');
+""")
+    for index, expected_code in [(1, 'RECURRING_AUTH:'), (2, 'RECURRING_MODULE:')]:
+        schedule_id = f'f7300000-0000-4000-8000-00000000000{index}'
+        caller_id = f'f1000000-0000-4000-8000-00000000000{index}'
+        def session(source):
+            job = subprocess.Popen([*command, 'exec', '-i', container, 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'],
+                                   env=environment, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            job.stdin.write(source)
+            job.stdin.close()
+            return job
+        locker = session(f"begin;select id from recurring_journals where id='{schedule_id}'for update;select pg_sleep(2)/*{schedule_id}*/;commit;")
+        for _ in range(30):
+            if sql(f"select count(*)from pg_stat_activity where wait_event='PgSleep'and query like '%{schedule_id}%';") != '0':
+                break
+            time.sleep(.05)
+        else:
+            if locker.poll() is not None:
+                raise RuntimeError('Schedule locker exited early: ' + locker.stderr.read() + locker.stdout.read())
+            raise RuntimeError('Could not establish held recurring schedule lock: ' + sql("select state||'|'||coalesce(wait_event,'')||'|'||query from pg_stat_activity where application_name='psql';"))
+        caller = session(f"begin;set local role authenticated;select set_config('request.jwt.claim.sub','{caller_id}',true);"
+                         f"select *from post_recurring_journal_period('{schedule_id}',to_char(statement_timestamp()at time zone 'Asia/Jakarta','YYYY-MM'));commit;")
+        for _ in range(20):
+            if sql("select count(*)from pg_stat_activity where cardinality(pg_blocking_pids(pid))>0 and query like '%post_recurring_journal_period%';") != '0':
+                break
+            time.sleep(.05)
+        else:
+            raise RuntimeError('Could not observe waiting request before permission revocation')
+        if index == 1:
+            sql(f"update profiles set is_active=false where id='{caller_id}';")
+        else:
+            sql("insert into role_modules(role,module_id)values('FINANCE','laporan');")
+        locker.wait(timeout=20)
+        if locker.returncode:
+            raise RuntimeError(locker.stderr.read())
+        caller.wait(timeout=20)
+        if caller.returncode == 0 or expected_code not in caller.stderr.read():
+            raise RuntimeError('Waiting request ignored permission revocation: ' + expected_code)
+        unchanged = sql(f"select (last_posted is null)::text||'|'||(select count(*)from journal_entries where source_ref like '{schedule_id}:%')"
+                        f"from recurring_journals where id='{schedule_id}';")
+        if unchanged != 'true|0':
+            raise RuntimeError('Revoked request created a journal or advanced its progress')
+    print('PASS: profile disable and module revocation committed during lock wait reject posting without a header or progress update', flush=True)
 finally:
     docker('rm', '-f', container, capture_output=True)
