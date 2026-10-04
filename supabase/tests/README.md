@@ -134,6 +134,10 @@ Sales account/module gates match the application's existing access-group rules:
 accounts must be active; OWNER overrides module rows; ADMIN without custom rows
 has full default access; FINANCE/STAFF require explicit `penjualan` permission.
 Disabled accounts cannot post or recover previously committed operations.
+Read access remains active-account and branch scoped, independent of sales
+module permission, so existing finance receivables, tax, and ledger consumers
+continue to see sales documents. The SQL suite checks default FINANCE invoice
+counts/totals, denied posting, and disabled-account invisibility.
 
 Sales form identities now persist in tab-local session storage across errors,
 refreshes, and exhausted forms. Only a confirmed success retires that identity.
@@ -161,3 +165,15 @@ and recovers read-only. It verifies one shipment, one invoice, one allocation,
 two journals and stock38, then stores screenshots and fixture IDs under `/tmp`.
 It starts/stops its own local Next process when necessary and leaves fictional
 financial audit fixtures in the shared test database for inspection.
+
+Verify the same fictional invoice with a default FINANCE account and the actual
+receivables page by passing the fixture path printed by the browser harness:
+
+```sh
+node scripts/test-sales-finance-read-local.mjs /tmp/vetos-sales-browser-<token>/fixture.json
+```
+
+This local-only follow-up checks the real API invoice amount, denied sales
+posting without module permission, `/keuangan/piutang`, and an existing JWT
+after disabling its own fictional FINANCE profile. It saves `finance-ar.png`
+beside the fixture and uses the same local app port and API restrictions.
