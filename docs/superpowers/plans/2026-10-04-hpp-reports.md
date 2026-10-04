@@ -12,7 +12,7 @@
 
 ## Global constraints
 
-- OWNER/FINANCE only, preserve role_modules and private ledger grants.
+- Active OWNER/FINANCE only, preserve role_modules and private ledger grants.
 - Read only; no production migrations/backfill/deployment or dependency changes.
 - Current inventory only; posted total HPP only; disclose partial cost coverage.
 
@@ -49,10 +49,12 @@ Files: routes `/laporan/nilai-persediaan`, `/laporan/margin-racikan` with `/undu
 
 ## Verification receipt
 
-- `npm test`: 135 files / 1,233 tests passed after final calculation changes.
+- `npm test`: 135 files / 1,236 tests passed after final calculation and active-account changes.
 - Focused ESLint on all changed report, shared component, fixture and test files: no errors or warnings.
 - `npx tsc --noEmit`: passed.
 - `npm run build`: passed after final precision changes; existing image, Edge runtime and webpack-cache warnings remain.
 - `git diff --check`: passed.
 
 No production reads/writes, dependencies, migration or private ledger access changed. Browser/real PostgREST checks are delegated to the parent release review. Current inventory uses multiple current reads rather than a transaction snapshot; visible reconciliation warnings describe concurrent-change risk. Compound lines without explicit historical recipe links are excluded; invoice-wide discounts/taxes are unallocated and doctor attribution follows the current visit. FINANCE may see an exact historical version ID without inactive catalogue metadata.
+
+Parent review additionally required the shared loader/export gate to enforce `profiles.is_active === true` because API routes bypass the page layout. Three regressions first demonstrated inactive OWNER/FINANCE reads and a direct CSV returning 200; the shared gate and navigation now reject them before financial reads. No `employees` query is used for doctor metadata, preserving HRIS privacy restrictions.

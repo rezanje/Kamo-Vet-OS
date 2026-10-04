@@ -1,9 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 export type Row = Record<string, unknown>;
-export function clientFixture(options: { role?: string; modules?: Row[]; tables?: Record<string, Row[]>; errorTable?: string; deniedBranch?: string; anonymous?: boolean } = {}) {
+export function clientFixture(options: { role?: string; active?: boolean; modules?: Row[]; tables?: Record<string, Row[]>; errorTable?: string; deniedBranch?: string; anonymous?: boolean } = {}) {
   const records: { table: string; method: string; args: unknown[] }[] = [];
   const tables: Record<string, Row[]> = {
-    profiles: [{ id: "u", role: options.role ?? "OWNER" }], role_modules: options.modules ?? [],
+    profiles: [{ id: "u", role: options.role ?? "OWNER", is_active: options.active ?? true }], role_modules: options.modules ?? [],
     branches: [{ id: "b1", name: "Satu" }, { id: "b2", name: "Dua" }],
     warehouses: [{ id: "w1", branch_id: "b1", name: "VET lama", code: "V", type: "VET", is_active: false }],
     stock: [{ id: "s", warehouse_id: "w1", item_id: "i", qty: 3 }],

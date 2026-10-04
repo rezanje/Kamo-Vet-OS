@@ -4,6 +4,11 @@ import { loadInventoryReport, loadCompoundReport, readReportRows, reportScope } 
 import { clientFixture, type Row } from "./fixtures/hpp-report-client";
 
 describe("financial report boundary", () => {
+  it.each(["OWNER","FINANCE"])("denies inactive %s before financial reads", async role => {
+    const { client, records } = clientFixture({ role, active: false });
+    await expect(loadCompoundReport(client,{})).rejects.toMatchObject({ status: 403 });
+    expect(records.some(row => ["stock","stock_layers","invoice_items","compound_official_usage"].includes(row.table))).toBe(false);
+  });
   it.each(["DOCTOR","STAFF","ADMIN",""])("denies %s before reading financial rows", async role => {
     const { client, records } = clientFixture({ role });
     await expect(loadInventoryReport(client, {})).rejects.toMatchObject({ status: 403 });

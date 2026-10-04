@@ -49,8 +49,8 @@ export type ReportScope = { role: string; branches: Branch[]; branchIds: string[
 export async function reportScope(client: SupabaseClient, path: string, branch: string): Promise<ReportScope> {
   const { data: { user }, error } = await client.auth.getUser();
   if (error || !user) throw new ReportAccessError("Sesi tidak ditemukan", 401);
-  const { data: profile, error: profileError } = await client.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profileError || !profile || !["OWNER","FINANCE"].includes(profile.role)) throw new ReportAccessError("Laporan HPP hanya tersedia untuk OWNER dan FINANCE", 403);
+  const { data: profile, error: profileError } = await client.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
+  if (profileError || !profile || profile.is_active !== true || !["OWNER","FINANCE"].includes(profile.role)) throw new ReportAccessError("Laporan HPP hanya tersedia untuk akun OWNER dan FINANCE yang aktif", 403);
   const rules = await tableRows<{ role: string; module_id: string }>(client, "role_modules", "role,module_id", query => query.order("module_id"), "role");
   if (!bolehBukaPath(profile.role, path, rules)) throw new ReportAccessError("Akses modul laporan tidak diizinkan", 403);
   const branches = await tableRows<Branch>(client, "branches", "id,name");

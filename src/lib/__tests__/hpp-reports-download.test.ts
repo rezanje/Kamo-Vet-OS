@@ -4,6 +4,12 @@ import { downloadHppReport } from "../hpp-reports-download";
 import { clientFixture } from "./fixtures/hpp-report-client";
 
 describe("financial CSV endpoint", () => {
+  it("denies deactivated finance accounts through the direct CSV URL", async () => {
+    const { client, records } = clientFixture({ role: "FINANCE", active: false });
+    const response = await downloadHppReport(client,"inventory",new Request("https://example.test/laporan/nilai-persediaan/unduh"));
+    expect(response.status).toBe(403);
+    expect(records.some(row => row.table === "stock_layers")).toBe(false);
+  });
   it("exports the full scoped inventory with safe attachment headers", async () => {
     const { client } = clientFixture({ tables: {
       stock: Array.from({ length: 205 },(_,i) => ({ id: `s${i}`, warehouse_id: "w1", item_id: `i${i}`, qty: 2 })),
