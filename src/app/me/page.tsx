@@ -2,9 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyEmployee } from "@/lib/employee";
-import { attendanceState, nextAction } from "@/lib/attendance";
-import { clockIn, clockOut } from "./actions";
-import { AbsenTombol } from "./AbsenTombol";
+import { pilihSesiAbsensi, waktuSesiWIB, type SesiAbsensi } from "@/lib/attendance-session";
+import { AbsensiStaf } from "./AbsensiStaf";
 import { CutiForm } from "./CutiForm";
 import { PengajuanCards, type Kasbon, type Lembur, type Reimburse } from "./PengajuanCards";
 
@@ -38,22 +37,24 @@ export default async function MePage({
 
   // Data HR (butuh employee tertaut).
   let kpi: { metrik: string; target: number | null; realisasi: number | null; skor: number }[] = [];
-  let att: { jam_masuk: string | null; jam_pulang: string | null } | null = null;
+  let attendanceData: {open_sessions:SesiAbsensi[];today:SesiAbsensi|null;branches:{id:string;name:string}[]} | null = null;
+  let attendanceError = "";
   let leaves: { jenis: string; tanggal_mulai: string; tanggal_selesai: string | null; durasi: number | null; status: string }[] = [];
   let lembur: Lembur[] = [];
   let kasbon: Kasbon[] = [];
   let reimburse: Reimburse[] = [];
   if (emp) {
-    const [{ data: k }, { data: a }, { data: l }, { data: ot }, { data: ca }, { data: rb }] = await Promise.all([
+    const [{ data: k }, { data: a, error: sessionError }, { data: l }, { data: ot }, { data: ca }, { data: rb }] = await Promise.all([
       supabase.from("kpi_records").select("metrik, target, realisasi, skor").eq("employee_id", emp.id).eq("periode", monthKey).order("metrik"),
-      supabase.from("attendance").select("jam_masuk, jam_pulang").eq("employee_id", emp.id).eq("tanggal", wibDate).maybeSingle(),
+      supabase.rpc("hris_my_attendance"),
       supabase.from("leave_requests").select("jenis, tanggal_mulai, tanggal_selesai, durasi, status").eq("employee_id", emp.id).order("created_at", { ascending: false }).limit(10),
       supabase.from("overtime_requests").select("id, tanggal, jam, status").eq("employee_id", emp.id).order("tanggal", { ascending: false }).limit(6),
       supabase.from("cash_advances").select("id, tanggal, jumlah, tenor_bulan, status, cash_advance_installments(jumlah)").eq("employee_id", emp.id).order("created_at", { ascending: false }).limit(4),
       supabase.from("reimbursements").select("id, tanggal, kategori, jumlah, status").eq("employee_id", emp.id).order("created_at", { ascending: false }).limit(6),
     ]);
     kpi = k ?? [];
-    att = a ?? null;
+    attendanceData = a;
+    attendanceError = sessionError ? (sessionError.code === "PGRST202" ? "Fitur sesi absensi belum aktif. Hubungi HR." : "Sesi absensi gagal dimuat. Coba muat ulang atau hubungi HR.") : "";
     leaves = l ?? [];
     lembur = (ot ?? []) as Lembur[];
     reimburse = (rb ?? []) as Reimburse[];
@@ -63,8 +64,7 @@ export default async function MePage({
         dibayar: (c.cash_advance_installments ?? []).reduce((a, i) => a + Number(i.jumlah), 0),
       }));
   }
-  const attState = attendanceState(att);
-  const action = nextAction(attState);
+  const session = pilihSesiAbsensi(attendanceData?.open_sessions ?? [],attendanceData?.today ?? null,now.toISOString());
 
   return (
     <>
@@ -98,6 +98,7 @@ export default async function MePage({
         </div>
       ) : (
         <>
+          <Link href="/me/jadwal" className="btn-def" style={{marginBottom:12}}>Jadwal & pengajuan perubahan shift</Link>
           {/* 2. KPI Pribadi */}
           <div className="card" style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 8 }}><i className="ti ti-target" /> KPI PRIBADI · {monthKey}</div>
@@ -127,22 +128,12 @@ export default async function MePage({
             )}
           </div>
 
-          {/* 3. Absensi Hari Ini */}
-          <div className="card" style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 8 }}><i className="ti ti-clock" /> ABSENSI HARI INI</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 11.5 }}>Masuk: <b>{att?.jam_masuk ?? "—"}</b></div>
-              <div style={{ fontSize: 11.5 }}>Pulang: <b>{att?.jam_pulang ?? "—"}</b></div>
-              <div style={{ marginLeft: "auto" }}>
-                {action === "clockIn" && (
-                  <AbsenTombol aksi={clockIn} label="Clock In" icon="ti-login-2" />
-                )}
-                {action === "clockOut" && (
-                  <AbsenTombol aksi={clockOut} label="Clock Out" icon="ti-logout-2" warna="var(--am)" />
-                )}
-                {action === null && <span className="bge g">Selesai hari ini</span>}
-              </div>
-            </div>
+          <div className="card" style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,marginBottom:8}}>SESI ABSENSI</div>
+            {attendanceError ? <p role="alert">{attendanceError}</p> : <>
+              {session.row && <p>Tanggal masuk: <b>{session.row.tanggal}</b> · Masuk: {session.row.checked_in_at ? waktuSesiWIB(session.row.checked_in_at) : session.row.jam_masuk} · Pulang: {waktuSesiWIB(session.row.checked_out_at)}</p>}
+              {session.correction ? <p role="alert">Ada sesi lama atau waktu belum lengkap. Minta HR mengoreksi dengan waktu sebenarnya atau membatalkan sesi yang keliru. Untuk sesi pada gaji yang sudah final, HR dapat melepas blokir absen berikutnya dengan alasan sambil mempertahankan riwayat lama. Jam kerja tidak diisi otomatis.</p> : <AbsensiStaf action={session.action} sessionBranch={session.row?.branch_id ?? undefined} branches={attendanceData?.branches ?? []}/>}
+            </>}
           </div>
 
           {/* 4b. Lembur, kasbon, reimburse */}

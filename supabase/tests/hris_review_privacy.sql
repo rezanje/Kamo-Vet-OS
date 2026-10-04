@@ -1,0 +1,33 @@
+\set ON_ERROR_STOP on
+\ir hris_attendance_review_setup.sql
+insert into employee_import_details(employee_id,fields)values('92000000-0000-0000-0000-000000000001','{"NIK":"fiction-private","Bank":"fiction-account"}');
+create function pg_temp.deny_details(q text)returns void language plpgsql as $$begin begin execute q;exception when others then if sqlerrm like 'HRIS:%'or sqlstate='42501' then return;end if;raise;end;raise exception 'FAIL: foreign details write accepted';end$$;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','90000000-0000-0000-0000-000000000003',true);
+select pg_temp.check_it((select count(*)from employees)=0,'unassigned ADMIN sensitive employee hidden');
+select pg_temp.check_it((select count(*)from employee_import_details)=0,'unassigned ADMIN imported bank/NIK hidden');
+select pg_temp.deny_details('insert into employee_import_details(employee_id,fields)values(''92000000-0000-0000-0000-000000000002'',''{"Bank":"forged"}'')');
+reset role;
+insert into user_branches(user_id,branch_id,effective_date)values('90000000-0000-0000-0000-000000000003','91000000-0000-0000-0000-000000000001','2026-01-01');
+set local role authenticated;
+select pg_temp.check_it((select count(*)from employee_import_details)=1,'scoped HR sees permitted imported details');
+select pg_temp.check_it((import_employee_excel('[{"nik":"FIC-IMPORT-REVIEW","nama":"Fiction scoped import","status":"Aktif","tgl_masuk":"2026-01-01","details":{"Bank":"fiction new account"}}]','91000000-0000-0000-0000-000000000001')->>'inserted')::int=1,'scoped ADMIN atomic import remains supported');
+select pg_temp.check_it((select count(*)from employee_import_details)=2,'successful import includes details and assignment');
+select set_config('request.jwt.claim.sub','90000000-0000-0000-0000-000000000001',true);
+select pg_temp.check_it((select count(*)from employee_import_details)=0,'STAFF cannot read raw imported private JSON');
+select pg_temp.deny_details('insert into employee_import_details(employee_id,fields)values(''92000000-0000-0000-0000-000000000002'',''{}'')');
+select set_config('request.jwt.claim.sub','90000000-0000-0000-0000-000000000002',true);
+select pg_temp.check_it((select count(*)from employee_import_details)=2,'OWNER sees complete imported details');
+reset role;
+insert into branches(id,code,name,type)values('91000000-0000-0000-0000-000000000002','MAP-FIC-B','Fiction mapping B','KLINIK');
+update employees set branch_id='91000000-0000-0000-0000-000000000002'where id='92000000-0000-0000-0000-000000000001';
+insert into employee_branch_assignments(employee_id,branch_id,effective_date)values('92000000-0000-0000-0000-000000000001','91000000-0000-0000-0000-000000000002','2026-01-01');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','90000000-0000-0000-0000-000000000003',true);
+select pg_temp.check_it(not exists(select 1 from employees where id='92000000-0000-0000-0000-000000000001'),'rolling sensitive row remains hidden');
+select pg_temp.check_it(exists(select 1 from employee_profile_directory where id='92000000-0000-0000-0000-000000000001'and profile_id='90000000-0000-0000-0000-000000000001'),'rolling operational profile attribution is complete');
+do $$begin begin perform gaji_pokok from employee_profile_directory;exception when undefined_column then return;end;raise exception 'FAIL: profile directory exposed salary';end$$;
+reset role;
+set local role anon;
+select pg_temp.deny_details('select * from employee_profile_directory');
+rollback;

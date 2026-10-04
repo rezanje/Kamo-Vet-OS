@@ -37,6 +37,19 @@ const dasar: InputGaji = {
 };
 
 describe("hitungGaji", () => {
+  it("aturan bertanggal memakai hari kegiatan dan membulatkan lembur satu kali",()=>{
+    const input={...dasar,aturan:{...aturan,bolos_per_hari:0,lembur_per_jam:0},jadwal:[{tanggal:"2026-08-03",isLibur:false,jamMasuk:"08:00"},{tanggal:"2026-08-04",isLibur:false,jamMasuk:"08:00"}],absen:[],jamLembur:2,
+    aturanPerTanggal:{"2026-08-03":{...aturan,bolos_per_hari:10,lembur_per_jam:5.3},"2026-08-04":{...aturan,bolos_per_hari:20,lembur_per_jam:10}},lemburPerTanggal:[{tanggal:"2026-08-03",jam:1.25},{tanggal:"2026-08-04",jam:0.75}]};
+    const result=hitungGaji(input);
+    expect(result.potonganBolos).toBe(30);
+    expect(result.upahLembur).toBe(14);
+  });
+  it("kedatangan setelah tengah malam memakai waktu nyata pada tanggal jadwal",()=>{
+    const input={...dasar,jadwal:[{tanggal:"2026-08-03",isLibur:false,jamMasuk:"20:00"}],absen:[{tanggal:"2026-08-03",jamMasuk:"00:01",checkedInAt:"2026-08-04T00:01:00+07:00"}]};
+    const result=hitungGaji(input);
+    expect(result.menitTelat).toBe(241);
+    expect(result.potonganTelat).toBe(50000);
+  });
   it("hadir penuh tanpa telat = gaji pokok utuh", () => {
     const r = hitungGaji(dasar);
     expect(r.hariKerja).toBe(5);

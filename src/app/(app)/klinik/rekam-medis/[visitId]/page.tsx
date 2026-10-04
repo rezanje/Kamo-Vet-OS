@@ -59,7 +59,7 @@ export default async function RekamMedisPage({
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
   const dokterOpsi = recorded ? [] : await daftarDokter(supabase, { branchId: visit.branch_id });
-  const { data: providerRows } = recorded ? { data: [] } : await supabase.from("employees")
+  const { data: providerRows } = recorded ? { data: [] } : await supabase.from("employee_directory")
     .select("id, nama, jabatan, branch_id")
     .eq("branch_id", visit.branch_id).eq("status", "Aktif").order("nama");
   const providerOpsi = (providerRows ?? []) as { id: string; nama: string; jabatan: string | null }[];

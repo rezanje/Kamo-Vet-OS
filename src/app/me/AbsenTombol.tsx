@@ -7,12 +7,13 @@ import { useRef, useState } from "react";
 // memutuskan: cabang tanpa titik tetap boleh absen, cabang bertitik akan menolak
 // dengan pesan yang jelas. Keputusan tidak boleh ada di sisi HP.
 export function AbsenTombol({
-  aksi, label, icon, warna,
+  aksi, label, icon, warna, branchId,
 }: {
   aksi: (formData: FormData) => void | Promise<void>;
   label: string;
   icon: string;
   warna?: string;
+  branchId: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const latRef = useRef<HTMLInputElement>(null);
@@ -39,6 +40,7 @@ export function AbsenTombol({
 
   return (
     <form action={aksi} ref={formRef}>
+      <input type="hidden" name="branch_id" value={branchId} />
       <input type="hidden" name="lat" ref={latRef} />
       <input type="hidden" name="lng" ref={lngRef} />
       <button

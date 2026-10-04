@@ -43,7 +43,7 @@ export function PengajuanCards({
           </div>
           <div style={{ flex: "1 1 180px" }}>
             <label className="flab">Alasan</label>
-            <input className="fi" name="alasan" placeholder="mis. bantu stok opname" />
+            <input className="fi" name="alasan" required minLength={3} maxLength={1000} placeholder="mis. bantu stok opname" />
           </div>
           <button type="submit" className="btn-acc">Kirim</button>
         </form>
@@ -69,7 +69,7 @@ export function PengajuanCards({
             </div>
             <div style={{ flex: "1 1 180px" }}>
               <label className="flab">Keperluan</label>
-              <input className="fi" name="alasan" placeholder="mis. biaya sekolah anak" />
+              <input className="fi" name="alasan" required minLength={3} maxLength={1000} placeholder="mis. biaya sekolah anak" />
             </div>
             <button type="submit" className="btn-acc">Kirim</button>
           </form>
@@ -101,7 +101,7 @@ export function PengajuanCards({
           </div>
           <div style={{ flex: "1 1 160px" }}>
             <label className="flab">Keterangan</label>
-            <input className="fi" name="keterangan" placeholder="mis. antar obat ke cabang" />
+            <input className="fi" name="keterangan" required minLength={3} maxLength={1000} placeholder="mis. antar obat ke cabang" />
           </div>
           <button type="submit" className="btn-acc">Kirim</button>
         </form>

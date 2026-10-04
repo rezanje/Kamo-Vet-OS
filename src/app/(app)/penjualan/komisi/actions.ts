@@ -49,10 +49,10 @@ export async function simpanAturanKomisi(formData: FormData) {
     berlaku_sampai: sampai,
   };
 
-  const { error } = id
-    ? await supabase.from("commission_rules").update(row).eq("id", id)
-    : await supabase.from("commission_rules").insert(row);
-  if (error) gagal(error.message);
+  const { data,error } = id
+    ? await supabase.from("commission_rules").update(row).eq("id", id).select("id")
+    : await supabase.from("commission_rules").insert(row).select("id");
+  if (error||!data?.length) gagal("Aturan gagal disimpan atau cakupan tidak diizinkan. Aturan global hanya OWNER.");
 
   redirect(`${BASE}?success=1`);
 }
@@ -63,8 +63,8 @@ export async function toggleAturanKomisi(formData: FormData) {
   const aktif = String(formData.get("aktif") ?? "") === "1";
   if (!id) gagal("Aturan tidak valid");
 
-  const { error } = await supabase.from("commission_rules").update({ is_active: !aktif }).eq("id", id);
-  redirect(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`);
+  const { data,error } = await supabase.from("commission_rules").update({ is_active: !aktif }).eq("id", id).select("id");
+  redirect(error||!data?.length ? `${BASE}?error=${encodeURIComponent(error?.message??"Aturan tidak ditemukan atau cakupan tidak diizinkan")}` : `${BASE}?success=1`);
 }
 
 export async function hapusAturanKomisi(formData: FormData) {
@@ -72,6 +72,6 @@ export async function hapusAturanKomisi(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Aturan tidak valid");
 
-  const { error } = await supabase.from("commission_rules").delete().eq("id", id);
-  redirect(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`);
+  const { data,error } = await supabase.from("commission_rules").delete().eq("id", id).select("id");
+  redirect(error||!data?.length ? `${BASE}?error=${encodeURIComponent(error?.message??"Aturan tidak ditemukan atau cakupan tidak diizinkan")}` : `${BASE}?success=1`);
 }

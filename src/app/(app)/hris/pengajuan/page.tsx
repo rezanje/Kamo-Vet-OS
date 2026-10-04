@@ -6,7 +6,6 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { jadwalCicilan } from "@/lib/kasbon";
-import { getAturanGaji } from "@/lib/payroll-aturan";
 import {
   setujuiKasbon, setujuiLembur, setujuiReimburse,
   tolakKasbon, tolakLembur, tolakReimburse,
@@ -28,7 +27,7 @@ export default async function PengajuanPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening, aturan] = await Promise.all([
+  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening] = await Promise.all([
     supabase.from("overtime_requests")
       .select("id, tanggal, jam, alasan, status, employees(nama, jabatan)")
       .eq("status", "Menunggu").order("tanggal"),
@@ -39,7 +38,6 @@ export default async function PengajuanPage({
       .select("id, tanggal, kategori, jumlah, keterangan, status, employees(nama, jabatan)")
       .eq("status", "Menunggu").order("tanggal"),
     loadRekeningAktif(supabase),
-    getAturanGaji(supabase),
   ]);
 
   // Utang berjalan yang SUDAH disetujui — termasuk utang selisih kas yang lahir
@@ -90,13 +88,15 @@ export default async function PengajuanPage({
         </div>
       )}
 
+      {bolehKelola && <Link href="/hris/pengajuan/selisih" className="btn-def">Selisih kas tertunda</Link>}
+      {bolehKelola && <Link href="/hris/pengajuan/tukar" className="btn-def">Persetujuan tukar shift</Link>}
+      {bolehKelola && <Link href="/hris/pengajuan/jadwal" className="btn-def">Pengajuan perubahan jadwal</Link>}
+
       {/* ── Lembur ─────────────────────────────────────────────── */}
       <div className="crm-sec">
         <SecHeader
           num="01" title="LEMBUR"
-          desc={aturan.lembur_per_jam > 0
-            ? `Upah lembur ${rp(aturan.lembur_per_jam)}/jam sesuai Aturan Gaji.`
-            : "Upah lembur per jam belum diatur — isi dulu di Pengaturan → Aturan gaji, kalau tidak lembur bernilai nol."}
+          desc="Jam yang disetujui dibayar dengan aturan karyawan pada tanggal lembur. Periksa kelompok dan aturan bertanggal sebelum menyetujui."
         />
         {lembur.length === 0 ? (
           <Kosong teks="Tidak ada pengajuan lembur." />
@@ -106,12 +106,11 @@ export default async function PengajuanPage({
               <div style={{ fontSize: 11.5, fontWeight: 600 }}>{one(l.employees)?.nama ?? "—"}</div>
               <div style={{ fontSize: 10.5, color: "var(--tm)" }}>
                 {tgl(l.tanggal)} · {Number(l.jam)} jam
-                {aturan.lembur_per_jam > 0 && <> · <b>{rp(Number(l.jam) * aturan.lembur_per_jam)}</b></>}
                 {l.alasan ? ` · ${l.alasan}` : ""}
               </div>
             </div>
             <input type="hidden" name="id" value={l.id} />
-            <input className="fi" name="catatan" placeholder="catatan (opsional)" style={{ width: 180, height: 28, fontSize: 10.5 }} />
+            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="alasan keputusan HR" style={{ width: 180, height: 28, fontSize: 10.5 }} />
             <Tombol bolehKelola={bolehKelola} tolak={tolakLembur} />
           </form>
         ))}
@@ -142,7 +141,7 @@ export default async function PengajuanPage({
                 defaultValue={k.tenor_bulan} style={{ width: 90, height: 28, fontSize: 10.5 }} />
             </div>
             <PilihRekening rekening={rekening} label="Uang keluar dari" width={150} />
-            <input className="fi" name="catatan" placeholder="catatan (opsional)" style={{ width: 150, height: 28, fontSize: 10.5 }} />
+            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="alasan keputusan HR" style={{ width: 150, height: 28, fontSize: 10.5 }} />
             <Tombol bolehKelola={bolehKelola} tolak={tolakKasbon} labelSetuju="Setujui &amp; cairkan" />
           </form>
         ))}
@@ -166,7 +165,7 @@ export default async function PengajuanPage({
               </div>
             </div>
             <input type="hidden" name="id" value={r.id} />
-            <input className="fi" name="catatan" placeholder="catatan (opsional)" style={{ width: 180, height: 28, fontSize: 10.5 }} />
+            <input className="fi" name="catatan" required minLength={3} maxLength={1000} placeholder="alasan keputusan HR" style={{ width: 180, height: 28, fontSize: 10.5 }} />
             <Tombol bolehKelola={bolehKelola} tolak={tolakReimburse} />
           </form>
         ))}

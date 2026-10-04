@@ -1,8 +1,10 @@
+import Link from "next/link";
+import {hariIniWIB}from"@/lib/tanggal";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { assertRole, bolehKelolaMaster } from "@/lib/master-guard";
 import { lepasKomponen, pasangKomponen, simpanKomponen, toggleKomponen } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -15,9 +17,13 @@ export default async function KomponenGajiPage({
 }: {
   searchParams: Promise<{ error?: string; success?: string; emp?: string }>;
 }) {
+  await assertRole("/hris", "rincian gaji", ["OWNER", "ADMIN", "FINANCE"]);
   const { error, success, emp } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const bolehGlobal = profile?.role === "OWNER";
 
   const [{ data: kompData }, { data: empData }, { data: pasangData }] = await Promise.all([
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("tipe").order("nama"),
@@ -44,16 +50,16 @@ export default async function KomponenGajiPage({
   return (
     <MasterPage
       back="/hris" icon="ti-coin" title="KOMPONEN GAJI"
-      desc="Tunjangan & potongan tetap — dipasang sekali, dipakai tiap bulan"
+      desc="Rencana terakhir komponen tetap — perubahan bertanggal dan tersimpan dalam riwayat"
       error={error} success={success} successMsg="Komponen gaji tersimpan."
       bolehKelola={bolehKelola}
-      readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah komponen gaji."
+      readOnlyNote="Master komponen hanya OWNER; pemasangan per karyawan oleh HR yang diizinkan."
     >
-      <div className="crm-sec">
+      <div className="crm-sec"><Link href="/hris/aturan">Aturan bertanggal dan riwayat komponen</Link>
         <SecHeader num="01" title="DAFTAR KOMPONEN" desc="Nominal di sini jadi bawaan; per karyawan boleh beda." />
 
-        {bolehKelola && (
-          <form action={simpanKomponen} style={{ marginBottom: 12 }}>
+        {bolehGlobal && (
+          <form action={simpanKomponen} style={{ marginBottom: 12 }}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
             <div className="frow">
               <div>
                 <label className="flab">Nama komponen *</label>
@@ -86,7 +92,7 @@ export default async function KomponenGajiPage({
                 <th>Komponen</th><th style={{ width: 170 }}>Jenis</th>
                 <th style={{ width: 140, textAlign: "right" }}>Nominal bawaan</th>
                 <th style={{ width: 80 }}>Status</th>
-                {bolehKelola && <th style={{ width: 120 }}>Aksi</th>}
+                {bolehGlobal && <th style={{ width: 120 }}>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -100,9 +106,9 @@ export default async function KomponenGajiPage({
                   </td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(Number(k.nominal))}</td>
                   <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
-                  {bolehKelola && (
+                  {bolehGlobal && (
                     <td>
-                      <form action={toggleKomponen}>
+                      <form action={toggleKomponen}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
                         <input type="hidden" name="id" value={k.id} />
                         <input type="hidden" name="aktif" value={k.is_active ? "1" : "0"} />
                         <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
@@ -114,7 +120,7 @@ export default async function KomponenGajiPage({
                 </tr>
               ))}
               {komponen.length === 0 && (
-                <tr><td colSpan={bolehKelola ? 5 : 4} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
+                <tr><td colSpan={bolehGlobal ? 5 : 4} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
                   Belum ada komponen gaji.
                 </td></tr>
               )}
@@ -146,7 +152,7 @@ export default async function KomponenGajiPage({
             </div>
 
             {bolehKelola && (
-              <form action={pasangKomponen} style={{ marginBottom: 12 }}>
+              <form action={pasangKomponen} style={{ marginBottom: 12 }}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
                 <input type="hidden" name="employee_id" value={dipilih} />
                 <div className="frow">
                   <div>
@@ -199,7 +205,7 @@ export default async function KomponenGajiPage({
                         </td>
                         {bolehKelola && (
                           <td>
-                            <form action={lepasKomponen}>
+                            <form action={lepasKomponen}><label className="flab">Mulai bulan *</label><input className="fi"type="month"name="effective_period"required defaultValue={hariIniWIB().slice(0,7)}/><label className="flab">Alasan *</label><input className="fi"name="reason"minLength={3}maxLength={1000}required/>
                               <input type="hidden" name="id" value={p.id} />
                               <input type="hidden" name="employee_id" value={dipilih} />
                               <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">

@@ -1,245 +1,466 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/master-guard";
+import { aksesCabangHRIS } from "@/lib/jadwal-scope";
+import { hariIniWIB } from "@/lib/tanggal";
+import { tanggalValid } from "@/lib/jadwal-kalender";
+import {
+  menitSesi,
+  waktuSesiWIB,
+  type SesiAbsensi,
+} from "@/lib/attendance-session";
 import { SecHeader } from "@/components/SecHeader";
-import { simpanAbsensi } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
+import { simpanAbsensi, koreksiAbsensi, selesaikanSesiFinal } from "./actions";
 
-type Rel<T> = T | T[] | null;
-function one<T>(r: Rel<T>): T | null {
-  return Array.isArray(r) ? (r[0] ?? null) : r;
-}
-
-const TODAY = "2026-07-01";
-
-const STATUS_LIST = ["Hadir", "Izin", "Sakit", "Alpha", "Cuti"] as const;
-type StatusKey = (typeof STATUS_LIST)[number];
-
-type EmployeeRow = {
-  id: string;
-  nama: string;
-  jabatan: string | null;
-  status: string;
-};
-
-type AttendanceRow = {
-  id: string;
+type Row = SesiAbsensi & {
   employee_id: string;
-  tanggal: string;
-  jam_masuk: string | null;
-  jam_pulang: string | null;
-  status: StatusKey;
+  status: string;
   keterangan: string | null;
-  employees: Rel<{ nama: string; jabatan: string | null }>;
+  attendance_session_resolutions?: {
+    attendance_id: string;
+    reason: string;
+    created_at: string;
+  }[];
 };
-
-// ponytail: badge class per status absensi — Hadir=g, Izin/Cuti=b, Sakit=o, Alpha=r.
-function statusBadge(s: StatusKey): string {
-  if (s === "Hadir") return "g";
-  if (s === "Izin" || s === "Cuti") return "b";
-  if (s === "Sakit") return "o";
-  return "r"; // Alpha
-}
-
+const localValue = (iso: string | null) =>
+  iso
+    ? new Date(new Date(iso).getTime() + 7 * 3600000).toISOString().slice(0, 23)
+    : "";
 export default async function AbsensiPage({
   searchParams,
 }: {
   searchParams: Promise<{ tgl?: string; error?: string; success?: string }>;
 }) {
-  const { tgl, error, success } = await searchParams;
-  const tanggalFilter = tgl && tgl.match(/^\d{4}-\d{2}-\d{2}$/) ? tgl : TODAY;
-
-  const supabase = await createClient();
-
-  // ponytail: hanya karyawan aktif yang bisa dipilih di form absensi.
-  const { data: empRaw } = await supabase
-    .from("employees")
-    .select("id, nama, jabatan, status")
-    .eq("status", "Aktif")
-    .order("nama");
-  const employees = (empRaw ?? []) as unknown as EmployeeRow[];
-
-  // ponytail: join employees untuk kolom Karyawan + Jabatan di tabel absensi.
-  const { data: attRaw } = await supabase
-    .from("attendance")
-    .select("id, employee_id, tanggal, jam_masuk, jam_pulang, status, keterangan, employees(nama, jabatan)")
-    .eq("tanggal", tanggalFilter)
-    .order("employees(nama)");
-  const rows = (attRaw ?? []) as unknown as AttendanceRow[];
-
-  // Summary cards untuk tanggal terpilih
-  const cntHadir = rows.filter((r) => r.status === "Hadir").length;
-  const cntIzin = rows.filter((r) => r.status === "Izin" || r.status === "Cuti").length;
-  const cntSakit = rows.filter((r) => r.status === "Sakit").length;
-  const cntAlpha = rows.filter((r) => r.status === "Alpha").length;
-
-  const fmtTgl = (d: string) =>
-    new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta",
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-    });
-
+  const supabase = await assertRole("/me", "rincian absensi", [
+    "OWNER",
+    "ADMIN",
+  ]);
+  const sp = await searchParams;
+  const date = tanggalValid(sp.tgl) ? sp.tgl : hariIniWIB();
+  const access = await aksesCabangHRIS(supabase);
+  const [emps, assignments, daily, open, audit] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("id, nama, jabatan, branch_id")
+      .order("nama"),
+    supabase
+      .from("employee_branch_assignments")
+      .select("employee_id, branch_id, effective_date"),
+    supabase
+      .from("attendance")
+      .select(
+        "*, attendance_session_resolutions(attendance_id, reason, created_at)",
+      )
+      .eq("tanggal", date)
+      .order("employee_id"),
+    supabase
+      .from("hris_open_attendance")
+      .select("*")
+      .lt("tanggal", hariIniWIB())
+      .order("tanggal")
+      .limit(100),
+    supabase
+      .from("attendance_corrections")
+      .select(
+        "id, employee_id, actor_id, reason, old_values, new_values, created_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ]);
+  const allowed = new Set(access.branches.map((b) => b.id));
+  const employees = (emps.data ?? []).filter(
+    (e) =>
+      access.role === "OWNER" ||
+      ((assignments.data ?? []).some(
+        (a) =>
+          a.employee_id === e.id &&
+          a.branch_id === e.branch_id &&
+          a.effective_date <= hariIniWIB(),
+      ) &&
+        (assignments.data ?? [])
+          .filter((a) => a.employee_id === e.id)
+          .every(
+            (a) => allowed.has(a.branch_id) && a.effective_date <= hariIniWIB(),
+          )),
+  );
+  const names = new Map((emps.data ?? []).map((e) => [e.id, e.nama]));
+  const loadError =
+    emps.error || assignments.error || daily.error || open.error || audit.error;
+  const rows = (daily.data ?? []) as Row[];
+  const unresolved = (open.data ?? []) as Row[];
   return (
     <>
-      {/* Back link */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/hris" className="back-btn">
-          <i className="ti ti-arrow-left" /> Kembali
-        </Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Absensi Karyawan</span>
-      </div>
-
-      {/* Banners */}
-      {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-circle" /> {error}
-        </div>
+      <Link href="/laporan/absensi" className="btn-def">Rekap harian / bulanan dan ekspor</Link>
+      <Link className="back-btn" href="/hris">
+        Kembali ke HRIS
+      </Link>
+      {sp.error && (
+        <p role="alert" className="p2ban">
+          {sp.error}
+        </p>
       )}
-      {success === "1" && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Absensi berhasil disimpan.
-        </div>
+      {sp.success && (
+        <p role="status" className="p2ban">
+          Catatan dan jejak perubahan tersimpan.
+        </p>
       )}
-
-      {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
-        <StatCard label="Hadir" value={String(cntHadir)} accent />
-        <StatCard label="Izin / Cuti" value={String(cntIzin)} />
-        <StatCard label="Sakit" value={String(cntSakit)} />
-        <StatCard label="Alpha" value={String(cntAlpha)} />
-      </div>
-
-      {/* 01 CATAT ABSENSI */}
-      <div className="crm-sec">
-        <SecHeader num="01" title="CATAT ABSENSI" desc="Catat kehadiran karyawan untuk satu hari." />
-        <form action={simpanAbsensi}>
-          <div className="grid2">
-            <div>
-              <label className="flab">Karyawan *</label>
-              <select className="fi" name="employee_id" required>
-                <option value="">Pilih karyawan aktif</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nama}{e.jabatan ? ` — ${e.jabatan}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="flab">Tanggal *</label>
-              <input className="fi" name="tanggal" type="date" defaultValue={tanggalFilter} required />
-            </div>
-            <div>
-              <label className="flab">Jam Masuk</label>
-              <input className="fi" name="jam_masuk" type="time" />
-            </div>
-            <div>
-              <label className="flab">Jam Pulang</label>
-              <input className="fi" name="jam_pulang" type="time" />
-            </div>
-            <div>
-              <label className="flab">Status *</label>
-              <select className="fi" name="status" defaultValue="Hadir" required>
-                {STATUS_LIST.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="flab">Keterangan</label>
-              <input className="fi" name="keterangan" type="text" placeholder="mis. Izin keperluan keluarga (opsional)" />
-            </div>
-          </div>
-          <div style={{ marginTop: 12, borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
-            <button type="submit" className="btn-acc">
-              <i className="ti ti-clipboard-check" /> Simpan Absensi
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* 02 DAFTAR ABSENSI */}
-      <div className="crm-sec">
-        <SecHeader
-          num="02"
-          title="DAFTAR ABSENSI"
-          desc={`Kehadiran karyawan: ${fmtTgl(tanggalFilter)}`}
-          action={
-            <form method="GET" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input
-                className="fi"
-                name="tgl"
-                type="date"
-                defaultValue={tanggalFilter}
-                style={{ fontSize: 11, padding: "4px 8px", height: 30, width: 140 }}
-              />
-              <button type="submit" className="btn-def" style={{ height: 30, fontSize: 11 }}>
-                <i className="ti ti-filter" /> Terapkan
-              </button>
-            </form>
-          }
-        />
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 680 }}>
-            <thead>
-              <tr>
-                <th>Karyawan</th>
-                <th>Jabatan</th>
-                <th>Jam Masuk</th>
-                <th>Jam Pulang</th>
-                <th>Status</th>
-                <th>Keterangan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const emp = one(r.employees);
-                return (
-                  <tr key={r.id}>
-                    <td style={{ fontWeight: 500, fontSize: 12 }}>{emp?.nama ?? "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{emp?.jabatan ?? "—"}</td>
-                    <td style={{ fontSize: 11, fontFamily: "monospace" }}>{r.jam_masuk ?? "—"}</td>
-                    <td style={{ fontSize: 11, fontFamily: "monospace" }}>{r.jam_pulang ?? "—"}</td>
-                    <td>
-                      <span className={`bge ${statusBadge(r.status)}`}>{r.status}</span>
-                    </td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? "—"}</td>
-                  </tr>
-                );
-              })}
-              {rows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={6}
-                    style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}
+      {loadError ? (
+        <p role="alert">
+          Sesi absensi atau akses gagal dimuat. Fitur mungkin belum aktif;
+          hubungi admin sistem. Tidak ada perubahan disimpan.
+        </p>
+      ) : (
+        <>
+          <div className="crm-sec">
+            <SecHeader
+              num="01"
+              title="CATAT ABSENSI"
+              desc="Tambah catatan yang belum ada. Untuk perubahan catatan lama, gunakan koreksi berjejak di tabel."
+            />
+            <form action={simpanAbsensi}>
+              <div className="grid2">
+                <div>
+                  <label htmlFor="attendance-employee" className="flab">
+                    Karyawan
+                  </label>
+                  <select
+                    id="attendance-employee"
+                    className="fi"
+                    name="employee_id"
+                    required
                   >
-                    Belum ada absensi tercatat untuk tanggal ini.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                    <option value="">Pilih karyawan di cabang diizinkan</option>
+                    {employees.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="attendance-date" className="flab">
+                    Tanggal masuk / catatan
+                  </label>
+                  <input
+                    id="attendance-date"
+                    className="fi"
+                    type="date"
+                    name="tanggal"
+                    defaultValue={date}
+                    required
+                    max={hariIniWIB()}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="attendance-in" className="flab">
+                    Jam masuk WIB (Hadir)
+                  </label>
+                  <input
+                    id="attendance-in"
+                    className="fi"
+                    type="time"
+                    name="jam_masuk"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="attendance-out-date" className="flab">
+                    Tanggal pulang (jika ada)
+                  </label>
+                  <input
+                    id="attendance-out-date"
+                    className="fi"
+                    type="date"
+                    name="tanggal_pulang"
+                    defaultValue={date}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="attendance-out" className="flab">
+                    Jam pulang WIB
+                  </label>
+                  <input
+                    id="attendance-out"
+                    className="fi"
+                    type="time"
+                    name="jam_pulang"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="attendance-status" className="flab">
+                    Status
+                  </label>
+                  <select id="attendance-status" className="fi" name="status">
+                    {["Hadir", "Izin", "Sakit", "Alpha", "Cuti"].map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="attendance-reason" className="flab">
+                    Alasan / sumber catatan
+                  </label>
+                  <input
+                    id="attendance-reason"
+                    className="fi"
+                    name="keterangan"
+                    required
+                    minLength={3}
+                    maxLength={1000}
+                  />
+                </div>
+              </div>
+              <p>Untuk status selain Hadir, kosongkan jam masuk dan pulang.</p>
+              <SubmitButton className="btn-acc" pendingText="Menyimpan…">
+                Simpan catatan baru
+              </SubmitButton>
+            </form>
+          </div>
+          <div className="crm-sec">
+            <SecHeader
+              num="02"
+              title="ABSENSI HARIAN"
+              desc={`Tanggal masuk ${date}. Durasi hanya dihitung dari timestamp lengkap.`}
+              action={
+                <form method="get" style={{ display: "flex", gap: 8 }}>
+                  <input
+                    aria-label="Tanggal absensi"
+                    className="fi"
+                    name="tgl"
+                    type="date"
+                    defaultValue={date}
+                  />
+                  <button className="btn-def">Tampilkan</button>
+                </form>
+              }
+            />
+            <AttendanceTable rows={rows} names={names} date={date} />
+          </div>
+          <div className="crm-sec">
+            <SecHeader
+              num="03"
+              title="SESI SEBELUMNYA BELUM SELESAI"
+              desc="Maksimal 100 sesi terbuka sebelum hari ini. Pulang lintas hari dicatat pada sesi masuk; sesi lama/legacy membutuhkan koreksi eksplisit."
+            />
+            <AttendanceTable rows={unresolved} names={names} date={date} />
+          </div>
+          <div className="crm-sec">
+            <SecHeader
+              num="04"
+              title="JEJAK KOREKSI"
+              desc="50 perubahan terakhir yang diizinkan. Nilai lama tetap disimpan."
+            />
+            {!(audit.data ?? []).length ? (
+              <p>Belum ada koreksi.</p>
+            ) : (
+              (audit.data ?? []).map((a) => (
+                <details key={a.id} style={{ marginBottom: 12 }}>
+                  <summary>
+                    {names.get(a.employee_id) ?? "Karyawan"} ·{" "}
+                    {waktuSesiWIB(a.created_at)} · {a.reason}
+                  </summary>
+                  <p>Pelaku: {a.actor_id}</p>
+                  <div className="grid2">
+                    <div>
+                      <b>Sebelum</b>
+                      <pre style={{ whiteSpace: "pre-wrap" }}>
+                        {JSON.stringify(a.old_values, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <b>Sesudah</b>
+                      <pre style={{ whiteSpace: "pre-wrap" }}>
+                        {JSON.stringify(a.new_values, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </details>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </>
   );
 }
-
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function AttendanceTable({
+  rows,
+  names,
+  date,
+}: {
+  rows: Row[];
+  names: Map<string, string>;
+  date: string;
+}) {
   return (
-    <div className="card" style={{ padding: "11px 13px" }}>
-      <div style={{ fontSize: 9.5, color: "var(--tm)" }}>{label}</div>
-      <div
-        style={{
-          fontSize: 20,
-          fontWeight: 700,
-          color: accent ? "var(--acc)" : "#141413",
-          marginTop: 3,
-        }}
-      >
-        {value}
-      </div>
+    <div style={{ overflowX: "auto" }}>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Karyawan</th>
+            <th>Tanggal masuk</th>
+            <th>Masuk WIB</th>
+            <th>Pulang WIB</th>
+            <th>Durasi / keadaan</th>
+            <th>Koreksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const minutes = menitSesi(r);
+            return (
+              <tr key={r.id}>
+                <td>{names.get(r.employee_id) ?? "Karyawan"}</td>
+                <td>{r.tanggal}</td>
+                <td>
+                  {r.checked_in_at
+                    ? waktuSesiWIB(r.checked_in_at)
+                    : (r.jam_masuk ?? "—")}
+                </td>
+                <td>
+                  {r.checked_out_at
+                    ? waktuSesiWIB(r.checked_out_at)
+                    : (r.jam_pulang ?? "—")}
+                </td>
+                <td>
+                  {r.attendance_session_resolutions?.length
+                    ? "Sesi lama dilepas dari blokir; catatan tetap"
+                    : r.is_void
+                      ? "Dibatalkan"
+                      : minutes !== null
+                        ? `${Math.floor(minutes / 60)}j ${minutes % 60}m`
+                        : r.status === "Hadir"
+                          ? "Belum lengkap / perlu verifikasi"
+                          : r.status}
+                </td>
+                <td>
+                  {r.attendance_session_resolutions?.length ? (
+                    <p>Alasan: {r.attendance_session_resolutions[0].reason}</p>
+                  ) : (
+                    <>
+                      <details>
+                        <summary>Koreksi berjejak</summary>
+                        <form action={koreksiAbsensi} style={{ minWidth: 250 }}>
+                          <input type="hidden" name="id" value={r.id} />
+                          <input
+                            type="hidden"
+                            name="updated_at"
+                            value={r.updated_at ?? ""}
+                          />
+                          <input
+                            type="hidden"
+                            name="checked_in_at_original"
+                            value={r.checked_in_at ?? ""}
+                          />
+                          <input
+                            type="hidden"
+                            name="checked_out_at_original"
+                            value={r.checked_out_at ?? ""}
+                          />
+                          <input type="hidden" name="tgl" value={date} />
+                          <label className="flab" htmlFor={`in-${r.id}`}>
+                            Masuk WIB sebenarnya
+                          </label>
+                          <input
+                            id={`in-${r.id}`}
+                            className="fi"
+                            name="checked_in_at"
+                            type="datetime-local"
+                            step="any"
+                            defaultValue={localValue(r.checked_in_at)}
+                          />
+                          <label className="flab" htmlFor={`out-${r.id}`}>
+                            Pulang WIB sebenarnya (sesi tanpa cabang wajib
+                            dilengkapi atau dibatalkan)
+                          </label>
+                          <input
+                            id={`out-${r.id}`}
+                            className="fi"
+                            name="checked_out_at"
+                            type="datetime-local"
+                            step="any"
+                            defaultValue={localValue(r.checked_out_at)}
+                          />
+                          <label>
+                            <input type="checkbox" name="void" value="1" />{" "}
+                            Batalkan sesi yang keliru; jangan mengarang jam
+                          </label>
+                          <label className="flab" htmlFor={`reason-${r.id}`}>
+                            Alasan koreksi
+                          </label>
+                          <input
+                            id={`reason-${r.id}`}
+                            className="fi"
+                            name="reason"
+                            required
+                            minLength={3}
+                            maxLength={1000}
+                          />
+                          <SubmitButton
+                            className="btn-acc"
+                            pendingText="Menyimpan…"
+                          >
+                            Simpan koreksi
+                          </SubmitButton>
+                        </form>
+                      </details>
+                      {r.jam_masuk &&
+                        !r.jam_pulang &&
+                        !r.is_void &&
+                        r.tanggal < hariIniWIB() && (
+                          <details>
+                            <summary>
+                              Izinkan absen berikutnya (gaji final)
+                            </summary>
+                            <p>
+                              Hanya untuk sesi terbuka dari hari sebelumnya yang
+                              periode gajinya sudah disahkan. Catatan ini dan
+                              gaji final tetap dipertahankan; waktu kerja belum
+                              lengkap. Alasan wajib dicatat.
+                            </p>
+                            <form action={selesaikanSesiFinal}>
+                              <input type="hidden" name="id" value={r.id} />
+                              <input
+                                type="hidden"
+                                name="updated_at"
+                                value={r.updated_at ?? ""}
+                              />
+                              <input type="hidden" name="tgl" value={date} />
+                              <label
+                                className="flab"
+                                htmlFor={`resolve-${r.id}`}
+                              >
+                                Alasan melepas blokir
+                              </label>
+                              <input
+                                id={`resolve-${r.id}`}
+                                className="fi"
+                                name="reason"
+                                required
+                                minLength={3}
+                                maxLength={1000}
+                              />
+                              <SubmitButton
+                                className="btn-acc"
+                                pendingText="Menyimpan…"
+                              >
+                                Lepas blokir sesi final
+                              </SubmitButton>
+                            </form>
+                          </details>
+                        )}
+                    </>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {!rows.length && (
+            <tr>
+              <td colSpan={6}>Tidak ada catatan.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -4,35 +4,45 @@
 // lembur disetujui, komponen gaji, cicilan kasbon, dan reimburse disetujui.
 
 import { potonganTelat, menitTelat, type AturanGaji } from "./payroll-aturan";
-import { cicilanSemuaKasbon, cicilanTertutupGaji, type KasbonBerjalan } from "./kasbon";
+import {
+  cicilanSemuaKasbon,
+  cicilanTertutupGaji,
+  type KasbonBerjalan,
+} from "./kasbon";
 
 export type HariJadwal = {
   tanggal: string;
   isLibur: boolean;
-  jamMasuk: string | null;      // jam shift yang dijadwalkan
+  jamMasuk: string | null; // jam shift yang dijadwalkan
 };
 
 export type HariAbsen = {
+  checkedInAt?: string | null;
   tanggal: string;
   jamMasuk: string | null;
 };
 
-export type KomponenDipakai = { tipe: "tunjangan" | "potongan"; nominal: number };
+export type KomponenDipakai = {
+  tipe: "tunjangan" | "potongan";
+  nominal: number;
+};
 
 export type InputGaji = {
   gajiPokok: number;
   jadwal: HariJadwal[];
   absen: HariAbsen[];
-  tanggalCuti: string[];        // cuti/izin/sakit yang SUDAH disetujui
-  jamLembur: number;            // total jam lembur yang sudah disetujui
+  tanggalCuti: string[]; // cuti/izin/sakit yang SUDAH disetujui
+  jamLembur: number; // total jam lembur yang sudah disetujui
   komponen: KomponenDipakai[];
-  reimburse: number;            // reimburse disetujui yang dibayar periode ini
-  komisi: number;               // komisi penjualan periode ini (migrasi 0091)
+  reimburse: number; // reimburse disetujui yang dibayar periode ini
+  komisi: number; // komisi penjualan periode ini (migrasi 0091)
   // Bisa lebih dari satu: kasbon yang diajukan sendiri + utang selisih kas dari
   // tutup shift. Dulu tipenya tunggal, jadi utang kedua tidak pernah dipotong.
   kasbon: KasbonBerjalan[];
-  penyesuaian: number;          // koreksi manual pemilik (boleh negatif)
+  penyesuaian: number; // koreksi manual pemilik (boleh negatif)
   aturan: AturanGaji;
+  aturanPerTanggal?: Record<string, AturanGaji>;
+  lemburPerTanggal?: { tanggal: string; jam: number }[];
 };
 
 export type RincianGaji = {
@@ -68,37 +78,75 @@ export function hitungGaji(i: InputGaji): RincianGaji {
   let potTelat = 0;
   let hadir = 0;
   let bolos = 0;
+  let potBolosNominal = 0;
 
   for (const h of hariKerja) {
+    const aturanHari = i.aturanPerTanggal?.[h.tanggal] ?? i.aturan;
     const a = absenPer.get(h.tanggal);
     if (a?.jamMasuk) {
       hadir += 1;
-      const telat = menitTelat(h.jamMasuk, a.jamMasuk);
+      const planned = h.jamMasuk
+        ? Date.parse(
+            `${h.tanggal}T${h.jamMasuk.length === 5 ? h.jamMasuk + ":00" : h.jamMasuk}+07:00`,
+          )
+        : NaN;
+      const actual = a.checkedInAt ? Date.parse(a.checkedInAt) : NaN;
+      const telat =
+        Number.isFinite(planned) && Number.isFinite(actual)
+          ? Math.max(0, Math.floor((actual - planned) / 60000))
+          : menitTelat(h.jamMasuk, a.jamMasuk);
       menitTelatTotal += telat;
       // Potongan dihitung PER HARI supaya batas atas harian berlaku benar —
       // menjumlahkan menit sebulan lalu memotong sekali akan salah besar.
-      potTelat += potonganTelat(telat, i.aturan);
+      potTelat += potonganTelat(telat, aturanHari);
       continue;
     }
     // Tidak absen: bolos, kecuali hari itu memang cuti/izin yang sudah disetujui.
-    if (!cuti.has(h.tanggal)) bolos += 1;
+    if (!cuti.has(h.tanggal)) {
+      bolos += 1;
+      potBolosNominal += aturanHari.bolos_per_hari;
+    }
   }
 
-  const tunjangan = i.komponen.filter((k) => k.tipe === "tunjangan").reduce((a, k) => a + Number(k.nominal), 0);
-  const potonganTetap = i.komponen.filter((k) => k.tipe === "potongan").reduce((a, k) => a + Number(k.nominal), 0);
+  const tunjangan = i.komponen
+    .filter((k) => k.tipe === "tunjangan")
+    .reduce((a, k) => a + Number(k.nominal), 0);
+  const potonganTetap = i.komponen
+    .filter((k) => k.tipe === "potongan")
+    .reduce((a, k) => a + Number(k.nominal), 0);
 
-  const upahLembur = Math.round(Number(i.jamLembur) * i.aturan.lembur_per_jam);
-  const potBolos = Math.round(bolos * i.aturan.bolos_per_hari);
+  const upahLembur = Math.round(
+    i.lemburPerTanggal
+      ? i.lemburPerTanggal.reduce(
+          (sum, l) =>
+            sum +
+            Number(l.jam) *
+              (i.aturanPerTanggal?.[l.tanggal] ?? i.aturan).lembur_per_jam,
+          0,
+        )
+      : Number(i.jamLembur) * i.aturan.lembur_per_jam,
+  );
+  const potBolos = Math.round(potBolosNominal);
   const komisi = Math.round(Number(i.komisi) || 0);
 
   // Gaji sebelum cicilan = batas atas yang bisa dipotong untuk utang.
   const sebelumCicilan =
-    Number(i.gajiPokok) + tunjangan + upahLembur + Number(i.reimburse) + komisi + Number(i.penyesuaian)
-    - potonganTetap - potTelat - potBolos;
+    Number(i.gajiPokok) +
+    tunjangan +
+    upahLembur +
+    Number(i.reimburse) +
+    komisi +
+    Number(i.penyesuaian) -
+    potonganTetap -
+    potTelat -
+    potBolos;
 
   // Yang dilaporkan adalah cicilan yang BENAR-BENAR tertutup gaji. Kalau utangnya
   // lebih besar dari gaji bersih, sisanya tetap jadi utang — bukan dianggap lunas.
-  const cicilanPerKasbon = cicilanTertutupGaji(cicilanSemuaKasbon(i.kasbon ?? []), sebelumCicilan);
+  const cicilanPerKasbon = cicilanTertutupGaji(
+    cicilanSemuaKasbon(i.kasbon ?? []),
+    sebelumCicilan,
+  );
   const cicilan = cicilanPerKasbon.reduce((a, c) => a + c.jumlah, 0);
 
   const total = sebelumCicilan - cicilan;
@@ -143,7 +191,8 @@ export function jurnalPenggajian(
   const bersih = Math.round(Number(netto) || 0);
   const cicilan = Math.round(Number(cicilanKasbon) || 0);
   const lines = [{ code: AKUN_BEBAN_GAJI, debit: bersih + cicilan, credit: 0 }];
-  if (cicilan > 0) lines.push({ code: akunPiutangKaryawan, debit: 0, credit: cicilan });
+  if (cicilan > 0)
+    lines.push({ code: akunPiutangKaryawan, debit: 0, credit: cicilan });
   lines.push({ code: kasCode, debit: 0, credit: bersih });
   return lines;
 }
