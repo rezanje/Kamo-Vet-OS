@@ -19,3 +19,6 @@ Review correction: cumulative skipped invoiced quantity can reassign historic HP
 
 
 Independent-review corrections: the RPC/RLS boundary now checks active accounts and the application's existing module defaults/overrides. ReactDOM tests first reproduced changed server-render keys after response loss. Forms now persist only tab-local identity, fail closed without storage, and keep a read-only recovery action reachable after quantity exhaustion. Confirmed success retires only the matching operation/order key. Recovery rechecks active actor/module/current and recorded branches under the same order→request lock order; it creates no document, stock movement, journal, or allocation.
+
+
+Financial read correction: sales-module gating belongs to writes/RPCs, not shared invoice reads. Default FINANCE can use AR/tax/ledger/report modules without sales permission. SELECT now independently requires an active actor and the existing branch predicate. The regression first proved two invoices/Rp377 disappearing under authenticated FINANCE; those reads are restored while sales conversion/posting remains denied. Disabled FINANCE still sees no invoices.

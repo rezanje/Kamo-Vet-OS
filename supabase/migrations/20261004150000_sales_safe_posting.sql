@@ -74,7 +74,8 @@ begin
 end $$;
 revoke all on function public.sales_assert_access(uuid) from public,anon,authenticated;
 
--- Restrict the previously authenticated-wide policies to source branches.
+-- Active, branch-scoped reads also serve finance AR/tax/ledger/report modules.
+-- Restrict mutations independently to the sales module and supported roles.
 do $$ declare t text; p text; predicate text; begin
   for t,p,predicate in select * from (values
     ('sales_quotations','sq_all','public.user_can_access_branch(branch_id)'),
@@ -87,7 +88,7 @@ do $$ declare t text; p text; predicate text; begin
     ('sales_invoice_items','sii_all','exists(select 1 from public.sales_invoices i where i.id=invoice_id)')
   ) as policies(t,p,predicate) loop
     execute format('drop policy %I on public.%I',p,t);
-    execute format('create policy %I on public.%I for select to authenticated using ((%s) and public.sales_module_access())',p||'_read',t,predicate);
+    execute format('create policy %I on public.%I for select to authenticated using ((%s) and exists(select 1 from public.profiles actor where actor.id=auth.uid() and actor.is_active is true))',p||'_read',t,predicate);
     execute format('create policy %I on public.%I for all to authenticated using ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF''))) with check ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF'')))',p||'_write',t,predicate,predicate);
   end loop;
 end $$;

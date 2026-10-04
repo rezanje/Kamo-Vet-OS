@@ -335,6 +335,7 @@ do $$ begin
     perform sales_get_posting_result('f6000000-0000-4000-8000-000000000001','invoice','sales-invoice-2');
     raise exception 'Disabled FINANCE used read-only recovery';
   exception when insufficient_privilege then null; end;
+  if exists(select 1 from sales_invoices where order_id='f6000000-0000-4000-8000-000000000001') then raise exception 'Disabled FINANCE still reads invoices'; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claim.sub','',true);
@@ -371,6 +372,9 @@ do $$ begin
     perform sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
     raise exception 'FINANCE default bypassed disabled sales module';
   exception when insufficient_privilege then null; end;
+  if (select count(*) from sales_invoices where order_id='f6000000-0000-4000-8000-000000000001')<>2
+    or (select sum(total) from sales_invoices where order_id='f6000000-0000-4000-8000-000000000001')<>377 then
+    raise exception 'Default FINANCE AR invoices disappeared despite branch access'; end if;
 end $$;
 reset role;
 select set_config('request.jwt.claim.sub','',true);
