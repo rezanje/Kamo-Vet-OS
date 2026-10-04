@@ -49,7 +49,7 @@ Files: routes `/laporan/nilai-persediaan`, `/laporan/margin-racikan` with `/undu
 
 ## Verification receipt
 
-- `npm test`: 135 files / 1,236 tests passed after final calculation and active-account changes.
+- `npm test`: 136 files / 1,245 tests passed after calculation, active-account and completeness changes.
 - Focused ESLint on all changed report, shared component, fixture and test files: no errors or warnings.
 - `npx tsc --noEmit`: passed.
 - `npm run build`: passed after final precision changes; existing image, Edge runtime and webpack-cache warnings remain.
@@ -58,3 +58,5 @@ Files: routes `/laporan/nilai-persediaan`, `/laporan/margin-racikan` with `/undu
 No production reads/writes, dependencies, migration or private ledger access changed. Browser/real PostgREST checks are delegated to the parent release review. Current inventory uses multiple current reads rather than a transaction snapshot; visible reconciliation warnings describe concurrent-change risk. Compound lines without explicit historical recipe links are excluded; invoice-wide discounts/taxes are unallocated and doctor attribution follows the current visit. FINANCE may see an exact historical version ID without inactive catalogue metadata.
 
 Parent review additionally required the shared loader/export gate to enforce `profiles.is_active === true` because API routes bypass the page layout. Three regressions first demonstrated inactive OWNER/FINANCE reads and a direct CSV returning 200; the shared gate and navigation now reject them before financial reads. No `employees` query is used for doctor metadata, preserving HRIS privacy restrictions.
+
+Independent review then reproduced silent truncation under a 200-row server cap and skipped/duplicated rows after an insertion/deletion between offset pages. The reader now requests exact counts, validates stable counts and expected page lengths, and rejects duplicate/missing primary or composite identities. The fixture sorts before applying ranges, returns filtered counts before server caps, and can mutate the dataset between queries. Loader and CSV regressions cover both reports, absent counts, cap200, count changes, and a count-preserving insertion that repeats an identity. These are observed-change checks, not a transaction snapshot; same-count value changes across sources remain subject to the visible caveat.

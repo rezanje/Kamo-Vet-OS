@@ -37,11 +37,24 @@ describe("financial report boundary", () => {
 
 describe("complete report reads", () => {
   it("reads beyond one page and fails rather than truncate above the cap", async () => {
-    const source = Array.from({ length: 1201 }, (_, id) => ({ id }));
-    expect(await readReportRows(async (from,to) => ({ data: source.slice(from,to+1), error: null }))).toHaveLength(1201);
-    await expect(readReportRows(async () => ({ data: Array.from({ length: 500 }, (_, id) => ({ id })), error: null }))).rejects.toThrow("terlalu banyak");
-    await expect(readReportRows(async from => ({ data: from ? null : source.slice(0,500), error: from ? { message: "later page" } : null }))).rejects.toThrow("later page");
-    await expect(readReportRows(async () => ({ data: null, error: null }))).rejects.toThrow("Data laporan gagal dibaca");
+    const source = Array.from({ length: 1201 }, (_, id) => ({ id: String(id) }));
+    expect(await readReportRows(async (from,to) => ({ data: source.slice(from,to+1), error: null, count: source.length }))).toHaveLength(1201);
+    await expect(readReportRows(async () => ({ data: source.slice(0,500), error: null, count: 5001 }))).rejects.toThrow("terlalu banyak");
+    await expect(readReportRows(async from => ({ data: from ? null : source.slice(0,500), error: from ? { message: "later page" } : null, count: source.length }))).rejects.toThrow("later page");
+    await expect(readReportRows(async () => ({ data: null, error: null, count: 0 }))).rejects.toThrow("Data laporan gagal dibaca");
+    await expect(readReportRows(async (from,to) => ({ data: source.slice(from,to+1), error: null, count: null }))).rejects.toThrow("Data laporan gagal dibaca");
+  });
+  it("rejects a server-capped page and repeated or missing row identities", async () => {
+    const rows = Array.from({ length: 1201 },(_,i) => ({ id: String(i) }));
+    await expect(readReportRows(async (from,to) => ({ data: rows.slice(from,Math.min(from+200,to+1)), count: rows.length, error: null }))).rejects.toThrow();
+    await expect(readReportRows(async () => ({ data: [{ id: "same" },{ id: "same" }], count: 2, error: null }))).rejects.toThrow();
+    await expect(readReportRows(async () => ({ data: [{ id: "" }], count: 1, error: null }))).rejects.toThrow();
+  });
+  it("accepts composite module identities without treating shared roles as duplicates", async () => {
+    const result = await loadInventoryReport(clientFixture({ role: "FINANCE", modules: [
+      { role: "FINANCE", module_id: "laporan" },{ role: "FINANCE", module_id: "buku-besar" },
+    ] }).client,{});
+    expect(result.summary.value).toBe(150);
   });
   const invoice = (id: string, recipe: string|null, time="2026-10-04T12:00:00+07:00", voided_at: string|null=null): Row => ({ id, compound_recipe_id: recipe, qty: 2, harga: 100, diskon_persen: 10, hpp: 50, deskripsi: "Nama sama",
     invoices: { id: "inv", visit_id: "visit", invoice_no: "INV", created_at: time, paid_status: "Belum Lunas", voided_at, visits: { branch_id: "b1", dokter: "Dr Satu", doctor_id: "d1" } } });

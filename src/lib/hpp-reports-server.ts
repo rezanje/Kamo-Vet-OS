@@ -16,24 +16,41 @@ export class ReportInputError extends Error {}
 type QueryError = { message: string } | null;
 const PAGE_SIZE = 500;
 const ROW_LIMIT = 5000;
-export async function readReportRows<T>(read: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: QueryError }>): Promise<T[]> {
+export async function readReportRows<T>(read: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: QueryError; count: number | null }>,
+  identity: (row: T) => string = row => typeof (row as Record<string,unknown>).id === "string" ? (row as Record<string,string>).id : "",
+): Promise<T[]> {
   const rows: T[] = [];
-  for (let from = 0; from <= ROW_LIMIT; from += PAGE_SIZE) {
-    const { data, error } = await read(from, from + PAGE_SIZE - 1);
+  const seen = new Set<string>();
+  let total: number | undefined;
+  for (let from = 0; total === undefined || from < total; from += PAGE_SIZE) {
+    const { data, error, count } = await read(from, from + PAGE_SIZE - 1);
     if (error) throw new Error(`Data laporan gagal dibaca: ${error.message}`);
-    if (!Array.isArray(data)) throw new Error("Data laporan gagal dibaca: hasil pembacaan tidak tersedia");
-    if (from === ROW_LIMIT && data?.length) throw new ReportInputError("Data memuat terlalu banyak baris. Persempit cabang, gudang, atau periode agar laporan tetap lengkap.");
-    rows.push(...(data ?? []));
-    if ((data?.length ?? 0) < PAGE_SIZE) break;
+    if (!Array.isArray(data) || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+      throw new Error("Data laporan gagal dibaca: hasil atau jumlah pasti baris tidak tersedia");
+    }
+    if (count > ROW_LIMIT) throw new ReportInputError("Data memuat terlalu banyak baris. Persempit cabang, gudang, atau periode agar laporan tetap lengkap.");
+    if (total === undefined) total = count;
+    if (count !== total || data.length !== Math.min(PAGE_SIZE,total-from)) {
+      throw new ReportInputError("Data laporan berubah atau terpotong selama pembacaan. Muat ulang atau persempit cakupan.");
+    }
+    for (const row of data) {
+      const key = identity(row);
+      if (typeof key !== "string" || !key || seen.has(key)) throw new ReportInputError("Identitas baris laporan berubah atau tidak lengkap. Muat ulang laporan.");
+      seen.add(key);
+      rows.push(row);
+    }
   }
   return rows;
 }
 
 type Query = ReturnType<ReturnType<SupabaseClient["from"]>["select"]>;
-async function tableRows<T>(client: SupabaseClient, table: string, columns: string, filter: (query: Query) => Query = query => query, order = "id"): Promise<T[]> {
+async function tableRows<T>(client: SupabaseClient, table: string, columns: string, filter: (query: Query) => Query = query => query, order = "id", identityKeys = [order]): Promise<T[]> {
   return readReportRows<T>(async (from, to) => {
-    const result = await filter(client.from(table).select(columns)).order(order).range(from, to);
-    return { data: result.data as T[] | null, error: result.error };
+    const result = await filter(client.from(table).select(columns,{ count: "exact" })).order(order).range(from, to);
+    return { data: result.data as T[] | null, error: result.error, count: result.count };
+  }, row => {
+    const values = identityKeys.map(key => (row as Record<string,unknown>)[key]);
+    return values.every(value => typeof value === "string" && value.length > 0) ? JSON.stringify(values) : "";
   });
 }
 async function byIds<T>(client: SupabaseClient, table: string, columns: string, key: string, ids: string[], order = "id"): Promise<T[]> {
@@ -51,7 +68,7 @@ export async function reportScope(client: SupabaseClient, path: string, branch: 
   if (error || !user) throw new ReportAccessError("Sesi tidak ditemukan", 401);
   const { data: profile, error: profileError } = await client.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
   if (profileError || !profile || profile.is_active !== true || !["OWNER","FINANCE"].includes(profile.role)) throw new ReportAccessError("Laporan HPP hanya tersedia untuk akun OWNER dan FINANCE yang aktif", 403);
-  const rules = await tableRows<{ role: string; module_id: string }>(client, "role_modules", "role,module_id", query => query.order("module_id"), "role");
+  const rules = await tableRows<{ role: string; module_id: string }>(client, "role_modules", "role,module_id", query => query.order("module_id"), "role",["role","module_id"]);
   if (!bolehBukaPath(profile.role, path, rules)) throw new ReportAccessError("Akses modul laporan tidak diizinkan", 403);
   const branches = await tableRows<Branch>(client, "branches", "id,name");
   if (branch && !branches.some(row => row.id === branch)) throw new ReportAccessError("Akses cabang ditolak", 403);
