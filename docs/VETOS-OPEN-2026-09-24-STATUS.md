@@ -1,5 +1,7 @@
 # VetOS OPEN — status kerja dan batas review
 
+> **Catatan historis.** Untuk status live, paket draft, bukti pengujian, dan sisa pekerjaan terbaru, baca [status 4 Oktober 2026](VETOS-2026-10-04-STATUS.md). PR #6/#9 di bawah sudah digabung pada 29 September; status tabel berikut mencerminkan saat audit awal.
+
 Tanggal audit: 25 September 2026. Sumber: tab `Report` (14 entri OPEN) dan repo `rezanje/Kamo-Vet-OS`, `main` pada `f860e92`. Spreadsheet hanya dibaca; branch review tidak mengubah data produksi.
 
 | Entri | Temuan terverifikasi | Status pada branch review / berikutnya |
