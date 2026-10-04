@@ -92,3 +92,31 @@ rollback when fee insertion fails. A separate two-session AR race allowed one
 Rp150 payment against a Rp200 invoice and rejected the competing Rp150 payment;
 one receipt and one journal remained. The isolated database is not production
 or a complete Supabase stack.
+
+## Atomic sales posting (2026-10-04)
+
+Run the sales transaction suite against local Supabase with:
+
+```sh
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/sales_safe_posting.sql
+```
+
+A self-contained Docker runner creates and removes its own fictional PostgreSQL
+16 database, applies every repository migration, runs that suite under the
+`authenticated` role and RLS, and checks genuine independent-session races:
+
+```sh
+python scripts/test-sales-posting-postgres.py
+```
+
+The runner uses explicit auth/storage shims and public-table grants, and seeds
+COA 1101/1102 before migration 0068 as required by the existing migration chain.
+It is not a complete Supabase local stack or a production verification. It does
+not accept a database URL. Coverage includes box and pcs of the same SKU,
+partial shipments/invoices and HPP, PKP, service/free-text rows, request identity,
+quantity and branch/role validation, forced journal and quotation-line failures,
+missing warehouse/stock/layers/positive cost/account, closed periods, and atomic
+quotation conversion. Two-session checks cover competing last-unit shipments,
+competing invoice remainder, and identical invoice retries. Each race verifies
+that the second independent session actually waits on a posting lock.

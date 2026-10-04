@@ -43,10 +43,40 @@ insert into sales_order_items(id,order_id,item_id,nama,satuan,faktor,qty,harga) 
 ('f7000000-0000-4000-8000-000000000004','f6000000-0000-4000-8000-000000000001',null,'Free text',null,1,1,20);
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=true,ppn_rate=11;
+insert into sales_quotations(id,no_penawaran,customer_id,branch_id,total) values
+('f8000000-0000-4000-8000-000000000001','SQ.TEST','f4000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001',220);
+insert into sales_quotation_items(quotation_id,item_id,nama,satuan,faktor,qty,harga) values
+('f8000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001','Box quote','box',12,2,110);
+create function public.test_sales_reject_order_line() returns trigger language plpgsql as $$ begin raise exception 'forced quotation line failure'; end $$;
+create trigger test_sales_quote_line before insert on sales_order_items for each row execute function public.test_sales_reject_order_line();
 set local role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
 select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+do $$ begin
+  begin
+    perform sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
+    raise exception 'Expected quotation line failure';
+  exception when raise_exception then if sqlerrm<>'forced quotation line failure' then raise; end if; end;
+  if exists(select 1 from sales_orders where quotation_id='f8000000-0000-4000-8000-000000000001')
+    or (select status from sales_quotations where id='f8000000-0000-4000-8000-000000000001')<>'draft' then raise exception 'Quotation accepted after failed conversion'; end if;
+end $$;
+reset role;
+drop trigger test_sales_quote_line on sales_order_items;
+set local role authenticated;
+do $$ declare r jsonb; again jsonb; begin
+  r:=sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
+  again:=sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
+  if r<>again or (select count(*) from sales_orders where quotation_id='f8000000-0000-4000-8000-000000000001')<>1 then raise exception 'Quotation retry duplicated'; end if;
+  if not exists(select 1 from sales_order_items where order_id=(r->>'order_id')::uuid and faktor=12 and satuan='box' and qty=2 and harga=110) then raise exception 'Quotation lost snapshot'; end if;
+end $$;
 do $$ declare r jsonb; retry jsonb; bad jsonb; cnt integer; begin
+  if has_function_privilege('anon','public.sales_create_delivery(uuid,text,jsonb,jsonb)','EXECUTE')
+    or has_function_privilege('authenticated','public.sales_post_order(text,uuid,text,jsonb,jsonb)','EXECUTE') then raise exception 'Internal or anonymous RPC exposed'; end if;
+  begin
+    perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','duplicate-line',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
+    raise exception 'Duplicate line accepted';
+  exception when sqlstate '22023' then null; end;
   -- One box + five pcs = seventeen base units, FIFO cost 10*2 + 7*3 = 41.
   r:=sales_create_delivery('f6000000-0000-4000-8000-000000000001','sales-shipment-1',jsonb_build_object('tanggal',current_date),
     '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000002","qty":5},{"order_item_id":"f7000000-0000-4000-8000-000000000003","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000004","qty":1}]');
@@ -67,6 +97,10 @@ do $$ declare r jsonb; retry jsonb; bad jsonb; cnt integer; begin
     raise exception 'Over shipment accepted';
   exception when sqlstate '22003' then null; end;
   if (select count(*) from sales_deliveries where order_id='f6000000-0000-4000-8000-000000000001')<>1 then raise exception 'Rejected shipment persisted'; end if;
+  begin
+    perform sales_cancel_order('f6000000-0000-4000-8000-000000000001');
+    raise exception 'Cancellation after shipment accepted';
+  exception when raise_exception then if sqlerrm not like 'Sebagian barang%' then raise; end if; end;
   r:=sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-1',jsonb_build_object('tanggal',current_date,'jatuh_tempo',current_date+30),
     '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":0.5},{"order_item_id":"f7000000-0000-4000-8000-000000000002","qty":5},{"order_item_id":"f7000000-0000-4000-8000-000000000003","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000004","qty":1}]');
   retry:=sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-1',jsonb_build_object('tanggal',current_date,'jatuh_tempo',current_date+30),
@@ -119,6 +153,77 @@ do $$ begin
       '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
     raise exception 'Stock shortage accepted';
   exception when sqlstate '22003' then null; end;
+end $$;
+reset role;
+update stock set qty=13 where warehouse_id='f3000000-0000-4000-8000-000000000001';
+update sales_orders set warehouse_id=null where id='f6000000-0000-4000-8000-000000000001';
+set local role authenticated;
+do $$ begin
+  begin
+    perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','no-warehouse',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
+    raise exception 'Missing warehouse accepted';
+  exception when raise_exception then if sqlerrm not like 'Pilih gudang%' then raise; end if; end;
+end $$;
+reset role;
+update sales_orders set warehouse_id='f3000000-0000-4000-8000-000000000001' where id='f6000000-0000-4000-8000-000000000001';
+update stock_layers set unit_cost=0 where warehouse_id='f3000000-0000-4000-8000-000000000001';
+set local role authenticated;
+do $$ begin
+  begin
+    perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','zero-cost',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
+    raise exception 'Zero cost accepted';
+  exception when raise_exception then if sqlerrm not like 'Lapisan stok%HPP positif%' then raise; end if; end;
+end $$;
+reset role;
+update stock_layers set unit_cost=3,qty_left=least(qty_left,5) where warehouse_id='f3000000-0000-4000-8000-000000000001';
+set local role authenticated;
+do $$ begin
+  begin
+    perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','short-layers',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
+    raise exception 'Short layers accepted';
+  exception when sqlstate '22003' then null; end;
+  if (select sum(qty_left) from stock_layers where warehouse_id='f3000000-0000-4000-8000-000000000001')<>5
+     or (select qty from stock where warehouse_id='f3000000-0000-4000-8000-000000000001')<>13
+     or (select count(*) from sales_deliveries where order_id='f6000000-0000-4000-8000-000000000001')<>1 then raise exception 'Short layer failure leaked changes'; end if;
+end $$;
+reset role;
+update stock_layers set qty_left=13 where warehouse_id='f3000000-0000-4000-8000-000000000001' and qty_left>0;
+update coa_accounts set is_active=false where code='5101';
+set local role authenticated;
+do $$ begin
+  begin
+    perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','missing-account',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
+    raise exception 'Missing account accepted';
+  exception when raise_exception then if sqlerrm not like 'Akun 5101%' then raise; end if; end;
+end $$;
+reset role;
+update coa_accounts set is_active=true where code='5101';
+update accounting_locks set closed_until=current_date;
+set local role authenticated;
+do $$ begin
+  begin
+    perform sales_create_invoice('f6000000-0000-4000-8000-000000000001','closed-period',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":0.5}]');
+    raise exception 'Closed period accepted';
+  exception when raise_exception then if sqlerrm not like 'Periode akuntansi%' then raise; end if; end;
+end $$;
+reset role;
+update accounting_locks set closed_until=null;
+-- Fixtures share one transaction's now(); establish shipment chronology explicitly.
+update sales_deliveries set created_at=now()-interval '1 minute' where order_id='f6000000-0000-4000-8000-000000000001';
+set local role authenticated;
+do $$ declare r jsonb; begin
+  perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','sales-shipment-2',jsonb_build_object('tanggal',current_date),
+    '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
+  r:=sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-2',jsonb_build_object('tanggal',current_date),
+    '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1.5}]');
+  if (select sum(hpp) from sales_invoice_items where invoice_id=(r->>'document_id')::uuid)<>49 then raise exception 'HPP across multiple shipments incorrect'; end if;
+  if (select status from sales_orders where id='f6000000-0000-4000-8000-000000000001')<>'selesai' then raise exception 'Order not completed'; end if;
+  if (select sum(qty) from stock_moves where warehouse_id='f3000000-0000-4000-8000-000000000001' and source='sales-delivery')<>-29 then raise exception 'Wrong final base stock movement'; end if;
 end $$;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
 select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000002","role":"authenticated"}',true);

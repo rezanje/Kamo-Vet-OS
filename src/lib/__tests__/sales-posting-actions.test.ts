@@ -2,9 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), guard: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("@/lib/master-guard", () => ({ assertRole: state.guard }));
-// Vitest resolves these aliases explicitly because this repository has no Vite alias config.
-vi.mock("../master-guard", () => ({ assertRole: state.guard }));
-import { buatPengiriman, buatFakturJual } from "../../app/(app)/penjualan/pesanan/actions";
+import { buatPengiriman, buatFakturJual, batalPesanan } from "../../app/(app)/penjualan/pesanan/actions";
+import { jadikanPesanan } from "../../app/(app)/penjualan/penawaran/actions";
 const form = () => {
   const f = new FormData();
   f.set("id", "00000000-0000-4000-8000-000000000001");
@@ -43,4 +42,23 @@ it("rejects malformed quantities and missing retry identity before invoking SQL"
   const missing = form(); missing.delete("request_key");
   await expect(buatFakturJual(missing)).rejects.toThrow(/error=/);
   expect(state.rpc).not.toHaveBeenCalled();
+});
+it("keeps an exact over-remainder request for SQL to reject instead of silently clamping", async () => {
+  const f = form(); f.set("qty_00000000-0000-4000-8000-000000000002", "9.5");
+  state.rpc.mockResolvedValue({data:null,error:{message:"Qty melebihi sisa pesanan"}});
+  await expect(buatPengiriman(f)).rejects.toThrow(/error=Qty/);
+  expect(state.rpc.mock.calls[0][1].p_items[0].qty).toBe(9.5);
+});
+
+it("converts quotation atomically and surfaces line insertion failure", async () => {
+  state.rpc.mockResolvedValue({data:null,error:{message:"Gagal menulis baris pesanan"}});
+  await expect(jadikanPesanan(form())).rejects.toThrow(/error=Gagal/);
+  expect(state.rpc).toHaveBeenCalledWith("sales_convert_quotation", {p_quotation_id:"00000000-0000-4000-8000-000000000001"});
+  expect(state.from).not.toHaveBeenCalled();
+});
+it("cancels using the same database serialization boundary as shipments", async () => {
+  state.rpc.mockResolvedValue({data:null,error:{message:"Sebagian barang sudah dikirim"}});
+  await expect(batalPesanan(form())).rejects.toThrow(/error=Sebagian/);
+  expect(state.rpc).toHaveBeenCalledWith("sales_cancel_order", {p_order_id:"00000000-0000-4000-8000-000000000001"});
+  expect(state.from).not.toHaveBeenCalled();
 });
