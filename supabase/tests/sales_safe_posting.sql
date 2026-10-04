@@ -10,6 +10,7 @@ insert into auth.users(id,raw_user_meta_data) values
 ('f1000000-0000-4000-8000-000000000002','{"full_name":"Doctor test"}');
 update profiles set role='STAFF' where id='f1000000-0000-4000-8000-000000000001';
 update profiles set role='DOCTOR' where id='f1000000-0000-4000-8000-000000000002';
+insert into role_modules(role,module_id) values('STAFF','penjualan') on conflict do nothing;
 insert into branches(id,code,name,type) values
 ('f2000000-0000-4000-8000-000000000001','SALESTEST','Sales test','PETSHOP'),
 ('f2000000-0000-4000-8000-000000000002','SALESOTHER','Other branch','KLINIK');
@@ -289,4 +290,85 @@ do $$ begin
     raise exception 'Doctor accepted';
   exception when insufficient_privilege then null; end;
 end $$;
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+update profiles set role='OWNER',is_active=false where id='f1000000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+do $$ begin
+  begin
+    perform sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
+    raise exception 'Disabled OWNER recovered an order';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','sales-shipment-2',jsonb_build_object('tanggal',current_date-1),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
+    raise exception 'Disabled OWNER recovered a delivery';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+update profiles set role='FINANCE' where id='f1000000-0000-4000-8000-000000000001';
+insert into role_modules(role,module_id) values('FINANCE','penjualan') on conflict do nothing;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+do $$ begin
+  begin
+    perform sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-2',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1.5}]');
+    raise exception 'Disabled FINANCE recovered invoice';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+update profiles set role='ADMIN',is_active=true where id='f1000000-0000-4000-8000-000000000001';
+delete from role_modules where role='ADMIN';
+insert into role_modules(role,module_id) values('ADMIN','klinik');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+do $$ begin
+  begin
+    perform sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
+    raise exception 'ADMIN with sales module disabled recovered order';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+delete from role_modules where role='ADMIN';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+-- ADMIN without custom rows retains the existing full default access.
+select sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+update profiles set role='FINANCE' where id='f1000000-0000-4000-8000-000000000001';
+delete from role_modules where role='FINANCE';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+do $$ begin
+  begin
+    perform sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
+    raise exception 'FINANCE default bypassed disabled sales module';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+select set_config('request.jwt.claims','{}',true);
+update profiles set role='OWNER' where id='f1000000-0000-4000-8000-000000000001';
+insert into role_modules(role,module_id) values('OWNER','klinik') on conflict do nothing;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+-- Active OWNER retains its module override; disabled OWNER was rejected above.
+select sales_convert_quotation('f8000000-0000-4000-8000-000000000001');
 rollback;

@@ -48,11 +48,25 @@ create trigger sales_allocated_invoice_line_immutable before update or delete on
 create trigger sales_allocated_delivery_line_immutable before update or delete on public.sales_delivery_items
   for each row execute function public.sales_allocated_line_immutable();
 
+-- Match lib/akses.ts: active OWNER overrides custom modules; ADMIN/DOCTOR
+-- without custom rows retain full defaults. FINANCE/STAFF require sales enabled.
+create function public.sales_module_access() returns boolean
+language sql stable security definer set search_path='' as $$
+  select exists(select 1 from public.profiles p where p.id=auth.uid() and p.is_active is true and (
+    p.role='OWNER'
+    or exists(select 1 from public.role_modules m where m.role=p.role and m.module_id='penjualan')
+    or (p.role in ('ADMIN','DOCTOR') and not exists(select 1 from public.role_modules m where m.role=p.role))
+  ));
+$$;
+revoke all on function public.sales_module_access() from public,anon;
+grant execute on function public.sales_module_access() to authenticated;
+
 -- SECURITY DEFINER entry points always check the JWT actor and source branch.
 create function public.sales_assert_access(p_branch uuid) returns void
 language plpgsql security definer set search_path='' as $$
 begin
-  if auth.uid() is null or not exists(select 1 from public.profiles where id=auth.uid() and role in ('OWNER','ADMIN','FINANCE','STAFF'))
+  if auth.uid() is null or not exists(select 1 from public.profiles where id=auth.uid() and is_active is true and role in ('OWNER','ADMIN','FINANCE','STAFF'))
+     or not public.sales_module_access()
      or not public.user_can_access_branch(p_branch) then
     raise exception 'Dokumen penjualan tidak ditemukan atau tidak dapat diakses.' using errcode='42501';
   end if;
@@ -72,8 +86,8 @@ do $$ declare t text; p text; predicate text; begin
     ('sales_invoice_items','sii_all','exists(select 1 from public.sales_invoices i where i.id=invoice_id)')
   ) as policies(t,p,predicate) loop
     execute format('drop policy %I on public.%I',p,t);
-    execute format('create policy %I on public.%I for select to authenticated using (%s)',p||'_read',t,predicate);
-    execute format('create policy %I on public.%I for all to authenticated using ((%s) and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF''))) with check ((%s) and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF'')))',p||'_write',t,predicate,predicate);
+    execute format('create policy %I on public.%I for select to authenticated using ((%s) and public.sales_module_access())',p||'_read',t,predicate);
+    execute format('create policy %I on public.%I for all to authenticated using ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF''))) with check ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF'')))',p||'_write',t,predicate,predicate);
   end loop;
 end $$;
 
