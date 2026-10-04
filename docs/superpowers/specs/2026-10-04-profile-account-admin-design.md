@@ -6,7 +6,9 @@ which ignores activation, so disabled OWNER/ADMIN accounts can edit others.
 The existing official-catalog trigger only protects self role changes.
 
 Add one BEFORE UPDATE trigger, leaving existing policies and the self-role guard
-unchanged. An authenticated caller must have a stored active profile. Role or
+unchanged. Its alphabetical ordering retains the existing self-role rejection
+first, preserving P0001/ACCESS_DENIED even for combined role/activation changes.
+An authenticated caller must have a stored active profile. Role or
 activation changes, and any changes to another profile, require its stored
 OWNER/ADMIN role. Active STAFF retain personal own-profile edits. Lock the caller
 profile while checking authority so revocation committed while a request waits

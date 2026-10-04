@@ -8,8 +8,10 @@ begin
  begin
   execute statement;
   raise exception 'Expected account administration denial: %',statement;
- exception when insufficient_privilege then
+ exception when insufficient_privilege or raise_exception then
   if sqlerrm not like expected||'%' then raise; end if;
+  if expected='ACCESS_DENIED:' and sqlstate<>'P0001' then raise;
+  elsif expected<>'ACCESS_DENIED:'and sqlstate<>'42501'then raise; end if;
  end;
  assert before_state=public.test_profile_state(),'denied update must leave every profile unchanged';
 end $$;
@@ -33,7 +35,7 @@ do $$ declare i integer; caller uuid; begin
   -- activation/role claims may grant authority.
   perform set_config('request.jwt.claim.role','service_role',true);
   perform public.test_profile_denied(format('update public.profiles set is_active=true where id=%L',caller));
-  perform public.test_profile_denied(format('update public.profiles set is_active=true,role=%L where id=%L','STAFF',caller));
+  perform public.test_profile_denied(format('update public.profiles set is_active=true,role=%L where id=%L','STAFF',caller),'ACCESS_DENIED:');
   perform public.test_profile_denied(format('update public.profiles set full_name=%L where id=%L','Fiction disabled edit',caller));
   if i>1 then
    perform public.test_profile_denied('update public.profiles set full_name=''Fiction disabled admin'' where id=''f8100000-0000-4000-8000-000000000007''');
@@ -48,7 +50,18 @@ update profiles set full_name='Fiction staff personal edit'where id='f8100000-00
 do $$ begin
  assert (select full_name='Fiction staff personal edit'from profiles where id=auth.uid()),'active staff personal edit allowed';
  perform public.test_profile_denied('update public.profiles set is_active=false where id=auth.uid()','PROFILE_ACCOUNT_ADMIN:');
- perform public.test_profile_denied('update public.profiles set role=''OWNER'' where id=auth.uid()','PROFILE_ACCOUNT_ADMIN:');
+ perform public.test_profile_denied('update public.profiles set role=''OWNER'' where id=auth.uid()','ACCESS_DENIED:');
+end $$;
+
+-- Preserve the original catalog self-role rejection contract for active users.
+select set_config('request.jwt.claim.sub','f8100000-0000-4000-8000-000000000008',true);
+do $$ begin
+ begin
+  update profiles set role='OWNER'where id=auth.uid();
+  raise exception 'Existing DOCTOR self-role guard was weakened';
+ exception when raise_exception then
+  if sqlerrm not like 'ACCESS_DENIED:%'then raise; end if;
+ end;
 end $$;
 
 -- Active administrators retain legitimate changes to other accounts.

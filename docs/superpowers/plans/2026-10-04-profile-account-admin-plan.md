@@ -15,3 +15,9 @@ two-session authorization/revocation checks passed on PostgreSQL 16. The full
 repository suite passed (131 files / 1203 tests), TypeScript passed, and lint had
 zero errors with 12 existing unrelated image/upload warnings. Independent review
 and local PostgREST verification remain separate handoff checks.
+
+Compatibility follow-up: added the existing active DOCTOR self-role error
+contract as a failing real SQL regression. Renamed the new trigger to execute
+after the existing self-role guard. Active/disabled combined self-role edits
+still reject with unchanged profiles and P0001/ACCESS_DENIED; activation-only
+disabled edits reject with 42501.

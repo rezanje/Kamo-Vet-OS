@@ -38,7 +38,9 @@ begin
 end;
 $function$;
 
-create trigger profiles_account_admin_guard before update on public.profiles
+-- PostgreSQL runs BEFORE triggers alphabetically. Keep the existing self-role
+-- denial (P0001/ACCESS_DENIED) first, including combined role/activation edits.
+create trigger profiles_require_active_account_admin before update on public.profiles
   for each row execute function public.guard_profile_account_administration();
 revoke all on function public.guard_profile_account_administration()
   from public, anon, authenticated, service_role;
