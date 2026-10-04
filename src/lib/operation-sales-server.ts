@@ -406,7 +406,9 @@ export async function collectStockBlock(scope: DashboardScope, filter: Dashboard
   const totalUsage = [...usage.values()].reduce((total, value) => total + value, 0);
   const minimumByItem = new Map<string, number>((itemResult.data ?? []).map((row: any) => [String(row.id), Number(row.min_stock) || 0]));
   return {
-    stockValue: stockValue(layers),
+    stockValue: stockValue(layers.map((layer: { qty_left: number; unit_cost: number }) => ({
+      qtyLeft: Number(layer.qty_left), unitCost: Number(layer.unit_cost),
+    }))),
     coverageDays: stockCoverage(totalAvailable, totalUsage),
     lowStock: stockRows.filter((row: any) => (Number(row.qty) || 0) < (minimumByItem.get(String(row.item_id)) ?? 0)).length,
     fastMoving: rankMovement(movementRows, filter.to, 90).fast,
