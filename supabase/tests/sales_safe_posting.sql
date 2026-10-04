@@ -106,6 +106,7 @@ do $$ declare r jsonb; retry jsonb; bad jsonb; cnt integer; begin
   retry:=sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-1',jsonb_build_object('tanggal',current_date,'jatuh_tempo',current_date+30),
     '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":0.5},{"order_item_id":"f7000000-0000-4000-8000-000000000002","qty":5},{"order_item_id":"f7000000-0000-4000-8000-000000000003","qty":1},{"order_item_id":"f7000000-0000-4000-8000-000000000004","qty":1}]');
   if r<>retry then raise exception 'Invoice retry identity differs'; end if;
+  if (select count(*) from sales_invoice_delivery_allocations a join sales_invoice_items ii on ii.id=a.invoice_item_id where ii.invoice_id=(r->>'document_id')::uuid)<>4 then raise exception 'Retry duplicated HPP allocations'; end if;
   if (select dpp<>175 or ppn<>19 or total<>194 from sales_invoices where id=(r->>'document_id')::uuid) then raise exception 'Price/PKP policy changed'; end if;
   if (select sum(hpp) from sales_invoice_items where invoice_id=(r->>'document_id')::uuid)<>28 then raise exception 'Partial invoice HPP incorrect'; end if;
   if exists(select 1 from journal_entries e join journal_lines l on l.entry_id=e.id where e.branch_id='f2000000-0000-4000-8000-000000000001' group by e.id having sum(debit)<>sum(credit)) then raise exception 'Unbalanced journal'; end if;
@@ -119,6 +120,12 @@ do $$ declare r jsonb; retry jsonb; bad jsonb; cnt integer; begin
     perform sales_create_invoice('f6000000-0000-4000-8000-000000000002','other',jsonb_build_object('tanggal',current_date),'[]');
     raise exception 'Cross branch RPC accepted';
   exception when insufficient_privilege then null; end;
+end $$;
+-- The ledger can be read within branch scope, but authenticated direct writes fail.
+do $$ begin
+  if has_table_privilege('authenticated','public.sales_invoice_delivery_allocations','INSERT')
+    or has_table_privilege('authenticated','public.sales_invoice_delivery_allocations','UPDATE')
+    or has_table_privilege('authenticated','public.sales_invoice_delivery_allocations','DELETE') then raise exception 'Allocation ledger directly writable'; end if;
 end $$;
 -- Force ledger insertion failure after stock and document writes, then prove rollback.
 reset role;
@@ -144,6 +151,54 @@ do $$ begin
 end $$;
 reset role;
 drop trigger test_sales_journal on journal_lines;
+do $$ begin
+  begin
+    update sales_invoice_delivery_allocations set hpp=hpp+1;
+    raise exception 'Historical allocation mutable';
+  exception when raise_exception then if sqlerrm not like 'Alokasi HPP faktur sudah tetap%' then raise; end if; end;
+  begin
+    update sales_invoice_items set hpp=hpp+1 where order_item_id='f7000000-0000-4000-8000-000000000001';
+    raise exception 'Allocated invoice cost mutable';
+  exception when raise_exception then if sqlerrm not like 'Baris dengan alokasi HPP%' then raise; end if; end;
+  begin
+    update sales_delivery_items set hpp=hpp+1 where order_item_id='f7000000-0000-4000-8000-000000000001';
+    raise exception 'Allocated shipment cost mutable';
+  exception when raise_exception then if sqlerrm not like 'Baris dengan alokasi HPP%' then raise; end if; end;
+end $$;
+-- Allocation insertion is part of the same rollback boundary.
+create function public.test_sales_reject_allocation() returns trigger language plpgsql as $$ begin raise exception 'forced allocation failure'; end $$;
+create trigger test_sales_allocation before insert on sales_invoice_delivery_allocations for each row execute function public.test_sales_reject_allocation();
+set local role authenticated;
+do $$ begin
+  begin
+    perform sales_create_invoice('f6000000-0000-4000-8000-000000000001','allocation-fail',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":0.5}]');
+    raise exception 'Expected allocation failure';
+  exception when raise_exception then if sqlerrm<>'forced allocation failure' then raise; end if; end;
+  if (select qty_faktur from sales_order_items where id='f7000000-0000-4000-8000-000000000001')<>0.5
+    or (select count(*) from sales_invoices where order_id='f6000000-0000-4000-8000-000000000001')<>1
+    or (select count(*) from sales_invoice_delivery_allocations a join sales_invoice_items ii on ii.id=a.invoice_item_id where ii.order_item_id between 'f7000000-0000-4000-8000-000000000001' and 'f7000000-0000-4000-8000-000000000004')<>4 then raise exception 'Allocation failure did not rollback'; end if;
+end $$;
+reset role;
+drop trigger test_sales_allocation on sales_invoice_delivery_allocations;
+-- A fictional partially billed historical order has no immutable allocations.
+insert into sales_orders(id,no_pesanan,branch_id) values ('f9000000-0000-4000-8000-000000000001','SO.LEGACY','f2000000-0000-4000-8000-000000000001');
+insert into sales_order_items(id,order_id,item_id,nama,satuan,faktor,qty,harga,qty_kirim,qty_faktur) values
+('fa000000-0000-4000-8000-000000000001','f9000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001','Legacy pcs','pcs',1,2,10,2,1);
+insert into sales_invoices(id,no_faktur,order_id,branch_id,tanggal,jatuh_tempo,dpp,total) values
+('fb000000-0000-4000-8000-000000000001','FJ.LEGACY','f9000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001',current_date,current_date,10,10);
+insert into sales_invoice_items(invoice_id,order_item_id,item_id,nama,satuan,faktor,qty,harga,hpp) values
+('fb000000-0000-4000-8000-000000000001','fa000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001','Legacy pcs','pcs',1,1,10,3);
+set local role authenticated;
+do $$ begin
+  begin
+    perform sales_create_invoice('f9000000-0000-4000-8000-000000000001','legacy-remainder',jsonb_build_object('tanggal',current_date),
+      '[{"order_item_id":"fa000000-0000-4000-8000-000000000001","qty":1}]');
+    raise exception 'Unlinked legacy HPP accepted';
+  exception when sqlstate '22023' then if sqlerrm not like '%keuangan%rekonsiliasi%' then raise; end if; end;
+  if (select count(*) from sales_invoices where order_id='f9000000-0000-4000-8000-000000000001')<>1 then raise exception 'Legacy rejection leaked invoice'; end if;
+end $$;
+reset role;
 -- Short stock failure, no warehouse failure, doctor rejection.
 update stock set qty=1 where warehouse_id='f3000000-0000-4000-8000-000000000001';
 set local role authenticated;
@@ -217,11 +272,12 @@ update accounting_locks set closed_until=null;
 update sales_deliveries set created_at=now()-interval '1 minute' where order_id='f6000000-0000-4000-8000-000000000001';
 set local role authenticated;
 do $$ declare r jsonb; begin
-  perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','sales-shipment-2',jsonb_build_object('tanggal',current_date),
+  perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','sales-shipment-2',jsonb_build_object('tanggal',current_date-1),
     '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
   r:=sales_create_invoice('f6000000-0000-4000-8000-000000000001','sales-invoice-2',jsonb_build_object('tanggal',current_date),
     '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1.5}]');
-  if (select sum(hpp) from sales_invoice_items where invoice_id=(r->>'document_id')::uuid)<>49 then raise exception 'HPP across multiple shipments incorrect'; end if;
+  if (select sum(hpp) from sales_invoice_items where invoice_id=(r->>'document_id')::uuid)<>49 then raise exception 'Backdated shipment reordered already billed HPP'; end if;
+  if (select sum(a.hpp) from sales_invoice_delivery_allocations a join sales_invoice_items ii on ii.id=a.invoice_item_id where ii.order_item_id between 'f7000000-0000-4000-8000-000000000001' and 'f7000000-0000-4000-8000-000000000004')<>77 then raise exception 'Allocated costs do not reconcile to shipments'; end if;
   if (select status from sales_orders where id='f6000000-0000-4000-8000-000000000001')<>'selesai' then raise exception 'Order not completed'; end if;
   if (select sum(qty) from stock_moves where warehouse_id='f3000000-0000-4000-8000-000000000001' and source='sales-delivery')<>-29 then raise exception 'Wrong final base stock movement'; end if;
 end $$;

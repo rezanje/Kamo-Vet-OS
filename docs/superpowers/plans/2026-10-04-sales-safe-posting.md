@@ -13,3 +13,6 @@ Plan:
 4. Commit logical stages and report remaining release gates precisely.
 
 Local Next installation is 15.5.25; AGENTS.md's node_modules/next/dist/docs guide path is absent. Follow installed server-action typing and existing application conventions.
+
+
+Review correction: cumulative skipped invoiced quantity can reassign historic HPP when a later shipment is backdated. New invoice lines now persist immutable delivery-line quantity/cost allocations. Subsequent invoices consume remaining delivery quantities and cost; the final allocation carries residual cents. No shipment date restriction is introduced. A selected partially billed legacy row without complete historical allocations is blocked with an actionable finance reconciliation message; no historical invoice is backfilled. Verification first reproduced the backdated regression (expected remaining HPP49, old cumulative skip gave44), then passed with the allocation ledger. Forced allocation-insert failure and retry verify rollback and one ledger allocation per invoice/delivery pair.

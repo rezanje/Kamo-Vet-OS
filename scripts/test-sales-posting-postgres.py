@@ -117,12 +117,18 @@ insert into sales_order_items(id,order_id,item_id,nama,satuan,faktor,qty,harga) 
     assert sql("select qty from stock where warehouse_id='f3000000-0000-4000-8000-000000000001';",tuples=True).stdout.strip()=='0'
     assert sql("select count(*) from stock_moves where source='sales-delivery';",tuples=True).stdout.strip()=='1'
     print('Two-session competing last-unit shipments: one commit, one stock rejection, one movement, zero stock.')
+    delivery_retry = call('delivery',order,'last-unit-a',line,1)
+    same_delivery = race(delivery_retry,delivery_retry,same=True)
+    assert sql(f"select count(*) from sales_deliveries where id='{same_delivery['document_id']}';",tuples=True).stdout.strip()=='1'
+    assert sql("select count(*) from stock_moves where source='sales-delivery';",tuples=True).stdout.strip()=='1'
+    print('Two-session identical shipment retry: same document, no second stock movement.')
     race(call('invoice',order,'bill-a',line,.75),call('invoice',order,'bill-b',line,.75))
     print('Two-session invoice remainder race: one commit, one quantity rejection.')
     retry_call = call('invoice',order,'same-retry',line,.25)
     result = race(retry_call,retry_call,same=True)
     assert sql(f"select count(*) from sales_invoices where id='{result['document_id']}';",tuples=True).stdout.strip()=='1'
     assert sql(f"select count(*) from journal_entries where source='sales-invoice' and source_ref='{result['document_no']}';",tuples=True).stdout.strip()=='1'
-    print('Two-session identical invoice retry: same document, one invoice, one journal.')
+    assert sql(f"select count(*) from sales_invoice_delivery_allocations a join sales_invoice_items ii on ii.id=a.invoice_item_id where ii.invoice_id='{result['document_id']}';",tuples=True).stdout.strip()=='1'
+    print('Two-session identical invoice retry: same document, one invoice, one allocation, one journal.')
 finally:
     subprocess.run(['docker','rm','-f',CONTAINER], capture_output=True)

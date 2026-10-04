@@ -12,6 +12,42 @@ create table public.sales_posting_requests (
 alter table public.sales_posting_requests enable row level security;
 revoke all on public.sales_posting_requests from anon,authenticated;
 
+-- Immutable cost links for NEW invoices. Historical invoices are not backfilled.
+create table public.sales_invoice_delivery_allocations (
+  invoice_item_id uuid not null references public.sales_invoice_items(id),
+  delivery_item_id uuid not null references public.sales_delivery_items(id),
+  qty numeric not null check(qty>0),
+  hpp numeric(15,2) not null check(hpp>=0),
+  created_at timestamptz not null default now(),
+  primary key(invoice_item_id,delivery_item_id)
+);
+create index on public.sales_invoice_delivery_allocations(delivery_item_id);
+alter table public.sales_invoice_delivery_allocations enable row level security;
+revoke all on public.sales_invoice_delivery_allocations from anon,authenticated;
+grant select on public.sales_invoice_delivery_allocations to authenticated;
+create policy sales_allocations_read on public.sales_invoice_delivery_allocations for select to authenticated
+  using(exists(select 1 from public.sales_invoice_items i where i.id=invoice_item_id));
+create function public.sales_allocations_immutable() returns trigger
+language plpgsql set search_path='' as $$begin raise exception 'Alokasi HPP faktur sudah tetap dan tidak boleh diubah.'; end $$;
+revoke all on function public.sales_allocations_immutable() from public,anon,authenticated;
+create trigger sales_allocations_immutable before update or delete on public.sales_invoice_delivery_allocations
+  for each row execute function public.sales_allocations_immutable();
+
+-- The cost links also freeze both referenced document-line snapshots.
+create function public.sales_allocated_line_immutable() returns trigger
+language plpgsql security definer set search_path='' as $$begin
+  if (tg_table_name='sales_invoice_items' and exists(select 1 from public.sales_invoice_delivery_allocations where invoice_item_id=old.id))
+     or (tg_table_name='sales_delivery_items' and exists(select 1 from public.sales_invoice_delivery_allocations where delivery_item_id=old.id)) then
+    raise exception 'Baris dengan alokasi HPP faktur sudah tetap. Minta keuangan meninjau.';
+  end if;
+  return coalesce(new,old);
+end $$;
+revoke all on function public.sales_allocated_line_immutable() from public,anon,authenticated;
+create trigger sales_allocated_invoice_line_immutable before update or delete on public.sales_invoice_items
+  for each row execute function public.sales_allocated_line_immutable();
+create trigger sales_allocated_delivery_line_immutable before update or delete on public.sales_delivery_items
+  for each row execute function public.sales_allocated_line_immutable();
+
 -- SECURITY DEFINER entry points always check the JWT actor and source branch.
 create function public.sales_assert_access(p_branch uuid) returns void
 language plpgsql security definer set search_path='' as $$
@@ -90,7 +126,8 @@ declare
   v_payload jsonb; v_prior public.sales_posting_requests%rowtype; v_result jsonb;
   v_date date; v_due date; v_warehouse uuid; v_no text; v_id uuid:=gen_random_uuid();
   v_qty numeric; v_left numeric; v_take numeric; v_hpp numeric; v_total_hpp numeric:=0;
-  v_skip numeric; v_dpp numeric:=0; v_tax numeric:=0; v_pkp boolean; v_rate numeric; v_type text;
+  v_available numeric; v_allocated_hpp numeric; v_cost numeric; v_invoice_item_id uuid;
+  v_allocations jsonb; v_dpp numeric:=0; v_tax numeric:=0; v_pkp boolean; v_rate numeric; v_type text;
   v_is_inventory boolean; v_lines jsonb:='[]'; v_count integer;
 begin
   if p_kind not in ('delivery','invoice') then raise exception 'Jenis posting tidak valid'; end if;
@@ -131,7 +168,7 @@ begin
   if p_kind='delivery' then
     -- Aggregate same SKU across box/pcs rows and lock balances in stock RPC order.
     for v_stock in
-      select oi.item_id,sum(x.qty*oi.faktor) as qty from jsonb_to_recordset(p_items) as x(order_item_id uuid,qty numeric)
+      select oi.item_id,min(i.name) as item_name,sum(x.qty*oi.faktor) as qty from jsonb_to_recordset(p_items) as x(order_item_id uuid,qty numeric)
       join public.sales_order_items oi on oi.id=x.order_item_id
       join public.items i on i.id=oi.item_id where coalesce(i.item_type,'Persediaan')='Persediaan'
       group by oi.item_id order by oi.item_id
@@ -140,7 +177,7 @@ begin
         raise exception 'Pilih gudang aktif pada cabang pesanan untuk mengirim barang.'; end if;
       perform public.sales_assert_access((select branch_id from public.warehouses where id=v_warehouse));
       perform 1 from public.stock where warehouse_id=v_warehouse and item_id=v_stock.item_id and qty>=v_stock.qty for update;
-      if not found then raise exception 'Stok % tidak cukup untuk % satuan dasar.',v_stock.item_id,v_stock.qty using errcode='22003'; end if;
+      if not found then raise exception 'Stok % tidak cukup untuk % satuan dasar.',v_stock.item_name,v_stock.qty using errcode='22003'; end if;
     end loop;
     v_no:=public.sales_next_number('DO',(now() at time zone 'Asia/Jakarta')::date);
     insert into public.sales_deliveries(id,no_kirim,order_id,tanggal,ekspedisi,no_resi,catatan,created_by)
@@ -175,18 +212,39 @@ begin
         values(v_id,v_row.id,v_row.item_id,v_row.nama,v_row.satuan,v_row.faktor,v_input.qty,case when v_row.item_id is null then null else round(v_hpp,2) end);
       update public.sales_order_items set qty_kirim=qty_kirim+v_input.qty where id=v_row.id;
     else
-      v_left:=v_input.qty; v_skip:=v_row.qty_faktur;
-      for v_delivery in select di.qty,di.hpp from public.sales_delivery_items di join public.sales_deliveries d on d.id=di.delivery_id
+      -- Cumulative qty alone cannot identify the historical cost consumed by
+      -- legacy invoices. Fail closed until finance reconciles those documents.
+      if v_row.qty_faktur<>(select coalesce(sum(ii.qty),0) from public.sales_invoice_items ii
+          join public.sales_invoices inv on inv.id=ii.invoice_id where ii.order_item_id=v_row.id and inv.order_id=p_order_id)
+        or exists(select 1 from public.sales_invoice_items ii join public.sales_invoices inv on inv.id=ii.invoice_id
+          where ii.order_item_id=v_row.id and inv.order_id=p_order_id and (
+            ii.qty<>(select coalesce(sum(a.qty),0) from public.sales_invoice_delivery_allocations a where a.invoice_item_id=ii.id)
+            or ii.hpp<>(select coalesce(sum(a.hpp),0) from public.sales_invoice_delivery_allocations a where a.invoice_item_id=ii.id))) then
+        raise exception 'Alokasi HPP faktur lama % belum dapat diverifikasi. Minta keuangan merekonsiliasi faktur dan pengiriman sebelum menagih sisa.' ,v_row.nama using errcode='22023';
+      end if;
+      v_left:=v_input.qty; v_allocations:='[]'; v_invoice_item_id:=gen_random_uuid();
+      for v_delivery in select di.id,di.qty,di.hpp,
+          coalesce((select sum(a.qty) from public.sales_invoice_delivery_allocations a where a.delivery_item_id=di.id),0) as allocated_qty,
+          coalesce((select sum(a.hpp) from public.sales_invoice_delivery_allocations a where a.delivery_item_id=di.id),0) as allocated_hpp
+        from public.sales_delivery_items di join public.sales_deliveries d on d.id=di.delivery_id
         where di.order_item_id=v_row.id and d.order_id=p_order_id order by d.tanggal,d.created_at,d.id,di.id loop
         exit when v_left<=0;
-        v_take:=least(v_skip,v_delivery.qty); v_skip:=v_skip-v_take;
-        v_take:=least(v_left,v_delivery.qty-v_take);
+        v_available:=v_delivery.qty-v_delivery.allocated_qty;
+        v_allocated_hpp:=coalesce(v_delivery.hpp,0)-v_delivery.allocated_hpp;
+        if v_available<0 or v_allocated_hpp<0 then raise exception 'Alokasi HPP pengiriman % tidak konsisten. Minta keuangan meninjau.',v_row.nama; end if;
+        if v_available=0 then continue; end if;
+        v_take:=least(v_left,v_available);
         if v_row.item_id is not null and coalesce(v_is_inventory,false) and v_delivery.hpp is null then raise exception 'HPP pengiriman % belum tersedia. Minta keuangan meninjau.',v_row.nama; end if;
-        v_hpp:=v_hpp+v_take*coalesce(v_delivery.hpp,0)/v_delivery.qty; v_left:=v_left-v_take;
+        -- Final allocation carries residual cents so line and shipment HPP reconcile exactly.
+        v_cost:=case when v_take=v_available then v_allocated_hpp else least(v_allocated_hpp,round(v_take*coalesce(v_delivery.hpp,0)/v_delivery.qty,2)) end;
+        v_hpp:=v_hpp+v_cost; v_left:=v_left-v_take;
+        v_allocations:=v_allocations||jsonb_build_array(jsonb_build_object('delivery_item_id',v_delivery.id,'qty',v_take,'hpp',v_cost));
       end loop;
       if v_left>0 then raise exception 'Rincian pengiriman % tidak cukup untuk alokasi HPP.',v_row.nama; end if;
-      insert into public.sales_invoice_items(invoice_id,order_item_id,item_id,nama,satuan,faktor,qty,harga,hpp)
-        values(v_id,v_row.id,v_row.item_id,v_row.nama,v_row.satuan,v_row.faktor,v_input.qty,v_row.harga,round(v_hpp,2));
+      insert into public.sales_invoice_items(id,invoice_id,order_item_id,item_id,nama,satuan,faktor,qty,harga,hpp)
+        values(v_invoice_item_id,v_id,v_row.id,v_row.item_id,v_row.nama,v_row.satuan,v_row.faktor,v_input.qty,v_row.harga,round(v_hpp,2));
+      insert into public.sales_invoice_delivery_allocations(invoice_item_id,delivery_item_id,qty,hpp)
+        select v_invoice_item_id,a.delivery_item_id,a.qty,a.hpp from jsonb_to_recordset(v_allocations) as a(delivery_item_id uuid,qty numeric,hpp numeric);
       update public.sales_order_items set qty_faktur=qty_faktur+v_input.qty where id=v_row.id;
       v_dpp:=v_dpp+v_input.qty*v_row.harga;
     end if;

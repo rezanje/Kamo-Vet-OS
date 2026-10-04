@@ -120,3 +120,11 @@ missing warehouse/stock/layers/positive cost/account, closed periods, and atomic
 quotation conversion. Two-session checks cover competing last-unit shipments,
 competing invoice remainder, and identical invoice retries. Each race verifies
 that the second independent session actually waits on a posting lock.
+
+New sales invoices keep immutable invoice-line → delivery-line quantity and HPP
+allocations. Backdated later shipments cannot reorder HPP already billed. Legacy
+partially billed rows whose invoice quantities/HPP lack complete allocation links
+are blocked with a finance reconciliation message; this change does not backfill
+history or provide a reconciliation workflow. The suite proves that rejection,
+backdated mixed-cost shipments, immutable allocation rows, exact total HPP, retry
+identity, and rollback when allocation insertion fails.
