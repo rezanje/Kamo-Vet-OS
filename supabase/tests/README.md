@@ -92,3 +92,38 @@ rollback when fee insertion fails. A separate two-session AR race allowed one
 Rp150 payment against a Rp200 invoice and rejected the competing Rp150 payment;
 one receipt and one journal remained. The isolated database is not production
 or a complete Supabase stack.
+
+## Purchase receipt and retry verification (2026-10-04)
+
+```sh
+python3 scripts/test-purchase-recovery-db.py
+```
+
+This runner creates and removes a fictional PostgreSQL 16 container with no
+network. It uses the actual purchase/stock/accounting migrations, test-only auth
+functions and grants, and two schema columns from migrations outside its curated
+subset. It is not a clean Supabase `db reset` or production schema verification.
+The SQL suite can also run against a reset local Supabase with:
+
+```sh
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/purchase_recovery.sql
+```
+
+Coverage includes staged box-to-base receipts, multiple expiry batches, damaged
+claims, omitted and foreign rows, duplicate rows, over-receipts, changed unit
+conversions, closed periods, distinct receipt journal identities, partial invoice
+FIFO splits, forced stock/journal failures and complete rollback, identical and
+conflicting retries, nonfinite amounts, current role/module/branch rejection, and
+disabled users in every supported role, and private ledger/helper permissions. The runner additionally uses independent
+connections for identical receipt/invoice/bank-asset retries, competing remaining
+receipt/invoice allocations, and recovery blocked behind newly revoked role or
+branch access. No historical receipts are repaired or repriced by this migration.
+
+`src/lib/__tests__/purchase-actions.test.ts` executes the actual server actions
+with infrastructure boundaries mocked; `purchase-request.test.ts` verifies tab
+key reuse and retirement. Browser interaction and a complete PostgREST-to-action
+round trip remain separate acceptance checks. Browser storage retains request
+identities only; when browser storage is unavailable, retries remain stable only
+while the same form stays mounted. Existing rules still require a PO to be fully
+received before any PO invoice can be created.

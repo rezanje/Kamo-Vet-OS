@@ -1,3 +1,4 @@
+import { PurchaseRecoveryComplete, PurchaseReceiptRecovery } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -50,9 +51,9 @@ const fmtDate = (d: string) =>
 export default async function PembelianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; success_sup?: string; success_terima?: string; error?: string; tab?: string }>;
+  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; success_sup?: string; success_terima?: string; recover_receipt?: string; error?: string; tab?: string }>;
 }) {
-  const { success, success_sup, success_terima, error, tab } = await searchParams;
+  const { request_done, request_scope, success, success_sup, success_terima, recover_receipt, error, tab } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: poData }, { data: supData }, { data: supCatData }] = await Promise.all([
@@ -71,6 +72,8 @@ export default async function PembelianPage({
 
   return (
     <>
+      <PurchaseRecoveryComplete scope={request_scope} requestKey={request_done} />
+      {recover_receipt && <PurchaseReceiptRecovery poId={recover_receipt} />}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/" className="back-btn">
           <i className="ti ti-arrow-left" /> Beranda
