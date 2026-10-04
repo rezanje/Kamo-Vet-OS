@@ -1,5 +1,31 @@
 # Supabase SQL checks
 
+## Atomic monthly recurring journals
+
+```sh
+python3 scripts/test-recurring-db.py
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/atomic_recurring_journals.sql
+```
+
+The Python command creates and removes a network-isolated PostgreSQL 16 container
+with fictional data, auth shims and the actual core/RLS/accounting/recurring
+migrations. It also runs two independent sessions against the same schedule and
+month: one posts, the other returns the same journal, leaving one balanced pair
+of lines. This curated accounting stack is not a complete Supabase reset or proof
+of production schema parity. The SQL command requires a local Supabase database
+with `20261004110000_atomic_recurring_journals.sql` applied.
+
+Coverage includes header/line/progress atomicity; rollback on line and progress
+trigger failure; WIB dates; consecutive catch-up and first-run rules; closed
+period and inactive-account rejection; disabled schedules; branch access;
+full-UUID identities and legacy reference reuse; and incomplete, missing or
+ambiguous historical markers. No legacy journal is rewritten automatically.
+Apply the migration before the updated app. Deploy both together; do not continue
+using an old application version that posts recurring headers and lines itself.
+An identified historical mismatch requires reviewed accounting correction before
+that schedule can continue; this test harness performs no production correction.
+
 Run these checks only against the local Supabase database. Each SQL test starts
 a transaction and rolls it back, including fixtures and test helper functions.
 

@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { RecurringForm } from "./RecurringForm";
 import { NoDok } from "@/components/NoDok";
 import { toggleRecurring } from "./actions";
+import { riwayatJurnalRecurring, type JurnalRecurringHistory } from "@/lib/recurring";
 
 type Row = {
   id: string;
@@ -30,29 +31,17 @@ export default async function JurnalBerulangPage({
     supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
     supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").order("name"),
-    // Riwayat jalannya: tiap posting menulis jurnal ber-source "recurring" dengan
-    // ref "<8 huruf pertama id>-<YYYY-MM>" (lib/recurring.ts). Dari situ jumlah
-    // berjalan dan nomor jurnal tiap bulan bisa ditarik tanpa tabel baru.
+    // Preserve legacy histories; new references identify the full schedule UUID.
     supabase.from("journal_entries")
-      .select("no_jurnal, tanggal, source_ref, journal_lines(debit)")
+      .select("no_jurnal, tanggal, source_ref, journal_lines(debit, credit)")
       .eq("source", "recurring")
       .order("tanggal", { ascending: false }),
   ]);
   const rows = (rjs ?? []) as unknown as Row[];
 
-  type JurnalRow = { no_jurnal: string; tanggal: string; source_ref: string | null; journal_lines: { debit: number }[] };
-  const riwayat = new Map<string, { no_jurnal: string; tanggal: string; periode: string; nilai: number }[]>();
-  for (const j of (jurnalRows ?? []) as unknown as JurnalRow[]) {
-    const ref = j.source_ref ?? "";
-    const pisah = ref.lastIndexOf("-", ref.length - 4);   // "<id8>-YYYY-MM"
-    if (pisah <= 0) continue;
-    const kunci = ref.slice(0, ref.indexOf("-"));
-    const periode = ref.slice(ref.indexOf("-") + 1);
-    const nilai = (j.journal_lines ?? []).reduce((a, l) => a + (Number(l.debit) || 0), 0);
-    const arr = riwayat.get(kunci) ?? [];
-    arr.push({ no_jurnal: j.no_jurnal, tanggal: j.tanggal, periode, nilai });
-    riwayat.set(kunci, arr);
-  }
+  const { riwayat, bermasalah } = riwayatJurnalRecurring(
+    (jurnalRows ?? []) as unknown as JurnalRecurringHistory[], rows.map((row) => row.id),
+  );
 
   return (
     <>
@@ -70,6 +59,11 @@ export default async function JurnalBerulangPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+      {bermasalah > 0 && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+          <i className="ti ti-alert-triangle" /> Riwayat jurnal berulang perlu ditinjau: {bermasalah} entri tidak lengkap atau memiliki identitas lama yang ambigu. Minta keuangan memeriksa jurnalnya.
         </div>
       )}
 
@@ -96,7 +90,7 @@ export default async function JurnalBerulangPage({
             <tbody>
               {rows.map((r) => {
                 const nilai = (r.lines ?? []).reduce((a, l) => a + (Number(l.debit) || 0), 0);
-                const jalan = (riwayat.get(r.id.slice(0, 8)) ?? [])
+                const jalan = (riwayat.get(r.id) ?? [])
                   .sort((a, b) => b.periode.localeCompare(a.periode));
                 return (
                   <tr key={r.id}>
