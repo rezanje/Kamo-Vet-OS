@@ -16,6 +16,7 @@ type ResepItem = {
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
   official_version_id?: string;
+  sale_item_id?: string;
 };
 
 type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
@@ -141,11 +142,13 @@ export async function simpanRekamMedis(formData: FormData) {
   const compounds = racikan.map((r) => r.official_version_id
     ? {
         official_version_id: r.official_version_id,
+        ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
         request_key: r.key ?? "",
         dosage_instruction: r.aturan_pakai ?? null,
       }
     : {
         request_key: r.key ?? "",
+        ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
         recipe: toClinicCompoundRecipeInput({
           recipeName: r.nama_obat,
           dosageInstruction: r.aturan_pakai,

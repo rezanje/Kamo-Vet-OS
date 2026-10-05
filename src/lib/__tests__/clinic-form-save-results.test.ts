@@ -1,18 +1,18 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const fixture=vi.hoisted(()=>({error:null as unknown,revalidated:[] as string[],doctorId:"doctor" as string|null,service:"Poli Umum"}));
+const fixture=vi.hoisted(()=>({error:null as unknown,revalidated:[] as string[],doctorId:"doctor" as string|null,service:"Poli Umum",calls:[] as {name:string,args:Record<string,unknown>}[]}));
 vi.mock('next/cache',()=>({revalidatePath:(href:string)=>fixture.revalidated.push(href)}));
 vi.mock('next/navigation',()=>({redirect:(href:string)=>{throw new Error(`REDIRECT ${href}`)}}));
 vi.mock('@/lib/dokter',()=>({resolveDokter:async()=>({doctorId:fixture.doctorId,nama:fixture.doctorId?'Drh. Fiction':null})}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:'user'}}})},
- rpc:async()=>({data:null,error:fixture.error}),
+ rpc:async(name:string,args:Record<string,unknown>)=>{fixture.calls.push({name,args});return {data:null,error:fixture.error}},
  from(table:string){const q={select(){return q},eq(){return q},order(){return q},limit(){return q},in(){return q},
  maybeSingle:async()=>({data:table==='inpatient_records'?{condition_status:'stabil',visit_id:'visit',medical_record_id:'record'}:table==='visits'?{branch_id:'branch',poli:fixture.service,status:'Diperiksa',pets:{species:'Kucing'}}:{role:'OWNER'},error:null}),
  then(resolve:(value:unknown)=>void){return Promise.resolve({data:[],error:null}).then(resolve)}};return q},
 })}));
 import { simpanRekamMedis } from '../../app/(app)/klinik/rekam-medis/[visitId]/actions';
 import { addDailyLogPos } from '../../app/(app)/klinik/rawat-inap/actions';
-beforeEach(()=>{fixture.error=null;fixture.revalidated=[];fixture.doctorId='doctor';fixture.service='Poli Umum'});
+beforeEach(()=>{fixture.error=null;fixture.calls=[];fixture.revalidated=[];fixture.doctorId='doctor';fixture.service='Poli Umum'});
 function form(){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',condition_note:'Fictional clinical note',next:'resep',resep:'[]'}))data.set(key,value);return data;}
 it('rejects medical completion with no resolved doctor',async()=>{
  fixture.doctorId=null;await expect(simpanRekamMedis(form())).rejects.toThrow(/^REDIRECT .*\?error=/);expect(fixture.revalidated).toEqual([]);
@@ -36,3 +36,13 @@ it('returns failed inpatient save to the editable form',async()=>{
  fixture.error={message:'STOCK_SHORT: Fictional medicine'};
  await expect(addDailyLogPos(form())).rejects.toThrow(/^REDIRECT \/klinik\/rawat-inap\/inpatient\/catatan\?error=/);
 });
+
+for(const [name,save] of [['initial',simpanRekamMedis],['inpatient',addDailyLogPos]] as const){
+ for(const official of [false,true])it(`forwards master SKU binding for ${name} ${official?'official':'custom'} compound atomically`,async()=>{
+  const data=form();data.set('resep',JSON.stringify([{key:'compound-key',sale_item_id:'master-sku',nama_obat:'Master compound',qty:1,harga:1200,jenis:'racikan',satuan:'racikan',faktor:1,item_id:null,...(official?{official_version_id:'formula-version'}:{ingredients:[{item_id:'material',nama:'Material',qty:0.5,satuan:'gram',harga:999999}],dosage_form:'puyer'})}]));
+  expect(await save(data)).toMatchObject({saved:true});
+  const call=fixture.calls.find(c=>c.name===(name==='initial'?'clinic_save_initial_record':'clinic_save_inpatient_log_with_status'))!;
+  expect(call.args.p_rows).toEqual([]);
+  expect(call.args.p_compounds).toEqual([expect.objectContaining({sale_item_id:'master-sku',request_key:'compound-key',...(official?{official_version_id:'formula-version'}:{recipe:expect.objectContaining({recipe_name:'Master compound'})})})]);
+ });
+}
