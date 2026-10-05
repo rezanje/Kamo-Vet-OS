@@ -33,6 +33,22 @@ export function compoundTable(report: CompoundReport): ReportTable {
     row.paymentStatus, row.cost === null ? "HPP belum tersedia" : "Lengkap",
   ] })) };
 }
+export function compoundIngredientsTable(report: CompoundReport): ReportTable {
+  return { columns: [
+    { label: "Waktu WIB" }, { label: "Invoice" }, { label: "Cabang" }, { label: "Dokter kunjungan" }, { label: "Racikan" },
+    { label: "ID resep" }, { label: "ID versi resmi" }, { label: "Bahan" }, { label: "ID barang" }, { label: "Satuan dasar" },
+    { label: "Qty bahan", format: "qty" }, { label: "Sumber qty" }, { label: "HPP satuan historis rata-rata", format: "money" },
+    { label: "HPP bahan historis", format: "money" }, { label: "Cakupan rincian HPP" },
+  ], rows: report.rows.flatMap(row => (row.ingredients?.length ? row.ingredients : [null]).map(ingredient => ({
+    id: `${row.id}:${ingredient?.id ?? "missing"}`, href: `/klinik/pembayaran/${row.visitId}/invoice`, cells: [
+      reportWIB(row.createdAt), row.invoiceNo, row.branch, row.doctor, row.name, row.recipeId, row.formulaVersionId ?? "Ad hoc",
+      ingredient?.name ?? "Bahan belum tersedia", ingredient?.itemId ?? null, ingredient?.unit ?? null, ingredient?.qty ?? null,
+      row.ingredientQtySource ?? "Resep tersimpan", ingredient?.averageCost ?? null, ingredient?.cost ?? null,
+      row.ingredientCostComplete ? "Cocok dengan HPP invoice" : "Rincian HPP belum lengkap / belum cocok",
+    ],
+  }))) };
+}
+export function compoundIngredientsCsv(report: CompoundReport): string { return tableCsv(compoundIngredientsTable(report)); }
 function tableCsv(table: ReportTable): string {
   return reportCsv(table.columns.map(column => column.label),table.rows.map(row => row.cells.map(cell => cell ?? "")));
 }

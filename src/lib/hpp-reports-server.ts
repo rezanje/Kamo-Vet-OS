@@ -6,8 +6,8 @@ import { compoundSales, compoundSummary, validReportDate, valueInventory, type N
 
 export type ReportKind = "inventory" | "compound";
 export const REPORT_PATHS = { inventory: "/laporan/nilai-persediaan", compound: "/laporan/margin-racikan" } as const;
-export type ReportParams = { cabang?: string; gudang?: string; dokter?: string; dari?: string; sampai?: string; q?: string; masalah?: string; halaman?: string };
-export type ReportFilters = Required<Omit<ReportParams,"halaman">>;
+export type ReportParams = { cabang?: string; gudang?: string; dokter?: string; dari?: string; sampai?: string; q?: string; masalah?: string; halaman?: string; rincian?: string };
+export type ReportFilters = Required<Omit<ReportParams,"halaman" | "rincian">>;
 export class ReportAccessError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
@@ -92,15 +92,15 @@ type Stock = { warehouse_id: string; item_id: string; qty: Numeric };
 type Layer = { warehouse_id: string; item_id: string; qty_left: Numeric; unit_cost: Numeric };
 const matches = (q: string, values: string[]) => !q || values.some(value => value.toLocaleLowerCase("id-ID").includes(q.toLocaleLowerCase("id-ID")));
 
-export async function loadInventoryReport(client: SupabaseClient, params: ReportParams) {
+export async function loadInventoryReport(client: SupabaseClient, params: ReportParams, itemIds?: string[], path: string = REPORT_PATHS.inventory) {
   const filters = normalizeReportFilters(params);
-  const scope = await reportScope(client, REPORT_PATHS.inventory, filters.cabang);
+  const scope = await reportScope(client, path, filters.cabang);
   const warehouses = scope.branchIds.length ? await tableRows<Warehouse>(client, "warehouses", "id,branch_id,code,name,type,is_active", query => query.in("branch_id",scope.branchIds)) : [];
   if (filters.gudang && !warehouses.some(row => row.id === filters.gudang)) throw new ReportAccessError("Akses gudang ditolak", 403);
   const warehouseIds = warehouses.filter(row => !filters.gudang || row.id === filters.gudang).map(row => row.id);
   const [stock, layers] = warehouseIds.length ? await Promise.all([
-    tableRows<Stock>(client,"stock","id,warehouse_id,item_id,qty", query => query.in("warehouse_id",warehouseIds)),
-    tableRows<Layer>(client,"stock_layers","id,warehouse_id,item_id,qty_left,unit_cost", query => query.in("warehouse_id",warehouseIds).gt("qty_left",0)),
+    tableRows<Stock>(client,"stock","id,warehouse_id,item_id,qty", query => itemIds ? query.in("warehouse_id",warehouseIds).in("item_id",itemIds) : query.in("warehouse_id",warehouseIds)),
+    tableRows<Layer>(client,"stock_layers","id,warehouse_id,item_id,qty_left,unit_cost", query => itemIds ? query.in("warehouse_id",warehouseIds).gt("qty_left",0).in("item_id",itemIds) : query.in("warehouse_id",warehouseIds).gt("qty_left",0)),
   ]) : [[],[]] as [Stock[],Layer[]];
   const values = valueInventory(stock.map(row => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qty: row.qty })),
     layers.map(row => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qtyLeft: row.qty_left, unitCost: row.unit_cost })));
@@ -122,6 +122,42 @@ export async function loadInventoryReport(client: SupabaseClient, params: Report
     summary: { count: rows.length, incomplete, pricedValue, value: incomplete ? null : pricedValue } };
 }
 
+export async function loadSkuInventoryCosts(client: SupabaseClient, itemIds: string[]) {
+  const report = await loadInventoryReport(client, {}, [...new Set(itemIds)], "/pos/sku");
+  return [...new Set(itemIds)].map(itemId => {
+    const values = report.rows.filter(row => row.itemId === itemId);
+    const flags = [...new Set(values.flatMap(row => row.flags))];
+    const qty = values.reduce((sum, row) => sum + row.layerQty, 0);
+    const value = values.reduce((sum, row) => sum + row.pricedValue, 0);
+    return { itemId, averageCost: flags.length === 0 && qty > 0 ? value / qty : null, flags };
+  });
+}
+
+type IngredientSnapshot = { id: string; recipe_id: string; item_id: string | null; ingredient_name: string; quantity: Numeric; unit: string };
+type IngredientIssue = { id: string; invoice_item_id: string; recipe_id: string; ingredient_id: string; item_id: string; ingredient_name: string; unit: string; qty: Numeric; unit_cost: Numeric };
+export type CompoundIngredient = { id: string; itemId: string | null; name: string; unit: string; qty: number; averageCost: number | null; cost: number | null };
+async function ingredientIssues(client: SupabaseClient, lineIds: string[]): Promise<IngredientIssue[] | null> {
+  const rows: IngredientIssue[] = [];
+  for (let start = 0; start < lineIds.length; start += 100) {
+    const batch = lineIds.slice(start, start + 100);
+    try {
+      rows.push(...await readReportRows<IngredientIssue>(async (from, to) => {
+        const result = await client.rpc("report_compound_ingredients", { p_invoice_item_ids: batch }, { count: "exact" })
+          .select("*").order("id").range(from, to);
+        // Older installations have no protected ledger reader. Other failures
+        // must remain fatal, including auth, permissions and incomplete pages.
+        if (result.error?.code === "PGRST202") throw new MissingIngredientReader();
+        return { data: result.data, error: result.error, count: result.count };
+      }));
+    } catch (error) {
+      if (error instanceof MissingIngredientReader) return null;
+      throw error;
+    }
+  }
+  return rows;
+}
+class MissingIngredientReader extends Error {}
+
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
 type InvoiceLine = {
@@ -142,9 +178,11 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
     query => query.not("compound_recipe_id","is",null).is("invoices.voided_at",null)
       .in("invoices.visits.branch_id",scope.branchIds).gte("invoices.created_at",mulai).lte("invoices.created_at",akhir)) : [];
   const recipeIds = lines.flatMap(row => row.compound_recipe_id ? [row.compound_recipe_id] : []);
-  const [recipes, usage] = await Promise.all([
+  const [recipes, usage, snapshots, issues] = await Promise.all([
     byIds<Recipe>(client,"compounding_recipes","id,recipe_name,status","id",recipeIds),
     byIds<OfficialUsage>(client,"compound_official_usage","recipe_id,formula_version_id","recipe_id",recipeIds,"recipe_id"),
+    byIds<IngredientSnapshot>(client,"compounding_ingredients","id,recipe_id,item_id,ingredient_name,quantity,unit","recipe_id",recipeIds),
+    ingredientIssues(client, lines.map(row => row.id)),
   ]);
   const versions = await byIds<Version>(client,"compound_formula_versions","id,name,version,formula_id","id",usage.map(row => row.formula_version_id));
   const recipeMap = new Map(recipes.map(row => [row.id,row]));
@@ -165,8 +203,34 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
       doctorKey: visit.doctor_id || `nama:${doctor}`, createdAt: invoice.created_at,
       invoiceNo: invoice.invoice_no || "—", invoiceId: invoice.id, visitId: invoice.visit_id, paymentStatus: invoice.paid_status };
   }));
-  const doctors = [...new Map(values.map(row => [row.doctorKey,{ id: row.doctorKey, name: row.doctor }])).values()].sort((a,b) => a.name.localeCompare(b.name));
-  const rows = values.filter(row => (!filters.dokter || row.doctorKey === filters.dokter) && matches(filters.q,
+  const enriched = values.map(line => {
+    const grouped = new Map<string, CompoundIngredient>();
+    for (const issue of (issues ?? []).filter(row => row.invoice_item_id === line.id)) {
+      const qty = Number(issue.qty), unitCost = Number(issue.unit_cost);
+      if (issue.recipe_id !== line.recipeId || !issue.ingredient_id || !issue.item_id || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitCost) || unitCost <= 0)
+        throw new Error("Data laporan gagal dibaca: histori bahan racikan tidak valid");
+      const ingredient = grouped.get(issue.ingredient_id) ?? { id: issue.ingredient_id, itemId: issue.item_id, name: issue.ingredient_name, unit: issue.unit, qty: 0, averageCost: null, cost: 0 };
+      if (ingredient.itemId !== issue.item_id || ingredient.unit !== issue.unit) throw new Error("Data laporan gagal dibaca: identitas bahan berubah");
+      ingredient.qty += qty;
+      ingredient.cost = ingredient.cost! + qty * unitCost;
+      if (!Number.isFinite(ingredient.cost) || !Number.isFinite(ingredient.qty)) throw new Error("Data laporan gagal dibaca: HPP bahan tidak valid");
+      ingredient.averageCost = ingredient.cost / ingredient.qty;
+      grouped.set(issue.ingredient_id, ingredient);
+    }
+    const ingredients: CompoundIngredient[] = grouped.size ? [...grouped.values()] : snapshots.filter(row => row.recipe_id === line.recipeId).map(row => {
+      const qty = Number(row.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) throw new Error("Data laporan gagal dibaca: qty bahan tidak valid");
+      return { id: row.id, itemId: row.item_id, name: row.ingredient_name, unit: row.unit, qty, averageCost: null, cost: null };
+    });
+    const cost = ingredients.reduce((sum, row) => sum + (row.cost ?? 0), 0);
+    return { ...line, ingredients: ingredients.sort((a,b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+      ingredientQtySource: grouped.size ? "Pemakaian historis" : "Resep tersimpan",
+      ingredientCostComplete: grouped.size > 0 && line.cost !== null && Math.abs(cost - line.cost) < 0.005 };
+  });
+  if ((issues ?? []).some(issue => !values.some(line => line.id === issue.invoice_item_id && line.recipeId === issue.recipe_id)))
+    throw new Error("Data laporan gagal dibaca: tautan histori bahan tidak valid");
+  const doctors = [...new Map(enriched.map(row => [row.doctorKey,{ id: row.doctorKey, name: row.doctor }])).values()].sort((a,b) => a.name.localeCompare(b.name));
+  const rows = enriched.filter(row => (!filters.dokter || row.doctorKey === filters.dokter) && matches(filters.q,
     [row.name,row.recipeName,row.invoiceNo,row.branch,row.doctor,row.formulaName ?? "",row.formulaVersionId ?? ""]))
     .sort((a,b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
   return { scope, filters, rows, doctors, summary: compoundSummary(rows), readAt: new Date().toISOString() };
