@@ -11,6 +11,7 @@ type Row = {
   nama: string;
   deskripsi: string | null;
   day_of_month: number;
+  branch_id: string | null;
   is_active: boolean;
   max_occurrences: number | null;
   last_posted: string | null;
@@ -29,19 +30,19 @@ export default async function JurnalBerulangPage({
   const supabase = await createClient();
 
   const [{ data: rjs }, { data: accounts }, { data: branches }, { data: jurnalRows }] = await Promise.all([
-    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, max_occurrences, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
+    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, branch_id, max_occurrences, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
     supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").order("name"),
     // Preserve legacy histories; new references identify the full schedule UUID.
     supabase.from("journal_entries")
-      .select("no_jurnal, tanggal, source_ref, journal_lines(debit, credit)")
+      .select("no_jurnal, tanggal, source_ref, branch_id, journal_lines(debit, credit)")
       .eq("source", "recurring")
       .order("tanggal", { ascending: false }),
   ]);
   const rows = (rjs ?? []) as unknown as Row[];
 
-  const { riwayat, bermasalah } = riwayatJurnalRecurring(
-    (jurnalRows ?? []) as unknown as JurnalRecurringHistory[], rows.map((row) => row.id),
+  const { riwayat, bermasalah, perluDitinjau } = riwayatJurnalRecurring(
+    (jurnalRows ?? []) as unknown as JurnalRecurringHistory[], rows.map((row) => row.id), rows,
   );
 
   return (
@@ -93,7 +94,8 @@ export default async function JurnalBerulangPage({
                 const nilai = (r.lines ?? []).reduce((a, l) => a + (Number(l.debit) || 0), 0);
                 const jalan = (riwayat.get(r.id) ?? [])
                   .sort((a, b) => b.periode.localeCompare(a.periode));
-                const selesai = r.max_occurrences !== null && jalan.length >= r.max_occurrences;
+                const review = perluDitinjau.has(r.id);
+                const selesai = !review && r.max_occurrences !== null && jalan.length >= r.max_occurrences;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
@@ -133,7 +135,7 @@ export default async function JurnalBerulangPage({
                       )}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.last_posted ?? "Belum pernah"}</td>
-                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{selesai ? "Selesai" : r.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{review ? "Perlu ditinjau" : selesai ? "Selesai" : r.is_active ? "Aktif" : "Nonaktif"}</span></td>
                     <td>
                       {!selesai && <form action={toggleRecurring}>
                         <input type="hidden" name="id" value={r.id} />

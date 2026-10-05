@@ -57,36 +57,55 @@ export function idRecurringDariRef(ref: string, ids: string[]): string | null {
 }
 
 export type JurnalRecurringHistory = {
-  no_jurnal: string | null; tanggal: string; source_ref: string | null;
+  no_jurnal: string | null; tanggal: string; source_ref: string | null; branch_id?: string | null;
   journal_lines: { debit: number; credit: number }[];
 };
 
 /** Only complete journals contribute to the displayed successful run count. */
-export function riwayatJurnalRecurring(journals: JurnalRecurringHistory[], ids: string[]) {
+export function riwayatJurnalRecurring(
+  journals: JurnalRecurringHistory[], ids: string[],
+  schedules: { id: string; day_of_month: number; branch_id: string | null }[] = [],
+) {
+  const scheduleById = new Map(schedules.map((row) => [row.id, row]));
+  const perluDitinjau = new Set<string>();
   const riwayat = new Map<string, { no_jurnal: string; tanggal: string; periode: string; nilai: number }[]>();
   let bermasalah = 0;
   for (const journal of journals) {
     const ref = journal.source_ref ?? "";
     const id = idRecurringDariRef(ref, ids);
+    const schedule = id ? scheduleById.get(id) : undefined;
+    const periode = ref.slice(-7);
+    const dateMatches = journal.tanggal.slice(0, 7) === periode
+      && (!schedule || (Number(journal.tanggal.slice(8, 10)) === schedule.day_of_month
+        && (journal.branch_id ?? null) === schedule.branch_id));
+    const markReview = () => {
+      if (id) perluDitinjau.add(id);
+      else if (/^[0-9a-f]{8}-/.test(ref)) {
+        ids.filter((candidate) => candidate.startsWith(ref.slice(0, 8)))
+          .forEach((candidate) => perluDitinjau.add(candidate));
+      }
+    };
     const lines = journal.journal_lines ?? [];
     const debit = lines.reduce((sum, line) => sum + Number(line.debit), 0);
     const credit = lines.reduce((sum, line) => sum + Number(line.credit), 0);
-    if (!id || !journal.no_jurnal?.trim() || lines.length < 2 || !Number.isFinite(debit)
+    if (!id || !dateMatches || !journal.no_jurnal?.trim() || lines.length < 2 || !Number.isFinite(debit)
       || !Number.isFinite(credit) || debit <= 0 || debit !== credit
       || lines.some((line) => Number(line.debit) < 0 || Number(line.credit) < 0
         || (Number(line.debit) > 0 && Number(line.credit) > 0))) {
       bermasalah++;
+      markReview();
       continue;
     }
     const history = riwayat.get(id) ?? [];
     if (history.some((row) => row.periode === ref.slice(-7))) {
       bermasalah++;
+      markReview();
       continue;
     }
     history.push({ no_jurnal: journal.no_jurnal, tanggal: journal.tanggal, periode: ref.slice(-7), nilai: debit });
     riwayat.set(id, history);
   }
-  return { riwayat, bermasalah };
+  return { riwayat, bermasalah, perluDitinjau };
 }
 
 function bulanSebelum(periode: string): string {

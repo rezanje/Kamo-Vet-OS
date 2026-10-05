@@ -7,6 +7,20 @@ const complete = {
   journal_lines: [{ debit: 100, credit: 0 }, { debit: 0, credit: 100 }],
 };
 describe("recurring history reporting", () => {
+  it.each([
+    { tanggal: "2026-06-15", branch_id: null },
+    { tanggal: "2026-07-15", branch_id: null },
+    { tanggal: "2026-07-01", branch_id: "other-branch" },
+  ])("does not count a posting outside its schedule date or branch: %j", (patch) => {
+    const result = riwayatJurnalRecurring([{ ...complete, ...patch }], [ID], [{ id: ID, day_of_month: 1, branch_id: null }]);
+    expect(result.riwayat.get(ID) ?? []).toHaveLength(0);
+    expect(result.bermasalah).toBe(1);
+    expect(result.perluDitinjau.has(ID)).toBe(true);
+  });
+  it("flags duplicate monthly history for the affected schedule, even when one journal is invalid", () => {
+    const result = riwayatJurnalRecurring([complete, { ...complete, no_jurnal: "BAD-DATE", tanggal: "2026-06-15" }], [ID], [{ id: ID, day_of_month: 1, branch_id: null }]);
+    expect(result.perluDitinjau.has(ID)).toBe(true);
+  });
   it("reports complete legacy and full-identity postings under the same schedule", () => {
     const result = riwayatJurnalRecurring([complete, { ...complete, source_ref: "f3000000-2026-06", tanggal: "2026-06-01" }], [ID]);
     expect(result.riwayat.get(ID)?.map((row) => row.periode)).toEqual(["2026-07", "2026-06"]);
