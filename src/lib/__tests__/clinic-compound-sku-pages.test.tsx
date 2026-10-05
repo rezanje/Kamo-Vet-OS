@@ -12,6 +12,13 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       eq(k: string, v: unknown) { filters.push(r => r[k] === v); return q; },
       neq(k: string, v: unknown) { filters.push(r => r[k] !== v); return q; },
       in(k: string, values: unknown[]) { filters.push(r => values.includes(r[k])); return q; },
+      or(expression: string) {
+        const alternatives = expression.match(/category_id\.in\.\([^)]+\)|name\.ilike\.[^,]+/g) ?? [];
+        filters.push(row => alternatives.some(filter => filter.startsWith("category_id.in.")
+          ? filter.slice("category_id.in.(".length, -1).split(",").includes(String(row.category_id))
+          : String(row.name).toLowerCase().startsWith(filter.slice("name.ilike.".length).replace(/\*$/, "").toLowerCase())));
+        return q;
+      },
       order() { return q; },
       limit(n: number) { to = n - 1; return q; },
       range(a: number, b: number) { from = a; to = b; return q; },
@@ -81,6 +88,15 @@ describe("compound master SKUs reach clinic POS", () => {
     const props = formProps(await exam());
     const last = (props?.racikanItems as { id: string; stok: number; sell_price: number; units: unknown[] }[]).find(item => item.id === "compound-1009");
     expect(last).toMatchObject({ stok: 9, sell_price: 2000, units: expect.arrayContaining([expect.objectContaining({ unit: "box", factor: 10 })]) });
+  });
+  it("includes legacy Obat Racik names stored in other master categories", async () => {
+    fixture.tables.items.push({ id: "legacy", name: "Obat Racik Salep Jamur", is_active: true, is_compound_material: false, item_type: "Persediaan", category_id: "other", unit: "PCS", sell_price: 10000 });
+    const props = formProps(await exam());
+    expect(props?.racikanItems).toEqual(expect.arrayContaining([expect.objectContaining({ id: "legacy" })]));
+  });
+  it("finds legacy named compound SKUs even without a compound category", async () => {
+    fixture.tables.item_categories = [];
+    expect(formProps(await exam())?.racikanItems).toEqual([expect.objectContaining({ id: "racik" })]);
   });
   it.each([["category", "item_categories"], ["SKU", "items"], ["warehouse", "warehouses"], ["stock", "stock"], ["unit", "item_units"], ["branch price", "item_branch_prices"]])("fails visibly when the %s source cannot be read", async (_name, table) => {
     fixture.failed = table;

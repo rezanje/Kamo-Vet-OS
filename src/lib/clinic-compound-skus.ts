@@ -17,10 +17,11 @@ export async function loadClinicCompoundSkus(client: any): Promise<CompoundSkuRo
   const categoryIds = categories.filter(c => ["OBAT RACIK", "OBAT RACIKAN", "RACIKAN"].includes(
     c.name.trim().replace(/\s+/g, " ").toUpperCase(),
   )).map(c => c.id);
-  if (!categoryIds.length) return [];
+  const choices = ["name.ilike.Obat Racik *", "name.ilike.Obat Racikan *"];
+  if (categoryIds.length) choices.push(`category_id.in.(${categoryIds.join(",")})`);
   return readCompleteList<CompoundSkuRow>((from, to) => client.from("items")
     .select("id,code,name,unit,sell_price,is_compound_material,item_type,tindakan_kategori", { count: "exact" })
-    .in("category_id", categoryIds).eq("is_active", true)
+    .or(choices.join(",")).eq("is_active", true)
     .eq("item_type", "Persediaan").eq("is_compound_material", false)
     .order("name").order("id").range(from, to), "Obat racik dari Barang & Jasa");
 }

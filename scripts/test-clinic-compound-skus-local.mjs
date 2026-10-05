@@ -21,8 +21,9 @@ const uuid = n => `c5000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 let categories = await api('item_categories?name=eq.OBAT%20RACIK');
 if (!categories.length) categories = await api('item_categories', 'POST', [{ id: uuid(1), name: 'OBAT RACIK', is_active: true }]);
 const category = categories[0].id;
+await api('item_categories?on_conflict=id', 'POST', [{ id: uuid(2), name: 'QA other fictional category', is_active: true }]);
 const items = Array.from({ length: 55 }, (_, i) => ({ id: uuid(100 + i), code: `QA-RACIK-SKU-${i + 1}`,
-  name: `ZZ Fiction Obat Racik ${String(i + 1).padStart(2, '0')}`, unit: 'pcs', category_id: category,
+  name: `${i < 2 ? 'Obat Racik ' : ''}ZZ Fiction Obat Racik ${String(i + 1).padStart(2, '0')}`, unit: 'pcs', category_id: i < 2 ? uuid(2) : category,
   is_active: true, is_compound_material: false, item_type: 'Persediaan', sell_price: 20000, buy_price: 1000 }));
 await api('items?on_conflict=id', 'POST', items);
 await api('stock?on_conflict=item_id,warehouse_id', 'POST', items.map(item => ({ item_id: item.id, warehouse_id: manifest.benchmarkWarehouse, qty: 8 })));
@@ -53,9 +54,10 @@ try {
     await page.getByRole('button', { name: 'Racikan', exact: true }).click();
     const list = page.getByRole('region', { name: 'Obat racik dari Barang & Jasa' });
     await list.waitFor();
-    assert.equal(await list.getByRole('button', { name: /^Tambah ZZ Fiction/ }).count(), 50);
+    assert.equal(await list.getByRole('button', { name: /^Tambah / }).count(), 50);
+    assert.equal(await list.getByRole('button', { name: 'Tambah Obat Racik ZZ Fiction Obat Racik 01', exact: true }).count(), 1);
     await list.getByRole('button', { name: 'Berikutnya', exact: true }).click();
-    assert.equal(await list.getByRole('button', { name: /^Tambah ZZ Fiction/ }).count(), 5);
+    assert.equal(await list.getByRole('button', { name: /^Tambah / }).count(), 5);
     await list.getByRole('textbox', { name: 'Cari obat racik' }).fill('QA-RACIK-SKU-55');
     const add = list.getByRole('button', { name: 'Tambah ZZ Fiction Obat Racik 55', exact: true });
     await add.waitFor();
@@ -74,6 +76,6 @@ try {
   }
   assert.equal(errors.length, 0, errors.join('\n'));
   console.log(JSON.stringify({ passed: true, routes: 2, fictionalCompoundSkus: 55, visiblePerPage: 50,
-    searchBeyondOldLimit: true, secondPage: true, repeatedAddKeepsSkuIdentity: true, branchPrice: true,
+    searchBeyondOldLimit: true, legacyNamesOutsideCompoundCategory: true, secondPage: true, repeatedAddKeepsSkuIdentity: true, branchPrice: true,
     unitFactorAndPrice: true, browserErrors: errors.length, businessSubmit: false }));
 } finally { await context.close(); await browser.close(); }
