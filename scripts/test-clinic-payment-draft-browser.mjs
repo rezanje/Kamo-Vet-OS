@@ -44,6 +44,13 @@ const page=await context.newPage();const errors=[];page.on('pageerror',error=>er
 const values=async()=>({key:await page.locator('[name=requestKey]').inputValue(),items:JSON.parse(await page.locator('[name=items]').inputValue()),discount:await page.locator('[name=discount]').inputValue(),metode:await page.locator('[name=metode_bayar]').inputValue(),staff:await page.locator('[name=salesperson_id]').inputValue(),dp:await page.locator('[name=dp_amount]').inputValue(),points:await page.locator('[name=poinDigunakan]').inputValue(),voucher:await page.locator('[name=voucherCode]').inputValue()});
 try{
  await page.goto('/payment');await page.locator('[name=requestKey]').waitFor({state:'attached'});
+ const compound=page.locator('tr').filter({has:page.locator('input[value="Fiction compound"]')});
+ assert.equal(await compound.locator('input:not([type])').evaluate(e=>e.readOnly),true,'compound name stays bound to snapshot');
+ const compoundNumbers=compound.locator('input[type=number]');
+ assert.equal(await compoundNumbers.nth(0).evaluate(e=>e.readOnly),true,'one recipe is one result');
+ assert.equal(await compoundNumbers.nth(1).evaluate(e=>e.readOnly),true,'master selling price is locked');
+ assert.equal(await compoundNumbers.nth(2).evaluate(e=>e.readOnly),false,'separate discount stays editable');
+ await compoundNumbers.nth(2).fill('10');
  const medicine=page.locator('tr').filter({has:page.locator('input[value="Fiction medicine"]')});
  await medicine.locator('input[type=number]').nth(0).fill('3');await page.getByLabel('Satuan Fiction medicine',{exact:true}).selectOption('box');
  await medicine.locator('input[type=number]').nth(2).fill('10');

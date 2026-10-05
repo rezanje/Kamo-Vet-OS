@@ -86,8 +86,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
               <td>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <input className="fi" list={listId} value={r.deskripsi} placeholder="Ketik / pilih dari master" onChange={(e) => setNama(i, e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-                  {r.deskripsi.trim() && !r.item_id && (
+                  <input className="fi" list={listId} value={r.deskripsi} readOnly={!!r.recipe_id} placeholder="Ketik / pilih dari master" onChange={(e) => setNama(i, e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+                  {r.deskripsi.trim() && !r.item_id && !r.recipe_id && (
                     <i className="ti ti-alert-triangle" title="Bukan dari master — stok tidak akan berkurang" style={{ color: "#d97706", fontSize: 13, flexShrink: 0 }} />
                   )}
                 </div>
@@ -95,8 +95,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td>
                 <input className="fi" type="number" min={1} value={r.qty}
                   onChange={(e) => set(i, { qty: Number(e.target.value) })}
-                  readOnly={r.terkunci} disabled={r.terkunci}
-                  title={r.terkunci ? "Dihitung otomatis dari lama rawat inap" : undefined}
+                  readOnly={r.terkunci || !!r.recipe_id} disabled={r.terkunci}
+                  title={r.terkunci ? "Dihitung otomatis dari lama rawat inap" : r.recipe_id ? "Satu hasil racikan tersimpan" : undefined}
                   style={{ textAlign: "center", ...(r.terkunci ? { background: "#f3f4f6", cursor: "not-allowed" } : {}) }} />
               </td>
               {allowUnits && <td>
