@@ -1,5 +1,7 @@
 "use server";
 
+import { resolveClinicSalesperson } from "@/lib/clinic-payment";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
@@ -123,13 +125,19 @@ export async function bayarVisit(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, todayIso());
   if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
-  const { data: v } = await supabase.from("visits").select("branch_id, customer_id, doctor_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
+  const { data: v } = await supabase.from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
 
   // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
-  const { data: existing } = await supabase
+  const { data: activeInvoice } = await supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+
+  // A lost create response must replay its sealed request/hash instead of
+  // becoming a correction. Different creation keys keep the normal edit path.
+  const submittedRequestKey = String(formData.get("requestKey") ?? "").trim();
+  const isCreationReplay = !!activeInvoice && activeInvoice.request_key === submittedRequestKey;
+  const existing = isCreationReplay ? null : activeInvoice;
 
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
@@ -196,19 +204,28 @@ export async function bayarVisit(formData: FormData) {
     });
     if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
     if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
-    redirect(`${back}?success=edit`);
+    revalidatePath(back);
+    return { saved: true, href: `${back}?success=edit` };
   }
 
   // ---- jalur CREATE (invoice pertama utk visit ini) ----
   const requestKey = String(formData.get("requestKey") ?? "").trim();
   if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
+  let salespersonId: string | null = null;
+  try {
+    salespersonId = await resolveClinicSalesperson(supabase, v?.branch_id ?? null,
+      v?.doctor_id ?? null, v?.service_provider_id ?? null,
+      formData.has("salesperson_id") ? String(formData.get("salesperson_id") ?? "") : undefined);
+  } catch (error) {
+    redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Penjual tidak valid.")}`);
+  }
   const posted = await postInvoiceAtomik(supabase, {
     p_visit_id: visitId,
     p_request_key: requestKey,
     p_invoice: {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
-      shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: v?.doctor_id ?? null,
+      shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
     },
     p_lines: barisUntukPosting(rows),
   });
@@ -227,7 +244,7 @@ export async function bayarVisit(formData: FormData) {
 
   // Poin: dipakai & didapat dicatat saat tagihan benar-benar LUNAS. Kalau dicatat
   // saat DP, pelanggan sudah dapat poin atas uang yang belum masuk.
-  if (paidStatus === "Lunas") {
+  if (paidStatus === "Lunas" && !isCreationReplay) {
     await catatPoinKlinik(supabase, {
       customerId: v?.customer_id ?? null, ref: invoiceNo,
       dipakai: poinDipakai, totalDibayar: total,
@@ -248,7 +265,8 @@ export async function bayarVisit(formData: FormData) {
 
   if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
-  redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
+  revalidatePath(back);
+  return { saved: true, href: `/klinik/pembayaran/${visitId}?success=bayar` };
 }
 
 
@@ -307,7 +325,7 @@ export async function bayarRombongan(formData: FormData) {
 
   for (const b of belum) {
     const { data: v } = await supabase
-      .from("visits").select("branch_id, customer_id, doctor_id, poli").eq("id", b.visitId).maybeSingle();
+      .from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, poli").eq("id", b.visitId).maybeSingle();
     if (!v) { dilewati.push(b.hewan); continue; }
 
     // §6.3: tindakan berisiko wajib punya persetujuan bertanda tangan. Berlaku per
@@ -337,7 +355,8 @@ export async function bayarRombongan(formData: FormData) {
     const potonganPet = await hitungPotonganKlinik(supabase, {
       branchId: v.branch_id ?? null, customerId: v.customer_id ?? null, rows,
     });
-    siap.push({ b, salespersonId: v.doctor_id ?? null, rows, subtotal, potonganNonVoucher: potonganPet.total });
+    const salespersonId = await resolveClinicSalesperson(supabase, v.branch_id ?? null, v.doctor_id ?? null, v.service_provider_id ?? null);
+    siap.push({ b, salespersonId, rows, subtotal, potonganNonVoucher: potonganPet.total });
   }
 
   // Voucher dihitung dari GABUNGAN tagihan seluruh hewan (setelah promo & golongan),

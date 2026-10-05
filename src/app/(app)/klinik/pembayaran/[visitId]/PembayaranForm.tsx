@@ -1,5 +1,8 @@
 "use client";
 
+import type { PilihanPenjual } from "@/lib/penjual";
+import type { ItemUnit } from "@/lib/satuan";
+import { useClinicDraft } from "@/components/useClinicDraft";
 import { useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -23,7 +26,7 @@ type Line = {
    */
   terkunci?: boolean;
 };
-export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number };
+export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number; units?: ItemUnit[] };
 type Patient = {
   photo: string | null; name: string; species: string; owner: string; phone: string; address: string;
   dokter: string; jenisLayanan: string; noInvoice: string; tanggal: string;
@@ -33,9 +36,9 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 const labelMaster = (it: MasterItem) => `${it.code} — ${it.name}`;
 
-function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
-  master: MasterItem[]; listId: string;
+  master: MasterItem[]; listId: string; allowUnits?: boolean;
 }) {
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows([...rows, { deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0 }]);
@@ -73,7 +76,7 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
           diberi lebar minimum lalu digeser mendatar, sama seperti tabel lain. */}
       <div style={{ overflowX: "auto" }}>
       <table className="tbl" style={{ minWidth: 520 }}>
-        <thead><tr><th style={{ width: 26 }}>No.</th><th style={{ minWidth: 180 }}>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th><th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 66, textAlign: "center" }}>Disk %</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
+        <thead><tr><th style={{ width: 26 }}>No.</th><th style={{ minWidth: 180 }}>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th>{allowUnits && <th style={{ width: 100 }}>Satuan</th>}<th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 66, textAlign: "center" }}>Disk %</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
@@ -93,6 +96,25 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
                   title={r.terkunci ? "Dihitung otomatis dari lama rawat inap" : undefined}
                   style={{ textAlign: "center", ...(r.terkunci ? { background: "#f3f4f6", cursor: "not-allowed" } : {}) }} />
               </td>
+              {allowUnits && <td>
+                {r.prescription_item_id || r.recipe_id || r.satuan === "racikan" || r.terkunci ? (
+                  <span title="Satuan resep dan baris otomatis mengikuti catatan klinik">{r.satuan ?? "—"}</span>
+                ) : (
+                  <select className="fi" aria-label={`Satuan ${r.deskripsi || `baris ${i + 1}`}`}
+                    disabled={!r.item_id} value={r.satuan ?? master.find(it => it.id === r.item_id)?.unit ?? ""}
+                    onChange={e => {
+                      const chosen = master.find(it => it.id === r.item_id)?.units?.find(unit => unit.unit === e.target.value);
+                      if (chosen) set(i, { satuan: chosen.unit, harga: chosen.sell_price });
+                    }}>
+                    {!r.item_id && <option value="">Pilih barang dulu</option>}
+                    {r.satuan && !master.find(it => it.id === r.item_id)?.units?.some(unit => unit.unit === r.satuan)
+                      && <option value={r.satuan}>{r.satuan}</option>}
+                    {(master.find(it => it.id === r.item_id)?.units ?? []).map(unit => (
+                      <option key={unit.unit} value={unit.unit}>{unit.unit}{unit.factor > 1 ? ` (isi ${unit.factor})` : ""}</option>
+                    ))}
+                  </select>
+                )}
+              </td>}
               <td><input className="fi" type="number" min={0} step="any" value={r.harga} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td>
                 <input className="fi" type="number" min={0} max={100} step="any"
@@ -113,7 +135,7 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
               </td>
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", fontSize: 10.5, padding: "10px 0" }}>Belum ada item.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={allowUnits ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", fontSize: 10.5, padding: "10px 0" }}>Belum ada item.</td></tr>}
         </tbody>
       </table>
       </div>
@@ -125,9 +147,12 @@ function ItemTable({ title, icon, color, rows, setRows, master, listId }: {
   );
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, draftUserId = "", draftScope = `payment:${visitId}:new` }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
+  draftUserId?: string; draftScope?: string;
+  manualUnitsEnabled?: boolean;
+  salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
 }) {
@@ -137,6 +162,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [metode, setMetode] = useState(initialMetode);
   const [reason, setReason] = useState("");
   const [voucher, setVoucher] = useState("");
+  const [salesperson, setSalesperson] = useState(initialSalespersonId);
 
   const barisSemua = [...obat, ...jasa].filter((r) => r.deskripsi.trim() && r.qty > 0);
   // Diskon per baris dipotong lebih dulu; promo/voucher/golongan menghitung dari
@@ -183,6 +209,26 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
 
+  const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit } = useClinicDraft({
+    userId: draftUserId, scope: draftScope, requestKey,
+    snapshot: { obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson },
+    restore: value => {
+      const restoreRows = (saved: Line[], initial: Line[]) => {
+        const restored = saved.map(row => {
+        const locked = initial.find(source => source.terkunci && source.item_id === row.item_id);
+          return locked ? { ...row, deskripsi: locked.deskripsi, item_id: locked.item_id,
+            satuan: locked.satuan, prescription_item_id: locked.prescription_item_id,
+            recipe_id: locked.recipe_id, qty: locked.qty, terkunci: true } : row;
+        });
+        return [...restored, ...initial.filter(source => source.terkunci
+          && !restored.some(row => row.item_id === source.item_id))];
+      };
+      setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
+      setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
+      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setSalesperson(value.salesperson);
+    },
+  });
+
   const items = JSON.stringify([
     ...obat.map((r) => ({ ...r, jenis: "obat" })),
     ...jasa.map((r) => ({ ...r, jenis: "jasa" })),
@@ -190,9 +236,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const today = hariIniWIB();
 
   return (
-    <form action={bayarVisit}>
+    <form action={data => submit(data, bayarVisit)} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
-      <input type="hidden" name="requestKey" value={requestKey} />
+      <input type="hidden" name="requestKey" value={submissionKey} />
       <input type="hidden" name="items" value={items} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="voucherCode" value={voucher} />
@@ -202,6 +248,11 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
+
+      {recovered && <div className="p2ban">Draf dipulihkan. Periksa isian sebelum menyimpan.
+        <button type="button" className="btn-def" onClick={discard}>Buang draf</button>
+      </div>}
+      {(storageError || saveError) && <div className="p2ban" role="alert">{storageError || saveError}</div>}
 
       {/* Header pasien */}
       <div className="card" style={{ marginBottom: 14, padding: 18 }}>
@@ -227,6 +278,16 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
         </div>
       </div>
 
+      <div className="card" style={{ marginBottom: 12 }}>
+        <label className="flab" htmlFor="clinic-salesperson">Penjual / dokter / petugas</label>
+        {editMode ? <div>{sealedSalespersonName} · mengikuti invoice tersimpan</div> : (
+          <select id="clinic-salesperson" className="fi" name="salesperson_id" value={salesperson} onChange={event => setSalesperson(event.target.value)}>
+            <option value="">Tanpa penjual</option>
+            {salespeople.map(person => <option key={person.id} value={person.id}>{person.nama}{person.jabatan ? ` — ${person.jabatan}` : ""}</option>)}
+          </select>
+        )}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 14, alignItems: "start" }}>
         {/* ===== KIRI: rincian tagihan ===== */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
@@ -235,7 +296,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           </div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
-          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" />
+          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} />
           <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
