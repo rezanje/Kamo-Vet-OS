@@ -9,8 +9,9 @@ import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { addDailyLogPos } from "../../actions";
 import { katalogTotal, type KatalogRacikan } from "@/lib/katalog-racikan";
+import { CompoundSkuList } from "@/components/CompoundSkuList";
 
-export type ItemLite = { id: string; name: string; unit: string; sell_price: number; stok: number; units?: ItemUnit[] };
+export type ItemLite = { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number; units?: ItemUnit[] };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   faktor: number;
@@ -28,10 +29,11 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, backHref, patient, items, bahanItems, katalogRacikan, bolehManual }: {
+export function CatatanForm({ recordId, requestKey, backHref, patient, items, racikanItems, bahanItems, katalogRacikan, bolehManual }: {
   recordId: string; requestKey: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
+  racikanItems: ItemLite[];
   bahanItems: ItemLite[];
   katalogRacikan: KatalogRacikan[];
   bolehManual: boolean;
@@ -124,7 +126,7 @@ export function CatatanForm({ recordId, requestKey, backHref, patient, items, ba
 
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
   // Satuan berjenjang: ganti ml→btl, harga & faktor ikut satuan yang dipilih.
-  const unitsOf = (itemId: string | null) => (itemId ? items.find((i) => i.id === itemId)?.units ?? [] : []);
+  const unitsOf = (itemId: string | null) => (itemId ? [...items, ...racikanItems].find((i) => i.id === itemId)?.units ?? [] : []);
   const setSatuan = (key: string, itemId: string | null, unit: string) =>
     setCart((c) => c.map((r) => {
       if (r.key !== key) return r;
@@ -372,6 +374,8 @@ export function CatatanForm({ recordId, requestKey, backHref, patient, items, ba
               {tab === "Paket" && <div style={{ fontSize: 11, color: "var(--td)", padding: "12px 0" }}>Paket bundling — dalam pengembangan.</div>}
               {tab === "Racikan" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <CompoundSkuList items={racikanItems} onAdd={addObat} />
+                  <hr style={{ border: 0, borderTop: ".5px solid var(--bd)", width: "100%" }} />
                   <label className="flab">Katalog resmi perusahaan</label>
                   <select className="fi" value={officialVersionId} onChange={(e) => setOfficialVersionId(e.target.value)}>
                     <option value="">{bolehManual ? "Racikan khusus pasien (manual)" : "Pilih resep resmi"}</option>
