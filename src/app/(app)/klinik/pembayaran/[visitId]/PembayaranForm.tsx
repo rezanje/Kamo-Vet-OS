@@ -2,6 +2,7 @@
 
 import type { PilihanPenjual } from "@/lib/penjual";
 import type { ItemUnit } from "@/lib/satuan";
+import { useClinicDraft } from "@/components/useClinicDraft";
 import { useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -146,9 +147,10 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   );
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, draftUserId = "", draftScope = `payment:${visitId}:new` }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
+  draftUserId?: string; draftScope?: string;
   manualUnitsEnabled?: boolean;
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
@@ -160,6 +162,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [metode, setMetode] = useState(initialMetode);
   const [reason, setReason] = useState("");
   const [voucher, setVoucher] = useState("");
+  const [salesperson, setSalesperson] = useState(initialSalespersonId);
 
   const barisSemua = [...obat, ...jasa].filter((r) => r.deskripsi.trim() && r.qty > 0);
   // Diskon per baris dipotong lebih dulu; promo/voucher/golongan menghitung dari
@@ -206,6 +209,26 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
 
+  const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit } = useClinicDraft({
+    userId: draftUserId, scope: draftScope, requestKey,
+    snapshot: { obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson },
+    restore: value => {
+      const restoreRows = (saved: Line[], initial: Line[]) => {
+        const restored = saved.map(row => {
+        const locked = initial.find(source => source.terkunci && source.item_id === row.item_id);
+          return locked ? { ...row, deskripsi: locked.deskripsi, item_id: locked.item_id,
+            satuan: locked.satuan, prescription_item_id: locked.prescription_item_id,
+            recipe_id: locked.recipe_id, qty: locked.qty, terkunci: true } : row;
+        });
+        return [...restored, ...initial.filter(source => source.terkunci
+          && !restored.some(row => row.item_id === source.item_id))];
+      };
+      setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
+      setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
+      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setSalesperson(value.salesperson);
+    },
+  });
+
   const items = JSON.stringify([
     ...obat.map((r) => ({ ...r, jenis: "obat" })),
     ...jasa.map((r) => ({ ...r, jenis: "jasa" })),
@@ -213,9 +236,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const today = hariIniWIB();
 
   return (
-    <form action={bayarVisit}>
+    <form action={data => submit(data, bayarVisit)} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
-      <input type="hidden" name="requestKey" value={requestKey} />
+      <input type="hidden" name="requestKey" value={submissionKey} />
       <input type="hidden" name="items" value={items} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="voucherCode" value={voucher} />
@@ -225,6 +248,11 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
+
+      {recovered && <div className="p2ban">Draf dipulihkan. Periksa isian sebelum menyimpan.
+        <button type="button" className="btn-def" onClick={discard}>Buang draf</button>
+      </div>}
+      {(storageError || saveError) && <div className="p2ban" role="alert">{storageError || saveError}</div>}
 
       {/* Header pasien */}
       <div className="card" style={{ marginBottom: 14, padding: 18 }}>
@@ -253,7 +281,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <div className="card" style={{ marginBottom: 12 }}>
         <label className="flab" htmlFor="clinic-salesperson">Penjual / dokter / petugas</label>
         {editMode ? <div>{sealedSalespersonName} · mengikuti invoice tersimpan</div> : (
-          <select id="clinic-salesperson" className="fi" name="salesperson_id" defaultValue={initialSalespersonId}>
+          <select id="clinic-salesperson" className="fi" name="salesperson_id" value={salesperson} onChange={event => setSalesperson(event.target.value)}>
             <option value="">Tanpa penjual</option>
             {salespeople.map(person => <option key={person.id} value={person.id}>{person.nama}{person.jabatan ? ` — ${person.jabatan}` : ""}</option>)}
           </select>

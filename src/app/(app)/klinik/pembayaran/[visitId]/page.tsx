@@ -38,6 +38,7 @@ export default async function PembayaranPage({
   const invoiceRequestKey = randomUUID();
   const groupRequestKey = randomUUID();
   const supabase = await createClient();
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
 
   const { data: visit } = await supabase
     .from("visits")
@@ -395,8 +396,11 @@ export default async function PembayaranPage({
 
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
+          key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}
+          draftUserId={draftUser?.id ?? ""}
+          draftScope={`payment:${visit.id}:${invoice?.id ?? "new"}`}
           patient={patient}
           ppnRate={ppnRate}
           initialObat={initialObat}
@@ -500,8 +504,11 @@ export default async function PembayaranPage({
         </>
       ) : (
         <PembayaranForm
+          key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}
+          draftUserId={draftUser?.id ?? ""}
+          draftScope={`payment:${visit.id}:new`}
           patient={patient}
           ppnRate={ppnRate}
           initialObat={initialObat}

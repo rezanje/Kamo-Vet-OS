@@ -1,6 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+vi.mock("@/components/useClinicDraft", () => ({ useClinicDraft: ({ requestKey }: {requestKey: string}) => ({ submissionKey: requestKey, submit: vi.fn(), capture: vi.fn(), attachForm: vi.fn(), discard: vi.fn(), recovered: false, storageError: "", saveError: "" }) }));
 vi.mock("@/components/SubmitButton", () => ({ SubmitButton: () => null }));
 vi.mock("../../app/(app)/klinik/pembayaran/[visitId]/actions", () => ({ bayarVisit: vi.fn() }));
 vi.mock("@/lib/tanggal", async () => await import("../tanggal"));
