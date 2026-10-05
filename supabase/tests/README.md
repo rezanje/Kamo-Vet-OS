@@ -1,5 +1,43 @@
 # Supabase SQL checks
 
+## Active profile administration
+
+```sh
+python3 scripts/test-profile-account-admin-db.py
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/profile_account_admin_guard.sql
+```
+
+The Python command creates/removes a network-isolated PostgreSQL 16 container.
+It applies actual core/profile RLS migrations and the exact existing self-role
+trigger extracted from the catalog migration; auth tables/functions are local
+test shims. This curated profile stack is not a complete Supabase reset. The SQL
+command requires `20261004160000_profile_account_admin_guard.sql` on a local
+Supabase database; all fixtures and helper functions roll back.
+
+Coverage checks disabled FINANCE/OWNER/ADMIN self-reactivation, role changes and
+administration of others; active STAFF personal edits; active OWNER/ADMIN account
+administration; preserved self-role restrictions; forged JWT role claims; and
+trusted database service_role/direct postgres maintenance. Real independent
+sessions prove committed disable/role revocation is observed after lock waits,
+and that granted authority is locked until the protected update commits.
+`--baseline` omits the new migration and must fail on disabled self-reactivation.
+Native GoTrue/PostgREST verification uses an authorized generated local manifest:
+
+```sh
+python3 scripts/test-profile-account-admin-api.py --manifest /path/to/local-auth.json
+```
+
+The manifest contains `API_URL`, `ANON_KEY`, and `SERVICE_ROLE_KEY` for the
+fictional runtime. The harness only permits `http://127.0.0.1:55421`; never supply
+production credentials. It creates six unique fictional accounts, obtains real
+password-login JWTs, verifies profile PATCH denial/allowance and unchanged denied
+rows, then deletes those accounts and confirms profile cleanup. It checks both
+user-controlled role metadata on valid JWTs and a rejected signature after
+tampering with the top-level role. Keys, passwords and tokens are never printed.
+Independent review and production release remain separate checks. These commands
+never write to a remote database.
+
 Run these checks only against the local Supabase database. Each SQL test starts
 a transaction and rolls it back, including fixtures and test helper functions.
 
