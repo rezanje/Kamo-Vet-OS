@@ -29,7 +29,7 @@ export function clientFixture(options: { role?: string; active?: boolean; module
         query[method] = (...args: unknown[]) => {
           records.push({ table, method, args });
           const key = String(args[0]);
-          if (method === "select") countRequested = (args[1] as { count?: string } | undefined)?.count === "exact";
+          if (method === "select") countRequested ||= (args[1] as { count?: string } | undefined)?.count === "exact";
           if (method === "eq" || method === "is") data = data.filter(row => nested(row,key) === args[1]);
           if (method === "in") data = data.filter(row => (args[1] as unknown[]).includes(nested(row,key)));
           if (method === "not") data = data.filter(row => nested(row,key) !== args[2]);
@@ -59,7 +59,14 @@ export function clientFixture(options: { role?: string; active?: boolean; module
       };
       return query;
     },
-    rpc: async (_name: string, args: { b: string }) => ({ data: args.b !== options.deniedBranch, error: null }),
+    rpc: (name: string, args: { b: string; p_invoice_item_ids?: string[] }) => {
+      if (name === "user_can_access_branch") return Promise.resolve({ data: args.b !== options.deniedBranch, error: null });
+      if (!(name in tables) && options.errorTable !== name) {
+        const missing = { select: () => missing, order: () => missing, range: async () => ({ data: null, count: null, error: { code: "PGRST202", message: "missing function" } }) };
+        return missing;
+      }
+      return client.from(name).select("*", { count: "exact" }).in("invoice_item_id", args.p_invoice_item_ids ?? []);
+    },
   } as unknown as SupabaseClient;
   return { client, records };
 }

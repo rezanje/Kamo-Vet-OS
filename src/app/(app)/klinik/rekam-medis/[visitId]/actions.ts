@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
@@ -164,11 +165,14 @@ export async function simpanRekamMedis(formData: FormData) {
     p_request_key: requestKey,
   });
   if (saveError) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
+  revalidatePath(back);
+  revalidatePath(`${back}/resep`);
+  revalidatePath(`/klinik/pembayaran/${visitId}`);
 
   // Tujuan setelah simpan tergantung tombol yg dipencet.
-  if (next === "resep") redirect(`${back}/resep`);            // cetak resep
-  if (next === "rawatinap") redirect(back);                   // form admit rawat inap ada di view recorded
-  redirect(`/klinik/pembayaran/${visitId}`);                  // fallback
+  if (next === "resep") return { saved: true, href: `${back}/resep` };            // cetak resep
+  if (next === "rawatinap") return { saved: true, href: back };                   // form admit rawat inap ada di view recorded
+  return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
 }
 
 export async function createReferral(formData: FormData) {

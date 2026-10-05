@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "./LaporanPage";
 import { loadCompoundReport, loadInventoryReport, normalizeReportFilters, REPORT_PATHS, type ReportKind, type ReportParams, type CompoundReport, type InventoryReport } from "@/lib/hpp-reports-server";
-import { compoundTable, inventoryTable, reportWIB, type ReportCell, type ReportColumn } from "@/lib/hpp-reports-export";
+import { compoundTable, compoundIngredientsTable, inventoryTable, reportWIB, type ReportCell, type ReportColumn } from "@/lib/hpp-reports-export";
 import { hppReportError } from "@/lib/hpp-reports-download";
 import { paginateReport } from "@/lib/hpp-reports";
 
@@ -35,11 +35,12 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
   const branches = report?.scope.branches ?? [];
   const inventory = report && "warehouses" in report ? report : undefined;
   const compound = report && "doctors" in report ? report : undefined;
-  const table = inventory ? inventoryTable(inventory) : compound ? compoundTable(compound) : undefined;
+  const ingredientView = kind === "compound" && params.rincian === "bahan";
+  const table = inventory ? inventoryTable(inventory) : compound ? ingredientView ? compoundIngredientsTable(compound) : compoundTable(compound) : undefined;
   const pagination = paginateReport(table?.rows ?? [],params.halaman);
   const path = REPORT_PATHS[kind];
   const query = new URLSearchParams({ cabang: filters.cabang, q: filters.q,
-    ...(kind === "inventory" ? { gudang: filters.gudang, masalah: filters.masalah } : { dari: filters.dari, sampai: filters.sampai, dokter: filters.dokter }) });
+    ...(kind === "inventory" ? { gudang: filters.gudang, masalah: filters.masalah } : { dari: filters.dari, sampai: filters.sampai, dokter: filters.dokter, ...(ingredientView ? { rincian: "bahan" } : {}) }) });
   const pageHref = (page: number) => `${path}?${query}&halaman=${page}`;
   const cards = inventory ? [
     { label: "Barang / gudang", nilai: String(inventory.summary.count) },
@@ -74,6 +75,9 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
           <option value="">Semua saldo</option><option value="ya">Perlu rekonsiliasi / HPP</option>
         </select></div>
       </>}
+      {kind === "compound" && <div><label className="flab">Rincian</label><select className="fi" name="rincian" defaultValue={ingredientView ? "bahan" : "margin"}>
+        <option value="margin">Margin per racikan</option><option value="bahan">Bahan dan HPP historis</option>
+      </select></div>}
       {kind === "compound" && <div><label className="flab">Dokter kunjungan</label><select className="fi" name="dokter" defaultValue={filters.dokter}>
         <option value="">Semua dokter</option>{compound?.doctors.map(doctor => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}
       </select></div>}
@@ -85,7 +89,11 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
     {message ? <div className="p2ban" style={{ color: "#b91c1c" }}>{message}</div> : table && report ? <div className="crm-sec">
       <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <span style={{ fontSize: 11, color: "var(--td)" }}>Dibaca {reportWIB(report.readAt)} WIB</span>
-        <Link className="btn-def" href={`${path}/unduh?${query}`}><i className="ti ti-download" /> Unduh CSV ({table.rows.length} baris)</Link>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link className="btn-def" href={`${path}/unduh?${query}`}><i className="ti ti-download" /> CSV ({table.rows.length} baris)</Link>
+          <Link className="btn-def" href={`${path}/unduh?${query}&format=xlsx`}>Excel lengkap</Link>
+          <a className="btn-def" href={`${path}/unduh?${query}&format=print`} target="_blank" rel="noopener noreferrer">Cetak / PDF lengkap</a>
+        </div>
       </div>
       <div style={{ overflowX: "auto" }}><table className="tbl" style={{ width: "100%", minWidth: 1600 }}>
         <thead><tr>{table.columns.map(column => <th key={column.label} style={{ textAlign: column.format ? "right" : "left" }}>{column.label}</th>)}</tr></thead>
@@ -109,6 +117,8 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
           Penjualan memakai tanggal invoice dan diskon per item, termasuk invoice belum lunas. Diskon tingkat invoice dan pajak belum dialokasikan, sehingga jumlah ini bisa berbeda dari total pembayaran.
           Laba dan margin ringkasan hanya memakai penjualan yang HPP-nya tersedia ({money(compound.summary.coveredRevenue)} dari {money(compound.summary.revenue)}).
           Dokter mengikuti penanggung jawab kunjungan saat ini. Versi resmi tetap memakai ID saat racikan dibuat; metadata versi nonaktif dapat tidak tersedia.
+          Nama dan satuan bahan mengikuti resep saat dibaca; label racikan ad hoc dapat berubah. Qty resep yang tidak valid ditampilkan kosong tanpa mengubah HPP invoice.
+          Rincian bahan memakai HPP pemakaian historis yang ditautkan ke invoice. Jika histori belum tersedia, qty berasal dari resep tersimpan dan HPP bahan ditandai belum tersedia. Qty resep lama dapat berubah; nilai bahan tidak dihitung dari harga jual atau HPP stok saat ini.
           Hanya baris dengan tautan ID resep yang dihitung; racikan lama tanpa tautan tidak dicocokkan lewat nama.
         </> : null}
       </div>

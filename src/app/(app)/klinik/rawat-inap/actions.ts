@@ -114,11 +114,11 @@ export async function addDailyLogPos(formData: FormData) {
   const newStatus = String(formData.get("new_status") ?? "").trim() as Condition | "";
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
-  if (!recordId || !conditionNote || !requestKey) redirect(`${back}?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
+  if (!recordId || !conditionNote || !requestKey) redirect(`${back}/catatan?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
 
   const { data: rec } = await supabase
     .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
-  if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
+  if (!rec) redirect(`${back}/catatan?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
 
   const stamp = waktuInputWIB(logDate, logTime);
   const log = {
@@ -140,10 +140,10 @@ export async function addDailyLogPos(formData: FormData) {
   const racikan = resep.filter((r) => r.jenis === "racikan");
   if (racikan.some((r) => !r.official_version_id &&
     (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
-    redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
+    redirect(`${back}/catatan?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
   if (resep.length && !mrId) {
-    redirect(`${back}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
+    redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
   let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string }[] = [];
   if (mrId && resep.length) {
@@ -175,12 +175,12 @@ export async function addDailyLogPos(formData: FormData) {
     request_key: r.key ?? "",
   });
   if (newStatus && !["stabil", "kritis", "sembuh", "rip"].includes(newStatus)) {
-    redirect(`${back}?error=${encodeURIComponent("Status kondisi tidak valid")}`);
+    redirect(`${back}/catatan?error=${encodeURIComponent("Status kondisi tidak valid")}`);
   }
   if (newStatus && newStatus !== rec!.condition_status) {
     const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
     if (!canTransition((me?.role ?? "STAFF") as Role, newStatus)) {
-      redirect(`${back}?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
+      redirect(`${back}/catatan?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
     }
   }
   const { error: saveError } = await supabase.rpc("clinic_save_inpatient_log_with_status", {
@@ -192,9 +192,12 @@ export async function addDailyLogPos(formData: FormData) {
     p_request_key: requestKey,
     p_new_status: newStatus && newStatus !== rec!.condition_status ? newStatus : null,
   });
-  if (saveError) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
+  if (saveError) redirect(`${back}/catatan?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
+  revalidatePath(back);
+  revalidatePath(`${back}/catatan`);
+  revalidatePath(`/klinik/rekam-medis/${rec!.visit_id}/resep`);
 
-  redirect(cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log`);
+  return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log` };
 }
 
 // Ubah kondisi (stabil/kritis/sembuh/rip) — rip hanya dokter, wajib tercatat di status log.

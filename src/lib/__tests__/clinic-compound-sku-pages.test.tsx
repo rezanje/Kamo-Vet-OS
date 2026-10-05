@@ -71,6 +71,26 @@ beforeEach(() => {
 const exam = () => ExamPage({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) });
 const inpatient = () => InpatientPage({ params: Promise.resolve({ id: "inpatient" }) });
 describe("compound master SKUs reach clinic POS", () => {
+  it("does not reopen the editable initial form for a recorded visit", async () => {
+    fixture.tables.visits[0].status = "Pembayaran";
+    expect(formProps(await exam())).toBeUndefined();
+  });
+  it("keeps raw ingredients and services out of the inpatient medicine picker", async () => {
+    const props = formProps(await inpatient());
+    expect((props?.items as { id: string }[]).map(item => item.id)).not.toContain("material");
+    expect((props?.items as { id: string }[]).map(item => item.id)).not.toContain("service");
+    expect(props?.bahanItems).toEqual([expect.objectContaining({ id: "material" })]);
+  });
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s loads every ordinary medicine with units beyond the old limit", async (_name, page) => {
+    const ordinary = Array.from({ length: 1250 }, (_, i) => ({ id: `medicine-${i}`, name: `Medicine ${i}`, is_active: true, is_compound_material: false, item_type: "Persediaan", category_id: "ordinary", unit: "ml", sell_price: 1000 }));
+    fixture.tables.items = ordinary;
+    fixture.tables.item_units = [{ id: "late-unit", item_id: "medicine-1249", unit: "btl", factor: 50, sell_price: 40000, buy_price: 10000 }];
+    fixture.tables.item_branch_prices = [{ id: "late-price", item_id: "medicine-1249", unit: "btl", branch_id: "branch", sell_price: 45000 }];
+    const props = formProps(await page());
+    expect(props?.items).toHaveLength(1250);
+    expect((props?.items as { id: string; units: unknown[] }[]).find(item => item.id === "medicine-1249")?.units)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ unit: "btl", factor: 50, sell_price: 45000 })]));
+  });
   it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s exposes an active compound SKU beyond the old master limit with branch price and stock", async (_name, page) => {
     const props = formProps(await page());
     expect(props?.racikanItems).toEqual([expect.objectContaining({ id: "racik", sell_price: 25000, stok: 8, unit: "PCS" })]);
