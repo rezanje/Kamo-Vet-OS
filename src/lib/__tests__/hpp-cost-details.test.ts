@@ -66,3 +66,20 @@ it("shows recipe quantities with unavailable costs only when the protected RPC i
   expect(report.rows[0].ingredientCostComplete).toBe(false);
   expect(report.summary.cost).toBe(50);
 });
+
+it("caps the complete ingredient source across ID batches instead of returning an oversized report", async () => {
+  const lines = Array.from({ length: 101 }, (_, i) => ({ ...invoice, id: `line-${i}`, compound_recipe_id: `recipe-${i}` }));
+  const ingredients = lines.flatMap((line, i) => Array.from({ length: 50 }, (_, j) => ({
+    id: `ingredient-${i}-${j}`, recipe_id: line.compound_recipe_id, item_id: "i", ingredient_name: "Obat", quantity: 1, unit: "ml",
+  })));
+  await expect(loadCompoundReport(clientFixture({ tables: { invoice_items: lines, compounding_ingredients: ingredients } }).client, params)).rejects.toThrow("terlalu banyak");
+});
+
+it("retains explicitly labeled recipe quantities when a complete ledger read has no historical issues", async () => {
+  const report = await loadCompoundReport(clientFixture({ tables: { invoice_items: [invoice], report_compound_ingredients: [], compounding_ingredients: [
+    { id: "ingredient", recipe_id: "recipe", item_id: "i", ingredient_name: "Obat", quantity: 3, unit: "ml" },
+  ] } }).client, params);
+  expect(report.rows[0].ingredients[0]).toMatchObject({ qty: 3, cost: null, averageCost: null });
+  expect(report.rows[0].ingredientQtySource).toBe("Resep tersimpan");
+  expect(report.rows[0].ingredientCostComplete).toBe(false);
+});

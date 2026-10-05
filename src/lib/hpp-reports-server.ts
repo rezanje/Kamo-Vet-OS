@@ -184,6 +184,8 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
     byIds<IngredientSnapshot>(client,"compounding_ingredients","id,recipe_id,item_id,ingredient_name,quantity,unit","recipe_id",recipeIds),
     ingredientIssues(client, lines.map(row => row.id)),
   ]);
+  if (snapshots.length > ROW_LIMIT || (issues?.length ?? 0) > ROW_LIMIT)
+    throw new ReportInputError("Data memuat terlalu banyak bahan. Persempit cabang atau periode agar laporan tetap lengkap.");
   const versions = await byIds<Version>(client,"compound_formula_versions","id,name,version,formula_id","id",usage.map(row => row.formula_version_id));
   const recipeMap = new Map(recipes.map(row => [row.id,row]));
   const usageMap = new Map(usage.map(row => [row.recipe_id,row.formula_version_id]));
