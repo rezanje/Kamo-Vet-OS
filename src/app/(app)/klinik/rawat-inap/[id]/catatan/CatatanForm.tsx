@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useClinicDraft } from "@/components/useClinicDraft";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createClient } from "@/lib/supabase/client";
@@ -29,8 +30,8 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, backHref, patient, items, racikanItems, bahanItems, katalogRacikan, bolehManual }: {
-  recordId: string; requestKey: string; backHref: string;
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, katalogRacikan, bolehManual }: {
+  recordId: string; requestKey: string; draftUserId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
   racikanItems: ItemLite[];
@@ -40,6 +41,7 @@ export function CatatanForm({ recordId, requestKey, backHref, patient, items, ra
 }) {
   const [tab, setTab] = useState<Tab>("Obat");
   const [search, setSearch] = useState("");
+  const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
@@ -82,7 +84,32 @@ export function CatatanForm({ recordId, requestKey, backHref, patient, items, ra
   const [racikBahan, setRacikBahan] = useState<RacikanIngredient[]>([]);
   const [bahanSearch, setBahanSearch] = useState("");
 
-  const filtered = useMemo(() => items.filter((it) => it.name.toLowerCase().includes(search.toLowerCase())).slice(0, 40), [items, search]);
+  const {
+    attachForm: draftAttachForm, submissionKey: draftSubmissionKey, recovered: draftRecovered,
+    storageError: draftStorageError, saveError: draftSaveError,
+    capture: draftCapture, discard: draftDiscard, submit: draftSubmit,
+  } = useClinicDraft({
+    userId: draftUserId, scope: `inpatient:${recordId}`, requestKey,
+    snapshot: { cart, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, fotoUrl, jasaNama, jasaHarga },
+    restore: (value) => {
+      setCart(value.cart);
+      setCatatan(value.catatan);
+      setDiscountPct(value.discountPct);
+      setRacikNama(value.racikNama);
+      setOfficialVersionId(value.officialVersionId);
+      setRacikForm(value.racikForm);
+      setRacikAturan(value.racikAturan);
+      setRacikBahan(value.racikBahan);
+      setFotoUrl(value.fotoUrl);
+      setJasaNama(value.jasaNama);
+      setJasaHarga(value.jasaHarga);
+    },
+  });
+
+  const obatMatches = useMemo(() => items.filter((it) => it.name.toLowerCase().includes(search.toLowerCase())), [items, search]);
+  const obatPages = Math.max(1, Math.ceil(obatMatches.length / 40));
+  const currentObatPage = Math.min(obatPage, obatPages);
+  const filtered = obatMatches.slice((currentObatPage - 1) * 40, currentObatPage * 40);
   const bahanFiltered = useMemo(() => bahanItems.filter((it) => it.name.toLowerCase().includes(bahanSearch.toLowerCase())).slice(0, 40), [bahanItems, bahanSearch]);
   const racikSubtotal = racikanTotal(racikBahan);
   const selectedFormula = katalogRacikan.find((formula) => formula.version_id === officialVersionId);
@@ -146,9 +173,11 @@ export function CatatanForm({ recordId, requestKey, backHref, patient, items, ra
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
   return (
-    <form action={addDailyLogPos}>
+    <form ref={draftAttachForm} action={(data) => draftSubmit(data, addDailyLogPos)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={draftCapture}>
+      {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}
+      {(draftStorageError || draftSaveError) && <div role="alert" className="p2ban">{draftSaveError || draftStorageError}</div>}
       <input type="hidden" name="recordId" value={recordId} />
-      <input type="hidden" name="request_key" value={requestKey} />
+      <input type="hidden" name="request_key" value={draftSubmissionKey} />
       <input type="hidden" name="resep" value={JSON.stringify(cart)} />
       <input type="hidden" name="catatan_resep" value={catatan} />
       <input type="hidden" name="foto_url" value={fotoUrl} />
@@ -338,7 +367,7 @@ export function CatatanForm({ recordId, requestKey, backHref, patient, items, ra
               {tab === "Obat" && (
                 <>
                   <div style={{ position: "relative", marginBottom: 8 }}>
-                    <input className="fi" placeholder="Cari nama obat / scan barcode…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingRight: 28 }} />
+                    <input className="fi" placeholder="Cari nama obat / scan barcode…" value={search} onChange={(e) => { setSearch(e.target.value); setObatPage(1); }} style={{ paddingRight: 28 }} />
                     <i className="ti ti-search" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 13 }} />
                   </div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--tm)", marginBottom: 5 }}>DAFTAR OBAT</div>
@@ -361,6 +390,11 @@ export function CatatanForm({ recordId, requestKey, backHref, patient, items, ra
                         {filtered.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", fontSize: 11, color: "var(--td)", padding: "12px 0" }}>Tidak ada obat.</td></tr>}
                       </tbody>
                     </table>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, fontSize: 10.5 }}>
+                    <span>{obatMatches.length} obat · {currentObatPage}/{obatPages}</span>
+                    <button type="button" className="btn-def" aria-label="Obat sebelumnya" disabled={currentObatPage <= 1} onClick={() => setObatPage(currentObatPage - 1)}>Sebelumnya</button>
+                    <button type="button" className="btn-def" aria-label="Obat berikutnya" disabled={currentObatPage >= obatPages} onClick={() => setObatPage(currentObatPage + 1)}>Berikutnya</button>
                   </div>
                 </>
               )}

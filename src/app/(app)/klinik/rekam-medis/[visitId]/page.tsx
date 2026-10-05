@@ -15,6 +15,7 @@ import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 import { ReferralPanel } from "./ReferralPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -45,6 +46,7 @@ export default async function RekamMedisPage({
   const { visitId } = await params;
   const { error, racikan, success } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const { data: visit } = await supabase
     .from("visits")
@@ -136,12 +138,15 @@ export default async function RekamMedisPage({
   const katalogRacikan = !recorded ? await loadKatalogRacikan() : [];
   const bolehManual = await bolehRacikKhusus();
   if (!recorded) {
-    const { data: limitedRows } = await supabase
-      .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori")
-      .eq("is_active", true).order("name").limit(400);
+    const masterRows = await readCompleteList<{
+      id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean;
+      item_type: string; tindakan_kategori: string | null;
+    }>((from, to) => supabase
+      .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori", { count: "exact" })
+      .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
     const compoundRows = await loadClinicCompoundSkus(supabase);
     const compoundIds = new Set(compoundRows.map(item => item.id));
-    const itemRows = [...new Map([...(limitedRows ?? []), ...compoundRows].map(item => [item.id, item])).values()];
+    const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
     const ids = (itemRows ?? []).map((i) => i.id);
 
     const { stock: stokByItem, units: unitMap, prices: hargaMap } = await loadClinicSkuDetails(supabase, ids, visit.branch_id);
@@ -456,8 +461,10 @@ export default async function RekamMedisPage({
         </>
       ) : (
         <RekamForm
+          key={`${user?.id ?? ""}:${visitId}`}
           visitId={visit.id}
           requestKey={randomUUID()}
+          draftUserId={user?.id ?? ""}
           petId={visit.pet_id}
           dokterOpsi={dokterOpsi}
           currentWeight={pet?.weight ?? null}

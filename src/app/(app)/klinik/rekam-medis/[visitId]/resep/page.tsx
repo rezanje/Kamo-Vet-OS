@@ -31,8 +31,8 @@ export default async function ResepPage({ params }: { params: Promise<{ visitId:
     .limit(1)
     .maybeSingle();
   const { data: resep } = mr
-    ? await supabase.from("prescription_items").select("nama_obat, qty, aturan_pakai").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { nama_obat: string; qty: number; aturan_pakai: string | null }[] };
+    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as { nama_obat: string; qty: number; satuan: string | null; aturan_pakai: string | null }[] };
 
   const tgl = new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
@@ -81,7 +81,7 @@ export default async function ResepPage({ params }: { params: Promise<{ visitId:
             ) : (
               (resep ?? []).map((r, i) => (
                 <div key={i} style={{ marginBottom: 14, paddingBottom: 12, borderBottom: i < (resep ?? []).length - 1 ? ".5px dashed var(--bd)" : "none" }}>
-                  <div style={{ fontWeight: 600 }}>{r.nama_obat} <span style={{ color: "var(--tm)", fontWeight: 400 }}>No. {r.qty}</span></div>
+                  <div style={{ fontWeight: 600 }}>{r.nama_obat} <span style={{ color: "var(--tm)", fontWeight: 400 }}>No. {`${r.qty}${r.satuan ? ` ${r.satuan}` : ""}`}</span></div>
                   <div style={{ fontSize: 12, color: "var(--tm)", marginTop: 2 }}>
                     <span style={{ fontStyle: "italic" }}>S</span> {r.aturan_pakai ?? "—"}
                   </div>
