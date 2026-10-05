@@ -1,3 +1,4 @@
+-- Uses the same guarded status wrapper as the app; direct worker no longer has UPDATE table grants.
 -- Run only on isolated local Supabase after the clinic/catalog migrations.
 begin;
 
@@ -43,12 +44,12 @@ begin
     '[{"item_id":"cb200000-0000-4000-8000-000000000001","quantity":2,"unit":"gram"}]');
   failed := false;
   begin
-    perform public.clinic_save_inpatient_log(
+    perform public.clinic_save_inpatient_log_with_status(
       'cb800000-0000-4000-8000-000000000001','cb700000-0000-4000-8000-000000000001',
       v_log,v_rows,jsonb_build_array(
         jsonb_build_object('official_version_id',v_version,'request_key','inpat-first'),
         jsonb_build_object('official_version_id','cb900000-0000-4000-8000-000000000001','request_key','inpat-fail')
-      ),'inpat-record-fail');
+      ),'inpat-record-fail', null);
   exception when others then failed := true; end;
   if not failed or exists(select 1 from public.inpatient_daily_logs where inpatient_record_id='cb800000-0000-4000-8000-000000000001')
      or exists(select 1 from public.prescription_items where medical_record_id='cb700000-0000-4000-8000-000000000001')
@@ -58,14 +59,14 @@ begin
     raise exception 'formula failure left a partial log, prescription, or stock move';
   end if;
 
-  v_first := public.clinic_save_inpatient_log(
+  v_first := public.clinic_save_inpatient_log_with_status(
     'cb800000-0000-4000-8000-000000000001','cb700000-0000-4000-8000-000000000001',
     v_log,v_rows,jsonb_build_array(jsonb_build_object('official_version_id',v_version,'request_key','inpat-final')),
-    'inpat-record-success');
-  v_retry := public.clinic_save_inpatient_log(
+    'inpat-record-success', null);
+  v_retry := public.clinic_save_inpatient_log_with_status(
     'cb800000-0000-4000-8000-000000000001','cb700000-0000-4000-8000-000000000001',
     v_log,v_rows,jsonb_build_array(jsonb_build_object('official_version_id',v_version,'request_key','inpat-final')),
-    'inpat-record-success');
+    'inpat-record-success', null);
   if v_first is null or v_first <> v_retry
      or (select count(*) from public.inpatient_daily_logs where inpatient_record_id='cb800000-0000-4000-8000-000000000001') <> 1
      or (select count(*) from public.prescription_items where medical_record_id='cb700000-0000-4000-8000-000000000001') <> 2
@@ -75,11 +76,11 @@ begin
   end if;
   failed := false;
   begin
-    perform public.clinic_save_inpatient_log(
+    perform public.clinic_save_inpatient_log_with_status(
       'cb800000-0000-4000-8000-000000000001','cb700000-0000-4000-8000-000000000001',
       v_log || '{"condition_note":"Berubah"}',v_rows,
       jsonb_build_array(jsonb_build_object('official_version_id',v_version,'request_key','inpat-final')),
-      'inpat-record-success');
+      'inpat-record-success', null);
   exception when sqlstate 'P0001' then failed := true; end;
   if not failed then raise exception 'changed retry reused the submission key'; end if;
   update public.inpatient_daily_logs set condition_note='Dikoreksi' where id=v_first;
