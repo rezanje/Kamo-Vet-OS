@@ -1,5 +1,8 @@
 "use client";
 
+import { METODE_BAYAR as SPLIT_METHODS } from "@/lib/kas-akun";
+import { validateSplitPaymentTotal, type SplitPaymentDraft } from "@/lib/clinic-split-payment";
+
 import type { PilihanPenjual } from "@/lib/penjual";
 import type { ItemUnit } from "@/lib/satuan";
 import { useClinicDraft } from "@/components/useClinicDraft";
@@ -163,6 +166,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [reason, setReason] = useState("");
   const [voucher, setVoucher] = useState("");
   const [salesperson, setSalesperson] = useState(initialSalespersonId);
+  const [mixed, setMixed] = useState(false);
+  const [splitPayments, setSplitPayments] = useState<SplitPaymentDraft[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
 
   const barisSemua = [...obat, ...jasa].filter((r) => r.deskripsi.trim() && r.qty > 0);
   // Diskon per baris dipotong lebih dulu; promo/voucher/golongan menghitung dari
@@ -204,14 +209,21 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
 
   const [bayar, setBayar] = useState(0);
-  const totalDiterima = dpPaid + initialCreditAmount + bayar;
-  const kembalian = Math.max(0, bayar - sisa);
+  const splitAmount = splitPayments.reduce((sum, part) => sum + part.amount, 0);
+  const totalDiterima = dpPaid + initialCreditAmount + (mixed ? splitAmount : bayar);
+  const kembalian = mixed ? 0 : Math.max(0, bayar - sisa);
+  let splitError: string | null = null;
+  if (mixed) {
+    try { validateSplitPaymentTotal(splitPayments, total); }
+    catch (error) { splitError = error instanceof Error ? error.message : "Periksa rincian pembayaran."; }
+  }
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
 
   const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit } = useClinicDraft({
     userId: draftUserId, scope: draftScope, requestKey,
-    snapshot: { obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson },
+    snapshot: { obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson, mixed, splitPayments },
+    optionalSnapshotKeys: ["mixed", "splitPayments"],
     restore: value => {
       const restoreRows = (saved: Line[], initial: Line[]) => {
         const restored = saved.map(row => {
@@ -226,6 +238,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
       setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
       setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setSalesperson(value.salesperson);
+      setMixed(!editMode && value.mixed === true);
+      setSplitPayments(Array.isArray(value.splitPayments) ? value.splitPayments : [{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
     },
   });
 
@@ -245,6 +259,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="poinDigunakan" value={poinDipakai} />
       <input type="hidden" name="paid_status" value={paidStatus} />
       <input type="hidden" name="metode_bayar" value={metode} />
+      {mixed && !editMode && <input type="hidden" name="split_payments" value={JSON.stringify(splitPayments)} />}
       <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
@@ -400,6 +415,26 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           {/* Metode */}
           <div className="card">
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PILIH METODE PEMBAYARAN</div>
+            {!editMode && <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <input type="checkbox" checked={mixed} onChange={event => setMixed(event.target.checked)} />
+              Bayar dengan beberapa metode
+            </label>}
+            {mixed ? <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {splitPayments.map((part, index) => <div key={index} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <select className="fi" aria-label={`Metode pembayaran ${index + 1}`} value={part.method}
+                  onChange={event => setSplitPayments(parts => parts.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
+                  {SPLIT_METHODS.map(method => <option key={method}>{method}</option>)}
+                </select>
+                <input className="fi" type="number" min={1} step={1} aria-label={`Nominal pembayaran ${index + 1}`} value={part.amount || ""}
+                  onChange={event => setSplitPayments(parts => parts.map((row, i) => i === index ? { ...row, amount: Number(event.target.value) } : row))} />
+                {splitPayments.length > 2 && <button className="btn-def" type="button" aria-label={`Hapus pembayaran ${index + 1}`}
+                  onClick={() => setSplitPayments(parts => parts.filter((_, i) => i !== index))}>×</button>}
+              </div>)}
+              <button className="btn-def" type="button" disabled={splitPayments.length >= 6}
+                onClick={() => setSplitPayments(parts => [...parts, { method: "Tunai", amount: 0 }])}>Tambah metode pembayaran</button>
+              <div style={{ fontSize: 11 }}>Satu invoice · total bagian {rp(splitAmount)}</div>
+              {splitError && <div role="alert" style={{ color: "#b91c1c", fontSize: 11 }}>{splitError}</div>}
+            </div> :
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {METODE_BAYAR.map(({ m, ic, desc }) => (
                 <button key={m} type="button" disabled={editMode} onClick={() => setMetode(m)} style={{
@@ -414,11 +449,11 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
                   </div>
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
 
           {/* Penerimaan */}
-          <div className="card">
+          {!mixed && <div className="card">
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Jumlah Bayar</span>
@@ -428,7 +463,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               <span style={{ fontWeight: 600, color: "#15803d" }}>Kembalian</span>
               <span style={{ fontWeight: 700, color: "#15803d" }}>{rp(kembalian)}</span>
             </div>
-          </div>
+          </div>}
 
           {/* Aksi */}
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: 6 }}>
@@ -441,8 +476,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
                 <i className="ti ti-printer" /> Cetak
               </span>
             )}
-            <SubmitButton className="btn-acc" name="finalize" value="0" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>Simpan</SubmitButton>
-            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
+            <SubmitButton className="btn-acc" name="finalize" value="0" disabled={!!splitError} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>Simpan</SubmitButton>
+            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={!!splitError} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
           </div>
         </div>
       </div>

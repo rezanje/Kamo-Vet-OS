@@ -461,6 +461,7 @@ export default async function RekamMedisPage({
         </>
       ) : (
         <RekamForm
+          service={visit.poli}
           key={`${user?.id ?? ""}:${visitId}`}
           visitId={visit.id}
           requestKey={randomUUID()}

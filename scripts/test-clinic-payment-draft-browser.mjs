@@ -79,6 +79,26 @@ try{
  const discarded=await values();assert.equal(discarded.items[0].qty,1);assert.equal(discarded.items[0].satuan,'PCS');assert.equal(discarded.items[2].qty,7,'discard restores current server rows');
  await page.evaluate(()=>{window.__saveMode='success'});await Promise.all([page.waitForURL('**/saved'),page.getByRole('button',{name:'Simpan',exact:true}).click()]);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('vetos:clinic-draft:v1:user-a:payment:visit:new')),null,'only acknowledged success clears draft');
+ await page.goto('/payment');await page.getByLabel('Bayar dengan beberapa metode').check();
+ await page.getByLabel('Nominal pembayaran 1',{exact:true}).fill('5000');
+ await page.getByLabel('Nominal pembayaran 2',{exact:true}).fill('4999');
+ assert.equal(await page.getByRole('button',{name:'Bayar & Selesai',exact:true}).isDisabled(),true,'underpaid split is blocked');
+ await page.getByLabel('Nominal pembayaran 2',{exact:true}).fill('5000');
+ assert.equal(await page.getByRole('button',{name:'Bayar & Selesai',exact:true}).isDisabled(),false,'complete split can be saved');
+ const mixedKey=await page.locator('[name=requestKey]').inputValue();
+ const parts=JSON.parse(await page.locator('[name=split_payments]').inputValue());
+ assert.deepEqual(parts,[{method:'Tunai',amount:5000},{method:'Transfer',amount:5000}]);
+ await page.reload();await page.getByText('Draf dipulihkan.',{exact:false}).waitFor();
+ assert.equal(await page.getByLabel('Bayar dengan beberapa metode').isChecked(),true);
+ assert.deepEqual(JSON.parse(await page.locator('[name=split_payments]').inputValue()),parts,'split parts survive reload');
+ assert.equal(await page.locator('[name=requestKey]').inputValue(),mixedKey,'mixed request key survives reload');
+ await page.addStyleTag({content:(await fs.readFile(path.join(source,'app/globals.css'),'utf8')).split('/* Color tokens live')[1].replace(/^.*?\*\//s,'')+'\n*{box-sizing:border-box}body{font-family:system-ui;background:#f0ede8;padding:24px;margin:0}'});
+ await page.screenshot({path:'/tmp/vetos-split-payment-demo.png',fullPage:true});
+ // A draft from before this change still recovers its original payment/rows.
+ await page.evaluate(()=>{const key='vetos:clinic-draft:v1:user-a:payment:visit:new';const draft=JSON.parse(sessionStorage.getItem(key));delete draft.snapshot.mixed;delete draft.snapshot.splitPayments;sessionStorage.setItem(key,JSON.stringify(draft));});
+ await page.reload();await page.getByText('Draf dipulihkan.',{exact:false}).waitFor();
+ assert.equal(await page.getByLabel('Bayar dengan beberapa metode').isChecked(),false,'legacy drafts remain single method');
+ assert.equal(await page.locator('[name=requestKey]').inputValue(),mixedKey,'legacy draft retains request key');
  assert.equal(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({passed:true,reload:true,serverFailure:true,networkFailure:true,stableRequestKey:true,accountIsolation:true,refsUnitsAmountsStaff:true,acknowledgedSuccessCleanup:true,productionMutations:false}));
+ console.log(JSON.stringify({passed:true,reload:true,serverFailure:true,networkFailure:true,stableRequestKey:true,accountIsolation:true,refsUnitsAmountsStaff:true,acknowledgedSuccessCleanup:true,mixedPayment:true,mixedDraftRecovery:true,legacyDraftRecovery:true,productionMutations:false}));
 }finally{await context.close();await browser.close();await server.close();await fs.rm(root,{recursive:true,force:true});}

@@ -80,6 +80,30 @@ const shift = (o: Partial<ShiftTutup> = {}): ShiftTutup => ({
 });
 
 describe("pemasukanShift", () => {
+  it("counts original mixed checkout parts separately in the clinic shift", async () => {
+    const db: Db = {
+      invoices: [{ id: "mixed", total: 1000000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai" }],
+      invoice_payments: [
+        { invoice_id: "mixed", amount: 500000, metode: "Tunai", checkout_payment: true, transferred_from: null },
+        { invoice_id: "mixed", amount: 500000, metode: "Transfer", checkout_payment: true, transferred_from: null },
+      ],
+    };
+    const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(result.expected).toBe(600000);
+    expect(result.breakdown.Tunai).toBe(500000);
+    expect(result.breakdown.Transfer).toBe(500000);
+  });
+  it("preserves the original mixed breakdown through transferred reissue credit", async () => {
+    const result = await hitungShift(makeClient({
+      invoices: [{ id: "reissue", total: 1000000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai", shift_cash_carry: 0 }],
+      invoice_payments: [
+        { invoice_id: "reissue", amount: 500000, metode: "Tunai", checkout_payment: true, transferred_from: "original" },
+        { invoice_id: "reissue", amount: 500000, metode: "Transfer", checkout_payment: true, transferred_from: "original" },
+      ],
+    }), shift({ shift_type: "klinik" }));
+    expect(result.expected).toBe(600000);
+    expect(result.breakdown.Transfer).toBe(500000);
+  });
   it("shift petshop membaca penjualan", async () => {
     const db: Db = { sales: [{ total: 50_000, metode_bayar: "Tunai" }] };
     const rows = await pemasukanShift(makeClient(db), shift());
