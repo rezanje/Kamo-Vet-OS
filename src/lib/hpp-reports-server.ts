@@ -135,7 +135,7 @@ export async function loadSkuInventoryCosts(client: SupabaseClient, itemIds: str
 
 type IngredientSnapshot = { id: string; recipe_id: string; item_id: string | null; ingredient_name: string; quantity: Numeric; unit: string };
 type IngredientIssue = { id: string; invoice_item_id: string; recipe_id: string; ingredient_id: string; item_id: string; ingredient_name: string; unit: string; qty: Numeric; unit_cost: Numeric };
-export type CompoundIngredient = { id: string; itemId: string | null; name: string; unit: string; qty: number; averageCost: number | null; cost: number | null };
+export type CompoundIngredient = { id: string; itemId: string | null; name: string; unit: string; qty: number | null; averageCost: number | null; cost: number | null };
 async function ingredientIssues(client: SupabaseClient, lineIds: string[]): Promise<IngredientIssue[] | null> {
   const rows: IngredientIssue[] = [];
   for (let start = 0; start < lineIds.length; start += 100) {
@@ -213,7 +213,7 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
         throw new Error("Data laporan gagal dibaca: histori bahan racikan tidak valid");
       const ingredient = grouped.get(issue.ingredient_id) ?? { id: issue.ingredient_id, itemId: issue.item_id, name: issue.ingredient_name, unit: issue.unit, qty: 0, averageCost: null, cost: 0 };
       if (ingredient.itemId !== issue.item_id || ingredient.unit !== issue.unit) throw new Error("Data laporan gagal dibaca: identitas bahan berubah");
-      ingredient.qty += qty;
+      ingredient.qty = (ingredient.qty ?? 0) + qty;
       ingredient.cost = ingredient.cost! + qty * unitCost;
       if (!Number.isFinite(ingredient.cost) || !Number.isFinite(ingredient.qty)) throw new Error("Data laporan gagal dibaca: HPP bahan tidak valid");
       ingredient.averageCost = ingredient.cost / ingredient.qty;
@@ -221,8 +221,8 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
     }
     const ingredients: CompoundIngredient[] = grouped.size ? [...grouped.values()] : snapshots.filter(row => row.recipe_id === line.recipeId).map(row => {
       const qty = Number(row.quantity);
-      if (!Number.isFinite(qty) || qty <= 0) throw new Error("Data laporan gagal dibaca: qty bahan tidak valid");
-      return { id: row.id, itemId: row.item_id, name: row.ingredient_name, unit: row.unit, qty, averageCost: null, cost: null };
+      return { id: row.id, itemId: row.item_id, name: row.ingredient_name, unit: row.unit,
+        qty: Number.isFinite(qty) && qty > 0 ? qty : null, averageCost: null, cost: null };
     });
     const cost = ingredients.reduce((sum, row) => sum + (row.cost ?? 0), 0);
     return { ...line, ingredients: ingredients.sort((a,b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),

@@ -36,6 +36,8 @@ describe("financial cost UI boundary", () => {
     } }).client;
     const html = renderToStaticMarkup(await HppReportPage({ kind: "compound", params: { cabang: "b1", dari: "2026-10-04", sampai: "2026-10-04", rincian: "bahan" } }));
     expect(html).toContain("Obat historis");
+    expect(html).toContain("nama resep saat dibaca");
+    expect(html).toContain("Satuan resep saat dibaca");
     expect(html).toContain("Rincian HPP belum lengkap");
     expect(html).toContain("format=xlsx");
     expect(html).toContain("format=print");

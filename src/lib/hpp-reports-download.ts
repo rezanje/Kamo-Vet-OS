@@ -29,7 +29,7 @@ export async function downloadHppReport(client: SupabaseClient, kind: ReportKind
       filename = `margin-racikan-${report.filters.dari}-${report.filters.sampai}${params.rincian === "bahan" ? "-bahan" : ""}`;
       title = `HPP dan margin racikan · ${report.filters.dari}–${report.filters.sampai} WIB`;
       readAt = report.readAt;
-      context = "Penjualan setelah diskon item, sebelum alokasi diskon invoice dan pajak. Laba hanya dihitung untuk baris dengan HPP invoice. HPP bahan berasal dari pemakaian historis; jika pembaca histori belum tersedia, qty mengikuti resep tersimpan dan HPP bahan dikosongkan. Dokter mengikuti kunjungan saat ini.";
+      context = "Penjualan setelah diskon item, sebelum alokasi diskon invoice dan pajak. Laba hanya dihitung untuk baris dengan HPP invoice. Nama/satuan bahan mengikuti resep saat dibaca dan dapat berubah pada racikan ad hoc. Qty resep tidak valid dikosongkan tanpa mengubah HPP invoice. HPP bahan berasal dari pemakaian historis; jika pembaca histori belum tersedia, qty mengikuti resep tersimpan dan HPP bahan dikosongkan. Dokter mengikuti kunjungan saat ini.";
       tables = [{ name: "Margin racikan", table: compoundTable(report) }, { name: "Bahan racikan", table: compoundIngredientsTable(report) }];
     }
     if (params.format === "xlsx") {

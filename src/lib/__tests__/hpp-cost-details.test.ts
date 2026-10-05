@@ -83,3 +83,13 @@ it("retains explicitly labeled recipe quantities when a complete ledger read has
   expect(report.rows[0].ingredientQtySource).toBe("Resep tersimpan");
   expect(report.rows[0].ingredientCostComplete).toBe(false);
 });
+
+it.each([0, -1, "NaN", null])("preserves valid invoice margin when legacy recipe quantity is invalid (%s)", async quantity => {
+  const report = await loadCompoundReport(clientFixture({ tables: { invoice_items: [invoice], compounding_ingredients: [
+    { id: "ingredient", recipe_id: "recipe", item_id: "i", ingredient_name: "Obat lama", quantity, unit: "ml" },
+  ] } }).client, params);
+  expect(report.rows[0].ingredients[0].qty).toBeNull();
+  expect(report.rows[0].ingredients[0].cost).toBeNull();
+  expect(report.rows[0].grossProfit).toBe(150);
+  expect(report.summary.cost).toBe(50);
+});

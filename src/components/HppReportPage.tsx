@@ -117,6 +117,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
           Penjualan memakai tanggal invoice dan diskon per item, termasuk invoice belum lunas. Diskon tingkat invoice dan pajak belum dialokasikan, sehingga jumlah ini bisa berbeda dari total pembayaran.
           Laba dan margin ringkasan hanya memakai penjualan yang HPP-nya tersedia ({money(compound.summary.coveredRevenue)} dari {money(compound.summary.revenue)}).
           Dokter mengikuti penanggung jawab kunjungan saat ini. Versi resmi tetap memakai ID saat racikan dibuat; metadata versi nonaktif dapat tidak tersedia.
+          Nama dan satuan bahan mengikuti resep saat dibaca; label racikan ad hoc dapat berubah. Qty resep yang tidak valid ditampilkan kosong tanpa mengubah HPP invoice.
           Rincian bahan memakai HPP pemakaian historis yang ditautkan ke invoice. Jika histori belum tersedia, qty berasal dari resep tersimpan dan HPP bahan ditandai belum tersedia. Qty resep lama dapat berubah; nilai bahan tidak dihitung dari harga jual atau HPP stok saat ini.
           Hanya baris dengan tautan ID resep yang dihitung; racikan lama tanpa tautan tidak dicocokkan lewat nama.
         </> : null}
