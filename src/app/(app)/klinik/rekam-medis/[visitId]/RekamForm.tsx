@@ -11,9 +11,10 @@ import { kategoriWajibConsent } from "@/lib/tindakan";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { batasBeratWajar } from "@/lib/anabul";
 import { katalogTotal, type KatalogRacikan } from "@/lib/katalog-racikan";
+import { CompoundSkuList } from "@/components/CompoundSkuList";
 
 export type ItemLite = {
-  id: string; name: string; unit: string; sell_price: number; stok: number;
+  id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
   tindakan_kategori?: string | null;
   units?: ItemUnit[];   // satuan berjenjang (pcs/box, ml/btl) — kosong = hanya satuan dasar
 };
@@ -41,10 +42,11 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, patient, items, bahanItems, jasaItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi }: {
+export function RekamForm({ visitId, petId, requestKey, patient, items, racikanItems, bahanItems, jasaItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi }: {
   visitId: string; petId: string; requestKey: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
+  racikanItems: ItemLite[];
   bahanItems: ItemLite[];
   jasaItems: ItemLite[];
   katalogRacikan: KatalogRacikan[];
@@ -138,7 +140,7 @@ export function RekamForm({ visitId, petId, requestKey, patient, items, bahanIte
   };
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
   // Ganti satuan obat (mis. ml → btl): harga & faktor ikut satuan yang dipilih.
-  const unitsOf = (itemId: string | null) => (itemId ? items.find((i) => i.id === itemId)?.units ?? [] : []);
+  const unitsOf = (itemId: string | null) => (itemId ? [...items, ...racikanItems].find((i) => i.id === itemId)?.units ?? [] : []);
   const setSatuan = (key: string, itemId: string | null, unit: string) =>
     setCart((c) => c.map((r) => {
       if (r.key !== key) return r;
@@ -327,6 +329,8 @@ export function RekamForm({ visitId, petId, requestKey, patient, items, bahanIte
               )}
               {tab === "Racikan" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <CompoundSkuList items={racikanItems} onAdd={addObat} />
+                  <hr style={{ border: 0, borderTop: ".5px solid var(--bd)", width: "100%" }} />
                   <label className="flab">Katalog resmi perusahaan</label>
                   <select className="fi" value={officialVersionId} onChange={(e) => setOfficialVersionId(e.target.value)}>
                     <option value="">{bolehManual ? "Racikan khusus pasien (manual)" : "Pilih resep resmi"}</option>

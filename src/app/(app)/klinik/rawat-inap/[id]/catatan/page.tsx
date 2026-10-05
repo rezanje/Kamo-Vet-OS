@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { loadItemUnits, unitOptions } from "@/lib/satuan";
-import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
+import { unitOptions } from "@/lib/satuan";
+import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { CONDITION_LABEL, type Condition } from "@/lib/inpatient";
 import { CatatanForm } from "./CatatanForm";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
+import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -26,20 +27,15 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
 
-  const { data: itemRows } = await supabase
+  const { data: limitedRows } = await supabase
     .from("items").select("id, name, unit, sell_price, is_compound_material").eq("is_active", true).order("name").limit(200);
+  const compoundRows = await loadClinicCompoundSkus(supabase);
+  const compoundIds = new Set(compoundRows.map(item => item.id));
+  const itemRows = [...new Map([...(limitedRows ?? []), ...compoundRows].map(item => [item.id, item])).values()];
   const ids = (itemRows ?? []).map((i) => i.id);
-  const { data: stockRows } = ids.length
-    ? await supabase.from("stock").select("item_id, qty").in("item_id", ids)
-    : { data: [] as { item_id: string; qty: number }[] };
-  const stok = new Map<string, number>();
-  for (const s of stockRows ?? []) stok.set(s.item_id as string, (stok.get(s.item_id as string) ?? 0) + Number(s.qty));
-  // Satuan berjenjang ikut dari master SKU (perawat bisa mencatat per btl, bukan per ml).
-  const unitMap = await loadItemUnits(supabase, (itemRows ?? []).map((i) => i.id as string));
-  // Harga jual cabang kunjungan ini (migrasi 0073) menimpa harga Semua Cabang.
-  const hargaMap = await loadHargaCabang(supabase, visit?.branch_id ?? null, ids as string[]);
+  const { stock: stok, units: unitMap, prices: hargaMap } = await loadClinicSkuDetails(supabase, ids, visit?.branch_id ?? null);
   const items = (itemRows ?? []).map((i) => ({
-    id: i.id as string, name: i.name as string, unit: (i.unit as string) ?? "pcs",
+    id: i.id as string, code: "code" in i ? i.code as string | null : null, name: i.name as string, unit: (i.unit as string) ?? "pcs",
     sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
     stok: stok.get(i.id as string) ?? 0,
     is_compound_material: !!i.is_compound_material,
@@ -80,7 +76,8 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
         recordId={id}
         requestKey={crypto.randomUUID()}
         backHref={`/klinik/rawat-inap/${id}`}
-        items={items}
+        items={items.filter(item => !compoundIds.has(item.id))}
+        racikanItems={items.filter(item => compoundIds.has(item.id))}
         bahanItems={bahanItems}
         katalogRacikan={katalogRacikan}
         bolehManual={bolehManual}
