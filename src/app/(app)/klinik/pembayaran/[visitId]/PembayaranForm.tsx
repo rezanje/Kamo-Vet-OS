@@ -118,7 +118,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                   </select>
                 )}
               </td>}
-              <td><input className="fi" type="number" min={0} step="any" value={r.harga} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
+              <td><input className="fi" type="number" min={0} step="any" value={r.harga} readOnly={!!r.recipe_id} title={r.recipe_id ? "Harga racikan tersimpan; koreksi melalui diskon" : undefined} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td>
                 <input className="fi" type="number" min={0} max={100} step="any"
                   value={r.diskon_persen ?? 0}

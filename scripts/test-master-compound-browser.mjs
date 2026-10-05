@@ -15,11 +15,11 @@ import {RekamForm} from '${source}/app/(app)/klinik/rekam-medis/[visitId]/RekamF
 import {CatatanForm} from '${source}/app/(app)/klinik/rawat-inap/[id]/catatan/CatatanForm.tsx';
 const unit=(unit,factor,sell_price)=>({unit,factor,sell_price,buy_price:0});
 const items=[{id:'medicine',name:'Fictional medicine',unit:'ml',sell_price:1000,stok:200,units:[unit('ml',1,1000),unit('btl',50,40000)]},...Array.from({length:54},(_,i)=>({id:'ordinary-'+i,name:'Ordinary medicine '+i,unit:'ml',sell_price:1000,stok:100,units:[unit('ml',1,1000)]}))];
-const common={draftUserId:new URLSearchParams(location.search).get('user')||'user-a',requestKey:crypto.randomUUID(),patient:{name:'Fictional patient',species:'Kucing',noRM:'QA',owner:'Fictional owner',tglPeriksa:'QA',tglMasuk:'QA',phone:'',address:'',tier:'',dokter:'Fictional doctor',dokterId:'doctor',providerId:null,kondisi:'stabil',breed:null,photo:null,keluhan:'Fiction complaint'},items,racikanItems:[],bahanItems:[],katalogRacikan:[],bolehManual:false};
+const common={draftUserId:new URLSearchParams(location.search).get('user')||'user-a',requestKey:crypto.randomUUID(),patient:{name:'Fictional patient',species:'Kucing',noRM:'QA',owner:'Fictional owner',tglPeriksa:'QA',tglMasuk:'QA',phone:'',address:'',tier:'',dokter:'Fictional doctor',dokterId:'doctor',providerId:null,kondisi:'stabil',breed:null,photo:null,keluhan:'Fiction complaint'},items,racikanItems:[{id:'master-compound',name:'Fictional master racikan',code:'FIC',unit:'pcs',sell_price:1200,stok:7,units:[unit('pcs',1,1200)]}],bahanItems:[{id:'material',name:'Fictional ingredient',unit:'gram',sell_price:999999,stok:20}],katalogRacikan:[],bolehManual:true};
 const Form=location.pathname==='/inpatient'?CatatanForm:RekamForm;
 createRoot(document.getElementById('root')).render(<Form {...common} recordId="inpatient" backHref="/inpatient" visitId="visit" petId="pet" jasaItems={[]} currentWeight={null} dokterOpsi={[{id:'doctor',nama:'Drh Fictional doctor',jabatan:'Dokter'}]} providerOpsi={[]}/>);
 `);
-const server = await createServer({root,logLevel:'error',oxc:{jsx:{runtime:'automatic'},tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}},server:{host:'127.0.0.1',port:3157,strictPort:true,fs:{allow:[root,source,path.resolve('node_modules'),'/opt/codex']}},optimizeDeps:{include:['react','react-dom','react-dom/client']},resolve:{dedupe:['react','react-dom'],alias:[{find:'@',replacement:source},{find:'react-dom',replacement:require.resolve('react-dom').replace(/\/index\.js$/,'')},{find:'react',replacement:require.resolve('react').replace(/\/index\.js$/,'')}]},plugins:[{
+const server = await createServer({root,logLevel:'error',oxc:{jsx:{runtime:'automatic'},tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}},server:{host:'127.0.0.1',port:3158,strictPort:true,fs:{allow:[root,source,path.resolve('node_modules'),'/opt/codex']}},optimizeDeps:{include:['react','react-dom','react-dom/client']},resolve:{dedupe:['react','react-dom'],alias:[{find:'@',replacement:source},{find:'react-dom',replacement:require.resolve('react-dom').replace(/\/index\.js$/,'')},{find:'react',replacement:require.resolve('react').replace(/\/index\.js$/,'')}]},plugins:[{
 name:'clinic-fixtures',enforce:'pre',
 resolveId(id,importer){
 if(id==='next/link')return '\0fixture-link';
@@ -38,11 +38,34 @@ if(id==='\0fixture-actions')return 'const save=async()=>{if(window.__saveMode===
 }]});
 await server.listen();
 const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
-const context=await browser.newContext({baseURL:'http://127.0.0.1:3157',timezoneId:'Asia/Jakarta'});
-await context.route('**/*',route=>new URL(route.request().url()).origin==='http://127.0.0.1:3157'?route.continue():route.abort());
+const context=await browser.newContext({baseURL:'http://127.0.0.1:3158',timezoneId:'Asia/Jakarta'});
+await context.route('**/*',route=>new URL(route.request().url()).origin==='http://127.0.0.1:3158'?route.continue():route.abort());
 const page=await context.newPage();
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
 try{
+ for(const route of ['/exam','/inpatient']){
+  await page.goto(route);await page.locator('input[name=request_key]').waitFor({state:'attached'});
+  await page.getByRole('button',{name:'Racikan',exact:true}).click();
+  const editor=page.getByRole('region',{name:'Editor obat racik'});
+  assert.equal(await editor.getByRole('button',{name:'Pilih Fictional master racikan',exact:true}).count(),0);
+  await editor.getByRole('textbox',{name:'Cari obat racik',exact:true}).fill('Fictional');
+  await editor.getByRole('button',{name:'Pilih Fictional master racikan',exact:true}).click();
+  assert.equal(JSON.parse(await page.locator('input[name=resep]').inputValue()).length,0,'selecting master must not issue stock');
+  await editor.getByRole('textbox',{name:'Cari bahan racikan',exact:true}).fill('ingredient');
+  assert.equal((await editor.innerText()).includes('999.999'),false,'material selling price must be hidden');
+  await editor.getByRole('button',{name:'Pilih bahan Fictional ingredient',exact:true}).click();
+  await editor.getByRole('spinbutton',{name:'Jumlah bahan Fictional ingredient'}).fill('0.5');
+  await page.reload();await page.locator('input[name=request_key]').waitFor({state:'attached'});
+  await page.getByRole('button',{name:'Racikan',exact:true}).click();
+  await editor.getByText('Fictional master racikan',{exact:true}).waitFor();
+  assert.equal(await editor.getByRole('spinbutton',{name:'Jumlah bahan Fictional ingredient'}).inputValue(),'0.5');
+  await editor.getByRole('button',{name:'Tambah racikan ke keranjang',exact:true}).click();
+  const cart=JSON.parse(await page.locator('input[name=resep]').inputValue());
+  assert.equal(cart.length,1);assert.equal(cart[0].sale_item_id,'master-compound');assert.equal(cart[0].item_id,null);assert.equal(cart[0].harga,1200);assert.equal(cart[0].qty,1);assert.equal(cart[0].ingredients[0].qty,0.5);
+  await page.reload();await page.locator('input[name=request_key]').waitFor({state:'attached'});
+  assert.deepEqual(JSON.parse(await page.locator('input[name=resep]').inputValue()),cart,'compound cart survives reload');
+  await page.getByRole('button',{name:'Buang draf'}).click();
+ }
  for(const route of ['/exam','/inpatient']){
   await page.goto(route);await page.locator('input[name=request_key]').waitFor({state:'attached'});
   assert.equal(await page.getByRole('button',{name:'Obat berikutnya',exact:true}).count(),1,'all ordinary medicines must be browsable beyond 40 rows');
@@ -112,5 +135,5 @@ try{
  await page.getByRole('alert').filter({hasText:'Draf browser tidak dapat disimpan'}).waitFor();
  assert.equal(await page.locator('[name=anamnesis]').inputValue(),'Keep this work in the current page');
  assert.equal(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({passed:true,forms:2,reload:true,failedSave:true,networkError:true,ordinaryPagination:true,followupsAndUploadedReferences:true,unitFactorPrice:true,accountIsolation:true,discard:true,successCleanup:true,expiredDrafts:true,malformedDrafts:true,disabledStorage:true,productionMutations:false}));
+ console.log(JSON.stringify({passed:true,forms:2,reload:true,failedSave:true,networkError:true,unifiedCompoundEditor:true,masterCartAndDraft:true,hiddenMaterialPrices:true,fractionalIngredients:true,ordinaryPagination:true,followupsAndUploadedReferences:true,unitFactorPrice:true,accountIsolation:true,discard:true,successCleanup:true,expiredDrafts:true,malformedDrafts:true,disabledStorage:true,productionMutations:false}));
 }finally{await context.close();await browser.close();await server.close();await fs.rm(root,{recursive:true,force:true});}
