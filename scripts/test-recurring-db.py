@@ -48,16 +48,19 @@ grant execute on function auth.uid() to authenticated,service_role;
     bootstrap += '\ngrant all on all tables in schema public to authenticated,service_role;'
     if '--baseline' not in sys.argv:
         bootstrap += '\n' + (root / 'supabase/migrations/20261004110000_atomic_recurring_journals.sql').read_text()
+        bootstrap += '\n' + (root / 'supabase/migrations/20261005051500_recurring_occurrence_limit.sql').read_text()
     sql(bootstrap)
     sql((root / 'supabase/tests/atomic_recurring_journals.sql').read_text())
     print('PASS: recurring transaction, rollback, WIB date, legacy identity and authenticated access', flush=True)
+    sql((root / 'supabase/tests/recurring_occurrence_limit.sql').read_text())
+    print('PASS: finite/unlimited recurring limits, successful-only counting, rollback, recovery and ambiguity', flush=True)
 
     sql("""
 insert into auth.users(id)values('f1000000-0000-4000-8000-000000000001');
 update profiles set role='OWNER' where id='f1000000-0000-4000-8000-000000000001';
 insert into coa_accounts(code,name,type,normal_balance)values('FIC-D','Fiction debit','BEBAN','D'),('FIC-K','Fiction credit','ASET','K');
-insert into recurring_journals(id,nama,day_of_month,last_posted,lines)values
- ('f7000000-0000-4000-8000-000000000001','Fiction race',1,
+insert into recurring_journals(id,nama,day_of_month,max_occurrences,last_posted,lines)values
+ ('f7000000-0000-4000-8000-000000000001','Fiction race',1,2,
  to_char((statement_timestamp() at time zone 'Asia/Jakarta')-interval '1 month','YYYY-MM'),
  '[{"code":"FIC-D","debit":100,"credit":0},{"code":"FIC-K","debit":0,"credit":100}]');
 insert into journal_entries(no_jurnal,tanggal,source,source_ref)
@@ -100,6 +103,8 @@ select pg_sleep(2); commit;
     counts = sql("select count(distinct e.id)||'|'||count(l.id)from journal_entries e join journal_lines l on l.entry_id=e.id where e.tanggal=date_trunc('month',statement_timestamp() at time zone 'Asia/Jakarta')::date;")
     if counts != '1|2':
         raise RuntimeError('Concurrent replay left unexpected journal counts: ' + counts)
+    if sql("select recurring_completed_occurrences('f7000000-0000-4000-8000-000000000001');") != '2':
+        raise RuntimeError('Concurrent retries consumed an incorrect number of occurrences')
     print('PASS: two independent sessions return one journal, one pair of lines and one effective progress update', flush=True)
 
     sql("""

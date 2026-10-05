@@ -12,6 +12,7 @@ type Row = {
   deskripsi: string | null;
   day_of_month: number;
   is_active: boolean;
+  max_occurrences: number | null;
   last_posted: string | null;
   lines: { code: string; debit: number; credit: number }[];
   branches: { name: string } | null;
@@ -28,7 +29,7 @@ export default async function JurnalBerulangPage({
   const supabase = await createClient();
 
   const [{ data: rjs }, { data: accounts }, { data: branches }, { data: jurnalRows }] = await Promise.all([
-    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
+    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, max_occurrences, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
     supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").order("name"),
     // Preserve legacy histories; new references identify the full schedule UUID.
@@ -92,6 +93,7 @@ export default async function JurnalBerulangPage({
                 const nilai = (r.lines ?? []).reduce((a, l) => a + (Number(l.debit) || 0), 0);
                 const jalan = (riwayat.get(r.id) ?? [])
                   .sort((a, b) => b.periode.localeCompare(a.periode));
+                const selesai = r.max_occurrences !== null && jalan.length >= r.max_occurrences;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
@@ -104,6 +106,9 @@ export default async function JurnalBerulangPage({
                     {/* Rincian tiap kali jalan — sampai nomor jurnalnya, dan nomor itu
                         bisa diklik ke jurnalnya (permintaan Bu Nisa 14 Agustus). */}
                     <td style={{ fontSize: 11 }}>
+                      <div style={{ marginBottom: 4, color: "var(--tm)" }}>
+                        {jalan.length} / {r.max_occurrences ?? "tanpa batas"} kali
+                      </div>
                       {jalan.length === 0 ? (
                         <span style={{ color: "var(--td)" }}>Belum pernah jalan</span>
                       ) : (
@@ -128,15 +133,15 @@ export default async function JurnalBerulangPage({
                       )}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.last_posted ?? "Belum pernah"}</td>
-                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{r.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{selesai ? "Selesai" : r.is_active ? "Aktif" : "Nonaktif"}</span></td>
                     <td>
-                      <form action={toggleRecurring}>
+                      {!selesai && <form action={toggleRecurring}>
                         <input type="hidden" name="id" value={r.id} />
                         <input type="hidden" name="aktif" value={r.is_active ? "0" : "1"} />
                         <button type="submit" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
                           {r.is_active ? "Nonaktifkan" : "Aktifkan"}
                         </button>
-                      </form>
+                      </form>}
                     </td>
                   </tr>
                 );

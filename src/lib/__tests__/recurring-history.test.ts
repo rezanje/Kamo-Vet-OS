@@ -25,4 +25,10 @@ describe("recurring history reporting", () => {
     expect(result.riwayat.size).toBe(0);
     expect(result.bermasalah).toBe(1);
   });
+  it("does not count the same monthly occurrence twice", () => {
+    const result = riwayatJurnalRecurring([complete, { ...complete, no_jurnal: "JRN-FIC-DUP" }], [ID]);
+    expect(result.riwayat.get(ID)).toHaveLength(1);
+    expect(result.bermasalah).toBe(1);
+  });
+
 });

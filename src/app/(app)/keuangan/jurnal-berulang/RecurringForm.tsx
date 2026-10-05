@@ -38,6 +38,11 @@ export function RecurringForm({ accounts, branches }: { accounts: Account[]; bra
             <label className="flab">Tgl posting *</label>
             <input className="fi" type="number" name="day_of_month" min={1} max={28} defaultValue={1} required />
           </div>
+          <div className="fg" style={{ width: 170, marginBottom: 0 }}>
+            <label className="flab" htmlFor="recurring-count">Jumlah pengulangan</label>
+            <input id="recurring-count" className="fi" type="number" name="max_occurrences" min={1} max={2147483647} step={1} placeholder="Tanpa batas" />
+            <span style={{ fontSize: 10, color: "var(--td)" }}>Kosong = tiap bulan tanpa batas</span>
+          </div>
           <div className="fg" style={{ flex: 1, minWidth: 160, marginBottom: 0 }}>
             <label className="flab">Cabang</label>
             <select className="fi" name="branch_id">

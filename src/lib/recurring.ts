@@ -10,6 +10,17 @@ type RJ = {
   id: string; nama: string; day_of_month: number; last_posted: string | null;
 };
 
+/** Empty preserves legacy unlimited schedules; PostgreSQL int bounds apply. */
+export function parseRecurringOccurrences(value: FormDataEntryValue | null): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const count = Number(raw);
+  if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(count) || count < 1 || count > 2147483647) {
+    throw new Error("Jumlah pengulangan harus bilangan bulat positif (minimal 1).");
+  }
+  return count;
+}
+
 const MAX_CATCHUP = 12; // ponytail: batas mundur 12 bulan
 
 // Daftar periode YYYY-MM dari (last_posted, bulan-berjalan]. PURE — dites.
@@ -68,6 +79,10 @@ export function riwayatJurnalRecurring(journals: JurnalRecurringHistory[], ids: 
       continue;
     }
     const history = riwayat.get(id) ?? [];
+    if (history.some((row) => row.periode === ref.slice(-7))) {
+      bermasalah++;
+      continue;
+    }
     history.push({ no_jurnal: journal.no_jurnal, tanggal: journal.tanggal, periode: ref.slice(-7), nilai: debit });
     riwayat.set(id, history);
   }
@@ -99,6 +114,7 @@ export async function postRecurringCatchUp(supabase: AnyClient): Promise<{ nama:
       // Definitions remain globally readable in the existing RLS policy, but
       // branch-scoped users must only post journals for their accessible branches.
       if (postingError?.code === "42501" && postingError.message?.startsWith("RECURRING_SCOPE:")) break;
+      if (postingError?.code === "RCL01" && postingError.message?.startsWith("RECURRING_LIMIT:")) break;
       const journal = Array.isArray(result) ? result[0] : result;
       if (postingError || !journal?.entry_id) {
         throw new Error(`Jurnal berulang "${rj.nama}" (${periode}) gagal: ${postingError?.message ?? "hasil posting tidak diterima"}`);

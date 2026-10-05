@@ -103,6 +103,14 @@ describe("atomic recurring catch-up", () => {
     expect(db.rpc).toHaveBeenCalledTimes(1);
   });
 
+  it("stops an exhausted schedule without failing month-end or reporting another run", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-08-03T03:00:00Z"));
+    const db = database();
+    db.rpc.mockResolvedValue({ data: null, error: { code: "RCL01", message: "RECURRING_LIMIT: jumlah pengulangan selesai." } } as never);
+    expect(await postRecurringCatchUp(db)).toEqual([]);
+    expect(db.rpc).toHaveBeenCalledTimes(1);
+  });
+
   it("uses the WIB due day even while the server is still on yesterday", () => {
     expect(periodeTertinggal("2026-06", new Date("2026-07-24T17:01:00Z"), 25)).toEqual(["2026-07"]);
   });
