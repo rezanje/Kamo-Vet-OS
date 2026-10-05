@@ -8,6 +8,7 @@ import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
 import { resolveDokter } from "@/lib/dokter";
 import { pesanBeratTidakWajar } from "@/lib/anabul";
+import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
@@ -69,6 +70,10 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   const back = `/klinik/rekam-medis/${visitId}`;
+  const { data: clinicalVisit, error: clinicalVisitError } = await supabase.from("visits").select("poli").eq("id", visitId).maybeSingle();
+  if (clinicalVisitError || !clinicalVisit) redirect(`${back}?error=${encodeURIComponent("Kunjungan tidak dapat dibaca. Muat ulang dan coba lagi.")}`);
+  const clinicalError = validateClinicalCompletion(clinicalVisit.poli, doctorId, keluhan);
+  if (clinicalError) redirect(`${back}?error=${encodeURIComponent(clinicalError)}`);
   if (berat !== null) {
     const { data: pet } = await supabase.from("pets").select("species").eq("id", petId).maybeSingle();
     const pesanBerat = pesanBeratTidakWajar(pet?.species ?? null, berat);

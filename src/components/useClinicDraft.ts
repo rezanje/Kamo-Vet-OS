@@ -7,8 +7,9 @@ const MAX_AGE = 12 * 60 * 60 * 1000;
 type Draft<T> = { version: 1; savedAt: number; requestKey: string; fields: Record<string, string>; snapshot: T };
 
 /** Session-only drafts are isolated by the authenticated server user and encounter. */
-export function useClinicDraft<T extends Record<string, unknown>>({ userId, scope, requestKey, snapshot, restore }: {
+export function useClinicDraft<T extends Record<string, unknown>>({ userId, scope, requestKey, snapshot, restore, optionalSnapshotKeys = [] }: {
   userId: string; scope: string; requestKey: string; snapshot: T; restore: (value: T) => void;
+  optionalSnapshotKeys?: (keyof T)[];
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -18,6 +19,7 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
   const [storageError, setStorageError] = useState("");
   const [saveError, setSaveError] = useState("");
   const initial = useRef(snapshot);
+  const optionalKeys = useRef(optionalSnapshotKeys);
   const latest = useRef({ snapshot, restore, submissionKey });
   useLayoutEffect(() => { latest.current = { snapshot, restore, submissionKey }; });
   const ready = useRef(false);
@@ -57,8 +59,9 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
             && Number.isFinite(draft.savedAt) && draft.savedAt > 0 && draft.savedAt <= Date.now()
             && Date.now() - draft.savedAt <= MAX_AGE
             && draft.fields && typeof draft.fields === "object" && draft.snapshot && typeof draft.snapshot === "object"
-            && Object.entries(initial.current).every(([name, value]) => Array.isArray(value)
-              ? Array.isArray(draft.snapshot[name]) : typeof draft.snapshot[name] === typeof value);
+            && Object.entries(initial.current).every(([name, value]) =>
+              draft.snapshot[name] === undefined && optionalKeys.current.includes(name)
+                ? true : Array.isArray(value) ? Array.isArray(draft.snapshot[name]) : typeof draft.snapshot[name] === typeof value);
           if (valid) {
             latest.current.restore(draft.snapshot);
             setSubmissionKey(draft.requestKey);

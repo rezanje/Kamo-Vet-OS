@@ -13,6 +13,7 @@ import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { batasBeratWajar } from "@/lib/anabul";
 import { katalogTotal, type KatalogRacikan } from "@/lib/katalog-racikan";
 import { CompoundSkuList } from "@/components/CompoundSkuList";
+import { isMedicalService } from "@/lib/clinic-required-fields";
 
 export type ItemLite = {
   id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
@@ -43,8 +44,9 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service }: {
   visitId: string; petId: string; requestKey: string; draftUserId: string;
+  service?: string | null;
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   racikanItems: ItemLite[];
@@ -212,11 +214,11 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 {/* Dokter dipilih di sini, bukan cuma ditampilkan: dialah yang
                     dicatat sebagai penanggung jawab kunjungan dan dapat insentif. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter</span>
-                  <select className="fi" name="doctor_id" defaultValue={patient.dokterId ?? ""}
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter{isMedicalService(service) ? " *" : ""}</span>
+                  <select className="fi" name="doctor_id" required={isMedicalService(service)} defaultValue={patient.dokterId ?? ""}
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
-                    {dokterOpsi.map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
+                    {dokterOpsi.filter(d => !isMedicalService(service) || /dokter|doctor|drh/i.test(`${d.nama} ${d.jabatan ?? ""}`)).map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
                   </select>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -237,7 +239,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
           </div>
 
           <ExamField icon="ti-message-2" color="var(--posb)" label="Keluhan">
-            <input className="fi" name="keluhan" defaultValue={patient.keluhan ?? ""} placeholder="Keluhan utama pasien" />
+            <input className="fi" name="keluhan" required={isMedicalService(service)} pattern={isMedicalService(service) ? ".*\\S.*" : undefined} title="Keluhan pasien wajib diisi" defaultValue={patient.keluhan ?? ""} placeholder="Keluhan utama pasien" />
           </ExamField>
           <ExamField icon="ti-file-text" color="var(--posb)" label="Anamnesa">
             <textarea className="fi" name="anamnesis" rows={2} placeholder="Riwayat & perjalanan penyakit" style={{ resize: "vertical" }} />
