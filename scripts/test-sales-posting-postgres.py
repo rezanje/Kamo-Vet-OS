@@ -95,6 +95,10 @@ alter default privileges in schema public grant all on sequences to authenticate
     suite = (ROOT / 'supabase/tests/sales_safe_posting.sql').read_text()
     sql(suite)
     print('Sales SQL transaction/authorization suite passed.')
+    sql((ROOT / 'supabase/tests/sales_opname_access.sql').read_text())
+    print('POS opname invoice authorization regression passed.')
+    sql((ROOT / 'supabase/tests/sales_group_access.sql').read_text())
+    print('Configured group/default sales access regression passed.')
     # Commit fictional fixture setup for independent two-session connections.
     fixture = suite[:suite.index('insert into sales_quotations')]
     sql(fixture + '\ncommit;')

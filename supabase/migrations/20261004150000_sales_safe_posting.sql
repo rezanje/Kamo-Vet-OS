@@ -66,7 +66,7 @@ grant execute on function public.sales_module_access() to authenticated;
 create function public.sales_assert_access(p_branch uuid) returns void
 language plpgsql security definer set search_path='' as $$
 begin
-  if auth.uid() is null or not exists(select 1 from public.profiles where id=auth.uid() and is_active is true and role in ('OWNER','ADMIN','FINANCE','STAFF'))
+  if auth.uid() is null or not exists(select 1 from public.profiles where id=auth.uid() and is_active is true and role in ('OWNER','ADMIN','FINANCE','STAFF','DOCTOR'))
      or not public.sales_module_access()
      or not public.user_can_access_branch(p_branch) then
     raise exception 'Dokumen penjualan tidak ditemukan atau tidak dapat diakses.' using errcode='42501';
@@ -89,9 +89,32 @@ do $$ declare t text; p text; predicate text; begin
   ) as policies(t,p,predicate) loop
     execute format('drop policy %I on public.%I',p,t);
     execute format('create policy %I on public.%I for select to authenticated using ((%s) and exists(select 1 from public.profiles actor where actor.id=auth.uid() and actor.is_active is true))',p||'_read',t,predicate);
-    execute format('create policy %I on public.%I for all to authenticated using ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF''))) with check ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF'')))',p||'_write',t,predicate,predicate);
+    execute format('create policy %I on public.%I for all to authenticated using ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF'',''DOCTOR''))) with check ((%s) and public.sales_module_access() and exists(select 1 from public.profiles where id=auth.uid() and role in (''OWNER'',''ADMIN'',''FINANCE'',''STAFF'',''DOCTOR'')))',p||'_write',t,predicate,predicate);
   end loop;
 end $$;
+
+-- Stock-opname shortages also create invoices from the inventory/cashier flow.
+-- Permit only new, actor-owned shortage invoices; ordinary sales stay gated.
+create function public.sales_opname_invoice_access(p_branch uuid) returns boolean
+language sql stable security definer set search_path='' as $$
+  select exists(select 1 from public.profiles p where p.id=auth.uid() and p.is_active is true
+    and public.user_can_access_branch(p_branch) and (
+      p.role='OWNER'
+      or exists(select 1 from public.role_modules m where m.role=p.role and m.module_id='pos')
+      or (p.role in ('ADMIN','DOCTOR') and not exists(select 1 from public.role_modules m where m.role=p.role))
+      or exists(select 1 from public.cashier_shifts s where s.opened_by=auth.uid()
+        and s.status='open' and s.shift_type='petshop' and s.branch_id=p_branch)
+    ));
+$$;
+revoke all on function public.sales_opname_invoice_access(uuid) from public,anon,service_role;
+grant execute on function public.sales_opname_invoice_access(uuid) to authenticated;
+create policy sales_opname_invoice_insert on public.sales_invoices for insert to authenticated
+  with check(kategori='selisih_stok' and order_id is null and created_by=auth.uid()
+    and public.sales_opname_invoice_access(branch_id));
+create policy sales_opname_invoice_item_insert on public.sales_invoice_items for insert to authenticated
+  with check(order_item_id is null and exists(select 1 from public.sales_invoices i
+    where i.id=invoice_id and i.kategori='selisih_stok' and i.order_id is null
+      and i.created_by=auth.uid() and public.sales_opname_invoice_access(i.branch_id)));
 
 -- Internal only: honor configured formats and allocate against all branches.
 create function public.sales_next_number(p_kind text,p_date date) returns text

@@ -207,7 +207,7 @@ do $$ begin
   if (select count(*) from sales_invoices where order_id='f9000000-0000-4000-8000-000000000001')<>1 then raise exception 'Legacy rejection leaked invoice'; end if;
 end $$;
 reset role;
--- Short stock failure, no warehouse failure, doctor rejection.
+-- Short stock failure, no warehouse failure, configured module rejection.
 update stock set qty=1 where warehouse_id='f3000000-0000-4000-8000-000000000001';
 set local role authenticated;
 do $$ begin
@@ -289,12 +289,15 @@ do $$ declare r jsonb; begin
   if (select status from sales_orders where id='f6000000-0000-4000-8000-000000000001')<>'selesai' then raise exception 'Order not completed'; end if;
   if (select sum(qty) from stock_moves where warehouse_id='f3000000-0000-4000-8000-000000000001' and source='sales-delivery')<>-29 then raise exception 'Wrong final base stock movement'; end if;
 end $$;
+reset role;
+insert into role_modules(role,module_id)values('DOCTOR','klinik')on conflict do nothing;
+set local role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
 select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 do $$ begin
   begin
     perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','doctor',jsonb_build_object('tanggal',current_date),'[]');
-    raise exception 'Doctor accepted';
+    raise exception 'Doctor without sales permission accepted';
   exception when insufficient_privilege then null; end;
 end $$;
 reset role;
