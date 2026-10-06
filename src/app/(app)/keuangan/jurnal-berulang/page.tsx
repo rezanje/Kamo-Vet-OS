@@ -5,6 +5,7 @@ import { RecurringForm } from "./RecurringForm";
 import { NoDok } from "@/components/NoDok";
 import { toggleRecurring } from "./actions";
 import { riwayatJurnalRecurring, type JurnalRecurringHistory } from "@/lib/recurring";
+import { ListLoadError, readCompleteList } from "@/lib/checked-list";
 
 type Row = {
   id: string;
@@ -29,20 +30,28 @@ export default async function JurnalBerulangPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: rjs }, { data: accounts }, { data: branches }, { data: jurnalRows }] = await Promise.all([
-    supabase.from("recurring_journals").select("id, nama, deskripsi, day_of_month, branch_id, max_occurrences, is_active, last_posted, lines, branches(name)").order("created_at", { ascending: false }),
-    supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
-    supabase.from("branches").select("id, name").order("name"),
-    // Preserve legacy histories; new references identify the full schedule UUID.
-    supabase.from("journal_entries")
-      .select("no_jurnal, tanggal, source_ref, branch_id, journal_lines(debit, credit)")
-      .eq("source", "recurring")
-      .order("tanggal", { ascending: false }),
-  ]);
-  const rows = (rjs ?? []) as unknown as Row[];
+  let loaded;
+  try {
+    loaded = await Promise.all([
+      readCompleteList<Row>((from, to) => supabase.from("recurring_journals")
+        .select("id, nama, deskripsi, day_of_month, branch_id, max_occurrences, is_active, last_posted, lines, branches(name)", { count: "exact" })
+        .order("created_at", { ascending: false }).order("id").range(from, to).returns<Row[]>(), "Jadwal jurnal berulang"),
+      supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
+      supabase.from("branches").select("id, name").order("name"),
+      // Preserve legacy histories; new references identify the full schedule UUID.
+      readCompleteList<JurnalRecurringHistory & { id: string }>((from, to) => supabase.from("journal_entries")
+        .select("id, no_jurnal, tanggal, source_ref, branch_id, journal_lines(debit, credit)", { count: "exact" })
+        .eq("source", "recurring")
+        .order("tanggal", { ascending: false }).order("id").range(from, to), "Riwayat jurnal berulang"),
+    ]);
+  } catch (loadError) {
+    return <div className="p2ban" role="alert">{loadError instanceof ListLoadError
+      ? loadError.message : "Jurnal berulang belum dapat dimuat. Coba muat ulang."}</div>;
+  }
+  const [rows, { data: accounts }, { data: branches }, jurnalRows] = loaded;
 
   const { riwayat, bermasalah, perluDitinjau } = riwayatJurnalRecurring(
-    (jurnalRows ?? []) as unknown as JurnalRecurringHistory[], rows.map((row) => row.id), rows,
+    jurnalRows, rows.map((row) => row.id), rows,
   );
 
   return (

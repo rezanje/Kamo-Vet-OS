@@ -45,4 +45,19 @@ describe("recurring history reporting", () => {
     expect(result.bermasalah).toBe(1);
   });
 
+  it("counts SQL-balanced decimal postings without floating-sum errors", () => {
+    const result = riwayatJurnalRecurring([{ ...complete, journal_lines: [
+      { debit: 100.1, credit: 0 }, { debit: 200.2, credit: 0 }, { debit: 0, credit: 300.3 },
+    ] }], [ID]);
+    expect(result.riwayat.get(ID)).toHaveLength(1);
+    expect(result.perluDitinjau.has(ID)).toBe(false);
+    expect(result.bermasalah).toBe(0);
+  });
+  it("rejects real decimal imbalance below one cent", () => {
+    const result = riwayatJurnalRecurring([{ ...complete, journal_lines: [
+      { debit: 0.0001, credit: 0 }, { debit: 0, credit: 0.0002 },
+    ] }], [ID]);
+    expect(result.riwayat.size).toBe(0);
+    expect(result.perluDitinjau.has(ID)).toBe(true);
+  });
 });

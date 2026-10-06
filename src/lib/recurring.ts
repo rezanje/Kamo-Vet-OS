@@ -61,6 +61,18 @@ export type JurnalRecurringHistory = {
   journal_lines: { debit: number; credit: number }[];
 };
 
+// Match PostgreSQL numeric sums without rounding away sub-cent imbalances.
+function balancedDecimalLines(lines: JurnalRecurringHistory["journal_lines"]): boolean {
+  const parts = lines.flatMap((line) => [line.debit, line.credit]).map((value) => {
+    const [mantissa, exponent = "0"] = String(Number(value)).toLowerCase().split("e");
+    const [whole, fraction = ""] = mantissa.split(".");
+    return { coefficient: BigInt(whole + fraction), scale: fraction.length - Number(exponent) };
+  });
+  const scale = parts.reduce((max, part) => Math.max(max, part.scale), 0);
+  return parts.reduce((sum, part, index) => sum + (index % 2 ? BigInt(-1) : BigInt(1))
+    * part.coefficient * BigInt(10) ** BigInt(scale - part.scale), BigInt(0)) === BigInt(0);
+}
+
 /** Only complete journals contribute to the displayed successful run count. */
 export function riwayatJurnalRecurring(
   journals: JurnalRecurringHistory[], ids: string[],
@@ -89,7 +101,7 @@ export function riwayatJurnalRecurring(
     const debit = lines.reduce((sum, line) => sum + Number(line.debit), 0);
     const credit = lines.reduce((sum, line) => sum + Number(line.credit), 0);
     if (!id || !dateMatches || !journal.no_jurnal?.trim() || lines.length < 2 || !Number.isFinite(debit)
-      || !Number.isFinite(credit) || debit <= 0 || debit !== credit
+      || !Number.isFinite(credit) || debit <= 0 || !balancedDecimalLines(lines)
       || lines.some((line) => Number(line.debit) < 0 || Number(line.credit) < 0
         || (Number(line.debit) > 0 && Number(line.credit) > 0))) {
       bermasalah++;
