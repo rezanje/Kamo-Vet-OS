@@ -1,5 +1,7 @@
 "use client";
 
+import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
+
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatFaktur } from "../actions";
@@ -53,6 +55,7 @@ export function FakturForm({ options }: { options: PoOption[] }) {
 
   return (
     <form action={buatFaktur}>
+      <PurchaseRequestKey scope={"invoice"} />
       <input type="hidden" name="po_id" value={poId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 

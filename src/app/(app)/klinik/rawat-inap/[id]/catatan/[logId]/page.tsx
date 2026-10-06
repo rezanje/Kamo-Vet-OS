@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, type Condition } from "@/lib/inpatient";
 import { LogEditForm, type EditRow, type LogRow } from "./LogEditForm";
+import { daftarDokter } from '@/lib/dokter';
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -26,14 +27,18 @@ export default async function LogDetailPage({
   const [{ data: rec }, { data: log }] = await Promise.all([
     supabase
       .from("inpatient_records")
-      .select("id, condition_status, doctor_name, admitted_at, discharged_at, visit_id, visits(created_at, pets(name, species, breed, photo_url), customers(name, phone, address))")
+      .select("id, condition_status, branch_id, doctor_name, admitted_at, discharged_at, visit_id, visits(created_at, pets(name, species, breed, photo_url), customers(name, phone, address))")
       .eq("id", id).maybeSingle(),
     supabase
       .from("inpatient_daily_logs")
-      .select("id, log_date, created_at, condition_note, tindakan, keterangan, doctor_name, inpatient_record_id, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
+      .select("id, log_kind, visit_doctor_id, paramedic_id, paramedic_name, log_date, created_at, condition_note, tindakan, keterangan, doctor_name, inpatient_record_id, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
       .eq("id", logId).maybeSingle(),
   ]);
   if (!rec || !log || log.inpatient_record_id !== id) notFound();
+  const [doctors,paramedics]=await Promise.all([
+    daftarDokter(supabase,{branchId:rec.branch_id,role:'doctor'}),
+    daftarDokter(supabase,{branchId:rec.branch_id,role:'paramedic'}),
+  ]);
 
   const { data: editRows } = await supabase
     .from("inpatient_daily_log_edits")
@@ -86,6 +91,8 @@ export default async function LogDetailPage({
         backHref={`/klinik/rawat-inap/${id}`}
         editable={!rec.discharged_at}
         edits={edits}
+        doctors={doctors}
+        paramedics={paramedics}
         patient={{
           name: pet?.name ?? "—",
           species: pet?.species ?? "—",

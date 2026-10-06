@@ -1,7 +1,11 @@
+import { readCompleteList, TABLE_PAGE_SIZE } from "@/lib/checked-list";
+import { infoHalaman } from "@/lib/pagination";
+import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
+import { statusPasienRekamMedis, type CatatanStatusRawatInap } from "@/lib/status-pasien-rekam-medis";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 type Rel<T> = T | T[] | null;
@@ -13,6 +17,7 @@ function one<T>(value: Rel<T>): T | null {
 type RekamRow = BarisDaftarRekamMedis & {
   id: string;
   date: string;
+  petId: string | null;
   species: string | null;
   breed: string | null;
   doctor: string | null;
@@ -20,6 +25,7 @@ type RekamRow = BarisDaftarRekamMedis & {
   note: string | null;
   diagnosis: string | null;
   isImported: boolean;
+  patientStatus: ReturnType<typeof statusPasienRekamMedis>;
 };
 
 const dateText = (iso: string) => new Date(iso).toLocaleDateString("id-ID", {
@@ -29,20 +35,15 @@ const dateText = (iso: string) => new Date(iso).toLocaleDateString("id-ID", {
 export default async function DaftarRekamMedisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pet?: string }>;
+  searchParams: Promise<{ q?: string; pet?: string; hal?: string }>;
 }) {
-  const { q = "", pet: petId = "" } = await searchParams;
+  const { q = "", pet: petId = "", hal } = await searchParams;
   const supabase = await createClient();
-  let query = supabase
-    .from("visits")
-    .select("id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis)")
-    .order("created_at", { ascending: false });
-  if (petId) query = query.eq("pet_id", petId);
-  const { data } = await query.limit(300);
 
   type SourceRow = {
     id: string;
     created_at: string;
+    pet_id: string | null;
     dokter: string | null;
     keluhan: string | null;
     legacy_source_key: string | null;
@@ -50,9 +51,22 @@ export default async function DaftarRekamMedisPage({
     customers: Rel<{ name: string; phone: string | null }>;
     branches: Rel<{ code: string }>;
     medical_records: Rel<{ diagnosis: string | null; anamnesis: string | null }>;
+    inpatient_records: Rel<CatatanStatusRawatInap>;
   };
 
-  const rows: RekamRow[] = ((data ?? []) as unknown as SourceRow[]).map((visit) => {
+  let data: SourceRow[];
+  try {
+    data = await readCompleteList<SourceRow>(async (from, to) => {
+      let query = supabase.from("visits")
+        .select("id, pet_id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis), inpatient_records(created_at, discharged_at, condition_status)", { count: "exact" })
+        .order("created_at", { ascending: false }).order("id");
+      if (petId) query = query.eq("pet_id", petId);
+      const result = await query.range(from, to);
+      return { ...result, data: result.data as unknown as SourceRow[] | null };
+    }, "Rekam medis");
+  } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
+
+  const rows: RekamRow[] = data.map((visit) => {
     const pet = one(visit.pets);
     const owner = one(visit.customers);
     const branch = one(visit.branches);
@@ -61,6 +75,7 @@ export default async function DaftarRekamMedisPage({
     return {
       id: visit.id,
       date: visit.created_at,
+      petId: visit.pet_id,
       ownerName: invalidImportedOwner ? "Pemilik perlu verifikasi" : owner?.name ?? "—",
       petName: pet?.name ?? "—",
       phone: invalidImportedOwner ? "" : owner?.phone ?? "",
@@ -71,10 +86,13 @@ export default async function DaftarRekamMedisPage({
       note: medical?.anamnesis ?? visit.keluhan,
       diagnosis: medical?.diagnosis ?? null,
       isImported: Boolean(visit.legacy_source_key),
+      patientStatus: statusPasienRekamMedis(visit.inpatient_records, Boolean(visit.legacy_source_key)),
     };
   });
   const filtered = saringDaftarRekamMedis(rows, q);
-  const pets = new Set(rows.map((row) => row.petName).filter((name) => name !== "—")).size;
+  const pageInfo = infoHalaman(hal, filtered.length, TABLE_PAGE_SIZE);
+  const visibleRows = filtered.slice(pageInfo.from, pageInfo.to + 1);
+  const pets = new Set(rows.map((row) => row.petId).filter(Boolean)).size;
   const imported = rows.filter((row) => row.isImported).length;
   const selectedPet = petId ? rows[0] : null;
 
@@ -128,16 +146,17 @@ export default async function DaftarRekamMedisPage({
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 850 }}>
               <thead>
-                <tr><th>Tanggal</th><th>Pasien</th><th>Pemilik</th><th>Ringkasan kunjungan</th><th>Diagnosa</th><th /></tr>
+                <tr><th>Tanggal</th><th>Pasien</th><th>Pemilik</th><th>Status pasien</th><th>Ringkasan kunjungan</th><th>Diagnosa</th><th /></tr>
               </thead>
               <tbody>
-                {filtered.map((row) => (
+                {visibleRows.map((row) => (
                   <tr key={row.id}>
                     <td style={{ whiteSpace: "nowrap", fontSize: 11 }}>{dateText(row.date)}<br />
                       <span style={{ fontSize: 10, color: "var(--td)" }}>{row.branch ?? "Riwayat lama · semua cabang"}</span>
                     </td>
                     <td><div style={{ fontWeight: 700 }}>{row.petName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{[row.species, row.breed].filter(Boolean).join(" · ") || "—"}</div></td>
                     <td><div style={{ fontWeight: 600 }}>{row.ownerName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.phone || "—"}</div></td>
+                    <td style={{ whiteSpace: "nowrap" }}><span className={`bge ${row.patientStatus.badge}`}>{row.patientStatus.label}</span></td>
                     <td style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.45 }}>{row.note || "—"}</td>
                     <td style={{ maxWidth: 190, fontSize: 11, lineHeight: 1.45 }}>{row.diagnosis || "Belum diisi"}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
@@ -149,6 +168,7 @@ export default async function DaftarRekamMedisPage({
             </table>
           </div>
         )}
+        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId }} total={filtered.length} pageInfo={pageInfo} />
       </div>
     </>
   );

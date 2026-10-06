@@ -18,6 +18,7 @@ type AssetInput = {
 async function bacaAset(
   supabase: Awaited<ReturnType<typeof createClient>>,
   formData: FormData,
+  readCategory = true,
 ): Promise<AssetInput> {
   const nama = String(formData.get("nama") ?? "").trim();
   const categoryId = String(formData.get("category_id") ?? "").trim();
@@ -34,6 +35,8 @@ async function bacaAset(
   if (!Number.isFinite(nilaiSisa) || nilaiSisa < 0 || nilaiSisa >= harga) {
     redirect(`${back}?error=${encodeURIComponent("Nilai sisa harus nol atau lebih, dan lebih kecil dari harga perolehan")}`);
   }
+
+  if (!readCategory) return { nama, categoryId, tanggal, harga, nilaiSisa, umurBulan, branchId, kategori: "" };
 
   const { data: kat, error } = await supabase.from("asset_categories")
     .select("nama").eq("id", categoryId).eq("is_active", true).maybeSingle();
@@ -57,7 +60,9 @@ export async function tambahSaldoAwalAset(formData: FormData) {
 
 export async function tambahPembelianAset(formData: FormData) {
   const supabase = await createClient();
-  const a = await bacaAset(supabase, formData);
+  const a = await bacaAset(supabase, formData, false);
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang formulir.")}`);
   const sumber = String(formData.get("sumber") ?? "").trim();
   try {
     assertNewAssetFunding(sumber);
@@ -65,8 +70,6 @@ export async function tambahPembelianAset(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(e instanceof Error ? e.message : "Sumber dana tidak valid")}`);
   }
 
-  const pesanPeriode = await cekPeriode(supabase, a.tanggal);
-  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
   const creditCode = await kodeAkunBayar(
     supabase,
     sumber,
@@ -83,6 +86,7 @@ export async function tambahPembelianAset(formData: FormData) {
   const creditAccount = journal.find((line) => line.credit > 0)?.code;
   if (!creditAccount) redirect(`${back}?error=${encodeURIComponent("Akun pembelian aset tidak valid")}`);
   const { data, error } = await supabase.rpc("create_fixed_asset_purchase", {
+    p_request_key: requestKey,
     p_nama: a.nama,
     p_category_id: a.categoryId,
     p_tanggal: a.tanggal,
@@ -94,9 +98,9 @@ export async function tambahPembelianAset(formData: FormData) {
     p_credit_code: creditAccount,
   });
   if (error || !data) {
-    redirect(`${back}?error=${encodeURIComponent(`Pembelian dan jurnal dibatalkan: ${error?.message ?? "gagal"}`)}`);
+    redirect(`${back}?error=${encodeURIComponent(`Pembelian belum terkonfirmasi: ${error?.message ?? "gagal"}`)}`);
   }
-  redirect(`${back}?success=pembelian`);
+  redirect(`${back}?success=pembelian&request_done=${encodeURIComponent(requestKey)}&request_scope=asset`);
 }
 
 // Jalankan penyusutan garis lurus untuk satu periode (YYYY-MM).

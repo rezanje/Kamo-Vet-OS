@@ -27,6 +27,34 @@ type Candidate = {
 
 type Settings = Record<`${TriggerKey}_enabled`, boolean> & { is_enabled: boolean };
 
+const PAGE_SIZE = 500;
+const SOURCE_LIMIT = 50_000;
+
+async function bacaSumberWa<T extends { id: string }>(supabase: Db, table: string, fields: string): Promise<T[]> {
+  const rows: T[] = [];
+  const ids = new Set<string>();
+  let total: number | undefined;
+  for (let start = 0; total === undefined || start < total; start += PAGE_SIZE) {
+    const { data, error, count } = await supabase.from(table)
+      .select(fields, { count: "exact" }).order("id").range(start, start + PAGE_SIZE - 1);
+    if (error || !Array.isArray(data) || !Number.isInteger(count) || count < 0 || count > SOURCE_LIMIT) {
+      throw new Error(`Data WA (${table}) belum bisa dibaca lengkap. Tidak ada pengingat baru yang dikirim.`);
+    }
+    if (total === undefined) total = count;
+    if (count !== total || data.length !== Math.min(PAGE_SIZE, total! - start)) {
+      throw new Error(`Data WA (${table}) berubah atau terpotong saat dibaca. Jalankan pemeriksaan lagi.`);
+    }
+    for (const row of data as T[]) {
+      if (typeof row.id !== "string" || !row.id || ids.has(row.id)) {
+        throw new Error(`Data WA (${table}) tidak lengkap. Jalankan pemeriksaan lagi.`);
+      }
+      ids.add(row.id);
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
 function dateAtWib(now: Date) {
   return tanggalWIB(now.toISOString());
 }
@@ -52,16 +80,17 @@ function pesan(trigger: TriggerKey, owner: string, pet: string, extra?: string) 
 
 export async function jalankanWaEngine(supabase: Db, now = new Date()) {
   const today = dateAtWib(now);
-  const { data: rawSettings } = await supabase.from("wa_engine_settings").select("*").eq("id", true).maybeSingle();
+  const { data: rawSettings, error: settingsError } = await supabase.from("wa_engine_settings").select("*").eq("id", true).maybeSingle();
+  if (settingsError) throw new Error("Pengaturan WA belum bisa dibaca. Tidak ada pengingat baru yang dikirim.");
   const settings = rawSettings as Settings | null;
   if (!settings?.is_enabled) return { enabled: false, created: 0, sent: 0, failed: 0 };
 
-  const [{ data: customers }, { data: pets }, { data: visits }, { data: followUps }, { data: sales }] = await Promise.all([
-    supabase.from("customers").select("id, name, phone, dob"),
-    supabase.from("pets").select("id, customer_id, name, dob"),
-    supabase.from("visits").select("id, customer_id, pet_id, branch_id, poli, created_at"),
-    supabase.from("follow_ups").select("id, customer_id, pet_id, branch_id, jenis, tanggal"),
-    supabase.from("sales").select("id, customer_id, created_at"),
+  const [customers, pets, visits, followUps, sales] = await Promise.all([
+    bacaSumberWa<Customer>(supabase, "customers", "id, name, phone, dob"),
+    bacaSumberWa<Pet>(supabase, "pets", "id, customer_id, name, dob"),
+    bacaSumberWa<Visit>(supabase, "visits", "id, customer_id, pet_id, branch_id, poli, created_at"),
+    bacaSumberWa<FollowUp>(supabase, "follow_ups", "id, customer_id, pet_id, branch_id, jenis, tanggal"),
+    bacaSumberWa<{ id: string; customer_id: string | null; created_at: string }>(supabase, "sales", "id, customer_id, created_at"),
   ]);
 
   type Customer = { id: string; name: string; phone: string; dob: string | null };
@@ -128,14 +157,17 @@ export async function jalankanWaEngine(supabase: Db, now = new Date()) {
       customer_id: candidate.customerId, pet_id: candidate.petId ?? null, branch_id: candidate.branchId ?? null,
       trigger_key: candidate.trigger, idempotency_key: idempotencyKey, phone: candidate.phone, message: candidate.message,
     }).select("id").maybeSingle();
-    if (insertError || !log) continue;
+    if (insertError?.code === "23505") continue;
+    if (insertError || !log) throw new Error("Pesan WA belum bisa dicatat. Pemeriksaan dihentikan; periksa riwayat sebelum mencoba lagi.");
     created++;
     const result = await sendWA(candidate.phone, candidate.message);
     if (result.ok) {
-      await supabase.from("whatsapp_message_log").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", log.id);
+      const { data: updated, error } = await supabase.from("whatsapp_message_log").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", log.id).select("id").maybeSingle();
+      if (error || updated?.id !== log.id) throw new Error("Status WA belum bisa disimpan setelah provider menerima pesan. Periksa riwayat; jangan kirim ulang otomatis.");
       sent++;
     } else {
-      await supabase.from("whatsapp_message_log").update({ status: "failed", error: result.reason ?? "Gagal kirim" }).eq("id", log.id);
+      const { data: updated, error } = await supabase.from("whatsapp_message_log").update({ status: "failed", error: result.reason ?? "Gagal kirim" }).eq("id", log.id).select("id").maybeSingle();
+      if (error || updated?.id !== log.id) throw new Error("Status kegagalan WA belum bisa disimpan. Periksa riwayat sebelum mencoba lagi.");
       failed++;
     }
   }
@@ -146,7 +178,8 @@ export async function kirimStrukWa(supabase: Db, input: {
   invoiceNo: string; customerId: string; phone: string; customerName: string; petName?: string | null;
   total: number; items: { deskripsi: string; qty: number; harga: number }[];
 }) {
-  const { data: settings } = await supabase.from("wa_engine_settings").select("is_enabled").eq("id", true).maybeSingle();
+  const { data: settings, error: settingsError } = await supabase.from("wa_engine_settings").select("is_enabled").eq("id", true).maybeSingle();
+  if (settingsError) return { ok: false, reason: "Pengaturan WA belum bisa dibaca. Struk belum dikirim." };
   if (!settings?.is_enabled) return { ok: false, reason: "Pengiriman WA belum diaktifkan" };
   const idempotencyKey = `receipt:${input.invoiceNo}`;
   const message = [
@@ -159,8 +192,12 @@ export async function kirimStrukWa(supabase: Db, input: {
   }).select("id").maybeSingle();
   if (!log) return { ok: false, reason: "Struk WA sudah pernah diproses atau gagal dicatat" };
   const result = await sendWA(input.phone, message);
-  await supabase.from("whatsapp_message_log").update(result.ok
+  const { data: updated, error } = await supabase.from("whatsapp_message_log").update(result.ok
     ? { status: "sent", sent_at: new Date().toISOString() }
-    : { status: "failed", error: result.reason ?? "Gagal kirim" }).eq("id", log.id);
+    : { status: "failed", error: result.reason ?? "Gagal kirim" }).eq("id", log.id).select("id").maybeSingle();
+  if (error || updated?.id !== log.id) return {
+    ok: false,
+    reason: result.ok ? "Provider menerima struk, tetapi status WA belum tersimpan. Periksa riwayat; jangan kirim ulang otomatis." : "Status kegagalan struk WA belum tersimpan. Periksa riwayat sebelum mencoba lagi.",
+  };
   return result;
 }

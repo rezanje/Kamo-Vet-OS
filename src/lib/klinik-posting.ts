@@ -96,6 +96,7 @@ export function toClinicCompoundRecipeInput(input: {
 
 export function parseClinicPostingError(error: { code?: string; message: string } | null): string {
   if (error?.code === "P0001") {
+    if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
     const detailMessages: Record<string, string> = {
       STOCK_SHORT: "Stok tidak cukup",
       WAREHOUSE_MISSING: "Gudang aktif cabang belum tersedia",

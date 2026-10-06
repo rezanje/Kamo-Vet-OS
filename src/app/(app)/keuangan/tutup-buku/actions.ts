@@ -135,11 +135,17 @@ export async function jalankanAkhirBulanSekarang(formData: FormData) {
     redirect(`${BACK}?error=${encodeURIComponent("Hanya owner/admin yang boleh menjalankan proses akhir bulan.")}`);
   }
 
-  const hasil = await jalankanAkhirBulan(supabase, {
-    sumber: "manual",
-    userId: user?.id ?? null,
-    paksaKunci: String(formData.get("kunci_sekalian") ?? "") === "on",
-  });
+  let hasil: Awaited<ReturnType<typeof jalankanAkhirBulan>>;
+  try {
+    hasil = await jalankanAkhirBulan(supabase, {
+      sumber: "manual",
+      userId: user?.id ?? null,
+      paksaKunci: String(formData.get("kunci_sekalian") ?? "") === "on",
+    });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "Proses akhir bulan gagal. Minta keuangan meninjau.";
+    redirect(`${BACK}?error=${encodeURIComponent(message)}`);
+  }
 
   revalidatePath(BACK);
   redirect(`${BACK}?success=${encodeURIComponent(`Proses akhir bulan ${hasil.periode} selesai — ${ringkasHasil(hasil)}.`)}`);

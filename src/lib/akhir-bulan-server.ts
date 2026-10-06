@@ -2,7 +2,7 @@
 // cron tiap tanggal 1 dan tombol "Jalankan sekarang" di layar Tutup Buku.
 //
 // Semua langkahnya idempoten: penyusutan dikunci unique(asset_id, periode), jurnal
-// berulang dikunci last_posted, dan penguncian periode hanya maju, tidak pernah mundur.
+// berulang mengunci jadwal dan bulan dalam RPC atomik, dan penguncian periode hanya maju.
 // Jadi menjalankan dua kali di hari yang sama tidak menggandakan apa pun.
 import { catchUpDepreciation } from "@/lib/depreciation";
 import { postRecurringCatchUp } from "@/lib/recurring";

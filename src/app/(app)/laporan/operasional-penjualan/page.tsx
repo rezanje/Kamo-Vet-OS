@@ -42,7 +42,7 @@ export default async function OperationSalesPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user
-    ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+    ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle()
     : { data: null };
   const role = profile?.role ?? "";
   if (!canAccessOperationSales(role, process.env.OPERATION_SALES_ROLLOUT_ROLES)) {
@@ -106,7 +106,7 @@ export default async function OperationSalesPage({
         </>
       }
     >
-      <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} />
+      <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} canViewInventoryValue={profile?.is_active === true && (role === "OWNER" || role === "FINANCE")} />
     </LaporanPage>
   );
 }

@@ -66,7 +66,13 @@ export default async function JurnalPage({
   const supabase = await createClient();
 
   // Jurnal berulang: catch-up bulan tertinggal (idempotent via last_posted).
-  const recurringPosted = await postRecurringCatchUp(supabase);
+  let recurringPosted: { nama: string; periode: string }[] = [];
+  let recurringError: string | null = null;
+  try {
+    recurringPosted = await postRecurringCatchUp(supabase);
+  } catch (cause) {
+    recurringError = cause instanceof Error ? cause.message : "Jurnal berulang gagal diproses. Minta keuangan meninjau.";
+  }
 
   // Saringan dikerjakan di database (bukan memotong 30 baris terakhir di layar),
   // supaya mencari jurnal bulan lalu tidak perlu menggulir ratusan baris.
@@ -115,6 +121,11 @@ export default async function JurnalPage({
       </div>
 
       {/* Banners */}
+      {recurringError && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {recurringError}
+        </div>
+      )}
       {recurringPosted.length > 0 && (
         <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #93c5fd", color: "#1d4ed8" }}>
           <i className="ti ti-repeat" /> Jurnal berulang otomatis diposting:{" "}

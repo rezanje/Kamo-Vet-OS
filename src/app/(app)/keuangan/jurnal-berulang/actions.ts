@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { parseRecurringOccurrences } from "@/lib/recurring";
 import { createClient } from "@/lib/supabase/server";
 
 const BACK = "/keuangan/jurnal-berulang";
@@ -20,6 +21,9 @@ export async function buatRecurring(formData: FormData) {
   lines = lines.filter((l) => l.code && (Number(l.debit) > 0 || Number(l.credit) > 0));
 
   const fail = (msg: string) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
+  let max_occurrences: number | null = null;
+  try { max_occurrences = parseRecurringOccurrences(formData.get("max_occurrences")); }
+  catch (error) { fail(error instanceof Error ? error.message : "Jumlah pengulangan tidak valid."); }
   if (!nama || lines.length < 2) fail("Nama dan minimal 2 baris jurnal wajib diisi.");
 
   const totalD = lines.reduce((a, l) => a + (Number(l.debit) || 0), 0);
@@ -28,12 +32,13 @@ export async function buatRecurring(formData: FormData) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase.from("recurring_journals").insert({
-    nama, deskripsi, day_of_month, branch_id, lines, created_by: user?.id ?? null,
+    nama, deskripsi, day_of_month, max_occurrences, branch_id, lines, created_by: user?.id ?? null,
   });
   if (error) fail(error.message);
 
   revalidatePath(BACK);
-  redirect(`${BACK}?success=${encodeURIComponent(`Jurnal berulang "${nama}" tersimpan — otomatis diposting tiap bulan.`)}`);
+  const pengulangan = max_occurrences === null ? "tanpa batas" : `sebanyak ${max_occurrences} kali`;
+  redirect(`${BACK}?success=${encodeURIComponent(`Jurnal berulang "${nama}" tersimpan — diposting tiap bulan ${pengulangan}.`)}`);
 }
 
 export async function toggleRecurring(formData: FormData) {

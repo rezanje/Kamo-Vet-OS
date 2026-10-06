@@ -1,5 +1,7 @@
 "use client";
 
+import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
+
 // ponytail: qty diterima default = sisa yang belum datang; user tinggal ubah baris
 // yang tidak sesuai. Kolom rusak dipisah dari kolom terima karena akibatnya beda:
 // yang baik masuk stok & jadi hutang, yang rusak cuma jadi bahan klaim ke pemasok.
@@ -90,6 +92,7 @@ export function TerimaForm({
 
   return (
     <form action={terimaBarang}>
+      <PurchaseRequestKey scope={`receipt:${poId}`} />
       <input type="hidden" name="id" value={poId} />
       <input type="hidden" name="rows" value={JSON.stringify(payload)} />
 

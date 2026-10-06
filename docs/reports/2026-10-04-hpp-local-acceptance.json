@@ -1,0 +1,30 @@
+{
+  "app": "http://127.0.0.1:3109",
+  "api": "http://127.0.0.1:55421",
+  "container": "supabase_db_vetos_hris_acceptance",
+  "checks": [
+    "guarded historical LOCAL fixtures:1200 layers at110,1200 active compound lines plus a void line",
+    "real PostgREST cap1000 exists; report reader must span multiple500-row pages",
+    "owner@hris-fiction.local: HTML100 vs CSV1200; FIFO1320000; compound revenue216000/cost60000/profit156000; historical/inactive versions; doctor600/search1",
+    "finance@reports-fiction.local: HTML100 vs CSV1200; FIFO1320000; compound revenue216000/cost60000/profit156000; historical/inactive versions; doctor600/search1",
+    "disabled-finance@reports-fiction.local: both direct sensitive exports403",
+    "disabled-owner@reports-fiction.local: both direct sensitive exports403",
+    "admin@reports-fiction.local: both direct sensitive exports403",
+    "admin@reports-fiction.local: protected report navigation absent",
+    "default STAFF module redirects denied export; local laporan grant exercises additional role guard",
+    "staff@reports-fiction.local: both direct sensitive exports403",
+    "staff@reports-fiction.local: protected report navigation absent",
+    "doctor@reports-fiction.local: both direct sensitive exports403",
+    "doctor@reports-fiction.local: protected report navigation absent",
+    "FINANCE custom module denial: both direct exports redirected307 before handler, no CSV",
+    "existing HRIS payroll slip rows byte-for-byte unchanged"
+  ],
+  "fixture": {
+    "branch": "b1000000-0000-4000-8000-000000000001",
+    "warehouse": "b1000000-0000-4000-8000-000000000002"
+  },
+  "limits": [
+    "Adapted fictional local stack, not production or full Supabase CLI reset.",
+    "Report reads are not a transaction snapshot."
+  ]
+}

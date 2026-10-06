@@ -1,3 +1,5 @@
+import { PurchaseRecoveryComplete } from "@/components/PurchaseRequestKey";
+import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -11,8 +13,8 @@ import { hariIniWIB } from "@/lib/tanggal";
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default async function AsetPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; n?: string }> }) {
-  const { success, error, n } = await searchParams;
+export default async function AsetPage({ searchParams }: { searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string; n?: string }> }) {
+  const { request_done, request_scope, success, error, n } = await searchParams;
   const supabase = await createClient();
   const rekening = await loadRekeningAktif(supabase);
 
@@ -50,6 +52,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
 
   return (
     <>
+      <PurchaseRecoveryComplete scope={request_scope} requestKey={request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -127,6 +130,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
       <div className="crm-sec">
         <SecHeader num="02" title="PEMBELIAN ASET BARU" desc="Aset dan jurnal pembelian disimpan sebagai satu transaksi." />
         <form action={tambahPembelianAset}>
+      <PurchaseRequestKey scope={"asset"} />
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Nama aset</label>

@@ -5,23 +5,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { stockIn } from "@/lib/inventory";
-import { hitungBarisTerima, nilaiDiterima } from "@/lib/penerimaan";
-import { loadUnitOptions, pickUnit, toBaseCost, toBaseQty } from "@/lib/satuan";
-import { normalisasiBatch, type BatchInput } from "@/lib/kadaluarsa-batch";
+import { loadUnitOptions, pickUnit } from "@/lib/satuan";
+import { type BatchInput } from "@/lib/kadaluarsa-batch";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
-import { tanggalLokal } from "@/lib/tanggal";
 import { hariIniWIB } from "@/lib/tanggal";
-import { cekPeriode } from "@/lib/jurnal-guard";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function nextNoTerima(supabase: any): Promise<string> {
-  const { nomor } = await nomorBerikutnya(supabase, "TB", tanggalLokal(new Date()), {
-    table: "goods_receipts", column: "no_terima",
-  });
-  return nomor;
-}
 
 type ItemInput = {
   nama: string; qty: number; harga_beli: number; item_id?: string | null;
@@ -172,168 +159,61 @@ type TerimaInput = {
 export async function terimaBarang(formData: FormData) {
   const supabase = await createClient();
   const id = String(formData.get("id") ?? "");
+  const requestKey = String(formData.get("request_key") ?? "").trim();
   const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
-  const suratJalan = String(formData.get("surat_jalan") ?? "").trim() || null;
-  const catatanDok = String(formData.get("catatan") ?? "").trim() || null;
-
-  const fail = (msg: string) =>
-    redirect(`/pembelian/${id}/terima?error=` + encodeURIComponent(msg));
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) fail(pesanPeriode);
-
+  const fail = (msg: string): never => redirect(`/pembelian/${id}/terima?error=${encodeURIComponent(msg)}`);
   let input: TerimaInput[] = [];
   try {
-    input = JSON.parse(String(formData.get("rows") ?? "[]")) as TerimaInput[];
-  } catch {
-    input = [];
+    const parsed: unknown = JSON.parse(String(formData.get("rows") ?? "[]"));
+    if (Array.isArray(parsed)) input = parsed as TerimaInput[];
+  } catch { /* Invalid JSON is rejected below. */ }
+  if (!id || !requestKey || input.length === 0 || input.some((row) => !row || !row.id
+    || !Number.isFinite(Number(row.qty_terima)) || Number(row.qty_terima) < 0
+    || !Number.isFinite(Number(row.qty_rusak ?? 0)) || Number(row.qty_rusak ?? 0) < 0)
+    || new Set(input.map((row) => row.id)).size !== input.length) {
+    fail("Rincian atau kunci penerimaan tidak valid. Periksa formulir lalu coba lagi.");
   }
-
-  const { data: po } = await supabase
-    .from("purchase_orders")
-    .select("id, no_po, to_warehouse_id, branch_id, status, purchase_order_items(id, item_id, nama, satuan, qty, qty_terima, qty_rusak, faktor, harga_beli)")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (!po) fail("PO tidak ditemukan.");
-  if (po!.status === "Batal") fail("PO batal tidak bisa diterima.");
-
-  const poItems = (po!.purchase_order_items ?? []) as {
-    id: string; item_id: string | null; nama: string; satuan: string | null;
-    qty: number; qty_terima: number | null; qty_rusak: number | null;
-    faktor: number | null; harga_beli: number;
-  }[];
-
-  // Penerimaan boleh BERTAHAP: pemasok sering mengirim sisa beberapa hari
-  // kemudian. Angka di form = qty yang datang KALI INI, ditambahkan ke yang
-  // sudah pernah diterima, dan tidak boleh melewati qty PO.
-  const inputById = new Map(input.map((r) => [r.id, r]));
-  const rows = poItems.map((r) => {
-    const dari = inputById.get(r.id);
-    const sudah = Number(r.qty_terima) || 0;
-    const h = hitungBarisTerima({
-      qty: Number(r.qty),
-      sudahTerima: sudah,
-      // Baris yang tidak dikirim form dianggap datang penuh (perilaku lama).
-      mintaTerima: dari ? Number(dari.qty_terima) : Math.max(0, Number(r.qty) - sudah),
-      mintaRusak: dari ? Number(dari.qty_rusak ?? 0) : 0,
-      harga: Number(r.harga_beli) || 0,
-    });
-    // Kadaluarsa dicatat per baris: satu kiriman bisa berisi obat dengan masa
-    // simpan berbeda-beda.
-    const exp = (dari?.exp_date ?? "").trim();
-    const expDate = /^\d{4}-\d{2}-\d{2}$/.test(exp) ? exp : null;
-    // Beberapa tanggal dalam satu baris: dirapikan di sini supaya jumlah lapisan
-    // yang dibuat selalu pas dengan qty yang diterima.
-    const batches = normalisasiBatch(
-      h.terima,
-      dari?.batches?.length ? dari.batches : (expDate ? [{ qty: h.terima, exp_date: expDate }] : []),
-    );
-    return {
-      ...r, ...h, kaliIni: h.terima, catatan: dari?.catatan?.trim() || null,
-      expDate, batches,
-    };
+  const { prefix, digit } = await nomorBerikutnya(supabase, "TB", tanggal, {
+    table: "goods_receipts", column: "no_terima",
   });
-
-  if (rows.every((r) => r.terima <= 0 && r.rusak <= 0)) {
-    fail("Tidak ada barang yang diterima. Batalkan PO kalau kiriman tidak datang.");
-  }
-
-  for (const r of rows) {
-    if (r.terima <= 0 && r.rusak <= 0) continue;
-    await supabase.from("purchase_order_items").update({
-      qty_terima: r.totalTerima,
-      qty_rusak: (Number(r.qty_rusak) || 0) + r.rusak,
-    }).eq("id", r.id);
-  }
-
-  // Dokumen penerimaan bernomor (migrasi 0093): tiap kiriman punya jejaknya
-  // sendiri — kapan datang, diterima siapa, mana yang rusak.
-  const { data: { user } } = await supabase.auth.getUser();
-  const noTerima = await nextNoTerima(supabase);
-  const { data: dokumen } = await supabase
-    .from("goods_receipts")
-    .insert({
-      no_terima: noTerima, po_id: id, tanggal,
-      surat_jalan: suratJalan, catatan: catatanDok, received_by: user?.id ?? null,
-    })
-    .select("id").single();
-
-  if (dokumen) {
-    await supabase.from("goods_receipt_items").insert(
-      rows.filter((r) => r.terima > 0 || r.rusak > 0).map((r) => ({
-        receipt_id: dokumen.id,
-        po_item_id: r.id,
-        item_id: r.item_id,
-        nama: r.nama,
-        satuan: r.satuan,
-        qty_pesan: Number(r.qty),
-        qty_sisa_sebelum: r.sisaSebelum,
-        qty_terima: r.terima,
-        qty_rusak: r.rusak,
-        harga: Number(r.harga_beli) || 0,
-        catatan: r.catatan,
-        exp_date: r.expDate,
-        // Jejak audit: rincian jumlah per tanggal, walau lapisannya nanti habis.
-        batches: r.batches.length > 1 ? r.batches : null,
-      })),
-    );
-  }
-
-  // Stok masuk via lib FIFO: layer baru @ harga_beli PO (sumber cost utama HPP).
-  const warehouseId = po!.to_warehouse_id as string | null;
-  const noPo = (po!.no_po as string | null) ?? id;
-  if (warehouseId) {
-    for (const r of rows) {
-      if (!r.item_id || r.kaliIni <= 0) continue;
-      // Satu lapisan per tanggal kadaluarsa. Kiriman satu tanggal tetap
-      // menghasilkan satu lapisan seperti dulu.
-      for (const b of r.batches) {
-        // qty diinput dalam satuan baris PO (bisa box/sak) → konversi ke satuan dasar stok
-        await stockIn(supabase, {
-          warehouseId, itemId: r.item_id, qty: toBaseQty(b.qty, r.faktor ?? 1),
-          unitCost: toBaseCost(Number(r.harga_beli) || 0, r.faktor ?? 1),
-          source: "purchase", ref: noPo, expDate: b.expDate,
-        });
-      }
-    }
-  }
-
-  // Jurnal senilai barang yang datang KALI INI saja — penerimaan sebelumnya
-  // sudah punya jurnalnya sendiri.
-  // Barang rusak tidak ikut: belum jadi persediaan dan belum jadi hutang.
-  const total = nilaiDiterima(rows.map((r) => ({ qty: r.kaliIni, qty_terima: r.kaliIni, harga_beli: r.harga_beli })));
-  if (total > 0) {
-    await postJournal(supabase, {
-      tanggal,
-      deskripsi: `Penerimaan barang ${noTerima} (${noPo})`,
-      source: "purchase",
-      sourceRef: noPo,
-      branchId: (po!.branch_id as string | null) ?? null,
-      // hutang usaha (2101) baru lahir saat Faktur Pembelian; saat terima barang
-      // masuk akun antara 2102 Hutang Belum Difakturkan (ala Accurate/GRNI).
-      lines: [
-        { code: "1301", debit: total, credit: 0 },
-        { code: "2102", debit: 0, credit: total },
-      ],
-    });
-  }
-
-  // PO baru dianggap tuntas kalau SEMUA baris sudah datang penuh; selama masih
-  // ada sisa, statusnya tetap "Dipesan" supaya tombol Terima Barang tidak hilang
-  // dan sisa kiriman masih bisa dicatat.
-  const lengkap = rows.every((r) => r.totalTerima >= Number(r.qty));
-  await supabase.from("purchase_orders").update({ status: lengkap ? "Diterima" : "Dipesan" }).eq("id", id);
-
+  const { data, error } = await supabase.rpc("receive_purchase_order", {
+    p_po_id: id, p_request_key: requestKey,
+    p_no_terima_prefix: prefix, p_no_terima_digits: digit,
+    p_tanggal: tanggal,
+    p_surat_jalan: String(formData.get("surat_jalan") ?? "").trim() || null,
+    p_catatan: String(formData.get("catatan") ?? "").trim() || null,
+    p_rows: input,
+  });
+  if (error || !data?.receipt_id) fail(error?.message ?? "Penerimaan belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
   revalidatePath("/pembelian");
   revalidatePath("/pembelian/penerimaan");
   revalidatePath("/keuangan/hutang");
+  const pesan = `Barang ${data.no_po ?? id} diterima ${data.complete ? "lengkap" : "sebagian"} — dokumen ${data.no_terima}.`;
+  redirect(`/pembelian?success_terima=${encodeURIComponent(pesan)}&request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(`receipt:${id}`)}`);
+}
 
-  const adaRusak = rows.some((r) => r.rusak > 0);
-  const pesan = lengkap
-    ? `Barang ${noPo} diterima lengkap — dokumen ${noTerima}.`
-    : `Sebagian barang ${noPo} diterima (dokumen ${noTerima}) — sisanya masih bisa dicatat nanti.`;
-  redirect("/pembelian?success_terima=" + encodeURIComponent(
-    adaRusak ? `${pesan} Barang rusak tercatat untuk klaim ke pemasok.` : pesan,
-  ));
+// Check a prior committed submission without replaying refreshed form quantities.
+export async function recoverPurchaseSubmission(formData: FormData) {
+  const scope = String(formData.get("request_scope") ?? "");
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  const kind = scope.startsWith("receipt:") ? "receipt" : scope;
+  const back = kind === "receipt" ? `/pembelian/${scope.slice(8)}/terima`
+    : kind === "invoice" ? "/pembelian/faktur/baru" : "/keuangan/aset";
+  if (!["receipt", "invoice", "asset"].includes(kind) || !requestKey) {
+    redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid.")}`);
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_purchase_operation_result", {
+    p_kind: kind, p_request_key: requestKey,
+  });
+  if (error || !data) {
+    redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Belum ada transaksi tersimpan untuk formulir ini. Periksa rincian sebelum menyimpan.")}`);
+  }
+  const confirmed = `request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(scope)}`;
+  revalidatePath("/pembelian");
+  revalidatePath("/pembelian/faktur");
+  revalidatePath("/keuangan/aset");
+  if (kind === "receipt") redirect(`/pembelian?success_terima=${encodeURIComponent(`Penerimaan ${data.no_terima} sudah tersimpan.`)}&${confirmed}`);
+  if (kind === "invoice") redirect(`/pembelian/faktur?success=${encodeURIComponent(`Faktur ${data.no_faktur} sudah tersimpan.`)}&${confirmed}`);
+  redirect(`/keuangan/aset?success=pembelian&${confirmed}`);
 }

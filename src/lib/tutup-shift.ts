@@ -63,19 +63,26 @@ export async function pemasukanShift(
 
     const ids = ((invoices ?? []) as { id: string }[]).map((i) => i.id);
     const { data: pays } = ids.length
-      ? await supabase.from("invoice_payments").select("invoice_id, amount").in("invoice_id", ids)
+      ? await supabase.from("invoice_payments").select("invoice_id, amount, metode, checkout_payment").in("invoice_id", ids)
       : { data: [] as { invoice_id: string; amount: number }[] };
     const susulan = new Map<string, number>();
-    for (const p of (pays ?? []) as { invoice_id: string; amount: number }[]) {
+    const originalParts: { total: number; metode_bayar: string }[] = [];
+    const mixedInvoices = new Set<string>();
+    for (const p of (pays ?? []) as { invoice_id: string; amount: number; metode?: string; checkout_payment?: boolean }[]) {
+      if (p.checkout_payment && ids.includes(p.invoice_id)) {
+        mixedInvoices.add(p.invoice_id);
+        originalParts.push({ total: Number(p.amount), metode_bayar: p.metode ?? "Tunai" });
+        continue;
+      }
       susulan.set(p.invoice_id, (susulan.get(p.invoice_id) ?? 0) + Number(p.amount));
     }
 
-    return invoiceCashRows(
+    return [...originalParts, ...invoiceCashRows(
       ((invoices ?? []) as {
         id: string; total: number; dp_amount: number; paid_status: string; metode_bayar: string;
         shift_cash_carry?: number | null;
-      }[]).map((i) => ({ ...i, dibayarSusulan: susulan.get(i.id) ?? 0 })),
-    );
+      }[]).filter(i => !mixedInvoices.has(i.id)).map((i) => ({ ...i, dibayarSusulan: susulan.get(i.id) ?? 0 })),
+    )];
   }
 
   const { data: sales } = await supabase
