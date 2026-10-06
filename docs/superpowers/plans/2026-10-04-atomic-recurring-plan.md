@@ -1,0 +1,18 @@
+# Atomic recurring implementation
+
+1. [x] Add failing application tests for RPC-based retry/error propagation, WIB monthly eligibility and full/legacy identity history mapping; add failing SQL contract assertions.
+2. [x] Add a dedicated monthly RPC and widen the source-reference column enough for full identity. Keep schedule and journal transaction boundaries local to this RPC.
+3. [x] Route catch-up through the RPC, preserve monthly limits, display actionable failures and adapt recurring history to both reference formats.
+4. [x] Verify rollback/retry and real two-session serialization against isolated PostgreSQL, then run the complete Vitest suite, TypeScript and lint. Document limits and commit the reviewable change.
+
+Verification on 4 October 2026: isolated PostgreSQL 16 checks passed, including observing a second session blocked on the schedule lock and returning the same journal after the first commits. All 134 Vitest files / 1,218 tests passed. TypeScript passed with `--noEmit --incremental false`. Full lint passed with zero errors and twelve pre-existing warnings in unrelated clinical image/upload files; changed TypeScript files are clean. `git diff --check` passed.
+
+The database harness applies the actual accounting/core/RLS migration subset with test-only Supabase auth shims. It is not a complete local Supabase reset or production schema verification. No production data, migrations, external messages, remote writes or automatic historical corrections occurred. The existing monthly schedule definitions remain in force; extension rules for BUG-08 remain undecided.
+
+Review follow-up: reproduced disabled-OWNER posting, STAFF/default and configured-module bypass, and NaN historical progress acknowledgement before fixing their SQL guards. The updated local suite passes disabled-account new/recovery/replay denial, exact Buku Besar default/override rules and nonfinite-history rejection. Two additional observed lock-wait races pass: committed profile disable and module revocation reject the waiting request without a header or progress change. The complete Vitest suite remains 134 files / 1,218 passing tests. TypeScript application code is unchanged by this follow-up.
+
+Release review, 6 October 2026: a fresh whole-branch review found two P2 issues. RED regressions reproduced rejection of SQL-balanced 100.1 + 200.2 = 300.3 and an exhausted schedule missing after 1,000 history rows. One correction pass uses exact native decimal coefficients for the display validator (without rounding sub-cent imbalances), and the existing checked-list reader with stable ID ordering and exact counts for schedule/history pagination. Incomplete reads show a safe load error instead of false progress. The existing reader refuses more than 10,000 rows rather than presenting partial totals.
+
+Validation: 163 Vitest files / 1,476 tests pass, including both reported regressions, sub-cent imbalance rejection and history-read failure. TypeScript and lint of changed files pass. Isolated PostgreSQL 16 tests pass atomic rollback/retry, finite and unlimited quotas, historical ambiguity, two-session serialization, and access revocation while waiting on the schedule lock. Production preflight confirms two existing schedules and two historical recurring entries; neither required migration is installed yet. No production journal was posted for verification.
+
+The production Next.js build also passes; it reports existing warnings in unrelated image/upload components. Local checks do not certify a clean Supabase provisioning reset. Deployment uses the two exact versioned migrations in order and preserves existing unlimited schedules; no historical financial correction is included.
