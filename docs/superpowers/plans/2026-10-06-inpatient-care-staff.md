@@ -20,7 +20,8 @@ Steps:
 - [x] Shared staff fields for create/correction, role-filtered registration/exam choices, PJ read-only, report/audit display.
 - [x] Local browser: required doctor only for doctor visits, staff IDs/draft recovery, discard, and previous compound/draft behavior.
 - [x] SQL authenticated-role and edge checks; 1,438 unit tests; TypeScript and targeted lint; fresh whole-branch review. Both review findings fixed with RED/GREEN checks. Final production build passed (existing lint warnings only).
-- [ ] Apply exact migration before merge, deploy, then read-only production smoke. Blocked: Supabase Management API read-only `select 1` returns HTTP 500 `FGA Authentication Error. Unauthorized`. Migration has not been applied; frontend must not merge until it is. PCA remains pending unless user answers.
+- [x] Access recovered on 6 Oct; compared all five captured production functions without drift and applied exact migration 20261006090000 with migration history in one transaction. Read-only verification passed for five columns, three triggers, authenticated/anon grants and blocked direct audit insertion. Legacy logs remain unclassified.
+- [ ] Merge, deploy, then read-only production smoke. PCA remains pending unless user answers; production master currently has zero explicit paramedic jobs.
 
 Release handoff:
 - Recheck production definitions of clinic_save_inpatient_log, clinic_save_inpatient_log_with_status, clinic_save_initial_record and set_visit_service_state for drift against the captured definitions before applying the migration.
