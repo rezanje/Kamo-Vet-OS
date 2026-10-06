@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { unitOptions, type ItemUnit } from "@/lib/satuan";
 import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { daftarDokter } from "@/lib/dokter";
+import { performersForService } from '@/lib/clinical-staff';
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
@@ -62,10 +63,7 @@ export default async function RekamMedisPage({
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
   const dokterOpsi = recorded ? [] : await daftarDokter(supabase, { branchId: visit.branch_id });
-  const { data: providerRows } = recorded ? { data: [] } : await supabase.from("employees")
-    .select("id, nama, jabatan, branch_id")
-    .eq("branch_id", visit.branch_id).eq("status", "Aktif").order("nama");
-  const providerOpsi = (providerRows ?? []) as { id: string; nama: string; jabatan: string | null }[];
+  const providerOpsi = recorded ? [] : performersForService(await daftarDokter(supabase,{branchId:visit.branch_id}),visit.poli);
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
@@ -452,7 +450,7 @@ export default async function RekamMedisPage({
                 </div>
                 <div style={{ flex: 1, minWidth: 140 }}>
                   <label className="flab">Dokter PIC</label>
-                  <input className="fi" name="doctor_name" defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
+                  <input className="fi" name="doctor_name" readOnly defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
                 </div>
                 <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…">Masukkan Rawat Inap</SubmitButton>
               </form>

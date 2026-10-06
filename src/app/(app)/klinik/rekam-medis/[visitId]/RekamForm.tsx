@@ -14,6 +14,7 @@ import { batasBeratWajar } from "@/lib/anabul";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { CompoundEditor } from "@/components/CompoundEditor";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
+import { staffForService } from "@/lib/clinical-staff";
 import { isMedicalService } from "@/lib/clinic-required-fields";
 
 export type ItemLite = {
@@ -203,7 +204,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                   <select className="fi" name="doctor_id" required={isMedicalService(service)} defaultValue={patient.dokterId ?? ""}
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
-                    {dokterOpsi.filter(d => !isMedicalService(service) || /dokter|doctor|drh/i.test(`${d.nama} ${d.jabatan ?? ""}`)).map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
+                    {staffForService(dokterOpsi,service).map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
                   </select>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>

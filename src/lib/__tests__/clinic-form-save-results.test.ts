@@ -46,3 +46,13 @@ for(const [name,save] of [['initial',simpanRekamMedis],['inpatient',addDailyLogP
   expect(call.args.p_compounds).toEqual([expect.objectContaining({sale_item_id:'master-sku',request_key:'compound-key',...(official?{official_version_id:'formula-version'}:{recipe:expect.objectContaining({recipe_name:'Master compound'})})})]);
  });
 }
+
+it('rejects a doctor-visit report without selecting a master doctor before posting',async()=>{
+ const data=form();data.set('log_kind','doctor_visit');
+ await expect(addDailyLogPos(data)).rejects.toThrow('REDIRECT');expect(fixture.calls).toEqual([]);
+});
+it('sends separate doctor/paramedic IDs with the entire inpatient transaction',async()=>{
+ const data=form();data.set('log_kind','doctor_visit');data.set('visit_doctor_id','dc000000-0000-4000-8000-000000000002');data.set('paramedic_id','dc000000-0000-4000-8000-000000000003');
+ expect(await addDailyLogPos(data)).toMatchObject({saved:true});
+ expect(fixture.calls.find(c=>c.name==='clinic_save_inpatient_log_with_status')?.args.p_log).toMatchObject({log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002',paramedic_id:'dc000000-0000-4000-8000-000000000003'});
+});
