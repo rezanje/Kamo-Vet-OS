@@ -7,6 +7,8 @@
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
+import { clinicalRoles, type ClinicalRole } from './clinical-staff';
+import { hariIniWIB } from './tanggal';
 
 export type PilihanDokter = { id: string; nama: string; jabatan: string | null; jaga?: boolean };
 
@@ -18,17 +20,20 @@ export type PilihanDokter = { id: string; nama: string; jabatan: string | null; 
  */
 export async function daftarDokter(
   supabase: AnyClient,
-  konteks?: { tanggal?: string; branchId?: string | null },
+  konteks?: { tanggal?: string; branchId?: string | null; role?: ClinicalRole },
 ): Promise<PilihanDokter[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif").order("nama");
   const semua = (data ?? []) as (PilihanDokter & { branch_id: string | null })[];
+  if(error)throw Error('Daftar karyawan belum dapat dimuat');
 
   if (konteks?.branchId && semua.length) {
-    const { data: assignments } = await supabase
+    const { data: assignments, error: assignmentError } = await supabase
       .from("employee_branch_assignments").select("employee_id")
       .eq("branch_id", konteks.branchId)
+      .lte("effective_date", hariIniWIB())
       .in("employee_id", semua.map((e) => e.id));
+    if(assignmentError)throw Error('Penugasan cabang belum dapat dimuat');
     const assigned = new Set((assignments ?? []).map((r: { employee_id: string }) => r.employee_id));
     for (let i = semua.length - 1; i >= 0; i--) {
       if (!assigned.has(semua[i].id) && semua[i].branch_id !== konteks.branchId) semua.splice(i, 1);
@@ -52,8 +57,9 @@ export async function daftarDokter(
 
   // Dokter didahulukan, tapi staf lain tetap bisa dipilih — grooming & vaksinasi
   // kadang ditangani paramedis.
-  const dokter = semua.filter((e) => /dokter|drh/i.test(`${e.jabatan ?? ""} ${e.nama}`));
-  const lain = semua.filter((e) => !dokter.includes(e));
+  const pilihan=konteks?.role?semua.filter(e=>clinicalRoles(e.jabatan).includes(konteks.role!)):semua;
+  const dokter = pilihan.filter((e) => clinicalRoles(e.jabatan).includes('doctor'));
+  const lain = pilihan.filter((e) => !dokter.includes(e));
   return [...dokter, ...lain];
 }
 

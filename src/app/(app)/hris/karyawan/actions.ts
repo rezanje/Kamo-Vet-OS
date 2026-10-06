@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseEmployeeBranches } from "@/lib/employee-branch-input";
+import { hariIniWIB } from "@/lib/tanggal";
 import { bacaEditKaryawan } from "@/lib/karyawan-edit";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
@@ -62,25 +64,19 @@ export async function simpanKaryawan(formData: FormData) {
 
 export async function simpanPenugasanCabang(formData: FormData) {
   const supabase = await assertMasterAdmin("/hris/karyawan", "penugasan cabang");
-  const employeeId = String(formData.get("employee_id") ?? "").trim();
-  const branchId = String(formData.get("branch_id") ?? "").trim();
-  const role = String(formData.get("role") ?? "SECONDARY").trim();
-  const effectiveDate = String(formData.get("effective_date") ?? "").trim() || new Date().toISOString().slice(0, 10);
-
-  if (!employeeId || !branchId || role !== "SECONDARY") {
-    redirect(`/hris/karyawan?error=${encodeURIComponent("Pilih karyawan, cabang, dan jenis penugasan")}`);
+  let input;
+  try { input = parseEmployeeBranches(formData, hariIniWIB()); }
+  catch (error) {
+    redirect(`/hris/karyawan?error=${encodeURIComponent(error instanceof Error ? error.message : "Penugasan tidak valid")}`);
   }
-
-  const { data: employee } = await supabase.from("employees").select("branch_id").eq("id", employeeId).single();
-  if (!employee || employee.branch_id === branchId) redirect(`/hris/karyawan?error=${encodeURIComponent("Pilih cabang tambahan yang berbeda dari cabang utama")}`);
-
-  const { error } = await supabase.from("employee_branch_assignments").upsert({
-    employee_id: employeeId,
-    branch_id: branchId,
-    role,
-    effective_date: effectiveDate,
-  }, { onConflict: "employee_id,branch_id" });
-  if (error) redirect(`/hris/karyawan?error=${encodeURIComponent("Penugasan cabang belum tersimpan")}`);
+  const { error } = await supabase.rpc("assign_employee_secondary_branches", {
+    p_employee_id: input.employeeId,
+    p_branch_ids: input.branchIds,
+    p_effective_date: input.effectiveDate,
+  });
+  if (error) redirect(`/hris/karyawan?error=${encodeURIComponent("Penugasan belum tersimpan. Pastikan karyawan dan seluruh cabang aktif, dapat diakses, dan berbeda dari cabang utama.")}`);
+  revalidatePath("/hris/karyawan");
+  revalidatePath(`/hris/karyawan/${input.employeeId}`);
 
   redirect("/hris/karyawan?success=assignment");
 }

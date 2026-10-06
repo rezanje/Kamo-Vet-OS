@@ -6,6 +6,8 @@ import { ITEM_TYPES } from "@/lib/barang";
 import { BARANG_FIELDS } from "./data";
 import { buildTree, labelPath, type KategoriRow } from "@/lib/kategori";
 import { BarangMatrixTable, type BarangMatrixRow } from "./BarangMatrixTable";
+import { loadSkuInventoryCosts } from "@/lib/hpp-reports-server";
+import { hppReportError } from "@/lib/hpp-reports-download";
 import { infoHalaman } from "@/lib/pagination";
 
 type Rel<T> = T | T[] | null;
@@ -35,7 +37,7 @@ export default async function BarangJasaPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
   const bolehKelola = profile?.role === "OWNER" || profile?.role === "ADMIN";
 
   const { data: categories } = await supabase
@@ -77,6 +79,16 @@ export default async function BarangJasaPage({
   // Kolom kategori dipetakan dari SEMUA kategori (termasuk yang nonaktif) — barang
   // lama tetap menunjukkan kategorinya, bukan tanda strip.
   const namaKat = new Map(katRows.map((c) => [c.id, labelPath(c.id, katRows)]));
+  let hppError = "";
+  let hppRows: Awaited<ReturnType<typeof loadSkuInventoryCosts>> | undefined;
+  if (profile?.is_active === true && ["OWNER", "FINANCE"].includes(profile.role)) {
+    try { hppRows = await loadSkuInventoryCosts(supabase, baseRows.filter(row => row.item_type === "Persediaan").map(row => row.id)); }
+    catch (error) {
+      const failure = hppReportError(error);
+      if (failure.status !== 403) hppError = failure.message;
+    }
+  }
+  const hppMap = new Map(hppRows?.map(row => [row.itemId,row]) ?? []);
   const matrixRows: BarangMatrixRow[] = rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -97,6 +109,8 @@ export default async function BarangJasaPage({
     default_discount: Number(row.default_discount),
     is_active: row.is_active,
     tindakan_kategori: row.tindakan_kategori,
+    ...(hppRows ? { average_cost: row.item_type === "Persediaan" ? hppMap.get(row.id)?.averageCost ?? null : null,
+      cost_note: row.item_type === "Persediaan" ? hppMap.get(row.id)?.flags.join("; ") || (hppMap.get(row.id)?.averageCost != null ? "Lengkap" : "Belum ada saldo ber-HPP") : "Tidak melacak persediaan" } : {}),
   }));
 
   return (
@@ -165,7 +179,9 @@ export default async function BarangJasaPage({
         </div>
       </form>
 
-      <BarangMatrixTable rows={matrixRows} bolehKelola={bolehKelola} startNumber={pageInfo.from} />
+      {hppError && <div className="p2ban" style={{ color: "#b91c1c" }}>HPP FIFO belum bisa dibaca lengkap: {hppError}</div>}
+      {hppRows && <div className="p2ban">HPP rata-rata FIFO saat ini per satuan dasar, tertimbang atas seluruh gudang dan cabang yang diizinkan. <Link href="/laporan/nilai-persediaan">Rincian nilai persediaan</Link></div>}
+      <BarangMatrixTable bolehLihatHpp={Boolean(hppRows)} rows={matrixRows} bolehKelola={bolehKelola} startNumber={pageInfo.from} />
       {(count ?? 0) > 0 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 10 }}>
           <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Menampilkan {pageInfo.from + 1}–{Math.min(pageInfo.from + matrixRows.length, count ?? 0)} dari {(count ?? 0).toLocaleString("id-ID")} barang</span>

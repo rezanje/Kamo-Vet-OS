@@ -1,5 +1,7 @@
 "use server";
 
+import { resolveClinicSalesperson } from "@/lib/clinic-payment";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
@@ -15,6 +17,8 @@ import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nila
 import { parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { kirimStrukWa } from "@/lib/wa-engine";
+import { kodeAkunBayar } from "@/lib/kas-akun";
+import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
 
 type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
@@ -41,8 +45,11 @@ function barisUntukPosting(rows: Line[]): ClinicInvoiceLineInput[] {
 async function postInvoiceAtomik(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: ClinicPostInvoiceParams,
+  payments?: ClinicSplitPayment[],
 ): Promise<{ invoiceNo: string | null; error: { code?: string; message: string } | null }> {
-  const { data: invoiceId, error } = await supabase.rpc("clinic_post_invoice", params);
+  const { data: invoiceId, error } = payments
+    ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
+    : await supabase.rpc("clinic_post_invoice", params);
   if (error || !invoiceId) return { invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
   const { data: invoice, error: readError } = await supabase
     .from("invoices").select("invoice_no").eq("id", invoiceId).maybeSingle();
@@ -123,13 +130,26 @@ export async function bayarVisit(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, todayIso());
   if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
-  const { data: v } = await supabase.from("visits").select("branch_id, customer_id, doctor_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
+  const { data: v } = await supabase.from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
 
   // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
-  const { data: existing } = await supabase
+  const { data: activeInvoice } = await supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+
+  // A lost create response must replay its sealed request/hash instead of
+  // becoming a correction. Different creation keys keep the normal edit path.
+  const submittedRequestKey = String(formData.get("requestKey") ?? "").trim();
+  const isCreationReplay = !!activeInvoice && activeInvoice.request_key === submittedRequestKey;
+  const existing = isCreationReplay ? null : activeInvoice;
+  const rawSplit = formData.get("split_payments");
+  let split: ReturnType<typeof parseSplitPaymentDraft> | undefined;
+  if (rawSplit !== null) {
+    if (existing) redirect(`${back}?error=${encodeURIComponent("Koreksi tidak boleh mengubah pembayaran campuran.")}`);
+    try { split = parseSplitPaymentDraft(String(rawSplit)); }
+    catch (error) { redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Pembayaran campuran tidak valid.")}`); }
+  }
 
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
@@ -148,7 +168,7 @@ export async function bayarVisit(formData: FormData) {
 
   // "Bayar & Selesai" memaksa lunas; "Simpan" pakai status turunan dari jumlah bayar.
   const finalize = String(formData.get("finalize") ?? "") === "1";
-  const paidStatus = finalize ? "Lunas" : String(formData.get("paid_status") ?? "Belum Lunas");
+  const paidStatus = split || finalize ? "Lunas" : String(formData.get("paid_status") ?? "Belum Lunas");
 
   // Poin pelanggan dipakai setelah promo/voucher/diskon golongan, persis urutan
   // kasir petshop (permintaan Pak Aldi, meeting 14 Agustus).
@@ -167,7 +187,16 @@ export async function bayarVisit(formData: FormData) {
   const dpp = Math.max(0, subtotal - discount);
   // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
   const { tax, total } = tambahPpn(dpp, await getPajakSettings(supabase));
-  const metode = String(formData.get("metode_bayar") ?? "Tunai");
+  let payments: ClinicSplitPayment[] | undefined;
+  if (split) {
+    try {
+      validateSplitPaymentTotal(split, total);
+      payments = await Promise.all(split.map(async part => ({ ...part,
+        kas_code: await kodeAkunBayar(supabase, part.method, v?.branch_id ?? null),
+      })));
+    } catch (error) { redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Pembayaran campuran tidak valid.")}`); }
+  }
+  const metode = split?.[0].method ?? String(formData.get("metode_bayar") ?? "Tunai");
   const dpAmount = existing ? Number(existing.dp_amount)
     : paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
@@ -196,22 +225,31 @@ export async function bayarVisit(formData: FormData) {
     });
     if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
     if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
-    redirect(`${back}?success=edit`);
+    revalidatePath(back);
+    return { saved: true, href: `${back}?success=edit` };
   }
 
   // ---- jalur CREATE (invoice pertama utk visit ini) ----
   const requestKey = String(formData.get("requestKey") ?? "").trim();
   if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
+  let salespersonId: string | null = null;
+  try {
+    salespersonId = await resolveClinicSalesperson(supabase, v?.branch_id ?? null,
+      v?.doctor_id ?? null, v?.service_provider_id ?? null,
+      formData.has("salesperson_id") ? String(formData.get("salesperson_id") ?? "") : undefined);
+  } catch (error) {
+    redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Penjual tidak valid.")}`);
+  }
   const posted = await postInvoiceAtomik(supabase, {
     p_visit_id: visitId,
     p_request_key: requestKey,
     p_invoice: {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
-      shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: v?.doctor_id ?? null,
+      shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
     },
     p_lines: barisUntukPosting(rows),
-  });
+  }, payments);
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(posted.error))}`);
   }
@@ -227,7 +265,7 @@ export async function bayarVisit(formData: FormData) {
 
   // Poin: dipakai & didapat dicatat saat tagihan benar-benar LUNAS. Kalau dicatat
   // saat DP, pelanggan sudah dapat poin atas uang yang belum masuk.
-  if (paidStatus === "Lunas") {
+  if (paidStatus === "Lunas" && !isCreationReplay) {
     await catatPoinKlinik(supabase, {
       customerId: v?.customer_id ?? null, ref: invoiceNo,
       dipakai: poinDipakai, totalDibayar: total,
@@ -248,7 +286,8 @@ export async function bayarVisit(formData: FormData) {
 
   if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
-  redirect(`/klinik/pembayaran/${visitId}?success=bayar`);
+  revalidatePath(back);
+  return { saved: true, href: `/klinik/pembayaran/${visitId}?success=bayar` };
 }
 
 
@@ -307,7 +346,7 @@ export async function bayarRombongan(formData: FormData) {
 
   for (const b of belum) {
     const { data: v } = await supabase
-      .from("visits").select("branch_id, customer_id, doctor_id, poli").eq("id", b.visitId).maybeSingle();
+      .from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, poli").eq("id", b.visitId).maybeSingle();
     if (!v) { dilewati.push(b.hewan); continue; }
 
     // §6.3: tindakan berisiko wajib punya persetujuan bertanda tangan. Berlaku per
@@ -337,7 +376,8 @@ export async function bayarRombongan(formData: FormData) {
     const potonganPet = await hitungPotonganKlinik(supabase, {
       branchId: v.branch_id ?? null, customerId: v.customer_id ?? null, rows,
     });
-    siap.push({ b, salespersonId: v.doctor_id ?? null, rows, subtotal, potonganNonVoucher: potonganPet.total });
+    const salespersonId = await resolveClinicSalesperson(supabase, v.branch_id ?? null, v.doctor_id ?? null, v.service_provider_id ?? null);
+    siap.push({ b, salespersonId, rows, subtotal, potonganNonVoucher: potonganPet.total });
   }
 
   // Voucher dihitung dari GABUNGAN tagihan seluruh hewan (setelah promo & golongan),

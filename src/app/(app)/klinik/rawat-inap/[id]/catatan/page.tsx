@@ -7,15 +7,19 @@ import { CONDITION_LABEL, type Condition } from "@/lib/inpatient";
 import { CatatanForm } from "./CatatanForm";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
+import { readCompleteList } from "@/lib/checked-list";
+import { daftarDokter } from '@/lib/dokter';
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-export default async function CatatanRawatInapPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CatatanRawatInapPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ error?: string }> }) {
   const { id } = await params;
+  const { error } = await (searchParams ?? Promise.resolve({} as { error?: string }));
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const { data: rec } = await supabase
     .from("inpatient_records")
@@ -26,12 +30,19 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
   const visit = one(rec.visits as Rel<{ created_at: string; branch_id: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
+  const [doctors,paramedics]=await Promise.all([
+    daftarDokter(supabase,{branchId:visit?.branch_id,role:'doctor'}),
+    daftarDokter(supabase,{branchId:visit?.branch_id,role:'paramedic'}),
+  ]);
 
-  const { data: limitedRows } = await supabase
-    .from("items").select("id, name, unit, sell_price, is_compound_material").eq("is_active", true).order("name").limit(200);
+  const masterRows = await readCompleteList<{
+    id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string;
+  }>((from, to) => supabase
+    .from("items").select("id, name, unit, sell_price, is_compound_material, item_type", { count: "exact" })
+    .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
   const compoundRows = await loadClinicCompoundSkus(supabase);
   const compoundIds = new Set(compoundRows.map(item => item.id));
-  const itemRows = [...new Map([...(limitedRows ?? []), ...compoundRows].map(item => [item.id, item])).values()];
+  const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
   const ids = (itemRows ?? []).map((i) => i.id);
   const { stock: stok, units: unitMap, prices: hargaMap } = await loadClinicSkuDetails(supabase, ids, visit?.branch_id ?? null);
   const items = (itemRows ?? []).map((i) => ({
@@ -39,6 +50,7 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
     sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
     stok: stok.get(i.id as string) ?? 0,
     is_compound_material: !!i.is_compound_material,
+    item_type: i.item_type,
     units: applyHargaCabang(
       unitOptions(
         { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
@@ -72,15 +84,21 @@ export default async function CatatanRawatInapPage({ params }: { params: Promise
         </div>
       </div>
 
+      {error && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
+
       <CatatanForm
+        key={`${user?.id ?? ""}:${id}`}
         recordId={id}
         requestKey={crypto.randomUUID()}
+        draftUserId={user?.id ?? ""}
         backHref={`/klinik/rawat-inap/${id}`}
-        items={items.filter(item => !compoundIds.has(item.id))}
+        items={items.filter(item => !compoundIds.has(item.id) && !item.is_compound_material && item.item_type !== "Jasa")}
         racikanItems={items.filter(item => compoundIds.has(item.id))}
         bahanItems={bahanItems}
         katalogRacikan={katalogRacikan}
         bolehManual={bolehManual}
+        doctors={doctors}
+        paramedics={paramedics}
         patient={{
           name: pet?.name ?? "—",
           species: pet?.species ?? "—",

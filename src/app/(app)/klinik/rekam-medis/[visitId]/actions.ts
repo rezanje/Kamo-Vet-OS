@@ -1,12 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
 import { resolveDokter } from "@/lib/dokter";
 import { pesanBeratTidakWajar } from "@/lib/anabul";
+import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
@@ -14,6 +16,7 @@ type ResepItem = {
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
   official_version_id?: string;
+  sale_item_id?: string;
 };
 
 type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
@@ -68,6 +71,10 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   const back = `/klinik/rekam-medis/${visitId}`;
+  const { data: clinicalVisit, error: clinicalVisitError } = await supabase.from("visits").select("poli").eq("id", visitId).maybeSingle();
+  if (clinicalVisitError || !clinicalVisit) redirect(`${back}?error=${encodeURIComponent("Kunjungan tidak dapat dibaca. Muat ulang dan coba lagi.")}`);
+  const clinicalError = validateClinicalCompletion(clinicalVisit.poli, doctorId, keluhan);
+  if (clinicalError) redirect(`${back}?error=${encodeURIComponent(clinicalError)}`);
   if (berat !== null) {
     const { data: pet } = await supabase.from("pets").select("species").eq("id", petId).maybeSingle();
     const pesanBerat = pesanBeratTidakWajar(pet?.species ?? null, berat);
@@ -135,11 +142,13 @@ export async function simpanRekamMedis(formData: FormData) {
   const compounds = racikan.map((r) => r.official_version_id
     ? {
         official_version_id: r.official_version_id,
+        ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
         request_key: r.key ?? "",
         dosage_instruction: r.aturan_pakai ?? null,
       }
     : {
         request_key: r.key ?? "",
+        ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
         recipe: toClinicCompoundRecipeInput({
           recipeName: r.nama_obat,
           dosageInstruction: r.aturan_pakai,
@@ -164,11 +173,14 @@ export async function simpanRekamMedis(formData: FormData) {
     p_request_key: requestKey,
   });
   if (saveError) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
+  revalidatePath(back);
+  revalidatePath(`${back}/resep`);
+  revalidatePath(`/klinik/pembayaran/${visitId}`);
 
   // Tujuan setelah simpan tergantung tombol yg dipencet.
-  if (next === "resep") redirect(`${back}/resep`);            // cetak resep
-  if (next === "rawatinap") redirect(back);                   // form admit rawat inap ada di view recorded
-  redirect(`/klinik/pembayaran/${visitId}`);                  // fallback
+  if (next === "resep") return { saved: true, href: `${back}/resep` };            // cetak resep
+  if (next === "rawatinap") return { saved: true, href: back };                   // form admit rawat inap ada di view recorded
+  return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
 }
 
 export async function createReferral(formData: FormData) {

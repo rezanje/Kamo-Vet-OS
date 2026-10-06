@@ -64,7 +64,7 @@ export default async function RawatInapDetailPage({
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
 
   const [{ data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }] = await Promise.all([
-    supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, updated_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
+    supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, paramedic_name, created_at, updated_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
     supabase.from("inpatient_status_log").select("previous_status, new_status, notes, changed_at, profiles(full_name)")
       .eq("inpatient_record_id", id).order("changed_at", { ascending: false }),
@@ -296,7 +296,7 @@ export default async function RawatInapDetailPage({
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
-            <thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Oleh</th><th style={{ textAlign: "center" }}>Detail</th></tr></thead>
+            <thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Dokter visit</th><th>Paramedis</th><th style={{ textAlign: "center" }}>Detail</th></tr></thead>
             <tbody>
               {(logs ?? []).map((l, i) => (
                 <tr key={i}>
@@ -309,6 +309,7 @@ export default async function RawatInapDetailPage({
                   <td style={{ fontSize: 11.5 }}>{l.tindakan ?? "—"}</td>
                   <td style={{ fontSize: 11.5, color: "var(--tm)" }}>{l.keterangan ?? "—"}</td>
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.doctor_name ?? "—"}</td>
+                  <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.paramedic_name ?? "—"}</td>
                   <td style={{ textAlign: "center" }}>
                     <Link href={`/klinik/rawat-inap/${rec.id}/catatan/${l.id}`} title="Lihat detail"
                       style={{ display: "inline-flex", width: 26, height: 26, borderRadius: 6, border: "1px solid #bfdbfe", color: "var(--posb)", background: "#fff", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
@@ -318,7 +319,7 @@ export default async function RawatInapDetailPage({
                 </tr>
               ))}
               {(logs ?? []).length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Belum ada catatan harian.</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Belum ada catatan harian.</td></tr>
               )}
             </tbody>
           </table>
