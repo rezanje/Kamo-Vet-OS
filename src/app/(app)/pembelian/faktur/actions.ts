@@ -31,6 +31,7 @@ export async function buatFaktur(formData: FormData) {
   const supabase = await createClient();
 
   const po_id = String(formData.get("po_id") ?? "");
+  const requestKey = String(formData.get("request_key") ?? "").trim();
   const no_faktur_pemasok = String(formData.get("no_faktur_pemasok") ?? "").trim() || null;
   const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
   const jatuh_tempo = String(formData.get("jatuh_tempo") ?? "") || tanggal;
@@ -44,7 +45,7 @@ export async function buatFaktur(formData: FormData) {
 
   const fail = (msg: string): never => redirect("/pembelian/faktur/baru?error=" + encodeURIComponent(msg));
 
-  if (!po_id || items.length === 0) fail("Pilih PO dan minimal 1 barang.");
+  if (!requestKey || !po_id || items.length === 0) fail("Pilih PO dan minimal 1 barang.");
   if (items.some((it) => !it || typeof it.po_item_id !== "string" || !it.po_item_id
     || !Number.isFinite(Number(it.qty)) || Number(it.qty) < 0
     || !Number.isFinite(Number(it.harga)) || Number(it.harga) < 0)) {
@@ -55,6 +56,23 @@ export async function buatFaktur(formData: FormData) {
   if (new Set(items.map((it) => it.po_item_id)).size !== items.length) {
     fail("Baris PO yang sama tercantum lebih dari sekali. Muat ulang faktur.");
   }
+
+  // Recover before remaining-quantity checks or rebuilding a now-stale FIFO plan.
+  const payload = {
+    po_id, tanggal, jatuh_tempo, no_faktur_pemasok, keterangan,
+    items: items.map((r) => ({ po_item_id: r.po_item_id, qty: Number(r.qty), harga: Number(r.harga) }))
+      .sort((a, b) => a.po_item_id.localeCompare(b.po_item_id)),
+  };
+  const finish = (noFaktur: string): never => {
+    revalidatePath("/pembelian/faktur");
+    revalidatePath("/keuangan/hutang");
+    redirect(`/pembelian/faktur?success=${encodeURIComponent(`Faktur ${noFaktur} tersimpan.`)}&request_done=${encodeURIComponent(requestKey)}&request_scope=invoice`);
+  };
+  const { data: recovered, error: recoveryError } = await supabase.rpc("recover_purchase_operation", {
+    p_kind: "invoice", p_request_key: requestKey, p_payload: payload,
+  });
+  if (recoveryError) fail(recoveryError.message);
+  if (recovered?.no_faktur) finish(recovered.no_faktur);
 
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) fail(pesanPeriode);
@@ -182,6 +200,7 @@ export async function buatFaktur(formData: FormData) {
   });
   const { data: result, error: createError } = await supabase.rpc("create_purchase_invoice_from_po", {
     p_po_id: po_id,
+    p_request_key: requestKey,
     p_no_faktur_prefix: prefix,
     p_no_faktur_digits: digit,
     p_no_faktur_pemasok: no_faktur_pemasok,
@@ -201,14 +220,12 @@ export async function buatFaktur(formData: FormData) {
   });
   if (createError) {
     console.error("faktur beli: transaksi atomik gagal", createError);
-    fail("Faktur tidak tersimpan. Periksa sisa PO dan lapisan stok, lalu muat ulang sebelum mencoba lagi.");
+    fail("Faktur belum terkonfirmasi. Periksa hasil transaksi terakhir atau coba lagi dengan formulir yang sama.");
   }
   const created = Array.isArray(result) ? result[0] : result;
-  if (!created?.no_faktur) fail("Faktur tidak tersimpan. Coba muat ulang halaman.");
+  if (!created?.no_faktur) fail("Faktur belum terkonfirmasi. Periksa hasil transaksi terakhir.");
 
-  revalidatePath("/pembelian/faktur");
-  revalidatePath("/keuangan/hutang");
-  redirect("/pembelian/faktur?success=" + encodeURIComponent(`Faktur ${created.no_faktur} tersimpan.`));
+  finish(created.no_faktur);
 }
 
 // Bayar hutang per faktur. Jurnal: Dr 2101 / Cr rekening kas/bank yang dipilih.

@@ -124,3 +124,70 @@ rollback when fee insertion fails. A separate two-session AR race allowed one
 Rp150 payment against a Rp200 invoice and rejected the competing Rp150 payment;
 one receipt and one journal remained. The isolated database is not production
 or a complete Supabase stack.
+
+## Purchase receipt and retry verification (2026-10-04)
+
+```sh
+python3 scripts/test-purchase-recovery-db.py
+```
+
+This runner creates and removes a fictional PostgreSQL 16 container with no
+network. It uses the actual purchase/stock/accounting migrations, test-only auth
+functions and grants, and two schema columns from migrations outside its curated
+subset. It is not a clean Supabase `db reset` or production schema verification.
+The SQL suite can also run against a reset local Supabase with:
+
+```sh
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/purchase_recovery.sql
+```
+
+Coverage includes staged box-to-base receipts, multiple expiry batches, damaged
+claims, omitted and foreign rows, duplicate rows, over-receipts, changed unit
+conversions, closed periods, distinct receipt journal identities, partial invoice
+FIFO splits, forced stock/journal failures and complete rollback, identical and
+conflicting retries, nonfinite amounts, current role/module/branch rejection, and
+disabled users in every supported role, assets moved outside the current branch scope, and private ledger/helper permissions. The runner additionally uses independent
+connections for identical receipt/invoice/bank-asset retries, competing remaining
+receipt/invoice allocations, and recovery blocked behind newly revoked role or
+branch access. No historical receipts are repaired or repriced by this migration.
+
+`src/lib/__tests__/purchase-actions.test.ts` executes the actual server actions
+with infrastructure boundaries mocked; `purchase-request.test.ts` verifies tab
+key reuse and retirement. Browser interaction and the complete Next-action/PostgREST/database round trip
+are verified by the local browser suite below. Browser storage retains request
+identities only; when browser storage is unavailable, retries remain stable only
+while the same form stays mounted. Existing rules still require a PO to be fully
+received before any PO invoice can be created.
+
+### Real local purchase browser acceptance
+
+```sh
+node scripts/test-purchase-local-browser.mjs
+```
+
+Requires the fictional real GoTrue/PostgREST local stack on `127.0.0.1:55421`,
+its generated auth manifest at `/workspace/hris-local-runtime/local-auth.json`,
+PostgreSQL container `supabase_db_vetos_hris_acceptance`, the existing fictional
+OWNER login, Playwright and Chromium. The script refuses a different API URL,
+starts its own Next.js app on loopback port 3112, uses a fresh isolated purchase
+branch/SKU/PO/bank per run, and closes its browser and app afterward. It creates
+only fictional local data, dated 2035-01-03 so asset-page catch-up cannot add
+historical depreciation to the finalized October 2026 HRIS period.
+
+The suite passed against the actual source-migration local database with real
+SSR auth cookies, GoTrue and PostgREST. It submits two staged receipt forms,
+checks 40 base units and two balanced GRNI journals, deliberately fetches the
+second server-action response until its transaction commits and then aborts the
+browser response, refreshes, and recovers the same receipt IDs through the
+read-only recovery form without another stock move or journal. A real partial
+invoice form reprices 10 base units and balances GRNI/AP. A real bank-funded
+asset form posts one asset and a balanced journal to its selected mapped bank,
+and retires its key while the same page stays mounted.
+
+The script compares October payroll slips, finalized runs, audit events and
+payroll journal headers/lines before and after; their hash remains unchanged.
+Normal fictional configuration inserts naturally advance the global HRIS source
+revision. Results and screenshots go to `/workspace/purchase-browser-runtime`.
+This verifies the named local flows, not production schema drift, remote recovery,
+or browser key persistence when session storage is unavailable.

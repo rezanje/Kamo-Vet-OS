@@ -1,3 +1,4 @@
+import { PurchaseRecoveryComplete } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -23,9 +24,9 @@ const fmtD = (d: string) =>
 export default async function FakturBeliPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string }>;
 }) {
-  const { success, error } = await searchParams;
+  const { request_done, request_scope, success, error } = await searchParams;
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -38,6 +39,7 @@ export default async function FakturBeliPage({
 
   return (
     <>
+      <PurchaseRecoveryComplete scope={request_scope} requestKey={request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/pembelian" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
