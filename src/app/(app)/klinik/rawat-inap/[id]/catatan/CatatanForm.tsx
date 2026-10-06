@@ -12,6 +12,8 @@ import { addDailyLogPos } from "../../actions";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { CompoundEditor } from "@/components/CompoundEditor";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
+import { InpatientStaffFields } from '@/components/InpatientStaffFields';
+import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 
 export type ItemLite = { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number; units?: ItemUnit[] };
 type CartRow = {
@@ -32,7 +34,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, katalogRacikan, bolehManual }: {
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[] }: {
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
@@ -40,7 +42,9 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   bahanItems: ItemLite[];
   katalogRacikan: KatalogRacikan[];
   bolehManual: boolean;
+  doctors?:ClinicalStaff[];paramedics?:ClinicalStaff[];
 }) {
+  const [staff,setStaff]=useState<InpatientStaff>({log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
   const [tab, setTab] = useState<Tab>("Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
@@ -92,9 +96,10 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
     capture: draftCapture, discard: draftDiscard, submit: draftSubmit,
   } = useClinicDraft({
     userId: draftUserId, scope: `inpatient:${recordId}`, requestKey,
-    optionalSnapshotKeys: ["saleItemId"],
-    snapshot: { saleItemId, cart, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, fotoUrl, jasaNama, jasaHarga },
+    optionalSnapshotKeys: ["saleItemId","staff"],
+    snapshot: { staff,saleItemId, cart, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, fotoUrl, jasaNama, jasaHarga },
     restore: (value) => {
+      setStaff(value.staff??{log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
       setCart(value.cart);
       setCatatan(value.catatan);
       setDiscountPct(value.discountPct);
@@ -318,8 +323,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
           </div>
           <div className="frow">
             <div>
-              <label className="flab">Oleh dokter</label>
-              <input className="fi" name="doctor_name" defaultValue={patient.dokter} placeholder="Drh. ..." />
+              <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics}/>
             </div>
             <div>
               <label className="flab">Ubah kondisi</label>

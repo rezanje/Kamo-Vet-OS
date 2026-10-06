@@ -9,6 +9,12 @@ import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klini
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
+import { inpatientStaffInput } from '@/lib/clinical-staff';
+
+function bacaPetugas(formData:FormData,back:string,allowLegacy=false) {
+  try{return formData.has('log_kind')?inpatientStaffInput(formData,allowLegacy):{};}
+  catch(error){redirect(`${back}?error=${encodeURIComponent(error instanceof Error?error.message:'Pilih petugas yang valid')}`);}
+}
 
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
 export async function admitInpatient(formData: FormData) {
@@ -86,6 +92,7 @@ export async function addDailyLog(formData: FormData) {
     inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
     doctor_name: doctorName, created_by: user?.id ?? null,
     ...bacaPemantauan(formData),
+    ...bacaPetugas(formData,back),
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   redirect(`${back}?success=log`);
@@ -124,6 +131,7 @@ export async function addDailyLogPos(formData: FormData) {
   const stamp = waktuInputWIB(logDate, logTime);
   const log = {
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
+    ...bacaPetugas(formData,`${back}/catatan`),
     ...bacaPemantauan(formData),
     log_date: logDate || null,
     created_at: stamp && !Number.isNaN(stamp.getTime()) ? stamp.toISOString() : null,
@@ -282,9 +290,10 @@ export async function updateDailyLog(formData: FormData) {
 
   const { data: before } = await supabase
     .from("inpatient_daily_logs")
-    .select("id, inpatient_record_id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
+    .select("id, inpatient_record_id, log_kind, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
     .eq("id", logId).maybeSingle();
   if (!before) redirect(`${back}?error=${encodeURIComponent("Catatan tidak ditemukan")}`);
+  if(before.inpatient_record_id!==recordId)redirect(`${back}?error=${encodeURIComponent('Catatan tidak sesuai pasien')}`);
 
   // Pasien sudah pulang/RIP → catatan dikunci. Koreksi setelah kasus ditutup harus
   // lewat jalur lain, bukan diam-diam dari layar ini.
@@ -293,22 +302,19 @@ export async function updateDailyLog(formData: FormData) {
   if (rec?.discharged_at) redirect(`${back}?error=${encodeURIComponent("Rawat inap sudah ditutup — catatan tidak bisa diubah lagi")}`);
 
   const stamp = waktuInputWIB(logDate, logTime);
-  const { error: upErr } = await supabase.from("inpatient_daily_logs").update({
+  const { error: upErr } = await supabase.rpc('clinic_update_inpatient_log',{
+    p_inpatient_id:recordId,p_log_id:logId,p_reason:alasan,p_patch:{
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
+    ...bacaPetugas(formData,here,before.log_kind==null),
     updated_at: new Date().toISOString(), updated_by: user?.id ?? null,
     // Angka pemantauan ikut bisa dikoreksi; nilai lamanya tersimpan di snapshot
     // `before` — berat/suhu yang salah ketik tidak boleh berubah tanpa jejak.
     ...bacaPemantauan(formData),
     ...(logDate ? { log_date: logDate } : {}),
     ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
-  }).eq("id", logId);
-  if (upErr) redirect(`${here}?error=${encodeURIComponent(upErr.message)}`);
-
-  // Snapshot ditulis setelah update berhasil supaya tidak ada baris audit palsu
-  // untuk perubahan yang sebenarnya gagal.
-  await supabase.from("inpatient_daily_log_edits").insert({
-    log_id: logId, edited_by: user?.id ?? null, before, alasan,
+    },
   });
+  if (upErr) redirect(`${here}?error=${encodeURIComponent(parseClinicRecordError(upErr))}`);
 
   redirect(`${back}?success=logedit`);
 }

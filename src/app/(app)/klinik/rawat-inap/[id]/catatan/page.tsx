@@ -8,6 +8,7 @@ import { CatatanForm } from "./CatatanForm";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
+import { daftarDokter } from '@/lib/dokter';
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -29,6 +30,10 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   const visit = one(rec.visits as Rel<{ created_at: string; branch_id: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
+  const [doctors,paramedics]=await Promise.all([
+    daftarDokter(supabase,{branchId:visit?.branch_id,role:'doctor'}),
+    daftarDokter(supabase,{branchId:visit?.branch_id,role:'paramedic'}),
+  ]);
 
   const masterRows = await readCompleteList<{
     id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string;
@@ -92,6 +97,8 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
         bahanItems={bahanItems}
         katalogRacikan={katalogRacikan}
         bolehManual={bolehManual}
+        doctors={doctors}
+        paramedics={paramedics}
         patient={{
           name: pet?.name ?? "—",
           species: pet?.species ?? "—",
