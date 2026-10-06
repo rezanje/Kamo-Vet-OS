@@ -8,8 +8,10 @@ export type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
 
 // Tabel rencana follow up di rekam medis. Baris dikirim sebagai JSON lewat hidden input —
 // baris follow_ups baru dibuat saat form disubmit (medical_record_id belum ada saat diisi).
-export function FollowUpTable({ name }: { name: string }) {
-  const [rows, setRows] = useState<FollowUpDraft[]>([]);
+export function FollowUpTable({ name, value, onChange }: { name: string; value?: FollowUpDraft[]; onChange?: React.Dispatch<React.SetStateAction<FollowUpDraft[]>> }) {
+  const [localRows, setLocalRows] = useState<FollowUpDraft[]>([]);
+  const rows = value ?? localRows;
+  const setRows = onChange ?? setLocalRows;
   const [jenis, setJenis] = useState<string>("Kontrol");
   const [tanggal, setTanggal] = useState("");
   const [catatan, setCatatan] = useState("");

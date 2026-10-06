@@ -2,7 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { simpanKaryawan, simpanPenugasanCabang } from "./actions";
+import { simpanKaryawan } from "./actions";
+import { PenugasanCabangForm } from "./PenugasanCabangForm";
+import { hariIniWIB } from "@/lib/tanggal";
 import { tampilkanKaryawan } from "@/lib/karyawan-master";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -164,35 +166,11 @@ export default async function KaryawanPage({
       {bolehKelola && (
         <div className="crm-sec">
           <SecHeader num="02" title="PENUGASAN LINTAS CABANG" desc="Satu dokter atau tenaga medis bisa dijadwalkan di beberapa cabang." />
-          <form action={simpanPenugasanCabang}>
-            <div className="grid2">
-              <div>
-                <label className="flab">Karyawan *</label>
-                <select className="fi" name="employee_id" required>
-                  <option value="">Pilih karyawan aktif</option>
-                  {rows.filter((r) => r.status === "Aktif").map((r) => <option key={r.id} value={r.id}>{r.nama} · {r.jabatan ?? "—"}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="flab">Cabang *</label>
-                <select className="fi" name="branch_id" required>
-                  <option value="">Pilih cabang</option>
-                  {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="flab">Jenis Penugasan</label>
-                <select className="fi" name="role" defaultValue="SECONDARY">
-                  <option value="SECONDARY">Cabang tambahan</option>
-                </select>
-              </div>
-              <div>
-                <label className="flab">Mulai Berlaku</label>
-                <input className="fi" name="effective_date" type="date" />
-              </div>
-            </div>
-            <div style={{ marginTop: 12 }}><button type="submit" className="btn-acc"><i className="ti ti-git-branch" /> Simpan Penugasan</button></div>
-          </form>
+          <PenugasanCabangForm
+            employees={((rowsRaw ?? []) as unknown as EmployeeRow[]).filter(row => row.status === "Aktif")}
+            branches={branches ?? []}
+            today={hariIniWIB()}
+          />
         </div>
       )}
 

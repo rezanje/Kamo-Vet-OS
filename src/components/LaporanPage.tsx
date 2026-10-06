@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { UnduhLaporan } from "./UnduhLaporan";
 
 export function LaporanPage({
-  icon, title, desc, filter, ringkasan, children,
+  icon, title, desc, filter, ringkasan, children, unduhTampilan = true,
 }: {
   icon: string;
   title: string;
@@ -14,6 +14,8 @@ export function LaporanPage({
   filter?: ReactNode;
   ringkasan?: ReactNode;
   children: ReactNode;
+  /** Paginated financial reports use their complete server export instead. */
+  unduhTampilan?: boolean;
 }) {
   return (
     <>
@@ -31,7 +33,7 @@ export function LaporanPage({
         </div>
       </div>
 
-      <UnduhLaporan judul={title} />
+      {unduhTampilan && <UnduhLaporan judul={title} />}
 
       {filter && (
         <form className="crm-sec" style={{ marginBottom: 12 }}>

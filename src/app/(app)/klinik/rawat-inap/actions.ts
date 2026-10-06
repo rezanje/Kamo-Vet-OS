@@ -9,6 +9,12 @@ import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klini
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
+import { inpatientStaffInput } from '@/lib/clinical-staff';
+
+function bacaPetugas(formData:FormData,back:string,allowLegacy=false) {
+  try{return formData.has('log_kind')?inpatientStaffInput(formData,allowLegacy):{};}
+  catch(error){redirect(`${back}?error=${encodeURIComponent(error instanceof Error?error.message:'Pilih petugas yang valid')}`);}
+}
 
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
 export async function admitInpatient(formData: FormData) {
@@ -86,6 +92,7 @@ export async function addDailyLog(formData: FormData) {
     inpatient_record_id: recordId, condition_note: conditionNote, tindakan, keterangan,
     doctor_name: doctorName, created_by: user?.id ?? null,
     ...bacaPemantauan(formData),
+    ...bacaPetugas(formData,back),
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   redirect(`${back}?success=log`);
@@ -99,6 +106,7 @@ type ResepItem = {
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
   official_version_id?: string;
+  sale_item_id?: string;
 };
 export async function addDailyLogPos(formData: FormData) {
   const supabase = await createClient();
@@ -114,15 +122,16 @@ export async function addDailyLogPos(formData: FormData) {
   const newStatus = String(formData.get("new_status") ?? "").trim() as Condition | "";
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
-  if (!recordId || !conditionNote || !requestKey) redirect(`${back}?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
+  if (!recordId || !conditionNote || !requestKey) redirect(`${back}/catatan?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
 
   const { data: rec } = await supabase
     .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
-  if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
+  if (!rec) redirect(`${back}/catatan?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
 
   const stamp = waktuInputWIB(logDate, logTime);
   const log = {
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
+    ...bacaPetugas(formData,`${back}/catatan`),
     ...bacaPemantauan(formData),
     log_date: logDate || null,
     created_at: stamp && !Number.isNaN(stamp.getTime()) ? stamp.toISOString() : null,
@@ -140,10 +149,10 @@ export async function addDailyLogPos(formData: FormData) {
   const racikan = resep.filter((r) => r.jenis === "racikan");
   if (racikan.some((r) => !r.official_version_id &&
     (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
-    redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
+    redirect(`${back}/catatan?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
   if (resep.length && !mrId) {
-    redirect(`${back}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
+    redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
   let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string }[] = [];
   if (mrId && resep.length) {
@@ -163,9 +172,11 @@ export async function addDailyLogPos(formData: FormData) {
 
   const compounds = racikan.map((r) => r.official_version_id ? {
     official_version_id: r.official_version_id,
+    ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
     request_key: r.key ?? "",
     dosage_instruction: r.aturan_pakai ?? null,
   } : {
+    ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
     recipe: toClinicCompoundRecipeInput({
       recipeName: r.nama_obat,
       dosageInstruction: r.aturan_pakai,
@@ -175,12 +186,12 @@ export async function addDailyLogPos(formData: FormData) {
     request_key: r.key ?? "",
   });
   if (newStatus && !["stabil", "kritis", "sembuh", "rip"].includes(newStatus)) {
-    redirect(`${back}?error=${encodeURIComponent("Status kondisi tidak valid")}`);
+    redirect(`${back}/catatan?error=${encodeURIComponent("Status kondisi tidak valid")}`);
   }
   if (newStatus && newStatus !== rec!.condition_status) {
     const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
     if (!canTransition((me?.role ?? "STAFF") as Role, newStatus)) {
-      redirect(`${back}?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
+      redirect(`${back}/catatan?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
     }
   }
   const { error: saveError } = await supabase.rpc("clinic_save_inpatient_log_with_status", {
@@ -192,9 +203,12 @@ export async function addDailyLogPos(formData: FormData) {
     p_request_key: requestKey,
     p_new_status: newStatus && newStatus !== rec!.condition_status ? newStatus : null,
   });
-  if (saveError) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
+  if (saveError) redirect(`${back}/catatan?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
+  revalidatePath(back);
+  revalidatePath(`${back}/catatan`);
+  revalidatePath(`/klinik/rekam-medis/${rec!.visit_id}/resep`);
 
-  redirect(cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log`);
+  return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log` };
 }
 
 // Ubah kondisi (stabil/kritis/sembuh/rip) — rip hanya dokter, wajib tercatat di status log.
@@ -276,9 +290,10 @@ export async function updateDailyLog(formData: FormData) {
 
   const { data: before } = await supabase
     .from("inpatient_daily_logs")
-    .select("id, inpatient_record_id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
+    .select("id, inpatient_record_id, log_kind, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
     .eq("id", logId).maybeSingle();
   if (!before) redirect(`${back}?error=${encodeURIComponent("Catatan tidak ditemukan")}`);
+  if(before.inpatient_record_id!==recordId)redirect(`${back}?error=${encodeURIComponent('Catatan tidak sesuai pasien')}`);
 
   // Pasien sudah pulang/RIP → catatan dikunci. Koreksi setelah kasus ditutup harus
   // lewat jalur lain, bukan diam-diam dari layar ini.
@@ -287,22 +302,19 @@ export async function updateDailyLog(formData: FormData) {
   if (rec?.discharged_at) redirect(`${back}?error=${encodeURIComponent("Rawat inap sudah ditutup — catatan tidak bisa diubah lagi")}`);
 
   const stamp = waktuInputWIB(logDate, logTime);
-  const { error: upErr } = await supabase.from("inpatient_daily_logs").update({
+  const { error: upErr } = await supabase.rpc('clinic_update_inpatient_log',{
+    p_inpatient_id:recordId,p_log_id:logId,p_reason:alasan,p_patch:{
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
+    ...bacaPetugas(formData,here,before.log_kind==null),
     updated_at: new Date().toISOString(), updated_by: user?.id ?? null,
     // Angka pemantauan ikut bisa dikoreksi; nilai lamanya tersimpan di snapshot
     // `before` — berat/suhu yang salah ketik tidak boleh berubah tanpa jejak.
     ...bacaPemantauan(formData),
     ...(logDate ? { log_date: logDate } : {}),
     ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
-  }).eq("id", logId);
-  if (upErr) redirect(`${here}?error=${encodeURIComponent(upErr.message)}`);
-
-  // Snapshot ditulis setelah update berhasil supaya tidak ada baris audit palsu
-  // untuk perubahan yang sebenarnya gagal.
-  await supabase.from("inpatient_daily_log_edits").insert({
-    log_id: logId, edited_by: user?.id ?? null, before, alasan,
+    },
   });
+  if (upErr) redirect(`${here}?error=${encodeURIComponent(parseClinicRecordError(upErr))}`);
 
   redirect(`${back}?success=logedit`);
 }

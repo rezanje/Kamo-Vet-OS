@@ -4,10 +4,14 @@ import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@/lib/monitoring-inap";
 import { updateDailyLog } from "../../../actions";
+import { useState } from 'react';
+import { InpatientStaffFields } from '@/components/InpatientStaffFields';
+import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 
 export type LogRow = {
   id: string; log_date: string; created_at: string;
   condition_note: string; tindakan: string | null; keterangan: string | null; doctor_name: string | null;
+  log_kind?:InpatientStaff['log_kind'];visit_doctor_id?:string|null;paramedic_id?:string|null;paramedic_name?:string|null;
   makan?: string | null; minum?: string | null; bab?: string | null; pipis?: string | null;
   berat?: number | string | null; suhu?: number | string | null; foto_url?: string | null;
   komunikasi_owner?: string | null; komunikasi_via?: string | null;
@@ -15,15 +19,17 @@ export type LogRow = {
 
 export type EditRow = {
   edited_at: string; alasan: string | null; oleh: string;
-  before: { condition_note?: string; tindakan?: string | null; keterangan?: string | null; doctor_name?: string | null };
+  before: { condition_note?: string; tindakan?: string | null; keterangan?: string | null; doctor_name?: string | null;paramedic_name?:string|null;log_kind?:string|null };
 };
 
-export function LogEditForm({ log, recordId, backHref, patient, editable, edits }: {
+export function LogEditForm({ log, recordId, backHref, patient, editable, edits,doctors=[],paramedics=[] }: {
   log: LogRow; recordId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   editable: boolean;
   edits: EditRow[];
+  doctors?:ClinicalStaff[];paramedics?:ClinicalStaff[];
 }) {
+  const [staff,setStaff]=useState<InpatientStaff>({log_kind:log.log_kind??null,visit_doctor_id:log.visit_doctor_id??null,paramedic_id:log.paramedic_id??null});
   const d = new Date(log.created_at);
   const pad = (n: number) => String(n).padStart(2, "0");
   const dateStr = log.log_date?.slice(0, 10) || `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -161,8 +167,7 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
           </div>
 
           <div className="fg">
-            <label className="flab">Oleh dokter</label>
-            <input className="fi" name="doctor_name" defaultValue={log.doctor_name ?? ""} placeholder="Drh. ..." disabled={!editable} />
+            <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics} disabled={!editable} legacyName={log.doctor_name} doctorName={log.doctor_name} paramedicName={log.paramedic_name}/>
           </div>
 
           {editable && (
@@ -213,6 +218,7 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits 
                 <Was k="Tindakan" v={e.before?.tindakan} />
                 <Was k="Keterangan" v={e.before?.keterangan} />
                 <Was k="Dokter" v={e.before?.doctor_name} />
+                <Was k="Paramedis" v={e.before?.paramedic_name} />
               </div>
             ))
           )}

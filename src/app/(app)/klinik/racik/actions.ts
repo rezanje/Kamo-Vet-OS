@@ -3,9 +3,11 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { readCompleteList } from "@/lib/checked-list";
+import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { nextStatus, type RecipeStatus } from "@/lib/compounding";
 
-import { hargaCabang, loadHargaCabang } from "@/lib/harga-cabang";
+import { hargaCabang } from "@/lib/harga-cabang";
 import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams, type ClinicVoidCompoundParams } from "@/lib/klinik-posting";
 import { loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 
@@ -21,30 +23,22 @@ export async function katalogRacikanUntukKunjungan(visitId: string) {
 
 export async function bahanRacikanUntukKunjungan(visitId: string): Promise<BahanRacikan[]> {
   const supabase = await createClient();
-  const [{ data: visit }, { data: items }] = await Promise.all([
-    supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle(),
-    supabase.from("items").select("id, name, unit, sell_price")
-      .eq("is_active", true).eq("item_type", "Persediaan").eq("is_compound_material", true)
-      .order("name").limit(1000),
-  ]);
-  if (!visit || !items?.length) return [];
-  const ids = items.map((item) => item.id as string);
-  const [{ data: warehouse }, hargaMap] = await Promise.all([
-    supabase.from("warehouses").select("id").eq("branch_id", visit.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle(),
-    loadHargaCabang(supabase, visit.branch_id, ids),
-  ]);
-  const { data: stockRows } = warehouse
-    ? await supabase.from("stock").select("item_id, qty").eq("warehouse_id", warehouse.id).in("item_id", ids)
-    : { data: [] as { item_id: string; qty: number }[] };
-  const stokByItem = new Map<string, number>();
-  for (const stock of stockRows ?? []) stokByItem.set(stock.item_id as string, (stokByItem.get(stock.item_id as string) ?? 0) + Number(stock.qty));
-  return items.map((item) => ({
-    id: item.id as string,
-    name: item.name as string,
-    unit: (item.unit as string) || "pcs",
-    sell_price: hargaCabang(hargaMap, item.id as string, item.unit as string, Number(item.sell_price)),
-    stok: stokByItem.get(item.id as string) ?? 0,
-  }));
+  const { data: visit, error } = await supabase.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+  if (error || !visit) throw new Error("Kunjungan tidak tersedia.");
+  const items = await readCompleteList<{id:string;name:string;unit:string;sell_price:number}>((from,to) => supabase.from("items")
+    .select("id,name,unit,sell_price", {count:"exact"}).eq("is_active",true).eq("item_type","Persediaan").eq("is_compound_material",true)
+    .order("name").order("id").range(from,to), "Bahan racikan");
+  const {stock,prices} = await loadClinicSkuDetails(supabase,items.map(item=>item.id),visit.branch_id);
+  return items.map(item=>({...item,sell_price:hargaCabang(prices,item.id,item.unit,Number(item.sell_price)),stok:stock.get(item.id)??0}));
+}
+
+export async function obatRacikUntukKunjungan(visitId:string) {
+  const supabase=await createClient();
+  const {data:visit,error}=await supabase.from("visits").select("branch_id").eq("id",visitId).maybeSingle();
+  if(error||!visit)throw new Error("Kunjungan tidak tersedia.");
+  const items=await loadClinicCompoundSkus(supabase);
+  const {stock,prices}=await loadClinicSkuDetails(supabase,items.map(item=>item.id),visit.branch_id);
+  return items.map(item=>({...item,sell_price:hargaCabang(prices,item.id,item.unit,Number(item.sell_price)),stok:stock.get(item.id)??0}));
 }
 
 // Tambah racikan inline dari view rekam medis (recorded) — field ringkas sama seperti
@@ -62,6 +56,21 @@ export async function addRacikan(formData: FormData) {
   const form = String(formData.get("dosage_form") ?? "").trim() || null;
   const aturan = String(formData.get("aturan_pakai") ?? "").trim() || null;
   const officialVersionId = String(formData.get("official_version_id") ?? "").trim();
+  const saleItemId = String(formData.get("sale_item_id") ?? "").trim();
+  if (saleItemId) {
+    let ingredients;
+    try { ingredients = JSON.parse(String(formData.get("ingredients") ?? "[]")); }
+    catch { return redirect(`${back}?error=${encodeURIComponent("Bahan racikan tidak valid")}`); }
+    if (!Array.isArray(ingredients)) return redirect(`${back}?error=${encodeURIComponent("Bahan racikan tidak valid")}`);
+    const {error} = await supabase.rpc("clinic_issue_master_compound", {
+      p_medical_record_id:medicalRecordId, p_visit_id:visitId, p_sale_item_id:saleItemId,
+      p_recipe:officialVersionId?null:toClinicCompoundRecipeInput({recipeName,dosageForm:form,dosageInstruction:aturan,ingredients}),
+      p_request_key:requestKey,p_formula_version_id:officialVersionId||null,p_dosage_instruction:officialVersionId?aturan:null,
+    });
+    if(error)return redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+    revalidatePath(back);revalidatePath(`/klinik/pembayaran/${visitId}`);
+    return redirect(`${back}?racikan=dibuat`);
+  }
   if (officialVersionId) {
     if (!medicalRecordId || !visitId || !requestKey) return redirect(`${back}?error=${encodeURIComponent("Kunjungan racikan tidak valid")}`);
     const { error } = await supabase.rpc("clinic_issue_official_compound", {
