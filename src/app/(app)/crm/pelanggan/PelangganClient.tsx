@@ -1,5 +1,7 @@
 "use client";
 
+import { infoHalaman } from "@/lib/pagination";
+import { TABLE_PAGE_SIZE } from "@/lib/checked-list";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -153,6 +155,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   );
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState(cariAwal);
+  const [page, setPage] = useState(1);
   const [detailByCustomer, setDetailByCustomer] = useState<Record<string, DetailPelanggan>>({});
   const detailRef = useRef<HTMLDivElement>(null);
 
@@ -180,6 +183,9 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
     if (!s) return customers;
     return customers.filter((c) => c.name.toLowerCase().includes(s) || c.phone.includes(s));
   }, [customers, q]);
+
+  const pageInfo = infoHalaman(page, filtered.length, TABLE_PAGE_SIZE);
+  const visibleCustomers = filtered.slice(pageInfo.from, pageInfo.to + 1);
 
   const sel = customers.find((c) => c.id === selId) ?? null;
   const detail = sel ? detailByCustomer[sel.id] ?? null : null;
@@ -282,7 +288,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
               )}
             </div>
             <div style={{ position: "relative", width: 220 }}>
-              <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
+              <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} style={{ fontSize: 11, paddingRight: 26 }} />
               <i className="ti ti-search" style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />
             </div>
           </div>
@@ -297,9 +303,9 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c, i) => (
+                {visibleCustomers.map((c, i) => (
                   <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, transition: "background .1s" }} onClick={() => pilihPelanggan(c.id)}>
-                    <td style={{ color: "var(--td)", fontSize: 11 }}>{i + 1}</td>
+                    <td style={{ color: "var(--td)", fontSize: 11 }}>{pageInfo.from + i + 1}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                         <Av initials={initials(c.name)} color={colorFor(c.id)} size={25} />
@@ -325,7 +331,11 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
               </tbody>
             </table>
           </div>
-          <div style={{ marginTop: 10, fontSize: 10, color: "var(--tm)" }}>Menampilkan {filtered.length} dari {customers.length} pelanggan</div>
+          <nav aria-label="Halaman pelanggan" style={{ marginTop: 10, fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>Menampilkan {filtered.length ? pageInfo.from + 1 : 0}–{Math.min(filtered.length, pageInfo.to + 1)} dari {filtered.length} hasil · {customers.length} pelanggan · Halaman {pageInfo.page}/{pageInfo.totalPages}</span>
+            <button type="button" className="btn-def" disabled={pageInfo.page === 1} onClick={() => setPage(pageInfo.page - 1)}>Sebelumnya</button>
+            <button type="button" className="btn-def" disabled={pageInfo.page === pageInfo.totalPages} onClick={() => setPage(pageInfo.page + 1)}>Berikutnya</button>
+          </nav>
         </div>
       </div>
 

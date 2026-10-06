@@ -31,6 +31,8 @@ export type BarangMatrixRow = {
   default_discount: number;
   is_active: boolean;
   tindakan_kategori: string | null;
+  average_cost?: number | null;
+  cost_note?: string;
 };
 
 const ALL_COLUMNS: AccurateMatrixColumn[] = ACCURATE_MATRIX_COLUMNS.map((column) => column.key);
@@ -83,7 +85,7 @@ function MatrixValue({ row, column }: { row: BarangMatrixRow; column: AccurateMa
   }
 }
 
-export function BarangMatrixTable({ rows, bolehKelola, startNumber = 0 }: { rows: BarangMatrixRow[]; bolehKelola: boolean; startNumber?: number }) {
+export function BarangMatrixTable({ rows, bolehKelola, bolehLihatHpp = false, startNumber = 0 }: { rows: BarangMatrixRow[]; bolehKelola: boolean; bolehLihatHpp?: boolean; startNumber?: number }) {
   const [visibleColumns, setVisibleColumns] = useState<AccurateMatrixColumn[]>(ALL_COLUMNS);
   const selectedColumns = useMemo(
     () => ACCURATE_MATRIX_COLUMNS.filter((column) => visibleColumns.includes(column.key)),
@@ -134,6 +136,7 @@ export function BarangMatrixTable({ rows, bolehKelola, startNumber = 0 }: { rows
               {selectedColumns.map((column) => (
                 <th key={column.key} style={{ width: columnWidth[column.key], minWidth: columnWidth[column.key] }}>{column.label}</th>
               ))}
+              {bolehLihatHpp && <th style={{ width: 180, minWidth: 180 }}>HPP rata-rata FIFO</th>}
               <th style={{ width: 120, minWidth: 120 }}>Tindakan</th>
               {bolehKelola && <th style={{ width: 130, minWidth: 130 }}>Aksi</th>}
             </tr>
@@ -160,6 +163,9 @@ export function BarangMatrixTable({ rows, bolehKelola, startNumber = 0 }: { rows
                     <MatrixValue row={row} column={column.key} />
                   </td>
                 ))}
+                {bolehLihatHpp && <td title={row.cost_note} style={{ fontSize: 10.5, whiteSpace: "nowrap" }}>
+                  {row.average_cost == null ? <span style={{ color: "var(--td)" }}>{row.cost_note || "HPP belum tersedia"}</span> : `Rp ${row.average_cost.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </td>}
                 <td>
                   {row.tindakan_kategori
                     ? <span className={`bge ${kategoriWajibConsent(row.tindakan_kategori) ? "r" : "b"}`}>{row.tindakan_kategori}</span>
@@ -183,7 +189,7 @@ export function BarangMatrixTable({ rows, bolehKelola, startNumber = 0 }: { rows
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={3 + selectedColumns.length + 1 + (bolehKelola ? 1 : 0)} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                <td colSpan={3 + selectedColumns.length + 1 + (bolehLihatHpp ? 1 : 0) + (bolehKelola ? 1 : 0)} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                   Belum ada barang di filter ini.
                 </td>
               </tr>

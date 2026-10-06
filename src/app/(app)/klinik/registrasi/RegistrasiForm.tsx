@@ -1,4 +1,5 @@
 "use client";
+import { staffForService } from "@/lib/clinical-staff";
 
 import { batasBeratWajar, STATUS_REPRODUKSI } from "@/lib/anabul";
 
@@ -53,6 +54,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
     namaHewan: string; jenisHewan: string; keluhan: string;
   };
 }) {
+  const [service,setService]=useState(awal?.poli??"Poli Umum");
   const [phone, setPhone] = useState(awal?.phone ?? "");
   const [looking, setLooking] = useState(false);
   const [customer, setCustomer] = useState<CustomerLite | null>(null);
@@ -194,7 +196,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
             </div>
             <div>
               <label className="flab">Poli tujuan {req}</label>
-              <select className="fi" name="poli" defaultValue={awal?.poli ?? "Poli Umum"}>
+              <select className="fi" name="poli" value={service} onChange={event=>setService(event.target.value)}>
                 <option>Poli Umum</option>
                 <option>Poli Gigi</option>
                 <option>Poli Kulit</option>
@@ -205,10 +207,10 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
           </div>
           <div className="frow">
             <div>
-              <label className="flab">Dokter</label>
-              <select className="fi" name="doctor_id" defaultValue="">
+              <label className="flab">{service==="Grooming"?"Groomer":"Dokter"}</label>
+              <select className="fi" key={service} name="doctor_id" defaultValue="">
                 <option value="">— belum ditentukan —</option>
-                {dokter.map((d) => (
+                {staffForService(dokter,service).map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.nama}{d.jabatan ? ` · ${d.jabatan}` : ""}{d.jaga ? " · jaga hari ini" : ""}
                   </option>

@@ -1,3 +1,5 @@
+import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
+import { daftarPenjual } from "@/lib/penjual";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -36,10 +38,11 @@ export default async function PembayaranPage({
   const invoiceRequestKey = randomUUID();
   const groupRequestKey = randomUUID();
   const supabase = await createClient();
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, status, poli, dokter, created_at, branch_id, customer_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
+    .select("id, status, poli, dokter, created_at, branch_id, customer_id, doctor_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
     .eq("id", visitId)
     .maybeSingle();
   if (!visit) notFound();
@@ -72,7 +75,7 @@ export default async function PembayaranPage({
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key")
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   const { data: invItems } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
@@ -170,16 +173,17 @@ export default async function PembayaranPage({
   // Baris tambahan di kasir klinik wajib bisa dipilih dari master, bukan diketik
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
   // terjual tapi persediaan tidak pernah berkurang.
-  const { data: masterRows } = await supabase
-    .from("items").select("id, code, name, unit, sell_price, item_type")
-    .eq("is_active", true).order("name");
-  const master = (masterRows ?? []).map((it) => ({
-    id: it.id as string, code: it.code as string, name: it.name as string,
-    unit: (it.unit as string) ?? "", harga: Number(it.sell_price) || 0,
-    jasa: it.item_type === "Jasa",
-  }));
-  const masterObat = master.filter((it) => !it.jasa);
-  const masterJasa = master.filter((it) => it.jasa);
+  const { obat: masterObat, jasa: masterJasa, all: master } = await loadClinicPaymentMaster(supabase, visit.branch_id ?? null);
+  const salespeople = visit.branch_id ? await daftarPenjual(supabase, visit.branch_id) : [];
+  // Older databases retain their base-unit-only invoice posting contract.
+  const unitCapability = await supabase.rpc("clinic_manual_invoice_units_supported");
+  const manualUnitsEnabled = !unitCapability.error && unitCapability.data === true;
+  const eligibleIds = new Set(salespeople.map(person => person.id));
+  const defaultSalespersonId = [visit.doctor_id, visit.service_provider_id].find(id => id && eligibleIds.has(id)) ?? "";
+  const { data: invoiceSalesperson } = invoice?.salesperson_id
+    ? await supabase.from("employees").select("nama").eq("id",invoice.salesperson_id).maybeSingle()
+    : { data: null };
+  const sealedSalespersonName = invoiceSalesperson?.nama ?? "Tanpa penjual";
 
   // Bahan promo/voucher/diskon golongan untuk layar. Servernya tetap menghitung
   // ulang saat menyimpan — ini supaya kasir melihat angkanya lebih dulu.
@@ -293,6 +297,7 @@ export default async function PembayaranPage({
             <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}`} />
             <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
             <Field label="Poli" value={visit.poli} />
+            <Field label="Penjual" value={sealedSalespersonName} />
             {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
           </div>
         </div>
@@ -391,12 +396,16 @@ export default async function PembayaranPage({
 
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
+          key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}
+          draftUserId={draftUser?.id ?? ""}
+          draftScope={`payment:${visit.id}:${invoice?.id ?? "new"}`}
           patient={patient}
           ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}
+          manualUnitsEnabled={manualUnitsEnabled}
           masterObat={masterObat}
           masterJasa={masterJasa}
           bekal={bekal}
@@ -406,6 +415,7 @@ export default async function PembayaranPage({
           initialCreditAmount={creditAmount}
           initialDpDate={invoice.dp_date}
           initialMetode={invoice.metode_bayar ?? "Tunai"}
+          sealedSalespersonName={sealedSalespersonName}
           editMode
         />
       ) : invoice ? (
@@ -494,15 +504,21 @@ export default async function PembayaranPage({
         </>
       ) : (
         <PembayaranForm
+          key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}
+          draftUserId={draftUser?.id ?? ""}
+          draftScope={`payment:${visit.id}:new`}
           patient={patient}
           ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}
+          manualUnitsEnabled={manualUnitsEnabled}
           masterObat={masterObat}
           masterJasa={masterJasa}
           bekal={bekal}
+          salespeople={salespeople}
+          initialSalespersonId={defaultSalespersonId}
           catatanResep={mr?.catatan_resep ?? null}
         />
       )}

@@ -1,150 +1,29 @@
 "use client";
-
 import { useState, useTransition } from "react";
-import { addRacikan, bahanRacikanUntukKunjungan, katalogRacikanUntukKunjungan, type BahanRacikan } from "@/app/(app)/klinik/racik/actions";
-import { katalogTotal, type KatalogRacikan } from "@/lib/katalog-racikan";
+import { addRacikan, bahanRacikanUntukKunjungan, katalogRacikanUntukKunjungan, obatRacikUntukKunjungan, type BahanRacikan } from "@/app/(app)/klinik/racik/actions";
+import { CompoundEditor } from "@/components/CompoundEditor";
+import type { CompoundDraft, CompoundSaleSku } from "@/lib/master-compound-cart";
+import type { KatalogRacikan } from "@/lib/katalog-racikan";
 
-type ItemLite = BahanRacikan;
-type Bahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
-
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-
-// Builder racikan ringkas — field & alur sama seperti tab "Racikan" di form pemeriksaan,
-// tapi berdiri sendiri utk nambah racikan setelah rekam medis tersimpan (recorded view).
 export function RacikanInline({ visitId, medicalRecordId, bahanItems, bolehManual }: {
-  visitId: string; medicalRecordId: string; bahanItems: ItemLite[]; bolehManual: boolean;
+  visitId:string;medicalRecordId:string;bahanItems:BahanRacikan[];bolehManual:boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<ItemLite[]>(bahanItems);
-  const [catalog, setCatalog] = useState<KatalogRacikan[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState("");
-  const [loadError, setLoadError] = useState("");
-  const [isLoading, startTransition] = useTransition();
-  const [nama, setNama] = useState("");
-  const [form, setForm] = useState("sirup");
-  const [aturan, setAturan] = useState("");
-  const [requestKey, setRequestKey] = useState("");
-  const [search, setSearch] = useState("");
-  const [bahan, setBahan] = useState<Bahan[]>([]);
-
-  const subtotal = bahan.reduce((a, b) => a + b.qty * b.harga, 0);
-  const selected = catalog.find((formula) => formula.version_id === selectedVersion);
-
-  const addBahan = (it: ItemLite) => {
-    if (bahan.some((b) => b.item_id === it.id)) return;
-    setBahan([...bahan, { item_id: it.id, nama: it.name, qty: 1, satuan: it.unit, harga: it.sell_price }]);
-  };
-  const setQty = (id: string, qty: number) => setBahan(bahan.map((b) => (b.item_id === id ? { ...b, qty } : b)));
-  const delBahan = (id: string) => setBahan(bahan.filter((b) => b.item_id !== id));
-  const bukaRacikan = () => {
-    setLoadError("");
-    startTransition(async () => {
-      try {
-        const [availableItems, availableCatalog] = await Promise.all([
-          bahanRacikanUntukKunjungan(visitId), katalogRacikanUntukKunjungan(visitId),
-        ]);
-        setItems(availableItems);
-        setCatalog(availableCatalog);
-        setRequestKey(crypto.randomUUID());
-        setOpen(true);
-      } catch {
-        setLoadError("Bahan racikan belum bisa dimuat. Coba lagi.");
-      }
-    });
-  };
-
-  if (!open) {
-    return (
-      <div>
-        <button type="button" onClick={bukaRacikan} disabled={isLoading} className="btn-acc"
-          style={{ padding: "4px 10px", fontSize: 10.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <i className={`ti ${isLoading ? "ti-loader-2 ti-spin" : "ti-plus"}`} /> {isLoading ? "Menyiapkan bahan…" : "Racikan baru"}
-        </button>
-        {loadError && <div style={{ marginTop: 6, fontSize: 10.5, color: "#dc2626" }}>{loadError}</div>}
-      </div>
-    );
-  }
-
-  return (
-    <form action={addRacikan} style={{ display: "flex", flexDirection: "column", gap: 8, border: ".5px solid var(--bd)", borderRadius: 10, padding: 12, marginTop: 4 }}>
-      <input type="hidden" name="visitId" value={visitId} />
-      <input type="hidden" name="medicalRecordId" value={medicalRecordId} />
-      <input type="hidden" name="requestKey" value={requestKey} />
-      <input type="hidden" name="ingredients" value={JSON.stringify(bahan)} />
-      <input type="hidden" name="official_version_id" value={selectedVersion} />
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: "#7c3aed" }}><i className="ti ti-flask" /> Racikan baru</span>
-        <i className="ti ti-x" onClick={() => setOpen(false)} style={{ cursor: "pointer", color: "var(--td)", fontSize: 14 }} />
-      </div>
-
-      <label className="flab">Katalog resmi perusahaan</label>
-      <select className="fi" value={selectedVersion} onChange={(e) => {
-        const versionId = e.target.value;
-        const formula = catalog.find((entry) => entry.version_id === versionId);
-        setSelectedVersion(versionId);
-        setAturan(formula?.dosage_instruction ?? "");
-      }}>
-        <option value="">{bolehManual ? "Racikan khusus pasien (manual)" : "Pilih resep resmi"}</option>
-        {catalog.map((formula) => <option key={formula.version_id} value={formula.version_id}>
-          {formula.code} · {formula.name} (v{formula.version})
-        </option>)}
-      </select>
-      {selected ? <div style={{ fontSize: 11, background: "#f4f0ff", borderRadius: 8, padding: 9 }}>
-        <strong>{selected.name} · {selected.dosage_form}</strong>
-        <div>{selected.ingredients.map((ingredient) => `${ingredient.name} ${ingredient.quantity} ${ingredient.unit}`).join(" · ")}</div>
-        <div>Estimasi bahan {rp(katalogTotal(selected.ingredients))}. Stok diperiksa saat menyimpan.</div>
-      </div> : bolehManual ? <input className="fi" name="recipe_name" placeholder="Nama racikan (mis. Puyer Batuk)" value={nama} onChange={(e) => setNama(e.target.value)} /> : null}
-      <div style={{ display: "flex", gap: 6 }}>
-        {!selected && bolehManual && <select className="fi" name="dosage_form" value={form} onChange={(e) => setForm(e.target.value)} style={{ fontSize: 11.5 }}>
-          {["sirup", "nebul", "salep", "puyer", "kapsul", "lainnya"].map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>}
-        {selected
-          ? <><input type="hidden" name="aturan_pakai" value={selected.dosage_instruction ?? ""} />
-            <span style={{ fontSize: 11 }}>Aturan pakai resmi: {selected.dosage_instruction ?? "Tidak ditetapkan"}. Untuk aturan lain, gunakan racikan khusus pasien.</span></>
-          : bolehManual ? <input className="fi" name="aturan_pakai" placeholder="Aturan pakai (opsional)" value={aturan} onChange={(e) => setAturan(e.target.value)} /> : null}
-      </div>
-
-      {!selected && bolehManual && <>
-      <div style={{ position: "relative" }}>
-        <input className="fi" placeholder="Cari bahan baku..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingRight: 28 }} />
-        <i className="ti ti-search" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 13 }} />
-      </div>
-      <div style={{ maxHeight: 140, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
-        {items.length === 0 && <div style={{ fontSize: 10.5, color: "var(--td)", padding: "8px 10px" }}>Belum ada bahan baku. Tandai di menu Kelola Bahan Baku.</div>}
-        {(search.trim() ? items.filter((i) => i.name.toLowerCase().includes(search.toLowerCase())) : items).map((it) => (
-          <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderBottom: ".5px solid var(--bd)" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</div>
-              <div style={{ fontSize: 9.5, color: "var(--tm)" }}>Stok {it.stok} {it.unit} · {rp(it.sell_price)}</div>
-            </div>
-            <button type="button" onClick={() => addBahan(it)} className="btn-acc" style={{ padding: "2px 7px", fontSize: 11, background: "#16a34a" }}><i className="ti ti-plus" /></button>
-          </div>
-        ))}
-      </div>
-
-      {bahan.length > 0 && (
-        <div style={{ border: ".5px solid var(--bd)", borderRadius: 8, padding: 8 }}>
-          {bahan.map((b) => (
-            <div key={b.item_id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <span style={{ flex: 1, fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.nama}</span>
-              <input className="fi" type="number" min={1} value={b.qty} onChange={(e) => setQty(b.item_id, Number(e.target.value))} style={{ width: 46, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />
-              <span style={{ fontSize: 10, color: "var(--tm)" }}>{b.satuan}</span>
-              <span style={{ fontSize: 10.5, width: 62, textAlign: "right" }}>{rp(b.qty * b.harga)}</span>
-              <i className="ti ti-x" onClick={() => delBahan(b.item_id)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} />
-            </div>
-          ))}
-          <div style={{ display: "flex", justifyContent: "space-between", borderTop: ".5px solid var(--bd)", paddingTop: 5, marginTop: 3, fontSize: 11.5, fontWeight: 700 }}>
-            <span>Estimasi</span><span style={{ color: "var(--posb)" }}>{rp(subtotal)}</span>
-          </div>
-        </div>
-      )}
-      </>}
-
-      <button type="submit" disabled={!selected && (!bolehManual || !nama.trim() || bahan.length === 0)}
-        className="btn-acc" style={{ justifyContent: "center", background: "var(--posb)", opacity: (!selected && (!bolehManual || !nama.trim() || bahan.length === 0)) ? .5 : 1 }}>
-        <i className="ti ti-plus" /> Simpan racikan
-      </button>
-    </form>
-  );
+  const [open,setOpen]=useState(false),[materials,setMaterials]=useState(bahanItems),[items,setItems]=useState<CompoundSaleSku[]>([]),[catalog,setCatalog]=useState<KatalogRacikan[]>([]);
+  const [value,setValue]=useState<CompoundDraft>({saleItemId:"",formulaId:"",dosageForm:"sirup",instruction:"",ingredients:[]});
+  const [requestKey,setRequestKey]=useState(""),[loadError,setLoadError]=useState(""),[loading,startTransition]=useTransition();
+  const sku=items.find(item=>item.id===value.saleItemId),formula=catalog.find(row=>row.version_id===value.formulaId);
+  const load=()=>{setLoadError("");startTransition(async()=>{
+    try {
+      const [loadedMaterials,loadedCatalog,loadedItems]=await Promise.all([bahanRacikanUntukKunjungan(visitId),katalogRacikanUntukKunjungan(visitId),obatRacikUntukKunjungan(visitId)]);
+      setMaterials(loadedMaterials);setCatalog(loadedCatalog);setItems(loadedItems);setRequestKey(crypto.randomUUID());setOpen(true);
+    }catch{setLoadError("Obat atau bahan racikan belum bisa dimuat. Coba lagi.");}
+  });};
+  if(!open)return <div><button type="button" className="btn-acc" disabled={loading} onClick={load}>{loading?"Menyiapkan racikan…":"Racikan baru"}</button>{loadError&&<div role="alert">{loadError}</div>}</div>;
+  return <form action={addRacikan} style={{padding:12,border:".5px solid var(--bd)",borderRadius:8}}>
+    <input type="hidden" name="visitId" value={visitId}/><input type="hidden" name="medicalRecordId" value={medicalRecordId}/><input type="hidden" name="requestKey" value={requestKey}/>
+    <input type="hidden" name="sale_item_id" value={value.saleItemId}/><input type="hidden" name="recipe_name" value={sku?.name??""}/><input type="hidden" name="official_version_id" value={value.formulaId}/>
+    <input type="hidden" name="dosage_form" value={formula?.dosage_form??value.dosageForm}/><input type="hidden" name="aturan_pakai" value={formula?(formula.dosage_instruction??""):value.instruction}/><input type="hidden" name="ingredients" value={JSON.stringify(value.ingredients)}/>
+    <CompoundEditor items={items} materials={materials} catalog={catalog} allowCustom={bolehManual} value={value} onChange={setValue} submitLabel="Simpan racikan"/>
+    <button type="button" className="btn-def" onClick={()=>setOpen(false)} style={{marginTop:8}}>Tutup</button>
+  </form>;
 }

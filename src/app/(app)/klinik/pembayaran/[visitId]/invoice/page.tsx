@@ -29,7 +29,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
   const { data: items } = await supabase
     .from("invoice_items").select("deskripsi, qty, harga, diskon_persen").eq("invoice_id", invoice.id).order("created_at");
   const { data: payments } = await supabase.from("invoice_payments")
-    .select("amount, transferred_from").eq("invoice_id", invoice.id);
+    .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
@@ -129,7 +129,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
         </div>
 
         <div style={{ marginTop: 24, fontSize: 11, color: "var(--tm)", borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
-          Metode pembayaran: <b style={{ color: "#141413" }}>{invoice.metode_bayar ?? "-"}</b>
+          Metode pembayaran: <b style={{ color: "#141413" }}>{(payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-"}</b>
+          {(payments ?? []).filter(p => !p.transferred_from).map(payment => <div key={payment.id} style={{ marginTop: 4 }}>{payment.metode}: {rp(Number(payment.amount))}</div>)}
           {invoice.paid_at && ` · Lunas pada ${new Date(invoice.paid_at).toLocaleDateString("id-ID")}`}
           <div style={{ marginTop: 4, fontSize: 9.5, color: "var(--td)" }}>Invoice ini sah tanpa tanda tangan & cap. PPN 11% dihitung dari DPP (subtotal − diskon).</div>
         </div>

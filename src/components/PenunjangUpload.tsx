@@ -6,8 +6,10 @@ import { createClient } from "@/lib/supabase/client";
 // Upload foto hasil penunjang (lab/rontgen/USG) ke bucket privat `medical-docs`.
 // URL disimpan di state lalu dikirim sebagai JSON — baris medical_records baru dibuat
 // saat form disubmit, jadi belum ada id-nya waktu upload (pola sama dgn foto hewan).
-export function PenunjangUpload({ name }: { name: string }) {
-  const [paths, setPaths] = useState<string[]>([]);
+export function PenunjangUpload({ name, value, onChange }: { name: string; value?: string[]; onChange?: React.Dispatch<React.SetStateAction<string[]>> }) {
+  const [localPaths, setLocalPaths] = useState<string[]>([]);
+  const paths = value ?? localPaths;
+  const setPaths = onChange ?? setLocalPaths;
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -60,7 +62,7 @@ export function PenunjangUpload({ name }: { name: string }) {
           {paths.map((p) => (
             <div key={p} style={{ position: "relative", width: 74, height: 74, borderRadius: 8, overflow: "hidden", border: ".5px solid var(--bd)", background: "var(--sf1)" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previews[p]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              {previews[p] ? <img src={previews[p]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 10, padding: 5 }}>Foto hasil tersimpan</span>}
               <button type="button" onClick={() => hapus(p)} title="Hapus"
                 style={{ position: "absolute", top: 2, right: 2, width: 18, height: 18, borderRadius: "50%", border: "none", background: "rgba(0,0,0,.6)", color: "#fff", cursor: "pointer", fontSize: 10, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <i className="ti ti-x" />

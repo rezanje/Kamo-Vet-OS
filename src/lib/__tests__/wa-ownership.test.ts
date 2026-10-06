@@ -1,33 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { jalankanWaEngine } from "../wa-engine";
 import { sendWA } from "../fonnte";
+import { waDatabase } from "./helpers/wa-db";
 
 vi.mock("../fonnte", () => ({ sendWA: vi.fn(async () => ({ ok: true })) }));
 
 function database() {
-  const records: Record<string, unknown> = {
-    wa_engine_settings: { is_enabled: true, post_treatment_enabled: true, vaccination_due_enabled: true },
+  const records = {
+    wa_engine_settings: [{ is_enabled: true, post_treatment_enabled: true, vaccination_due_enabled: true }],
     customers: [{ id: "old", name: "Aldi", phone: "08111111111" }, { id: "new", name: "Andri", phone: "08222222222" }],
     pets: [{ id: "mochi", customer_id: "new", name: "Mochi" }],
     visits: [{ id: "v", customer_id: "old", pet_id: "mochi", branch_id: "b", poli: "Umum", created_at: "2026-09-07T03:00:00Z" }],
     follow_ups: [{ id: "f", customer_id: "old", pet_id: "mochi", branch_id: "b", jenis: "Vaksin", tanggal: "2026-10-14" }],
     sales: [],
   };
-  const logs: Record<string, unknown>[] = [];
-  return {
-    logs,
-    from(table: string) {
-      let data = records[table] ?? [];
-      const query = {
-        select: () => query, eq: () => query,
-        insert: (value: Record<string, unknown>) => { logs.push(value); data = { id: `log-${logs.length}` }; return query; },
-        update: () => query,
-        maybeSingle: async () => ({ data, error: null }),
-        then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve),
-      };
-      return query;
-    },
-  };
+  return waDatabase(records);
 }
 
 describe("reminder setelah transfer kepemilikan", () => {

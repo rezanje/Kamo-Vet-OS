@@ -28,7 +28,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   const { data: items } = await supabase
     .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at");
   const { data: payments } = await supabase.from("invoice_payments")
-    .select("amount, transferred_from").eq("invoice_id", invoice.id);
+    .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
   const credit = (payments ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const received = Number(invoice.dp_amount) + (payments ?? [])
@@ -80,7 +80,8 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
           <span>TOTAL</span><span>{rp(invoice.total)}</span>
         </div>
         <Hr />
-        <Row k="Metode" v={invoice.metode_bayar ?? "-"} />
+        <Row k="Metode" v={(payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-"} />
+        {(payments ?? []).filter(p => !p.transferred_from).map(payment => <Row key={payment.id} k={payment.metode ?? "Pembayaran"} v={rp(Number(payment.amount))} />)}
         <Row k="Status" v={invoice.paid_status} />
         {credit > 0 && <Row k="Dialihkan" v={rp(credit)} />}
         {invoice.paid_status === "DP" && <Row k="Sisa" v={rp(Math.max(0, Number(invoice.total) - received))} />}
