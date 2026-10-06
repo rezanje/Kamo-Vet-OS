@@ -125,6 +125,90 @@ Rp150 payment against a Rp200 invoice and rejected the competing Rp150 payment;
 one receipt and one journal remained. The isolated database is not production
 or a complete Supabase stack.
 
+## Atomic sales posting (2026-10-04)
+
+Run the sales transaction suite against local Supabase with:
+
+```sh
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
+  -v ON_ERROR_STOP=1 -f supabase/tests/sales_safe_posting.sql
+```
+
+A self-contained Docker runner creates and removes its own fictional PostgreSQL
+16 database, applies every repository migration, runs that suite under the
+`authenticated` role and RLS, and checks genuine independent-session races:
+
+```sh
+python scripts/test-sales-posting-postgres.py
+```
+
+The runner uses explicit auth/storage shims and public-table grants, and seeds
+COA 1101/1102 before migration 0068 as required by the existing migration chain.
+It is not a complete Supabase local stack or a production verification. It does
+not accept a database URL. Coverage includes box and pcs of the same SKU,
+partial shipments/invoices and HPP, PKP, service/free-text rows, request identity,
+quantity and branch/role validation, forced journal and quotation-line failures,
+missing warehouse/stock/layers/positive cost/account, closed periods, and atomic
+quotation conversion. Two-session checks cover competing last-unit shipments,
+competing invoice remainder, and identical invoice retries. Each race verifies
+that the second independent session actually waits on a posting lock.
+
+New sales invoices keep immutable invoice-line → delivery-line quantity and HPP
+allocations. Backdated later shipments cannot reorder HPP already billed. Legacy
+partially billed rows whose invoice quantities/HPP lack complete allocation links
+are blocked with a finance reconciliation message; this change does not backfill
+history or provide a reconciliation workflow. The suite proves that rejection,
+backdated mixed-cost shipments, immutable allocation rows, exact total HPP, retry
+identity, and rollback when allocation insertion fails.
+
+
+Sales account/module gates match the application's existing access-group rules:
+accounts must be active; OWNER overrides module rows; ADMIN without custom rows
+has full default access; FINANCE/STAFF require explicit `penjualan` permission.
+Disabled accounts cannot post or recover previously committed operations.
+Read access remains active-account and branch scoped, independent of sales
+module permission, so existing finance receivables, tax, and ledger consumers
+continue to see sales documents. The SQL suite checks default FINANCE invoice
+counts/totals, denied posting, and disabled-account invisibility.
+
+Sales form identities now persist in tab-local session storage across errors,
+refreshes, and exhausted forms. Only a confirmed success retires that identity.
+When storage is unavailable the form has no usable key and posting fails closed.
+The recovery action calls the read-only `sales_get_posting_result`, which checks
+the actor, module, current order branch, and recorded posting branch. It locks
+the order before the key, matching the posting lock order. Component tests render
+the actual order page and cover a committed-response-loss/remount/recovery flow,
+independent invoice keys, exhausted forms, and confirmation-only rotation.
+
+
+Actual local GoTrue/PostgREST/Chromium coverage is available with:
+
+```sh
+node scripts/test-sales-local-browser.mjs
+```
+
+This harness refuses any API except `http://127.0.0.1:55421`, requires the local
+fake-auth manifest and database `supabase_db_vetos_hris_acceptance`, and uses app
+port 3111. Run it after the exact committed migration chain is applied. It seeds
+its own fictional user/branch/order and 2035-dated inventory/documents. It rejects
+a disabled OWNER's valid JWT, commits each actual shipment/invoice form while
+aborting its server-action response, reloads, checks the persisted original key,
+and recovers read-only. It verifies one shipment, one invoice, one allocation,
+two journals and stock38, then stores screenshots and fixture IDs under `/tmp`.
+It starts/stops its own local Next process when necessary and leaves fictional
+financial audit fixtures in the shared test database for inspection.
+
+Verify the same fictional invoice with a default FINANCE account and the actual
+receivables page by passing the fixture path printed by the browser harness:
+
+```sh
+node scripts/test-sales-finance-read-local.mjs /tmp/vetos-sales-browser-<token>/fixture.json
+```
+
+This local-only follow-up checks the real API invoice amount, denied sales
+posting without module permission, `/keuangan/piutang`, and an existing JWT
+after disabling its own fictional FINANCE profile. It saves `finance-ar.png`
+beside the fixture and uses the same local app port and API restrictions.
 ## Purchase receipt and retry verification (2026-10-04)
 
 ```sh

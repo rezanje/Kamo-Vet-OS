@@ -1,3 +1,4 @@
+import { SalesRequestIdentity, SalesRecoveryComplete, SalesOrderRecovery } from "@/components/SalesRequestIdentity";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -25,7 +26,7 @@ export default async function DetailPesananPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; request_done?: string; request_scope?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -64,6 +65,7 @@ export default async function DetailPesananPage({
 
   return (
     <>
+      <SalesRecoveryComplete scope={sp.request_scope} requestKey={sp.request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/penjualan/pesanan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -87,7 +89,7 @@ export default async function DetailPesananPage({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 18px", fontSize: 11, marginBottom: 12 }}>
           <KV k="Pelanggan" v={one(so.customers as Rel<{ name: string }>)?.name ?? "—"} />
           <KV k="Cabang" v={one(so.branches as Rel<{ name: string }>)?.name ?? "—"} />
-          <KV k="Gudang pengirim" v={one(so.warehouses as Rel<{ name: string }>)?.name ?? "tanpa potong stok"} />
+          <KV k="Gudang pengirim" v={one(so.warehouses as Rel<{ name: string }>)?.name ?? "belum dipilih"} />
           <KV k="Rencana kirim" v={tgl(so.rencana_kirim)} />
           <KV k="Nilai pesanan" v={rp(Number(so.total))} />
           <KV k="Catatan" v={so.catatan ?? "—"} />
@@ -127,6 +129,7 @@ export default async function DetailPesananPage({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {bisaKirim && (
               <form action={buatPengiriman}>
+                <SalesRequestIdentity scope={`delivery:${id}`} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Kirim barang</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>
@@ -149,7 +152,7 @@ export default async function DetailPesananPage({
                   <div>
                     <label className="flab">Gudang pengirim</label>
                     <select className="fi" name="warehouse_id" defaultValue={so.warehouse_id ?? ""}>
-                      <option value="">— tanpa potong stok —</option>
+                      <option value="">— pilih gudang untuk barang —</option>
                       {gudang.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
                   </div>
@@ -162,6 +165,7 @@ export default async function DetailPesananPage({
 
             {bisaFaktur && (
               <form action={buatFakturJual}>
+                <SalesRequestIdentity scope={`invoice:${id}`} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Terbitkan faktur</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>
@@ -192,6 +196,9 @@ export default async function DetailPesananPage({
           </div>
         </div>
       )}
+
+      {boleh && (!aktif || !bisaKirim) && <SalesOrderRecovery orderId={id} kind="delivery" />}
+      {boleh && (!aktif || !bisaFaktur) && <SalesOrderRecovery orderId={id} kind="invoice" />}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader num="03" title="DOKUMEN TURUNAN" desc="Pengiriman & faktur yang lahir dari pesanan ini." />

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
+import { validasiSatuanJual } from "@/lib/penjualan-satuan";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/penjualan/penawaran";
@@ -18,7 +19,9 @@ export async function buatPenawaran(formData: FormData) {
   const berlaku = String(formData.get("berlaku_sampai") ?? "").trim() || null;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
-  const baris = bacaBaris(formData.get("items"));
+  const parsed = bacaBaris(formData.get("items"));
+  const { rows: baris, error: satuanError } = await validasiSatuanJual(supabase, parsed);
+  if (satuanError) gagal(satuanError);
   if (!customerId) gagal("Pilih pelanggan dulu");
   if (baris.length === 0) gagal("Isi minimal satu baris barang atau jasa");
   if (berlaku && berlaku < tanggal) gagal("Masa berlaku selesai sebelum tanggal penawaran");
@@ -64,36 +67,7 @@ export async function jadikanPesanan(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Penawaran tidak valid");
 
-  const { data: q } = await supabase
-    .from("sales_quotations")
-    .select("id, no_penawaran, customer_id, branch_id, total, catatan, sales_quotation_items(item_id, nama, satuan, faktor, qty, harga)")
-    .eq("id", id).maybeSingle();
-  if (!q) gagal("Penawaran tidak ditemukan");
-
-  const { data: sudah } = await supabase
-    .from("sales_orders").select("id, no_pesanan").eq("quotation_id", id).maybeSingle();
-  if (sudah) gagal(`Penawaran ini sudah jadi pesanan ${sudah.no_pesanan}`);
-
-  const baris = (q!.sales_quotation_items ?? []) as
-    { item_id: string | null; nama: string; satuan: string | null; faktor: number | null; qty: number; harga: number }[];
-  if (baris.length === 0) gagal("Penawaran ini tidak punya baris");
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const no = await nextNoDokumen(supabase, "SO");
-
-  const { data: so, error } = await supabase.from("sales_orders").insert({
-    no_pesanan: no, quotation_id: id, customer_id: q!.customer_id, branch_id: q!.branch_id,
-    total: q!.total, catatan: q!.catatan, created_by: user?.id ?? null,
-  }).select("id").single();
-  if (error || !so) gagal(error?.message ?? "Gagal membuat pesanan");
-
-  await supabase.from("sales_order_items").insert(
-    baris.map((b) => ({
-      order_id: so!.id, item_id: b.item_id, nama: b.nama,
-      satuan: b.satuan, faktor: b.faktor ?? 1, qty: b.qty, harga: b.harga,
-    })),
-  );
-  await supabase.from("sales_quotations").update({ status: "diterima" }).eq("id", id);
-
-  redirect(`/penjualan/pesanan/${so!.id}?success=${encodeURIComponent(`Pesanan ${no} dibuat dari ${q!.no_penawaran}.`)}`);
+  const { data, error } = await supabase.rpc("sales_convert_quotation", { p_quotation_id: id });
+  if (error || !data?.order_id) gagal(error?.message ?? "Gagal membuat pesanan");
+  redirect(`/penjualan/pesanan/${data.order_id}?success=${encodeURIComponent(`Pesanan ${data.order_no} dibuat dari penawaran.`)}`);
 }
