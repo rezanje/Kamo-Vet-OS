@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -24,12 +25,12 @@ export default async function LaporanAbsensiPage({
   const akhir = bl === 12 ? `${th + 1}-01-01` : `${th}-${String(bl + 1).padStart(2, "0")}-01`;
 
   const [{ data: absen }, { data: karyawan }, { data: setting }, { data: cabangList }] = await Promise.all([
-    supabase.from("attendance").select("employee_id, status, jam_masuk, jam_pulang")
-      .gte("tanggal", awal).lt("tanggal", akhir),
-    supabase.from("employees").select("id, nama, jabatan, status, branches(name)").order("nama"),
+    completeReportQuery(supabase.from("attendance").select("id, employee_id, status, jam_masuk, jam_pulang", { count: "exact" })
+      .gte("tanggal", awal).lt("tanggal", akhir)),
+    completeReportQuery(supabase.from("employees").select("id, nama, jabatan, status, branches(name)", { count: "exact" }).order("nama")),
     supabase.from("company_settings")
       .select("jam_masuk_standar, jam_pulang_standar, toleransi_telat_menit").maybeSingle(),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const jamKerja: JamKerja = setting

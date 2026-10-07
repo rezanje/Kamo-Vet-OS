@@ -14,6 +14,7 @@ export default async function SaldoAwalPage({
 }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
   const { usulan, sudahAda, akun } = await bacaSaldoAwal(supabase);
 
   return (
@@ -83,7 +84,7 @@ export default async function SaldoAwalPage({
           title="ISI SALDO AWAL"
           desc="Baris di bawah sudah terisi dari hitungan di atas. Tambahkan sendiri kas, piutang, dan utang yang sudah ada sebelum sistem dipakai."
         />
-        <SaldoAwalForm akun={akun} usulan={usulan} />
+        <SaldoAwalForm key={user?.id} userId={user?.id ?? ""} akun={akun} usulan={usulan} />
       </div>
     </>
   );

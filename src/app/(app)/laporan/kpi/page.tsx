@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -30,11 +31,11 @@ export default async function LaporanKpiPage({
 
   const supabase = await createClient();
   const [{ data }, { data: cabangList }] = await Promise.all([
-    supabase.from("kpi_records")
-      .select("id, employee_id, metrik, target, realisasi, skor, catatan, employees(nama, jabatan, branches(name))")
+    completeReportQuery(supabase.from("kpi_records")
+      .select("id, employee_id, metrik, target, realisasi, skor, catatan, employees(nama, jabatan, branches(name))", { count: "exact" })
       .eq("periode", periode)
-      .order("skor", { ascending: false }),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+      .order("skor", { ascending: false })),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const rows = ((data ?? []) as unknown as Row[])

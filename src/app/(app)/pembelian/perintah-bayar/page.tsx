@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -32,6 +33,7 @@ export default async function PerintahBayarPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const [bolehAjukan, bolehSetuju] = await Promise.all([bolehTransaksiKas(), bolehKelolaMaster()]);
 
   const [{ data: orderData }, { data: supData }, { data: invData }, { data: payData }, { data: antreData }, rekening] =
@@ -86,7 +88,7 @@ export default async function PerintahBayarPage({
         />
 
         {bolehAjukan && supplierDipilih && fakturBisa.length > 0 ? (
-          <form action={buatPerintahBayar}>
+          <TransactionForm userId={user?.id ?? ""} scope="payment-order" action={buatPerintahBayar}>
             <input type="hidden" name="supplier_id" value={supplierDipilih} />
 
             <div style={{ overflowX: "auto" }}>
@@ -135,7 +137,7 @@ export default async function PerintahBayarPage({
                 </SubmitButton>
               </div>
             </div>
-          </form>
+          </TransactionForm>
         ) : (
           <div style={{ fontSize: 11, color: "var(--td)" }}>
             {!supplierDipilih
@@ -184,7 +186,7 @@ export default async function PerintahBayarPage({
                         </form>
                       )}
                       {bolehSetuju && o.status === "disetujui" && (
-                        <form action={bayarPerintahBayar} style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <TransactionForm userId={user?.id ?? ""} scope={`payment-order-pay:${o.id}`} action={bayarPerintahBayar} style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap" }}>
                           <input type="hidden" name="id" value={o.id} />
                           <select className="fi" name="metode" defaultValue="Transfer" style={{ width: 100, height: 26, fontSize: 10.5 }}>
                             {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -195,7 +197,7 @@ export default async function PerintahBayarPage({
                           <SubmitButton className="btn-acc" style={{ padding: "3px 9px", fontSize: 10.5, background: "#16a34a" }} pendingText="…">
                             Bayar
                           </SubmitButton>
-                        </form>
+                        </TransactionForm>
                       )}
                       {bolehSetuju && o.status !== "dibayar" && o.status !== "batal" && (
                         <form action={batalkanPerintahBayar}>

@@ -48,9 +48,39 @@ export function compoundIngredientsTable(report: CompoundReport): ReportTable {
     ],
   }))) };
 }
-export function compoundIngredientsCsv(report: CompoundReport): string { return tableCsv(compoundIngredientsTable(report)); }
-function tableCsv(table: ReportTable): string {
-  return reportCsv(table.columns.map(column => column.label),table.rows.map(row => row.cells.map(cell => cell ?? "")));
+export function compoundIngredientsCsv(report: CompoundReport): string { return tableCsv(compoundIngredientsTable(report), reportContext(report)); }
+function tableCsv(table: ReportTable, context: (string | number)[][] = []): string {
+  return reportCsv(table.columns.map(column => column.label), [...table.rows.map(row => row.cells.map(cell => cell ?? "")), ...(context.length ? [[], ["Ringkasan dan filter"], ...context] : [])]);
 }
-export function compoundCsv(report: CompoundReport): string { return tableCsv(compoundTable(report)); }
-export function inventoryCsv(report: InventoryReport): string { return tableCsv(inventoryTable(report)); }
+export function compoundCsv(report: CompoundReport): string { return tableCsv(compoundTable(report), reportContext(report)); }
+export function inventoryCsv(report: InventoryReport): string { return tableCsv(inventoryTable(report), reportContext(report)); }
+
+export function compoundReconciliationTable(report: CompoundReport): ReportTable {
+  return { columns: ["Waktu WIB", "Invoice", "ID invoice", "ID baris invoice", "ID kunjungan", "Cabang", "Dokter kunjungan", "Racikan", "ID resep", "HPP historis", "Laba kotor", "Margin %", "Alasan"].map(label => ({ label })),
+    rows: (report.reconciliation ?? []).map(row => ({ id: row.id, href: `/klinik/pembayaran/${row.visitId}/invoice`, cells: [
+      reportWIB(row.createdAt), row.invoiceNo, row.invoiceId, row.id, row.visitId, row.branch, row.doctor, row.name,
+      row.recipeId, row.cost, row.grossProfit, row.margin, row.reason,
+    ] })) };
+}
+export function compoundReconciliationCsv(report: CompoundReport): string { return tableCsv(compoundReconciliationTable(report), reportContext(report)); }
+
+export function reportContext(report: InventoryReport | CompoundReport): (string | number)[][] {
+  if (!report.filters || !report.summary) return [];
+  const f = report.filters;
+  const rows: (string | number)[][] = [["Dibaca WIB", reportWIB(report.readAt)],
+    ["Cabang", report.scope.branches.find(branch => branch.id === f.cabang)?.name ?? (f.cabang || "Semua cabang")], ["Cari", f.q]];
+  if ("warehouses" in report) {
+    rows.push(["Gudang", report.warehouses.find(warehouse => warehouse.id === f.gudang)?.name ?? (f.gudang || "Semua gudang")],
+      ["Cakupan", f.masalah ? "Perlu rekonsiliasi / HPP" : "Semua saldo"],
+      ["Barang / gudang", report.summary.count], ["Subtotal lapisan ber-HPP", report.summary.pricedValue],
+      ["Nilai persediaan lengkap", report.summary.value ?? "Belum lengkap"], ["Baris perlu rekonsiliasi / HPP", report.summary.incomplete]);
+  } else {
+    rows.push(["Dari tanggal WIB", f.dari], ["Sampai tanggal WIB", f.sampai],
+      ["Dokter kunjungan", report.doctors.find(doctor => doctor.id === f.dokter)?.name ?? (f.dokter || "Semua dokter")],
+      ["Jumlah racikan", report.summary.qty], ["Penjualan setelah diskon item", report.summary.revenue],
+      ["Penjualan baris ber-HPP", report.summary.coveredRevenue], ["HPP baris tercakup", report.summary.cost ?? "Belum lengkap"],
+      ["Laba kotor baris tercakup", report.summary.grossProfit ?? "Belum lengkap"], ["Margin baris tercakup %", report.summary.margin ?? "Belum lengkap"],
+      ["Baris tanpa HPP", report.summary.missingCost], ["Baris perlu rekonsiliasi tautan / HPP", report.reconciliation?.length ?? 0]);
+  }
+  return rows;
+}

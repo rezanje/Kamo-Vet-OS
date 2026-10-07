@@ -3,6 +3,8 @@
 // Editor baris dokumen penjualan — dipakai Penawaran & Pesanan.
 // ponytail: baris dinamis diserialisasi ke satu input hidden JSON, pola sama dgn POForm.
 
+import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
+import { draftRows } from "@/components/TransactionDraft";
 import { useState } from "react";
 import { unitOptions, type ItemUnit } from "@/lib/satuan";
 
@@ -17,7 +19,7 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const blank: Row = { nama: "", qty: 1, harga: 0, item_id: null, satuan: "", faktor: 1 };
 const label = (it: ItemJual) => `${it.code} — ${it.name}`;
 
-export function BarisJualForm({ items, listId }: { items: ItemJual[]; listId: string }) {
+export function BarisJualForm({ userId, scope, items, listId }: { userId: string; scope: string; items: ItemJual[]; listId: string }) {
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
   const byLabel = new Map(items.map((it) => [label(it), it]));
 
@@ -51,6 +53,7 @@ export function BarisJualForm({ items, listId }: { items: ItemJual[]; listId: st
 
   return (
     <>
+      <LocalTransactionDraft userId={userId} scope={scope} state={{ snapshot: { rows }, restore: (value) => { if (!draftRows(value.rows, blank)) return false; setRows(value.rows); return true; }, reset: () => setRows([{ ...blank }]) }} />
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
       <datalist id={listId}>
         {items.map((it) => <option key={it.id} value={label(it)} />)}

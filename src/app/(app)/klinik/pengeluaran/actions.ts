@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -36,20 +37,21 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
     .from("cashier_shifts").select("id")
     .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "klinik").maybeSingle();
 
-  const { error } = await supabase.from("expenses").insert({
+  const { data: expense, error } = await supabase.from("expenses").insert({
     branch_id: branchId, tanggal, kategori,
     deskripsi: deskripsi || null, jumlah, metode_bayar: metode, bukti_url: null,
     shift_id: shift?.id ?? null, created_by: user?.id ?? null,
-  });
-  if (error) redirect(`${back}?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
+  }).select("id").single();
+  if (error || !expense) redirect(`${back}?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
 
   const bebanCode = kategoriToCode[kategori] ?? "5401";
   const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   await postJournal(supabase, {
     tanggal,
-    deskripsi: `Pengeluaran klinik: ${deskripsi || kategori}`, source: "expense", sourceRef: null, branchId,
+    deskripsi: `Pengeluaran klinik: ${deskripsi || kategori}`, source: "expense", sourceRef: expense!.id, branchId,
     lines: [{ code: bebanCode, debit: jumlah, credit: 0 }, { code: kasCode, debit: 0, credit: jumlah }],
   });
 
-  redirect(`${back}?success=1`);
+  await assertDraftJournal(supabase,{tanggal,source:"expense",sourceRef:expense!.id,branchId,lines:[{code:bebanCode,debit:jumlah,credit:0},{code:kasCode,debit:0,credit:jumlah}]});
+  redirect(`${back}?success=1${transactionDraftAck(formData)}`);
 }

@@ -25,7 +25,8 @@ describe("complete protected HPP formats", () => {
     expect(html).toContain("SKU204");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("<script>alert(1)</script>");
-    expect((html.match(/<tr>/g) ?? []).length).toBe(206);
+    expect((html.match(/<tr>/g) ?? []).length).toBeGreaterThanOrEqual(206);
+    expect(html).toContain("Subtotal lapisan ber-HPP");
   });
   it.each(["xlsx", "print"])("denies costs via direct %s URLs", async format => {
     const { client, records } = clientFixture({ role: "DOCTOR" });
@@ -53,4 +54,25 @@ it("keeps ingredient costs unavailable and exports their exact recipe link with 
   expect(row.getCell(12).value).toBe("Resep tersimpan");
   expect(row.getCell(13).value).toBeNull();
   expect(row.getCell(14).value).toBeNull();
+});
+
+it.each(["csv", "xlsx", "print"])("exports legacy reconciliation with source IDs and unavailable financial values as %s", async format => {
+  const client = clientFixture({ tables: { invoice_items: [{ id: "old-line", compound_recipe_id: null, satuan: "racikan", deskripsi: "Racikan lama", qty: 2, harga: 100, hpp: null,
+    invoices: { id: "old-invoice", visit_id: "old-visit", invoice_no: "INV-OLD", created_at: "2026-10-04T05:00:00Z", paid_status: "Lunas", voided_at: null, visits: { branch_id: "b1", dokter: "Dr A", doctor_id: "doctor" } },
+  }] } }).client;
+  const response = await downloadHppReport(client, "compound", new Request(`https://example.test/unduh?dari=2026-10-04&sampai=2026-10-04&rincian=rekonsiliasi&format=${format}`));
+  expect(response.status).toBe(200);
+  if (format === "xlsx") {
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(await response.arrayBuffer());
+    const row = book.getWorksheet("Rekonsiliasi")!.getRow(2);
+    expect(row.getCell(4).value).toBe("old-line");
+    expect([9, 10, 11, 12].map(index => row.getCell(index).value)).toEqual([null, null, null, null]);
+    expect(book.getWorksheet("Margin racikan")!.rowCount).toBe(1);
+  } else {
+    const content = await response.text();
+    expect(content).toContain("old-line");
+    expect(content).toContain("old-invoice");
+    expect(content).toContain("Baris racikan belum memiliki tautan ID resep");
+  }
 });

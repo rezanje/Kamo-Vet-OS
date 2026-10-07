@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
@@ -27,8 +28,9 @@ export async function hitungPenggajian(formData: FormData) {
   const gagal = (msg: string): never => redirect(`${kembali(periode)}&error=${encodeURIComponent(msg)}`);
   const supabase = await assertRole(kembali(periode), "penggajian", BOLEH);
 
-  const { data: lama } = await supabase
+  const { data: lama, error:readError } = await supabase
     .from("payrolls").select("employee_id, penyesuaian, status").eq("periode", periode);
+  if(readError) throw new Error(readError.message);
   const rows = (lama ?? []) as { employee_id: string; penyesuaian: number; status: string }[];
   if (rows.some((r) => r.status === "final")) gagal("Penggajian periode ini sudah disahkan — tidak bisa dihitung ulang");
 
@@ -72,8 +74,9 @@ export async function simpanKoreksi(formData: FormData) {
   const gagal = (msg: string): never => redirect(`${kembali(periode)}&error=${encodeURIComponent(msg)}`);
   const supabase = await assertRole(kembali(periode), "penggajian", BOLEH);
 
-  const { data: lama } = await supabase
+  const { data: lama, error:readError } = await supabase
     .from("payrolls").select("employee_id, status").eq("periode", periode);
+  if(readError) throw new Error(readError.message);
   const rows = (lama ?? []) as { employee_id: string; status: string }[];
   if (rows.length === 0) gagal("Hitung dulu penggajian periode ini");
   if (rows.some((r) => r.status === "final")) gagal("Penggajian periode ini sudah disahkan");
@@ -87,14 +90,15 @@ export async function simpanKoreksi(formData: FormData) {
   const baris = await kumpulkanDataGaji(supabase, periode, penyesuaian);
   for (const b of baris) {
     const catatan = String(formData.get(`note_${b.employeeId}`) ?? "").trim() || null;
-    await supabase.from("payrolls").update({
+    const {error:correctionError} = await supabase.from("payrolls").update({
       penyesuaian: b.rincian.penyesuaian,
       total: b.rincian.total,
       catatan,
-    }).eq("periode", periode).eq("employee_id", b.employeeId);
+    }).eq("periode", periode).eq("employee_id", b.employeeId).select("employee_id").single();
+    if(correctionError) throw new Error(correctionError.message);
   }
 
-  redirect(`${kembali(periode)}&success=koreksi`);
+  redirect(`${kembali(periode)}&success=koreksi${transactionDraftAck(formData)}`);
 }
 
 // Sahkan: kunci slip, catat cicilan kasbon, tandai reimburse terbayar, lalu jurnal.
@@ -107,8 +111,9 @@ export async function sahkanPenggajian(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) gagal(pesanPeriode);
 
-  const { data: slipData } = await supabase
+  const { data: slipData, error:slipError } = await supabase
     .from("payrolls").select("employee_id, total, cicilan_kasbon, reimburse, status").eq("periode", periode);
+  if(slipError) throw new Error(slipError.message);
   const slip = (slipData ?? []) as { employee_id: string; total: number; cicilan_kasbon: number; reimburse: number; status: string }[];
   if (slip.length === 0) gagal("Belum ada perhitungan untuk periode ini");
   if (slip.some((s) => s.status === "final")) gagal("Penggajian periode ini sudah disahkan");
@@ -135,16 +140,19 @@ export async function sahkanPenggajian(formData: FormData) {
     for (const c of b?.cicilanKasbon ?? []) {
       if (!c.id || c.jumlah <= 0) continue;
 
-      await supabase.from("cash_advance_installments")
+      const {error:installmentError} = await supabase.from("cash_advance_installments")
         .upsert({ advance_id: c.id, periode, jumlah: c.jumlah }, { onConflict: "advance_id,periode" });
+      if(installmentError) throw new Error(installmentError.message);
 
-      const { data: adv } = await supabase
+      const { data: adv, error:advanceReadError } = await supabase
         .from("cash_advances").select("jumlah, cash_advance_installments(jumlah)").eq("id", c.id).maybeSingle();
+      if(advanceReadError||!adv) throw new Error(advanceReadError?.message??"Kasbon tidak ditemukan");
       if (adv) {
         const dibayar = ((adv.cash_advance_installments ?? []) as { jumlah: number }[])
           .reduce((a, i) => a + Number(i.jumlah), 0);
         if (dibayar >= Number(adv.jumlah)) {
-          await supabase.from("cash_advances").update({ status: "Lunas" }).eq("id", c.id);
+          const {error:advanceError} = await supabase.from("cash_advances").update({ status: "Lunas" }).eq("id", c.id).select("id").single();
+          if(advanceError) throw new Error(advanceError.message);
         }
       }
     }
@@ -155,8 +163,9 @@ export async function sahkanPenggajian(formData: FormData) {
     if (Number(s.reimburse) <= 0) continue;
     const ids = perKaryawan.get(s.employee_id)?.reimburseIds ?? [];
     if (ids.length === 0) continue;
-    await supabase.from("reimbursements")
+    const {error:reimbursementError} = await supabase.from("reimbursements")
       .update({ status: "Dibayar", paid_periode: periode }).in("id", ids);
+    if(reimbursementError) throw new Error(reimbursementError.message);
   }
 
   // 3) Jurnal satu periode.
@@ -173,10 +182,13 @@ export async function sahkanPenggajian(formData: FormData) {
     gagal("Jurnal penggajian gagal tersimpan — slip belum disahkan, coba lagi");
   }
 
+  await assertDraftJournal(supabase,{deskripsi:`Penggajian ${periode}`,source:"payroll",sourceRef:periode,tanggal,branchId:null,lines:jurnalPenggajian(kasCode,AKUN_PIUTANG_KARYAWAN,totalNetto,totalCicilan)});
   const { data: { user } } = await supabase.auth.getUser();
-  await supabase.from("payrolls")
+  const {data:finalRows,error:finalError} = await supabase.from("payrolls")
     .update({ status: "final", disahkan_at: new Date().toISOString(), disahkan_by: user?.id ?? null })
-    .eq("periode", periode);
+    .eq("periode", periode).select("employee_id");
 
-  redirect(`${kembali(periode)}&success=sah`);
+  if(finalError) throw new Error(finalError.message);
+  if(!finalRows||finalRows.length!==slip.length)throw new Error("Pengesahan slip belum terkonfirmasi lengkap");
+  redirect(`${kembali(periode)}&success=sah${transactionDraftAck(formData)}`);
 }

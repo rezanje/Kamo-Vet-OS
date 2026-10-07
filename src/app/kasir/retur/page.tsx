@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { PostingRequestIdentity } from "@/components/PostingRequestIdentity";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { sisaRetur, rasioBayar, hargaRefund, infoBarangRetur } from "@/lib/retur";
+import { loadSaleReturnRows, type ReturnFormRow } from "@/lib/return-source-units";
 import { ReturJualForm } from "@/app/(app)/penjualan/retur/baru/ReturJualForm";
 
 type SaleRow = {
@@ -14,7 +15,7 @@ type SaleRow = {
   created_at: string;
   customers: { name: string } | null;
   sale_items: {
-    item_id: string | null; nama: string; qty: number; harga: number; faktor: number;
+    id: string; item_id: string | null; nama: string; qty: number; harga: number; satuan: string | null; faktor: number;
     sale_item_group_components: {
       component_item_id: string | null; component_name: string; item_type: string;
       qty_per_group: number; unit: string; sort_order: number;
@@ -22,11 +23,7 @@ type SaleRow = {
   }[] | null;
 };
 
-type ComponentRow = NonNullable<NonNullable<SaleRow["sale_items"]>[number]["sale_item_group_components"]>[number];
-type FormRow = {
-  item_id: string; nama: string; harga: number; sisa: number;
-  berstok?: boolean; trackExpiry?: boolean; components?: ComponentRow[];
-};
+type FormRow = ReturnFormRow;
 
 type ReturRow = {
   id: string; no_retur: string; tanggal: string; total: number; keterangan: string | null;
@@ -44,9 +41,9 @@ const fmtD = (d: string) =>
 export default async function ReturKasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ struk?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ struk?: string; error?: string; request_scope?:string; request_done?:string; success?: string }>;
 }) {
-  const { struk, error, success } = await searchParams;
+  const { struk, error, success, request_scope, request_done } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -61,7 +58,7 @@ export default async function ReturKasirPage({
   if (struk?.trim()) {
     const { data } = await supabase
       .from("sales")
-      .select("id, no_struk, branch_id, subtotal, total, created_at, customers(name), sale_items(item_id, nama, qty, harga, faktor, sale_item_group_components(component_item_id, component_name, item_type, qty_per_group, unit, sort_order))")
+      .select("id, no_struk, branch_id, subtotal, total, created_at, customers(name), sale_items(id, item_id, nama, qty, harga, satuan, faktor, sale_item_group_components(component_item_id, component_name, item_type, qty_per_group, unit, sort_order))")
       .eq("no_struk", struk.trim())
       .is("channel", null)
       .maybeSingle();
@@ -73,51 +70,12 @@ export default async function ReturKasirPage({
       pesan = `Struk ${sale.no_struk} bukan penjualan ${shift.branchName} — retur harus di cabang tempat barang dijual.`;
       sale = null;
     } else {
-      // Sisa yang bisa diretur dihitung dalam SATUAN DASAR (satu struk bisa memuat
-      // item yang sama dalam dua satuan: 1 box + 3 pcs).
-      const sumber: Record<string, number> = {};
-      const meta: Record<string, { nama: string; harga: number; components: ComponentRow[] }> = {};
-      // Harga yang DITAMPILKAN wajib sama dengan yang nanti dibayar server: sebanding
-      // dengan yang benar-benar dikeluarkan pelanggan, bukan harga daftar sebelum
-      // promo/diskon/voucher/poin. Layar ini dulu melewatkan rasio itu, jadi struk
-      // berdiskon terlihat menjanjikan refund lebih besar daripada yang cair.
-      const rasio = rasioBayar(Number(sale.subtotal), Number(sale.total));
-      for (const r of sale.sale_items ?? []) {
-        if (!r.item_id) continue;
-        const f = Number(r.faktor) > 0 ? Number(r.faktor) : 1;
-        sumber[r.item_id] = (sumber[r.item_id] ?? 0) + Number(r.qty) * f;
-        const components = [...(r.sale_item_group_components ?? [])]
-          .sort((a, b) => Number(a.sort_order) - Number(b.sort_order));
-        meta[r.item_id] = {
-          nama: r.nama,
-          harga: hargaRefund((Number(r.harga) || 0) / f, rasio),
-          components,
-        };
+      try {
+        rows = await loadSaleReturnRows(supabase, sale);
+      } catch (e) {
+        pesan = e instanceof Error ? e.message : "Gagal memuat rincian retur.";
       }
-      const { data: prev } = await supabase
-        .from("sales_returns").select("sales_return_items(item_id, qty)").eq("sale_id", sale.id);
-      const sudah: Record<string, number> = {};
-      for (const d of prev ?? [])
-        for (const r of d.sales_return_items ?? [])
-          if (r.item_id) sudah[r.item_id] = (sudah[r.item_id] ?? 0) + Number(r.qty);
-
-      const sisaMap = sisaRetur(sumber, sudah);
-      const componentIds = Object.values(meta).flatMap((item) =>
-        item.components.map((component) => component.component_item_id).filter((id): id is string => !!id));
-      const info = await infoBarangRetur(supabase, [...Object.keys(sisaMap), ...componentIds]);
-      rows = Object.entries(sisaMap).map(([item_id, qty]) => {
-        const components = meta[item_id]?.components ?? [];
-        const baseInfo = info.get(item_id) ?? { berstok: true, trackExpiry: false };
-        const trackedComponents = components.filter((component) => component.item_type === "Persediaan");
-        return {
-          item_id, sisa: qty, nama: meta[item_id]?.nama ?? "—", harga: meta[item_id]?.harga ?? 0,
-          berstok: trackedComponents.length > 0 || baseInfo.berstok,
-          trackExpiry: baseInfo.trackExpiry || trackedComponents.some((component) =>
-            component.component_item_id ? !!info.get(component.component_item_id)?.trackExpiry : false),
-          components,
-        };
-      });
-      if (rows.length === 0) pesan = `Semua barang di struk ${sale.no_struk} sudah diretur.`;
+      if (rows.length === 0 && !pesan) pesan = `Semua barang di struk ${sale.no_struk} sudah diretur.`;
     }
   }
 
@@ -174,8 +132,15 @@ export default async function ReturKasirPage({
         {pesan && <div style={{ fontSize: 11, color: "#b91c1c", marginTop: 8 }}>{pesan}</div>}
       </div>
 
+      {sale && rows.length === 0 && <form>
+        <input type="hidden" name="source_ref" value={sale.no_struk ?? ""} />
+        <input type="hidden" name="dari" value="kasir" />
+        <PostingRequestIdentity scope={`sales-return:${sale.id}`} userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done} />
+      </form>}
+
       {sale && rows.length > 0 && (
         <ReturJualForm
+          userId={user.id} confirmedScope={request_scope} confirmedKey={request_done}
           saleId={sale.id}
           info={`${sale.no_struk} — ${sale.customers?.name ?? "Umum"}`}
           rows={rows}

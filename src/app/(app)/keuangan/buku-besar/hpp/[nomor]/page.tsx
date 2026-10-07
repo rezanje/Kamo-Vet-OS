@@ -1,3 +1,5 @@
+import { UnduhLaporan } from "@/components/UnduhLaporan";
+import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -67,10 +69,10 @@ export default async function RincianHppPage({ params }: { params: Promise<{ nom
           hpp: Number(item.hpp) || 0,
         }));
       } else {
-        const { data: deliveries } = await supabase
+        const { data: deliveries } = await completeReportQuery(supabase
           .from("sales_deliveries")
-          .select("sales_delivery_items(order_item_id, qty, hpp)")
-          .eq("order_id", invoice.order_id);
+          .select("id, sales_delivery_items(order_item_id, qty, hpp)", { count: "exact" })
+          .eq("order_id", invoice.order_id));
         rows = rincianHppFaktur(invoiceItems.map((item) => ({
           orderItemId: item.order_item_id,
           nama: item.nama,
@@ -92,7 +94,8 @@ export default async function RincianHppPage({ params }: { params: Promise<{ nom
   if (!sourceHref) notFound();
 
   const total = rows.reduce((sum, row) => sum + row.hpp, 0);
-  return <>
+  return <div data-report-page id="laporan-isi">
+    <UnduhLaporan judul={`Rincian HPP ${nomor}`} />
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
       <Link href="/keuangan/buku-besar?akun=5101" className="back-btn"><i className="ti ti-arrow-left" /> Buku Besar HPP</Link>
       <Link href={sourceHref} className="back-btn">Buka transaksi</Link>
@@ -114,5 +117,5 @@ export default async function RincianHppPage({ params }: { params: Promise<{ nom
         <tfoot><tr><td colSpan={3} style={{ fontWeight: 700 }}>Total HPP</td><td style={{ textAlign: "right", fontWeight: 700 }}>{rp(total)}</td></tr></tfoot>
       </table>
     </div>
-  </>;
+  </div>;
 }

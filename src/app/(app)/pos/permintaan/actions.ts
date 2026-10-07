@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
@@ -42,12 +43,14 @@ export async function buatPermintaan(formData: FormData) {
     redirect("/pos/permintaan/baru?error=" + encodeURIComponent("Gagal menyimpan permintaan."));
   }
 
-  await supabase.from("stock_request_items").insert(
+  const { error: itemsError } = await supabase.from("stock_request_items").insert(
     baris.map((b) => ({ ...b, request_id: (req as { id: string }).id })),
   );
 
+  if (itemsError) redirect(`/pos/permintaan/baru?error=${encodeURIComponent("Baris permintaan belum terkonfirmasi. Periksa daftar permintaan sebelum menyimpan ulang.")}`);
+
   revalidatePath("/pos/permintaan");
-  redirect("/pos/permintaan?success=1");
+  redirect(`/pos/permintaan?success=1${transactionDraftAck(formData)}`);
 }
 
 // Setujui dgn penyesuaian qty (stok DC tidak selalu cukup). Baris yang tidak
@@ -72,19 +75,11 @@ export async function setujuiPermintaan(formData: FormData) {
   // qty disetujui per baris — hanya baris milik permintaan ini yang boleh disentuh.
   const { data: baris } = await supabase
     .from("stock_request_items").select("id, qty_diminta").eq("request_id", id);
-  for (const b of (baris ?? []) as { id: string; qty_diminta: number }[]) {
-    const raw = formData.get(`qty_${b.id}`);
-    const qty = raw == null ? Number(b.qty_diminta) : Math.max(0, Number(raw) || 0);
-    await supabase.from("stock_request_items").update({ qty_disetujui: qty }).eq("id", b.id);
-  }
-
-  await supabase
-    .from("stock_requests")
-    .update({ status: "Disetujui", approved_by: user?.id ?? null })
-    .eq("id", id);
+  const { error } = await supabase.rpc("approve_stock_request_atomic", { p_id: id, p_rows: ((baris ?? []) as { id: string; qty_diminta: number }[]).map(b => ({ id: b.id, qty: formData.get(`qty_${b.id}`) == null ? Number(b.qty_diminta) : Number(formData.get(`qty_${b.id}`)) })) });
+  if (error) redirect(`${kembali}?error=${encodeURIComponent(error.message)}`);
 
   revalidatePath("/pos/permintaan");
-  redirect(`${kembali}?success=setuju`);
+  redirect(`${kembali}?success=setuju${transactionDraftAck(formData)}`);
 }
 
 /**
@@ -145,7 +140,7 @@ export async function terimaDariBackoffice(formData: FormData) {
   if (!hasil.ok) redirect(`${kembali}?error=${encodeURIComponent(hasil.error)}`);
 
   revalidatePath("/pos/permintaan");
-  redirect(`${kembali}?success=terima&trm=${hasil.receiptNumber}`);
+  redirect(`${kembali}?success=terima&trm=${hasil.receiptNumber}${transactionDraftAck(formData)}`);
 }
 
 export async function updateRequestStatus(formData: FormData) {
@@ -182,9 +177,10 @@ export async function updateRequestStatus(formData: FormData) {
     }
   }
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("stock_requests")
     .update(status === "Disetujui" ? { status, approved_by: user?.id ?? null } : { status })
     .eq("id", id);
+  if (updateError) redirect(`/pos/permintaan?error=${encodeURIComponent(updateError.message)}`);
   revalidatePath("/pos/permintaan");
 }

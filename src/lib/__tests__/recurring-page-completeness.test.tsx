@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 const fixture=vi.hoisted(()=>({tables:{} as Record<string,Record<string,unknown>[]>,failed:false}));
 vi.stubGlobal('React',React);
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string){
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:"recurring-reader"}}})},from(table:string){
  let counted=false,bounds:[number,number]|undefined;
  const query={select(_fields:string,options?:{count:string}){counted=options?.count==='exact';return query;},order(){return query;},eq(){return query;},returns(){return query;},range(from:number,to:number){bounds=[from,to];return query;},then(resolve:(value:unknown)=>unknown){
  const all=fixture.tables[table]??[];

@@ -7,7 +7,7 @@ import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
-import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
+import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
 import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
@@ -203,8 +203,8 @@ export async function checkoutKasir(formData: FormData) {
       const opsi = applyHargaCabang(unitMap.get(l.item_id) ?? [], l.item_id, hargaMap);
       if (opsi.length > 0) {
         // Satuan yang dikirim klien hanya dipakai untuk MEMILIH dari daftar resmi;
-        // kalau tidak dikenal, pickUnit jatuh ke satuan dasar.
-        const u = pickUnit(opsi, l.satuan);
+        // satuan yang sudah dihapus ditolak sebelum struk dan stok berubah.
+        const u = resolveSubmittedUnit(opsi, l.satuan);
         l.satuan = u.unit;
         l.faktor = u.factor;
         l.harga = u.sell_price;

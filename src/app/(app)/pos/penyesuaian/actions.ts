@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -125,14 +126,16 @@ export async function simpanPenyesuaian(formData: FormData) {
       nilaiKeluar += nilai;
     }
 
-    await supabase.from("inventory_adjustment_items").insert({
+    const { error: detailError } = await supabase.from("inventory_adjustment_items").insert({
       adjustment_id: doc!.id, item_id: b.item_id, nama: b.nama,
       qty_sistem: b.qty_sistem, qty_baru: b.qty_baru, selisih: b.selisih, nilai,
     });
+    if(detailError) throw new Error("Rincian penyesuaian belum terkonfirmasi. Periksa dokumen sebelum menyimpan ulang.");
   }
 
-  await supabase.from("inventory_adjustments")
+  const { error: totalsError } = await supabase.from("inventory_adjustments")
     .update({ nilai_masuk: nilaiMasuk, nilai_keluar: nilaiKeluar }).eq("id", doc!.id);
+  if(totalsError) throw new Error("Nilai penyesuaian belum terkonfirmasi. Periksa dokumen sebelum menyimpan ulang.");
 
   // Lawannya 5902 Selisih Persediaan, bukan Hutang Usaha: tidak ada pemasok yang
   // menagih barang rusak. Dinilai MODAL — kerugiannya sebesar biaya perolehan.
@@ -155,7 +158,8 @@ export async function simpanPenyesuaian(formData: FormData) {
     });
   }
 
+  if(lines.length>0) await assertDraftJournal(supabase,{tanggal,source:"penyesuaian",sourceRef:no,branchId:wh?.branch_id??null,lines});
   revalidatePath(BASE);
   revalidatePath("/pos/stok");
-  redirect(`${BASE}/${doc!.id}?success=${encodeURIComponent(`Penyesuaian ${no} tersimpan — stok & jurnal sudah menyesuaikan.`)}`);
+  redirect(`${BASE}/${doc!.id}?success=${encodeURIComponent(`Penyesuaian ${no} tersimpan — stok & jurnal sudah menyesuaikan.`)}${transactionDraftAck(formData)}`);
 }

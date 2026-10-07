@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { type BahanKatalog, type KatalogRacikan, katalogTotal } from "@/lib/katalog-racikan";
-import { publishKatalogRacikan, setKatalogRacikanAktif } from "./actions";
+import { publishKatalogRacikan, setKatalogRacikanAktif, bindKatalogRacikanSku } from "./actions";
 
 type Item = { id: string; name: string; unit: string; sell_price: number };
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export function KatalogForm({ katalog, items }: { katalog: KatalogRacikan[]; items: Item[] }) {
+export function KatalogForm({ katalog, items, saleItems }: { katalog: KatalogRacikan[]; items: Item[]; saleItems: { id: string; name: string; code: string | null }[] }) {
   const [editing, setEditing] = useState<KatalogRacikan | null>(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -39,6 +39,17 @@ export function KatalogForm({ katalog, items }: { katalog: KatalogRacikan[]; ite
         <div style={{ fontSize: 11, color: "var(--tm)" }}>
           Versi {formula.version} · {formula.dosage_form} · {formula.ingredients.length} bahan · {rp(katalogTotal(formula.ingredients))} · {formula.active ? "Aktif" : "Nonaktif"}
         </div>
+        <form action={bindKatalogRacikanSku} style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          <input type="hidden" name="formula_id" value={formula.id} />
+          <label className="flab" htmlFor={`sale-${formula.id}`}>SKU jual racikan</label>
+          <select id={`sale-${formula.id}`} className="fi" name="sale_item_id" defaultValue={formula.sale_item_id ?? ""}>
+            <option value="">Belum ditautkan</option>
+            {formula.sale_item_id && !saleItems.some(item => item.id === formula.sale_item_id) && <option value={formula.sale_item_id}>SKU tersimpan tidak aktif / tidak tersedia — pilih ulang</option>}
+            {saleItems.map(item => <option key={item.id} value={item.id}>{item.code ? `${item.code} · ` : ""}{item.name}</option>)}
+          </select>
+          <button type="submit" className="btn-def">Simpan tautan SKU</button>
+        </form>
+        {!formula.sale_item_id && <p style={{ fontSize: 11, color: "var(--tm)" }}>Pilih SKU secara eksplisit sebelum resep resmi digunakan di klinik.</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button type="button" className="btn-def" onClick={() => edit(formula)}>Revisi</button>
           <form action={setKatalogRacikanAktif}>

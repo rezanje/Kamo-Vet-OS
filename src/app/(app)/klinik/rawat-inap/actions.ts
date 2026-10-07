@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -44,12 +45,13 @@ export async function admitInpatient(formData: FormData) {
     .select("id").single();
   if (error || !rec) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal admit rawat inap")}`);
 
-  await supabase.from("inpatient_status_log").insert({
+  const { error: statusLogError } = await supabase.from("inpatient_status_log").insert({
     inpatient_record_id: rec!.id, previous_status: null, new_status: "stabil",
     changed_by: user?.id ?? null, notes: "Admit rawat inap",
   });
 
-  redirect(`/klinik/rawat-inap/${rec!.id}?success=admit`);
+  if(statusLogError) throw new Error("Admit tersimpan tetapi riwayat status belum terkonfirmasi. Periksa rawat inap sebelum menyimpan ulang.");
+  redirect(`/klinik/rawat-inap/${rec!.id}?success=admit${transactionDraftAck(formData)}`);
 }
 
 // Kolom pemantauan harian (migrasi 0106). Kosong disimpan sebagai NULL — "belum
@@ -239,7 +241,7 @@ export async function changeCondition(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(error))}`);
 
   // rip → layar review WA dulu (spec default: review sebelum kirim, bukan auto-send).
-  redirect(newStatus === "rip" ? `${back}?wa=review` : `${back}?success=status`);
+  redirect(newStatus === "rip" ? `${back}?wa=review${transactionDraftAck(formData)}` : `${back}?success=status${transactionDraftAck(formData)}`);
 }
 
 // Kirim WA duka (template khusus) setelah dokter review — trigger terpisah dari WA engine rutin.
@@ -316,7 +318,7 @@ export async function updateDailyLog(formData: FormData) {
   });
   if (upErr) redirect(`${here}?error=${encodeURIComponent(parseClinicRecordError(upErr))}`);
 
-  redirect(`${back}?success=logedit`);
+  redirect(`${back}?success=logedit${transactionDraftAck(formData)}`);
 }
 
 // ── Obat khusus (permintaan drh. Ilham, 24 Agustus) ───────────────────────────
@@ -356,7 +358,7 @@ export async function tambahObatInap(formData: FormData) {
   if (error) gagal(error.message);
 
   revalidatePath(back);
-  redirect(`${back}?success=obat`);
+  redirect(`${back}?success=obat${transactionDraftAck(formData)}`);
 }
 
 /**
@@ -386,7 +388,7 @@ export async function catatPemberianObat(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
 
   revalidatePath(back);
-  redirect(`${back}?success=dosis`);
+  redirect(`${back}?success=dosis${transactionDraftAck(formData)}`);
 }
 
 /** Hentikan protokol lebih awal — sisa jadwalnya berhenti menagih. */

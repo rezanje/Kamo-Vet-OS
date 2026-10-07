@@ -1,3 +1,5 @@
+import { UnduhLaporan } from "@/components/UnduhLaporan";
+import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -10,7 +12,7 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 export default async function NeracaPage({ searchParams }: { searchParams: Promise<{ sampai?: string; cabang?: string }> }) {
   const { sampai, cabang } = await searchParams;
   const supabase = await createClient();
-  const { data: branches } = await supabase.from("branches").select("id, name").order("name");
+  const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name"));
   // Neraca = posisi kumulatif s/d tanggal (bukan rentang) — laba berjalan ikut terpotong otomatis.
   const balances = await getAccountBalances(supabase as never, { to: sampai || undefined, branchId: cabang || undefined });
 
@@ -39,7 +41,8 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
   const hrefAkun = bikinHrefAkun({ sampai, cabang });
 
   return (
-    <>
+    <div data-report-page id="laporan-isi">
+      <UnduhLaporan judul="Neraca" />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -66,19 +69,19 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
           <AkunGroup rows={liabilitas} hrefAkun={hrefAkun} />
           <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", margin: "10px 0 6px" }}>EKUITAS</div>
           <AkunGroup rows={ekuitas} hrefAkun={hrefAkun} />
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, borderBottom: ".5px solid var(--bd)", fontStyle: "italic", color: "var(--tm)" }}>
+          <div data-report-row style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, borderBottom: ".5px solid var(--bd)", fontStyle: "italic", color: "var(--tm)" }}>
             <span>Laba berjalan (belum ditutup)</span><span>{rp(labaBerjalan)}</span>
           </div>
           <TotalRow label="TOTAL PASIVA" value={totalPasiva} />
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
 function TotalRow({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", marginTop: 6, borderTop: "2px solid #16213e", fontSize: 13, fontWeight: 700 }}>
+    <div data-report-row style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", marginTop: 6, borderTop: "2px solid #16213e", fontSize: 13, fontWeight: 700 }}>
       <span>{label}</span><span>{rp(value)}</span>
     </div>
   );

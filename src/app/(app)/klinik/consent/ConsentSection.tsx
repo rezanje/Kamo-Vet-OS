@@ -1,4 +1,5 @@
 "use client";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 
 import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -46,7 +47,7 @@ export function ConsentSection({ visitId, consents, templates }: {
       )}
 
       {buka && (
-        <form action={buatConsent} style={{ border: ".5px solid var(--bd)", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+        <TransactionForm scope={`clinic-consent-create:${visitId}`} action={buatConsent} style={{ border: ".5px solid var(--bd)", borderRadius: 8, padding: 10, marginBottom: 10 }}>
           <input type="hidden" name="visitId" value={visitId} />
           <div className="fg">
             <label className="flab">Template *</label>
@@ -65,7 +66,7 @@ export function ConsentSection({ visitId, consents, templates }: {
               Buat Form
             </SubmitButton>
           </div>
-        </form>
+        </TransactionForm>
       )}
 
       {consents.length === 0 && !buka && (
@@ -123,7 +124,7 @@ export function ConsentSection({ visitId, consents, templates }: {
             )}
 
             {signing === c.id && c.status === "belum_ttd" && (
-              <form action={tandaTanganConsent} style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 10 }}>
+              <TransactionForm scope={`clinic-consent-sign:${visitId}:${c.id}`} action={tandaTanganConsent} style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 10 }}>
                 <input type="hidden" name="consentId" value={c.id} />
                 <input type="hidden" name="visitId" value={visitId} />
                 <div className="fg">
@@ -137,7 +138,7 @@ export function ConsentSection({ visitId, consents, templates }: {
                     Simpan Tanda Tangan
                   </SubmitButton>
                 </div>
-              </form>
+              </TransactionForm>
             )}
           </div>
         ))}

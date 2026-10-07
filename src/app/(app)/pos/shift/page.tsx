@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -84,20 +85,20 @@ export default async function ShiftPage({
               <Stat label="Kas seharusnya" value={rp(expected)} accent />
               <Stat label="Non-tunai" value="QRIS/Transfer" sub="tidak masuk kas" muted />
             </div>
-            <form action={closeShift} style={{ display: "flex", gap: 8, alignItems: "flex-end", borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
+            <TransactionForm scope={`pos-shift-close:${open.id}`} action={closeShift} style={{ display: "flex", gap: 8, alignItems: "flex-end", borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
               <input type="hidden" name="shiftId" value={open.id} />
               <div style={{ flex: 1, maxWidth: 240 }}>
                 <label className="flab">Uang kas dihitung (tutup shift)</label>
                 <input className="fi" name="closing_balance" type="number" min={0} step="any" placeholder="Hitung fisik uang di laci" required />
               </div>
               <button type="submit" className="btn-acc"><i className="ti ti-lock" /> Selesai Shift</button>
-            </form>
+            </TransactionForm>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>Selisih (kas dihitung − kas seharusnya) dicatat otomatis untuk rekonsiliasi keuangan.</div>
           </>
         ) : (
           <>
             <SecHeader num="01" title="MULAI SHIFT" desc="Masukkan modal awal kas sebelum transaksi." />
-            <form action={openShift} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <TransactionForm scope={"pos-shift-open"} action={openShift} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
               <div style={{ flex: 1, maxWidth: 220 }}>
                 <label className="flab">Cabang *</label>
                 <select className="fi" name="branchId" required>
@@ -110,7 +111,7 @@ export default async function ShiftPage({
                 <input className="fi" name="opening_balance" type="number" min={0} step="any" placeholder="500000" required />
               </div>
               <button type="submit" className="btn-acc"><i className="ti ti-player-play" /> Mulai Shift</button>
-            </form>
+            </TransactionForm>
           </>
         )}
       </div>

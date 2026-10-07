@@ -14,15 +14,19 @@ function makeClient(accounts: { id: string; code: string; name: string; type: st
       if (table === "coa_accounts") {
         const builder = {
           select() { return builder; },
-          eq(_col: string, val: string) { return Promise.resolve({ data: accounts.filter((a) => a.code === val) }); },
+          order() { return builder; },
+          range(from: number, to: number) { return Promise.resolve({ data: accounts.slice(from, to + 1), count: accounts.length, error: null }); },
+          eq(_col: string, val: string) { return { order() { return { range() { const data = accounts.filter(a => a.code === val); return Promise.resolve({ data, count: data.length, error: null }); } }; } }; },
           then(resolve: (v: { data: typeof accounts }) => void) { return resolve({ data: accounts }); },
         };
         return builder;
       }
       if (table === "journal_lines") {
-        let rows = lines;
+        let rows = lines.map((line, id) => ({ ...line, id: String(id) }));
         const builder = {
           select() { return builder; },
+          order() { return builder; },
+          range(from: number, to: number) { return Promise.resolve({ data: rows.slice(from, to + 1), count: rows.length, error: null }); },
           gte(_col: string, val: string) { rows = rows.filter((l) => l.journal_entries.tanggal >= val); return builder; },
           lte(_col: string, val: string) { rows = rows.filter((l) => l.journal_entries.tanggal <= val); return builder; },
           eq(_col: string, val: string) { rows = rows.filter((l) => l.journal_entries.branch_id === val); return builder; },
@@ -100,4 +104,11 @@ describe("nilaiSeksi — akun kontra jadi pengurang kelompoknya", () => {
     const sisi = (t: string) => akun.filter((a) => a.type === t).reduce((s, a) => s + nilaiSeksi(a), 0);
     expect(sisi("ASET")).toBe(sisi("LIABILITAS") + sisi("EKUITAS"));
   });
+});
+
+it("includes every journal line beyond the API row cap in financial totals and account detail", async () => {
+  const manyLines = Array.from({ length: 1201 }, () => ({ ...lines[0], credit: 100 }));
+  const balances = await getAccountBalances(makeClient(accounts, manyLines));
+  expect(balances[0].saldo).toBe(120_100);
+  expect(await getAccountLedger(makeClient(accounts, manyLines), "4101")).toHaveLength(1201);
 });

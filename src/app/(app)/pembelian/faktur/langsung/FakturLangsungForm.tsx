@@ -1,5 +1,7 @@
 "use client";
 
+import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { draftRows, draftString } from "@/components/TransactionDraft";
 import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { LampiranPicker } from "@/components/LampiranPicker";
@@ -17,12 +19,15 @@ type Baris = { key: number; item_id: string; qty: number; harga: number; satuan:
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export function FakturLangsungForm({
+  userId,
   suppliers, warehouses, items,
 }: {
+  userId: string;
   suppliers: { id: string; nama: string; terminHari: number }[];
   warehouses: { id: string; label: string }[];
   items: ItemOpsi[];
 }) {
+  const { save, failure } = usePreservedAction(buatFakturLangsung);
   const [supplierId, setSupplierId] = useState("");
   const [tanggal, setTanggal] = useState(hariIniWIB());
   const [jatuhTempo, setJatuhTempo] = useState(geserHari(hariIniWIB(), 30));
@@ -73,7 +78,12 @@ export function FakturLangsungForm({
   }));
 
   return (
-    <form action={buatFakturLangsung}>
+    <form action={save}>
+      <LocalTransactionDraft userId={userId} scope="invoice-direct" state={{ snapshot: { baris, supplierId, tanggal, jatuhTempo }, restore: (value) => {
+        if (!draftRows(value.baris, { key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" })) return false; if (!draftString(value.supplierId) || !draftString(value.tanggal) || !draftString(value.jatuhTempo)) return false; setSupplierId(value.supplierId); setTanggal(value.tanggal); setJatuhTempo(value.jatuhTempo);
+        setBaris(value.baris); return true;
+      }, reset: () => { setBaris([{ ...{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" } }]); setSupplierId(""); setTanggal(hariIniWIB()); setJatuhTempo(geserHari(hariIniWIB(), 30)); } }} />
+      {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
       <div className="crm-sec">

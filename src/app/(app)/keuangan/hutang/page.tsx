@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -24,6 +25,7 @@ type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: st
 export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
   const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
 
@@ -32,7 +34,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
     supabase
       .from("purchase_invoices")
       .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
-      .order("jatuh_tempo"),
+      .order("jatuh_tempo").order("id"),
     supabase
       .from("purchase_orders")
       .select("id, no_po, tanggal, total, suppliers(nama), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, faktor)")
@@ -211,7 +213,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                       <summary className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-block" }}>
                         Bayar
                       </summary>
-                      <form action={bayarFaktur} style={{ display: "flex", gap: 6, alignItems: "flex-end", padding: "8px 0", flexWrap: "wrap" }}>
+                      <TransactionForm userId={user?.id ?? ""} scope={`payable-settle:${r.id}`} action={bayarFaktur} style={{ display: "flex", gap: 6, alignItems: "flex-end", padding: "8px 0", flexWrap: "wrap" }}>
                         <input type="hidden" name="invoice_id" value={r.id} />
                         <div>
                           <label className="flab">Nominal (maks {rp(r.sisa)})</label>
@@ -244,7 +246,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                         <button type="submit" className="btn-acc" style={{ padding: "7px 12px", fontSize: 11 }}>
                           <i className="ti ti-cash" /> Simpan
                         </button>
-                      </form>
+                      </TransactionForm>
                     </details>
                   </td>
                 </tr>

@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -71,7 +72,7 @@ export async function mulaiShiftKasir(formData: FormData) {
     redirect(`/kasir/mulai?error=${encodeURIComponent(msg)}`);
   }
 
-  redirect("/kasir");
+  redirect(`/kasir?success=shift${transactionDraftAck(formData)}`);
 }
 
 export async function tutupShiftKasir(formData: FormData) {
@@ -93,5 +94,5 @@ export async function tutupShiftKasir(formData: FormData) {
 
   // Kasir buta cuma berlaku SEBELUM submit (biar kas fisik dihitung independen).
   // Setelah kas fisik terkunci, kasir boleh lihat breakdown-nya sendiri.
-  redirect(`/kasir/tutup/${shiftId}`);
+  redirect(`/kasir/tutup/${shiftId}?success=closed${transactionDraftAck(formData)}`);
 }

@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -28,6 +29,7 @@ export default async function UangMukaJualPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
   const [{ data: umData }, { data: custData }, { data: soData }, rekening] = await Promise.all([
@@ -61,7 +63,7 @@ export default async function UangMukaJualPage({
         />
 
         {boleh && (
-          <form action={terimaUangMukaJual}>
+          <TransactionForm userId={user?.id ?? ""} scope="sales-advance" action={terimaUangMukaJual}>
             <div className="frow">
               <div>
                 <label className="flab">Pelanggan *</label>
@@ -105,7 +107,7 @@ export default async function UangMukaJualPage({
                 </SubmitButton>
               </div>
             </div>
-          </form>
+          </TransactionForm>
         )}
       </div>
 

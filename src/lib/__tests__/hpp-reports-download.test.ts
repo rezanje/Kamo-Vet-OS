@@ -21,7 +21,9 @@ describe("financial CSV endpoint", () => {
     expect(response.headers.get("Content-Type")).toContain("text/csv");
     expect(response.headers.get("Content-Disposition")).toMatch(/^attachment; filename="nilai-persediaan-\d{4}-\d{2}-\d{2}\.csv"$/);
     const csv = await response.text();
-    expect(csv).toContain("SKU204"); expect(csv.trimEnd().split("\r\n")).toHaveLength(206);
+    expect(csv).toContain("SKU204"); expect(csv.trimEnd().split("\r\n")).toHaveLength(217);
+    expect(csv).toContain("Ringkasan dan filter");
+    expect(csv).toContain("Subtotal lapisan ber-HPP");
   });
   it("does not leak database errors or return a CSV after failed complete reads", async () => {
     const response = await downloadHppReport(clientFixture({ errorTable: "stock_layers" }).client,"inventory",new Request("https://example.test/laporan/nilai-persediaan/unduh"));

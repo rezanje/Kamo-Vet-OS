@@ -1,4 +1,6 @@
 "use client";
+import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
+import { draftRecord, draftString } from "@/components/TransactionDraft";
 
 import { useMemo, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -10,7 +12,7 @@ const fmt = (n: number) => n.toLocaleString("id-ID");
 // Hanya barang yang jumlah barunya diisi yang ikut terkirim — sisanya tidak
 // tersentuh sama sekali. Ini yang membedakan penyesuaian dari stok opname:
 // dokumen ini menyasar beberapa barang tertentu, bukan seluruh rak.
-export function BarisForm({ barang }: { barang: BarangStok[] }) {
+export function BarisForm({ barang, scope }: { barang: BarangStok[]; scope:string }) {
   const [cari, setCari] = useState("");
   const [isi, setIsi] = useState<Record<string, string>>({});
 
@@ -32,6 +34,7 @@ export function BarisForm({ barang }: { barang: BarangStok[] }) {
 
   return (
     <>
+      <LocalTransactionDraft scope={scope} state={{snapshot:{isi,cari},restore:s=>{if(!draftRecord(s.isi,draftString)||typeof s.cari!=="string"||!Object.keys(s.isi).every(id=>barang.some(b=>b.item_id===id)))return false;setIsi(s.isi);setCari(s.cari);return true;},reset:()=>{setIsi({});setCari("");}}}/>
       <input type="hidden" name="baris" value={JSON.stringify(berubah.map(({ item_id, qty_baru }) => ({ item_id, qty_baru })))} />
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>

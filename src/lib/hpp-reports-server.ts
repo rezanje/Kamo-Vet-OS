@@ -15,7 +15,6 @@ export class ReportInputError extends Error {}
 
 type QueryError = { message: string } | null;
 const PAGE_SIZE = 500;
-const ROW_LIMIT = 5000;
 export async function readReportRows<T>(read: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: QueryError; count: number | null }>,
   identity: (row: T) => string = row => typeof (row as Record<string,unknown>).id === "string" ? (row as Record<string,string>).id : "",
 ): Promise<T[]> {
@@ -28,7 +27,6 @@ export async function readReportRows<T>(read: (from: number, to: number) => Prom
     if (!Array.isArray(data) || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
       throw new Error("Data laporan gagal dibaca: hasil atau jumlah pasti baris tidak tersedia");
     }
-    if (count > ROW_LIMIT) throw new ReportInputError("Data memuat terlalu banyak baris. Persempit cabang, gudang, atau periode agar laporan tetap lengkap.");
     if (total === undefined) total = count;
     if (count !== total || data.length !== Math.min(PAGE_SIZE,total-from)) {
       throw new ReportInputError("Data laporan berubah atau terpotong selama pembacaan. Muat ulang atau persempit cakupan.");
@@ -177,6 +175,11 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
     "id,compound_recipe_id,deskripsi,qty,harga,diskon_persen,hpp,invoices!inner(id,visit_id,invoice_no,created_at,paid_status,voided_at,visits!inner(branch_id,dokter,doctor_id))",
     query => query.not("compound_recipe_id","is",null).is("invoices.voided_at",null)
       .in("invoices.visits.branch_id",scope.branchIds).gte("invoices.created_at",mulai).lte("invoices.created_at",akhir)) : [];
+  // Only an explicit racikan unit proves that an unlinked legacy invoice row is a compound.
+  const legacy = scope.branchIds.length ? await tableRows<InvoiceLine>(client,"invoice_items",
+    "id,compound_recipe_id,deskripsi,qty,harga,diskon_persen,hpp,invoices!inner(id,visit_id,invoice_no,created_at,paid_status,voided_at,visits!inner(branch_id,dokter,doctor_id))",
+    query => query.is("compound_recipe_id",null).eq("satuan","racikan").is("invoices.voided_at",null)
+      .in("invoices.visits.branch_id",scope.branchIds).gte("invoices.created_at",mulai).lte("invoices.created_at",akhir)) : [];
   const recipeIds = lines.flatMap(row => row.compound_recipe_id ? [row.compound_recipe_id] : []);
   const [recipes, usage, snapshots, issues] = await Promise.all([
     byIds<Recipe>(client,"compounding_recipes","id,recipe_name,status","id",recipeIds),
@@ -184,8 +187,6 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
     byIds<IngredientSnapshot>(client,"compounding_ingredients","id,recipe_id,item_id,ingredient_name,quantity,unit","recipe_id",recipeIds),
     ingredientIssues(client, lines.map(row => row.id)),
   ]);
-  if (snapshots.length > ROW_LIMIT || (issues?.length ?? 0) > ROW_LIMIT)
-    throw new ReportInputError("Data memuat terlalu banyak bahan. Persempit cabang atau periode agar laporan tetap lengkap.");
   const versions = await byIds<Version>(client,"compound_formula_versions","id,name,version,formula_id","id",usage.map(row => row.formula_version_id));
   const recipeMap = new Map(recipes.map(row => [row.id,row]));
   const usageMap = new Map(usage.map(row => [row.recipe_id,row.formula_version_id]));
@@ -231,11 +232,27 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
   });
   if ((issues ?? []).some(issue => !values.some(line => line.id === issue.invoice_item_id && line.recipeId === issue.recipe_id)))
     throw new Error("Data laporan gagal dibaca: tautan histori bahan tidak valid");
-  const doctors = [...new Map(enriched.map(row => [row.doctorKey,{ id: row.doctorKey, name: row.doctor }])).values()].sort((a,b) => a.name.localeCompare(b.name));
+  const legacyReconciliation = legacy.map(line => {
+    const invoice = one(line.invoices), visit = one(invoice?.visits ?? null);
+    if (!invoice || !visit || !scope.branchIds.includes(visit.branch_id)) throw new Error("Data laporan gagal dibaca: cabang invoice tidak tersedia");
+    const doctor = visit.dokter?.trim() || "Belum tercatat";
+    return { id: line.id, invoiceId: invoice.id, invoiceNo: invoice.invoice_no || "—", visitId: invoice.visit_id,
+      createdAt: invoice.created_at, branch: branchMap.get(visit.branch_id) ?? visit.branch_id,
+      doctor, doctorKey: visit.doctor_id || `nama:${doctor}`, name: line.deskripsi, recipeId: null,
+      cost: null, grossProfit: null, margin: null, reason: "Baris racikan belum memiliki tautan ID resep" };
+  });
+  const reconciliation = [...legacyReconciliation, ...enriched.filter(row => row.cost === null).map(row => ({
+    id: row.id, invoiceId: row.invoiceId, invoiceNo: row.invoiceNo, visitId: row.visitId, createdAt: row.createdAt,
+    branch: row.branch, doctor: row.doctor, doctorKey: row.doctorKey, name: row.name, recipeId: row.recipeId,
+    cost: null, grossProfit: null, margin: null, reason: "HPP historis baris racikan belum tersedia",
+  }))].filter(row => (!filters.dokter || row.doctorKey === filters.dokter) && matches(filters.q,
+    [row.id,row.invoiceId,row.recipeId ?? "",row.name,row.invoiceNo,row.branch,row.doctor]))
+    .sort((a,b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
+  const doctors = [...new Map([...enriched,...legacyReconciliation].map(row => [row.doctorKey,{ id: row.doctorKey, name: row.doctor }])).values()].sort((a,b) => a.name.localeCompare(b.name));
   const rows = enriched.filter(row => (!filters.dokter || row.doctorKey === filters.dokter) && matches(filters.q,
     [row.name,row.recipeName,row.invoiceNo,row.branch,row.doctor,row.formulaName ?? "",row.formulaVersionId ?? ""]))
     .sort((a,b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
-  return { scope, filters, rows, doctors, summary: compoundSummary(rows), readAt: new Date().toISOString() };
+  return { scope, filters, rows, reconciliation, doctors, summary: compoundSummary(rows), readAt: new Date().toISOString() };
 }
 
 export type InventoryReport = Awaited<ReturnType<typeof loadInventoryReport>>;

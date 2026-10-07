@@ -12,6 +12,7 @@ export default async function BaruPOPage({
 }) {
   const { error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const [{ data: suppliers }, { data: warehouses }, { data: branches }, { data: items }] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
@@ -50,7 +51,7 @@ export default async function BaruPOPage({
         </div>
       )}
 
-      <POForm
+      <POForm userId={user?.id ?? ""}
         suppliers={suppliers ?? []}
         warehouses={warehouses ?? []}
         branches={branches ?? []}

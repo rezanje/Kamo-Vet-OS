@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { SecHeader } from "@/components/SecHeader";
 import { KatalogForm } from "./KatalogForm";
+import { loadClinicCompoundSkus } from "@/lib/clinic-compound-skus";
 
 export default async function KatalogRacikanPage({ searchParams }: {
   searchParams: Promise<{ error?: string; success?: string }>;
@@ -15,6 +16,7 @@ export default async function KatalogRacikanPage({ searchParams }: {
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
   if (!profile || !["OWNER", "ADMIN"].includes(profile.role)) redirect("/klinik");
   const katalog = await loadKatalogRacikan(true);
+  const saleItems = await loadClinicCompoundSkus(supabase);
   const { data: items, error: itemError } = await supabase.from("items")
     .select("id, name, unit, sell_price")
     .eq("is_active", true).eq("item_type", "Persediaan")
@@ -28,7 +30,7 @@ export default async function KatalogRacikanPage({ searchParams }: {
       <SecHeader num="01" title="KATALOG RACIKAN RESMI" desc="OWNER/ADMIN menerbitkan revisi; resep lama tetap memakai versi saat dibuat." />
       {error && <div className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
       {success && <div className="p2ban" style={{ color: "#15803d" }}>Katalog berhasil diperbarui.</div>}
-      <KatalogForm katalog={katalog} items={(items ?? []).map((item) => ({
+      <KatalogForm katalog={katalog} saleItems={saleItems} items={(items ?? []).map((item) => ({
         id: item.id, name: item.name, unit: item.unit, sell_price: Number(item.sell_price),
       }))} />
     </div>

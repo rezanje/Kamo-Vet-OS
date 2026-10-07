@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -167,7 +168,7 @@ export default async function RacikDetailPage({
 
         {/* Petunjuk racik diisi apoteker di sini — dokter hanya resepkan komposisi. */}
         {(r.status === "pending" || r.status === "ready") && (
-          <form action={updateRacikPetunjuk} style={{ border: ".5px solid #bfdbfe", background: "#f8fbff", borderRadius: 10, padding: 14, marginTop: 14 }}>
+          <TransactionForm scope={`clinic-racik-instructions:${recipeId}`} action={updateRacikPetunjuk} style={{ border: ".5px solid #bfdbfe", background: "#f8fbff", borderRadius: 10, padding: 14, marginTop: 14 }}>
             <input type="hidden" name="recipeId" value={r.id} />
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", marginBottom: 3 }}>
               <i className="ti ti-pencil" /> ISI PETUNJUK RACIK — {r.recipe_name}
@@ -192,7 +193,7 @@ export default async function RacikDetailPage({
                 style={{ resize: "vertical" }} />
             </div>
             <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…">Simpan Petunjuk Racik</SubmitButton>
-          </form>
+          </TransactionForm>
         )}
 
         <div style={{ background: "#fffbeb", border: ".5px solid #fde68a", borderRadius: 10, padding: 14, marginTop: 14 }}>

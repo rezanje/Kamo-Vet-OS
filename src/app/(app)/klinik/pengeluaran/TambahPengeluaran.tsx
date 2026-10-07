@@ -1,4 +1,5 @@
 "use client";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 
 import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -6,7 +7,7 @@ import { simpanPengeluaranKlinik } from "./actions";
 
 const KATEGORI = ["Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Lain-lain"];
 
-export function TambahPengeluaran({ branchId, today }: { branchId: string; today: string }) {
+export function TambahPengeluaran({ branchId, today, shiftId }: { branchId: string; today: string; shiftId:string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -15,7 +16,7 @@ export function TambahPengeluaran({ branchId, today }: { branchId: string; today
       </button>
       {open && (
         <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
-          <form action={simpanPengeluaranKlinik} onClick={(e) => e.stopPropagation()} className="card" style={{ width: "100%", maxWidth: 440, padding: 20 }}>
+          <TransactionForm scope={`clinic-expense:${branchId}:${shiftId}`} action={simpanPengeluaranKlinik} onClick={(e) => e.stopPropagation()} className="card" style={{ width: "100%", maxWidth: 440, padding: 20 }}>
             <input type="hidden" name="branchId" value={branchId} />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Tambah Pengeluaran</div>
@@ -51,7 +52,7 @@ export function TambahPengeluaran({ branchId, today }: { branchId: string; today
               </div>
             </div>
             <SubmitButton className="kpos-bayar" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ marginTop: 8 }}>Simpan Pengeluaran</SubmitButton>
-          </form>
+          </TransactionForm>
         </div>
       )}
     </>

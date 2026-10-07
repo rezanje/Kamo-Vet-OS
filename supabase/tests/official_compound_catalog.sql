@@ -8,6 +8,8 @@ update public.profiles set role = 'OWNER' where id = 'fa000000-0000-4000-8000-00
 update public.profiles set role = 'DOCTOR' where id = 'fa000000-0000-4000-8000-000000000002';
 insert into public.items(id, code, name, unit, item_type, is_active, is_compound_material, sell_price)
 values ('fb000000-0000-4000-8000-000000000001', 'CAT-ING', 'Bahan Katalog', 'gram', 'Persediaan', true, true, 15);
+insert into public.items(id, code, name, unit, item_type, is_active, is_compound_material, sell_price)
+values ('fb000000-0000-4000-8000-000000000002', 'CAT-SKU', 'Obat Racik Katalog Uji', 'pcs', 'Persediaan', true, false, 75);
 insert into public.branches(id, code, name, type)
 values ('fc000000-0000-4000-8000-000000000001', 'CAT-BR', 'Cabang Katalog', 'KLINIK');
 insert into public.warehouses(id, branch_id, code, name, type)
@@ -71,6 +73,7 @@ begin
     'catalog-owner-custom') is null then
     raise exception 'owner could not issue an exceptional patient recipe';
   end if;
+  perform public.bind_compound_formula_sale_item(v_formula_id, 'fb000000-0000-4000-8000-000000000002');
   perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000002',true);
   failed := false;
   begin

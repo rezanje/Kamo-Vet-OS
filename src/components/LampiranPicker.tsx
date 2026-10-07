@@ -4,7 +4,7 @@
 // baru): file diunggah duluan ke bucket `dokumen`, path-nya dikirim sebagai JSON di
 // hidden input, baris document_attachments dibuat server action setelah dokumen induk jadi.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { namaFileAman, type LampiranDraft } from "@/lib/dokumen";
 
@@ -19,9 +19,28 @@ export function LampiranPicker({
   folder: string;
   wajib?: boolean;
 }) {
+  const anchor = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<LampiranDraft[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const input = anchor.current;
+    const form = input?.closest("form");
+    if (!input || !form) return;
+    const restore = (event: Event) => {
+      try {
+        const value: unknown = JSON.parse(String((event as CustomEvent<string>).detail));
+        if (!Array.isArray(value) || value.length > 100 || !value.every((row) => validReference(row, folder))) throw new Error("invalid");
+        setFiles(value); setErr("");
+      } catch { setErr("Referensi lampiran draf tidak dapat dipulihkan. Pilih kembali lampirannya."); }
+    };
+    const reset = (event: Event) => { queueMicrotask(() => { if (!event.defaultPrevented) setFiles([]); }); };
+    input.addEventListener("vetos:draft-restore", restore);
+    form.addEventListener("reset", reset);
+    return () => { input.removeEventListener("vetos:draft-restore", restore); form.removeEventListener("reset", reset); };
+  }, [folder]);
+  useEffect(() => { anchor.current?.dispatchEvent(new Event("input", { bubbles: true })); }, [files]);
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files ?? []);
@@ -51,7 +70,7 @@ export function LampiranPicker({
 
   return (
     <div>
-      <input type="hidden" name={name} value={JSON.stringify(files)} />
+      <input ref={anchor} data-draft-state type="hidden" name={name} value={JSON.stringify(files)} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <label className="btn-def" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, cursor: busy ? "wait" : "pointer", padding: "5px 11px" }}>
           <i className="ti ti-paperclip" /> {busy ? "Mengunggah…" : "Pilih file"}
@@ -81,4 +100,13 @@ export function LampiranPicker({
       )}
     </div>
   );
+}
+
+function validReference(value: unknown, folder: string): value is LampiranDraft {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<LampiranDraft>;
+  return typeof row.path === "string" && row.path.startsWith(`${folder}/`) && !row.path.includes("..")
+    && row.path.length <= 500 && typeof row.nama === "string" && row.nama.length <= 200
+    && (row.mime === null || typeof row.mime === "string" && row.mime.length <= 120)
+    && (row.ukuran === null || typeof row.ukuran === "number" && Number.isFinite(row.ukuran) && row.ukuran > 0 && row.ukuran <= MAKS_MB * 1024 * 1024);
 }

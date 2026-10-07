@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -25,6 +26,8 @@ export default async function StokMinimumPage({
 }) {
   const { gudang = "", error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
+  const draftUserId = draftUser?.id ?? "";
 
   const [{ data: whRows }, { data: itemRows }] = await Promise.all([
     supabase.from("warehouses").select("id, code, name").eq("is_active", true).order("code"),
@@ -51,17 +54,19 @@ export default async function StokMinimumPage({
 
   const unitMap = await loadItemUnits(supabase, ids);
 
+  const invalidBuyUnits: string[] = [];
   const menipis: BarangReorder[] = items
-    .map((i) => {
+    .flatMap((i) => {
       const opts = unitOptions({ unit: i.unit, sell_price: 0, buy_price: Number(i.buy_price) }, unitMap.get(i.id) ?? []);
-      const beli = opts.find((u) => u.unit === (i.buy_unit ?? i.unit)) ?? opts[0];
-      return {
+      const beli = opts.find((u) => u.unit === (i.buy_unit || i.unit));
+      if (!beli) { invalidBuyUnits.push(i.name); return []; }
+      return [{
         itemId: i.id, kode: i.code, nama: i.name, satuan: i.unit,
         stok: stok.get(i.id) ?? 0, minStock: Number(i.min_stock),
         minBuy: Number(i.min_buy), buyUnit: beli.unit, faktorBeli: beli.factor,
         hargaBeli: Number(beli.buy_price) || Number(i.buy_price) || 0,
         supplierId: i.supplier_id, supplierNama: one(i.suppliers)?.nama ?? "Belum ada pemasok",
-      };
+      }];
     })
     .filter(perluDipesan);
 
@@ -83,6 +88,8 @@ export default async function StokMinimumPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+
+      {invalidBuyUnits.length > 0 && <div className="p2ban">Usulan diblokir karena satuan beli belum memiliki konversi: {invalidBuyUnits.join(", ")}. Perbaiki satuan beli pada master barang.</div>}
 
       <form className="crm-sec" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -109,7 +116,7 @@ export default async function StokMinimumPage({
           {" "}Batas minimum diisi di <Link href="/pos/sku" style={{ color: "#2563eb" }}>Barang &amp; Jasa</Link>.
         </div>
       ) : (
-        <form action={buatPOdariUsulan}>
+        <TransactionForm userId={draftUserId} scope={`minimum-stock-po:${gudangId}`} action={buatPOdariUsulan}>
           <div className="crm-sec" style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 240 }}>
@@ -184,7 +191,7 @@ export default async function StokMinimumPage({
               </div>
             </div>
           ))}
-        </form>
+        </TransactionForm>
       )}
     </>
   );

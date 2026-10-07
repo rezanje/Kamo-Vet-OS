@@ -3,12 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { kodeAkunBayar } from "@/lib/kas-akun";
+import {transactionDraftAck} from "@/lib/transaction-draft-ack";
 import { rencanakanRepriceLapisan, sisaFakturablePerBaris, type ItemFakturPoTersimpan, type LapisanStokFaktur, type PoItemUntukFaktur } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { totalRetur } from "@/lib/retur";
-import { jurnalBayarHutang, pakaiUangMuka } from "@/lib/uang-muka";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -228,98 +226,33 @@ export async function buatFaktur(formData: FormData) {
   finish(created.no_faktur);
 }
 
-// Bayar hutang per faktur. Jurnal: Dr 2101 / Cr rekening kas/bank yang dipilih.
+// Bayar hutang per faktur; invoice/PO/advance/payment/journal share one database transaction.
 export async function bayarFaktur(formData: FormData) {
-  const supabase = await createClient();
-  const back = "/keuangan/hutang";
-
-  const invoiceId = String(formData.get("invoice_id") ?? "");
-  const amount = Number(formData.get("amount")) || 0;
-  const metode = String(formData.get("metode") ?? "Transfer");
-  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
-  const catatan = String(formData.get("catatan") ?? "").trim() || null;
-  const accountId = String(formData.get("account_id") ?? "").trim() || null;
-
-  const fail = (msg: string) => redirect(`${back}?error=${encodeURIComponent(msg)}`);
-  if (!invoiceId || amount <= 0) fail("Nominal pembayaran tidak valid.");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) fail(pesanPeriode);
-
-  const { data: inv } = await supabase
-    .from("purchase_invoices")
-    .select("id, no_faktur, total, po_id, supplier_id, branch_id, purchase_orders(branch_id)")
-    .eq("id", invoiceId).maybeSingle();
-  if (!inv) fail("Faktur tidak ditemukan.");
-
-  const { data: pays } = await supabase
-    .from("purchase_invoice_payments").select("amount").eq("invoice_id", invoiceId);
-  const dibayar = (pays ?? []).reduce((a, p) => a + Number(p.amount), 0);
-  const sisa = Math.max(0, Number(inv!.total) - dibayar);
-  if (sisa <= 0) fail("Faktur ini sudah lunas.");
-  if (amount > sisa) fail(`Nominal melebihi sisa faktur (maks Rp ${Math.round(sisa).toLocaleString("id-ID")}).`);
-
-  // Uang muka yang dipilih dipotongkan lebih dulu — uangnya sudah keluar waktu DP
-  // dibayar, jadi porsi itu tidak boleh keluar lagi dari kas.
-  const advanceId = String(formData.get("advance_id") ?? "").trim() || null;
-  let dariUangMuka = 0;
-  type Advance = { id: string; jumlah: number; terpakai: number; supplier_id: string | null; status: string };
-  let advance: Advance | null = null;
-
-  if (advanceId) {
-    const { data: um } = await supabase
-      .from("purchase_advances").select("id, jumlah, terpakai, supplier_id, status").eq("id", advanceId).maybeSingle();
-    if (!um) fail("Uang muka tidak ditemukan.");
-    if (um!.status !== "aktif") fail("Uang muka itu sudah dibatalkan.");
-    if (um!.supplier_id && inv!.supplier_id && um!.supplier_id !== inv!.supplier_id) {
-      fail("Uang muka itu milik pemasok lain.");
-    }
-    advance = um as Advance;
-    dariUangMuka = pakaiUangMuka(Number(um!.jumlah) - Number(um!.terpakai), amount);
-    if (dariUangMuka <= 0) fail("Uang muka itu sudah habis terpakai.");
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Persetujuan diperiksa TEPAT DI SINI: setelah semua validasi lolos, sebelum
-  // satu rupiah pun tercatat keluar. Kalau ditahan, tidak ada baris pembayaran,
-  // tidak ada jurnal, dan tidak ada uang muka yang terpakai.
-  const izin = await cekPersetujuan(supabase, {
-    jenis: "bayar-faktur",
-    refId: invoiceId,
-    nilai: amount,
-    noDokumen: inv!.no_faktur,
-    keterangan: `Pembayaran faktur ${inv!.no_faktur} sebesar Rp ${Math.round(amount).toLocaleString("id-ID")}`,
-    userId: user?.id ?? null,
-  });
-  if (!izin.boleh) fail(izin.pesan ?? "Transaksi ini butuh persetujuan atasan.");
-
-  const { error: payErr } = await supabase.from("purchase_invoice_payments").insert({
-    invoice_id: invoiceId, tanggal, amount, metode, catatan, created_by: user?.id ?? null,
-    advance_id: advance?.id ?? null, dari_uang_muka: dariUangMuka,
-  });
-  if (payErr) fail(payErr.message);
-
-  if (advance) {
-    await supabase.from("purchase_advances")
-      .update({ terpakai: Number(advance.terpakai) + dariUangMuka }).eq("id", advance.id);
-  }
-
-  // Faktur langsung tidak punya PO, jadi cabangnya disimpan di fakturnya sendiri.
-  const po = inv!.purchase_orders as unknown as { branch_id: string | null } | null;
-  const cabang = (inv as { branch_id?: string | null }).branch_id ?? po?.branch_id ?? null;
-  const kasCode = await kodeAkunBayar(supabase, metode, cabang, accountId);
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: dariUangMuka > 0
-      ? `Pembayaran faktur ${inv!.no_faktur} (pakai uang muka)`
-      : `Pembayaran faktur ${inv!.no_faktur}`,
-    source: "purchase-pay",
-    sourceRef: inv!.no_faktur,
-    branchId: cabang,
-    lines: jurnalBayarHutang(kasCode, amount, dariUangMuka),
-  });
-
-  revalidatePath(back);
-  redirect(`${back}?success=${encodeURIComponent(`Pembayaran ${inv!.no_faktur} tersimpan.`)}`);
+  const supabase=await createClient();const back="/keuangan/hutang";
+  const invoiceId=String(formData.get("invoice_id")??"");
+  const requestKey=String(formData.get("draft_key")??"");
+  const amount=Number(formData.get("amount"));
+  const metode=String(formData.get("metode")??"Transfer");
+  const tanggal=String(formData.get("tanggal")??"")||hariIniWIB();
+  const catatan=String(formData.get("catatan")??"").trim()||null;
+  const accountId=String(formData.get("account_id")??"").trim()||null;
+  const advanceId=String(formData.get("advance_id")??"").trim()||null;
+  const fail=(message:string):never=>redirect(`${back}?error=${encodeURIComponent(message)}`);
+  if(!invoiceId||!requestKey||!Number.isFinite(amount)||amount<=0)fail("Nominal atau identitas pembayaran tidak valid. Muat ulang formulir.");
+  if(!Number.isInteger(amount))fail("Nominal pembayaran harus dalam rupiah bulat.");
+  const payload={invoice_id:invoiceId,tanggal,amount,metode,catatan,account_id:accountId,advance_id:advanceId};
+  const finish=(noFaktur:string):never=>{revalidatePath(back);redirect(`${back}?success=${encodeURIComponent(`Pembayaran ${noFaktur} tersimpan.`)}${transactionDraftAck(formData)}`);};
+  const {data:recovered,error:recoveryError}=await supabase.rpc("recover_purchase_payment",{p_request_key:requestKey,p_payload:payload});
+  if(recoveryError)fail(recoveryError.message);
+  if(recovered?.no_faktur)finish(recovered.no_faktur);
+  const pesanPeriode=await cekPeriode(supabase,tanggal);if(pesanPeriode)fail(pesanPeriode);
+  const {data:inv,error:invoiceError}=await supabase.from("purchase_invoices").select("id,no_faktur").eq("id",invoiceId).maybeSingle();
+  if(invoiceError||!inv)fail("Faktur tidak ditemukan.");
+  const {data:{user}}=await supabase.auth.getUser();
+  const izin=await cekPersetujuan(supabase,{jenis:"bayar-faktur",refId:invoiceId,nilai:amount,noDokumen:inv!.no_faktur,keterangan:`Pembayaran faktur ${inv!.no_faktur} sebesar Rp ${Math.round(amount).toLocaleString("id-ID")}`,userId:user?.id??null,deferConsumption:true});
+  if(!izin.boleh)fail(izin.pesan??"Transaksi ini butuh persetujuan atasan.");
+  const {data:result,error}=await supabase.rpc("pay_purchase_invoice_atomic",{p_request_key:requestKey,p_invoice_id:invoiceId,p_tanggal:tanggal,p_amount:amount,p_metode:metode,p_catatan:catatan,p_account_id:accountId,p_advance_id:advanceId});
+  if(error)fail(error.message);
+  if(!result?.payment_id||!result?.journal_id||!result?.no_faktur)throw new Error("Pembayaran belum terkonfirmasi lengkap. Periksa transaksi sebelum menyimpan ulang.");
+  finish(result.no_faktur);
 }

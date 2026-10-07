@@ -1,4 +1,6 @@
 "use client";
+import { draftRecord, draftString } from "@/components/TransactionDraft";
+import { PreservedForm, LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -109,7 +111,8 @@ export function HitungForm({
   }
 
   return (
-    <form action={simpanHasil}>
+    <PreservedForm action={simpanHasil}>
+      <LocalTransactionDraft scope={`opname-count:${orderId}`} state={{snapshot:{isian,cari,kategori,urut,sisaSaja},restore:s=>{if(!draftRecord(s.isian,draftString)||!Object.keys(s.isian).every(id=>rows.some(r=>r.item_id===id))||typeof s.cari!=="string"||typeof s.kategori!=="string"||!["nama","kategori","harga"].includes(String(s.urut))||typeof s.sisaSaja!=="boolean")return false;setIsian(Object.fromEntries(Object.entries(s.isian).filter(([id])=>terkunci[id]===undefined)));setCari(s.cari);setKategori(s.kategori);setUrut(s.urut as Urut);setSisaSaja(s.sisaSaja);return true;},reset:()=>setIsian({})}}/>
       <input type="hidden" name="order_id" value={orderId} />
       <input type="hidden" name="kembali" value="kasir" />
       <input type="hidden" name="fisik" value={JSON.stringify(dikirim)} />
@@ -237,6 +240,6 @@ export function HitungForm({
           Barang yang tidak dihitung dilewat — stoknya tidak diubah. Laporan selisih keluar setelah disimpan.
         </div>
       </div>
-    </form>
+    </PreservedForm>
   );
 }

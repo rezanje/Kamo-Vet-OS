@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -201,5 +202,5 @@ export async function createReferral(formData: FormData) {
     p_notes: notes || null,
   });
   if (error) redirect(`/klinik/rekam-medis/${visitId}?error=${encodeURIComponent(error.message)}`);
-  redirect(`/klinik/rekam-medis/${visitId}?success=referral`);
+  redirect(`/klinik/rekam-medis/${visitId}?success=referral${transactionDraftAck(formData)}`);
 }

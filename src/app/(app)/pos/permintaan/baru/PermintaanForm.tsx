@@ -3,6 +3,8 @@
 // Item dipilih dari master SKU (sama pola dgn POForm), bukan diketik bebas:
 // tanpa item_id stok tidak bisa dipotong/ditambah saat barang diterima.
 
+import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { draftRows } from "@/components/TransactionDraft";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { pickUnit } from "@/lib/satuan";
@@ -16,10 +18,13 @@ type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: stri
 const blank: Row = { item_id: "", qty_diminta: 1, satuan: "", catatan: "", cari: "" };
 
 export function PermintaanForm({
+  userId,
   branches, warehouses, items,
 }: {
+  userId: string;
   branches: Branch[]; warehouses: Warehouse[]; items: KatalogItem[];
 }) {
+  const { save, failure } = usePreservedAction(buatPermintaan);
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
   const byId = new Map(items.map((it) => [it.id, it]));
 
@@ -39,7 +44,12 @@ export function PermintaanForm({
   const del = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
 
   return (
-    <form action={buatPermintaan}>
+    <form action={save}>
+      <LocalTransactionDraft userId={userId} scope="request-pos" state={{ snapshot: { rows }, restore: (value) => {
+        if (!draftRows(value.rows, blank)) return false;
+        setRows(value.rows); return true;
+      }, reset: () => { setRows([{ ...blank }]); } }} />
+      {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
 
       <div className="grid2">

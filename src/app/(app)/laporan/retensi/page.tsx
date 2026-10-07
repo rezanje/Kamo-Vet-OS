@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -39,8 +40,8 @@ export default async function RetensiPage({
   const supabase = await createClient();
   const [{ trx, terpotong }, { data: custData }, { data: branchData }] = await Promise.all([
     tarikRiwayat(hariIni),
-    supabase.from("customers").select("id, name, phone, tier, total_spending"),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    completeReportQuery(supabase.from("customers").select("id, name, phone, tier, total_spending", { count: "exact" })),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const profil = profilPelanggan(

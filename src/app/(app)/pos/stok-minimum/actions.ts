@@ -1,8 +1,9 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { loadUnitOptions, pickUnit } from "@/lib/satuan";
+import { loadUnitOptions, resolveSubmittedUnit } from "@/lib/satuan";
 import { formatDokumen, formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -34,14 +35,32 @@ export async function buatPOdariUsulan(formData: FormData) {
   // Nama, harga & satuan beli diambil ULANG dari master — halaman cuma mengusulkan
   // qty; harga yang ikut dari layar tidak boleh jadi sumber kebenaran nilai PO.
   const ids = [...new Set(baris.map((b) => b.itemId))];
-  const [{ data: itemRows }, unitOpts] = await Promise.all([
+  const [{ data: itemRows, error: itemReadError }, unitOpts] = await Promise.all([
     supabase.from("items").select("id, name, unit, buy_unit, buy_price").in("id", ids),
     loadUnitOptions(supabase, ids),
   ]);
+  if (itemReadError) throw new Error(itemReadError.message);
   const master = new Map(
     ((itemRows ?? []) as { id: string; name: string; unit: string; buy_unit: string | null; buy_price: number }[])
       .map((i) => [i.id, i]),
   );
+
+  // Validate every supplier group before the first PO is written.
+  const prepared = new Map(baris.map((b) => {
+      const it = master.get(b.itemId);
+      const opts = unitOpts.get(b.itemId);
+      if (!it) throw new Error("Barang usulan tidak ditemukan.");
+      const u = resolveSubmittedUnit(opts ?? [], it.buy_unit || it.unit);
+      const harga = u ? (Number(u.buy_price) || Number(it?.buy_price) || 0) : Number(it?.buy_price) || 0;
+      return [b, {
+        item_id: b.itemId,
+        nama: it?.name ?? "Barang",
+        qty: b.qty,
+        harga_beli: harga,
+        satuan: u?.unit ?? it?.unit ?? null,
+        faktor: u?.factor ?? 1,
+      }] as const;
+  }));
 
   // Satu PO per pemasok.
   const perPemasok = new Map<string, Baris[]>();
@@ -63,20 +82,7 @@ export async function buatPOdariUsulan(formData: FormData) {
     seq += 1;
     const no_po = formatNomor(prefixPo, seq, digitPo);
 
-    const lines = rows.map((b) => {
-      const it = master.get(b.itemId);
-      const opts = unitOpts.get(b.itemId);
-      const u = opts ? pickUnit(opts, it?.buy_unit ?? it?.unit ?? null) : null;
-      const harga = u ? (Number(u.buy_price) || Number(it?.buy_price) || 0) : Number(it?.buy_price) || 0;
-      return {
-        item_id: b.itemId,
-        nama: it?.name ?? "Barang",
-        qty: b.qty,
-        harga_beli: harga,
-        satuan: u?.unit ?? it?.unit ?? null,
-        faktor: u?.factor ?? 1,
-      };
-    });
+    const lines = rows.map(b => prepared.get(b)!);
     const total = lines.reduce((a, l) => a + l.qty * l.harga_beli, 0);
 
     const { data: po, error: poErr } = await supabase
@@ -98,5 +104,5 @@ export async function buatPOdariUsulan(formData: FormData) {
     dibuat += 1;
   }
 
-  redirect(`/pembelian?success=${encodeURIComponent(`${dibuat} draft PO dibuat dari usulan stok minimum`)}`);
+  redirect(`/pembelian?success=${encodeURIComponent(`${dibuat} draft PO dibuat dari usulan stok minimum`)}${transactionDraftAck(formData)}`);
 }

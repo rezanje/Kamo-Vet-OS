@@ -1,4 +1,6 @@
 "use client";
+import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
+import { draftNumber } from "@/components/TransactionDraft";
 
 import { useState } from "react";
 import { prosesRekonsiliasi } from "./actions";
@@ -7,7 +9,7 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export type RekeningRekon = { id: string; nama: string; coa_code: string; saldo: number };
 
-export function RekonForm({ rekening, hariIni }: { rekening: RekeningRekon[]; hariIni: string }) {
+export function RekonForm({ userId, rekening, hariIni }: { userId: string; rekening: RekeningRekon[]; hariIni: string }) {
   const [accountId, setAccountId] = useState(rekening[0]?.id ?? "");
   const [saldoBank, setSaldoBank] = useState(0);
   const [biayaAdm, setBiayaAdm] = useState(0);
@@ -28,7 +30,8 @@ export function RekonForm({ rekening, hariIni }: { rekening: RekeningRekon[]; ha
   }
 
   return (
-    <form action={prosesRekonsiliasi}>
+    <PreservedForm action={prosesRekonsiliasi}>
+      <LocalTransactionDraft userId={userId} scope="bank-reconciliation-create" state={{snapshot:{accountId,saldoBank,biayaAdm,bunga},restore(value){if(typeof value.accountId!=="string"||!draftNumber(value.saldoBank)||!draftNumber(value.biayaAdm)||!draftNumber(value.bunga))return false;setAccountId(value.accountId);setSaldoBank(value.saldoBank);setBiayaAdm(value.biayaAdm);setBunga(value.bunga);return true;},reset(){setAccountId(rekening[0]?.id??"");setSaldoBank(0);setBiayaAdm(0);setBunga(0);}}}/>
       <div className="grid2" style={{ alignItems: "start" }}>
         <div>
           <div className="frow" style={{ marginBottom: 10 }}>
@@ -86,7 +89,7 @@ export function RekonForm({ rekening, hariIni }: { rekening: RekeningRekon[]; ha
           </button>
         </div>
       </div>
-    </form>
+    </PreservedForm>
   );
 }
 

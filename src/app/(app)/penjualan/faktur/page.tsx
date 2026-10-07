@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -41,6 +42,7 @@ export default async function FakturJualPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
   const today = hariIniWIB();
 
@@ -174,7 +176,7 @@ export default async function FakturJualPage({
                             <summary className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-block" }}>
                               Terima
                             </summary>
-                            <form action={terimaPembayaranJual} style={{ display: "flex", gap: 6, alignItems: "flex-end", padding: "8px 0", flexWrap: "wrap" }}>
+                            <TransactionForm userId={user?.id ?? ""} scope={`sales-payment:${f.id}`} action={terimaPembayaranJual} style={{ display: "flex", gap: 6, alignItems: "flex-end", padding: "8px 0", flexWrap: "wrap" }}>
                               <input type="hidden" name="invoice_id" value={f.id} />
                               <div>
                                 <label className="flab">Nominal (maks {rp(sisa)})</label>
@@ -203,7 +205,7 @@ export default async function FakturJualPage({
                               <SubmitButton className="btn-acc" icon="ti-cash" pendingText="Menyimpan…" style={{ padding: "7px 12px", fontSize: 11 }}>
                                 Simpan
                               </SubmitButton>
-                            </form>
+                            </TransactionForm>
                           </details>
                         )}
                       </td>

@@ -1,4 +1,6 @@
 "use client";
+import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
+import { draftRows } from "@/components/TransactionDraft";
 
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
@@ -11,7 +13,7 @@ type Row = { code: string; debit: number; credit: number };
 const blank: Row = { code: "", debit: 0, credit: 0 };
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export function RecurringForm({ accounts, branches }: { accounts: Account[]; branches: Branch[] }) {
+export function RecurringForm({ userId, accounts, branches }: { userId: string; accounts: Account[]; branches: Branch[] }) {
   const [rows, setRows] = useState<Row[]>([{ ...blank }, { ...blank }]);
 
   const set = (i: number, patch: Partial<Row>) =>
@@ -24,7 +26,8 @@ export function RecurringForm({ accounts, branches }: { accounts: Account[]; bra
   const seimbang = totalD > 0 && Math.round(totalD) === Math.round(totalK);
 
   return (
-    <form action={buatRecurring}>
+    <PreservedForm action={buatRecurring}>
+      <LocalTransactionDraft userId={userId} scope="recurring-create" state={{snapshot:{rows},restore(value){if(!draftRows(value.rows,blank))return false;setRows(value.rows);return true;},reset(){setRows([{...blank},{...blank}]);}}}/>
       <input type="hidden" name="lines" value={JSON.stringify(rows)} />
       <div className="crm-sec">
         <SecHeader num="02" title="BUAT JURNAL BERULANG" desc="Jurnal langganan (sewa, iuran, dsb) yang otomatis diposting tiap bulan pada tanggal terpilih." />
@@ -89,6 +92,6 @@ export function RecurringForm({ accounts, branches }: { accounts: Account[]; bra
           </button>
         </div>
       </div>
-    </form>
+    </PreservedForm>
   );
 }

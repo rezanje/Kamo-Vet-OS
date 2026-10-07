@@ -1,11 +1,14 @@
 "use client";
 
+import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
+import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
+import { draftString, draftNumber } from "@/components/TransactionDraft";
 import { useState } from "react";
 import Link from "next/link";
 
 // Kategori + umur berpasangan: memilih kategori mengisi umur dari standarnya,
 // tapi umurnya tetap bisa ditimpa — umur riil sebuah aset bisa beda dari standar.
-export function KategoriUmur({ kategori }: { kategori: { id: string; nama: string; umur_bulan: number }[] }) {
+export function KategoriUmur({ userId, purchase = false, kategori }: { userId: string; purchase?: boolean; kategori: { id: string; nama: string; umur_bulan: number }[] }) {
   const [catId, setCatId] = useState(kategori[0]?.id ?? "");
   const [umur, setUmur] = useState<number>(kategori[0]?.umur_bulan ?? 48);
 
@@ -15,8 +18,10 @@ export function KategoriUmur({ kategori }: { kategori: { id: string; nama: strin
     if (k) setUmur(k.umur_bulan);
   };
 
+  const draft = { snapshot: { catId, umur }, restore: (value: Record<string, unknown>) => { if (!draftString(value.catId) || !draftNumber(value.umur)) return false; setCatId(value.catId); setUmur(value.umur); return true; }, reset: () => { setCatId(kategori[0]?.id ?? ""); setUmur(kategori[0]?.umur_bulan ?? 48); } };
   return (
     <>
+      {purchase ? <PurchaseRequestKey userId={userId} scope="asset" draft={draft} /> : <LocalTransactionDraft userId={userId} scope="asset-opening" state={draft} />}
       <div>
         <label className="flab">Kategori *</label>
         <select className="fi" name="category_id" value={catId} onChange={(e) => ganti(e.target.value)} required>

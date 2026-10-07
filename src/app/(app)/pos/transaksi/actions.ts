@@ -8,7 +8,7 @@ import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { stockOut } from "@/lib/inventory";
-import { loadUnitOptions, pickUnit, toBaseQty } from "@/lib/satuan";
+import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
@@ -64,7 +64,7 @@ export async function checkoutSale(formData: FormData) {
   // menentukan barang & satuan, tidak boleh menentukan harganya sendiri.
   const rows = rawRows.map((l) => {
     const opts = l.item_id ? unitOpts.get(l.item_id) : undefined;
-    const u = opts ? pickUnit(opts, l.satuan) : null;
+    const u = l.item_id ? resolveSubmittedUnit(opts ?? [], l.satuan) : null;
     return {
       ...l,
       satuan: u?.unit ?? l.satuan ?? null,

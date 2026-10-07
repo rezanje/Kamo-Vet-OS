@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -21,7 +22,7 @@ export async function openShift(formData: FormData) {
     // unique index: kamu masih punya shift petshop yang open.
     redirect(`/pos/shift?error=${encodeURIComponent("Kamu masih punya shift terbuka — tutup dulu")}`);
   }
-  redirect("/pos/shift?success=open");
+  redirect(`/pos/shift?success=open${transactionDraftAck(formData)}`);
 }
 
 export async function closeShift(formData: FormData) {
@@ -45,7 +46,7 @@ export async function closeShift(formData: FormData) {
   const hasil = await tutupShift(supabase, { shift: shift!, closing });
   if (!hasil.ok) redirect(`/pos/shift?error=${encodeURIComponent(hasil.error)}`);
 
-  redirect("/pos/shift?success=close");
+  redirect(`/pos/shift?success=close${transactionDraftAck(formData)}`);
 }
 
 // Addendum §1 edge case: shift nyangkut >24 jam bisa ditutup paksa manajer cabang.

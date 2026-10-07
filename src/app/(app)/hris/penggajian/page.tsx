@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -28,6 +29,7 @@ export default async function PenggajianPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
   const bolehKelola = await bolehKelolaMaster();
 
   const periode = /^\d{4}-\d{2}$/.test(sp.periode ?? "") ? sp.periode! : hariIniWIB().slice(0, 7);
@@ -127,13 +129,13 @@ export default async function PenggajianPage({
             </form>
 
             {slip.length > 0 && !final && (
-              <form action={sahkanPenggajian} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <TransactionForm userId={user?.id ?? ""} scope={`payroll-authorize:${periode}`} action={sahkanPenggajian} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <input type="hidden" name="periode" value={periode} />
                 <PilihRekening rekening={rekening} label="Gaji dibayar dari" width={170} />
                 <SubmitButton className="btn-acc" icon="ti-lock" pendingText="Mengesahkan…" style={{ background: "#16a34a" }}>
                   Sahkan &amp; bukukan
                 </SubmitButton>
-              </form>
+              </TransactionForm>
             )}
 
             {slip.length > 0 && (
@@ -153,7 +155,7 @@ export default async function PenggajianPage({
               ? "Sudah disahkan — angka terkunci."
               : "Kolom koreksi untuk penyesuaian manual (boleh minus). Tekan Simpan koreksi setelah mengubah."}
           />
-          <form action={simpanKoreksi}>
+          <TransactionForm userId={user?.id ?? ""} scope={`payroll-correction:${periode}`} action={simpanKoreksi}>
             <input type="hidden" name="periode" value={periode} />
             <div style={{ overflowX: "auto" }}>
               <table className="tbl" style={{ minWidth: 1100 }}>
@@ -238,7 +240,7 @@ export default async function PenggajianPage({
                 </SubmitButton>
               </div>
             )}
-          </form>
+          </TransactionForm>
         </div>
       )}
 

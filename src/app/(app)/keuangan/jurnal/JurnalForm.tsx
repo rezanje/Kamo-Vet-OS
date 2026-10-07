@@ -1,4 +1,6 @@
 "use client";
+import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
+import { draftRows } from "@/components/TransactionDraft";
 
 import { useMemo, useState } from "react";
 import { jurnalManual } from "./actions";
@@ -15,9 +17,11 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const emptyLine = (): Line => ({ account_id: "", debit: "", credit: "" });
 
 export function JurnalForm({
+  userId,
   accounts,
   branches,
 }: {
+  userId: string;
   accounts: Account[];
   branches: Branch[];
 }) {
@@ -62,7 +66,8 @@ export function JurnalForm({
   );
 
   return (
-    <form action={jurnalManual}>
+    <PreservedForm action={jurnalManual}>
+      <LocalTransactionDraft userId={userId} scope="journal-create" state={{snapshot:{tanggal,deskripsi,branchId,lines},restore(value){if(typeof value.tanggal!=="string"||typeof value.deskripsi!=="string"||typeof value.branchId!=="string"||!draftRows(value.lines,emptyLine()))return false;setTanggal(value.tanggal);setDeskripsi(value.deskripsi);setBranchId(value.branchId);setLines(value.lines);return true;},reset(){setTanggal(today);setDeskripsi("");setBranchId("");setLines([emptyLine(),emptyLine()]);}}}/>
       {/* Hidden fields */}
       <input type="hidden" name="tanggal" value={tanggal} />
       <input type="hidden" name="deskripsi" value={deskripsi} />
@@ -247,6 +252,6 @@ export function JurnalForm({
         <i className="ti ti-device-floppy" style={{ marginRight: 6 }} />
         Simpan Jurnal
       </button>
-    </form>
+    </PreservedForm>
   );
 }

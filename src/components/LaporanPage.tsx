@@ -18,7 +18,7 @@ export function LaporanPage({
   unduhTampilan?: boolean;
 }) {
   return (
-    <>
+    <div data-report-page>
       <div style={{ marginBottom: 4 }}>
         <Link href="/laporan" className="back-btn"><i className="ti ti-arrow-left" /> Daftar Laporan</Link>
       </div>
@@ -45,7 +45,7 @@ export function LaporanPage({
         {ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}
         {children}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -54,7 +54,7 @@ export function KartuAngka({ items }: { items: { label: string; nilai: string; w
   return (
     <div className="crm-sec" style={{ display: "flex", gap: 26, flexWrap: "wrap", marginBottom: 0 }}>
       {items.map((k) => (
-        <div key={k.label}>
+        <div key={k.label} data-report-row>
           <div style={{ fontSize: 9.5, color: "var(--td)", textTransform: "uppercase", letterSpacing: .3 }}>{k.label}</div>
           <div style={{ fontSize: 17, fontWeight: 800, color: k.warna ?? "var(--sb)" }}>{k.nilai}</div>
         </div>

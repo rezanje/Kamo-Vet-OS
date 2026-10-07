@@ -1,3 +1,5 @@
+import { readReportRows } from "@/lib/hpp-reports-server";
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { nilaiBaris } from "@/lib/tagihan-klinik";
@@ -38,25 +40,6 @@ export type Baris = {
   nama: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
 };
 
-const UKURAN_HALAMAN_DATA = 500;
-const BATAS_BARIS_DATA = 5_000;
-
-async function bacaSemua<T>(ambil: (dari: number, sampai: number) => Promise<{
-  data: T[] | null; error: { message: string } | null;
-}>): Promise<T[]> {
-  const rows: T[] = [];
-  for (let dari = 0; dari <= BATAS_BARIS_DATA; dari += UKURAN_HALAMAN_DATA) {
-    const { data, error } = await ambil(dari, dari + UKURAN_HALAMAN_DATA - 1);
-    if (error) throw new Error(`Data laporan gagal dibaca: ${error.message}`);
-    if (dari === BATAS_BARIS_DATA && data?.length) {
-      throw new Error("Periode memuat terlalu banyak baris. Persempit tanggal agar laporan tetap lengkap.");
-    }
-    rows.push(...(data ?? []));
-    if ((data ?? []).length < UKURAN_HALAMAN_DATA) break;
-  }
-  return rows;
-}
-
 function potong<T>(items: T[], ukuran = 100): T[][] {
   const hasil: T[][] = [];
   for (let i = 0; i < items.length; i += ukuran) hasil.push(items.slice(i, i + ukuran));
@@ -84,20 +67,20 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       const bacaKlinik = kanal === "Klinik";
       const bacaKasir = kanal === "POS" || kanal === "Online";
       const [invoiceItems, saleItems] = await Promise.all([
-        bacaKlinik ? bacaSemua<InvoiceItem>(async (awal, ujung) => {
-          const { data, error } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, invoices!inner(visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))")
+        bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
+          const { data, error, count } = await supabase.from("invoice_items")
+            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, invoices!inner(visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
             .is("invoices.voided_at", null)
             .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
             .order("id").range(awal, ujung);
-          return { data: data as unknown as InvoiceItem[] | null, error };
+          return { data: data as unknown as InvoiceItem[] | null, error, count };
         }) : Promise.resolve([] as InvoiceItem[]),
-        bacaKasir ? bacaSemua<SaleItem>(async (awal, ujung) => {
-          const { data, error } = await supabase.from("sale_items")
-            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, sales!inner(id, no_struk, created_at, channel, branches(name), customers(name))")
+        bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
+          const { data, error, count } = await supabase.from("sale_items")
+            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, sales!inner(id, no_struk, created_at, channel, branches(name), customers(name))", { count: "exact" })
             .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
             .order("id").range(awal, ujung);
-          return { data: data as unknown as SaleItem[] | null, error };
+          return { data: data as unknown as SaleItem[] | null, error, count };
         }) : Promise.resolve([] as SaleItem[]),
       ]);
 
@@ -109,16 +92,14 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       }))];
       const medicalRecords: { id: string; visit_id: string }[] = [];
       for (const batch of potong(visitIds)) {
-        const { data, error } = await supabase.from("medical_records").select("id, visit_id").in("visit_id", batch);
-        if (error) throw new Error(`Data racikan gagal dibaca: ${error.message}`);
+        const { data } = await completeReportQuery(supabase.from("medical_records").select("id, visit_id", { count: "exact" }).in("visit_id", batch));
         medicalRecords.push(...(data ?? []));
       }
       const visitPerRecord = new Map(medicalRecords.map((record) => [record.id, record.visit_id]));
       const namaRacikan = new Set<string>();
       for (const batch of potong(medicalRecords.map((record) => record.id))) {
-        const { data, error } = await supabase.from("compounding_recipes")
-          .select("medical_record_id, recipe_name").in("medical_record_id", batch);
-        if (error) throw new Error(`Data racikan gagal dibaca: ${error.message}`);
+        const { data } = await completeReportQuery(supabase.from("compounding_recipes")
+          .select("id, medical_record_id, recipe_name", { count: "exact" }).in("medical_record_id", batch));
         for (const recipe of data ?? []) {
           const visitId = visitPerRecord.get(recipe.medical_record_id);
           if (visitId) namaRacikan.add(kunciRacikan(visitId, recipe.recipe_name));

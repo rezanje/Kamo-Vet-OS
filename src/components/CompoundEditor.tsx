@@ -8,18 +8,20 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
   value:CompoundDraft;onChange:(value:CompoundDraft)=>void;onAdd?:()=>void;onAddStock?:(item:T)=>void;submitLabel?:string;
 }) {
   const [search,setSearch]=useState(""),[materialSearch,setMaterialSearch]=useState(""),[page,setPage]=useState(1),[materialPage,setMaterialPage]=useState(1);
-  const sku=items.find(item=>item.id===value.saleItemId),formula=catalog.find(row=>row.version_id===value.formulaId);
+  const sku=items.find(item=>item.id===value.saleItemId);
+  const boundCatalog=sku?catalog.filter(row=>row.active&&row.sale_item_id===sku.id):[];
+  const formula=boundCatalog.find(row=>row.version_id===value.formulaId);
   const term=search.trim().toLowerCase(),materialTerm=materialSearch.trim().toLowerCase();
   const matches=term?items.filter(item=>`${item.name} ${item.code??""}`.toLowerCase().includes(term)):[];
   const materialMatches=materialTerm?materials.filter(item=>`${item.name} ${item.code??""}`.toLowerCase().includes(materialTerm)):[];
   const pages=Math.max(1,Math.ceil(matches.length/40)),currentPage=Math.min(page,pages);
   const materialPages=Math.max(1,Math.ceil(materialMatches.length/40)),currentMaterialPage=Math.min(materialPage,materialPages);
-  const valid=!!sku&&(!!formula || (allowCustom&&value.ingredients.length>0&&value.ingredients.every(row=>Number.isFinite(row.qty)&&row.qty>0)));
+  const valid=!!sku&&(!!formula || (!value.formulaId&&allowCustom&&value.ingredients.length>0&&value.ingredients.every(row=>Number.isFinite(row.qty)&&row.qty>0)));
   return <section aria-label="Editor obat racik" style={{ display:"flex",flexDirection:"column",gap:8 }}>
     <strong style={{fontSize:12}}>Obat racik dari Barang &amp; Jasa</strong>
     <input className="fi" aria-label="Cari obat racik" placeholder="Cari nama / kode obat racik…" value={search} onChange={event=>{setSearch(event.target.value);setPage(1);}} />
     {term&&<div style={{maxHeight:200,overflowY:"auto",display:"grid",gap:4}}>
-      {matches.slice((currentPage-1)*40,currentPage*40).map(item=><button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{onChange({...value,saleItemId:item.id});setSearch("");}} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
+      {matches.slice((currentPage-1)*40,currentPage*40).map(item=><button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{onChange({...value,saleItemId:item.id,formulaId:value.saleItemId===item.id?value.formulaId:""});setSearch("");}} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
         <span>{item.name}<small style={{display:"block",color:"var(--tm)"}}>Stok obat jadi {item.stok} {item.unit}</small></span><span>{rp(item.sell_price)}</span>
       </button>)}
       {!matches.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Tidak ada obat racik yang cocok.</span>}
@@ -33,8 +35,9 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
     <label className="flab">Komposisi racikan</label>
     <select className="fi" aria-label="Komposisi racikan" value={value.formulaId} onChange={event=>onChange({...value,formulaId:event.target.value})}>
       <option value="">{allowCustom?"Racikan khusus pasien":"Pilih resep resmi"}</option>
-      {catalog.map(row=><option key={row.version_id} value={row.version_id}>{row.code} · {row.name} (v{row.version})</option>)}
+      {boundCatalog.map(row=><option key={row.version_id} value={row.version_id}>{row.code} · {row.name} (v{row.version})</option>)}
     </select>
+    {sku&&!boundCatalog.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Resep resmi belum ditautkan ke SKU ini. OWNER/ADMIN dapat mengaturnya di Katalog Racikan Resmi.</span>}
     {formula?<div style={{fontSize:11,padding:9,background:"#f4f0ff",borderRadius:8}}>
       <strong>{formula.name} · {formula.dosage_form}</strong>
       <div>{formula.ingredients.map(row=>`${row.name} ${row.quantity} ${row.unit}`).join(" · ")}</div>

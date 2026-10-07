@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -23,10 +24,10 @@ export default async function LaporanGajiPage({
 
   const supabase = await createClient();
   const [{ data }, { data: cabangList }] = await Promise.all([
-    supabase.from("payrolls")
-      .select("id, gaji_pokok, tunjangan, potongan, total, employees(nama, jabatan, branches(name))")
-      .eq("periode", periode),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    completeReportQuery(supabase.from("payrolls")
+      .select("id, gaji_pokok, tunjangan, potongan, total, employees(nama, jabatan, branches(name))", { count: "exact" })
+      .eq("periode", periode)),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const rows = ((data ?? []) as unknown as Row[])

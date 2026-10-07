@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { loadUnitOptions } from "@/lib/satuan";
 import { OnlineForm } from "./OnlineForm";
 
 type WhRow = { id: string; name: string; branches: { name: string } | { name: string }[] | null };
@@ -7,10 +8,11 @@ type WhRow = { id: string; name: string; branches: { name: string } | { name: st
 export default async function OnlineBaruPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; request_scope?:string; request_done?:string; success?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, success, request_scope, request_done } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
 
   const [{ data: whRaw, error: whErr }, { data: items }, { data: customers }] = await Promise.all([
     supabase
@@ -28,6 +30,8 @@ export default async function OnlineBaruPage({
     return { id: w.id, name: w.name, branch_name: br?.name ?? "—" };
   });
 
+  const units = await loadUnitOptions(supabase, (items ?? []).map(it => it.id));
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -38,6 +42,7 @@ export default async function OnlineBaruPage({
         <span style={{ fontSize: 13, fontWeight: 500 }}>Order Online Baru</span>
       </div>
 
+      {success && <div className="p2ban">{success}</div>}
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
@@ -56,8 +61,9 @@ export default async function OnlineBaruPage({
         </div>
       ) : (
         <OnlineForm
+          userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done}
           warehouses={warehouses}
-          items={(items ?? []) as { id: string; code: string; name: string; sell_price: number }[]}
+          items={(items ?? []).map(it => ({...it, units: units.get(it.id) ?? []}))}
           customers={(customers ?? []) as { id: string; name: string; phone: string | null }[]}
         />
       )}

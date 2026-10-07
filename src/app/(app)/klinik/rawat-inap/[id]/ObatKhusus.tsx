@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -22,6 +23,8 @@ const tglPendek = (iso: string) =>
 
 export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif: boolean }) {
   const supabase = await createClient();
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
+  const draftUserId = draftUser?.id ?? "";
   const hariIni = hariIniWIB();
 
   const { data: obatRows } = await supabase
@@ -114,14 +117,14 @@ export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif:
 
                 {aktif && !pr.selesai && (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <form action={catatPemberianObat}>
+                    <TransactionForm userId={draftUserId} scope={`inpatient-dose:${recordId}:${o.id}`} action={catatPemberianObat}>
                       <input type="hidden" name="medicationId" value={o.id} />
                       <input type="hidden" name="recordId" value={recordId} />
                       <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Mencatat…"
                         style={{ background: "#7c3aed", fontSize: 11, padding: "5px 11px" }}>
                         Catat pemberian
                       </SubmitButton>
-                    </form>
+                    </TransactionForm>
                     <form action={hentikanObatInap}>
                       <input type="hidden" name="medicationId" value={o.id} />
                       <input type="hidden" name="recordId" value={recordId} />
@@ -171,7 +174,7 @@ export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif:
       </div>
 
       {aktif && (
-        <form action={tambahObatInap} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
+        <TransactionForm userId={draftUserId} scope={`inpatient-medication:${recordId}`} action={tambahObatInap} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
           <input type="hidden" name="recordId" value={recordId} />
           <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--tm)", letterSpacing: ".05em", marginBottom: 7 }}>
             TAMBAH OBAT BERPROTOKOL
@@ -213,7 +216,7 @@ export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif:
               Tambah obat
             </SubmitButton>
           </div>
-        </form>
+        </TransactionForm>
       )}
     </div>
   );

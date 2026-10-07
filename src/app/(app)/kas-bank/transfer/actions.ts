@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
@@ -79,7 +80,8 @@ export async function buatTransfer(formData: FormData) {
     gagal("Jurnal gagal tersimpan, transfer dibatalkan — coba lagi");
   }
 
-  redirect(`${BACK}?success=1`);
+  await assertDraftJournal(supabase,{deskripsi:`Transfer ${dari!.nama} → ${ke!.nama} (${noTransfer})`,source:"transfer",sourceRef:noTransfer,tanggal,branchId,lines:jurnalTransfer(dari!.coa_code,ke!.coa_code,jumlah,biayaAdmin)});
+  redirect(`${BACK}?success=1${transactionDraftAck(formData)}`);
 }
 
 export async function batalkanTransfer(formData: FormData) {

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "./LaporanPage";
 import { loadCompoundReport, loadInventoryReport, normalizeReportFilters, REPORT_PATHS, type ReportKind, type ReportParams, type CompoundReport, type InventoryReport } from "@/lib/hpp-reports-server";
-import { compoundTable, compoundIngredientsTable, inventoryTable, reportWIB, type ReportCell, type ReportColumn } from "@/lib/hpp-reports-export";
+import { compoundTable, compoundIngredientsTable, compoundReconciliationTable, inventoryTable, reportWIB, type ReportCell, type ReportColumn } from "@/lib/hpp-reports-export";
 import { hppReportError } from "@/lib/hpp-reports-download";
 import { paginateReport } from "@/lib/hpp-reports";
 
@@ -36,11 +36,12 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
   const inventory = report && "warehouses" in report ? report : undefined;
   const compound = report && "doctors" in report ? report : undefined;
   const ingredientView = kind === "compound" && params.rincian === "bahan";
-  const table = inventory ? inventoryTable(inventory) : compound ? ingredientView ? compoundIngredientsTable(compound) : compoundTable(compound) : undefined;
+  const reconciliationView = kind === "compound" && params.rincian === "rekonsiliasi";
+  const table = inventory ? inventoryTable(inventory) : compound ? reconciliationView ? compoundReconciliationTable(compound) : ingredientView ? compoundIngredientsTable(compound) : compoundTable(compound) : undefined;
   const pagination = paginateReport(table?.rows ?? [],params.halaman);
   const path = REPORT_PATHS[kind];
   const query = new URLSearchParams({ cabang: filters.cabang, q: filters.q,
-    ...(kind === "inventory" ? { gudang: filters.gudang, masalah: filters.masalah } : { dari: filters.dari, sampai: filters.sampai, dokter: filters.dokter, ...(ingredientView ? { rincian: "bahan" } : {}) }) });
+    ...(kind === "inventory" ? { gudang: filters.gudang, masalah: filters.masalah } : { dari: filters.dari, sampai: filters.sampai, dokter: filters.dokter, ...(reconciliationView ? { rincian: "rekonsiliasi" } : ingredientView ? { rincian: "bahan" } : {}) }) });
   const pageHref = (page: number) => `${path}?${query}&halaman=${page}`;
   const cards = inventory ? [
     { label: "Barang / gudang", nilai: String(inventory.summary.count) },
@@ -53,6 +54,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
     { label: "HPP baris tercakup", nilai: money(compound.summary.cost) },
     { label: "Laba kotor baris tercakup", nilai: money(compound.summary.grossProfit) },
     { label: "Margin baris tercakup", nilai: percent(compound.summary.margin) },
+    { label: "Baris perlu rekonsiliasi tautan / HPP", nilai: String(compound.reconciliation.length), warna: compound.reconciliation.length ? "#b45309" : "#15803d" },
     { label: "Baris tanpa HPP", nilai: String(compound.summary.missingCost), warna: compound.summary.missingCost ? "#b45309" : "#15803d" },
   ] : [];
   return <LaporanPage icon={kind === "inventory" ? "ti-package" : "ti-flask"}
@@ -75,8 +77,8 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
           <option value="">Semua saldo</option><option value="ya">Perlu rekonsiliasi / HPP</option>
         </select></div>
       </>}
-      {kind === "compound" && <div><label className="flab">Rincian</label><select className="fi" name="rincian" defaultValue={ingredientView ? "bahan" : "margin"}>
-        <option value="margin">Margin per racikan</option><option value="bahan">Bahan dan HPP historis</option>
+      {kind === "compound" && <div><label className="flab">Rincian</label><select className="fi" name="rincian" defaultValue={reconciliationView ? "rekonsiliasi" : ingredientView ? "bahan" : "margin"}>
+        <option value="margin">Margin per racikan</option><option value="bahan">Bahan dan HPP historis</option><option value="rekonsiliasi">Perlu rekonsiliasi tautan / HPP</option>
       </select></div>}
       {kind === "compound" && <div><label className="flab">Dokter kunjungan</label><select className="fi" name="dokter" defaultValue={filters.dokter}>
         <option value="">Semua dokter</option>{compound?.doctors.map(doctor => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}
@@ -119,7 +121,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
           Dokter mengikuti penanggung jawab kunjungan saat ini. Versi resmi tetap memakai ID saat racikan dibuat; metadata versi nonaktif dapat tidak tersedia.
           Nama dan satuan bahan mengikuti resep saat dibaca; label racikan ad hoc dapat berubah. Qty resep yang tidak valid ditampilkan kosong tanpa mengubah HPP invoice.
           Rincian bahan memakai HPP pemakaian historis yang ditautkan ke invoice. Jika histori belum tersedia, qty berasal dari resep tersimpan dan HPP bahan ditandai belum tersedia. Qty resep lama dapat berubah; nilai bahan tidak dihitung dari harga jual atau HPP stok saat ini.
-          Hanya baris dengan tautan ID resep yang dihitung; racikan lama tanpa tautan tidak dicocokkan lewat nama.
+          Hanya baris dengan tautan ID resep yang dihitung. Rincian rekonsiliasi menampilkan baris invoice bersatuan racikan tanpa tautan resep serta baris tanpa HPP historis, dengan ID sumber dan alasan. Baris tanpa tautan tidak masuk total keuangan; HPP, laba, dan margin yang tidak diketahui tetap kosong. Baris lama tanpa penanda satuan racikan belum dapat dikenali dengan pasti dan tidak dicocokkan lewat nama.
         </> : null}
       </div>
     </div> : null}

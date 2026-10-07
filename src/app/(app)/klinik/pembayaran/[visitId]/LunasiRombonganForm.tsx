@@ -1,4 +1,5 @@
 "use client";
+import { PreservedForm, LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 
 // Panel bayar sekaligus untuk satu kedatangan (beberapa hewan).
 //
@@ -16,8 +17,9 @@ import type { BekalPotongan } from "@/lib/tagihan-klinik";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export function LunasiRombonganForm({ visitId, requestKey, jumlahPasien, total, tertahan, bekal, promoTotal = 0 }: {
+export function LunasiRombonganForm({ visitId, requestKey, contextKey, jumlahPasien, total, tertahan, bekal, promoTotal = 0 }: {
   visitId: string;
+  contextKey: string;
   requestKey: string;
   jumlahPasien: number;
   /** Perkiraan total seluruh hewan — sudah termasuk promo & diskon golongan. */
@@ -28,6 +30,7 @@ export function LunasiRombonganForm({ visitId, requestKey, jumlahPasien, total, 
   /** Potongan promo & golongan yang sudah tercermin di `total` — untuk ditampilkan. */
   promoTotal?: number;
 }) {
+  const [submissionKey,setSubmissionKey] = useState(requestKey);
   const [metode, setMetode] = useState("Tunai");
   const [bayar, setBayar] = useState(0);
   const [voucher, setVoucher] = useState("");
@@ -55,9 +58,10 @@ export function LunasiRombonganForm({ visitId, requestKey, jumlahPasien, total, 
   const belumCukup = tunai && bayar > 0 && kurang > 0;
 
   return (
-    <form action={bayarRombongan} style={{ marginTop: 10, paddingTop: 10, borderTop: ".5px solid #bfdbfe" }}>
+    <PreservedForm action={bayarRombongan} style={{ marginTop: 10, paddingTop: 10, borderTop: ".5px solid #bfdbfe" }}>
+      <LocalTransactionDraft scope={`clinic-group-payment:${visitId}:${contextKey}`} state={{snapshot:{metode,bayar,voucher,poinPakai,submissionKey},restore:s=>{if(!METODE_BAYAR.some(m=>m.m===s.metode)||typeof s.bayar!=="number"||!Number.isFinite(s.bayar)||typeof s.voucher!=="string"||typeof s.poinPakai!=="number"||!Number.isFinite(s.poinPakai)||typeof s.submissionKey!=="string"||!s.submissionKey)return false;setMetode(String(s.metode));setBayar(s.bayar);setVoucher(s.voucher);setPoinPakai(s.poinPakai);setSubmissionKey(s.submissionKey);return true;},reset:()=>{setMetode("Tunai");setBayar(0);setVoucher("");setPoinPakai(0);setSubmissionKey(crypto.randomUUID());}}}/>
       <input type="hidden" name="visitId" value={visitId} />
-      <input type="hidden" name="requestKey" value={requestKey} />
+      <input type="hidden" name="requestKey" value={submissionKey} />
       <input type="hidden" name="metode_bayar" value={metode} />
       <input type="hidden" name="voucherCode" value={voucher} />
       <input type="hidden" name="poinDigunakan" value={poinDipakai} />
@@ -152,7 +156,7 @@ export function LunasiRombonganForm({ visitId, requestKey, jumlahPasien, total, 
           Jalur ini untuk pelunasan penuh. Perlu DP, diskon per item, atau ubah isi tagihan? Buka hewannya satu per satu.
         </span>
       </div>
-    </form>
+    </PreservedForm>
   );
 }
 

@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
@@ -47,7 +48,7 @@ export async function buatPesanan(formData: FormData) {
     gagal(itemErr.message);
   }
 
-  redirect(`${detail(so!.id)}?success=${encodeURIComponent(`Pesanan ${no} dibuat.`)}`);
+  redirect(`${detail(so!.id)}?success=${encodeURIComponent(`Pesanan ${no} dibuat.`)}${transactionDraftAck(formData)}`);
 }
 
 export async function batalPesanan(formData: FormData) {
@@ -55,7 +56,7 @@ export async function batalPesanan(formData: FormData) {
   const supabase = await assertRole(detail(id), "pesanan penjualan", BOLEH);
   const { error } = await supabase.rpc("sales_cancel_order", { p_order_id: id });
   if (error) redirect(`${detail(id)}?error=${encodeURIComponent(error.message)}`);
-  redirect(`${detail(id)}?success=${encodeURIComponent("Pesanan dibatalkan.")}`);
+  redirect(`${detail(id)}?success=${encodeURIComponent("Pesanan dibatalkan.")}${transactionDraftAck(formData)}`);
 }
 
 /** Pass exact quantities to SQL; never clamp using stale application remainders. */

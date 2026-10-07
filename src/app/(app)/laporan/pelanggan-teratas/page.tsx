@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { tanggalIndo } from "@/lib/followup";
@@ -33,15 +34,15 @@ export default async function PelangganTeratasPage({
   // dan tagihan klinik yang sudah lunas (invoices lewat visits). Menghitung
   // salah satunya saja bikin pelanggan klinik terlihat tidak pernah belanja.
   const [{ data: sales }, { data: invoices }, { data: customers }] = await Promise.all([
-    supabase.from("sales")
-      .select("customer_id, total, created_at")
-      .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`),
-    supabase.from("invoices")
-      .select("total, created_at, visits!inner(customer_id)")
+    completeReportQuery(supabase.from("sales")
+      .select("id, customer_id, total, created_at", { count: "exact" })
+      .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
+    completeReportQuery(supabase.from("invoices")
+      .select("id, total, created_at, visits!inner(customer_id)", { count: "exact" })
       .eq("paid_status", "Lunas").is("voided_at", null)
-      .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`),
-    supabase.from("customers")
-      .select("id, name, phone, customer_categories(nama)"),
+      .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
+    completeReportQuery(supabase.from("customers")
+      .select("id, name, phone, customer_categories(nama)", { count: "exact" })),
   ]);
 
   const agg = new Map<string, { trx: number; total: number; terakhir: string | null }>();

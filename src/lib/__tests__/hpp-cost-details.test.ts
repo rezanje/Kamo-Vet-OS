@@ -67,12 +67,15 @@ it("shows recipe quantities with unavailable costs only when the protected RPC i
   expect(report.summary.cost).toBe(50);
 });
 
-it("caps the complete ingredient source across ID batches instead of returning an oversized report", async () => {
+it("keeps all ingredient rows across ID batches beyond 5000 with unknown costs unchanged", async () => {
   const lines = Array.from({ length: 101 }, (_, i) => ({ ...invoice, id: `line-${i}`, compound_recipe_id: `recipe-${i}` }));
   const ingredients = lines.flatMap((line, i) => Array.from({ length: 50 }, (_, j) => ({
     id: `ingredient-${i}-${j}`, recipe_id: line.compound_recipe_id, item_id: "i", ingredient_name: "Obat", quantity: 1, unit: "ml",
   })));
-  await expect(loadCompoundReport(clientFixture({ tables: { invoice_items: lines, compounding_ingredients: ingredients } }).client, params)).rejects.toThrow("terlalu banyak");
+  const report = await loadCompoundReport(clientFixture({ tables: { invoice_items: lines, compounding_ingredients: ingredients } }).client, params);
+  expect(report.rows.flatMap(row => row.ingredients)).toHaveLength(ingredients.length);
+  expect(report.rows.flatMap(row => row.ingredients).every(ingredient => ingredient.cost === null)).toBe(true);
+  expect(report.summary.cost).toBe(lines.length * 50);
 });
 
 it("retains explicitly labeled recipe quantities when a complete ledger read has no historical issues", async () => {

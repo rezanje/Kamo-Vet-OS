@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { bolehTransaksiKas } from "@/lib/master-guard";
@@ -28,6 +29,7 @@ export default async function TransferPage({
 }) {
   const { error, success } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
   const [{ data: rekData }, { data: branches }, { data: rows }, saldoAkun] = await Promise.all([
@@ -88,7 +90,7 @@ export default async function TransferPage({
       )}
 
       {boleh && rekening.length >= 2 && (
-        <form action={buatTransfer} className="crm-sec" style={{ marginBottom: 14 }}>
+        <TransactionForm userId={user?.id ?? ""} scope={"bank-transfer-create"} action={buatTransfer} className="crm-sec" style={{ marginBottom: 14 }}>
           <div className="frow">
             <div>
               <label className="flab">Tanggal *</label>
@@ -140,7 +142,7 @@ export default async function TransferPage({
               Simpan transfer
             </SubmitButton>
           </div>
-        </form>
+        </TransactionForm>
       )}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>

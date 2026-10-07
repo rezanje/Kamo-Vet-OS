@@ -1,5 +1,7 @@
 "use client";
 
+import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { draftRows } from "@/components/TransactionDraft";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -11,9 +13,10 @@ type Warehouse = { id: string; name: string };
 type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: string; cari: string };
 const blank: Row = { item_id: "", qty_diminta: 1, satuan: "", catatan: "", cari: "" };
 
-export function PermintaanFormKlinik({ branchName, warehouses, items }: {
-  branchName: string; warehouses: Warehouse[]; items: KatalogItem[];
+export function PermintaanFormKlinik({ userId, branchName, warehouses, items }: {
+  userId: string; branchName: string; warehouses: Warehouse[]; items: KatalogItem[];
 }) {
+  const { save, failure } = usePreservedAction(buatPermintaanKlinik);
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
   const byId = new Map(items.map((item) => [item.id, item]));
   const set = (i: number, patch: Partial<Row>) => setRows((all) => all.map((row, j) => j === i ? { ...row, ...patch } : row));
@@ -23,7 +26,12 @@ export function PermintaanFormKlinik({ branchName, warehouses, items }: {
   };
 
   return (
-    <form action={buatPermintaanKlinik}>
+    <form action={save}>
+      <LocalTransactionDraft userId={userId} scope="request-clinic" state={{ snapshot: { rows }, restore: (value) => {
+        if (!draftRows(value.rows, blank)) return false;
+        setRows(value.rows); return true;
+      }, reset: () => { setRows([{ ...blank }]); } }} />
+      {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
       <div className="grid2">
         <div className="crm-sec" style={{ marginBottom: 0 }}>

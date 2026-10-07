@@ -1,6 +1,7 @@
+import { VoidReissueForm } from "./VoidReissueForm";
 import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { daftarPenjual } from "@/lib/penjual";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -8,8 +9,6 @@ import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
-import { SubmitButton } from "@/components/SubmitButton";
-import { voidAndReissue } from "./actions";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -353,7 +352,8 @@ export default async function PembayaranPage({
               Hanya untuk kunjungan yang tagihannya belum dibuat — yang sudah punya
               invoice (DP/sebagian bayar) punya jalur pelunasan sendiri. */}
           {belumDitagih.length >= 2 && (
-            <LunasiRombonganForm
+            <LunasiRombonganForm key={`${visitId}:${rombongan.customerId ?? ""}:${rombongan.baris.map(b=>b.visitId).sort().join(",")}`}
+              contextKey={createHash("sha256").update(`${rombongan.customerId ?? ""}:${rombongan.baris.map(b=>b.visitId).sort().join(",")}`).digest("hex")}
               visitId={visitId}
               requestKey={groupRequestKey}
               jumlahPasien={belumDitagih.length - tertahanConsent.length}
@@ -489,16 +489,7 @@ export default async function PembayaranPage({
               <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
                 Pembayaran yang sudah diterima dialihkan ke invoice baru. Setelah koreksi, sisa tagihan dihitung ulang tanpa menerima uang dua kali.
               </div>
-              <form action={voidAndReissue} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-                <input type="hidden" name="visitId" value={visit.id} />
-                <input type="hidden" name="invoiceId" value={invoice.id} />
-                <input type="hidden" name="requestKey" value={randomUUID()} />
-                <div style={{ flex: 1 }}>
-                  <label className="flab">Alasan void *</label>
-                  <input className="fi" name="reason" required placeholder="mis. salah tagih jasa rawat inap" />
-                </div>
-                <SubmitButton className="btn-def" icon="ti-file-x" style={{ color: "#b91c1c", borderColor: "#fca5a5" }} pendingText="Memproses…">Void &amp; Terbitkan Ulang</SubmitButton>
-              </form>
+              <VoidReissueForm key={invoice.id} visitId={visit.id} invoiceId={invoice.id} requestKey={randomUUID()}/>
             </div>
           )}
         </>

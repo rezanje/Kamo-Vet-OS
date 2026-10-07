@@ -4,7 +4,7 @@ import { katalogFromRows, type BahanKatalog, type KatalogRacikan } from "@/lib/k
 export async function loadKatalogRacikan(includeInactive = false): Promise<KatalogRacikan[]> {
   const supabase = await createClient();
   let query = supabase.from("compound_formulas")
-    .select("id, code, active, current_version_id").order("code");
+    .select("id, code, active, current_version_id, sale_item_id").order("code");
   if (!includeInactive) query = query.eq("active", true);
   const { data: formulas, error } = await query;
   if (error) throw new Error("Katalog racikan belum bisa dimuat.");

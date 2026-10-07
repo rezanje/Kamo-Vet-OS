@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -39,9 +40,11 @@ export async function buatPermintaanKlinik(formData: FormData) {
     .select("id").single();
   if (error || !req) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal simpan permintaan")}`);
 
-  await supabase.from("stock_request_items").insert(
+  const { error: itemsError } = await supabase.from("stock_request_items").insert(
     prepared.rows.map((item) => ({ request_id: (req as { id: string }).id, ...item })),
   );
 
-  redirect("/klinik/permintaan?success=1");
+  if (itemsError) redirect(`${back}?error=${encodeURIComponent("Baris permintaan belum terkonfirmasi. Periksa daftar permintaan sebelum menyimpan ulang.")}`);
+
+  redirect(`/klinik/permintaan?success=1${transactionDraftAck(formData)}`);
 }

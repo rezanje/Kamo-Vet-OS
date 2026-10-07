@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { parseRecurringOccurrences } from "@/lib/recurring";
 import { createClient } from "@/lib/supabase/server";
@@ -38,7 +39,7 @@ export async function buatRecurring(formData: FormData) {
 
   revalidatePath(BACK);
   const pengulangan = max_occurrences === null ? "tanpa batas" : `sebanyak ${max_occurrences} kali`;
-  redirect(`${BACK}?success=${encodeURIComponent(`Jurnal berulang "${nama}" tersimpan — diposting tiap bulan ${pengulangan}.`)}`);
+  redirect(`${BACK}?success=${encodeURIComponent(`Jurnal berulang "${nama}" tersimpan — diposting tiap bulan ${pengulangan}.`)}${transactionDraftAck(formData)}`);
 }
 
 export async function toggleRecurring(formData: FormData) {

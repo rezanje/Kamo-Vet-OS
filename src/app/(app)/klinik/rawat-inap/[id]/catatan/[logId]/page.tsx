@@ -85,7 +85,7 @@ export default async function LogDetailPage({
         </div>
       )}
 
-      <LogEditForm
+      <LogEditForm key={`${id}:${logId}`}
         log={log as unknown as LogRow}
         recordId={id}
         backHref={`/klinik/rawat-inap/${id}`}

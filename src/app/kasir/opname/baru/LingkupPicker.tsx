@@ -7,6 +7,7 @@
 // hilang yang tidak laku. Toko tidak sanggup menutup lapak untuk hitung penuh
 // tiap hari, tapi 30 barang sehari bisa.
 
+import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 import { useMemo, useState } from "react";
 
 export type ItemPilihan = { id: string; code: string; name: string; kategori: string };
@@ -16,7 +17,7 @@ type Mode = "auto" | "penuh" | "parsial";
 const TERLARIS = 20;
 const ACAK = 10;
 
-export function LingkupPicker({ items }: { items: ItemPilihan[] }) {
+export function LingkupPicker({ items, scope }: { items: ItemPilihan[]; scope:string }) {
   const [mode, setMode] = useState<Mode>("auto");
   const parsial = mode === "parsial";
   const [pilih, setPilih] = useState<Set<string>>(new Set());
@@ -51,6 +52,7 @@ export function LingkupPicker({ items }: { items: ItemPilihan[] }) {
 
   return (
     <div className="fg" style={{ marginBottom: 10 }}>
+      <LocalTransactionDraft scope={scope} state={{snapshot:{mode,pilih:[...pilih],cari,kategori},restore:s=>{if(!["auto","penuh","parsial"].includes(String(s.mode))||!Array.isArray(s.pilih)||!s.pilih.every(id=>typeof id==="string"&&items.some(i=>i.id===id))||typeof s.cari!=="string"||typeof s.kategori!=="string")return false;setMode(s.mode as Mode);setPilih(new Set(s.pilih));setCari(s.cari);setKategori(s.kategori);return true;},reset:()=>{setMode("auto");setPilih(new Set());}}}/>
       <label className="flab">Lingkup hitung</label>
       {/* Kosong = seluruh gudang; server memperlakukan daftar kosong sebagai opname penuh.
           Mode "auto" membiarkan server yang menyusun daftarnya. */}

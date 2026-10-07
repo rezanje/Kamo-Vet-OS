@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
@@ -47,7 +48,7 @@ export async function buatPenawaran(formData: FormData) {
     gagal(itemErr.message);
   }
 
-  redirect(`${BASE}?success=${encodeURIComponent(`Penawaran ${no} dibuat.`)}`);
+  redirect(`${BASE}?success=${encodeURIComponent(`Penawaran ${no} dibuat.`)}${transactionDraftAck(formData)}`);
 }
 
 export async function ubahStatusPenawaran(formData: FormData) {
@@ -69,5 +70,5 @@ export async function jadikanPesanan(formData: FormData) {
 
   const { data, error } = await supabase.rpc("sales_convert_quotation", { p_quotation_id: id });
   if (error || !data?.order_id) gagal(error?.message ?? "Gagal membuat pesanan");
-  redirect(`/penjualan/pesanan/${data.order_id}?success=${encodeURIComponent(`Pesanan ${data.order_no} dibuat dari penawaran.`)}`);
+  redirect(`/penjualan/pesanan/${data.order_id}?success=${encodeURIComponent(`Pesanan ${data.order_no} dibuat dari penawaran.`)}${transactionDraftAck(formData)}`);
 }

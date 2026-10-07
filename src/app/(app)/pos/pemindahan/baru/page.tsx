@@ -11,6 +11,7 @@ export default async function PemindahanBaruPage({
   const { error } = await searchParams;
   const supabase = await createClient();
 
+  const { data: { user } } = await supabase.auth.getUser();
   const [{ data: whs }, items] = await Promise.all([
     supabase.from("warehouses").select("id, name").eq("is_active", true).neq("type", "TRANSIT").order("name"),
     loadKatalogPermintaan(supabase),
@@ -32,7 +33,7 @@ export default async function PemindahanBaruPage({
         </div>
       )}
 
-      <PemindahanForm warehouses={whs ?? []} items={items} />
+      <PemindahanForm warehouses={whs ?? []} items={items} userId={user?.id ?? ""} />
     </>
   );
 }

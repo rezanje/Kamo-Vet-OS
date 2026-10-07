@@ -1,3 +1,4 @@
+import { PreservedForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -32,6 +33,7 @@ export default async function PesananPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
   const [{ data: docData }, { data: custData }, { data: cabData }, { data: gudangData }, { data: itemData }] =
@@ -73,7 +75,7 @@ export default async function PesananPage({
       {boleh && (
         <div className="crm-sec">
           <SecHeader num="01" title="BUAT PESANAN" desc="Gudang menentukan stok mana yang dipotong saat barang dikirim." />
-          <form action={buatPesanan}>
+          <PreservedForm action={buatPesanan}>
             <div className="frow">
               <div>
                 <label className="flab">Pelanggan *</label>
@@ -110,14 +112,14 @@ export default async function PesananPage({
               </div>
             </div>
 
-            <BarisJualForm items={items} listId="so-items" />
+            <BarisJualForm userId={user?.id ?? ""} scope="order-create" items={items} listId="so-items" />
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                 Simpan pesanan
               </SubmitButton>
             </div>
-          </form>
+          </PreservedForm>
         </div>
       )}
 

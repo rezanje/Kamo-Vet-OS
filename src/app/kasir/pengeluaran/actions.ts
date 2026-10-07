@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -53,9 +54,11 @@ export async function simpanPengeluaranKasir(formData: FormData) {
     redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
   }
 
-  await supabase.from("document_attachments").insert(
+  const { error: attachmentError } = await supabase.from("document_attachments").insert(
     lampiran.map((l) => ({ ...l, modul: "pengeluaran", ref_id: expense!.id, uploaded_by: user?.id ?? null })),
   );
+
+  if(attachmentError) throw new Error("Pengeluaran tersimpan tetapi bukti belum terkonfirmasi. Periksa transaksi sebelum menyimpan ulang.");
 
   // Accounting: Dr Beban, Cr Kas/Bank.
   const kategoriToCode: Record<string, string> = {
@@ -72,7 +75,7 @@ export async function simpanPengeluaranKasir(formData: FormData) {
     tanggal: tanggal || hariIniWIB(),
     deskripsi: `Pengeluaran: ${deskripsi || kategori}`,
     source: "expense",
-    sourceRef: null,
+    sourceRef: expense!.id,
     branchId,
     lines: [
       { code: bebanCode, debit: jumlah, credit: 0 },
@@ -80,5 +83,6 @@ export async function simpanPengeluaranKasir(formData: FormData) {
     ],
   });
 
-  redirect("/kasir/pengeluaran?success=1");
+  await assertDraftJournal(supabase,{tanggal:tanggal||hariIniWIB(),source:"expense",sourceRef:expense!.id,branchId,lines:[{code:bebanCode,debit:jumlah,credit:0},{code:kasCode,debit:0,credit:jumlah}]});
+  redirect(`/kasir/pengeluaran?success=1${transactionDraftAck(formData)}`);
 }

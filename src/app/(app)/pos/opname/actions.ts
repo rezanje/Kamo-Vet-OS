@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -71,6 +72,11 @@ async function nextNo(supabase: Db, table: "opname_orders" | "opname_results", p
 }
 
 // ================= Perintah Stok Opname =================
+async function checkedOpnameJournal(supabase: Parameters<typeof postJournal>[0], opts: Parameters<typeof postJournal>[1]) {
+  await postJournal(supabase,opts);
+  await assertDraftJournal(supabase,{...opts,sourceRef:opts.sourceRef ?? ""});
+}
+
 export async function buatPerintah(formData: FormData) {
   const supabase = await createClient();
 
@@ -127,7 +133,7 @@ export async function buatPerintah(formData: FormData) {
 
   revalidatePath("/pos/opname");
   revalidatePath("/kasir/opname");
-  redirect(`${basis}/${doc!.id}?success=` + encodeURIComponent(`Perintah ${no_opname} tersimpan.`));
+  redirect(`${basis}/${doc!.id}?success=` + encodeURIComponent(`Perintah ${no_opname} tersimpan.`) + transactionDraftAck(formData));
 }
 
 // ================= Kunci hitungan per barang =================
@@ -324,7 +330,7 @@ export async function simpanHasil(formData: FormData) {
   // Barang lebih selalu dinilai modal — tidak ada yang menagih siapa pun untuk
   // barang yang justru ketemu.
   if (lebih > 0) {
-    await postJournal(supabase, {
+    await checkedOpnameJournal(supabase, {
       tanggal,
       deskripsi: `Selisih lebih stok opname ${no_hasil} (${order.no_opname})`,
       source: "opname",
@@ -349,7 +355,7 @@ export async function simpanHasil(formData: FormData) {
     ));
 
     if (kurangCost > 0) {
-      await postJournal(supabase, {
+      await checkedOpnameJournal(supabase, {
         tanggal,
         deskripsi: `HPP selisih stok opname ${no_hasil} (${order.no_opname})`,
         source: "opname",
@@ -364,7 +370,7 @@ export async function simpanHasil(formData: FormData) {
 
     if (nilai > 0) {
       noFaktur = await nextNoDokumen(supabase, "FJS");
-      const { data: inv } = await supabase.from("sales_invoices").insert({
+      const { data: inv, error: invoiceError } = await supabase.from("sales_invoices").insert({
         no_faktur: noFaktur,
         branch_id: branchId,
         tanggal,
@@ -376,8 +382,9 @@ export async function simpanHasil(formData: FormData) {
         created_by: user?.id ?? null,
       }).select("id").single();
 
+      if(invoiceError || !inv) throw new Error("Faktur selisih opname belum terkonfirmasi. Periksa hasil sebelum menyimpan ulang.");
       if (inv) {
-        await supabase.from("sales_invoice_items").insert(kurang.map((k) => {
+        const { error: invoiceItemsError } = await supabase.from("sales_invoice_items").insert(kurang.map((k) => {
           const it = itemMap.get(k.item_id);
           return {
             invoice_id: inv.id,
@@ -388,9 +395,11 @@ export async function simpanHasil(formData: FormData) {
             harga: Number(it?.sell_price ?? 0),
           };
         }));
-        await supabase.from("opname_results").update({ invoice_id: inv.id }).eq("id", doc!.id);
+        if(invoiceItemsError) throw new Error("Rincian faktur opname belum terkonfirmasi. Periksa hasil sebelum menyimpan ulang.");
+        const { error: invoiceLinkError } = await supabase.from("opname_results").update({ invoice_id: inv.id }).eq("id", doc!.id);
+        if(invoiceLinkError) throw new Error("Tautan faktur opname belum terkonfirmasi. Periksa hasil sebelum menyimpan ulang.");
 
-        await postJournal(supabase, {
+        await checkedOpnameJournal(supabase, {
           tanggal,
           deskripsi: `Faktur selisih stok ${noFaktur} (${no_hasil})`,
           source: "opname-selisih",
@@ -403,7 +412,7 @@ export async function simpanHasil(formData: FormData) {
   } else if (kurangCost > 0) {
     // Klinik: banyak obat harga jualnya nol karena cuma bahan racikan, jadi selisih
     // tetap dinilai modal dan masuk beban selisih persediaan.
-    await postJournal(supabase, {
+    await checkedOpnameJournal(supabase, {
       tanggal,
       deskripsi: `Selisih kurang stok opname ${no_hasil} (${order.no_opname})`,
       source: "opname",
@@ -416,12 +425,13 @@ export async function simpanHasil(formData: FormData) {
     });
   }
 
-  await supabase.from("opname_orders").update({ status: "Selesai" }).eq("id", order_id);
+  const { error: completedError } = await supabase.from("opname_orders").update({ status: "Selesai" }).eq("id", order_id);
+  if(completedError) throw new Error("Hasil opname belum terkonfirmasi selesai. Periksa hasil sebelum menyimpan ulang.");
 
   revalidatePath("/pos/opname");
   revalidatePath("/kasir/opname");
   const pesan = noFaktur
     ? `Hasil ${no_hasil} tersimpan. Selisih kurang ditagihkan lewat faktur ${noFaktur}.`
     : `Hasil ${no_hasil} tersimpan, stok disesuaikan.`;
-  redirect(`${basis}/${order_id}?success=` + encodeURIComponent(pesan));
+  redirect(`${basis}/${order_id}?success=` + encodeURIComponent(pesan) + transactionDraftAck(formData));
 }
