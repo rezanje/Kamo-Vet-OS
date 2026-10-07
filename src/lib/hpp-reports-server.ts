@@ -180,6 +180,24 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
     "id,compound_recipe_id,deskripsi,qty,harga,diskon_persen,hpp,invoices!inner(id,visit_id,invoice_no,created_at,paid_status,voided_at,visits!inner(branch_id,dokter,doctor_id))",
     query => query.is("compound_recipe_id",null).eq("satuan","racikan").is("invoices.voided_at",null)
       .in("invoices.visits.branch_id",scope.branchIds).gte("invoices.created_at",mulai).lte("invoices.created_at",akhir)) : [];
+  // Some old invoices have neither a compound marker nor a product/prescription
+  // link. A recipe on that visit is evidence to investigate, not a proven link.
+  const unclassified = scope.branchIds.length ? await tableRows<InvoiceLine>(client,"invoice_items",
+    "id,compound_recipe_id,deskripsi,qty,harga,diskon_persen,hpp,invoices!inner(id,visit_id,invoice_no,created_at,paid_status,voided_at,visits!inner(branch_id,dokter,doctor_id))",
+    query => query.is("compound_recipe_id",null).is("satuan",null).eq("jenis","obat")
+      .is("item_id",null).is("prescription_item_id",null).is("invoices.voided_at",null)
+      .in("invoices.visits.branch_id",scope.branchIds).gte("invoices.created_at",mulai).lte("invoices.created_at",akhir)) : [];
+  const visitRecipes = await byIds<{ id: string; medical_records: Rel<{ visit_id: string }> }>(client,"compounding_recipes",
+    "id,medical_records!inner(visit_id)","medical_records.visit_id",unclassified.map(line => {
+      const invoice = one(line.invoices);
+      if (!invoice?.visit_id) throw new Error("Data laporan gagal dibaca: kunjungan invoice tidak tersedia");
+      return invoice.visit_id;
+    }));
+  const compoundVisitIds = new Set(visitRecipes.map(recipe => {
+    const record = one(recipe.medical_records);
+    if (!record?.visit_id) throw new Error("Data laporan gagal dibaca: kunjungan resep tidak tersedia");
+    return record.visit_id;
+  }));
   const recipeIds = lines.flatMap(row => row.compound_recipe_id ? [row.compound_recipe_id] : []);
   const [recipes, usage, snapshots, issues] = await Promise.all([
     byIds<Recipe>(client,"compounding_recipes","id,recipe_name,status","id",recipeIds),
@@ -232,14 +250,18 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
   });
   if ((issues ?? []).some(issue => !values.some(line => line.id === issue.invoice_item_id && line.recipeId === issue.recipe_id)))
     throw new Error("Data laporan gagal dibaca: tautan histori bahan tidak valid");
-  const legacyReconciliation = legacy.map(line => {
+  const legacyReconciliation = [
+    ...legacy.map(line => ({ line, reason: "Baris racikan belum memiliki tautan ID resep" })),
+    ...unclassified.filter(line => compoundVisitIds.has(one(line.invoices)!.visit_id)).map(line => ({ line,
+      reason: "Baris obat tanpa tautan barang atau resep; kunjungan memiliki catatan racikan. Periksa dokumen asli." })),
+  ].map(({ line, reason }) => {
     const invoice = one(line.invoices), visit = one(invoice?.visits ?? null);
     if (!invoice || !visit || !scope.branchIds.includes(visit.branch_id)) throw new Error("Data laporan gagal dibaca: cabang invoice tidak tersedia");
     const doctor = visit.dokter?.trim() || "Belum tercatat";
     return { id: line.id, invoiceId: invoice.id, invoiceNo: invoice.invoice_no || "—", visitId: invoice.visit_id,
       createdAt: invoice.created_at, branch: branchMap.get(visit.branch_id) ?? visit.branch_id,
       doctor, doctorKey: visit.doctor_id || `nama:${doctor}`, name: line.deskripsi, recipeId: null,
-      cost: null, grossProfit: null, margin: null, reason: "Baris racikan belum memiliki tautan ID resep" };
+      cost: null, grossProfit: null, margin: null, reason };
   });
   const reconciliation = [...legacyReconciliation, ...enriched.filter(row => row.cost === null).map(row => ({
     id: row.id, invoiceId: row.invoiceId, invoiceNo: row.invoiceNo, visitId: row.visitId, createdAt: row.createdAt,

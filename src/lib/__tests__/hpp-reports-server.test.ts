@@ -94,3 +94,29 @@ it("shows explicit legacy racikan rows separately without guessing recipe links 
   const filtered = await loadCompoundReport(client, { dari: "2026-10-01", sampai: "2026-10-04", q: "missing" });
   expect(filtered.reconciliation).toEqual([]);
 });
+
+it("flags unclassified legacy drug lines only when their own visit has a compound record", async () => {
+  const invoices = { id: "snowy-inv", visit_id: "snowy-visit", invoice_no: "INV-202609-0007", created_at: "2026-09-23T14:20:46+07:00", paid_status: "Lunas", voided_at: null, visits: { branch_id: "b1", dokter: "Dr A", doctor_id: "d1" } };
+  const drug = { id: "snowy-line", compound_recipe_id: null, item_id: null, prescription_item_id: null, satuan: null, jenis: "obat", qty: 1, harga: 15000, hpp: null, deskripsi: "Obat Batuk", invoices };
+  const tables = {
+    invoice_items: [drug,
+      { ...drug, id: "regular-sku", item_id: "sku" },
+      { ...drug, id: "prescription", prescription_item_id: "rx" },
+      { ...drug, id: "service", jenis: "jasa" },
+      { ...drug, id: "different-visit", invoices: { ...invoices, visit_id: "other-visit" } },
+      { ...drug, id: "void", invoices: { ...invoices, voided_at: "2026-09-24" } },
+      { ...drug, id: "foreign", invoices: { ...invoices, visits: { ...invoices.visits, branch_id: "b2" } } },
+    ],
+    compounding_recipes: [{ id: "snowy-recipe", recipe_name: "Different name", medical_records: { visit_id: "snowy-visit" } }],
+  };
+  const params = { dari: "2026-09-01", sampai: "2026-09-30", cabang: "b1" };
+  const report = await loadCompoundReport(clientFixture({ tables }).client, params);
+  expect(report.rows).toEqual([]);
+  expect(report.summary.revenue).toBe(0);
+  expect(report.reconciliation).toEqual([expect.objectContaining({ id: "snowy-line", recipeId: null, cost: null, grossProfit: null,
+    reason: "Baris obat tanpa tautan barang atau resep; kunjungan memiliki catatan racikan. Periksa dokumen asli." })]);
+  expect((await loadCompoundReport(clientFixture({ tables }).client, { ...params, q: "INV-202609-0007" })).reconciliation).toHaveLength(1);
+  expect((await loadCompoundReport(clientFixture({ tables }).client, { ...params, dokter: "other" })).reconciliation).toEqual([]);
+  expect((await loadCompoundReport(clientFixture({ tables: { ...tables, compounding_recipes: [] } }).client, params)).reconciliation).toEqual([]);
+  await expect(loadCompoundReport(clientFixture({ tables, errorTable: "compounding_recipes" }).client, params)).rejects.toThrow("Data laporan gagal dibaca");
+});
