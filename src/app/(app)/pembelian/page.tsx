@@ -55,6 +55,8 @@ export default async function PembelianPage({
 }) {
   const { request_done, request_scope, success, success_sup, success_terima, recover_receipt, error, tab } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
 
   const [{ data: poData }, { data: supData }, { data: supCatData }] = await Promise.all([
     supabase
@@ -72,7 +74,7 @@ export default async function PembelianPage({
 
   return (
     <>
-      <PurchaseRecoveryComplete scope={request_scope} requestKey={request_done} />
+      <PurchaseRecoveryComplete userId={userId} scope={request_scope} requestKey={request_done} />
       {recover_receipt && <PurchaseReceiptRecovery poId={recover_receipt} />}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/" className="back-btn">

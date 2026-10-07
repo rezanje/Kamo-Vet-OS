@@ -28,6 +28,8 @@ export default async function TerimaBarangPage({
   const { id } = await params;
   const { error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
 
   const { data: po } = await supabase
     .from("purchase_orders")
@@ -76,6 +78,7 @@ export default async function TerimaBarangPage({
       )}
 
       <TerimaForm
+        userId={userId}
         poId={po.id as string}
         noPo={(po.no_po as string | null) ?? id.slice(0, 8)}
         supplier={supplier}

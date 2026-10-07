@@ -1,10 +1,11 @@
 "use client";
+import { TransactionDraft, clearTransactionDraft } from "./TransactionDraft";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { recoverSalesSubmission } from "@/app/(app)/penjualan/pesanan/actions";
 import { createSalesRequestStore, salesStorageName } from "@/lib/sales-request";
 const confirmedEvent = "vetos:sales-confirmed";
 
-export function SalesRequestIdentity({ scope, recoveryOnly = false }: { scope: string; recoveryOnly?: boolean }) {
+export function SalesRequestIdentity({ scope, recoveryOnly = false, userId }: { scope: string; recoveryOnly?: boolean; userId?: string }) {
   const store = useMemo(() => createSalesRequestStore(scope, () => sessionStorage, () => crypto.randomUUID(), recoveryOnly), [scope, recoveryOnly]);
   const subscribe = useCallback((listener: () => void) => {
     const unsubscribe = store.subscribe(listener);
@@ -18,6 +19,7 @@ export function SalesRequestIdentity({ scope, recoveryOnly = false }: { scope: s
   const { key, previous, unavailable } = useSyncExternalStore(subscribe, store.getSnapshot, store.getServerSnapshot);
   return <>
     <input type="hidden" name="request_key" value={key} />
+    {userId && !recoveryOnly && <TransactionDraft userId={userId} domain="sales" scope={scope} requestKey={key} />}
     <input type="hidden" name="request_scope" value={scope} />
     {unavailable && <div className="p2ban">Penyimpanan sesi browser tidak tersedia. Aktifkan lalu muat ulang sebelum menyimpan.</div>}
     {previous && <div className="p2ban" style={{ marginBottom: 12 }}>
@@ -27,15 +29,16 @@ export function SalesRequestIdentity({ scope, recoveryOnly = false }: { scope: s
   </>;
 }
 
-export function SalesRecoveryComplete({ scope, requestKey }: { scope?: string; requestKey?: string }) {
+export function SalesRecoveryComplete({ scope, requestKey, userId }: { scope?: string; requestKey?: string; userId?: string }) {
   useEffect(() => {
     if (!scope || !requestKey) return;
+    if (userId) clearTransactionDraft(userId, "sales", scope, requestKey);
     try {
       const name = salesStorageName(scope);
       if (sessionStorage.getItem(name) === requestKey) sessionStorage.removeItem(name);
     } catch { /* Server confirmation still remains visible. */ }
     window.dispatchEvent(new CustomEvent(confirmedEvent, { detail: { scope, key: requestKey } }));
-  }, [scope, requestKey]);
+  }, [scope, requestKey, userId]);
   return null;
 }
 

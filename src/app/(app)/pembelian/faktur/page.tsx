@@ -28,6 +28,8 @@ export default async function FakturBeliPage({
 }) {
   const { request_done, request_scope, success, error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
 
   const { data } = await supabase
     .from("purchase_invoices")
@@ -39,7 +41,7 @@ export default async function FakturBeliPage({
 
   return (
     <>
-      <PurchaseRecoveryComplete scope={request_scope} requestKey={request_done} />
+      <PurchaseRecoveryComplete userId={userId} scope={request_scope} requestKey={request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/pembelian" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali

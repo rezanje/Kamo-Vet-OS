@@ -1,5 +1,6 @@
 "use client";
 
+import { draftRecord, draftNumber } from "@/components/TransactionDraft";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 
 import { useState } from "react";
@@ -26,7 +27,7 @@ const plusDays = (iso: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-export function FakturForm({ options }: { options: PoOption[] }) {
+export function FakturForm({ options, userId }: { options: PoOption[]; userId: string }) {
   const today = hariIniWIB();
   const [poId, setPoId] = useState("");
   const [qty, setQty] = useState<Record<string, number>>({});
@@ -55,7 +56,10 @@ export function FakturForm({ options }: { options: PoOption[] }) {
 
   return (
     <form action={buatFaktur}>
-      <PurchaseRequestKey scope={"invoice"} />
+      <PurchaseRequestKey scope="invoice" userId={userId} draft={{ snapshot: { poId, qty, harga, tempo }, restore(value) {
+        if (typeof value.poId !== "string" || typeof value.tempo !== "string" || !draftRecord(value.qty, draftNumber) || !draftRecord(value.harga, draftNumber)) return false;
+        setPoId(value.poId); setQty(value.qty); setHarga(value.harga); setTempo(value.tempo); return true;
+      } }} />
       <input type="hidden" name="po_id" value={poId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
