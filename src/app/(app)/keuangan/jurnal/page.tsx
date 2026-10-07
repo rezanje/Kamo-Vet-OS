@@ -64,6 +64,7 @@ export default async function JurnalPage({
 }) {
   const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "" } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
 
   // Jurnal berulang: catch-up bulan tertinggal (idempotent via last_posted).
   let recurringPosted: { nama: string; periode: string }[] = [];
@@ -157,7 +158,7 @@ export default async function JurnalPage({
           title="CATAT JURNAL"
           desc="Jurnal umum manual — minimal 2 baris, harus balance (total debit = total kredit)."
         />
-        <JurnalForm accounts={accounts} branches={branches} />
+        <JurnalForm key={user?.id} userId={user?.id ?? ""} accounts={accounts} branches={branches} />
       </div>
 
       {/* §02 RIWAYAT JURNAL */}

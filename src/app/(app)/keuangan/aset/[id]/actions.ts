@@ -1,5 +1,6 @@
 "use server";
 
+import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
@@ -41,7 +42,7 @@ export async function setGolonganPajak(formData: FormData) {
   const { error } = await supabase.from("fixed_assets").update({ tax_category_id: taxId }).eq("id", id);
   if (error) gagal(error.message);
 
-  redirect(`${back(id)}?success=${encodeURIComponent("Golongan pajak tersimpan.")}`);
+  redirect(`${back(id)}?success=${encodeURIComponent("Golongan pajak tersimpan.")}${transactionDraftAck(formData)}`);
 }
 
 /**
@@ -72,23 +73,33 @@ export async function tambahNilaiAset(formData: FormData) {
   const baru = lama + tambahan;
 
   const { data: { user } } = await supabase.auth.getUser();
-  await supabase.from("asset_changes").insert({
+  const { data: change, error: changeError } = await supabase.from("asset_changes").insert({
     asset_id: id, tanggal, jenis: "nilai", nilai_lama: lama, nilai_baru: baru,
     keterangan, created_by: user?.id ?? null,
-  });
-  await supabase.from("fixed_assets").update({ harga_perolehan: baru }).eq("id", id);
+  }).select("id").single();
+  if (changeError || !change) return gagal("Perubahan aset belum terkonfirmasi. Periksa aset sebelum menyimpan ulang.");
+  const { error: draftWriteError1 } = await supabase.from("fixed_assets").update({ harga_perolehan: baru }).eq("id", id).select("id").single();
+  if (draftWriteError1) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
 
   const kasCode = await kodeAkunBayar(supabase, metode, aset!.branch_id, accountId);
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Penambahan nilai aset: ${aset!.nama}`,
     source: "asset-change",
-    sourceRef: id,
+    sourceRef: change.id,
+    branchId: aset!.branch_id,
+    lines: jurnalTambahNilai(tambahan, kasCode),
+  });
+  await assertDraftJournal(supabase, {
+    tanggal,
+    deskripsi: `Penambahan nilai aset: ${aset!.nama}`,
+    source: "asset-change",
+    sourceRef: change.id,
     branchId: aset!.branch_id,
     lines: jurnalTambahNilai(tambahan, kasCode),
   });
 
-  redirect(`${back(id)}?success=${encodeURIComponent("Nilai aset bertambah — penyusutan berikutnya ikut menyesuaikan.")}`);
+  redirect(`${back(id)}?success=${encodeURIComponent("Nilai aset bertambah — penyusutan berikutnya ikut menyesuaikan.")}${transactionDraftAck(formData)}`);
 }
 
 /** Revisi taksiran umur ekonomis. Tanpa jurnal — yang berubah cuma penyusutan ke depan. */
@@ -108,13 +119,15 @@ export async function ubahUmurAset(formData: FormData) {
   if (umurBaru === aset!.umur_bulan) gagal("Umur ekonomisnya sama dengan yang sekarang");
 
   const { data: { user } } = await supabase.auth.getUser();
-  await supabase.from("asset_changes").insert({
+  const { error: draftWriteError2 } = await supabase.from("asset_changes").insert({
     asset_id: id, tanggal, jenis: "umur", umur_lama: aset!.umur_bulan, umur_baru: umurBaru,
     keterangan, created_by: user?.id ?? null,
   });
-  await supabase.from("fixed_assets").update({ umur_bulan: umurBaru }).eq("id", id);
+  if (draftWriteError2) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
+  const { error: draftWriteError3 } = await supabase.from("fixed_assets").update({ umur_bulan: umurBaru }).eq("id", id).select("id").single();
+  if (draftWriteError3) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
 
-  redirect(`${back(id)}?success=${encodeURIComponent("Umur ekonomis diperbarui.")}`);
+  redirect(`${back(id)}?success=${encodeURIComponent("Umur ekonomis diperbarui.")}${transactionDraftAck(formData)}`);
 }
 
 /** Jual atau hapus aset. Penyusutan berhenti dan akumulasinya ikut dihapus dari neraca. */
@@ -161,15 +174,24 @@ export async function disposisiAset(formData: FormData) {
     branchId: aset!.branch_id,
     lines: jurnalPelepasan(harga, akumulasi, hargaJual, kasCode),
   });
+  await assertDraftJournal(supabase, {
+    tanggal,
+    deskripsi: `${jenis === "jual" ? "Penjualan" : "Penghapusan"} aset tetap: ${aset!.nama}`,
+    source: "asset-disposal",
+    sourceRef: id,
+    branchId: aset!.branch_id,
+    lines: jurnalPelepasan(harga, akumulasi, hargaJual, kasCode),
+  });
 
   // is_active ikut dimatikan supaya mesin penyusutan berhenti menyusutkannya.
-  await supabase.from("fixed_assets").update({ status: "dilepas", is_active: false }).eq("id", id);
+  const { error: draftWriteError4 } = await supabase.from("fixed_assets").update({ status: "dilepas", is_active: false }).eq("id", id).select("id").single();
+  if (draftWriteError4) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
 
   redirect(`${back(id)}?success=${encodeURIComponent(
     labaRugi >= 0
       ? `Aset dilepas dengan laba Rp ${Math.round(labaRugi).toLocaleString("id-ID")}.`
       : `Aset dilepas dengan rugi Rp ${Math.round(-labaRugi).toLocaleString("id-ID")}.`,
-  )}`);
+  )}${transactionDraftAck(formData)}`);
 }
 
 /** Pindah cabang. Tanpa jurnal: perusahaannya sama, yang pindah lokasi & tanggung jawab. */
@@ -189,11 +211,13 @@ export async function pindahAset(formData: FormData) {
   if (keBranch === aset!.branch_id) gagal("Aset sudah berada di cabang itu");
 
   const { data: { user } } = await supabase.auth.getUser();
-  await supabase.from("asset_transfers").insert({
+  const { error: draftWriteError5 } = await supabase.from("asset_transfers").insert({
     asset_id: id, tanggal, dari_branch_id: aset!.branch_id, ke_branch_id: keBranch,
     keterangan, created_by: user?.id ?? null,
   });
-  await supabase.from("fixed_assets").update({ branch_id: keBranch }).eq("id", id);
+  if (draftWriteError5) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
+  const { error: draftWriteError6 } = await supabase.from("fixed_assets").update({ branch_id: keBranch }).eq("id", id).select("id").single();
+  if (draftWriteError6) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
 
-  redirect(`${back(id)}?success=${encodeURIComponent("Aset dipindahkan.")}`);
+  redirect(`${back(id)}?success=${encodeURIComponent("Aset dipindahkan.")}${transactionDraftAck(formData)}`);
 }

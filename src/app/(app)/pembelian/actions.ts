@@ -3,9 +3,10 @@
 // ponytail: server actions — buatPO, tambahSupplier, updatePOStatus (+ receiving logic).
 
 import { revalidatePath } from "next/cache";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { loadUnitOptions, pickUnit } from "@/lib/satuan";
+import { loadUnitOptions, resolveSubmittedUnit } from "@/lib/satuan";
 import { type BatchInput } from "@/lib/kadaluarsa-batch";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -37,6 +38,22 @@ export async function buatPO(formData: FormData) {
     redirect("/pembelian/baru?error=" + encodeURIComponent("Gudang, cabang, dan minimal 1 item wajib diisi."));
   }
 
+  // Satuan beli (box/sak) diambil ulang dari master — faktor dari form tidak dipercaya,
+  // karena faktor palsu bikin stok masuk lebih banyak dari barang yang benar-benar datang.
+  const unitOpts = await loadUnitOptions(supabase, items.map((it) => it.item_id).filter((x): x is string => !!x));
+  const rows = items.map((it) => {
+    const opts = it.item_id ? unitOpts.get(it.item_id) : undefined;
+    const u = it.item_id ? resolveSubmittedUnit(opts ?? [], it.satuan) : null;
+    return {
+      item_id: it.item_id || null,   // link master SKU → stok bertambah saat Diterima & bisa diretur
+      nama: String(it.nama).slice(0, 160),
+      qty: Number(it.qty) || 0,
+      harga_beli: Number(it.harga_beli) || 0,
+      satuan: u?.unit ?? null,
+      faktor: u?.factor ?? 1,
+    };
+  });
+
   // Formatnya dibaca dari master penomoran; bawaannya PO-YYYYMMDD-NNNN,
   // dilanjutkan dari nomor tertinggi hari itu.
   const { nomor: no_po } = await nomorBerikutnya(supabase, "PO", tanggal, {
@@ -57,26 +74,11 @@ export async function buatPO(formData: FormData) {
   }
 
   const poId = (po as { id: string }).id;
-  // Satuan beli (box/sak) diambil ulang dari master — faktor dari form tidak dipercaya,
-  // karena faktor palsu bikin stok masuk lebih banyak dari barang yang benar-benar datang.
-  const unitOpts = await loadUnitOptions(supabase, items.map((it) => it.item_id).filter((x): x is string => !!x));
-  const rows = items.map((it) => {
-    const opts = it.item_id ? unitOpts.get(it.item_id) : undefined;
-    const u = opts ? pickUnit(opts, it.satuan) : null;
-    return {
-      po_id: poId,
-      item_id: it.item_id || null,   // link master SKU → stok bertambah saat Diterima & bisa diretur
-      nama: String(it.nama).slice(0, 160),
-      qty: Number(it.qty) || 0,
-      harga_beli: Number(it.harga_beli) || 0,
-      satuan: u?.unit ?? null,
-      faktor: u?.factor ?? 1,
-    };
-  });
-  await supabase.from("purchase_order_items").insert(rows);
+  const { error: itemsError } = await supabase.from("purchase_order_items").insert(rows.map(row => ({ ...row, po_id: poId })));
+  if (itemsError) redirect(`/pembelian/baru?error=${encodeURIComponent("Baris PO belum terkonfirmasi. Periksa daftar PO sebelum menyimpan ulang.")}`);
 
   revalidatePath("/pembelian");
-  redirect("/pembelian?success=1");
+  redirect(`/pembelian?success=1${transactionDraftAck(formData)}`);
 }
 
 // ─── Tambah Supplier ──────────────────────────────────────────────────────────

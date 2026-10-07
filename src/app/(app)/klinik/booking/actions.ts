@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -18,14 +19,14 @@ async function putuskan(formData: FormData, status: "dikonfirmasi" | "ditolak" |
   if (!id) redirect("/klinik/booking?error=" + encodeURIComponent("Booking tidak dikenal"));
 
   const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase.from("bookings").update({
+  const { data: saved, error } = await supabase.from("bookings").update({
     status, catatan_staf: catatan,
     handled_by: user?.id ?? null, handled_at: new Date().toISOString(),
-  }).eq("id", id).is("visit_id", null);
+  }).eq("id", id).is("visit_id", null).select("id").maybeSingle();
 
-  if (error) redirect("/klinik/booking?error=" + encodeURIComponent(error.message));
+  if (error || !saved) redirect("/klinik/booking?error=" + encodeURIComponent(error?.message ?? "Booking tidak tersedia untuk diubah"));
   revalidatePath("/klinik/booking");
-  redirect(`/klinik/booking?success=${status}`);
+  redirect(`/klinik/booking?success=${status}${transactionDraftAck(formData)}`);
 }
 
 export async function konfirmasiBooking(formData: FormData) {

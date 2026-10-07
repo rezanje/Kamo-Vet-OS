@@ -1,5 +1,6 @@
 "use server";
 
+import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
@@ -69,8 +70,9 @@ export async function terimaPembayaranJual(formData: FormData) {
   if (error) gagal(error.message);
 
   if (advance) {
-    await supabase.from("sales_advances")
-      .update({ terpakai: Number(advance.terpakai) + dariUangMuka }).eq("id", advance.id);
+    const { error: draftWriteError1 } = await supabase.from("sales_advances")
+      .update({ terpakai: Number(advance.terpakai) + dariUangMuka }).eq("id", advance.id).select("id").single();
+    if (draftWriteError1) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
   }
 
   const kasCode = await kodeAkunBayar(supabase, metode, inv!.branch_id, accountId);
@@ -84,10 +86,21 @@ export async function terimaPembayaranJual(formData: FormData) {
     branchId: inv!.branch_id,
     lines: jurnalPenerimaan(kasCode, jumlah, dariUangMuka),
   });
+  await assertDraftJournal(supabase, {
+    tanggal,
+    deskripsi: dariUangMuka > 0
+      ? `Penerimaan ${no} atas faktur ${inv!.no_faktur} (pakai uang muka)`
+      : `Penerimaan ${no} atas faktur ${inv!.no_faktur}`,
+    source: "sales-receipt",
+    sourceRef: no,
+    branchId: inv!.branch_id,
+    lines: jurnalPenerimaan(kasCode, jumlah, dariUangMuka),
+  });
 
   if (jumlah >= sisa) {
-    await supabase.from("sales_invoices").update({ status: "lunas" }).eq("id", invoiceId);
+    const { error: draftWriteError2 } = await supabase.from("sales_invoices").update({ status: "lunas" }).eq("id", invoiceId).select("id").single();
+    if (draftWriteError2) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
   }
 
-  redirect(`${BASE}?success=${encodeURIComponent(`Penerimaan ${no} tercatat.`)}`);
+  redirect(`${BASE}?success=${encodeURIComponent(`Penerimaan ${no} tercatat.`)}${transactionDraftAck(formData)}`);
 }

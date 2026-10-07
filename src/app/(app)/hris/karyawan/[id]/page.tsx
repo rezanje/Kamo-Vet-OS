@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { bolehKelolaMaster } from "@/lib/master-guard";
@@ -49,7 +50,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
       {edit === "1" ? <form action={editKaryawan}>
         <input type="hidden" name="id" value={id} />
         <div className="grid2">
-          {inputs.map(([key, label, type]) => <div key={key}>
+          {inputs.map(([key, label, type]) => key === 'jabatan' ? <EmployeeOccupationField key={key} value={employee.jabatan} /> : <div key={key}>
             <label className="flab" htmlFor={key}>{label}</label>
             <input id={key} className="fi" name={key} type={type} defaultValue={employee[key] ?? ""} required={key === "nama" || key === "gaji_pokok"} min={type === "number" ? 0 : undefined} step={type === "number" ? "any" : undefined} />
           </div>)}

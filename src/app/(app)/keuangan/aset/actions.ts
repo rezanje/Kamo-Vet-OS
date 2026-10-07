@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { kodeAkunBayar } from "@/lib/kas-akun";
@@ -55,7 +56,7 @@ export async function tambahSaldoAwalAset(formData: FormData) {
     umur_bulan: a.umurBulan, branch_id: a.branchId,
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
-  redirect(`${back}?success=saldo-awal`);
+  redirect(`${back}?success=saldo-awal${transactionDraftAck(formData)}`);
 }
 
 export async function tambahPembelianAset(formData: FormData) {
@@ -116,6 +117,6 @@ export async function jalankanPenyusutan(formData: FormData) {
   }
 
   const { total, jumlahAset } = await runDepreciationPeriod(supabase, periode);
-  if (total > 0) redirect(`${back}?success=susut&n=${jumlahAset}`);
+  if (total > 0) redirect(`${back}?success=susut&n=${jumlahAset}${transactionDraftAck(formData)}`);
   redirect(`${back}?error=${encodeURIComponent("Tidak ada aset yang perlu disusutkan untuk periode ini (mungkin sudah dijalankan)")}`);
 }

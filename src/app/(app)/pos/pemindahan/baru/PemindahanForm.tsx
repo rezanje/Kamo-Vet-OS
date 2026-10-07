@@ -1,5 +1,7 @@
 "use client";
 
+import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import type { ItemUnit } from "@/lib/satuan";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -7,13 +9,15 @@ import { buatKirim } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type Warehouse = { id: string; name: string };
-type Item = { id: string; code: string; name: string; unit: string };
-type Row = { display: string; item_id: string; qty: number };
+type Item = { id: string; code: string; name: string; unit: string; units: ItemUnit[] };
+type Row = { display: string; item_id: string; qty: number; satuan: string };
 
-const blank: Row = { display: "", item_id: "", qty: 1 };
+const blank: Row = { display: "", item_id: "", qty: 1, satuan: "" };
 const label = (it: Item) => `${it.code} — ${it.name}`;
 
-export function PemindahanForm({ warehouses, items }: { warehouses: Warehouse[]; items: Item[] }) {
+export function PemindahanForm({ warehouses, items, userId }: { warehouses: Warehouse[]; items: Item[]; userId: string }) {
+  const { save, failure } = usePreservedAction(buatKirim);
+  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
 
   const byLabel = new Map(items.map((it) => [label(it), it]));
@@ -25,13 +29,16 @@ export function PemindahanForm({ warehouses, items }: { warehouses: Warehouse[];
 
   const onDisplay = (i: number, v: string) => {
     const it = byLabel.get(v);
-    set(i, { display: v, item_id: it?.id ?? "" });
+    set(i, { display: v, item_id: it?.id ?? "", satuan: it?.units[0]?.unit ?? "" });
   };
 
-  const payload = rows.filter((r) => r.item_id).map((r) => ({ item_id: r.item_id, qty: r.qty }));
+  const payload = rows.filter((r) => r.item_id).map((r) => ({ item_id: r.item_id, qty: r.qty, satuan: r.satuan }));
 
   return (
-    <form action={buatKirim}>
+    <form action={save}>
+      <LocalTransactionDraft userId={userId} scope="pos:pemindahan:baru" state={{ snapshot: { rows, requestKey }, reset: () => { setRows([{ ...blank }]); setRequestKey(crypto.randomUUID()); }, restore: (value) => { const draft = value as { rows?: Row[]; requestKey?: string }; if (Array.isArray(draft.rows)) setRows(draft.rows); if (draft.requestKey) setRequestKey(draft.requestKey); return true; } }} />
+      <input type="hidden" name="request_key" value={requestKey} />
+      {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
       <datalist id="pemindahan-items">
@@ -84,7 +91,7 @@ export function PemindahanForm({ warehouses, items }: { warehouses: Warehouse[];
                   <input className="fi" type="number" min={0} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 80 }} title="Kuantitas" />
-                  <span style={{ fontSize: 10.5, color: "var(--tm)", width: 34 }}>{it?.unit ?? ""}</span>
+                  <select className="fi" aria-label="Satuan barang" value={r.satuan} onChange={e => set(i, { satuan: e.target.value })} style={{ width: 90 }}>{(it?.units ?? []).map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}</select>
                   <button type="button" onClick={() => del(i)} className="btn-def"
                     style={{ padding: "0 9px", color: "#b91c1c" }} title="Hapus">
                     <i className="ti ti-trash" />

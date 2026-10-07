@@ -1,5 +1,5 @@
+import { PreservedForm } from "@/components/LocalTransactionDraft";
 import { PurchaseRecoveryComplete } from "@/components/PurchaseRequestKey";
-import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -16,6 +16,7 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { ti
 export default async function AsetPage({ searchParams }: { searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string; n?: string }> }) {
   const { request_done, request_scope, success, error, n } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const rekening = await loadRekeningAktif(supabase);
 
   // Penyusutan otomatis (lazy catch-up): periode yang belum disusutkan langsung
@@ -52,7 +53,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <PurchaseRecoveryComplete scope={request_scope} requestKey={request_done} />
+      <PurchaseRecoveryComplete userId={user?.id} scope={request_scope} requestKey={request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -129,8 +130,8 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
 
       <div className="crm-sec">
         <SecHeader num="02" title="PEMBELIAN ASET BARU" desc="Aset dan jurnal pembelian disimpan sebagai satu transaksi." />
-        <form action={tambahPembelianAset}>
-      <PurchaseRequestKey scope={"asset"} />
+        <PreservedForm action={tambahPembelianAset}>
+
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Nama aset</label>
@@ -142,7 +143,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
             </div>
           </div>
           <div className="frow" style={{ marginBottom: 10 }}>
-            <KategoriUmur kategori={asetKategori} />
+            <KategoriUmur userId={user?.id ?? ""} purchase kategori={asetKategori} />
           </div>
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
@@ -173,24 +174,24 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
             </div>
           </div>
           <button type="submit" className="pay-btn"><i className="ti ti-plus" /> Simpan Pembelian &amp; Jurnal</button>
-        </form>
+        </PreservedForm>
       </div>
 
       <div className="crm-sec">
         <SecHeader num="03" title="SALDO AWAL ASET" desc="Khusus aset yang sudah dimiliki sebelum memakai VetOS. Tidak membuat jurnal historis." />
-        <form action={tambahSaldoAwalAset}>
+        <PreservedForm action={tambahSaldoAwalAset}>
           <div className="frow" style={{ marginBottom: 10 }}>
             <div><label className="flab">Nama aset</label><input className="fi" name="nama" required /></div>
             <div><label className="flab">Tanggal perolehan</label><input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} required /></div>
           </div>
-          <div className="frow" style={{ marginBottom: 10 }}><KategoriUmur kategori={asetKategori} /></div>
+          <div className="frow" style={{ marginBottom: 10 }}><KategoriUmur userId={user?.id ?? ""} kategori={asetKategori} /></div>
           <div className="frow" style={{ marginBottom: 10 }}>
             <div><label className="flab">Harga perolehan</label><input className="fi" type="number" name="harga" min={1} step="any" required /></div>
             <div><label className="flab">Nilai sisa</label><input className="fi" type="number" name="nilai_sisa" min={0} step="any" defaultValue={0} /></div>
             <div><label className="flab">Cabang</label><select className="fi" name="branch_id" defaultValue=""><option value="">— Pusat / tanpa cabang —</option>{(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
           </div>
           <button type="submit" className="btn-def"><i className="ti ti-history" /> Simpan Saldo Awal Tanpa Jurnal</button>
-        </form>
+        </PreservedForm>
       </div>
     </>
   );

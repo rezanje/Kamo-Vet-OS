@@ -1,3 +1,4 @@
+import { PreservedForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -62,7 +63,7 @@ export default async function OpnameKasirBaruPage({
         </div>
       )}
 
-      <form action={buatPerintah}>
+      <PreservedForm action={buatPerintah}>
         <input type="hidden" name="warehouse_id" value={wh.id} />
         <input type="hidden" name="kembali" value="kasir" />
 
@@ -82,7 +83,7 @@ export default async function OpnameKasirBaruPage({
             <input className="fi" name="penanggung_jawab" defaultValue={profile?.full_name ?? ""} placeholder="Nama penanggung jawab" required />
           </div>
 
-          <LingkupPicker items={items} />
+          <LingkupPicker key={wh.id} scope={`opname-create:${wh.id}`} items={items} />
 
           <div className="fg">
             <label className="flab">Keterangan</label>
@@ -96,7 +97,7 @@ export default async function OpnameKasirBaruPage({
             </button>
           </div>
         </div>
-      </form>
+      </PreservedForm>
     </>
   );
 }

@@ -1,3 +1,4 @@
+import { PreservedForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -79,7 +80,7 @@ export default async function PenyesuaianBaruPage({
       </div>
 
       {dipilih && (
-        <form action={simpanPenyesuaian}>
+        <PreservedForm action={simpanPenyesuaian}>
           <input type="hidden" name="warehouse_id" value={dipilih.id} />
 
           <div className="crm-sec">
@@ -107,9 +108,9 @@ export default async function PenyesuaianBaruPage({
               </div>
             </div>
 
-            <BarisForm barang={barang} />
+            <BarisForm key={dipilih.id} scope={`inventory-adjustment:${dipilih.id}`} barang={barang} />
           </div>
-        </form>
+        </PreservedForm>
       )}
     </>
   );

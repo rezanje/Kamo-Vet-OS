@@ -62,6 +62,7 @@ export function BarangForm({
   // Satuan dasar & harga dasar dipantau di state supaya panel satuan berjenjang bisa
   // menampilkan perbandingan harga per satuan dasar sambil diketik.
   const [baseUnit, setBaseUnit] = useState(editing?.unit ?? "");
+  const [buyUnit, setBuyUnit] = useState(editing?.buy_unit ?? "");
   const [baseSell, setBaseSell] = useState<number>(Number(editing?.sell_price) || 0);
   const [units, setUnits] = useState<ItemUnit[]>(editing?.units ?? []);
   // Harga bertingkat: "beli minimal sekian → harga sekian". Beda dari satuan
@@ -397,9 +398,11 @@ export function BarangForm({
               </div>
               <div>
                 <label className="flab">Satuan beli</label>
-                <select className="fi" name="buy_unit" defaultValue={editing?.buy_unit ?? ""}>
+                <select className="fi" name="buy_unit" value={buyUnit} onChange={e => setBuyUnit(e.target.value)}>
                   <option value="">Ikut satuan dasar ({labelDasar})</option>
-                  {satuanMaster.map((u) => <option key={u.id} value={u.nama}>{u.nama}</option>)}
+                  {buyUnit && buyUnit !== dasar && !units.some(u => u.unit === buyUnit && u.factor > 0) && <option value={buyUnit}>{buyUnit} (konversi belum tersedia)</option>}
+                  {dasar && <option value={dasar}>{dasar}</option>}
+                  {units.filter(u => u.unit && u.unit !== dasar && Number.isFinite(u.factor) && u.factor > 0).map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                 </select>
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                   Satuan saat memesan — biasanya kemasan besar (box/dus).

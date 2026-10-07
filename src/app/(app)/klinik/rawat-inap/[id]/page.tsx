@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { PapanPemantauan } from "./PapanPemantauan";
 import { ObatKhusus } from "./ObatKhusus";
@@ -44,6 +45,8 @@ export default async function RawatInapDetailPage({
   const { id } = await params;
   const { error, success, wa } = await searchParams;
   const supabase = await createClient();
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
+  const draftUserId = draftUser?.id ?? "";
 
   const { data: rec } = await supabase
     .from("inpatient_records")
@@ -227,7 +230,7 @@ export default async function RawatInapDetailPage({
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
           <i className="ti ti-heart-rate-monitor" /> UBAH KONDISI PASIEN
         </div>
-        <form action={changeCondition} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <TransactionForm userId={draftUserId} scope={`inpatient-condition:${id}`} action={changeCondition} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
           <input type="hidden" name="recordId" value={rec.id} />
           <div>
             <label className="flab">Kondisi baru</label>
@@ -248,7 +251,7 @@ export default async function RawatInapDetailPage({
             <input className="fi" name="notes" placeholder="mis. respon terapi baik / henti jantung" />
           </div>
           <SubmitButton className="btn-acc" icon="ti-check" pendingText="Menyimpan…">Simpan Kondisi</SubmitButton>
-        </form>
+        </TransactionForm>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
           Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · sembuh → lanjut pembayaran; RIP → invoice tetap terbit (tidak diblokir).
         </div>

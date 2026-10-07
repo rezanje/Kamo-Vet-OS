@@ -1,4 +1,5 @@
 "use client";
+import { PreservedForm, LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -36,7 +37,8 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
   const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
   return (
-    <form action={updateDailyLog}>
+    <PreservedForm action={updateDailyLog}>
+      <LocalTransactionDraft scope={`inpatient-log-edit:${recordId}:${log.id}`} state={{snapshot:{staff},restore:s=>{const v=s.staff as InpatientStaff|undefined;if(!v||!["monitoring","doctor_visit",null].includes(v.log_kind)||!(v.visit_doctor_id===null||doctors.some(d=>d.id===v.visit_doctor_id))||!(v.paramedic_id===null||paramedics.some(p=>p.id===v.paramedic_id)))return false;setStaff(v);return true;},reset:()=>setStaff({log_kind:log.log_kind??null,visit_doctor_id:log.visit_doctor_id??null,paramedic_id:log.paramedic_id??null})}}/>
       <input type="hidden" name="logId" value={log.id} />
       <input type="hidden" name="recordId" value={recordId} />
 
@@ -230,7 +232,7 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
           )}
         </div>
       </div>
-    </form>
+    </PreservedForm>
   );
 }
 

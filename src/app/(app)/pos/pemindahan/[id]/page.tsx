@@ -13,7 +13,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 type Wh = { code: string; name: string } | null;
-type ItemRow = { item_id: string; qty: number; items: { code: string; name: string; unit: string } | null };
+type ItemRow = { item_id: string; qty: number; selected_qty: number | null; satuan: string | null; faktor: number | null; items: { code: string; name: string; unit: string } | null };
 type Doc = {
   id: string;
   no_pemindahan: string;
@@ -41,13 +41,14 @@ export default async function PemindahanDetailPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
 
+  const { data: { user } } = await supabase.auth.getUser();
   const { data: docRaw } = await supabase
     .from("stock_transfers")
     .select(
       "id, no_pemindahan, proses, tanggal, status, keterangan, source_transfer_id, " +
         "from:warehouses!stock_transfers_from_warehouse_id_fkey(code, name), " +
         "to:warehouses!stock_transfers_to_warehouse_id_fkey(code, name), " +
-        "stock_transfer_items(item_id, qty, items(code, name, unit))",
+        "stock_transfer_items(item_id, qty, selected_qty, satuan, faktor, items(code, name, unit))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -154,11 +155,11 @@ export default async function PemindahanDetailPage({
                 <tr key={r.item_id}>
                   <td style={{ fontSize: 11.5 }}>{r.items?.name ?? "—"}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.items?.code ?? "—"}</td>
-                  <td style={{ textAlign: "right", fontSize: 11.5 }}>{Number(r.qty)}</td>
-                  <td style={{ fontSize: 11 }}>{r.items?.unit ?? ""}</td>
+                  <td style={{ textAlign: "right", fontSize: 11.5 }}>{Number(r.selected_qty ?? r.qty)}{Number(r.faktor ?? 1) !== 1 && <small> ({Number(r.qty)} {r.items?.unit})</small>}</td>
+                  <td style={{ fontSize: 11 }}>{r.satuan ?? r.items?.unit ?? ""}</td>
                   {isKirim && (
                     <td style={{ textAlign: "right", fontSize: 11.5, color: (sisa[r.item_id] ?? 0) > 0 ? "#b45309" : "#15803d" }}>
-                      {sisa[r.item_id] ?? 0}
+                      {sisa[r.item_id] ?? 0} {r.items?.unit}
                     </td>
                   )}
                 </tr>
@@ -171,8 +172,9 @@ export default async function PemindahanDetailPage({
       {isKirim && doc.status !== "Dibatalkan" && Object.keys(sisa).length > 0 && (
         <TerimaForm
           sourceTransferId={doc.id}
+          userId={user?.id ?? ""}
           rows={items
-            .filter((r) => (sisa[r.item_id] ?? 0) > 0)
+            .filter((r, index) => items.findIndex(item => item.item_id === r.item_id) === index && (sisa[r.item_id] ?? 0) > 0)
             .map((r) => ({
               item_id: r.item_id,
               name: r.items?.name ?? "—",

@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -69,7 +70,7 @@ export async function addRacikan(formData: FormData) {
     });
     if(error)return redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
     revalidatePath(back);revalidatePath(`/klinik/pembayaran/${visitId}`);
-    return redirect(`${back}?racikan=dibuat`);
+    return redirect(`${back}?racikan=dibuat${transactionDraftAck(formData)}`);
   }
   if (officialVersionId) {
     if (!medicalRecordId || !visitId || !requestKey) return redirect(`${back}?error=${encodeURIComponent("Kunjungan racikan tidak valid")}`);
@@ -81,7 +82,7 @@ export async function addRacikan(formData: FormData) {
       p_dosage_instruction: aturan,
     });
     if (error) return redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
-    return redirect(`${back}?racikan=dibuat`);
+    return redirect(`${back}?racikan=dibuat${transactionDraftAck(formData)}`);
   }
   if (!medicalRecordId || !recipeName) {
     redirect(`${back}?error=${encodeURIComponent("Lengkapi nama racikan")}`);
@@ -107,7 +108,7 @@ export async function addRacikan(formData: FormData) {
   const { error } = await supabase.rpc("clinic_issue_compound", params);
   if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
 
-  redirect(`/klinik/rekam-medis/${visitId}?racikan=dibuat`);
+  redirect(`/klinik/rekam-medis/${visitId}?racikan=dibuat${transactionDraftAck(formData)}`);
 }
 
 // Petunjuk racik diisi apoteker di halaman racik (bukan dokter): jumlah jadi + langkah
@@ -132,7 +133,7 @@ export async function updateRacikPetunjuk(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
 
   revalidatePath(back);
-  redirect(`${back}?success=petunjuk`);
+  redirect(`${back}?success=petunjuk${transactionDraftAck(formData)}`);
 }
 
 // pending → ready (obat siap diserahkan) → handed_over (sudah diserahkan).

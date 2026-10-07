@@ -8,8 +8,8 @@ const inventoryTables = (): Record<string,Row[]> => ({
   stock: [{ id: "s", warehouse_id: "w1", item_id: "i", qty: 1201 }],
   stock_layers: Array.from({ length: 1201 },(_,i) => ({ id: id(i), warehouse_id: "w1", item_id: "i", qty_left: 1, unit_cost: 50 })),
 });
-const compoundTables = (): Record<string,Row[]> => ({
-  invoice_items: Array.from({ length: 1201 },(_,i) => ({ id: id(i), compound_recipe_id: `r${i}`, qty: 1, harga: 100, diskon_persen: 0, hpp: 50, deskripsi: `Racikan ${i}`,
+const compoundTables = (count = 1201): Record<string,Row[]> => ({
+  invoice_items: Array.from({ length: count },(_,i) => ({ id: id(i), compound_recipe_id: `r${i}`, qty: 1, harga: 100, diskon_persen: 0, hpp: 50, deskripsi: `Racikan ${i}`,
     invoices: { id: "inv", visit_id: "visit", invoice_no: "INV", created_at: "2026-10-04T12:00:00+07:00", paid_status: "Lunas", voided_at: null, visits: { branch_id: "b1", dokter: "Dr A", doctor_id: "d" } } })),
 });
 const period = { dari: "2026-10-01", sampai: "2026-10-04" };
@@ -52,4 +52,16 @@ describe("report completeness through source collectors and downloads", () => {
     await expect(loadInventoryReport(fixture().client,{})).rejects.toThrow();
     expect((await downloadHppReport(fixture().client,"inventory",new Request("https://example.test/unduh"))).status).toBeGreaterThanOrEqual(400);
   });
+});
+
+it("keeps a compound cohort beyond 5000 complete while retaining unknown historical costs", async () => {
+  const tables = compoundTables(5201);
+  tables.invoice_items[5200].hpp = null;
+  const report = await loadCompoundReport(clientFixture({ tables }).client, period);
+  expect(report.rows).toHaveLength(5201);
+  expect(report.summary.revenue).toBe(520100);
+  expect(report.summary.cost).toBe(260000);
+  expect(report.summary.missingCost).toBe(1);
+  expect(report.rows.find(row => row.id === id(5200))).toMatchObject({ cost: null, grossProfit: null, margin: null });
+  expect(report.reconciliation).toEqual([expect.objectContaining({ id: id(5200), cost: null, margin: null })]);
 });

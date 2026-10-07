@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { buildFakturLangsungLines } from "@/lib/faktur-beli";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockIn } from "@/lib/inventory";
-import { loadUnitOptions, pickUnit, toBaseQty, toBaseCost } from "@/lib/satuan";
+import { loadUnitOptions, resolveSubmittedUnit, toBaseQty, toBaseCost } from "@/lib/satuan";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { parseLampiran } from "@/lib/dokumen";
@@ -72,7 +73,7 @@ export async function buatFakturLangsung(formData: FormData) {
 
   const rows = items.map((it) => {
     const m = namaMap.get(it.item_id);
-    const u = pickUnit(unitMap.get(it.item_id) ?? [], it.satuan);
+    const u = resolveSubmittedUnit(unitMap.get(it.item_id) ?? [], it.satuan);
     const exp = String(it.exp_date ?? "").trim();
     return {
       item_id: it.item_id,
@@ -119,9 +120,10 @@ export async function buatFakturLangsung(formData: FormData) {
 
   // Berkas surat jalan / nota pemasok menempel ke fakturnya.
   if (lampiran.length) {
-    await supabase.from("document_attachments").insert(
+    const { error: attachmentError } = await supabase.from("document_attachments").insert(
       lampiran.map((l) => ({ ...l, modul: "pembelian", ref_id: doc!.id, uploaded_by: user?.id ?? null })),
     );
+    if (attachmentError) gagal("Lampiran faktur belum terkonfirmasi. Periksa daftar faktur sebelum menyimpan ulang.");
   }
 
   // Persediaan dinilai sebesar DPP — PPN Masukan bisa dikreditkan, jadi bukan bagian
@@ -165,9 +167,14 @@ export async function buatFakturLangsung(formData: FormData) {
     gagal("Faktur dibatalkan — jurnalnya gagal tersimpan. Coba lagi, dan laporkan kalau berulang.");
   }
 
+  await assertDraftJournal(supabase, {
+    tanggal, source: "purchase-invoice", sourceRef: no_faktur, branchId: gudang.branch_id,
+    lines: buildFakturLangsungLines(total, ppn),
+  });
+
   revalidatePath(LIST);
   revalidatePath("/keuangan/hutang");
-  redirect(`${LIST}?success=${encodeURIComponent(`Faktur ${no_faktur} tersimpan — stok sudah bertambah.`)}`);
+  redirect(`${LIST}?success=${encodeURIComponent(`Faktur ${no_faktur} tersimpan — stok sudah bertambah.`)}${transactionDraftAck(formData)}`);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

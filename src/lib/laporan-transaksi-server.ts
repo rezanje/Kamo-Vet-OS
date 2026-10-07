@@ -1,3 +1,4 @@
+import { completeReportQuery } from "./report-query";
 // Penarikan data untuk laporan transaksi dasar. Dipisah dari halamannya karena
 // dipakai dua laporan sekaligus (per cabang & per hari) — angkanya wajib sama.
 import { createClient } from "./supabase/server";
@@ -8,9 +9,6 @@ import type { Trx } from "./laporan-transaksi";
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
-// Batas aman satu tarikan. Kalau kena batas, halaman menampilkan peringatan
-// supaya angka yang terpotong tidak dibaca sebagai angka sebenarnya.
-const BATAS = 5000;
 
 export type HasilTarik = {
   trx: Trx[];
@@ -26,26 +24,21 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
 
   const [hasilSales, hasilInvoices, hasilReturs, hasilCabang] =
     await Promise.all([
-      supabase.from("sales")
-        .select("id, customer_id, total, channel, created_at, branches(name), sale_items(id)")
-        .gte("created_at", mulai).lte("created_at", akhir).limit(BATAS),
+      completeReportQuery(supabase.from("sales")
+        .select("id, customer_id, total, channel, created_at, branches(name), sale_items(id)", { count: "exact" })
+        .gte("created_at", mulai).lte("created_at", akhir)),
       // Tagihan klinik yang dibatalkan tidak dihitung sebagai transaksi.
-      supabase.from("invoices")
-        .select("id, total, created_at, visits(customer_id, branches(name)), invoice_items(id)")
+      completeReportQuery(supabase.from("invoices")
+        .select("id, total, created_at, visits(customer_id, branches(name)), invoice_items(id)", { count: "exact" })
         .is("voided_at", null)
-        .gte("created_at", mulai).lte("created_at", akhir).limit(BATAS),
+        .gte("created_at", mulai).lte("created_at", akhir)),
       // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
       // dan omzet struk itu harus terlihat sudah berkurang.
-      supabase.from("sales_returns").select("sale_id, total"),
-      supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+      completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" })),
+      completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
     ]);
 
-  // Jangan tampilkan omzet parsial sebagai laporan yang tampak lengkap jika satu
-  // sumber gagal dibaca (misalnya join invoice klinik berubah atau RLS menolak).
-  if (hasilSales.error) throw new Error("Gagal membaca penjualan kasir.", { cause: hasilSales.error });
-  if (hasilInvoices.error) throw new Error("Gagal membaca tagihan klinik.", { cause: hasilInvoices.error });
-  if (hasilReturs.error) throw new Error("Gagal membaca retur penjualan.", { cause: hasilReturs.error });
-  if (hasilCabang.error) throw new Error("Gagal membaca daftar cabang.", { cause: hasilCabang.error });
+  // completeReportQuery throws before returning any failed or incomplete source.
   const { data: sales } = hasilSales;
   const { data: invoices } = hasilInvoices;
   const { data: returs } = hasilReturs;
@@ -94,7 +87,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   return {
     trx,
     cabangList: (cabangList ?? []) as { id: string; name: string }[],
-    terpotong: (sales?.length ?? 0) >= BATAS || (invoices?.length ?? 0) >= BATAS,
+    terpotong: false,
   };
 }
 
@@ -112,15 +105,13 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
   const supabase = await createClient();
   const akhir = `${sampai}T23:59:59+07:00`;
   const [hasilSales, hasilInvoices] = await Promise.all([
-    supabase.from("sales")
-      .select("customer_id, total, created_at, branches(name)")
-      .lte("created_at", akhir).limit(BATAS),
-    supabase.from("invoices")
-      .select("total, created_at, visits(customer_id, branches(name))")
-      .is("voided_at", null).lte("created_at", akhir).limit(BATAS),
+    completeReportQuery(supabase.from("sales")
+      .select("id, customer_id, total, created_at, branches(name)", { count: "exact" })
+      .lte("created_at", akhir)),
+    completeReportQuery(supabase.from("invoices")
+      .select("id, total, created_at, visits(customer_id, branches(name))", { count: "exact" })
+      .is("voided_at", null).lte("created_at", akhir)),
   ]);
-  if (hasilSales.error) throw new Error("Gagal membaca riwayat penjualan kasir.", { cause: hasilSales.error });
-  if (hasilInvoices.error) throw new Error("Gagal membaca riwayat tagihan klinik.", { cause: hasilInvoices.error });
   const { data: sales } = hasilSales;
   const { data: invoices } = hasilInvoices;
 
@@ -148,6 +139,6 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
 
   return {
     trx,
-    terpotong: (sales?.length ?? 0) >= BATAS || (invoices?.length ?? 0) >= BATAS,
+    terpotong: false,
   };
 }

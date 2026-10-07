@@ -61,7 +61,7 @@ export default async function KlinikPengeluaranPage({
       <div style={{ marginBottom: 4 }}>
         <Link href="/klinik" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
       </div>
-      <StokTabs active="pengeluaran" action={<TambahPengeluaran branchId={branchId} today={startDay} />} />
+      <StokTabs active="pengeluaran" action={<TambahPengeluaran key={`${branchId}:${shift?.id ?? "none"}`} shiftId={shift?.id ?? "none"} branchId={branchId} today={startDay} />} />
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengeluaran tersimpan.</div>}

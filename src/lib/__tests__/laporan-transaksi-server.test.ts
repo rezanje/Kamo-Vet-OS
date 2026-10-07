@@ -11,6 +11,7 @@ function query(result: QueryResult) {
   const q = {
     select: vi.fn(), gte: vi.fn(), lte: vi.fn(), limit: vi.fn(),
     is: vi.fn(), eq: vi.fn(), order: vi.fn(),
+    range: (from: number, to: number) => Promise.resolve({ ...result, data: Array.isArray(result.data) ? result.data.slice(from, to + 1) : result.data, count: Array.isArray(result.data) ? result.data.length : null }),
     then: (resolve: (value: QueryResult) => unknown, reject: (error: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   };
@@ -54,6 +55,6 @@ describe("tarikTransaksi clinic invoices", () => {
     };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
     await expect(tarikTransaksi("2026-09-24", "2026-09-24"))
-      .rejects.toThrow("Gagal membaca tagihan klinik");
+      .rejects.toThrow("query failed");
   });
 });

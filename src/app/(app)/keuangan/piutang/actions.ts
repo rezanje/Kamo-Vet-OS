@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { kodeAkunBayar } from "@/lib/kas-akun";
@@ -9,7 +10,7 @@ export async function terimaPelunasan(formData: FormData) {
   const supabase = await createClient();
   const back = "/keuangan/piutang";
   const invoiceId = String(formData.get("invoice_id") ?? "");
-  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  const requestKey = String(formData.get("draft_key") ?? "").trim();
   const amount = Number(formData.get("amount"));
   const metode = String(formData.get("metode") ?? "");
   const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
@@ -29,5 +30,5 @@ export async function terimaPelunasan(formData: FormData) {
     p_request_key: requestKey,
   });
   if (error) redirect(`${back}?error=${encodeURIComponent("Pembayaran belum tersimpan. " + error.message)}`);
-  redirect(`${back}?success=1`);
+  redirect(`${back}?success=1${transactionDraftAck(formData)}`);
 }

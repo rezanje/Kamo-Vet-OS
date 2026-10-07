@@ -1,10 +1,8 @@
 "use server";
 
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
-import { postJournal } from "@/lib/posting";
-import { kodeAkunBayar } from "@/lib/kas-akun";
-import { cekPeriode } from "@/lib/jurnal-guard";
 import { sisaFakturBayar } from "@/lib/perintah-bayar";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -87,11 +85,12 @@ export async function buatPerintahBayar(formData: FormData) {
     .insert(dipilih.map((d) => ({ order_id: order!.id, invoice_id: d.invoice_id, jumlah: d.jumlah })));
   if (itemErr) {
     // Kepala tanpa baris = perintah bayar kosong yang tetap mengunci sisa hutang.
-    await supabase.from("payment_orders").delete().eq("id", order!.id);
+    const { error: draftWriteError1 } = await supabase.from("payment_orders").delete().eq("id", order!.id);
+    if (draftWriteError1) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
     gagal(itemErr.message);
   }
 
-  redirect(`${BASE}?success=${encodeURIComponent(`Perintah bayar ${noPp} dibuat, menunggu persetujuan.`)}`);
+  redirect(`${BASE}?success=${encodeURIComponent(`Perintah bayar ${noPp} dibuat, menunggu persetujuan.`)}${transactionDraftAck(formData)}`);
 }
 
 export async function setujuiPerintahBayar(formData: FormData) {
@@ -105,11 +104,12 @@ export async function setujuiPerintahBayar(formData: FormData) {
   if (order!.status !== "draft") gagal("Hanya perintah bayar berstatus draft yang bisa disetujui");
 
   const { data: { user } } = await supabase.auth.getUser();
-  await supabase.from("payment_orders").update({
+  const { error: draftWriteError2 } = await supabase.from("payment_orders").update({
     status: "disetujui", approved_by: user?.id ?? null, approved_at: new Date().toISOString(),
-  }).eq("id", id);
+  }).eq("id", id).select("id").single();
+  if (draftWriteError2) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
 
-  redirect(`${BASE}?success=${encodeURIComponent(`${order!.no_pp} disetujui — siap dibayar.`)}`);
+  redirect(`${BASE}?success=${encodeURIComponent(`${order!.no_pp} disetujui — siap dibayar.`)}${transactionDraftAck(formData)}`);
 }
 
 export async function batalkanPerintahBayar(formData: FormData) {
@@ -122,81 +122,22 @@ export async function batalkanPerintahBayar(formData: FormData) {
   if (!order) gagal("Perintah bayar tidak ditemukan");
   if (order!.status === "dibayar") gagal("Perintah bayar yang sudah dibayar tidak bisa dibatalkan");
 
-  await supabase.from("payment_orders").update({ status: "batal" }).eq("id", id);
-  redirect(`${BASE}?success=${encodeURIComponent(`${order!.no_pp} dibatalkan.`)}`);
+  const { error: draftWriteError3 } = await supabase.from("payment_orders").update({ status: "batal" }).eq("id", id).select("id").single();
+  if (draftWriteError3) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
+  redirect(`${BASE}?success=${encodeURIComponent(`${order!.no_pp} dibatalkan.`)}${transactionDraftAck(formData)}`);
 }
 
-/** Eksekusi: uang benar-benar keluar. Satu jurnal per perintah bayar. */
+/** Eksekusi: invoice/PO debt is locked with the payment rows and aggregate journal. */
 export async function bayarPerintahBayar(formData: FormData) {
-  const supabase = await assertRole(BASE, "pembayaran hutang", BOLEH_SETUJU);
-
-  const id = String(formData.get("id") ?? "").trim();
-  const metode = String(formData.get("metode") ?? "Transfer");
-  const accountId = String(formData.get("account_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
-  if (!id) gagal("Perintah bayar tidak valid");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  const { data: order } = await supabase
-    .from("payment_orders")
-    .select("id, no_pp, status, payment_order_items(id, invoice_id, jumlah)")
-    .eq("id", id).maybeSingle();
-  if (!order) gagal("Perintah bayar tidak ditemukan");
-  if (order!.status !== "disetujui") gagal("Perintah bayar ini belum disetujui");
-
-  const baris = (order!.payment_order_items ?? []) as { invoice_id: string; jumlah: number }[];
-  if (baris.length === 0) gagal("Perintah bayar ini tidak punya baris faktur");
-
-  // Sisa dicek ulang saat eksekusi: fakturnya bisa saja sudah dibayar lewat layar
-  // hutang di antara persetujuan dan pembayaran.
-  const [{ data: inv }, { data: bayar }] = await Promise.all([
-    supabase.from("purchase_invoices").select("id, total, purchase_orders(branch_id)").in("id", baris.map((b) => b.invoice_id)),
-    supabase.from("purchase_invoice_payments").select("invoice_id, amount").in("invoice_id", baris.map((b) => b.invoice_id)),
-  ]);
-  const sisa = sisaFakturBayar(
-    (inv ?? []) as { id: string; total: number }[],
-    (bayar ?? []) as { invoice_id: string; amount: number }[],
-    [],
-  );
-  for (const b of baris) {
-    if (b.jumlah > (sisa.get(b.invoice_id) ?? 0)) {
-      gagal("Ada faktur yang keburu dibayar dari layar lain — batalkan perintah bayar ini lalu buat ulang");
-    }
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const { error: payErr } = await supabase.from("purchase_invoice_payments").insert(
-    baris.map((b) => ({
-      invoice_id: b.invoice_id, tanggal, amount: b.jumlah, metode,
-      catatan: `Perintah bayar ${order!.no_pp}`, created_by: user?.id ?? null,
-      payment_order_id: id,
-    })),
-  );
-  if (payErr) gagal(payErr.message);
-
-  type InvRow = { id: string; purchase_orders: { branch_id: string | null } | { branch_id: string | null }[] | null };
-  const pertama = ((inv ?? []) as InvRow[])[0];
-  const rel = Array.isArray(pertama?.purchase_orders) ? pertama.purchase_orders[0] : pertama?.purchase_orders;
-  const branchId = rel?.branch_id ?? null;
-
-  const total = baris.reduce((a, b) => a + Number(b.jumlah), 0);
-  const kasCode = await kodeAkunBayar(supabase, metode, branchId, accountId);
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Pembayaran hutang lewat ${order!.no_pp}`,
-    source: "purchase-pay",
-    sourceRef: order!.no_pp,
-    branchId,
-    lines: [
-      { code: "2101", debit: total, credit: 0 },
-      { code: kasCode, debit: 0, credit: total },
-    ],
-  });
-
-  await supabase.from("payment_orders")
-    .update({ status: "dibayar", paid_at: new Date().toISOString() }).eq("id", id);
-
-  redirect(`${BASE}?success=${encodeURIComponent(`${order!.no_pp} dibayar.`)}`);
+ const supabase=await assertRole(BASE,"pembayaran hutang",BOLEH_SETUJU);
+ const id=String(formData.get("id")??"").trim();
+ const key=String(formData.get("draft_key")??"");
+ const metode=String(formData.get("metode")??"Transfer");
+ const accountId=String(formData.get("account_id")??"").trim()||null;
+ const tanggal=String(formData.get("tanggal")??"").trim()||hariIniWIB();
+ if(!id||!key)gagal("Identitas perintah bayar tidak valid. Muat ulang formulir.");
+ const {data:result,error}=await supabase.rpc("pay_purchase_payment_order_atomic",{p_request_key:key,p_order_id:id,p_tanggal:tanggal,p_metode:metode,p_account_id:accountId});
+ if(error)gagal(error.message);
+ if(!result?.order_id||!result?.journal_id||!result?.no_pp)throw new Error("Pembayaran belum terkonfirmasi lengkap. Periksa perintah bayar sebelum menyimpan ulang.");
+ redirect(`${BASE}?success=${encodeURIComponent(`${result.no_pp} dibayar.`)}${transactionDraftAck(formData)}`);
 }

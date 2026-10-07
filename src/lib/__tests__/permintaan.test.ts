@@ -16,9 +16,10 @@ describe("siapkanBaris", () => {
     expect(rows[0]).toMatchObject({ satuan: "box", faktor: 12, qty_diminta: 2 });
   });
 
-  it("satuan yang tidak dikenal jatuh ke satuan dasar, bukan faktor karangan", () => {
-    const { rows } = siapkanBaris([{ item_id: "b1", qty_diminta: 3, satuan: "peti" }], master);
-    expect(rows[0]).toMatchObject({ satuan: "pcs", faktor: 1 });
+  it("menolak satuan yang dihapus tanpa mengubahnya ke satuan dasar", () => {
+    const { rows, error } = siapkanBaris([{ item_id: "b1", qty_diminta: 3, satuan: "peti" }], master);
+    expect(rows).toEqual([]);
+    expect(error).toMatch(/satuan/i);
   });
 
   it("barang jasa ditolak", () => {

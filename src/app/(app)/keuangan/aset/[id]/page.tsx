@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -26,6 +27,7 @@ export default async function DetailAsetPage({
   const { id } = await params;
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
   const [{ data: aset }, { data: depData }, { data: golData }, { data: cabData }, { data: ubahData }, { data: pindahData }, { data: lepasData }, rekening] =
@@ -178,7 +180,7 @@ export default async function DetailAsetPage({
           <SecHeader num={lepasData ? "04" : "03"} title="TINDAKAN" desc="Perubahan nilai & umur berlaku ke depan, tidak menghitung ulang penyusutan yang sudah jalan." />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <form action={tambahNilaiAset}>
+            <TransactionForm userId={user?.id ?? ""} scope={`asset-value:${id}`} action={tambahNilaiAset}>
               <input type="hidden" name="id" value={id} />
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Tambah nilai (perbaikan besar)</div>
               <div className="fg"><label className="flab">Nilai tambahan (Rp) *</label>
@@ -193,9 +195,9 @@ export default async function DetailAsetPage({
               <div className="fg"><label className="flab">Keterangan</label>
                 <input className="fi" name="keterangan" placeholder="mis. ganti mesin" /></div>
               <SubmitButton className="btn-def" icon="ti-plus" pendingText="Menyimpan…">Tambah nilai</SubmitButton>
-            </form>
+            </TransactionForm>
 
-            <form action={ubahUmurAset}>
+            <TransactionForm userId={user?.id ?? ""} scope={`asset-life:${id}`} action={ubahUmurAset}>
               <input type="hidden" name="id" value={id} />
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Revisi umur ekonomis</div>
               <div className="fg"><label className="flab">Umur baru (bulan) *</label>
@@ -205,9 +207,9 @@ export default async function DetailAsetPage({
               <div className="fg"><label className="flab">Alasan</label>
                 <input className="fi" name="keterangan" placeholder="mis. dipakai lebih lama" /></div>
               <SubmitButton className="btn-def" icon="ti-edit" pendingText="Menyimpan…">Simpan umur</SubmitButton>
-            </form>
+            </TransactionForm>
 
-            <form action={pindahAset}>
+            <TransactionForm userId={user?.id ?? ""} scope={`asset-move:${id}`} action={pindahAset}>
               <input type="hidden" name="id" value={id} />
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Pindah cabang</div>
               <div className="fg"><label className="flab">Cabang tujuan *</label>
@@ -220,9 +222,9 @@ export default async function DetailAsetPage({
               <div className="fg"><label className="flab">Keterangan</label>
                 <input className="fi" name="keterangan" placeholder="opsional" /></div>
               <SubmitButton className="btn-def" icon="ti-arrows-transfer-down" pendingText="Memindahkan…">Pindahkan</SubmitButton>
-            </form>
+            </TransactionForm>
 
-            <form action={disposisiAset}>
+            <TransactionForm userId={user?.id ?? ""} scope={`asset-dispose:${id}`} action={disposisiAset}>
               <input type="hidden" name="id" value={id} />
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8, color: "#b91c1c" }}>Lepas aset (jual / hapus)</div>
               <div className="fg"><label className="flab">Jenis *</label>
@@ -244,7 +246,7 @@ export default async function DetailAsetPage({
               <SubmitButton className="btn-def" icon="ti-trash" style={{ color: "#b91c1c" }} pendingText="Memproses…">
                 Lepas aset
               </SubmitButton>
-            </form>
+            </TransactionForm>
           </div>
         </div>
       )}

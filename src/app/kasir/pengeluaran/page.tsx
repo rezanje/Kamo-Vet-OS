@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -85,7 +86,7 @@ export default async function PengeluaranKasirPage({
         {/* KIRI — form tambah pengeluaran */}
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)", marginBottom: 12, letterSpacing: ".03em" }}>TAMBAH PENGELUARAN</div>
-          <form action={simpanPengeluaranKasir}>
+          <TransactionForm userId={user.id} scope={`cashier-expense:${shift.id}`} action={simpanPengeluaranKasir}>
             <input type="hidden" name="branchId" value={shift.branch_id} />
             <div style={{ marginBottom: 10 }}>
               <label className="flab">Tanggal *</label>
@@ -120,7 +121,7 @@ export default async function PengeluaranKasirPage({
               <LampiranPicker folder="pengeluaran" wajib />
             </div>
             <button type="submit" className="pay-btn" style={{ width: "100%" }}>Simpan Pengeluaran</button>
-          </form>
+          </TransactionForm>
         </div>
 
         {/* KANAN — daftar pengeluaran + total */}

@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -51,7 +52,10 @@ export async function simpanMaintenance(formData: FormData) {
   if (error) redirect(`${BACK}?error=${encodeURIComponent("Riwayat maintenance belum tersimpan")}`);
   const { data: equipment } = await supabase.from("medical_equipment").select("id, maintenance_interval_days").eq("id", equipmentId).maybeSingle();
   const calculatedNextDue = nextDue || (equipment ? geserHari(date, Number(equipment.maintenance_interval_days) || 180) : null);
-  if (equipment) await supabase.from("medical_equipment").update({ next_maintenance_date: calculatedNextDue, status: "Aktif" }).eq("id", equipmentId);
+  if (equipment) {
+    const { error: equipmentError } = await supabase.from("medical_equipment").update({ next_maintenance_date: calculatedNextDue, status: "Aktif" }).eq("id", equipmentId);
+    if(equipmentError) throw new Error("Riwayat tersimpan tetapi jadwal alat belum terkonfirmasi. Periksa riwayat sebelum menyimpan ulang.");
+  }
   revalidatePath(BACK);
-  redirect(`${BACK}?success=maintenance`);
+  redirect(`${BACK}?success=maintenance${transactionDraftAck(formData)}`);
 }

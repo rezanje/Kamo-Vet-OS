@@ -12,6 +12,7 @@ export default async function FakturLangsungPage({
 }) {
   const { error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const [{ data: suppliers }, { data: warehouses }, { data: items }] = await Promise.all([
     // Tabel pemasok tidak punya penanda aktif/nonaktif — jangan saring kolom yang
@@ -46,7 +47,7 @@ export default async function FakturLangsungPage({
         </div>
       )}
 
-      <FakturLangsungForm
+      <FakturLangsungForm userId={user?.id ?? ""}
         suppliers={(suppliers ?? []).map((s) => ({
           id: s.id as string, nama: s.nama as string, terminHari: Number(s.termin_hari) || 0,
         }))}

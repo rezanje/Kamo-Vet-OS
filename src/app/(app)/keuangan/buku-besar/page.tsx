@@ -1,3 +1,5 @@
+import { UnduhLaporan } from "@/components/UnduhLaporan";
+import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -12,7 +14,7 @@ const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { ti
 export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string; cabang?: string }> }) {
   const { akun, dari, sampai, cabang } = await searchParams;
   const supabase = await createClient();
-  const { data: branches } = await supabase.from("branches").select("id, name, type").order("name");
+  const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name, type", { count: "exact" }).order("name"));
 
   // Cabang ikut disaring supaya angka di sini sama persis dengan baris laporan
   // yang mengantar ke sini (Laba Rugi/Neraca punya filter cabang). Kalau tidak,
@@ -57,7 +59,8 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
   }, []);
 
   return (
-    <>
+    <div data-report-page id="laporan-isi">
+      <UnduhLaporan judul="Buku Besar" />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -141,6 +144,6 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

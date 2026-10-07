@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { getCashLedgerPerAccount } from "@/lib/ledger";
@@ -28,7 +29,7 @@ export default async function RincianArusKasPage({
   const supabase = await createClient();
   const [rekening, { data: branches }] = await Promise.all([
     getCashLedgerPerAccount(supabase as never, { from: dari, to: sampai, branchId: cabang || undefined }),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const totalAwal = rekening.reduce((a, r) => a + r.saldoAwal, 0);

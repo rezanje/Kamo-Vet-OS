@@ -48,5 +48,5 @@ export async function DaftarHitung({ orderId, warehouseId }: { orderId: string; 
     ((kunciRows ?? []) as { item_id: string; qty_fisik: number }[]).map((r) => [r.item_id, Number(r.qty_fisik)]),
   );
 
-  return <HitungForm orderId={orderId} rows={rows} terkunci={terkunci} />;
+  return <HitungForm key={orderId} orderId={orderId} rows={rows} terkunci={terkunci} />;
 }

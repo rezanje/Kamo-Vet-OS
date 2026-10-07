@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
@@ -113,10 +114,7 @@ export default async function KaryawanPage({
               <label className="flab">Nama *</label>
               <input className="fi" name="nama" type="text" placeholder="Nama lengkap karyawan" required />
             </div>
-            <div>
-              <label className="flab">Jabatan</label>
-              <input className="fi" name="jabatan" type="text" placeholder="mis. Dokter Hewan, Kasir" />
-            </div>
+            <EmployeeOccupationField />
             <div>
               <label className="flab">Departemen</label>
               <input className="fi" name="departemen" type="text" placeholder="mis. Medis, Operasional" />

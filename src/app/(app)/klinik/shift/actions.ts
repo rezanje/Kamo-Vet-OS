@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -32,7 +33,7 @@ export async function mulaiShiftKlinik(formData: FormData) {
       : "Kamu tidak bertugas di cabang ini — pilih cabang penempatanmu.";
     redirect(`/klinik/shift?error=${encodeURIComponent(msg)}`);
   }
-  redirect("/klinik?success=shift");
+  redirect(`/klinik?success=shift${transactionDraftAck(formData)}`);
 }
 
 export async function tutupShiftKlinik(formData: FormData) {
@@ -52,5 +53,5 @@ export async function tutupShiftKlinik(formData: FormData) {
   if (!hasil.ok) redirect(`/klinik/shift?error=${encodeURIComponent(hasil.error)}`);
 
   // Kasir buta cuma berlaku SEBELUM submit; setelah kas fisik terkunci breakdown boleh dilihat.
-  redirect(`/klinik/shift/${shiftId}`);
+  redirect(`/klinik/shift/${shiftId}?success=closed${transactionDraftAck(formData)}`);
 }

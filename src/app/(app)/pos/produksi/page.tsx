@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -6,6 +7,7 @@ import { NoDok } from "@/components/NoDok";
 import { ResepForm, type BarangPilihan } from "./ResepForm";
 import { mulaiProduksi, selesaikanProduksi } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { kebutuhanBahan, rencanaJadi } from "@/lib/produksi";
 
 // Produksi own brand: resep → perintah (bahan keluar) → penyelesaian (barang jadi
@@ -28,7 +30,7 @@ type Resep = {
 type Perintah = {
   id: string; no_produksi: string; batch: number; qty_jadi: number; nilai_bahan: number;
   status: string; tanggal: string; tanggal_selesai: string | null;
-  production_recipes: Rel<{ nama: string; output_qty: number }>;
+  production_recipes: Rel<{ nama: string; output_qty: number; items: Rel<{ unit: string }> }>;
   warehouses: Rel<{ name: string }>;
 };
 
@@ -39,13 +41,15 @@ export default async function ProduksiPage({
 }) {
   const { error, success } = await searchParams;
   const supabase = await createClient();
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
+  const draftUserId = draftUser?.id ?? "";
 
   const [{ data: resepData }, { data: orderData }, { data: itemData }, { data: whData }] = await Promise.all([
     supabase.from("production_recipes")
       .select("id, nama, output_qty, is_active, items(code, name, unit), production_recipe_items(qty, items(name, unit))")
       .eq("is_active", true).order("created_at", { ascending: false }),
     supabase.from("production_orders")
-      .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty), warehouses(name)")
+      .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty, items(unit)), warehouses(name)")
       .order("created_at", { ascending: false }).limit(50),
     supabase.from("items").select("id, code, name, unit")
       .eq("is_active", true).eq("item_type", "Persediaan").order("name"),
@@ -54,7 +58,8 @@ export default async function ProduksiPage({
 
   const resep = (resepData ?? []) as unknown as Resep[];
   const perintah = (orderData ?? []) as unknown as Perintah[];
-  const barang = (itemData ?? []) as BarangPilihan[];
+  const itemUnits = await loadItemUnits(supabase, (itemData ?? []).map((item: { id: string }) => item.id));
+  const barang = ((itemData ?? []) as BarangPilihan[]).map(item => ({ ...item, units: unitOptions({ unit: item.unit, sell_price: 0 }, itemUnits.get(item.id) ?? []) }));
   const gudang = (whData ?? []) as { id: string; name: string }[];
   const berjalan = perintah.filter((p) => p.status === "berjalan");
 
@@ -102,6 +107,7 @@ export default async function ProduksiPage({
               <tbody>
                 {berjalan.map((p) => {
                   const r = one(p.production_recipes);
+                  const outputBaseUnit = one(r?.items ?? null)?.unit ?? "";
                   const rencana = rencanaJadi(Number(r?.output_qty ?? 0), Number(p.batch));
                   return (
                     <tr key={p.id}>
@@ -114,10 +120,10 @@ export default async function ProduksiPage({
                       <td style={{ textAlign: "right", fontSize: 11.5 }}>{rencana.toLocaleString("id-ID")}</td>
                       <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(p.nilai_bahan))}</td>
                       <td>
-                        <form action={selesaikanProduksi} style={{ display: "flex", gap: 5, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <TransactionForm userId={draftUserId} scope={`production-complete:${p.id}`} action={selesaikanProduksi} style={{ display: "flex", gap: 5, alignItems: "flex-end", flexWrap: "wrap" }}>
                           <input type="hidden" name="id" value={p.id} />
                           <div style={{ width: 90 }}>
-                            <label className="flab">Jadi</label>
+                            <label className="flab">Jadi {outputBaseUnit && `(${outputBaseUnit})`}</label>
                             <input className="fi" type="number" name="qty_jadi" min={0} step="any"
                               defaultValue={rencana || ""} style={{ textAlign: "right" }} />
                           </div>
@@ -129,7 +135,7 @@ export default async function ProduksiPage({
                             style={{ padding: "5px 10px", fontSize: 10.5 }}>
                             Selesai
                           </SubmitButton>
-                        </form>
+                        </TransactionForm>
                       </td>
                     </tr>
                   );
@@ -152,7 +158,7 @@ export default async function ProduksiPage({
             Belum ada resep produksi — buat dulu di bawah.
           </div>
         ) : (
-          <form action={mulaiProduksi}>
+          <TransactionForm userId={draftUserId} scope={"production-create"} action={mulaiProduksi}>
             <div className="frow" style={{ marginBottom: 10 }}>
               <div>
                 <label className="flab">Resep *</label>
@@ -188,7 +194,7 @@ export default async function ProduksiPage({
             <SubmitButton className="btn-acc" icon="ti-player-play" pendingText="Memproses…">
               Mulai produksi (bahan keluar)
             </SubmitButton>
-          </form>
+          </TransactionForm>
         )}
       </div>
 

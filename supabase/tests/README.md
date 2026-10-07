@@ -275,3 +275,18 @@ Normal fictional configuration inserts naturally advance the global HRIS source
 revision. Results and screenshots go to `/workspace/purchase-browser-runtime`.
 This verifies the named local flows, not production schema drift, remote recovery,
 or browser key persistence when session storage is unavailable.
+
+## Atomic purchase invoice and payment-order settlement
+
+```sh
+python3 scripts/test-purchase-payment-postgres.py
+```
+
+This runner creates and removes an isolated PostgreSQL 16 Docker container,
+applies the repository migrations with fictional auth/storage shims, and uses
+fictional PO/invoice/advance/approval fixtures. It verifies exact-payload payment
+recovery, the return-adjusted debt ceiling, direct-write blocking, integer rupiah
+and fractional advance guards, payment/journal/advance/approval rollback, and
+aggregate payment-order settlement. Two independent sessions test both lock
+orders: payment before return and return before payment. No production or
+connected database URL is accepted.

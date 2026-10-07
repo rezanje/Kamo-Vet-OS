@@ -3,46 +3,49 @@
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatReturJual } from "../actions";
+import { type ReturnFormRow } from "@/lib/return-source-units";
+import { usePreservedAction } from "@/components/LocalTransactionDraft";
+import { draftRecord, draftNumber, draftString } from "@/components/TransactionDraft";
+import { PostingRequestIdentity } from "@/components/PostingRequestIdentity";
 import { hariIniWIB } from "@/lib/tanggal";
 
-type Row = {
-  item_id: string; nama: string; harga: number; sisa: number;
-  /** Barang berstok? Jasa tidak punya kondisi barang. */
-  berstok?: boolean;
-  /** Barang yang dipantau kadaluarsanya — hanya ini yang butuh isian tanggal. */
-  trackExpiry?: boolean;
-  components?: {
-    component_item_id: string | null; component_name: string;
-    item_type: string; qty_per_group: number; unit: string;
-  }[];
-};
+type Row = ReturnFormRow;
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
 export function ReturJualForm({
-  saleId, info, rows, dari, lockBranchId,
+  saleId, info, rows, dari, lockBranchId, userId, confirmedScope, confirmedKey,
 }: {
-  saleId: string; info: string; rows: Row[];
+  confirmedScope?:string; confirmedKey?:string; userId?: string; saleId: string; info: string; rows: Row[];
   // "kasir" = dipakai dari layar POS: redirect & pembatasan cabang ikut kasir.
   dari?: "kasir"; lockBranchId?: string;
 }) {
+  const {save,failure}=usePreservedAction(buatReturJual);
+  const [unit, setUnit] = useState<Record<string, string>>({});
+  const chosen = (r: Row) => r.units.find(u => u.unit === unit[r.source_line_id]) ?? r.units[0];
   const [qty, setQty] = useState<Record<string, number>>({});
   const [kondisi, setKondisi] = useState<Record<string, string>>({});
   const [exp, setExp] = useState<Record<string, string>>({});
 
   const payload = rows
     .map((r) => ({
-      item_id: r.item_id,
-      qty: Number(qty[r.item_id]) || 0,
-      kondisi: r.berstok === false ? "baik" : (kondisi[r.item_id] ?? "baik"),
-      exp_date: exp[r.item_id] || undefined,
+      item_id: r.item_id, source_line_id: r.source_line_id, satuan: chosen(r)?.unit,
+      qty: Number(qty[r.source_line_id]) || 0,
+      kondisi: r.berstok === false ? "baik" : (kondisi[r.source_line_id] ?? "baik"),
+      exp_date: exp[r.source_line_id] || undefined,
     }))
     .filter((r) => r.qty > 0);
-  const total = rows.reduce((a, r) => a + (Number(qty[r.item_id]) || 0) * r.harga, 0);
+  const total = rows.reduce((a, r) => a + (Number(qty[r.source_line_id]) || 0) * (chosen(r)?.factor ?? 1) * r.harga, 0);
   const adaRusak = payload.some((r) => r.kondisi === "rusak");
 
   return (
-    <form action={buatReturJual}>
+    <form action={save}>
+      {failure && <div role="alert" className="p2ban">{failure}</div>}
+      <PostingRequestIdentity scope={`sales-return:${saleId}`} userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} state={{snapshot:{qty,unit,kondisi,exp},reset:()=>{setQty({});setUnit({});setKondisi({});setExp({});},restore:value=>{
+        if(!draftRecord(value.qty,draftNumber)||!draftRecord(value.unit,draftString)||!draftRecord(value.kondisi,draftString)||!draftRecord(value.exp,draftString))return false;
+        setQty(value.qty);setUnit(value.unit);setKondisi(value.kondisi);setExp(value.exp);return true;
+      }}} />
+      <input type="hidden" name="source_ref" value={info.split(" — ")[0]} />
       <input type="hidden" name="sale_id" value={saleId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
       {dari && <input type="hidden" name="dari" value={dari} />}
@@ -64,14 +67,14 @@ export function ReturJualForm({
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.map((r) => {
-            const qtyDipilih = Number(qty[r.item_id]) || 0;
+            const qtyDipilih = Number(qty[r.source_line_id]) || 0;
             const dipilih = qtyDipilih > 0;
-            const kond = kondisi[r.item_id] ?? "baik";
+            const kond = kondisi[r.source_line_id] ?? "baik";
             const punyaStok = r.berstok !== false;
             return (
-              <div key={r.item_id} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <div key={r.source_line_id} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ flex: 1, minWidth: 140, fontSize: 11.5 }}>
-                  {r.nama} <span style={{ color: "var(--td)", fontSize: 10.5 }}>@{rp(r.harga)}</span>
+                  {r.nama} <small style={{color:"var(--td)"}}>({r.source_qty} {r.source_unit})</small> <span style={{ color: "var(--td)", fontSize: 10.5 }}>@{rp(r.harga * (chosen(r)?.factor ?? 1))}</span>
                   {r.components?.map((component) => (
                     <span key={`${component.component_item_id}:${component.unit}`} style={{ display: "block", paddingLeft: 10, fontSize: 9.5, color: "var(--td)" }}>
                       ↳ {dipilih ? qtyDipilih * component.qty_per_group : component.qty_per_group} {component.unit} {component.component_name}
@@ -79,10 +82,13 @@ export function ReturJualForm({
                     </span>
                   ))}
                 </span>
-                <span style={{ fontSize: 10.5, color: "var(--tm)" }}>maks {r.sisa}</span>
-                <input className="fi" type="number" min={0} max={r.sisa} step="any"
-                  value={qty[r.item_id] ?? 0}
-                  onChange={(e) => setQty((q) => ({ ...q, [r.item_id]: Number(e.target.value) }))}
+                <span style={{ fontSize: 10.5, color: "var(--tm)" }}>maks {r.sisa / (chosen(r)?.factor ?? 1)} {chosen(r)?.unit}</span>
+                <select className="fi" title="Satuan retur" value={chosen(r)?.unit ?? ""} onChange={e => setUnit(u => ({...u, [r.source_line_id]: e.target.value}))}>
+                  {r.units.map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
+                </select>
+                <input className="fi" type="number" min={0} max={r.sisa / (chosen(r)?.factor ?? 1)} step="any"
+                  value={qty[r.source_line_id] ?? 0}
+                  onChange={(e) => setQty((q) => ({ ...q, [r.source_line_id]: Number(e.target.value) }))}
                   style={{ width: 90 }} title="Qty retur" />
 
                 {/* Kondisi menentukan nasib barangnya: yang rusak TIDAK kembali ke rak.
@@ -90,7 +96,7 @@ export function ReturJualForm({
                 {dipilih && punyaStok && (
                   <select className="fi" style={{ width: 150 }} title="Kondisi barang"
                     value={kond}
-                    onChange={(e) => setKondisi((k) => ({ ...k, [r.item_id]: e.target.value }))}>
+                    onChange={(e) => setKondisi((k) => ({ ...k, [r.source_line_id]: e.target.value }))}>
                     <option value="baik">Bisa dijual lagi</option>
                     <option value="rusak">Rusak / kadaluarsa</option>
                   </select>
@@ -99,8 +105,8 @@ export function ReturJualForm({
                 {dipilih && punyaStok && kond === "baik" && r.trackExpiry && (
                   <input className="fi" type="date" style={{ width: 150 }}
                     title="Tanggal kadaluarsa barang yang kembali"
-                    value={exp[r.item_id] ?? ""}
-                    onChange={(e) => setExp((x) => ({ ...x, [r.item_id]: e.target.value }))} />
+                    value={exp[r.source_line_id] ?? ""}
+                    onChange={(e) => setExp((x) => ({ ...x, [r.source_line_id]: e.target.value }))} />
                 )}
               </div>
             );

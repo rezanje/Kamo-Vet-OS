@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { kumpulkanBarisKomisi } from "@/lib/komisi-data";
@@ -41,12 +42,12 @@ export default async function PenjualPage({
   const [{ baris, omzetTanpaPenjual }, { data: empData }, { data: itemData }, { data: fjData }, { data: rcData }] =
     await Promise.all([
       kumpulkanBarisKomisi(supabase, periode),
-      supabase.from("employees").select("id, nama, profile_id, status"),
-      supabase.from("items").select("id, name, unit"),
-      supabase.from("sales_invoices")
-        .select("id, no_faktur, tanggal, jatuh_tempo, total, status, created_by, customers(name)")
-        .neq("status", "batal").gte("tanggal", awal).lte("tanggal", akhir),
-      supabase.from("sales_receipts").select("invoice_id, jumlah"),
+      completeReportQuery(supabase.from("employees").select("id, nama, profile_id, status", { count: "exact" })),
+      completeReportQuery(supabase.from("items").select("id, name, unit", { count: "exact" })),
+      completeReportQuery(supabase.from("sales_invoices")
+        .select("id, no_faktur, tanggal, jatuh_tempo, total, status, created_by, customers(name)", { count: "exact" })
+        .neq("status", "batal").gte("tanggal", awal).lte("tanggal", akhir)),
+      completeReportQuery(supabase.from("sales_receipts").select("id, invoice_id, jumlah", { count: "exact" })),
     ]);
 
   type Emp = { id: string; nama: string; profile_id: string | null; status: string | null };

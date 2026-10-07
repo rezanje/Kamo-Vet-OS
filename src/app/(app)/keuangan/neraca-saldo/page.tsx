@@ -1,3 +1,5 @@
+import { UnduhLaporan } from "@/components/UnduhLaporan";
+import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -17,7 +19,7 @@ export default async function NeracaSaldoPage({
 
   const [balances, { data: branches }] = await Promise.all([
     getAccountBalances(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
-    supabase.from("branches").select("id, name").order("name"),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name")),
   ]);
 
   const rows = balances
@@ -34,7 +36,8 @@ export default async function NeracaSaldoPage({
   const seimbang = Math.round(totalD) === Math.round(totalK);
 
   return (
-    <>
+    <div data-report-page id="laporan-isi">
+      <UnduhLaporan judul="Neraca Saldo" />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -91,6 +94,6 @@ export default async function NeracaSaldoPage({
           </table>
         </div>
       </div>
-    </>
+    </div>
   );
 }

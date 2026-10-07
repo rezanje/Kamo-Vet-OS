@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -110,7 +111,10 @@ async function daftar(formData: FormData): Promise<string[]> {
       const patch: Record<string, unknown> = {};
       if (p.weight != null) patch.weight = p.weight;
       if (p.photo_url) patch.photo_url = p.photo_url;
-      if (Object.keys(patch).length) await supabase.from("pets").update(patch).eq("id", reuseId);
+      if (Object.keys(patch).length) {
+        const { error: petUpdateError } = await supabase.from("pets").update(patch).eq("id", reuseId);
+        if(petUpdateError) redirect(`/klinik/registrasi?error=${encodeURIComponent(petUpdateError.message)}`);
+      }
       finalPetId = reuseId;
     } else {
       const { data: pet, error: petErr } = await supabase
@@ -209,12 +213,12 @@ export async function lookupPetsByPhone(phone: string): Promise<{ customer: Cust
 
 export async function registrasiPasien(formData: FormData) {
   const ids = await daftar(formData);
-  redirect(`/klinik/antrian?success=${ids.length}`);
+  redirect(`/klinik/antrian?success=${ids.length}${transactionDraftAck(formData)}`);
 }
 
 // "Simpan dan Pembayaran": daftar lalu langsung ke kasir. Rombongan diarahkan ke
 // kunjungan pertama; kunjungan saudaranya muncul di layar pembayaran itu.
 export async function registrasiDanBayar(formData: FormData) {
   const ids = await daftar(formData);
-  redirect(`/klinik/pembayaran/${ids[0]}`);
+  redirect(`/klinik/pembayaran/${ids[0]}?success=registered${transactionDraftAck(formData)}`);
 }

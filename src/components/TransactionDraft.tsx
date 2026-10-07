@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-export type DraftSnapshot = { snapshot: Record<string, unknown>; restore: (value: Record<string, unknown>) => boolean };
+export type DraftSnapshot = { snapshot: Record<string, unknown>; restore: (value: Record<string, unknown>) => boolean; reset?: () => void };
 type Draft = { version: 1; savedAt: number; requestKey: string; fields: Record<string, string>; snapshot: Record<string, unknown> };
 export const transactionDraftName = (userId: string, domain: string, scope: string) => `vetos:transaction-draft:v1:${userId}:${domain}:${scope}`;
 export function clearTransactionDraft(userId: string, domain: string, scope: string, requestKey: string) {
@@ -19,7 +19,7 @@ export const draftString = (value: unknown): value is string => typeof value ===
 
 /** Like clinic drafts: browser-tab only, authenticated user scope, twelve-hour lifetime. */
 export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
-  userId: string; domain: "purchase" | "sales"; scope: string; requestKey: string; state?: DraftSnapshot;
+  userId: string; domain: "purchase" | "sales" | "transaction"; scope: string; requestKey: string; state?: DraftSnapshot;
 }) {
   const anchor = useRef<HTMLSpanElement>(null);
   const latest = useRef(state);
@@ -30,7 +30,13 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
   useLayoutEffect(() => {
     if (!fields) return;
     for (const control of Array.from(anchor.current?.closest("form")?.elements ?? [])) {
-      if (eligible(control) && typeof fields[control.name] === "string") control.value = fields[control.name];
+      if (eligible(control) && typeof fields[fieldKey(control)] === "string") {
+        if (control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type)) control.checked = fields[fieldKey(control)] === "true";
+        else {
+          control.value = fields[fieldKey(control)];
+          if (control.hasAttribute("data-draft-state")) control.dispatchEvent(new CustomEvent("vetos:draft-restore", { detail: control.value }));
+        }
+      }
     }
   }, [fields]);
   const serialized = JSON.stringify(state?.snapshot ?? {});
@@ -43,7 +49,7 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
     function persist() {
       if (!ready || !form) return;
       const values: Record<string, string> = {};
-      for (const control of Array.from(form.elements)) if (eligible(control)) values[control.name] = control.value;
+      for (const control of Array.from(form.elements)) if (eligible(control)) values[fieldKey(control)] = control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type) ? String(control.checked) : control.value;
       try {
         sessionStorage.setItem(name, JSON.stringify({ version: 1, savedAt: Date.now(), requestKey,
           fields: values, snapshot: latest.current?.snapshot ?? {} } satisfies Draft));
@@ -72,6 +78,7 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
       const detail = (event as CustomEvent<{scope: string; key: string}>).detail;
       if (detail?.scope === scope && detail.key === requestKey) {
         ready = false; clearTransactionDraft(userId, domain, scope, requestKey); setNotice("");
+        setFields(null); latest.current?.reset?.();
         confirmedReset = true; form.reset(); confirmedReset = false;
       }
     };
@@ -88,7 +95,21 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
   useEffect(() => { save.current(); }, [serialized, fields]);
   return <span ref={anchor}>{notice && <span role="status" className="p2ban" style={{ display: "block", marginBottom: 12 }}>{notice}</span>}</span>;
 }
-function eligible(control: Element): control is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
+export function eligible(control: Element): control is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
   return (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)
-    && !!control.name && !(control instanceof HTMLInputElement && ["hidden", "file", "password", "checkbox", "radio", "submit", "button"].includes(control.type));
+    && !!control.name && !(control instanceof HTMLInputElement && (["file", "password", "submit", "button"].includes(control.type) || (control.type === "hidden" && !control.hasAttribute("data-draft-state"))));
+}
+
+/** Bound row count and validate every persisted property before restoring controlled rows. */
+export function draftRows<T extends object>(value: unknown, shape: T): value is T[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= 500 && value.every(row =>
+    row && typeof row === "object" && !Array.isArray(row) && Object.entries(shape).every(([key, sample]) => {
+      const entry = row[key];
+      return sample === null ? entry === null || typeof entry === "string"
+        : typeof sample === "number" ? draftNumber(entry) : typeof entry === typeof sample;
+    }));
+}
+
+function fieldKey(control: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) {
+  return control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type) ? `${control.name}:${control.value}` : control.name;
 }

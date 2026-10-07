@@ -1,3 +1,4 @@
+import { TransactionForm, PreservedForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -141,14 +142,14 @@ export default async function BookingKlinikPage({
                           <i className="ti ti-user-plus" /> Daftarkan sekarang
                         </Link>
                         {b.status === "baru" && (
-                          <form action={konfirmasiBooking} style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                          <PreservedForm action={konfirmasiBooking} style={{ display: "flex", gap: 5, alignItems: "center" }}>
                             <input type="hidden" name="id" value={b.id} />
                             <SubmitButton className="btn-def" style={{ padding: "4px 10px", fontSize: 11 }} pendingText="...">
                               <i className="ti ti-check" /> Konfirmasi
                             </SubmitButton>
-                          </form>
+                          </PreservedForm>
                         )}
-                        <form action={b.status === "baru" ? tolakBooking : batalkanBooking}
+                        <TransactionForm scope={`clinic-booking-decision:${b.id}:${b.status}`} action={b.status === "baru" ? tolakBooking : batalkanBooking}
                           style={{ display: "flex", gap: 5, alignItems: "center" }}>
                           <input type="hidden" name="id" value={b.id} />
                           <input className="fi" name="catatan" placeholder="alasan (opsional)"
@@ -156,7 +157,7 @@ export default async function BookingKlinikPage({
                           <SubmitButton className="btn-def" style={{ padding: "4px 10px", fontSize: 11 }} pendingText="...">
                             <i className="ti ti-x" /> {b.status === "baru" ? "Tolak" : "Batalkan"}
                           </SubmitButton>
-                        </form>
+                        </TransactionForm>
                         {b.status === "dikonfirmasi" && b.attendance_outcome === "pending" && lewat && <NoShowButton id={b.id} />}
                       </>
                     )}

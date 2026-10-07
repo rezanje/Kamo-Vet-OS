@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -35,16 +36,16 @@ export default async function PenjualanKasirPage({
 
   const supabase = await createClient();
   const [{ data: sales }, { data: returs }, { data: profiles }, { data: cabangList }] = await Promise.all([
-    supabase.from("sales")
-      .select("cashier_id, total, discount, branches(name)")
-      .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`),
-    supabase.from("sales_returns")
-      .select("total, sales(cashier_id, branches(name))")
-      .gte("tanggal", dari).lte("tanggal", sampai),
+    completeReportQuery(supabase.from("sales")
+      .select("id, cashier_id, total, discount, branches(name)", { count: "exact" })
+      .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
+    completeReportQuery(supabase.from("sales_returns")
+      .select("id, total, sales(cashier_id, branches(name))", { count: "exact" })
+      .gte("tanggal", dari).lte("tanggal", sampai)),
     // Kasir dikenali lewat akun login (sales.cashier_id → profiles), bukan lewat
     // tabel karyawan: tidak semua akun kasir punya kartu karyawan.
-    supabase.from("profiles").select("id, full_name, role"),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    completeReportQuery(supabase.from("profiles").select("id, full_name, role", { count: "exact" })),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const namaKasir = new Map((profiles ?? []).map((p) => [p.id, p.full_name || "(tanpa nama)"]));

@@ -23,6 +23,8 @@ export async function cekPersetujuan(
     noDokumen?: string | null;
     keterangan?: string | null;
     userId?: string | null;
+    /** Atomic posting RPC consumes the approval in its own transaction. */
+    deferConsumption?: boolean;
   },
 ): Promise<HasilCek> {
   const { data: rulesRaw } = await supabase
@@ -55,7 +57,7 @@ export async function cekPersetujuan(
   if (keputusan.boleh) {
     // Persetujuan dipakai sekali. Kalau penandaan gagal, transaksinya TIDAK dilanjutkan —
     // lebih baik pembayaran tertahan daripada satu persetujuan dipakai berkali-kali.
-    if (ada) {
+    if (ada && !o.deferConsumption) {
       const { error } = await supabase
         .from("approval_requests").update({ status: "terpakai" }).eq("id", ada.id).eq("status", "disetujui");
       if (error) {

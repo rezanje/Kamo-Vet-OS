@@ -35,6 +35,16 @@ export function pickUnit(options: ItemUnit[], unit: string | null | undefined): 
   return options.find((o) => o.unit === unit) ?? options[0];
 }
 
+// Submitted document units must never fall back from a removed box to pcs.
+// Empty legacy payloads may default to base; UI previews keep using pickUnit.
+export function resolveSubmittedUnit(options: ItemUnit[], unit: string | null | undefined): ItemUnit {
+  const chosen = unit == null || unit === "" ? options[0] : options.find(option => option.unit === unit);
+  if (!chosen || !Number.isFinite(chosen.factor) || chosen.factor <= 0) {
+    throw new Error("Satuan barang tidak tersedia atau berubah. Pilih barang dan satuannya lagi.");
+  }
+  return chosen;
+}
+
 // qty dalam satuan pilihan → qty dalam satuan dasar (untuk stockIn/stockOut).
 export function toBaseQty(qty: number, faktor: number): number {
   const f = Number(faktor) > 0 ? Number(faktor) : 1;
@@ -56,12 +66,24 @@ export async function loadItemUnits(
   supabase: AnyClient,
   itemIds?: string[],
 ): Promise<Map<string, ItemUnit[]>> {
-  let q = supabase.from("item_units").select("item_id, unit, factor, sell_price, buy_price").order("factor");
-  if (itemIds) {
-    if (itemIds.length === 0) return new Map();
-    q = q.in("item_id", itemIds);
-  }
-  const { data } = await q;
+  const ids = itemIds ? [...new Set(itemIds.filter(Boolean))] : undefined;
+  if (ids?.length === 0) return new Map();
+  const chunks = ids ? Array.from({ length: Math.ceil(ids.length / 200) }, (_, index) => ids.slice(index * 200, (index + 1) * 200)) : [undefined];
+  const pages = await Promise.all(chunks.map(async chunk => {
+    const rows: (ItemUnit & { item_id: string })[] = [];
+    for (let from = 0; ; from += 1000) {
+      let query = supabase.from("item_units").select("item_id, unit, factor, sell_price, buy_price")
+        .order("factor").order("item_id").order("unit");
+      if (chunk) query = query.in("item_id", chunk);
+      const { data, error } = await query.range(from, from + 999);
+      if (error) throw new Error(error.message);
+      const page = (data ?? []) as (ItemUnit & { item_id: string })[];
+      rows.push(...page);
+      if (page.length < 1000) break;
+    }
+    return rows;
+  }));
+  const data = pages.flat();
   const map = new Map<string, ItemUnit[]>();
   for (const r of (data ?? []) as (ItemUnit & { item_id: string })[]) {
     const list = map.get(r.item_id) ?? [];
@@ -77,13 +99,26 @@ export async function loadItemUnits(
 export async function loadUnitOptions(
   supabase: AnyClient,
   itemIds: string[],
+  options: { includeInactive?: boolean } = {},
 ): Promise<Map<string, ItemUnit[]>> {
   const ids = [...new Set(itemIds.filter(Boolean))];
   if (ids.length === 0) return new Map();
-  const [{ data: items }, extras] = await Promise.all([
-    supabase.from("items").select("id, unit, sell_price, buy_price").in("id", ids),
+  const [itemPages, extras] = await Promise.all([
+    Promise.all(Array.from({ length: Math.ceil(ids.length / 200) }, async (_, index) => {
+      const chunk = ids.slice(index * 200, (index + 1) * 200);
+      let query = supabase.from("items").select("id, unit, sell_price, buy_price")
+        .in("id", chunk).order("id");
+      // Returning a source-verified historical SKU may legitimately use an inactive master.
+      if (!options.includeInactive) query = query.eq("is_active", true);
+      const { data, error } = await query.range(0, 999);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as { id: string; unit: string; sell_price: number; buy_price: number }[];
+    })),
     loadItemUnits(supabase, ids),
   ]);
+  const items = itemPages.flat();
+  const found = new Set(items.map(item => item.id));
+  if (ids.some(id => !found.has(id))) throw new Error("Ada barang yang tidak aktif atau tidak ditemukan. Pilih lagi dari master.");
   const map = new Map<string, ItemUnit[]>();
   for (const it of (items ?? []) as { id: string; unit: string; sell_price: number; buy_price: number }[]) {
     map.set(it.id, unitOptions(it, extras.get(it.id) ?? []));

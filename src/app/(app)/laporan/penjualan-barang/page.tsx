@@ -32,6 +32,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
 
   return (
     <LaporanPage
+      unduhTampilan={false}
       icon="ti-list-details" title="RINCIAN PENJUALAN PER BARANG"
       desc="Setiap barang, obat, jasa, dan racikan yang tercatat pada struk atau invoice. Bawaan: racikan klinik bulan ini."
       filter={<>
@@ -57,10 +58,12 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
     >
       {pesanError ? <div className="p2ban" style={{ color: "#b91c1c" }}>{pesanError}</div> : <>
         <div className="crm-sec" style={{ marginBottom: 0 }}>
-          <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             <Link className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}`}>
               <i className="ti ti-download" /> Unduh CSV ({terpilih.length} baris)
             </Link>
+            <Link className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}&format=xlsx`}>Excel lengkap</Link>
+            <a className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}&format=print`} target="_blank" rel="noopener noreferrer">Cetak / PDF lengkap</a>
           </div>
           <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 1200, width: "100%" }}>
             <thead><tr>

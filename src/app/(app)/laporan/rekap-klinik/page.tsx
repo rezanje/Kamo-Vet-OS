@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
@@ -43,18 +44,18 @@ export default async function RekapKlinikPage({
 
   const supabase = await createClient();
   const [{ data: itemRows }, { data: inapRows }, { data: fuRows }, { data: branches }] = await Promise.all([
-    supabase.from("invoice_items")
-      .select("qty, harga, jenis, items(tindakan_kategori, item_type), invoices!inner(created_at, voided_at, visits!inner(branch_id))")
+    completeReportQuery(supabase.from("invoice_items")
+      .select("id, qty, harga, jenis, items(tindakan_kategori, item_type), invoices!inner(created_at, voided_at, visits!inner(branch_id))", { count: "exact" })
       .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
-      .is("invoices.voided_at", null),
-    supabase.from("inpatient_records")
-      .select("id, condition_status, admitted_at, discharged_at, doctor_name, branch_id, visits(pets(name), customers(name))")
+      .is("invoices.voided_at", null)),
+    completeReportQuery(supabase.from("inpatient_records")
+      .select("id, condition_status, admitted_at, discharged_at, doctor_name, branch_id, visits(pets(name), customers(name))", { count: "exact" })
       .gte("admitted_at", mulai).lte("admitted_at", akhir)
-      .order("admitted_at", { ascending: false }),
-    supabase.from("follow_ups")
-      .select("jenis, status, tanggal, branch_id")
-      .gte("tanggal", dari).lte("tanggal", sampai),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+      .order("admitted_at", { ascending: false })),
+    completeReportQuery(supabase.from("follow_ups")
+      .select("id, jenis, status, tanggal, branch_id", { count: "exact" })
+      .gte("tanggal", dari).lte("tanggal", sampai)),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   // ── 1. Layanan per kategori ────────────────────────────────────────────────

@@ -6,29 +6,33 @@ import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { CHANNELS } from "@/lib/online";
 import { buatPenjualanOnline } from "../actions";
+import { type ItemUnit } from "@/lib/satuan";
+import { usePreservedAction } from "@/components/LocalTransactionDraft";
+import { PostingRequestIdentity } from "@/components/PostingRequestIdentity";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type Warehouse = { id: string; name: string; branch_name: string };
-type Item = { id: string; code: string; name: string; sell_price: number };
+type Item = { id: string; code: string; name: string; sell_price: number; units: ItemUnit[] };
 type Customer = { id: string; name: string; phone: string | null };
 // `nama` = nama bare yang diserialisasi ke server (kontrak actions.ts).
 // `label` = teks yang tampil di input (bisa "CODE — Nama" hasil pilih datalist, atau teks bebas).
-type Row = { item_id: string; nama: string; label: string; qty: number; harga: number };
+type Row = { item_id: string; nama: string; label: string; satuan: string; qty: number; harga: number };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const blank: Row = { item_id: "", nama: "", label: "", qty: 1, harga: 0 };
+const blank: Row = { item_id: "", nama: "", label: "", satuan: "", qty: 1, harga: 0 };
 const itemLabel = (it: Item) => `${it.code} — ${it.name}`;
 const custLabel = (c: Customer) => (c.phone ? `${c.name} (${c.phone})` : c.name);
 
 export function OnlineForm({
-  warehouses,
+  warehouses, userId, confirmedScope, confirmedKey,
   items,
   customers,
 }: {
-  warehouses: Warehouse[];
+  confirmedScope?:string; confirmedKey?:string; userId?: string; warehouses: Warehouse[];
   items: Item[];
   customers: Customer[];
 }) {
+  const {save,failure} = usePreservedAction(buatPenjualanOnline);
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
   const [channel, setChannel] = useState<string>("Shopee");
   const [custText, setCustText] = useState("");
@@ -47,10 +51,10 @@ export function OnlineForm({
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v);
     set(i, it
-      ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, label: itemLabel(it) }
+      ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, label: itemLabel(it), satuan: it.units[0]?.unit ?? "" }
       // Tak match SKU manapun — item_id kosong (baris ini akan di-drop saat submit), jadi harga
       // lama juga direset ke 0 supaya tak ada harga basi nempel di SKU yang sudah tak valid.
-      : { nama: v, item_id: "", label: v, harga: 0 });
+      : { nama: v, item_id: "", label: v, harga: 0, satuan: "" });
   };
   const add = () => setRows((rs) => [...rs, { ...blank }]);
   const del = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
@@ -64,13 +68,18 @@ export function OnlineForm({
   // yang tampil, bukan submit senyap tanpa umpan balik.
   const itemsToSubmit = rows
     .filter((r) => r.item_id)
-    .map(({ item_id, nama, qty, harga }) => ({ item_id, nama, qty, harga }));
+    .map(({ item_id, nama, qty, harga, satuan }) => ({ item_id, nama, qty, harga, satuan }));
   // Total dihitung dari itemsToSubmit (bukan seluruh rows) supaya preview selalu sama dengan
   // yang benar-benar tersimpan — baris tanpa item_id valid ikut di-drop dari total juga (I3).
   const total = itemsToSubmit.reduce((a, r) => a + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0);
 
   return (
-    <form action={buatPenjualanOnline}>
+    <form action={save}>
+      {failure && <div role="alert" className="p2ban">{failure}</div>}
+      <PostingRequestIdentity scope="online" userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} state={{snapshot:{rows,channel,custText},reset:()=>{setRows([{...blank}]);setChannel("Shopee");setCustText("");},restore:value=>{
+        if(!Array.isArray(value.rows)||value.rows.length>100||!value.rows.every(r=>r&&typeof r==="object"&&typeof r.item_id==="string"&&typeof r.nama==="string"&&typeof r.label==="string"&&typeof r.satuan==="string"&&Number.isFinite(r.qty)&&Number.isFinite(r.harga))||typeof value.channel!=="string"||typeof value.custText!=="string")return false;
+        setRows(value.rows as Row[]);setChannel(value.channel);setCustText(value.custText);return true;
+      }}} />
       <input type="hidden" name="items" value={JSON.stringify(itemsToSubmit)} />
       <input type="hidden" name="customer_id" value={customerId} />
       <datalist id="onl-items">
@@ -187,10 +196,16 @@ export function OnlineForm({
                     style={belumValid ? { flex: 2, border: "1px solid #f59e0b" } : { flex: 2 }}
                   />
                   <input
-                    className="fi" type="number" min={1} step={1} value={r.qty}
+                    className="fi" type="number" min={0.000001} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 70 }} title="Qty" placeholder="Qty"
                   />
+                  <select className="fi" title="Satuan" value={r.satuan} onChange={(e) => {
+                    const unit = items.find(it => it.id === r.item_id)?.units.find(u => u.unit === e.target.value);
+                    if (unit) set(i, { satuan: unit.unit, harga: unit.sell_price });
+                  }} style={{ width: 90 }}>
+                    {(items.find(it => it.id === r.item_id)?.units ?? []).map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
+                  </select>
                   <input
                     className="fi" type="number" min={0} step="any" value={r.harga}
                     onChange={(e) => set(i, { harga: Number(e.target.value) })}

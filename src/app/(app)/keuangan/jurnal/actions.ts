@@ -1,5 +1,6 @@
 "use server";
 
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
@@ -99,5 +100,5 @@ export async function jurnalManual(formData: FormData) {
     );
   }
 
-  redirect("/keuangan/jurnal?success=1");
+  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData));
 }

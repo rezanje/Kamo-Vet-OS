@@ -2,7 +2,7 @@
 // faktor satuan & jenis barang WAJIB ditentukan ulang dari master di sini,
 // karena faktor palsu bikin stok bertambah lebih banyak dari yang benar dikirim.
 
-import { loadItemUnits, loadUnitOptions, pickUnit, unitOptions, type ItemUnit } from "./satuan";
+import { loadItemUnits, loadUnitOptions, resolveSubmittedUnit, unitOptions, type ItemUnit } from "./satuan";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -52,7 +52,9 @@ export function siapkanBaris(
       return { rows: [], error: `"${m.nama}" berjenis ${m.item_type} — tidak punya stok, jadi tidak bisa diminta.` };
     }
 
-    const u = pickUnit(m.units, b?.satuan);
+    let u: ItemUnit;
+    try { u = resolveSubmittedUnit(m.units, b?.satuan); }
+    catch (error) { return { rows: [], error: error instanceof Error ? error.message : "Satuan barang tidak tersedia." }; }
     rows.push({
       item_id: id,
       nama: m.nama.slice(0, 160),

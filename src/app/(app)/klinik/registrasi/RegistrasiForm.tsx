@@ -1,4 +1,5 @@
 "use client";
+import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import { staffForService } from "@/lib/clinical-staff";
 
 import { batasBeratWajar, STATUS_REPRODUKSI } from "@/lib/anabul";
@@ -44,8 +45,9 @@ const dariPetLama = (p: PetLite): PetDraft => ({
   photo_url: p.photo_url ?? "",
 });
 
-export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal }: {
+export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal, draftScope = `clinic-registration:${awal?.bookingId ?? "new"}` }: {
   branches: { id: string; name: string }[];
+  draftScope?:string;
   dokter?: { id: string; nama: string; jabatan: string | null; jaga?: boolean }[];
   lockBranch?: boolean;
   /** Isian awal dari booking online — staf tinggal melengkapi, tidak mengetik ulang. */
@@ -54,6 +56,8 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
     namaHewan: string; jenisHewan: string; keluhan: string;
   };
 }) {
+  const registration = usePreservedAction(registrasiPasien);
+  const payment = usePreservedAction(registrasiDanBayar);
   const [service,setService]=useState(awal?.poli??"Poli Umum");
   const [phone, setPhone] = useState(awal?.phone ?? "");
   const [looking, setLooking] = useState(false);
@@ -134,7 +138,13 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
   }
 
   return (
-    <form action={registrasiPasien}>
+    <form action={registration.save}>
+      <LocalTransactionDraft scope={draftScope} state={{
+        snapshot:{service,phone,pets:pets.map(p=>({...p,photo_url:p.photo_url.startsWith("blob:")?"":p.photo_url})),aktif},
+        restore:value=>{if(typeof value.service!=="string"||typeof value.phone!=="string"||!Array.isArray(value.pets)||value.pets.length<1||value.pets.length>MAKS_HEWAN||!value.pets.every(p=>p&&typeof p==="object"&&Object.keys(petKosong()).every(k=>k==="weight"?p[k]===null||(typeof p[k]==="number"&&Number.isFinite(p[k])):typeof p[k]==="string")&&!p.photo_url.startsWith("blob:"))||typeof value.aktif!=="number"||!Number.isInteger(value.aktif)||value.aktif<0||value.aktif>=value.pets.length)return false;setService(value.service);setPhone(value.phone);setPets(value.pets);setAktif(value.aktif);return true;},
+        reset:()=>{setPhone(awal?.phone??"");setService(awal?.poli??"Poli Umum");setPets([awal?{...petKosong(),name:awal.namaHewan,species:awal.jenisHewan,keluhan:awal.keluhan}:petKosong()]);setAktif(0);setCustomer(null);setExistingPets([]);}
+      }}/>
+      {(registration.failure||payment.failure)&&<div role="alert" className="p2ban">{registration.failure||payment.failure}</div>}
       <input type="hidden" name="pets" value={JSON.stringify(pets)} />
       {awal && <input type="hidden" name="bookingId" value={awal.bookingId} />}
 
@@ -411,7 +421,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
         )}
         <Link href="/klinik" className="btn-def">Batal</Link>
         <SubmitButton className="btn-acc" style={{ fontWeight: 600 }} pendingText="Menyimpan…">Simpan pendaftaran</SubmitButton>
-        <SubmitButton className="btn-acc" icon="ti-cash" formAction={registrasiDanBayar} pendingText="Memproses…">Simpan &amp; pembayaran</SubmitButton>
+        <SubmitButton className="btn-acc" icon="ti-cash" formAction={payment.save} pendingText="Memproses…">Simpan &amp; pembayaran</SubmitButton>
       </div>
     </form>
   );

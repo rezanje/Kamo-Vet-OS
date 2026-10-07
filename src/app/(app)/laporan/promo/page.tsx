@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { voucherStatus, type VoucherRow } from "@/lib/voucher";
@@ -36,21 +37,21 @@ export default async function PromoPage({
   const supabase = await createClient();
   const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData }] =
     await Promise.all([
-      supabase.from("sales")
-        .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)")
-        .gte("created_at", mulai).lte("created_at", akhir),
-      supabase.from("invoices")
-        .select("total, subtotal, discount, voucher_code, created_at, visits(branch_id, branches(name))")
-        .is("voided_at", null).gte("created_at", mulai).lte("created_at", akhir),
-      supabase.from("vouchers")
-        .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id"),
-      supabase.from("promos").select("id, name, promo_type"),
+      completeReportQuery(supabase.from("sales")
+        .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
+        .gte("created_at", mulai).lte("created_at", akhir)),
+      completeReportQuery(supabase.from("invoices")
+        .select("id, total, subtotal, discount, voucher_code, created_at, visits(branch_id, branches(name))", { count: "exact" })
+        .is("voided_at", null).gte("created_at", mulai).lte("created_at", akhir)),
+      completeReportQuery(supabase.from("vouchers")
+        .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id", { count: "exact" })),
+      completeReportQuery(supabase.from("promos").select("id, name, promo_type", { count: "exact" })),
       // Hanya target murni cabang / perusahaan. Target per karyawan atau per kategori
       // sengaja tidak dijumlah di sini — kalau digabung, satu omzet bisa terhitung
       // memenuhi beberapa target sekaligus dan rasionya jadi mengarang.
-      supabase.from("sales_targets")
-        .select("periode, branch_id, basis, target")
-        .is("employee_id", null).is("category_id", null),
+      completeReportQuery(supabase.from("sales_targets")
+        .select("id, periode, branch_id, basis, target", { count: "exact" })
+        .is("employee_id", null).is("category_id", null)),
     ]);
 
   type SaleItem = {

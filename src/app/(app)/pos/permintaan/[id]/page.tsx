@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -41,6 +42,7 @@ export default async function PermintaanDetailPage({
   const { success, error, trm } = await searchParams;
   const supabase = await createClient();
 
+  const { data: { user } } = await supabase.auth.getUser();
   const { data } = await supabase
     .from("stock_requests")
     .select("id, no_request, status, created_at, priority, catatan, branches(name), warehouses(name), stock_request_items(id, nama, satuan, qty_diminta, qty_disetujui, qty_diterima, kondisi, catatan)")
@@ -94,7 +96,7 @@ export default async function PermintaanDetailPage({
         </div>
       </div>
 
-      <form action={setujuiPermintaan}>
+      <TransactionForm userId={user?.id ?? ""} scope={`pos:permintaan:approve:${id}`} action={setujuiPermintaan}>
         <input type="hidden" name="id" value={req.id} />
         <div className="crm-sec">
           <SecHeader
@@ -156,7 +158,7 @@ export default async function PermintaanDetailPage({
             </div>
           )}
         </div>
-      </form>
+      </TransactionForm>
 
       {menunggu && (
         <form action={updateRequestStatus} style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -171,7 +173,7 @@ export default async function PermintaanDetailPage({
       {/* Penerimaan: satu-satunya cara permintaan jadi "Selesai", karena di sinilah
           stok benar-benar berpindah dari gudang pengirim ke gudang cabang. */}
       {dikirim && (
-        <form action={terimaDariBackoffice}>
+        <TransactionForm userId={user?.id ?? ""} scope={`pos:permintaan:receive:${id}`} action={terimaDariBackoffice}>
           <input type="hidden" name="id" value={req.id} />
           <div className="crm-sec">
             <SecHeader
@@ -228,7 +230,7 @@ export default async function PermintaanDetailPage({
               </button>
             </div>
           </div>
-        </form>
+        </TransactionForm>
       )}
     </>
   );

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAccountBalances } from "@/lib/ledger";
@@ -139,7 +140,7 @@ export async function simpanSaldoAwal(formData: FormData) {
   const arah = modal >= 0 ? "Modal Pemilik" : "defisit modal";
   redirect(`${BACK}?success=${encodeURIComponent(
     `Saldo awal per ${tanggal} tersimpan (${no_jurnal}) — selisih Rp ${Math.abs(modal).toLocaleString("id-ID")} masuk ${arah} (${AKUN_MODAL_PEMILIK}).`,
-  )}`);
+  )}${transactionDraftAck(formData)}`);
 }
 
 /** Hapus saldo awal (koreksi sebelum go-live). */

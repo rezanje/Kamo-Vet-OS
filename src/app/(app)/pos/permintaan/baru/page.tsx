@@ -10,6 +10,7 @@ export default async function BaruPermintaanPage({
 }) {
   const { error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const { data: branches } = await supabase
     .from("branches")
@@ -37,7 +38,7 @@ export default async function BaruPermintaanPage({
         </div>
       )}
 
-      <PermintaanForm branches={branches ?? []} warehouses={warehouses ?? []} items={items} />
+      <PermintaanForm userId={user?.id ?? ""} branches={branches ?? []} warehouses={warehouses ?? []} items={items} />
     </>
   );
 }

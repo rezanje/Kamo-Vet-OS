@@ -2,6 +2,8 @@
 
 // ponytail: dynamic item rows serialized to hidden JSON, same pattern as PermintaanForm.
 
+import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { draftRows } from "@/components/TransactionDraft";
 import Link from "next/link";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
@@ -20,16 +22,19 @@ const blank: Row = { nama: "", qty: 1, harga_beli: 0, item_id: null, satuan: "",
 const itemLabel = (it: Item) => `${it.code} — ${it.name}`;
 
 export function POForm({
+  userId,
   suppliers,
   warehouses,
   branches,
   items,
 }: {
+  userId: string;
   suppliers: Supplier[];
   warehouses: Warehouse[];
   branches: Branch[];
   items: Item[];
 }) {
+  const { save, failure } = usePreservedAction(buatPO);
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
   const byLabel = new Map(items.map((it) => [itemLabel(it), it]));
 
@@ -66,7 +71,12 @@ export function POForm({
   const today = hariIniWIB();
 
   return (
-    <form action={buatPO}>
+    <form action={save}>
+      <LocalTransactionDraft userId={userId} scope="po-create" state={{ snapshot: { rows }, restore: (value) => {
+        if (!draftRows(value.rows, blank)) return false;
+        setRows(value.rows); return true;
+      }, reset: () => { setRows([{ ...blank }]); } }} />
+      {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
       <datalist id="po-items">
         {items.map((it) => <option key={it.id} value={itemLabel(it)} />)}

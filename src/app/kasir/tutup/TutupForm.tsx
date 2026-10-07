@@ -1,4 +1,5 @@
 "use client";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 
 import { tutupShiftKasir } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -6,7 +7,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 // Kasir buta: hanya input kas fisik, tanpa perbandingan selisih (spec 2026-07-17).
 export function TutupForm({ shiftId }: { shiftId: string }) {
   return (
-    <form action={tutupShiftKasir}>
+    <TransactionForm scope={`cashier-shift-close:${shiftId}`} action={tutupShiftKasir}>
       <input type="hidden" name="shiftId" value={shiftId} />
       <label className="flab">Total uang cash di kasir (fisik) *</label>
       <div className="pshop-rp" style={{ marginBottom: 12 }}>
@@ -17,6 +18,6 @@ export function TutupForm({ shiftId }: { shiftId: string }) {
         />
       </div>
       <SubmitButton className="kpos-bayar" icon="ti-lock" pendingText="Menutup shift…">TUTUP SHIFT</SubmitButton>
-    </form>
+    </TransactionForm>
   );
 }

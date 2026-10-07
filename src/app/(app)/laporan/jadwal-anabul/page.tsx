@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { tanggalIndo, FOLLOWUP_JENIS } from "@/lib/followup";
@@ -38,13 +39,13 @@ export default async function JadwalAnabulPage({
   // atau 'Batal' tidak ikut — laporan ini soal siapa yang MASIH perlu dihubungi.
   let q = supabase
     .from("follow_ups")
-    .select("id, jenis, tanggal, catatan, pets(name, species), customers(name, phone), branches(name)")
+    .select("id, jenis, tanggal, catatan, pets(name, species), customers(name, phone), branches(name)", { count: "exact" })
     .in("status", ["Menunggu", "Terkirim"])
     .lte("tanggal", batas)
     .order("tanggal");
   if (jenis) q = q.eq("jenis", jenis);
 
-  const { data } = await q.limit(500);
+  const { data } = await completeReportQuery(q);
   const rows = (data ?? []) as unknown as Row[];
 
   const lewat = rows.filter((r) => selisihHari(r.tanggal, hariIni) < 0);

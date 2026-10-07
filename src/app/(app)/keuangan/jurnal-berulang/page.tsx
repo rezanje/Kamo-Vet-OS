@@ -29,6 +29,7 @@ export default async function JurnalBerulangPage({
 }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
 
   let loaded;
   try {
@@ -169,7 +170,7 @@ export default async function JurnalBerulangPage({
         </div>
       </div>
 
-      <RecurringForm accounts={accounts ?? []} branches={branches ?? []} />
+      <RecurringForm key={user?.id} userId={user?.id ?? ""} accounts={accounts ?? []} branches={branches ?? []} />
     </>
   );
 }

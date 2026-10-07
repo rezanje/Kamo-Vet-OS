@@ -1,3 +1,4 @@
+import { completeReportQuery } from "./report-query";
 // Agregasi buku besar dari journal_lines + coa_accounts. Read-only, hitung di JS
 // (volume prototype kecil). Saldo per akun mengikuti sifat saldo normal.
 // Semua fungsi menerima filter periode (from/to, inklusif) + cabang.
@@ -50,12 +51,12 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
 
   let q = supabase
     .from("journal_lines")
-    .select("account_id, debit, credit, journal_entries!inner(tanggal, branch_id, source, source_ref, no_jurnal, deskripsi, branches(name))");
+    .select("id, account_id, debit, credit, journal_entries!inner(tanggal, branch_id, source, source_ref, no_jurnal, deskripsi, branches(name))", { count: "exact" });
   if (f?.from) q = q.gte("journal_entries.tanggal", f.from);
   if (f?.to) q = q.lte("journal_entries.tanggal", f.to);
   if (f?.branchId) q = q.eq("journal_entries.branch_id", f.branchId);
   if (f?.branchIds?.length) q = q.in("journal_entries.branch_id", f.branchIds);
-  const { data } = await q;
+  const { data } = await completeReportQuery<RawLine>(q);
   return ((data ?? []) as RawLine[]).map((r) => ({
     ...r,
     journal_entries: Array.isArray(r.journal_entries) ? r.journal_entries[0] : r.journal_entries,
@@ -64,7 +65,7 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
 
 export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter): Promise<AccountBalance[]> {
   const [{ data: accs }, lines] = await Promise.all([
-    supabase.from("coa_accounts").select("id, code, name, type, normal_balance, parent_id, is_header") as Promise<{ data: { id: string; code: string; name: string; type: string; normal_balance: string; parent_id: string | null; is_header: boolean }[] | null }>,
+    completeReportQuery(supabase.from("coa_accounts").select("id, code, name, type, normal_balance, parent_id, is_header", { count: "exact" })) as Promise<{ data: { id: string; code: string; name: string; type: string; normal_balance: string; parent_id: string | null; is_header: boolean }[] | null }>,
     fetchLines(supabase, f),
   ]);
 
@@ -110,7 +111,7 @@ function hariSebelum(tanggal: string): string {
 // difilter — angkanya jadi bukan saldo akun, cuma jumlah mutasi dalam rentang.
 export async function getAccountOpening(supabase: AnyClient, code: string, f?: LedgerFilter): Promise<number> {
   if (!f?.from) return 0;
-  const { data: accs } = (await supabase.from("coa_accounts").select("id, normal_balance").eq("code", code)) as
+  const { data: accs } = (await completeReportQuery(supabase.from("coa_accounts").select("id, normal_balance", { count: "exact" }).eq("code", code))) as
     { data: { id: string; normal_balance: string }[] | null };
   const acc = accs?.[0];
   if (!acc) return 0;
@@ -127,7 +128,7 @@ export async function getAccountOpening(supabase: AnyClient, code: string, f?: L
 
 // Mutasi satu akun (untuk buku besar detail), urut tanggal — saldo berjalan dihitung di page.
 export async function getAccountLedger(supabase: AnyClient, code: string, f?: LedgerFilter): Promise<LedgerLine[]> {
-  const { data: accs } = (await supabase.from("coa_accounts").select("id").eq("code", code)) as { data: { id: string }[] | null };
+  const { data: accs } = (await completeReportQuery(supabase.from("coa_accounts").select("id", { count: "exact" }).eq("code", code))) as { data: { id: string }[] | null };
   const accId = accs?.[0]?.id;
   if (!accId) return [];
 
@@ -158,7 +159,7 @@ async function cashAccountIds(supabase: AnyClient): Promise<Set<string>> {
   // Daftar rekening dibaca dari master, bukan kode mati ["1101","1102"] — rekening
   // yang ditambah belakangan (Mandiri, QRIS, e-wallet) harus ikut terhitung sebagai kas.
   const kode = await kodeSemuaRekening(supabase);
-  const { data } = (await supabase.from("coa_accounts").select("id, code").in("code", kode)) as { data: { id: string }[] | null };
+  const { data } = (await completeReportQuery(supabase.from("coa_accounts").select("id, code", { count: "exact" }).in("code", kode))) as { data: { id: string }[] | null };
   return new Set((data ?? []).map((a) => a.id));
 }
 
@@ -217,7 +218,7 @@ export async function getCashLedgerPerAccount(
   f?: LedgerFilter,
 ): Promise<RekeningMutasi[]> {
   const [{ data: rek }, lines] = await Promise.all([
-    supabase.from("cash_accounts").select("nama, jenis, coa_code").eq("is_active", true).order("jenis").order("nama") as
+    completeReportQuery(supabase.from("cash_accounts").select("id, nama, jenis, coa_code", { count: "exact" }).eq("is_active", true).order("jenis").order("nama")) as
       Promise<{ data: { nama: string; jenis: string; coa_code: string }[] | null }>,
     fetchLines(supabase, f),
   ]);
@@ -225,7 +226,7 @@ export async function getCashLedgerPerAccount(
   if (rekening.length === 0) return [];
 
   const kode = [...new Set(rekening.map((r) => r.coa_code))];
-  const { data: accs } = (await supabase.from("coa_accounts").select("id, code").in("code", kode)) as
+  const { data: accs } = (await completeReportQuery(supabase.from("coa_accounts").select("id, code", { count: "exact" }).in("code", kode))) as
     { data: { id: string; code: string }[] | null };
   const kodePerId = new Map((accs ?? []).map((a) => [a.id, a.code]));
 

@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -48,7 +49,7 @@ export default async function MulaiShiftPage({
         </div>
       )}
 
-      <form action={mulaiShiftKasir} className="card pshop-card" style={{ width: "100%", maxWidth: 440, padding: 22 }}>
+      <TransactionForm userId={user.id} scope={"cashier-shift-open"} action={mulaiShiftKasir} className="card pshop-card" style={{ width: "100%", maxWidth: 440, padding: 22 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
@@ -83,7 +84,7 @@ export default async function MulaiShiftPage({
         </div>
 
         <SubmitButton className="kpos-bayar" icon="ti-player-play" pendingText="Memulai shift…">MULAI SHIFT</SubmitButton>
-      </form>
+      </TransactionForm>
     </div>
   );
 }

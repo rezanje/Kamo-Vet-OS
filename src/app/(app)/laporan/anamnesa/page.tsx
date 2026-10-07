@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { kelompokDiagnosa, samakan } from "@/lib/diagnosa";
@@ -28,11 +29,11 @@ export default async function AnamnesaPage({
 
   const supabase = await createClient();
   const [{ data: mrData }, { data: branchData }] = await Promise.all([
-    supabase.from("medical_records")
-      .select("id, diagnosis, anamnesis, gejala_klinis, follow_up, created_at, visits(branch_id, dokter, branches(name), pets(name, species, breed), customers(name))")
+    completeReportQuery(supabase.from("medical_records")
+      .select("id, diagnosis, anamnesis, gejala_klinis, follow_up, created_at, visits(branch_id, dokter, branches(name), pets(name, species, breed), customers(name))", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00+07:00`).lte("created_at", `${sampai}T23:59:59+07:00`)
-      .order("created_at", { ascending: false }),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+      .order("created_at", { ascending: false })),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   type Mr = {

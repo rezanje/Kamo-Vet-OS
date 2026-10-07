@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -55,6 +56,7 @@ export default async function RegistrasiPage({
       }
     : undefined;
 
+  const registrationDraftScope = `clinic-registration:${createHash("sha256").update(JSON.stringify([awal?.bookingId ?? "new",shift?.id ?? "no-shift",(branches ?? []).map(b=>b.id).sort()])).digest("hex")}`;
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -71,7 +73,7 @@ export default async function RegistrasiPage({
         </div>
       )}
 
-      <RegistrasiForm branches={branches ?? []} dokter={dokter} lockBranch={!!shift} awal={awal} />
+      <RegistrasiForm key={registrationDraftScope} draftScope={registrationDraftScope} branches={branches ?? []} dokter={dokter} lockBranch={!!shift} awal={awal} />
     </>
   );
 }

@@ -6,13 +6,16 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { bacaEditKaryawan } from "@/lib/karyawan-edit";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
+import { employeeOccupationInput } from "@/lib/employee-occupation";
 
 export async function simpanKaryawan(formData: FormData) {
   const supabase = await assertMasterAdmin("/hris/karyawan", "data karyawan");
 
   const nama = String(formData.get("nama") ?? "").trim();
   const nik = String(formData.get("nik") ?? "").trim() || null;
-  const jabatan = String(formData.get("jabatan") ?? "").trim() || null;
+  let jabatan: string | null;
+  try { jabatan = employeeOccupationInput(formData); }
+  catch (error) { redirect(`/hris/karyawan?error=${encodeURIComponent(error instanceof Error ? error.message : "Jabatan tidak valid")}`); }
   const departemen = String(formData.get("departemen") ?? "").trim() || null;
   const branchId = String(formData.get("branch_id") ?? "").trim() || null;
   const phone = String(formData.get("phone") ?? "").trim() || null;

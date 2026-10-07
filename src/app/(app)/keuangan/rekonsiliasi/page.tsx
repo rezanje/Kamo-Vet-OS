@@ -14,6 +14,7 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 export default async function RekonsiliasiPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
 
   const [balances, { data: rekData }, { data: history }] = await Promise.all([
     getAccountBalances(supabase as never),
@@ -56,7 +57,7 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
 
       <div className="crm-sec">
         <SecHeader num="01" title="REKONSILIASI BANK" desc="Pilih rekening, lalu cocokkan saldo buku dengan rekening korannya." />
-        <RekonForm rekening={rekening} hariIni={hariIniWIB()} />
+        <RekonForm key={user?.id} userId={user?.id ?? ""} rekening={rekening} hariIni={hariIniWIB()} />
       </div>
 
       <div className="crm-sec">

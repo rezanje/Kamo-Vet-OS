@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -20,6 +20,7 @@ type Row = {
 export default async function PiutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const {data:{user}} = await supabase.auth.getUser();
   const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
 
@@ -168,9 +169,8 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                     ) : (
                     <details>
                       <summary className="btn-def" style={{ cursor: "pointer", padding: "3px 9px", fontSize: 10.5, listStyle: "none", display: "inline-block" }}>Terima bayar</summary>
-                      <form action={terimaPelunasan} style={{ display: "flex", gap: 6, alignItems: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
+                      <TransactionForm userId={user?.id ?? ""} scope={`receivable-settle:${r.id}`} action={terimaPelunasan} style={{ display: "flex", gap: 6, alignItems: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
                         <input type="hidden" name="invoice_id" value={r.id} />
-                        <input type="hidden" name="requestKey" value={randomUUID()} />
                         <div>
                           <label className="flab">Tanggal</label>
                           <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} style={{ width: 130 }} />
@@ -187,7 +187,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                         </div>
                         <PilihRekening rekening={rekening} width={150} />
                         <button type="submit" className="pay-btn" style={{ padding: "7px 12px", fontSize: 11 }}>Simpan</button>
-                      </form>
+                      </TransactionForm>
                     </details>
                     )}
                   </td>

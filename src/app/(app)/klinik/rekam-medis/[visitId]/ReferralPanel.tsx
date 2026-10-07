@@ -1,4 +1,5 @@
 "use client";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 
 import { useState } from "react";
 import { createReferral } from "./actions";
@@ -16,7 +17,7 @@ export function ReferralPanel({ visitId, referrals }: { visitId: string; referra
         </button>
       </div>
       {open && (
-        <form action={createReferral} style={{ display: "grid", gap: 7, marginBottom: 10 }}>
+        <TransactionForm scope={`clinic-referral:${visitId}`} action={createReferral} style={{ display: "grid", gap: 7, marginBottom: 10 }}>
           <input type="hidden" name="visit_id" value={visitId} />
           <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", gap: 7 }}>
             <select className="fi" name="direction" defaultValue="keluar"><option value="masuk">Masuk</option><option value="keluar">Keluar</option></select>
@@ -25,7 +26,7 @@ export function ReferralPanel({ visitId, referrals }: { visitId: string; referra
           <input className="fi" name="reason" placeholder="Alasan referral" required />
           <textarea className="fi" name="notes" rows={2} placeholder="Catatan tambahan (opsional)" />
           <button type="submit" className="btn-acc" style={{ justifySelf: "start", background: "var(--posb)" }}><i className="ti ti-device-floppy" /> Simpan referral</button>
-        </form>
+        </TransactionForm>
       )}
       {referrals.length === 0 ? <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada referral.</div> : (
         <div style={{ display: "grid", gap: 6 }}>

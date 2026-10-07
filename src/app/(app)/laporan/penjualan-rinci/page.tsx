@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
@@ -59,21 +60,21 @@ export default async function PenjualanRinciPage({
   const akhir = `${sampai}T23:59:59+07:00`;
 
   const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] = await Promise.all([
-    supabase
+    completeReportQuery(supabase
       .from("sales")
-      .select("id, no_struk, total, metode_bayar, channel, marketplace_status, created_at, branches(name), customers(name)")
+      .select("id, no_struk, total, metode_bayar, channel, marketplace_status, created_at, branches(name), customers(name)", { count: "exact" })
       .gte("created_at", mulai).lte("created_at", akhir)
-      .order("created_at", { ascending: false }),
-    supabase
+      .order("created_at", { ascending: false })),
+    completeReportQuery(supabase
       .from("invoices")
-      .select("id, invoice_no, total, metode_bayar, paid_status, created_at, visit_id, visits(branches(name), customers(name))")
+      .select("id, invoice_no, total, metode_bayar, paid_status, created_at, visit_id, visits(branches(name), customers(name))", { count: "exact" })
       .is("voided_at", null)
       .gte("created_at", mulai).lte("created_at", akhir)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })),
     // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
     // dan omzet struk itu harus terlihat sudah berkurang di daftar ini.
-    supabase.from("sales_returns").select("sale_id, total"),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" })),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const returPerStruk = new Map<string, number>();

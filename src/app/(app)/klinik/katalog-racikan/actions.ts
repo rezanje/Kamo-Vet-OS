@@ -39,3 +39,15 @@ export async function setKatalogRacikanAktif(formData: FormData) {
   revalidatePath(back);
   redirect(`${back}?success=status`);
 }
+
+export async function bindKatalogRacikanSku(formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("bind_compound_formula_sale_item", {
+    p_formula_id: String(formData.get("formula_id") ?? ""),
+    p_sale_item_id: String(formData.get("sale_item_id") ?? "") || null,
+  });
+  if (error) return gagal("Tautan SKU gagal disimpan. Pilih obat racik aktif dan pastikan hak akses OWNER/ADMIN.");
+  revalidatePath(back);
+  revalidatePath("/klinik");
+  redirect(`${back}?success=binding`);
+}

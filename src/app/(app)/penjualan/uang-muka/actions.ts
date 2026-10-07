@@ -1,5 +1,6 @@
 "use server";
 
+import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
@@ -59,8 +60,16 @@ export async function terimaUangMukaJual(formData: FormData) {
     branchId,
     lines: jurnalUangMukaJual(kasCode, jumlah),
   });
+  await assertDraftJournal(supabase, {
+    tanggal,
+    deskripsi: `Uang muka penjualan ${no}`,
+    source: "sales-advance",
+    sourceRef: no,
+    branchId,
+    lines: jurnalUangMukaJual(kasCode, jumlah),
+  });
 
-  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${no} tercatat.`)}`);
+  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${no} tercatat.`)}${transactionDraftAck(formData)}`);
 }
 
 export async function batalkanUangMukaJual(formData: FormData) {
@@ -97,7 +106,16 @@ export async function batalkanUangMukaJual(formData: FormData) {
     branchId,
     lines,
   });
+  await assertDraftJournal(supabase, {
+    tanggal,
+    deskripsi: `Pengembalian uang muka penjualan ${um!.no_um}`,
+    source: "sales-advance-void",
+    sourceRef: um!.no_um,
+    branchId,
+    lines,
+  });
 
-  await supabase.from("sales_advances").update({ status: "batal" }).eq("id", id);
-  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${um!.no_um} dibatalkan.`)}`);
+  const { error: draftWriteError1 } = await supabase.from("sales_advances").update({ status: "batal" }).eq("id", id).select("id").single();
+  if (draftWriteError1) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
+  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${um!.no_um} dibatalkan.`)}${transactionDraftAck(formData)}`);
 }

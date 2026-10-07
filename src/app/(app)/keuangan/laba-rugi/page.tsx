@@ -1,3 +1,5 @@
+import { UnduhLaporan } from "@/components/UnduhLaporan";
+import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -11,7 +13,7 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 export default async function LabaRugiPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }> }) {
   const { dari, sampai, cabang } = await searchParams;
   const supabase = await createClient();
-  const { data: branches } = await supabase.from("branches").select("id, name, type").order("name");
+  const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name, type", { count: "exact" }).order("name"));
 
   // preset unit:KLINIK / unit:PETSHOP → filter daftar cabang berdasarkan tipe (laporan Memorize Accurate)
   const unitTypes = resolveUnitTypes(cabang);
@@ -51,7 +53,8 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
   const labaBersih = labaKotor - totalBebanOps;
 
   return (
-    <>
+    <div data-report-page id="laporan-isi">
+      <UnduhLaporan judul="Laba Rugi" />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -75,25 +78,25 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
         <AkunGroup title="BEBAN OPERASIONAL" rows={bebanOperasional} hrefAkun={hrefAkun} />
         <TotalRow label="Total Beban Operasional" value={totalBebanOps} />
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "2px solid #16213e" }}>
+        <div data-report-row style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "2px solid #16213e" }}>
           <span style={{ fontSize: 14, fontWeight: 700 }}>LABA BERSIH</span>
           <span style={{ fontSize: 18, fontWeight: 800, color: labaBersih >= 0 ? "#15803d" : "#b91c1c" }}>{rp(labaBersih)}</span>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
 function TotalRow({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
+    <div data-report-row style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
       <span>{label}</span><span>{rp(value)}</span>
     </div>
   );
 }
 function SubRow({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", marginTop: 4, borderTop: "1px solid var(--bd)", fontSize: 13, fontWeight: strong ? 700 : 500 }}>
+    <div data-report-row style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", marginTop: 4, borderTop: "1px solid var(--bd)", fontSize: 13, fontWeight: strong ? 700 : 500 }}>
       <span>{label}</span><span style={{ color: "var(--acc)" }}>{rp(value)}</span>
     </div>
   );

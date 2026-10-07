@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { resolveClinicSalesperson } from "@/lib/clinic-payment";
 import { revalidatePath } from "next/cache";
@@ -464,7 +465,7 @@ export async function bayarRombongan(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(`Tidak ada tagihan yang bisa diselesaikan sekaligus (${dilewati.join(", ")}) — buka satu per satu`)}`);
   }
   const sisa = dilewati.length ? `&dilewati=${encodeURIComponent(dilewati.join(", "))}` : "";
-  redirect(`${back}?success=rombongan&lunas=${jumlahLunas}${sisa}`);
+  redirect(`${back}?success=rombongan&lunas=${jumlahLunas}${sisa}${dilewati.length === 0 ? transactionDraftAck(formData) : ""}`);
 }
 
 // Addendum §7: reverse the ledger and reissue within one transaction.
@@ -488,5 +489,5 @@ export async function voidAndReissue(formData: FormData) {
     p_invoice_id: invoiceId, p_request_key: requestKey, p_reason: reason,
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
-  redirect(`${back}?success=reissue`);
+  redirect(`${back}?success=reissue${transactionDraftAck(formData)}`);
 }

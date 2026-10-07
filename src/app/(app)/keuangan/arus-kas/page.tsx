@@ -1,3 +1,5 @@
+import { UnduhLaporan } from "@/components/UnduhLaporan";
+import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -13,7 +15,7 @@ export default async function ArusKasPage({ searchParams }: { searchParams: Prom
   const supabase = await createClient();
   const [{ moves, saldoKasNow, saldoAwal }, { data: branches }] = await Promise.all([
     getCashMovements(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
-    supabase.from("branches").select("id, name").order("name"),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name")),
   ]);
 
   const rows = moves.map((m) => {
@@ -32,7 +34,8 @@ export default async function ArusKasPage({ searchParams }: { searchParams: Prom
   const sinkron = Math.round(saldoAkhir) === Math.round(saldoKasNow);
 
   return (
-    <>
+    <div data-report-page id="laporan-isi">
+      <UnduhLaporan judul="Arus Kas" />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -59,13 +62,13 @@ export default async function ArusKasPage({ searchParams }: { searchParams: Prom
         <div style={{ marginTop: 16, borderTop: "2px solid #16213e", paddingTop: 10 }}>
           <BigRow label="Kenaikan (Penurunan) Kas Bersih" value={kenaikan} />
           <BigRow label="Saldo Kas Awal" value={saldoAwal} muted />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8 }}>
+          <div data-report-row style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8 }}>
             <span style={{ fontSize: 14, fontWeight: 800 }}>SALDO KAS AKHIR</span>
             <span style={{ fontSize: 18, fontWeight: 800, color: "var(--acc)" }}>{rp(saldoAkhir)}</span>
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -77,7 +80,7 @@ function Activity({ title, rows, subtotal }: { title: string; rows: { label: str
         <div style={{ fontSize: 11, color: "var(--td)", padding: "2px 0" }}>Tidak ada pergerakan kas.</div>
       ) : (
         rows.map((r) => (
-          <div key={r.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12, borderBottom: ".5px solid var(--bd)" }}>
+          <div data-report-row key={r.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12, borderBottom: ".5px solid var(--bd)" }}>
             <span>{r.label}
               <span style={{ fontSize: 9.5, color: "var(--td)", marginLeft: 6 }}>
                 (masuk {rp(r.masuk)} · keluar {rp(r.keluar)})
@@ -87,7 +90,7 @@ function Activity({ title, rows, subtotal }: { title: string; rows: { label: str
           </div>
         ))
       )}
-      <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
+      <div data-report-row style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
         <span>Kas Bersih dari {title.replace("AKTIVITAS ", "").toLowerCase()}</span>
         <span>{subtotal < 0 ? "-" : ""}{rp(Math.abs(subtotal))}</span>
       </div>
@@ -96,7 +99,7 @@ function Activity({ title, rows, subtotal }: { title: string; rows: { label: str
 }
 function BigRow({ label, value, muted }: { label: string; value: number; muted?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, fontWeight: 600, color: muted ? "var(--tm)" : "#141413" }}>
+    <div data-report-row style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, fontWeight: 600, color: muted ? "var(--tm)" : "#141413" }}>
       <span>{label}</span><span>{value < 0 ? "-" : ""}{rp(Math.abs(value))}</span>
     </div>
   );

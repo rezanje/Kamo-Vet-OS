@@ -48,7 +48,7 @@ export function AkunGroup({ title, rows, hrefAkun }: {
           // menempel di akun rinciannya.
           if (akun.is_header) {
             return (
-              <div key={akun.id} style={{ ...gaya, background: "var(--sf1, #f8fafc)" }}>
+              <div data-report-row key={akun.id} style={{ ...gaya, background: "var(--sf1, #f8fafc)" }}>
                 <span>
                   <span style={{ color: "var(--td)", fontFamily: "monospace", fontSize: 10, marginRight: 6 }}>{akun.code}</span>
                   {akun.name}
@@ -59,7 +59,7 @@ export function AkunGroup({ title, rows, hrefAkun }: {
           }
 
           return (
-            <Link key={akun.id} href={hrefAkun(akun.code)}
+            <Link data-report-row key={akun.id} href={hrefAkun(akun.code)}
               title={`Lihat mutasi ${akun.code} ${akun.name} di buku besar`}
               style={{ ...gaya, color: "inherit", textDecoration: "none" }}>
               <span>

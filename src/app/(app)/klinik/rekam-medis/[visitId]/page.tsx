@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
@@ -47,6 +48,8 @@ export default async function RekamMedisPage({
   const { visitId } = await params;
   const { error, racikan, success } = await searchParams;
   const supabase = await createClient();
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
+  const draftUserId = draftUser?.id ?? "";
   const { data: { user } } = await supabase.auth.getUser();
 
   const { data: visit } = await supabase
@@ -410,7 +413,7 @@ export default async function RekamMedisPage({
             )}
             {mrId && (
               <div style={{ marginTop: 10 }}>
-                <RacikanInline visitId={visit.id} medicalRecordId={mrId} bahanItems={bahanItems} bolehManual={bolehManual} />
+                <RacikanInline key={`${visit.id}:${mrId}`} visitId={visit.id} medicalRecordId={mrId} bahanItems={bahanItems} bolehManual={bolehManual} />
               </div>
             )}
           </div>
@@ -419,7 +422,7 @@ export default async function RekamMedisPage({
             <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />
           </div>
 
-          <ReferralPanel visitId={visit.id as string} referrals={(referralRows ?? []) as { id: string; direction: string; facility: string; reason: string; notes: string | null; referred_at: string }[]} />
+          <ReferralPanel key={visit.id} visitId={visit.id as string} referrals={(referralRows ?? []) as { id: string; direction: string; facility: string; reason: string; notes: string | null; referred_at: string }[]} />
 
           {/* Rawat inap (Addendum §3) — popup "Catatan Rawat Inap" design klinik/07 sebagai card inline. */}
           <div className="card" style={{ marginTop: 12 }}>
@@ -442,7 +445,7 @@ export default async function RekamMedisPage({
                 </span>
               </div>
             ) : (
-              <form action={admitInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <TransactionForm userId={draftUserId} scope={`inpatient-admit:${visitId}`} action={admitInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <input type="hidden" name="visitId" value={visit.id} />
                 <div style={{ flex: 2, minWidth: 240 }}>
                   <label className="flab">Rencana tindakan dari dokter PIC *</label>
@@ -453,7 +456,7 @@ export default async function RekamMedisPage({
                   <input className="fi" name="doctor_name" readOnly defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
                 </div>
                 <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…">Masukkan Rawat Inap</SubmitButton>
-              </form>
+              </TransactionForm>
             )}
           </div>
         </>

@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -28,13 +29,13 @@ export default async function LaporanPembelianPage({
 
   const supabase = await createClient();
   const [{ data: invData }, { data: retData }, { data: branchData }] = await Promise.all([
-    supabase.from("purchase_invoices")
-      .select("id, no_faktur, tanggal, total, branch_id, supplier_id, suppliers(nama), purchase_invoice_payments(amount), purchase_invoice_items(item_id, nama, qty, harga, faktor, items(unit, item_categories(name)))")
-      .gte("tanggal", dari).lte("tanggal", sampai),
-    supabase.from("purchase_returns")
-      .select("total, tanggal, purchase_orders(supplier_id)")
-      .gte("tanggal", dari).lte("tanggal", sampai),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    completeReportQuery(supabase.from("purchase_invoices")
+      .select("id, no_faktur, tanggal, total, branch_id, supplier_id, suppliers(nama), purchase_invoice_payments(amount), purchase_invoice_items(item_id, nama, qty, harga, faktor, items(unit, item_categories(name)))", { count: "exact" })
+      .gte("tanggal", dari).lte("tanggal", sampai)),
+    completeReportQuery(supabase.from("purchase_returns")
+      .select("id, total, tanggal, purchase_orders(supplier_id)", { count: "exact" })
+      .gte("tanggal", dari).lte("tanggal", sampai)),
+    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   type Item = {

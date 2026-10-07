@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { DraftUserProvider, TransactionDraftComplete } from "@/components/LocalTransactionDraft";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/Sidebar";
@@ -47,8 +49,9 @@ export default async function AppLayout({
   const staffBranch = isStaff ? await getOpenShift(supabase as never, user.id, "klinik") : null;
 
   return (
-    <div className="shell">
+    <DraftUserProvider userId={user.id}><div className="shell">
       <NavigationFeedback />
+      <Suspense fallback={null}><TransactionDraftComplete userId={user.id} /></Suspense>
       {!isStaff && (
         <Sidebar
           branches={branches ?? []}
@@ -75,6 +78,6 @@ export default async function AppLayout({
         )}
         <div className="ct">{children}</div>
       </div>
-    </div>
+    </div></DraftUserProvider>
   );
 }

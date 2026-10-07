@@ -1,3 +1,4 @@
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -53,7 +54,7 @@ export default async function KlinikShiftPage({
               </div>
             </div>
           </div>
-          <form action={tutupShiftKlinik}>
+          <TransactionForm scope={`clinic-shift-close:${shift.id}`} action={tutupShiftKlinik}>
             <input type="hidden" name="shiftId" value={shift.id} />
             <label className="flab">Uang kas dihitung (fisik) *</label>
             <div className="pshop-rp" style={{ marginBottom: 10 }}>
@@ -61,7 +62,7 @@ export default async function KlinikShiftPage({
               <input className="fi" name="closing_balance" type="number" min={0} step="any" placeholder="0" required />
             </div>
             <SubmitButton className="kt-btn" icon="ti-lock" pendingText="Menutup shift…">TUTUP SHIFT KLINIK</SubmitButton>
-          </form>
+          </TransactionForm>
           <Link href="/klinik" className="back-btn" style={{ marginTop: 12, justifyContent: "center", width: "100%" }}>
             <i className="ti ti-arrow-left" /> Kembali ke menu klinik
           </Link>
@@ -97,7 +98,7 @@ export default async function KlinikShiftPage({
         </div>
       )}
 
-      <form action={mulaiShiftKlinik} className="card" style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 440, padding: 22 }}>
+      <TransactionForm scope={"clinic-shift-open"} action={mulaiShiftKlinik} className="card" style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 440, padding: 22 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
@@ -132,7 +133,7 @@ export default async function KlinikShiftPage({
         </div>
 
         <SubmitButton className="kt-btn" icon="ti-player-play" pendingText="Memulai shift…">MULAI SHIFT</SubmitButton>
-      </form>
+      </TransactionForm>
     </div>
   );
 }

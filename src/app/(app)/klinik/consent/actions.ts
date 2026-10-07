@@ -1,4 +1,5 @@
 "use server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -56,7 +57,7 @@ export async function buatConsent(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
 
   revalidatePath(back);
-  redirect(`${back}?success=consent`);
+  redirect(`${back}?success=consent${transactionDraftAck(formData)}`);
 }
 
 export async function tandaTanganConsent(formData: FormData) {
@@ -86,5 +87,5 @@ export async function tandaTanganConsent(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
 
   revalidatePath(back);
-  redirect(`${back}?success=ttd`);
+  redirect(`${back}?success=ttd${transactionDraftAck(formData)}`);
 }

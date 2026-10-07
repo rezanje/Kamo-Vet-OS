@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { loadUnitOptions, parseUnitDrafts } from "@/lib/satuan";
+import { loadUnitOptions, parseUnitDrafts, resolveSubmittedUnit, unitOptions } from "@/lib/satuan";
 import { rapikanTingkat } from "@/lib/harga-tingkat";
 import { pickItemType, validasiBarang, validasiSatuanDasar, pesanSimpanGagal } from "@/lib/barang";
 import {
@@ -124,6 +124,11 @@ export async function simpanBarang(formData: FormData) {
   const defaultDiscount = Math.min(100, Math.max(0, Number(formData.get("default_discount") ?? 0) || 0));
 
   const punyaStok = draft.itemType === "Persediaan";
+  if (punyaStok && buyUnit) {
+    try { resolveSubmittedUnit(unitOptions({ unit: unitResmi, sell_price: draft.sellPrice, buy_price: draft.buyPrice }, units), buyUnit); }
+    catch (error) { gagal(error instanceof Error ? error.message : "Satuan beli belum memiliki konversi barang."); }
+  }
+
 
   const patch = {
     name: draft.name,

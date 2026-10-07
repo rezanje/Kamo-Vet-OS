@@ -1,3 +1,4 @@
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { pertumbuhanBulanan, labelBulan, rekapPoin } from "@/lib/pertumbuhan";
@@ -30,16 +31,16 @@ export default async function MemberPage({
 
   const supabase = await createClient();
   const [{ data: custs }, { data: ledger }, { data: semuaMutasi }] = await Promise.all([
-    supabase.from("customers")
-      .select("id, name, tier, points, created_at, customer_categories(nama)")
-      .order("created_at"),
-    supabase.from("point_ledger")
-      .select("customer_id, delta, created_at, description")
+    completeReportQuery(supabase.from("customers")
+      .select("id, name, tier, points, created_at, customer_categories(nama)", { count: "exact" })
+      .order("created_at")),
+    completeReportQuery(supabase.from("point_ledger")
+      .select("id, customer_id, delta, created_at, description", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00+07:00`).lte("created_at", `${sampai}T23:59:59+07:00`)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })),
     // Tanpa batas tanggal — dipakai memeriksa apakah saldo poin di kartu pelanggan
     // benar-benar terjelaskan oleh riwayat transaksinya.
-    supabase.from("point_ledger").select("delta"),
+    completeReportQuery(supabase.from("point_ledger").select("id, delta", { count: "exact" })),
   ]);
 
   type Cust = {

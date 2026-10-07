@@ -36,10 +36,9 @@ describe("financial report boundary", () => {
 });
 
 describe("complete report reads", () => {
-  it("reads beyond one page and fails rather than truncate above the cap", async () => {
-    const source = Array.from({ length: 1201 }, (_, id) => ({ id: String(id) }));
-    expect(await readReportRows(async (from,to) => ({ data: source.slice(from,to+1), error: null, count: source.length }))).toHaveLength(1201);
-    await expect(readReportRows(async () => ({ data: source.slice(0,500), error: null, count: 5001 }))).rejects.toThrow("terlalu banyak");
+  it("reads the whole source beyond 5000 rows while rejecting incomplete pages", async () => {
+    const source = Array.from({ length: 6001 }, (_, id) => ({ id: String(id) }));
+    expect(await readReportRows(async (from,to) => ({ data: source.slice(from,to+1), error: null, count: source.length }))).toHaveLength(6001);
     await expect(readReportRows(async from => ({ data: from ? null : source.slice(0,500), error: from ? { message: "later page" } : null, count: source.length }))).rejects.toThrow("later page");
     await expect(readReportRows(async () => ({ data: null, error: null, count: 0 }))).rejects.toThrow("Data laporan gagal dibaca");
     await expect(readReportRows(async (from,to) => ({ data: source.slice(from,to+1), error: null, count: null }))).rejects.toThrow("Data laporan gagal dibaca");
@@ -80,4 +79,18 @@ describe("complete report reads", () => {
     const report = await loadCompoundReport(client, { dari: "2026-10-01", sampai: "2026-10-04", q: "missing" });
     expect(report.rows).toEqual([]); expect(report.summary.revenue).toBe(0);
   });
+});
+
+it("shows explicit legacy racikan rows separately without guessing recipe links or financial totals", async () => {
+  const invoices = { id: "inv-old", visit_id: "visit-old", invoice_no: "INV-OLD", created_at: "2026-10-04T12:00:00+07:00", paid_status: "Lunas", voided_at: null, visits: { branch_id: "b1", dokter: "Dr Satu", doctor_id: "d1" } };
+  const { client } = clientFixture({ tables: { invoice_items: [
+    { id: "legacy-line", compound_recipe_id: null, satuan: "racikan", qty: 2, harga: 100, hpp: null, deskripsi: "Nama sama", invoices },
+    { id: "normal-med", compound_recipe_id: null, satuan: "pcs", qty: 1, harga: 50, hpp: null, deskripsi: "Nama sama", invoices },
+  ] } });
+  const report = await loadCompoundReport(client, { dari: "2026-10-01", sampai: "2026-10-04", cabang: "b1", dokter: "d1" });
+  expect(report.rows).toEqual([]);
+  expect(report.summary.revenue).toBe(0);
+  expect(report.reconciliation).toEqual([expect.objectContaining({ id: "legacy-line", invoiceId: "inv-old", visitId: "visit-old", recipeId: null, cost: null, grossProfit: null, margin: null, reason: "Baris racikan belum memiliki tautan ID resep" })]);
+  const filtered = await loadCompoundReport(client, { dari: "2026-10-01", sampai: "2026-10-04", q: "missing" });
+  expect(filtered.reconciliation).toEqual([]);
 });

@@ -1,3 +1,4 @@
+import { completeReportQuery } from "./report-query";
 // Pengumpul data komisi: menarik penjualan + retur satu periode lalu menyusunnya
 // jadi baris siap hitung untuk `hitungKomisi`.
 //
@@ -83,12 +84,12 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   const akhir = akhirPeriode(periode);
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
-    supabase.from("sales")
-      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)")
-      .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`),
-    supabase.from("employees").select("id, profile_id").not("profile_id", "is", null),
-    supabase.from("items").select("id, category_id"),
-    supabase.from("item_categories").select("id, parent_id"),
+    completeReportQuery(supabase.from("sales")
+      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
+      .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`)),
+    completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
+    completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
+    completeReportQuery(supabase.from("item_categories").select("id, parent_id", { count: "exact" })),
   ]);
 
   const sales = (salesData ?? []) as SaleRow[];
@@ -154,10 +155,10 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
-  const { data: returData } = await supabase
+  const { data: returData } = await completeReportQuery(supabase
     .from("sales_returns")
-    .select("sale_id, tanggal, sales_return_items(item_id, qty, harga)")
-    .gte("tanggal", awal).lte("tanggal", akhir);
+    .select("id, sale_id, tanggal, sales_return_items(item_id, qty, harga)", { count: "exact" })
+    .gte("tanggal", awal).lte("tanggal", akhir));
 
   for (const r of (returData ?? []) as ReturRow[]) {
     const asal = infoStruk.get(r.sale_id);
@@ -189,11 +190,11 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // ── Klinik: tagihan kunjungan yang sudah lunas, jadi haknya dokter ────────────
   // Dipatok pada tanggal bayar, bukan tanggal periksa: yang dikomisikan adalah uang
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
-  const { data: invData } = await supabase
+  const { data: invData } = await completeReportQuery(supabase
     .from("invoices")
-    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp)")
+    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp)", { count: "exact" })
     .eq("paid_status", "Lunas")
-    .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`);
+    .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
 
   for (const inv of (invData ?? []) as InvoiceRow[]) {
     const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
@@ -230,11 +231,11 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // pendapatan diakui saat faktur terbit (Dr 1201 / Cr 4101), jadi omzet komisi,
   // realisasi target, dan omzet dashboard menunjuk angka yang sama. Faktur batal
   // tidak ikut. Yang dianggap penjualnya = pembuat faktur.
-  const { data: fjData } = await supabase
+  const { data: fjData } = await completeReportQuery(supabase
     .from("sales_invoices")
-    .select("id, tanggal, dpp, branch_id, created_by, sales_invoice_items(order_item_id, item_id, qty, harga)")
+    .select("id, tanggal, dpp, branch_id, created_by, sales_invoice_items(order_item_id, item_id, qty, harga)", { count: "exact" })
     .neq("status", "batal")
-    .gte("tanggal", awal).lte("tanggal", akhir);
+    .gte("tanggal", awal).lte("tanggal", akhir));
 
   const fakturs = (fjData ?? []) as FakturJualRow[];
   const hppPerOrderItem = await hppPengiriman(
@@ -286,10 +287,10 @@ async function hppPengiriman(supabase: AnyClient, orderItemIds: string[]): Promi
   const ids = [...new Set(orderItemIds)];
   if (ids.length === 0) return out;
 
-  const { data } = await supabase
+  const { data } = await completeReportQuery(supabase
     .from("sales_delivery_items")
-    .select("order_item_id, qty, hpp")
-    .in("order_item_id", ids);
+    .select("id, order_item_id, qty, hpp", { count: "exact" })
+    .in("order_item_id", ids));
 
   const akum = new Map<string, { qty: number; hpp: number }>();
   for (const d of (data ?? []) as { order_item_id: string | null; qty: number; hpp: number | null }[]) {
@@ -323,11 +324,11 @@ async function infoStrukLuarPeriode(
 }
 
 export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomisi[]> {
-  const { data } = await supabase
+  const { data } = await completeReportQuery(supabase
     .from("commission_rules")
-    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai")
+    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai", { count: "exact" })
     .eq("is_active", true)
-    .order("nama");
+    .order("nama"));
 
   return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
     id: String(r.id),

@@ -10,6 +10,7 @@ export type KatalogRacikan = {
   id: string;
   code: string;
   active: boolean;
+  sale_item_id?: string | null;
   version_id: string;
   version: number;
   name: string;
@@ -23,7 +24,7 @@ export function katalogTotal(ingredients: readonly BahanKatalog[]): number {
 }
 
 export function katalogFromRows(
-  formulas: readonly { id: string; code: string; active: boolean; current_version_id: string | null }[],
+  formulas: readonly { id: string; code: string; active: boolean; current_version_id: string | null; sale_item_id?: string | null }[],
   versions: readonly { id: string; version: number; name: string; dosage_form: string; dosage_instruction: string | null; ingredients: BahanKatalog[] }[],
 ): KatalogRacikan[] {
   const byId = new Map(versions.map((version) => [version.id, version]));
@@ -31,6 +32,7 @@ export function katalogFromRows(
     const version = formula.current_version_id ? byId.get(formula.current_version_id) : null;
     return version ? [{
       id: formula.id, code: formula.code, active: formula.active,
+      sale_item_id: formula.sale_item_id ?? null,
       version_id: version.id, version: version.version, name: version.name,
       dosage_form: version.dosage_form, dosage_instruction: version.dosage_instruction,
       ingredients: version.ingredients,

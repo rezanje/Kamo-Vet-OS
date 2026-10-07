@@ -1,4 +1,6 @@
 "use client";
+import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
+import { draftRows } from "@/components/TransactionDraft";
 
 import { useMemo, useState } from "react";
 import { simpanSaldoAwal } from "./actions";
@@ -14,7 +16,7 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 // adalah posisi harta, bukan riwayat laba rugi (itu sudah lebur jadi modal).
 const TIPE_BOLEH = ["ASET", "LIABILITAS", "EKUITAS"];
 
-export function SaldoAwalForm({ akun, usulan }: { akun: Akun[]; usulan: Usulan[] }) {
+export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: Akun[]; usulan: Usulan[] }) {
   const [tanggal, setTanggal] = useState(hariIniWIB());
   const [baris, setBaris] = useState<Baris[]>(
     usulan.length > 0
@@ -42,7 +44,8 @@ export function SaldoAwalForm({ akun, usulan }: { akun: Akun[]; usulan: Usulan[]
   );
 
   return (
-    <form action={simpanSaldoAwal}>
+    <PreservedForm action={simpanSaldoAwal}>
+      <LocalTransactionDraft userId={userId} scope="opening-balance-create" state={{snapshot:{tanggal,baris},restore(value){if(typeof value.tanggal!=="string"||!draftRows(value.baris,{code:"",nilai:"",sisi:"D"})||!value.baris.every(b=>b.sisi==="D"||b.sisi==="K"))return false;setTanggal(value.tanggal);setBaris(value.baris as Baris[]);return true;},reset(){setTanggal(hariIniWIB());setBaris([{code:"",nilai:"",sisi:"D"}]);}}}/>
       <input type="hidden" name="baris" value={serial} />
       <input type="hidden" name="tanggal" value={tanggal} />
 
@@ -116,7 +119,7 @@ export function SaldoAwalForm({ akun, usulan }: { akun: Akun[]; usulan: Usulan[]
           <i className="ti ti-device-floppy" /> Simpan Saldo Awal
         </button>
       </div>
-    </form>
+    </PreservedForm>
   );
 }
 
