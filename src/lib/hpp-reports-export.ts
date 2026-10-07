@@ -56,7 +56,7 @@ export function compoundCsv(report: CompoundReport): string { return tableCsv(co
 export function inventoryCsv(report: InventoryReport): string { return tableCsv(inventoryTable(report), reportContext(report)); }
 
 export function compoundReconciliationTable(report: CompoundReport): ReportTable {
-  return { columns: ["Waktu WIB", "Invoice", "ID invoice", "ID baris invoice", "ID kunjungan", "Cabang", "Dokter kunjungan", "Racikan", "ID resep", "HPP historis", "Laba kotor", "Margin %", "Alasan"].map(label => ({ label })),
+  return { columns: ["Waktu WIB", "Invoice", "ID invoice", "ID baris invoice", "ID kunjungan", "Cabang", "Dokter kunjungan", "Item invoice", "ID resep", "HPP historis", "Laba kotor", "Margin %", "Alasan"].map(label => ({ label })),
     rows: (report.reconciliation ?? []).map(row => ({ id: row.id, href: `/klinik/pembayaran/${row.visitId}/invoice`, cells: [
       reportWIB(row.createdAt), row.invoiceNo, row.invoiceId, row.id, row.visitId, row.branch, row.doctor, row.name,
       row.recipeId, row.cost, row.grossProfit, row.margin, row.reason,

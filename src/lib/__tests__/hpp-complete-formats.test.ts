@@ -76,3 +76,21 @@ it.each(["csv", "xlsx", "print"])("exports legacy reconciliation with source IDs
     expect(content).toContain("Baris racikan belum memiliki tautan ID resep");
   }
 });
+
+it("exports an unclassified drug candidate without assigning a recipe or financial totals", async () => {
+  const client = clientFixture({ tables: {
+    invoice_items: [{ id: "snowy-line", compound_recipe_id: null, item_id: null, prescription_item_id: null, satuan: null, jenis: "obat", deskripsi: "Obat Batuk", qty: 1, harga: 15000, hpp: null,
+      invoices: { id: "snowy-invoice", visit_id: "snowy-visit", invoice_no: "INV-202609-0007", created_at: "2026-09-23T07:20:46Z", paid_status: "Lunas", voided_at: null, visits: { branch_id: "b1", dokter: "Dr A", doctor_id: "doctor" } },
+    }],
+    compounding_recipes: [{ id: "snowy-recipe", medical_records: { visit_id: "snowy-visit" } }],
+  } }).client;
+  const response = await downloadHppReport(client, "compound", new Request("https://example.test/unduh?dari=2026-09-01&sampai=2026-09-30&rincian=rekonsiliasi&format=xlsx"));
+  expect(response.status).toBe(200);
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(await response.arrayBuffer());
+  const row = book.getWorksheet("Rekonsiliasi")!.getRow(2);
+  expect(row.getCell(2).value).toBe("INV-202609-0007");
+  expect([9, 10, 11, 12].map(index => row.getCell(index).value)).toEqual([null, null, null, null]);
+  expect(row.getCell(13).value).toContain("Periksa dokumen asli");
+  expect(book.getWorksheet("Margin racikan")!.rowCount).toBe(1);
+});

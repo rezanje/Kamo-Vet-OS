@@ -121,7 +121,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
           Dokter mengikuti penanggung jawab kunjungan saat ini. Versi resmi tetap memakai ID saat racikan dibuat; metadata versi nonaktif dapat tidak tersedia.
           Nama dan satuan bahan mengikuti resep saat dibaca; label racikan ad hoc dapat berubah. Qty resep yang tidak valid ditampilkan kosong tanpa mengubah HPP invoice.
           Rincian bahan memakai HPP pemakaian historis yang ditautkan ke invoice. Jika histori belum tersedia, qty berasal dari resep tersimpan dan HPP bahan ditandai belum tersedia. Qty resep lama dapat berubah; nilai bahan tidak dihitung dari harga jual atau HPP stok saat ini.
-          Hanya baris dengan tautan ID resep yang dihitung. Rincian rekonsiliasi menampilkan baris invoice bersatuan racikan tanpa tautan resep serta baris tanpa HPP historis, dengan ID sumber dan alasan. Baris tanpa tautan tidak masuk total keuangan; HPP, laba, dan margin yang tidak diketahui tetap kosong. Baris lama tanpa penanda satuan racikan belum dapat dikenali dengan pasti dan tidak dicocokkan lewat nama.
+          Hanya baris dengan tautan ID resep yang dihitung. Rincian rekonsiliasi menampilkan racikan tanpa tautan resep atau HPP historis, dengan ID sumber dan alasan. Baris obat lama tanpa tautan barang/resep juga perlu diperiksa jika kunjungannya memiliki catatan racikan; ini belum membuktikan baris tersebut adalah racikan. Baris tanpa tautan tidak masuk total keuangan; HPP, laba, dan margin yang tidak diketahui tetap kosong. Tautan tidak dicocokkan lewat nama.
         </> : null}
       </div>
     </div> : null}
