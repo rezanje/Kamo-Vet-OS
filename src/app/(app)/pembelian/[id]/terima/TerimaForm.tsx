@@ -1,5 +1,6 @@
 "use client";
 
+import { draftRecord, draftNumber, draftString } from "@/components/TransactionDraft";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 
 // ponytail: qty diterima default = sisa yang belum datang; user tinggal ubah baris
@@ -27,6 +28,7 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export function TerimaForm({
   poId,
+  userId,
   noPo,
   supplier,
   gudang,
@@ -34,6 +36,7 @@ export function TerimaForm({
   rows,
 }: {
   poId: string;
+  userId: string;
   noPo: string;
   supplier: string;
   gudang: string;
@@ -92,7 +95,11 @@ export function TerimaForm({
 
   return (
     <form action={terimaBarang}>
-      <PurchaseRequestKey scope={`receipt:${poId}`} />
+      <PurchaseRequestKey scope={`receipt:${poId}`} userId={userId} draft={{ snapshot: { terima, rusak, catatan, exp, batch }, restore(value) {
+        if (!draftRecord(value.terima, draftNumber) || !draftRecord(value.rusak, draftNumber) || !draftRecord(value.catatan, draftString) || !draftRecord(value.exp, draftString)
+          || !draftRecord(value.batch, (entries): entries is BatchInput[] => Array.isArray(entries) && entries.every(entry => entry && draftNumber(entry.qty) && draftString(entry.exp_date)))) return false;
+        setTerima(value.terima); setRusak(value.rusak); setCatatan(value.catatan); setExp(value.exp); setBatch(value.batch); return true;
+      } }} />
       <input type="hidden" name="id" value={poId} />
       <input type="hidden" name="rows" value={JSON.stringify(payload)} />
 

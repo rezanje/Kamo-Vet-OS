@@ -6,7 +6,7 @@ const state = vi.hoisted(() => ({rpc:vi.fn(), shipped:10,billed:5}));
 vi.mock("next/navigation",()=>({redirect:(url:string)=>{throw new Error(url);},notFound:()=>{throw new Error("not found");}}));
 vi.mock("next/link",()=>({default:({children,...props}:React.AnchorHTMLAttributes<HTMLAnchorElement>)=>React.createElement("a",props,children)}));
 vi.mock("@/lib/master-guard",()=>({assertRole:async()=>({rpc:state.rpc}),bolehTransaksiKas:async()=>true}));
-vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({from:(table:string)=>{
+vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:"owner"}}})},from:(table:string)=>{
   const data=table==="sales_orders"?{id:"00000000-0000-4000-8000-000000000001",no_pesanan:"SO.TEST",status:"diproses",total:200,warehouse_id:null,sales_order_items:[{id:"00000000-0000-4000-8000-000000000002",nama:"Test pcs",satuan:"pcs",qty:20,harga:10,qty_kirim:state.shipped,qty_faktur:state.billed}]}:[];
   const query={select:()=>query,eq:()=>query,order:()=>query,maybeSingle:async()=>({data}),then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data}).then(resolve)};
   return query;
@@ -75,4 +75,22 @@ it("fails closed when the tab cannot persist its request identity",async()=>{
     await expect(buatPengiriman(new FormData(shipmentForm()))).rejects.toThrow(/error=/);
     expect(state.rpc).not.toHaveBeenCalled();
   }finally{broken.mockRestore();}
+});
+
+it("restores shipment quantities and headers after failed reset and page reload",async()=>{
+ await render();const form=shipmentForm();const qty=form.querySelector<HTMLInputElement>('input[name^="qty_"]')!;const resi=form.querySelector<HTMLInputElement>('input[name="no_resi"]')!;
+ await act(async()=>{qty.value="2";qty.dispatchEvent(new Event("input",{bubbles:true}));resi.value="TRACK-77";resi.dispatchEvent(new Event("input",{bubbles:true}));form.reset();});
+ expect(qty.value).toBe("2");
+ await act(async()=>root.unmount());root=createRoot(container);await render({error:"Connection lost"});
+ expect(shipmentForm().querySelector<HTMLInputElement>('input[name^="qty_"]')!.value).toBe("2");expect(shipmentForm().querySelector<HTMLInputElement>('input[name="no_resi"]')!.value).toBe("TRACK-77");
+});
+
+it("clears matching shipment contents and starts fresh after server acknowledgement",async()=>{
+ await render();const original=key();const resi=shipmentForm().querySelector<HTMLInputElement>('input[name="no_resi"]')!;
+ await act(async()=>{resi.value="OLD-TRACK";resi.dispatchEvent(new Event("input",{bubbles:true}));const qty=shipmentForm().querySelector<HTMLInputElement>('input[name^="qty_"]')!;qty.value="2";qty.dispatchEvent(new Event("input",{bubbles:true}));});
+ state.shipped=12;
+ await render({request_done:original,request_scope:"delivery:00000000-0000-4000-8000-000000000001"});
+ expect(shipmentForm().querySelector<HTMLInputElement>('input[name="no_resi"]')!.value).toBe("");
+ expect(shipmentForm().querySelector<HTMLInputElement>('input[name^="qty_"]')!.value).toBe("8");
+ expect(sessionStorage.getItem("vetos:transaction-draft:v1:owner:sales:delivery:00000000-0000-4000-8000-000000000001")).toBeNull();
 });

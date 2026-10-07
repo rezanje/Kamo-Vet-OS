@@ -31,6 +31,8 @@ export default async function DetailPesananPage({
   const { id } = await params;
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
   const boleh = await bolehTransaksiKas();
 
   const [{ data: so }, { data: kirimData }, { data: fakturData }, { data: gudangData }] = await Promise.all([
@@ -65,7 +67,7 @@ export default async function DetailPesananPage({
 
   return (
     <>
-      <SalesRecoveryComplete scope={sp.request_scope} requestKey={sp.request_done} />
+      <SalesRecoveryComplete userId={userId} scope={sp.request_scope} requestKey={sp.request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/penjualan/pesanan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -129,7 +131,7 @@ export default async function DetailPesananPage({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             {bisaKirim && (
               <form action={buatPengiriman}>
-                <SalesRequestIdentity scope={`delivery:${id}`} />
+                <SalesRequestIdentity userId={userId} scope={`delivery:${id}`} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Kirim barang</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>
@@ -165,7 +167,7 @@ export default async function DetailPesananPage({
 
             {bisaFaktur && (
               <form action={buatFakturJual}>
-                <SalesRequestIdentity scope={`invoice:${id}`} />
+                <SalesRequestIdentity userId={userId} scope={`invoice:${id}`} />
                 <input type="hidden" name="id" value={id} />
                 <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Terbitkan faktur</div>
                 <table className="tbl" style={{ marginBottom: 8 }}>

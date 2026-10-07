@@ -30,6 +30,8 @@ export default async function FakturBaruPage({
 }) {
   const { error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
 
   const [{ data: pos, error: poError }, { data: invs, error: invoiceReadError }] = await Promise.all([
     supabase
@@ -119,7 +121,7 @@ export default async function FakturBaruPage({
         </div>
       )}
 
-      <FakturForm options={options} />
+      <FakturForm options={options} userId={userId} />
     </>
   );
 }
