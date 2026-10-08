@@ -2,6 +2,16 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
 
+function loginRedirect(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  url.pathname = "/login";
+  // 303 avoids replaying an expired/deleted-account form into the login action.
+  if (request.method !== "GET") {
+    url.searchParams.set("error", "Sesi kamu berakhir. Masuk lagi, lalu ulangi simpan.");
+  }
+  return NextResponse.redirect(url, { status: 303 });
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -26,10 +36,10 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // IMPORTANT: do not run code between createServerClient and getUser().
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verify signatures and expiry with Supabase's cached public signing keys.
+  // Keep this directly after createServerClient so session refresh cookies sync.
+  const { data, error } = await supabase.auth.getClaims();
+  const userId = error ? null : data?.claims.sub;
 
   // Halaman booking sengaja terbuka tanpa login — pemilik hewan memesan jadwal
   // dari luar sistem. Yang boleh dilakukannya dipagari RLS (migrasi 0105):
@@ -37,22 +47,12 @@ export async function updateSession(request: NextRequest) {
   const publik = request.nextUrl.pathname.startsWith("/booking");
 
   if (
-    !user &&
+    !userId &&
     !publik &&
     !request.nextUrl.pathname.startsWith("/login") &&
     !request.nextUrl.pathname.startsWith("/auth")
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    // 303, BUKAN 307 bawaan. 307 mempertahankan metode & badan permintaan, jadi
-    // sesi yang kedaluwarsa saat orang menekan Simpan membuat isi formulir
-    // ikut dikirim ulang ke /login — halaman login menerimanya sebagai percobaan
-    // masuk dan membalas "missing email or phone". Di depan pelanggan itu
-    // terlihat seperti aplikasi rusak, padahal cuma perlu login lagi.
-    if (request.method !== "GET") {
-      url.searchParams.set("error", "Sesi kamu berakhir. Masuk lagi, lalu ulangi simpan.");
-    }
-    return NextResponse.redirect(url, { status: 303 });
+    return loginRedirect(request);
   }
 
   // Sidebar disembunyikan per peran di (app)/layout.tsx, tapi itu cuma UI —
@@ -60,14 +60,17 @@ export async function updateSession(request: NextRequest) {
   //
   // Aturannya satu tempat di `lib/akses.ts` dan dipakai sidebar juga, supaya yang
   // kelihatan di menu dan yang benar-benar boleh dibuka tidak pernah beda.
-  if (user) {
+  if (userId) {
     const path = request.nextUrl.pathname;
     const isInternal = path.startsWith("/_next") || path.startsWith("/api");
-    if (!isInternal) {
-      const [{ data: profile }, { data: aturan }] = await Promise.all([
-        supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+    const isPublic = publik || path.startsWith("/login") || path.startsWith("/auth");
+    if (!isInternal && !isPublic) {
+      const [{ data: profile, error: profileError }, { data: aturan }] = await Promise.all([
+        supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
         supabase.from("role_modules").select("role, module_id"),
       ]);
+      // Auth deletion cascades the profile; an unexpired JWT alone is not enough.
+      if (profileError || !profile) return loginRedirect(request);
       const role = profile?.role ?? "";
       const tersimpan = (aturan ?? []) as { role: string; module_id: string }[];
 
