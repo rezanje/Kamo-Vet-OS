@@ -9,6 +9,7 @@ import { pesanSimpanGagal } from "@/lib/barang";
 import {
   bacaWorkbookKategoriAccurate,
   bacaWorkbookAccurate,
+  cocokkanKategoriAccurate,
   buatMatriksItemAccurate,
   buatPayloadItemAccurate,
   buatPreviewAccurate,
@@ -505,15 +506,16 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     const files = getUploads(formData);
     const categoryFile = getCategoryUpload(formData);
     const upload = await bacaUploads(files);
-    const parsed = upload.parsed;
+    let parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
     const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
     const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
       : { rows: [], errors: [] };
     if (parsedCategories.errors.length) return stateError(parsedCategories.errors.join(" "));
-    const categories = pakaiKategoriDariMaster ? parsed.categories : parsedCategories.rows;
     const master = await muatMasterAccurate(supabase);
+    parsed = cocokkanKategoriAccurate({ ...parsed, categories: pakaiKategoriDariMaster ? parsed.categories : parsedCategories.rows }, [...master.categories.values()]);
+    const categories = parsed.categories;
     const rows = buatPreviewAccurate(parsed, master.items);
     const hierarchyCount = categories.filter((row) => row.parent_name).length;
     const categoryBytes = !pakaiKategoriDariMaster && categoryFile
@@ -633,7 +635,7 @@ async function saveAccurateBatch(
 ) {
   await prepareBatchReferences(supabase, master, items);
   const payloads = items.map((item) => {
-    const existing = existingByCode.get(item.code.toLowerCase());
+    const existing = existingByCode.get(item.code.trim().toLowerCase());
     const payload = buatPayloadItemAccurate(item, referenceFor(master, item));
     return existing ? { ...payload, id: existing.id } : payload;
   });
@@ -676,14 +678,13 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const files = getUploads(formData);
     const categoryFile = getCategoryUpload(formData);
     const upload = await bacaUploads(files);
-    const parsed = upload.parsed;
+    let parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
     const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
     const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
       : { rows: [], errors: [] };
     if (parsedCategories.errors.length) return stateError(parsedCategories.errors.join(" "));
-    const categories = pakaiKategoriDariMaster ? parsed.categories : parsedCategories.rows;
     const categoryBytes = !pakaiKategoriDariMaster && categoryFile
       ? [{ name: `category:${categoryFile.name}`, data: new Uint8Array(await categoryFile.arrayBuffer()) }]
       : [];
@@ -698,6 +699,8 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
       return stateError("File berubah atau batch sudah diposting. Jalankan cek perubahan lagi.");
     }
     const master = await muatMasterAccurate(supabase);
+    parsed = cocokkanKategoriAccurate({ ...parsed, categories: pakaiKategoriDariMaster ? parsed.categories : parsedCategories.rows }, [...master.categories.values()]);
+    const categories = parsed.categories;
 
     for (const category of categories) {
       await ensureCategory(supabase, master, category.name);
@@ -716,7 +719,7 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
 
     const initialPreview = buatPreviewAccurate(parsed, master.items);
     const statusByRow = new Map(initialPreview.map((row) => [row.row_no, row.status]));
-    const existingByCode = new Map(master.items.map((item) => [item.code.toLowerCase(), item]));
+    const existingByCode = new Map(master.items.map((item) => [item.code.trim().toLowerCase(), item]));
     const resultByRow = new Map(initialPreview.map((row) => [row.row_no, row]));
     const itemsToSave = parsed.rows.filter((item) => (statusByRow.get(item.row_no) ?? "Baru") !== "Sama");
     const sameCount = parsed.rows.length - itemsToSave.length;
@@ -765,6 +768,7 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
       .eq("id", runId).eq("status", "previewed");
     if (postedRun.error) throw new Error(postedRun.error.message);
     revalidatePath("/pos/sku");
+    revalidatePath("/pos/kategori");
     revalidatePath(BACK);
     return {
       // Baris yang ditolak tidak membatalkan barang yang sudah tersimpan.
