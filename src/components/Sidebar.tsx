@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MODULES } from "@/lib/nav";
-import { modulDiizinkan, type AturanTersimpan } from "@/lib/akses";
+import { bolehBukaPath, modulDiizinkan, type AturanTersimpan } from "@/lib/akses";
 import { logout } from "@/app/login/actions";
 import { useEffect, useState } from "react";
 
@@ -15,7 +15,15 @@ type Props = {
   aksesModul?: AturanTersimpan;
 };
 
+// Pintasan ke alur yang sudah ada; bukan modul Akses Grup baru.
+const PETSHOP_SHORTCUTS = [
+  { id: "kasir", label: "POS Petshop", icon: "ti-building-store", href: "/kasir" },
+  { id: "quest-staff", label: "Quest Staff", icon: "ti-trophy", href: "/pos/quest" },
+];
+
 function activeModule(pathname: string): string {
+  const shortcut = PETSHOP_SHORTCUTS.find((s) => pathname === s.href || pathname.startsWith(s.href + "/"));
+  if (shortcut) return shortcut.id;
   if (pathname === "/") return "dashboard";
   return pathname.split("/")[1] || "dashboard";
 }
@@ -33,6 +41,14 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
     return next;
   });
   const active = activeModule(pathname);
+  const allow = modulDiizinkan(role, aksesModul);
+  const shortcuts = PETSHOP_SHORTCUTS.filter((s) => bolehBukaPath(role, s.href, aksesModul));
+  const menu = MODULES.flatMap((m) => {
+    const entries = allow === null || allow.includes(m.id)
+      ? [{ ...m, href: m.id === "dashboard" ? "/" : `/${m.id}` }]
+      : [];
+    return m.id === "klinik" ? [...entries, ...shortcuts] : entries;
+  });
   const initials = fullName
     .split(" ")
     .map((p) => p[0])
@@ -69,17 +85,14 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
       </div>
 
       <div className="sb-nav">
-        {(() => {
-          const allow = modulDiizinkan(role, aksesModul);
-          return allow ? MODULES.filter((m) => allow.includes(m.id)) : MODULES;
-        })().map((m) => {
-          const href = m.id === "dashboard" ? "/" : `/${m.id}`;
+        {menu.map((m) => {
           return (
             <Link
               key={m.id}
-              href={href}
+              href={m.href}
               prefetch={false}
               className={`sbi${active === m.id ? " on" : ""}`}
+              aria-current={active === m.id ? "page" : undefined}
               title={m.label}
             >
               <i className={`ti ${m.icon}`} />
