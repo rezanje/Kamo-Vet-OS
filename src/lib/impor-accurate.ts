@@ -22,6 +22,7 @@ export type AccurateItem = {
   item_type: ItemType;
   category_name: string;
   subcategory_name?: string | null;
+  parent_category_name?: string | null;
   brand_name: string | null;
   unit: string;
   sell_price: number;
@@ -401,10 +402,55 @@ function bentukKategoriDariMaster(items: AccurateItem[]): RencanaKategoriMaster 
       if (!child || child.toLowerCase() === item.category_name.toLowerCase()) return item;
       return {
         ...item,
+        parent_category_name: item.category_name,
         category_name: namesByPair.get(`${item.category_name.toLowerCase()}\u0000${child.toLowerCase()}`) ?? item.category_name,
       };
     }),
     categories,
+  };
+}
+
+/** Nama anak harus stabil ketika isi file berubah antara impor penuh dan parsial. */
+export function cocokkanKategoriAccurate(
+  workbook: AccurateWorkbookResult,
+  existing: ExistingAccurateCategory[],
+): AccurateWorkbookResult {
+  // Each file is parsed separately. Rebuild their shared hierarchy before
+  // matching names so equally named children in different files stay separate.
+  if (workbook.rows.some((row) => row.parent_category_name)) {
+    const combined = bentukKategoriDariMaster(workbook.rows.map((row) => ({
+      ...row, category_name: row.parent_category_name ?? row.category_name,
+    })));
+    workbook = { ...workbook, rows: combined.items, categories: combined.categories };
+  }
+  const key = (name: string) => name.trim().toLowerCase();
+  const byName = new Map(existing.map((row) => [key(row.name), row]));
+  const roots = new Set(workbook.categories.filter((row) => !row.parent_name).map((row) => key(row.name)));
+  const aliases = new Map<string, string>();
+  const categories = workbook.categories.map((category) => {
+    if (!category.parent_name) return category;
+    const parent = byName.get(key(category.parent_name));
+    const item = workbook.rows.find((row) => key(row.category_name) === key(category.name));
+    const base = item?.subcategory_name?.trim() || category.name;
+    const qualified = `${base} — ${category.parent_name}`;
+    const names = [category.name, base, qualified];
+    const match = names.map((name) => byName.get(key(name))).find((row) => (
+      row && parent && row.parent_id === parent.id && !roots.has(key(row.name))
+    ));
+    let name = match?.name ?? category.name;
+    const collision = byName.get(key(name));
+    if (!match && collision && collision.parent_id !== parent?.id) name = qualified;
+    const target = byName.get(key(name));
+    if (!match && target && target.parent_id !== parent?.id) {
+      throw new Error(`Kategori "${name}" sudah dipakai di induk lain`);
+    }
+    aliases.set(key(category.name), name);
+    return { ...category, name };
+  });
+  return {
+    ...workbook,
+    categories,
+    rows: workbook.rows.map((row) => ({ ...row, category_name: aliases.get(key(row.category_name)) ?? row.category_name })),
   };
 }
 

@@ -4,7 +4,7 @@ import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { buildTree, type KategoriRow } from "@/lib/kategori";
-import { simpanKategori, toggleKategori } from "./actions";
+import { simpanKategori, toggleKategori, hapusKategori } from "./actions";
 
 export default async function KategoriBarangPage({
   searchParams,
@@ -50,7 +50,7 @@ export default async function KategoriBarangPage({
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah kategori barang."
     >
       {bolehKelola && (
-        <form action={simpanKategori} className="crm-sec" style={{ marginBottom: 14 }}>
+        <form key={editing?.id ?? "new"} action={simpanKategori} className="crm-sec" style={{ marginBottom: 14 }}>
           <input type="hidden" name="id" value={editing?.id ?? ""} />
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 180 }}>
@@ -79,7 +79,7 @@ export default async function KategoriBarangPage({
               <tr>
                 <th>Kategori</th>
                 <th style={{ width: 110 }}>Dipakai</th><th style={{ width: 80 }}>Status</th>
-                {bolehKelola && <th style={{ width: 150 }}>Aksi</th>}
+                {bolehKelola && <th style={{ width: 210 }}>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -102,6 +102,14 @@ export default async function KategoriBarangPage({
                             {r.is_active ? "Nonaktifkan" : "Aktifkan"}
                           </SubmitButton>
                         </form>
+                        {(pakai.get(r.id) ?? 0) === 0 && !rows.some((row) => row.parent_id === r.id) && (
+                          <form action={hapusKategori}>
+                            <input type="hidden" name="id" value={r.id} />
+                            <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
+                              Hapus
+                            </SubmitButton>
+                          </form>
+                        )}
                       </div>
                     </td>
                   )}

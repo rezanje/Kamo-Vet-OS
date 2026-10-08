@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import {
+  cocokkanKategoriAccurate,
   bacaWorkbookKategoriAccurate,
   bacaWorkbookAccurate,
   buatMatriksItemAccurate,
@@ -395,4 +396,69 @@ describe("buatPayloadItemAccurate", () => {
       tindakan_kategori: "Konsultasi",
     });
   });
+});
+
+ describe("pencocokan kategori impor dengan master yang sudah ada", () => {
+  it("reuses the existing child when a later file needs a parent suffix", async () => {
+    const parsed = await bacaWorkbookAccurate(await workbook([
+      ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Subkategori", "Satuan"],
+      ["A-1", "Kalung A", "INV", "ACCESORIS", "COLLAR", "PCS"],
+      ["A-2", "Kalung B", "INV", "ALKES", "COLLAR", "PCS"],
+    ]));
+    const result = cocokkanKategoriAccurate(parsed, [
+      { id: "p1", name: "ACCESORIS", parent_id: null },
+      { id: "p2", name: "ALKES", parent_id: null },
+      { id: "c1", name: "COLLAR", parent_id: "p1" },
+    ]);
+    expect(result.rows.map(row => row.category_name)).toEqual(["COLLAR", "COLLAR — ALKES"]);
+    expect(result.categories).toContainEqual(expect.objectContaining({ name: "COLLAR", parent_name: "ACCESORIS" }));
+    expect(result.categories.map(row => row.name)).not.toContain("COLLAR — ACCESORIS");
+  });
+  it("keeps an existing suffixed category when importing a smaller file", async () => {
+    const parsed = await bacaWorkbookAccurate(await workbook([
+      ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Subkategori", "Satuan"],
+      ["A-1", "Kalung A", "INV", "ACCESORIS", "COLLAR", "PCS"],
+    ]));
+    const result = cocokkanKategoriAccurate(parsed, [
+      { id: "p1", name: "ACCESORIS", parent_id: null },
+      { id: "c1", name: "COLLAR — ACCESORIS", parent_id: "p1" },
+    ]);
+    expect(result.rows[0].category_name).toBe("COLLAR — ACCESORIS");
+  });
+  it("does not move another parent's child when the file contains only one parent", async () => {
+    const parsed = await bacaWorkbookAccurate(await workbook([
+      ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Subkategori", "Satuan"],
+      ["A-1", "Kalung B", "INV", "ALKES", "COLLAR", "PCS"],
+    ]));
+    const result = cocokkanKategoriAccurate(parsed, [
+      { id: "p1", name: "ACCESORIS", parent_id: null },
+      { id: "p2", name: "ALKES", parent_id: null },
+      { id: "c1", name: "COLLAR", parent_id: "p1" },
+    ]);
+    expect(result.rows[0].category_name).toBe("COLLAR — ALKES");
+  });
+});
+
+it("keeps child destinations separate when multiple files use the same child name", async () => {
+  const header = ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Subkategori", "Satuan"];
+  const a = await bacaWorkbookAccurate(await workbook([header, ["A", "Barang A", "INV", "ACCESORIS", "COLLAR", "PCS"]]));
+  const b = await bacaWorkbookAccurate(await workbook([header, ["B", "Barang B", "INV", "ALKES", "COLLAR", "PCS"]]));
+  const result = cocokkanKategoriAccurate({ ...a, rows: [...a.rows, ...b.rows], categories: [...a.categories, ...b.categories] }, [
+    { id: "p1", name: "ACCESORIS", parent_id: null },
+    { id: "p2", name: "ALKES", parent_id: null },
+    { id: "c1", name: "COLLAR", parent_id: "p1" },
+    { id: "c2", name: "COLLAR — ALKES", parent_id: "p2" },
+  ]);
+  expect(result.rows.map(row => row.category_name)).toEqual(["COLLAR", "COLLAR — ALKES"]);
+});
+it("preserves an existing root category when a file uses its name as a child", async () => {
+  const parsed = await bacaWorkbookAccurate(await workbook([
+    ["Kode Barang", "Nama Barang", "Jenis Barang", "Kategori Barang", "Subkategori", "Satuan"],
+    ["A", "Barang A", "INV", "ACCESORIS", "COLLAR", "PCS"],
+  ]));
+  const result = cocokkanKategoriAccurate(parsed, [
+    { id: "p1", name: "ACCESORIS", parent_id: null },
+    { id: "root", name: "COLLAR", parent_id: null },
+  ]);
+  expect(result.rows[0].category_name).toBe("COLLAR — ACCESORIS");
 });
