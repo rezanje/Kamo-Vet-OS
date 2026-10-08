@@ -45,7 +45,7 @@ export function Breadcrumb() {
 
   return (
     <div className="bc">
-      <Link href="/" title="Dashboard" style={{ color: "inherit", display: "inline-flex" }}>
+      <Link href="/" prefetch={false} title="Dashboard" style={{ color: "inherit", display: "inline-flex" }}>
         <i className="ti ti-home" style={{ fontSize: 14 }} />
       </Link>
       {pathname === "/" ? (
@@ -58,7 +58,7 @@ export function Breadcrumb() {
           <span key={r.href} style={{ display: "contents" }}>
             <span>/</span>
             {r.bolehKlik ? (
-              <Link href={r.href}
+              <Link href={r.href} prefetch={false}
                 style={{ color: "var(--tx)", fontWeight: 500, textDecoration: "none", borderBottom: "1px dotted var(--td)" }}>
                 {r.label}
               </Link>

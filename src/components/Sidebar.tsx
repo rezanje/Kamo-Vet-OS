@@ -78,6 +78,7 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
             <Link
               key={m.id}
               href={href}
+              prefetch={false}
               className={`sbi${active === m.id ? " on" : ""}`}
               title={m.label}
             >
