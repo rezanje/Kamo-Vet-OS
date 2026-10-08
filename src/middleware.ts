@@ -6,6 +6,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Session and module checks read Supabase in Seoul on every navigation.
+  regions: ["icn1"],
   matcher: [
     // `api/cron` sengaja dikecualikan: cron Vercel memanggilnya TANPA sesi login,
     // jadi kalau ikut disaring di sini permintaannya dibelokkan ke /login dan
