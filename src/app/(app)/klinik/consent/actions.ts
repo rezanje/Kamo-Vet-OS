@@ -69,22 +69,31 @@ export async function tandaTanganConsent(formData: FormData) {
   const signature = String(formData.get("signature") ?? "");
   const back = `/klinik/rekam-medis/${visitId}`;
 
-  if (!consentId) redirect(`${back}?error=${encodeURIComponent("Form persetujuan tidak valid")}`);
+  if (!consentId || !visitId) redirect(`${back}?error=${encodeURIComponent("Form persetujuan tidak valid")}`);
   if (!canSign(signerName, signature)) {
     redirect(`${back}?error=${encodeURIComponent("Isi nama penanda tangan dan bubuhkan tanda tangan dulu")}`);
   }
 
-  // Sekali ditandatangani, tidak bisa ditimpa — dokumen persetujuan harus final.
-  const { data: existing } = await supabase.from("consents").select("status").eq("id", consentId).maybeSingle();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) redirect(`${back}?error=${encodeURIComponent("Sesi tidak ditemukan. Masuk kembali sebelum menyimpan tanda tangan.")}`);
+  // The visit read applies the existing branch RLS before touching its consent.
+  const { data: visit, error: visitError } = await supabase.from("visits").select("id").eq("id", visitId).maybeSingle();
+  if (visitError || !visit) redirect(`${back}?error=${encodeURIComponent("Kunjungan tidak ditemukan atau tidak dapat diakses")}`);
+
+  const { data: existing, error: readError } = await supabase.from("consents").select("status").eq("id", consentId).eq("visit_id", visitId).maybeSingle();
+  if (readError || !existing) redirect(`${back}?error=${encodeURIComponent("Form persetujuan tidak ditemukan pada kunjungan ini atau gagal dibaca")}`);
   if (existing?.status === "sudah_ttd") {
     redirect(`${back}?error=${encodeURIComponent("Form ini sudah ditandatangani")}`);
   }
 
-  const { error } = await supabase.from("consents").update({
+  // Check unsigned status in the UPDATE itself so concurrent submissions cannot
+  // both save after reading the same unsigned snapshot.
+  const { data: signed, error } = await supabase.from("consents").update({
     signer_name: signerName, signature_data: signature,
     signed_at: new Date().toISOString(), status: "sudah_ttd",
-  }).eq("id", consentId);
+  }).eq("id", consentId).eq("visit_id", visitId).eq("status", "belum_ttd").select("id");
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  if (signed?.length !== 1) redirect(`${back}?error=${encodeURIComponent("Form persetujuan sudah ditandatangani atau berubah. Muat ulang untuk melihat hasilnya.")}`);
 
   revalidatePath(back);
   redirect(`${back}?success=ttd${transactionDraftAck(formData)}`);
