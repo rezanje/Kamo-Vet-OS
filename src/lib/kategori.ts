@@ -17,18 +17,33 @@ function indukEfektif(r: KategoriRow, byId: Map<string, KategoriRow>): string | 
 export function buildTree(rows: KategoriRow[]): { induk: KategoriRow; anak: KategoriRow[] }[] {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const induk = rows.filter((r) => indukEfektif(r, byId) === null).sort(byName);
+  // Legacy imports can contain deeper trees. Keep descendants in their root
+  // branch instead of losing them when displaying or filtering inventory.
+  function descendants(id: string, seen: Set<string>): KategoriRow[] {
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return rows.filter(r => indukEfektif(r, byId) === id).sort(byName)
+      .flatMap(r => [r, ...descendants(r.id, seen)]);
+  }
   return induk.map((p) => ({
     induk: p,
-    anak: rows.filter((r) => indukEfektif(r, byId) === p.id).sort(byName),
+    anak: descendants(p.id, new Set()),
   }));
 }
 
 export function labelPath(id: string, rows: KategoriRow[]): string {
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const r = byId.get(id);
-  if (!r) return "";
-  const p = indukEfektif(r, byId);
-  return p ? `${byId.get(p)!.name}${SEP}${r.name}` : r.name;
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let current: string | null = id;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const row = byId.get(current);
+    if (!row) break;
+    names.unshift(row.name);
+    current = indukEfektif(row, byId);
+  }
+  return names.join(SEP);
 }
 
 // Kembalikan pesan Indonesia kalau melanggar, null kalau boleh.

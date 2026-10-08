@@ -120,6 +120,7 @@ const PAGE_SIZE = 1_000;
 export type AccurateImportState = {
   ok: boolean;
   phase: "preview" | "done";
+  reapplying?: boolean;
   message: string;
   hierarchy_count: number;
   rows: AccuratePreviewRow[];
@@ -306,7 +307,7 @@ async function muatMasterAccurate(supabase: any): Promise<MasterAccurate> {
       "category:item_categories(name)", "brand:brands(name)", "supplier:suppliers(nama)",
       "units:item_units(unit,factor,sell_price,buy_price)",
     ].join(",")),
-    loadAll(supabase, "item_categories", "id,name,parent_id"),
+    loadAll(supabase, "item_categories", "id,name,parent_id,is_active"),
     loadAll(supabase, "brands", "id,name"),
     loadAll(supabase, "units", "id,nama"),
     loadAll(supabase, "suppliers", "id,nama"),
@@ -348,6 +349,7 @@ async function muatMasterAccurate(supabase: any): Promise<MasterAccurate> {
         id: String(row.id),
         name: String(row.name ?? "").trim(),
         parent_id: row.parent_id ? String(row.parent_id) : null,
+        is_active: row.is_active !== false,
       };
       return [category.name.toLowerCase(), category] as const;
     }).filter(([name]) => Boolean(name))),
@@ -441,10 +443,14 @@ async function findOrCreateImportRun(supabase: any, input: {
   if (existing.error) throw new Error(existing.error.message);
   if (existing.data) {
     if (existing.data.status === "posted") {
-      return { id: String(existing.data.id), status: "posted" as const };
+      return { id: String(existing.data.id), status: "posted" as const, reapplying: true };
     }
     if (existing.data.status !== "previewed") throw new Error("Batch file ini tidak dapat dilanjutkan.");
-    return { id: String(existing.data.id), status: "previewed" as const };
+    const previous = await supabase.from("import_runs").select("id,status")
+      .eq("kind", "master_accurate").eq("source_name", input.sourceName).eq("status", "posted")
+      .order("posted_at", { ascending: false }).limit(1).maybeSingle();
+    if (previous.error) throw new Error(previous.error.message);
+    return { id: String(existing.data.id), status: "previewed" as const, reapplying: previous.data?.status === "posted" };
   }
   const inserted = await supabase.from("import_runs").insert({
     kind: "master_accurate",
@@ -463,13 +469,17 @@ async function findOrCreateImportRun(supabase: any, input: {
     // Identitas dan status audit sudah disimpan pada kolom sendiri. Jangan
     // menyimpan seluruh matriks tampilan ribuan kali; itu memperlambat
     // pemeriksaan file besar tanpa dipakai saat impor dilanjutkan.
-    payload: { name: row.name, changed_fields: row.changed_fields },
+    payload: { name: row.name, changed_fields: row.changed_fields, category_name: row.matrix?.category_name ?? null, source: row.source ?? null },
   }));
   if (rowPayload.length) {
     const rowsInserted = await supabase.from("import_run_rows").insert(rowPayload);
     if (rowsInserted.error) throw new Error(rowsInserted.error.message);
   }
-  return { id: String(inserted.data.id), status: "previewed" as const };
+  const previous = await supabase.from("import_runs").select("id,status")
+    .eq("kind", "master_accurate").eq("source_name", input.sourceName).eq("status", "posted")
+    .order("posted_at", { ascending: false }).limit(1).maybeSingle();
+  if (previous.error) throw new Error(previous.error.message);
+  return { id: String(inserted.data.id), status: "previewed" as const, reapplying: previous.data?.status === "posted" };
 }
 
 function uniqueMissing(values: (string | null)[], existing: ReadonlyMap<string, unknown>) {
@@ -530,13 +540,21 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
       summary,
       rows,
     });
-    const masterAlreadyPosted = importRun.status === "posted";
+    const categoryChanges = categories.some(category => {
+      const existing = master.categories.get(category.name.toLowerCase());
+      const parent = category.parent_name ? master.categories.get(category.parent_name.toLowerCase()) : null;
+      return !existing || existing.is_active === false || existing.parent_id !== (parent?.id ?? null);
+    }) || parsed.rows.some(item => master.categories.get(item.category_name.toLowerCase())?.is_active === false);
+    // A posted hash protects stock postings; it must not freeze editable masters.
+    const masterAlreadyPosted = importRun.status === "posted"
+      && summary.Baru === 0 && summary.Update === 0 && !categoryChanges;
     return {
       ok: true,
       phase: masterAlreadyPosted ? "done" : "preview",
+      reapplying: importRun.reapplying,
       message: masterAlreadyPosted
         ? "Master dari file ini sudah pernah diimpor. Lanjutkan cek saldo stok awal dari file yang sama di bawah."
-        : `${parsed.rows.length} baris siap dari ${files.length} file. ${parsed.skipped.length} duplikat sama dilewati, ${parsed.rejected.length} konflik ditandai. ${hierarchyCount} relasi subkategori ditemukan.`,
+        : `${parsed.rows.length} baris siap dari ${files.length} file. ${parsed.skipped.length} duplikat sama dilewati, ${parsed.rejected.length} konflik ditandai. ${hierarchyCount} relasi subkategori ditemukan.${importRun.status === "posted" ? " File ini pernah diimpor; perubahan master akan diterapkan ulang tanpa menggandakan saldo yang sudah diposting." : ""}`,
       hierarchy_count: hierarchyCount,
       rows: ringkasPreviewAccurate(rows),
       total_rows: rows.length,
@@ -555,12 +573,19 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
 async function ensureCategory(supabase: any, master: MasterAccurate, name: string) {
   const key = name.toLowerCase();
   const existing = master.categories.get(key);
-  if (existing) return existing.id;
+  if (existing) {
+    if (existing.is_active === false) {
+      const { error } = await supabase.from("item_categories").update({ is_active: true }).eq("id", existing.id);
+      if (error) throw new Error(pesanSimpanGagal(error.message));
+      existing.is_active = true;
+    }
+    return existing.id;
+  }
   const { data, error } = await supabase.from("item_categories")
     .insert({ name, parent_id: null, is_active: true }).select("id").single();
   if (error) throw new Error(pesanSimpanGagal(error.message));
   const id = String(data.id);
-  master.categories.set(key, { id, name, parent_id: null });
+  master.categories.set(key, { id, name, parent_id: null, is_active: true });
   return id;
 }
 
@@ -661,15 +686,58 @@ async function saveAccurateBatch(
   }
 }
 
-async function rejectImportRow(
+async function refreshImportAudit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   runId: string,
-  item: AccurateItem,
-  reason: string,
+  results: AccuratePreviewRow[],
 ) {
-  await supabase.from("import_run_rows").update({ status: "rejected", reason })
-    .eq("run_id", runId).eq("source_row", item.row_no).eq("source_code", item.code).eq("status", "valid");
+  type AuditRow = { id: number; source_row: number; source_code: string | null; payload: { source?: string | null } | null };
+  const auditRows: AuditRow[] = [];
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const audit = await supabase.from("import_run_rows").select("id,source_row,source_code,payload")
+      .eq("run_id", runId).order("id").range(start, start + PAGE_SIZE - 1);
+    if (audit.error) throw new Error(audit.error.message);
+    auditRows.push(...(audit.data ?? []));
+    if ((audit.data ?? []).length < PAGE_SIZE) break;
+  }
+  const legacyKey = (row: number, code: string | null) => `${row}\u0000${code}`;
+  const sourceKey = (source: string, code: string | null) => `${source}\u0000${code}`;
+  const bySource = new Map(results.filter(row => row.source).map(row => [sourceKey(row.source!, row.code), row]));
+  const byLegacy = new Map(results.map(row => [legacyKey(row.row_no, row.code), row]));
+  const identityCounts = new Map<string, number>();
+  // Older runs did not store the filename. Do not rewrite ambiguous identities.
+  for (const row of auditRows) {
+    const key = legacyKey(row.source_row, row.source_code);
+    identityCounts.set(key, (identityCounts.get(key) ?? 0) + 1);
+  }
+  const resultCounts = new Map<string, number>();
+  for (const row of results) {
+    const key = legacyKey(row.row_no, row.code);
+    resultCounts.set(key, (resultCounts.get(key) ?? 0) + 1);
+  }
+  const updates = new Map<string, { status: string; reason: string | null; ids: number[] }>();
+  for (const audit of auditRows) {
+    const key = legacyKey(audit.source_row, audit.source_code);
+    const result = audit.payload?.source
+      ? bySource.get(sourceKey(audit.payload.source, audit.source_code))
+      : identityCounts.get(key) === 1 && resultCounts.get(key) === 1 ? byLegacy.get(key) : null;
+    if (!result) continue;
+    const status = result.status === "Baru" || result.status === "Update" ? "posted"
+      : result.status === "Sama" ? "same" : result.status === "Dilewati" ? "skipped" : "rejected";
+    const reason = status === "posted" || status === "same" ? null : result.reason;
+    const groupKey = JSON.stringify([status, reason]);
+    const group = updates.get(groupKey) ?? { status, reason, ids: [] };
+    group.ids.push(audit.id);
+    updates.set(groupKey, group);
+  }
+  for (const { status, reason, ids } of updates.values()) {
+    for (const batch of bagiImporBatch(ids, 500)) {
+      const { error } = await supabase.from("import_run_rows").update({ status, reason })
+        .eq("run_id", runId).in("id", batch);
+      if (error) throw new Error(error.message);
+    }
+  }
 }
 
 export async function konfirmasiImporAccurate(formData: FormData): Promise<AccurateImportState> {
@@ -692,10 +760,10 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const sourceHash = await hashFiles(sourceParts);
     const runId = String(formData.get("run_id") ?? "");
     if (!runId) return stateError("Preview impor sudah kedaluwarsa. Jalankan cek perubahan lagi.");
-    const run = await supabase.from("import_runs").select("id, kind, source_hash, status")
+    const run = await supabase.from("import_runs").select("id, kind, source_hash, status, summary")
       .eq("id", runId).maybeSingle();
     if (run.error) return stateError(run.error.message);
-    if (!run.data || run.data.kind !== "master_accurate" || run.data.source_hash !== sourceHash || run.data.status !== "previewed") {
+    if (!run.data || run.data.kind !== "master_accurate" || run.data.source_hash !== sourceHash || !["previewed", "posted"].includes(run.data.status)) {
       return stateError("File berubah atau batch sudah diposting. Jalankan cek perubahan lagi.");
     }
     const master = await muatMasterAccurate(supabase);
@@ -704,6 +772,9 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
 
     for (const category of categories) {
       await ensureCategory(supabase, master, category.name);
+    }
+    for (const name of new Set(parsed.rows.map(item => item.category_name))) {
+      await ensureCategory(supabase, master, name);
     }
     const categoryUpdates = rencanaIndukKategoriAccurate(
       categories,
@@ -718,10 +789,11 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     }
 
     const initialPreview = buatPreviewAccurate(parsed, master.items);
-    const statusByRow = new Map(initialPreview.map((row) => [row.row_no, row.status]));
+    const rowKey = (row: Pick<AccuratePreviewRow, "source" | "row_no" | "code">) => `${row.source ?? row.row_no}\u0000${row.code.trim().toLowerCase()}`;
+    const statusByRow = new Map(initialPreview.map((row) => [rowKey(row), row.status]));
     const existingByCode = new Map(master.items.map((item) => [item.code.trim().toLowerCase(), item]));
-    const resultByRow = new Map(initialPreview.map((row) => [row.row_no, row]));
-    const itemsToSave = parsed.rows.filter((item) => (statusByRow.get(item.row_no) ?? "Baru") !== "Sama");
+    const resultByRow = new Map(initialPreview.map((row) => [rowKey(row), row]));
+    const itemsToSave = parsed.rows.filter((item) => (statusByRow.get(rowKey(item)) ?? "Baru") !== "Sama");
     const sameCount = parsed.rows.length - itemsToSave.length;
     const progressSummary = summarize(initialPreview);
     let completed = sameCount;
@@ -736,8 +808,8 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
             await saveAccurateBatch(supabase, master, existingByCode, [item]);
           } catch (error) {
             const reason = error instanceof Error ? error.message : "Gagal menyimpan baris";
-            const preview = resultByRow.get(item.row_no);
-            resultByRow.set(item.row_no, {
+            const preview = resultByRow.get(rowKey(item));
+            resultByRow.set(rowKey(item), {
               row_no: item.row_no,
               code: item.code,
               name: item.name,
@@ -747,7 +819,6 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
               source: preview?.source ?? item.source,
               matrix: preview?.matrix ?? buatMatriksItemAccurate(item),
             });
-            await rejectImportRow(supabase, runId, item, reason);
           }
         }
       }
@@ -757,15 +828,13 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
 
     const rows = [...resultByRow.values()].sort((a, b) => a.row_no - b.row_no);
     const summary = summarize(rows);
-    const postedRows = await supabase.from("import_run_rows").update({ status: "posted" })
-      .eq("run_id", runId).eq("status", "valid");
-    if (postedRows.error) throw new Error(postedRows.error.message);
+    await refreshImportAudit(supabase, runId, rows);
     const postedRun = await supabase.from("import_runs").update({
       status: "posted",
       posted_at: new Date().toISOString(),
-      summary: { ...summary, progress: progressState("selesai", parsed.rows.length, parsed.rows.length) },
+      summary: { ...summary, master_reapplications: Number(run.data.summary?.master_reapplications ?? 0) + (run.data.status === "posted" ? 1 : 0), progress: progressState("selesai", parsed.rows.length, parsed.rows.length) },
     })
-      .eq("id", runId).eq("status", "previewed");
+      .eq("id", runId).in("status", ["previewed", "posted"]);
     if (postedRun.error) throw new Error(postedRun.error.message);
     revalidatePath("/pos/sku");
     revalidatePath("/pos/kategori");

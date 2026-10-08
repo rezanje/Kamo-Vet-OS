@@ -63,6 +63,7 @@ export function AccurateImportForm({
   const [initialStockAsOf, setInitialStockAsOf] = useState("");
   const [scopeSelection, setScopeSelection] = useState<{ branchId: string; warehouseId: string } | null>(null);
   const [skipInitialStock, setSkipInitialStock] = useState(false);
+  const [reapplyWithStock, setReapplyWithStock] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
@@ -93,7 +94,7 @@ export function AccurateImportForm({
   );
   const previewReady = Boolean(
     files.length === 1
-    && initialStockAsOf
+    && (skipInitialStock || initialStockAsOf)
     && state?.ok
     && state.run_id
     && (skipInitialStock || (oneClickStockState?.ok && oneClickStockState.phase === "preview")),
@@ -164,6 +165,12 @@ export function AccurateImportForm({
       if (!masterPreview.ok) {
         setOneClickPercentage(100);
         setOneClickStatus(masterPreview.message);
+        return;
+      }
+      if (masterPreview.reapplying && masterPreview.phase === "preview" && !reapplyWithStock) {
+        setSkipInitialStock(true);
+        setOneClickPercentage(100);
+        setOneClickStatus("Siap memperbarui master dan kategori saja. Saldo dari file ini tidak diimpor.");
         return;
       }
       setOneClickPercentage(60);
@@ -357,6 +364,7 @@ export function AccurateImportForm({
               setOneClickStockState(null);
               setScopeSelection(null);
               setSkipInitialStock(false);
+              setReapplyWithStock(false);
               setOneClickStatus("");
               setOneClickPercentage(0);
               setFlowMode("idle");
@@ -382,6 +390,7 @@ export function AccurateImportForm({
               setOneClickStockState(null);
               setScopeSelection(null);
               setSkipInitialStock(false);
+              setReapplyWithStock(false);
               setOneClickStatus("");
               setOneClickPercentage(0);
               setFlowMode("idle");
@@ -401,7 +410,7 @@ export function AccurateImportForm({
         {categoryFile && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name} — dipakai bila file Barang &amp; Jasa tidak punya Subkategori.</span>}
       </div>
 
-      <label style={{ display: "block", marginTop: 10, maxWidth: 300 }}>
+      {!skipInitialStock && <label style={{ display: "block", marginTop: 10, maxWidth: 300 }}>
         <span style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--sb)", marginBottom: 4 }}>
           Tanggal posisi saldo awal <span style={{ color: "#b91c1c" }}>*</span>
         </span>
@@ -422,7 +431,7 @@ export function AccurateImportForm({
         <span style={{ display: "block", marginTop: 4, fontSize: 10, color: "var(--tm)", lineHeight: 1.45 }}>
           Wajib dipilih. Dipakai hanya bila Per Tanggal di file kosong; bila file berisi tanggal berbeda, impor akan diblokir.
         </span>
-      </label>
+      </label>}
 
       {(localError || (state && !state.ok)) && (
         <div className="p2ban" style={{ marginTop: 12, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
@@ -455,7 +464,15 @@ export function AccurateImportForm({
 
       {previewReady && !isBusy && (
         <div role="status" style={{ marginTop: 12, padding: 11, border: ".5px solid #86efac", borderRadius: 8, background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 800 }}>
-          <i className="ti ti-circle-check" /> {skipInitialStock ? "Saldo ditahan sesuai pilihan. Import Sekali hanya menyimpan master Barang & Jasa." : "Pemeriksaan selesai. Tombol Import Sekali sudah aktif."}
+          <i className="ti ti-circle-check" /> {skipInitialStock ? "Pembaruan master dan kategori saja. Saldo dari file ini tidak diimpor." : "Pemeriksaan selesai. Tombol Import Sekali sudah aktif."}
+          {skipInitialStock && state?.reapplying && <div style={{ marginTop: 8 }}>
+            <button type="button" className="btn-def" onClick={() => {
+              setReapplyWithStock(true);
+              setSkipInitialStock(false);
+              setOneClickStockState(null);
+              setOneClickStatus("Isi tanggal saldo, lalu Cek perubahan untuk melanjutkan impor saldo awal.");
+            }}>Impor saldo awal juga</button>
+          </div>}
         </div>
       )}
 
@@ -647,7 +664,7 @@ export function AccurateImportForm({
         <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
           <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Siap dilanjutkan</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>
-            Master sudah dicek dan {readyStockCount.toLocaleString("id-ID")} saldo aman siap masuk. Tekan tombol ini untuk menyimpan semuanya.
+            {skipInitialStock ? "Master dan kategori siap diperbarui. Saldo stok yang sudah ada tidak ditambahkan lagi." : `Master sudah dicek dan ${readyStockCount.toLocaleString("id-ID")} saldo aman siap masuk. Tekan tombol ini untuk menyimpan semuanya.`}
           </div>
           <button type="button" className="btn-acc" onClick={importSekali} style={{ marginTop: 9, background: "#15803d" }}>
             <i className="ti ti-database-import" /> Lanjutkan Import Sekali

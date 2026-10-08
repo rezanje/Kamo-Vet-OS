@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, type ItemUnit } from "@/lib/satuan";
-import { ITEM_TYPES } from "@/lib/barang";
+import { BarangFilters } from "./BarangFilters";
 import { BARANG_FIELDS } from "./data";
 import { buildTree, labelPath, type KategoriRow } from "@/lib/kategori";
 import { BarangMatrixTable, type BarangMatrixRow } from "./BarangMatrixTable";
@@ -43,9 +43,9 @@ export default async function BarangJasaPage({
   const { data: categories } = await supabase
     .from("item_categories").select("id, name, parent_id, is_active").order("name");
   const katRows = (categories ?? []) as KategoriRow[];
-  const tree = buildTree(katRows.filter((row) => row.is_active));
+  const tree = buildTree(katRows);
   const selectedTree = tree.find((row) => row.induk.id === induk)
-    ?? tree.find((row) => row.anak.some((anak) => anak.id === kat))
+    ?? (!induk ? tree.find((row) => row.anak.some((anak) => anak.id === kat)) : null)
     ?? null;
   const selectedSubcategory = selectedTree?.anak.find((anak) => anak.id === kat) ?? null;
 
@@ -144,40 +144,9 @@ export default async function BarangJasaPage({
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "1" ? "Barang tersimpan." : success}</div>}
       {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah master barang. Kamu bisa melihat daftarnya saja.</div>}
 
-      <form action="/pos/sku" className="crm-sec" style={{ marginBottom: 12, padding: 12 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div style={{ width: 230 }}>
-            <label className="flab">Cari barang</label>
-            <input className="fi" name="cari" defaultValue={cari ?? ""} placeholder="Kode atau nama barang" />
-          </div>
-          <div style={{ width: 150 }}>
-            <label className="flab">Jenis</label>
-            <select className="fi" name="jenis" defaultValue={jenis ?? ""}>
-              <option value="">Semua jenis</option>
-              {ITEM_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-            </select>
-          </div>
-          <div style={{ width: 220 }}>
-            <label className="flab">Kategori induk</label>
-            <select className="fi" name="induk" defaultValue={selectedTree?.induk.id ?? ""}>
-              <option value="">Semua kategori</option>
-              {tree.map(({ induk: parent }) => <option key={parent.id} value={parent.id}>{parent.name}</option>)}
-            </select>
-          </div>
-          <div style={{ width: 230 }}>
-            <label className="flab">Subkategori</label>
-            <select className="fi" name="kat" defaultValue={selectedSubcategory?.id ?? ""} disabled={!selectedTree?.anak.length}>
-              <option value="">Semua subkategori</option>
-              {(selectedTree?.anak ?? []).map((child) => <option key={child.id} value={child.id}>{child.name}</option>)}
-            </select>
-          </div>
-          <button type="submit" className="btn-acc" style={{ background: "var(--posb)" }}><i className="ti ti-filter" /> Terapkan</button>
-          <Link href="/pos/sku" className="btn-def" style={{ textDecoration: "none" }}>Reset</Link>
-        </div>
-        <div style={{ fontSize: 10, color: "var(--td)", marginTop: 7 }}>
-          Pilih kategori induk, lalu tekan Terapkan untuk membuka pilihan subkategori.
-        </div>
-      </form>
+      <BarangFilters key={[induk, kat, jenis, cari].join(":")} categories={katRows}
+        parentId={selectedTree?.induk.id ?? ""} childId={selectedSubcategory?.id ?? ""}
+        jenis={jenis ?? ""} cari={cari ?? ""} />
 
       {hppError && <div className="p2ban" style={{ color: "#b91c1c" }}>HPP FIFO belum bisa dibaca lengkap: {hppError}</div>}
       {hppRows && <div className="p2ban">HPP rata-rata FIFO saat ini per satuan dasar, tertimbang atas seluruh gudang dan cabang yang diizinkan. <Link href="/laporan/nilai-persediaan">Rincian nilai persediaan</Link></div>}
