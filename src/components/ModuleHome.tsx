@@ -17,7 +17,7 @@ function TileCard({ tile }: { tile: Tile }) {
 
   if (tile.href) {
     return (
-      <Link href={tile.href} className="tile">
+      <Link href={tile.href} prefetch={false} className="tile">
         {inner}
       </Link>
     );
