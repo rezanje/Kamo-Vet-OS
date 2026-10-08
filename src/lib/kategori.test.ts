@@ -75,3 +75,9 @@ describe("flatOptions", () => {
     expect(flatOptions(mati).map((o) => o.id)).toEqual(["obat"]);
   });
 });
+
+it("keeps legacy grandchildren under their original root and shows the complete path",()=>{
+ const legacy=[...rows,{id:"kitten",name:"Kitten",parent_id:"kucing",is_active:true}];
+ expect(buildTree(legacy).find(t=>t.induk.id==="mkn")?.anak.map(r=>r.id)).toContain("kitten");
+ expect(labelPath("kitten",legacy)).toBe("Makanan › Makanan Kucing › Kitten");
+});

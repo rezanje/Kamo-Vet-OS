@@ -3,8 +3,19 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
-import { buildTree, type KategoriRow } from "@/lib/kategori";
+import { buildTree, labelPath, type KategoriRow } from "@/lib/kategori";
 import { simpanKategori, toggleKategori, hapusKategori } from "./actions";
+
+async function categoryUsage(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const counts = new Map<string, number>();
+  for (let start = 0; ; start += 1000) {
+    const { data, error } = await supabase.from("items").select("category_id")
+      .not("category_id", "is", null).order("id").range(start, start + 999);
+    if (error) throw new Error(error.message);
+    for (const item of data ?? []) counts.set(item.category_id, (counts.get(item.category_id) ?? 0) + 1);
+    if ((data ?? []).length < 1000) return counts;
+  }
+}
 
 export default async function KategoriBarangPage({
   searchParams,
@@ -15,9 +26,9 @@ export default async function KategoriBarangPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data }, { data: itemRows }] = await Promise.all([
+  const [{ data }, pakai] = await Promise.all([
     supabase.from("item_categories").select("id, name, parent_id, is_active").order("name"),
-    supabase.from("items").select("category_id").not("category_id", "is", null),
+    categoryUsage(supabase),
   ]);
 
   const rows = (data ?? []) as KategoriRow[];
@@ -26,11 +37,6 @@ export default async function KategoriBarangPage({
 
   // Dihitung LANGSUNG (barang yang kategorinya persis baris ini), tidak termasuk
   // anak — supaya jelas kategori mana yang benar-benar masih dipakai.
-  const pakai = new Map<string, number>();
-  for (const r of itemRows ?? []) {
-    const k = (r as { category_id: string }).category_id;
-    pakai.set(k, (pakai.get(k) ?? 0) + 1);
-  }
 
   // Pilihan induk: hanya kategori yang belum jadi anak & bukan dirinya sendiri.
   const calonInduk = rows.filter((r) => !r.parent_id && r.id !== editing?.id);
@@ -87,7 +93,7 @@ export default async function KategoriBarangPage({
                 <tr key={r.id}>
                   <td style={{ fontSize: 11.5, fontWeight: anak ? 500 : 700, paddingLeft: anak ? 26 : undefined }}>
                     {anak && <span style={{ color: "var(--td)", marginRight: 5 }}>└</span>}
-                    {r.name}
+                    {anak ? labelPath(r.id, rows).split(" › ").slice(1).join(" › ") : r.name}
                   </td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pakai.get(r.id) ?? 0} barang</td>
                   <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{r.is_active ? "Aktif" : "Nonaktif"}</span></td>

@@ -1,0 +1,52 @@
+// @vitest-environment jsdom
+import React,{act} from "react";
+import {createRoot,type Root} from "react-dom/client";
+import {afterEach,beforeEach,expect,it,vi} from "vitest";
+const actions=vi.hoisted(()=>({previewImporAccurate:vi.fn(),konfirmasiImporAccurate:vi.fn(),preflightSaldoAwalSekali:vi.fn(),previewSaldoAwalAccurate:vi.fn(),postSaldoAwalAccurate:vi.fn()}));
+vi.mock("../../app/(app)/pos/sku/impor/actions",()=>actions);
+vi.mock("../../app/(app)/pos/sku/impor/InitialStockImport",()=>({InitialStockImport:()=>null}));
+vi.mock("next/link",()=>({default:({children,...props}:React.AnchorHTMLAttributes<HTMLAnchorElement>)=><a {...props}>{children}</a>}));
+import {AccurateImportForm} from "../../app/(app)/pos/sku/impor/AccurateImportForm";
+let root:Root,container:HTMLDivElement;
+beforeEach(()=>{
+ Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});
+ vi.stubGlobal("requestAnimationFrame",(callback: FrameRequestCallback)=>{callback(0);return 1;});
+ Object.values(actions).forEach(fn=>fn.mockReset());
+ const state={ok:true,phase:"preview",reapplying:true,message:"Master perlu diperbarui",run_id:"run",rows:[],hierarchy_count:1,total_rows:1,summary:{Baru:0,Update:1,Sama:0,Ditolak:0,Dilewati:0},new_masters:{categories:[],brands:[],units:[],suppliers:[]},source_hash:"hash",source_fingerprint:null};
+ actions.previewImporAccurate.mockResolvedValue(state);
+ actions.konfirmasiImporAccurate.mockResolvedValue({...state,phase:"done"});
+ actions.preflightSaldoAwalSekali.mockResolvedValue({ok:false,phase:"preview",rows:[],scope_clarification:null,message:"Saldo belum siap"});
+ container=document.createElement("div");document.body.append(container);root=createRoot(container);
+});
+afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.unstubAllGlobals();});
+it("lets the user reapply a master file without a stock date or any stock actions",async()=>{
+ await act(async()=>root.render(<AccurateImportForm/>));
+ const upload=container.querySelector<HTMLInputElement>('input[type="file"]')!;
+ Object.defineProperty(upload,"files",{value:[new File(["fixture"],"master.xlsx")],configurable:true});
+ await act(async()=>upload.dispatchEvent(new Event("change",{bubbles:true})));
+ const button=(label:string)=>Array.from(container.querySelectorAll("button")).find(b=>b.textContent?.trim()===label)!;
+ await act(async()=>button("Cek perubahan").click());
+ expect(button("Import Sekali").disabled).toBe(false);
+ await act(async()=>button("Import Sekali").click());
+ expect(container.textContent).toContain("1 barang dan jasa sudah disimpan");
+ expect(container.textContent).toContain("0 saldo stok masuk");
+ expect(actions.konfirmasiImporAccurate).toHaveBeenCalledOnce();
+ expect(actions.preflightSaldoAwalSekali).not.toHaveBeenCalled();
+ expect(actions.previewSaldoAwalAccurate).not.toHaveBeenCalled();
+ expect(actions.postSaldoAwalAccurate).not.toHaveBeenCalled();
+});
+it("lets a master replay continue checking stock when the earlier stock import was unfinished",async()=>{
+ await act(async()=>root.render(<AccurateImportForm/>));
+ const upload=container.querySelector<HTMLInputElement>('input[type="file"]')!;
+ Object.defineProperty(upload,"files",{value:[new File(["fixture"],"master.xlsx")],configurable:true});
+ await act(async()=>upload.dispatchEvent(new Event("change",{bubbles:true})));
+ const button=(label:string)=>Array.from(container.querySelectorAll("button")).find(b=>b.textContent?.trim()===label)!;
+ await act(async()=>button("Cek perubahan").click());
+ await act(async()=>button("Impor saldo awal juga").click());
+ expect(container.querySelector('input[type="date"]')).not.toBeNull();
+ expect(button("Import Sekali").disabled).toBe(true);
+ await act(async()=>button("Cek perubahan").click());
+ expect(actions.preflightSaldoAwalSekali).toHaveBeenCalledOnce();
+ expect(actions.konfirmasiImporAccurate).not.toHaveBeenCalled();
+ expect(actions.postSaldoAwalAccurate).not.toHaveBeenCalled();
+});

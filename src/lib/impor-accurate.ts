@@ -94,6 +94,7 @@ export type ExistingAccurateCategory = {
   id: string;
   name: string;
   parent_id: string | null;
+  is_active?: boolean;
 };
 
 export type ExistingAccurateItem = Omit<AccurateItem, "row_no"> & { id: string };
@@ -602,8 +603,9 @@ function normalizedComparable(field: (typeof COMPARABLE_FIELDS)[number], value: 
 }
 
 function changedFields(item: AccurateItem, existing: ExistingAccurateItem): string[] {
+  const desired = { ...item, buy_unit: item.item_type === "Persediaan" ? (item.buy_unit || item.unit) : null };
   return COMPARABLE_FIELDS.filter((field) => (
-    JSON.stringify(normalizedComparable(field, item[field]))
+    JSON.stringify(normalizedComparable(field, desired[field]))
       !== JSON.stringify(normalizedComparable(field, existing[field]))
   ));
 }
