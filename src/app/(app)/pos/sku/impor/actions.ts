@@ -43,6 +43,8 @@ import {
 } from "@/lib/impor-saldo-accurate";
 import { bagiImporBatch, hitungProgresImpor, type ProgresImpor } from "@/lib/impor-accurate-batch";
 
+import { kategoriTergantikan } from "@/lib/impor-category-cleanup";
+
 const BACK = "/pos/sku/impor";
 
 async function assertBolehKelola() {
@@ -219,7 +221,7 @@ async function saveImportProgress(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   runId: string,
-  summary: Record<string, number>,
+  summary: Record<string, unknown>,
   progress: AccurateImportProgress,
 ) {
   const { error } = await supabase.from("import_runs").update({
@@ -439,11 +441,11 @@ async function findOrCreateImportRun(supabase: any, input: {
   rows: AccuratePreviewRow[];
 }) {
   const existing = await supabase.from("import_runs")
-    .select("id, status").eq("kind", "master_accurate").eq("source_hash", input.sourceHash).maybeSingle();
+    .select("id, status, summary").eq("kind", "master_accurate").eq("source_hash", input.sourceHash).maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
   if (existing.data) {
     if (existing.data.status === "posted") {
-      return { id: String(existing.data.id), status: "posted" as const, reapplying: true };
+      return { id: String(existing.data.id), status: "posted" as const, reapplying: true, cleanupPending: existing.data.summary?.category_cleanup_ids?.length > 0 };
     }
     if (existing.data.status !== "previewed") throw new Error("Batch file ini tidak dapat dilanjutkan.");
     const previous = await supabase.from("import_runs").select("id,status")
@@ -547,7 +549,7 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     }) || parsed.rows.some(item => master.categories.get(item.category_name.toLowerCase())?.is_active === false);
     // A posted hash protects stock postings; it must not freeze editable masters.
     const masterAlreadyPosted = importRun.status === "posted"
-      && summary.Baru === 0 && summary.Update === 0 && !categoryChanges;
+      && summary.Baru === 0 && summary.Update === 0 && !categoryChanges && !importRun.cleanupPending;
     return {
       ok: true,
       phase: masterAlreadyPosted ? "done" : "preview",
@@ -769,6 +771,16 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const master = await muatMasterAccurate(supabase);
     parsed = cocokkanKategoriAccurate({ ...parsed, categories: pakaiKategoriDariMaster ? parsed.categories : parsedCategories.rows }, [...master.categories.values()]);
     const categories = parsed.categories;
+    const originalCategories = [...master.categories.values()].map(row => ({ ...row }));
+    const protectedNames = [...categories.map(row => row.name), ...parsed.rows.map(row => row.category_name)];
+    const protectedIds = new Set(protectedNames.map(name => master.categories.get(name.toLowerCase())?.id));
+    const cleanupIds = [...new Set([
+      ...kategoriTergantikan(parsed.rows, master.items, [...master.categories.values()], protectedNames),
+      ...(Array.isArray(run.data.summary?.category_cleanup_ids) ? run.data.summary.category_cleanup_ids as string[] : []),
+    ])].filter(id => !protectedIds.has(id));
+    // Persist before any writes so interrupted/replayed imports can finish cleanup.
+    const progressSummary = { ...summarize(buatPreviewAccurate(parsed, master.items)), category_cleanup_ids: cleanupIds };
+    await saveImportProgress(supabase, runId, progressSummary, progressState("menyiapkan", 0, parsed.rows.length));
 
     for (const category of categories) {
       await ensureCategory(supabase, master, category.name);
@@ -795,7 +807,6 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const resultByRow = new Map(initialPreview.map((row) => [rowKey(row), row]));
     const itemsToSave = parsed.rows.filter((item) => (statusByRow.get(rowKey(item)) ?? "Baru") !== "Sama");
     const sameCount = parsed.rows.length - itemsToSave.length;
-    const progressSummary = summarize(initialPreview);
     let completed = sameCount;
     await saveImportProgress(supabase, runId, progressSummary, progressState("menyiapkan", completed, parsed.rows.length));
 
@@ -829,10 +840,58 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const rows = [...resultByRow.values()].sort((a, b) => a.row_no - b.row_no);
     const summary = summarize(rows);
     await refreshImportAudit(supabase, runId, rows);
+    let cleanupFailed = false;
+    let removedCategories = 0;
+    // A failed replacement protects its entire old branch, but must not strand
+    // completed branches when the user fixes the file (which changes its hash).
+    let failedItems = parsed.rows.filter(item => resultByRow.get(rowKey(item))?.status === "Ditolak");
+    let categoryReadFailed = false;
+    if (failedItems.length) {
+      // Item upsert can succeed before unit writes fail. Read the committed
+      // destination instead of treating every failed row as an unmoved item.
+      const failedIds = failedItems.flatMap(item => {
+        const existing = existingByCode.get(item.code.trim().toLowerCase());
+        return existing ? [existing.id] : [];
+      });
+      const savedCategories = new Map<string, string | null>();
+      // Bound URL size and stay below Supabase's 1,000-row response cap.
+      for (const ids of bagiImporBatch(failedIds, 100)) {
+        const persisted = await supabase.from("items").select("id,category_id").in("id", ids);
+        if (persisted.error) { categoryReadFailed = true; break; }
+        for (const row of persisted.data ?? []) savedCategories.set(row.id, row.category_id);
+        if (ids.some(id => !savedCategories.has(id))) { categoryReadFailed = true; break; }
+      }
+      if (!categoryReadFailed) {
+        failedItems = failedItems.filter(item => savedCategories.get(existingByCode.get(item.code.trim().toLowerCase())?.id ?? "")
+          !== master.categories.get(item.category_name.toLowerCase())?.id);
+      }
+    }
+    const blockedIds = new Set(kategoriTergantikan(failedItems, master.items, originalCategories, []));
+    let previousSize = -1;
+    while (previousSize !== blockedIds.size) {
+      previousSize = blockedIds.size;
+      originalCategories.forEach(category => {
+        if (category.parent_id && blockedIds.has(category.parent_id)) blockedIds.add(category.id);
+      });
+    }
+    const readyCleanupIds = categoryReadFailed ? [] : cleanupIds.filter(id => !blockedIds.has(id));
+    const cleanupDeferred = readyCleanupIds.length !== cleanupIds.length;
+    for (const id of readyCleanupIds) {
+      // The DB locks the row and checks EVERY FK, including discounts and
+      // commission rules. Failed/partial imports keep categories still in use.
+      const { error } = await supabase.rpc("delete_unused_item_category", { p_category_id: id });
+      if (!error) removedCategories += 1;
+      else if (error.code !== "23503" && error.code !== "P0002") cleanupFailed = true;
+    }
+    // Keep ancestors too: an unavailable child deletion temporarily blocks its parent.
+    const cleanupPending = categoryReadFailed ? cleanupIds : cleanupFailed ? readyCleanupIds : [];
+    const cleanupMessage = (removedCategories ? ` ${removedCategories} kategori lama yang sudah tidak dipakai dibersihkan.` : "")
+      + (cleanupPending.length ? " Sebagian kategori lama belum berhasil dibersihkan. Jalankan cek perubahan dan impor ulang untuk mencoba lagi." : "")
+      + (cleanupDeferred ? " Pembersihan kategori lama ditunda untuk kelompok barang yang gagal disimpan." : "");
     const postedRun = await supabase.from("import_runs").update({
       status: "posted",
       posted_at: new Date().toISOString(),
-      summary: { ...summary, master_reapplications: Number(run.data.summary?.master_reapplications ?? 0) + (run.data.status === "posted" ? 1 : 0), progress: progressState("selesai", parsed.rows.length, parsed.rows.length) },
+      summary: { ...summary, category_cleanup_ids: cleanupPending, master_reapplications: Number(run.data.summary?.master_reapplications ?? 0) + (run.data.status === "posted" ? 1 : 0), progress: progressState("selesai", parsed.rows.length, parsed.rows.length) },
     })
       .eq("id", runId).in("status", ["previewed", "posted"]);
     if (postedRun.error) throw new Error(postedRun.error.message);
@@ -846,8 +905,8 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
       ok: true,
       phase: "done",
       message: summary.Ditolak > 0
-        ? `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. ${summary.Ditolak} barang ditahan untuk diperbaiki. Barang yang aman sudah disimpan; saldo akan dilanjutkan hanya untuk barang yang siap.`
-        : `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. Master tersimpan; saldo stok sedang dilanjutkan.`,
+        ? `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. ${summary.Ditolak} barang ditahan untuk diperbaiki. Barang yang aman sudah disimpan; saldo akan dilanjutkan hanya untuk barang yang siap.${cleanupMessage}`
+        : `${summary.Baru} baru, ${summary.Update} diperbarui, ${summary.Sama} tanpa perubahan. Master tersimpan; saldo stok sedang dilanjutkan.${cleanupMessage}`,
       hierarchy_count: categories.filter((row) => row.parent_name).length,
       rows: ringkasPreviewAccurate(rows),
       total_rows: rows.length,
