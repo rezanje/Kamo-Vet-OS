@@ -20,12 +20,16 @@ let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   state.items=[];
+  state.rows = [
+    { id: "parent", name: "ACCESORIS", parent_id: null, is_active: true },
+    { id: "child", name: "COLLAR", parent_id: "parent", is_active: true },
+  ];
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); });
-async function render(edit?: string) {
-  const tree = await Page({ searchParams: Promise.resolve({ edit }) });
+async function render(edit?: string, hapus?: string) {
+  const tree = await Page({ searchParams: Promise.resolve({ edit, hapus }) });
   await act(async () => root.render(tree));
 }
 it("loads the selected name and parent when Ubah is clicked after opening the create form", async () => {
@@ -51,5 +55,40 @@ it("counts category usage past Supabase's 1000-row response limit",async()=>{
  await render();
  const row=Array.from(container.querySelectorAll("tbody tr")).find(row=>row.textContent?.includes("COLLAR"))!;
  expect(row.textContent).toContain("1501 barang");
- expect(row.textContent).not.toContain("Hapus");
+ expect(row.querySelector('a[href="/pos/kategori?hapus=child"]')).not.toBeNull();
+});
+
+it("shows a removal link for parents and explains that their subcategories need a destination", async () => {
+  await render(undefined, "parent");
+  const row = container.querySelector("tbody tr")!;
+  expect(row.querySelector('a[href="/pos/kategori?hapus=parent"]')).not.toBeNull();
+  expect(container.textContent).toContain("1 subkategori");
+  expect(container.querySelector('select[name="replacement_id"]')).not.toBeNull();
+  expect(container.querySelector('select[name="replacement_id"] option[value="child"]')).toBeNull();
+});
+it("requires an explicit replacement for a category with products", async () => {
+  state.items = [{ category_id: "child" }];
+  await render(undefined, "child");
+  const select = container.querySelector<HTMLSelectElement>('select[name="replacement_id"]')!;
+  expect(select).not.toBeNull();
+  expect(select.required).toBe(true);
+  expect(select.value).toBe("");
+  expect(select.querySelector('option[value="child"]')).toBeNull();
+  expect(select.querySelector('option[value="parent"]')).not.toBeNull();
+  expect(container.textContent).toContain("Pindahkan dan hapus");
+});
+it("asks for confirmation before deleting an unused category without moving products", async () => {
+  await render(undefined, "child");
+  expect(container.textContent).toContain("Hapus kategori COLLAR?");
+  expect(container.querySelector('select[name="replacement_id"]')).toBeNull();
+  expect(container.textContent).toContain("Hapus kategori ini");
+});
+
+it("resets the replacement choice when opening a different category's deletion form", async () => {
+  state.rows.push({ id: "other", name: "LAIN", parent_id: "parent", is_active: true });
+  state.items = [{ category_id: "child" }, { category_id: "other" }];
+  await render(undefined, "child");
+  container.querySelector<HTMLSelectElement>('select[name="replacement_id"]')!.value = "parent";
+  await render(undefined, "other");
+  expect(container.querySelector<HTMLSelectElement>('select[name="replacement_id"]')!.value).toBe("");
 });
