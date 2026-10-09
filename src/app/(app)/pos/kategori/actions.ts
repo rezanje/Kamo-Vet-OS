@@ -52,8 +52,11 @@ export async function hapusKategori(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) redirect(`${BACK}?error=${encodeURIComponent("Kategori tidak valid")}`);
 
-  const { error } = await supabase.rpc("delete_unused_item_category", { p_category_id: id });
-  if (error) redirect(`${BACK}?error=${encodeURIComponent(error.message)}`);
+  const replacementId = String(formData.get("replacement_id") ?? "").trim() || null;
+  const { error } = await supabase.rpc("remove_item_category", {
+    p_category_id: id, p_replacement_id: replacementId,
+  });
+  if (error) redirect(`${BACK}?hapus=${encodeURIComponent(id)}&error=${encodeURIComponent(error.message)}`);
   refreshKategori();
   redirect(`${BACK}?success=${encodeURIComponent("Kategori berhasil dihapus.")}`);
 }

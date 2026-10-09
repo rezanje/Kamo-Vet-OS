@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
-import { buildTree, labelPath, type KategoriRow } from "@/lib/kategori";
+import { buildTree, labelPath, flatOptions, type KategoriRow } from "@/lib/kategori";
 import { simpanKategori, toggleKategori, hapusKategori } from "./actions";
 
 async function categoryUsage(supabase: Awaited<ReturnType<typeof createClient>>) {
@@ -20,20 +20,33 @@ async function categoryUsage(supabase: Awaited<ReturnType<typeof createClient>>)
 export default async function KategoriBarangPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; hapus?: string }>;
 }) {
-  const { error, success, edit } = await searchParams;
+  const { error, success, edit, hapus } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data }, pakai] = await Promise.all([
+  const [{ data, error: categoryError }, pakai] = await Promise.all([
     supabase.from("item_categories").select("id, name, parent_id, is_active").order("name"),
     categoryUsage(supabase),
   ]);
 
+  if (categoryError) throw new Error(categoryError.message);
   const rows = (data ?? []) as KategoriRow[];
   const tree = buildTree(rows);
   const editing = edit ? rows.find((r) => r.id === edit) ?? null : null;
+  const deleting = hapus ? rows.find(r => r.id === hapus) ?? null : null;
+  const childCount = deleting ? rows.filter(r => r.parent_id === deleting.id).length : 0;
+  const itemCount = deleting ? pakai.get(deleting.id) ?? 0 : 0;
+  const needsReplacement = itemCount > 0 || childCount > 0;
+  const descendants = new Set(deleting ? [deleting.id] : []);
+  let previousSize = -1;
+  while (previousSize !== descendants.size) {
+    previousSize = descendants.size;
+    rows.forEach(row => { if (row.parent_id && descendants.has(row.parent_id)) descendants.add(row.id); });
+  }
+  const replacements = flatOptions(rows).filter(option => !descendants.has(option.id)
+    && (!childCount || !rows.find(row => row.id === option.id)?.parent_id));
 
   // Dihitung LANGSUNG (barang yang kategorinya persis baris ini), tidak termasuk
   // anak — supaya jelas kategori mana yang benar-benar masih dipakai.
@@ -55,6 +68,31 @@ export default async function KategoriBarangPage({
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah kategori barang."
     >
+      {bolehKelola && deleting && (
+        <form key={deleting.id} action={hapusKategori} className="crm-sec" style={{ marginBottom: 14 }}>
+          <input type="hidden" name="id" value={deleting.id} />
+          <h2 style={{ fontSize: 15, marginTop: 0 }}>Hapus kategori {deleting.name}?</h2>
+          <p>{itemCount} barang langsung dan {childCount} subkategori memakai kategori ini.</p>
+          {needsReplacement ? (
+            <>
+              <p>Pilih tujuan pemindahan. Barang, stok, dan transaksi tetap disimpan; subkategori ikut pindah ke induk pengganti.</p>
+              <label className="flab" htmlFor="replacement-category">Pindahkan ke kategori</label>
+              <select id="replacement-category" className="fi" name="replacement_id" required defaultValue="" style={{ maxWidth: 420 }}>
+                <option value="">— pilih kategori pengganti —</option>
+                {replacements.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+              {replacements.length === 0 && <p>Belum ada tujuan yang sesuai. Buat kategori induk aktif terlebih dahulu.</p>}
+            </>
+          ) : <p>Kategori ini kosong dan dapat dihapus jika tidak dipakai aturan lain.</p>}
+          <p style={{ fontSize: 12 }}>Jika masih dipakai aturan diskon, komisi, target penjualan, atau varian barang, penghapusan ditolak dan seluruh pemindahan dibatalkan. Sesuaikan aturan tersebut terlebih dahulu.</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <SubmitButton className="btn-acc" pendingText="Menghapus…" disabled={needsReplacement && replacements.length === 0}>
+              {needsReplacement ? "Pindahkan dan hapus" : "Hapus kategori ini"}
+            </SubmitButton>
+            <Link href="/pos/kategori" className="btn-def">Batal</Link>
+          </div>
+        </form>
+      )}
       {bolehKelola && (
         <form key={editing?.id ?? "new"} action={simpanKategori} className="crm-sec" style={{ marginBottom: 14 }}>
           <input type="hidden" name="id" value={editing?.id ?? ""} />
@@ -108,14 +146,7 @@ export default async function KategoriBarangPage({
                             {r.is_active ? "Nonaktifkan" : "Aktifkan"}
                           </SubmitButton>
                         </form>
-                        {(pakai.get(r.id) ?? 0) === 0 && !rows.some((row) => row.parent_id === r.id) && (
-                          <form action={hapusKategori}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
-                              Hapus
-                            </SubmitButton>
-                          </form>
-                        )}
+                        <Link href={`/pos/kategori?hapus=${r.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c", textDecoration: "none" }}>Hapus</Link>
                       </div>
                     </td>
                   )}
