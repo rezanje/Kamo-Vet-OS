@@ -193,7 +193,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
   const { data: invData } = await completeReportQuery(supabase
     .from("invoices")
-    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp), clinic_demo_invoice_snapshots(invoice_id)", { count: "exact" })
+    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
     .eq("paid_status", "Lunas").is("voided_at", null)
     .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
 
