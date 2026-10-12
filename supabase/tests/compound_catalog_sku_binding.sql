@@ -89,6 +89,27 @@ begin
     if sqlerrm not like 'ACCESS_DENIED:%' then raise; end if; failed:=true;
   end;
   if not failed then raise exception 'doctor changed selling binding'; end if;
+  -- PostgREST supplies request.jwt.claims, not necessarily legacy per-claim GUCs.
+  -- Exercise the real nested official issue and FIFO triggers with that session.
+  perform set_config('request.jwt.claim.role','',true);
+  perform set_config('request.jwt.claim.sub','',true);
+  before_state:=pg_temp.binding_state();
+  for i in 1..3 loop
+    perform set_config('request.jwt.claims',case i
+      when 1 then '{"sub":"fa000000-0000-4000-8000-000000000002","role":"anon"}'
+      when 2 then '{"sub":"fa000000-0000-4000-8000-000000000002","role":"service_role"}'
+      else '{"role":"authenticated"}' end,true);
+    failed:=false;
+    begin
+      perform public.clinic_issue_official_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',version_id,'invalid-session-'||i,null);
+    exception when raise_exception then
+      if sqlerrm not like 'ACCESS_DENIED:%' then raise; end if; failed:=true;
+    end;
+    if not failed or pg_temp.binding_state() is distinct from before_state then
+      raise exception 'invalid session issued an official compound';
+    end if;
+  end loop;
+  perform set_config('request.jwt.claims','{"sub":"fa000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
   issued:=public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',
     'fb000000-0000-4000-8000-000000000002',null,'binding-valid',version_id,null);
   after_state:=pg_temp.binding_state();
@@ -98,6 +119,8 @@ begin
   direct_issued:=public.clinic_issue_official_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',version_id,'binding-direct',null);
   if not exists(select 1 from public.clinic_compound_sales where recipe_id=direct_issued and sale_item_id='fb000000-0000-4000-8000-000000000002' and sale_price=75)
     or not exists(select 1 from public.prescription_items where compound_recipe_id=direct_issued and harga=75) then raise exception 'direct official call bypassed configured selling price'; end if;
+  perform set_config('request.jwt.claim.role','authenticated',true);
+  perform set_config('request.jwt.claims','',true);
   perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000001',true);
   perform public.bind_compound_formula_sale_item(formula_id,'fb000000-0000-4000-8000-000000000003');
   perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000002',true);
