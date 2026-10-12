@@ -1,4 +1,5 @@
 "use server";
+import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-policy";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { resolveClinicSalesperson } from "@/lib/clinic-payment";
@@ -47,8 +48,11 @@ async function postInvoiceAtomik(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
+  demo?: { policyId: string; employees: string[] },
 ): Promise<{ invoiceNo: string | null; error: { code?: string; message: string } | null }> {
-  const { data: invoiceId, error } = payments
+  const { data: invoiceId, error } = demo
+    ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
+    : payments
     ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
     : await supabase.rpc("clinic_post_invoice", params);
   if (error || !invoiceId) return { invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
@@ -82,9 +86,13 @@ export async function bayarVisit(formData: FormData) {
       mrGate
         ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mrGate.id)
         : Promise.resolve({ data: [] as { jenis: string; kategori: string | null }[] }),
-      supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
+      supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle(),
       supabase.from("consents").select("status").eq("visit_id", visitId),
     ]);
+    if (inpatRow?.consent_id) {
+      const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
+      if (linked.error || linked.data !== true) redirect(`${back}?error=${encodeURIComponent("Persetujuan khusus rawat inap tidak valid.")}`);
+    }
     const aturanConsent = await bacaAturanConsent(supabase);
     const boleh = bolehBayar(
       (jasaRows ?? []) as { jenis: string; kategori: string | null }[],
@@ -241,6 +249,26 @@ export async function bayarVisit(formData: FormData) {
   } catch (error) {
     redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Penjual tidak valid.")}`);
   }
+  const demoPolicyId = String(formData.get("demo_policy_id") ?? "").trim();
+  let demoCustomerFee = 0;
+  let demo: {policyId: string;employees: string[]} | undefined;
+  if (demoPolicyId) {
+    if (paidStatus !== "Lunas") redirect(`${back}?error=${encodeURIComponent("Aturan DEMO hanya untuk checkout awal lunas.")}`);
+    const {data: policyRow, error: policyError} = await supabase.from("clinic_demo_policies")
+      .select("id,name,incentive_percent,fee_bearer,fee_rates,admin_revenue_code,admin_expense_code").eq("id",demoPolicyId).maybeSingle();
+    if (policyError || !policyRow) redirect(`${back}?error=${encodeURIComponent("Aturan DEMO tidak ditemukan. Muat ulang halaman.")}`);
+    try {
+      const employees: unknown = JSON.parse(String(formData.get("demo_employee_ids") ?? "[]"));
+      if (!Array.isArray(employees) || !employees.length || employees.length>12 || employees.some(id=>typeof id!=="string" || !id)) throw new Error("Pilih petugas penerima insentif.");
+      const policy: DemoFinancialPolicy = {id:policyRow.id,name:policyRow.name,incentivePercent:Number(policyRow.incentive_percent),feeBearer:policyRow.fee_bearer,
+        feeRates:policyRow.fee_rates,adminRevenueCode:policyRow.admin_revenue_code,adminExpenseCode:policyRow.admin_expense_code};
+      payments = payments ?? [{method:metode,amount:total,kas_code:await kodeAkunBayar(supabase,metode,v?.branch_id ?? null)}];
+      const quote = quoteDemoPayments(policy,payments);
+      demoCustomerFee = quote.customerFee;
+      if (!split && (!Number.isFinite(Number(formData.get("demo_received"))) || Number(formData.get("demo_received")) < total+quote.customerFee)) throw new Error("Uang diterima belum menutup tagihan termasuk admin.");
+      demo = {policyId:demoPolicyId,employees};
+    } catch (error) { redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Aturan DEMO tidak valid.")}`); }
+  }
   const posted = await postInvoiceAtomik(supabase, {
     p_visit_id: visitId,
     p_request_key: requestKey,
@@ -250,7 +278,7 @@ export async function bayarVisit(formData: FormData) {
       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
     },
     p_lines: barisUntukPosting(rows),
-  }, payments);
+  }, payments, demo);
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(posted.error))}`);
   }
@@ -281,7 +309,8 @@ export async function bayarVisit(formData: FormData) {
   if (paidStatus === "Lunas" && v?.customer_id && cust?.phone) {
     await kirimStrukWa(supabase, {
       invoiceNo, customerId: v.customer_id, phone: cust.phone, customerName: cust.name ?? "Kak", petName: patient?.name,
-      total, items: rows.map((r) => ({ deskripsi: r.deskripsi, qty: r.qty, harga: r.harga })),
+      total: total + demoCustomerFee, items: [...rows.map((r) => ({ deskripsi: r.deskripsi, qty: r.qty, harga: r.harga })),
+        ...(demoCustomerFee > 0 ? [{deskripsi:"Admin pembayaran DEMO",qty:1,harga:demoCustomerFee}] : [])],
     });
   }
 

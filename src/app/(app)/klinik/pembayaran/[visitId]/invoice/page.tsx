@@ -1,3 +1,4 @@
+import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -31,6 +32,9 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
   const { data: payments } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
 
+  const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
+    .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
+  if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(visit.branches);
@@ -67,6 +71,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
           </div>
         </div>
 
+        <ClinicDemoFees snapshot={demoSnapshot}/>
         {/* Tagih ke */}
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
           <div>

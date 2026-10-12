@@ -3,6 +3,7 @@
 import { METODE_BAYAR as SPLIT_METHODS } from "@/lib/kas-akun";
 import { validateSplitPaymentTotal, type SplitPaymentDraft } from "@/lib/clinic-split-payment";
 
+import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-policy";
 import type { PilihanPenjual } from "@/lib/penjual";
 import type { ItemUnit } from "@/lib/satuan";
 import { useClinicDraft } from "@/components/useClinicDraft";
@@ -150,10 +151,11 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   );
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, draftUserId = "", draftScope = `payment:${visitId}:new` }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", draftScope = `payment:${visitId}:new` }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   draftUserId?: string; draftScope?: string;
+  demoPolicy?: DemoFinancialPolicy | null; demoStaff?: PilihanPenjual[];
   manualUnitsEnabled?: boolean;
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
@@ -166,6 +168,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [reason, setReason] = useState("");
   const [voucher, setVoucher] = useState("");
   const [salesperson, setSalesperson] = useState(initialSalespersonId);
+  const [demoEnabled, setDemoEnabled] = useState(!editMode && !!demoPolicy && demoStaff.length > 0 && /^DEMO\b/i.test(patient.owner));
+  const [demoPolicyId, setDemoPolicyId] = useState(demoPolicy?.id ?? "");
+  const [demoEmployees, setDemoEmployees] = useState(demoStaff.map(person => person.id));
   const [mixed, setMixed] = useState(false);
   const [splitPayments, setSplitPayments] = useState<SplitPaymentDraft[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
 
@@ -204,17 +209,30 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   // Dulu angkanya hardcoded sementara server sudah benar → layar menagih
   // Rp11.330 lebih besar dari yang tersimpan di invoice.
   const tax = Math.round((dpp * ppnRate) / 100);
-  const total = dpp + tax;
+  const baseTotal = dpp + tax;
+  let demoError: string | null = null;
+  let customerFee = 0; let companyFee = 0;
+  if (demoEnabled && demoPolicy) {
+    if (demoPolicyId !== demoPolicy.id) demoError = "Versi aturan draf sudah berubah. Periksa aturan lalu aktifkan ulang sebelum checkout baru.";
+    else {
+      try {
+        const quote = quoteDemoPayments(demoPolicy, mixed ? splitPayments : [{method: metode, amount: baseTotal}]);
+        customerFee = quote.customerFee; companyFee = quote.companyFee;
+      } catch (error) { demoError = error instanceof Error ? error.message : "Periksa pembayaran DEMO."; }
+    }
+    if (!demoEmployees.length) demoError = "Pilih petugas penerima insentif.";
+  }
+  const total = baseTotal + customerFee;
   const dpPaid = initialDpAmount;
   const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
 
   const [bayar, setBayar] = useState(0);
   const splitAmount = splitPayments.reduce((sum, part) => sum + part.amount, 0);
-  const totalDiterima = dpPaid + initialCreditAmount + (mixed ? splitAmount : bayar);
+  const totalDiterima = dpPaid + initialCreditAmount + (mixed ? splitAmount + customerFee : bayar);
   const kembalian = mixed ? 0 : Math.max(0, bayar - sisa);
   let splitError: string | null = null;
   if (mixed) {
-    try { validateSplitPaymentTotal(splitPayments, total); }
+    try { validateSplitPaymentTotal(splitPayments, baseTotal); }
     catch (error) { splitError = error instanceof Error ? error.message : "Periksa rincian pembayaran."; }
   }
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
@@ -222,8 +240,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
 
   const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit } = useClinicDraft({
     userId: draftUserId, scope: draftScope, requestKey,
-    snapshot: { obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson, mixed, splitPayments },
-    optionalSnapshotKeys: ["mixed", "splitPayments"],
+    snapshot: { obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson, mixed, splitPayments, demoEnabled, demoPolicyId, demoEmployees },
+    optionalSnapshotKeys: ["mixed", "splitPayments", "demoEnabled", "demoPolicyId", "demoEmployees"],
     restore: value => {
       const restoreRows = (saved: Line[], initial: Line[]) => {
         const restored = saved.map(row => {
@@ -238,6 +256,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
       setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
       setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setSalesperson(value.salesperson);
+      setDemoEnabled(!editMode && !!demoPolicy && value.demoEnabled === true);
+      setDemoPolicyId(typeof value.demoPolicyId === "string" ? value.demoPolicyId : demoPolicy?.id ?? "");
+      setDemoEmployees(Array.isArray(value.demoEmployees) ? value.demoEmployees.filter(id => demoStaff.some(person => person.id === id)) : demoStaff.map(person => person.id));
       setMixed(!editMode && value.mixed === true);
       setSplitPayments(Array.isArray(value.splitPayments) ? value.splitPayments : [{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
     },
@@ -253,6 +274,11 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
     <form action={data => submit(data, bayarVisit)} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="requestKey" value={submissionKey} />
+      {demoEnabled && !editMode && <>
+        <input type="hidden" name="demo_policy_id" value={demoPolicyId}/>
+        <input type="hidden" name="demo_employee_ids" value={JSON.stringify(demoEmployees)}/>
+        <input type="hidden" name="demo_received" value={bayar}/>
+      </>}
       <input type="hidden" name="items" value={items} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="voucherCode" value={voucher} />
@@ -293,6 +319,16 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
         </div>
       </div>
 
+      {!editMode && demoPolicy && demoStaff.length > 0 && <div className="card" style={{marginBottom:12}}>
+        <label><input type="checkbox" checked={demoEnabled} onChange={e=>{setDemoEnabled(e.target.checked);setDemoPolicyId(demoPolicy.id);}}/> Gunakan aturan DEMO</label>
+        <p style={{fontSize:12}}>{demoPolicy.name} · pool jasa {demoPolicy.incentivePercent}%. Checkout awal lunas. <Link href="/klinik/aturan-demo">Lihat aturan</Link></p>
+        {demoEnabled && <>
+          <p style={{fontSize:12}}>Pilih penerima dari petugas yang tercatat menangani pasien. Satu pool dibagi rata; admin tidak masuk dasar insentif.</p>
+          {demoStaff.map(person=><label key={person.id} style={{display:"block",fontSize:12}}><input type="checkbox" checked={demoEmployees.includes(person.id)} onChange={e=>setDemoEmployees(e.target.checked ? [...demoEmployees,person.id] : demoEmployees.filter(id=>id!==person.id))}/>{person.nama} — {person.jabatan}</label>)}
+          <p style={{fontSize:12}}>Biaya admin {demoPolicy.feeBearer==="customer" ? "pelanggan" : "perusahaan"}: {rp(customerFee+companyFee)}. {mixed ? "Nominal bagian diisi sebelum admin; biaya pelanggan ditambahkan ke metode masing-masing." : "Total pelanggan sudah termasuk admin."}</p>
+          {demoError && <div role="alert">{demoError}</div>}
+        </>}
+      </div>}
       <div className="card" style={{ marginBottom: 12 }}>
         <label className="flab" htmlFor="clinic-salesperson">Penjual / dokter / petugas</label>
         {editMode ? <div>{sealedSalespersonName} · mengikuti invoice tersimpan</div> : (
@@ -320,6 +356,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               <div style={{ fontSize: 11, color: "var(--tm)", lineHeight: 1.5 }}>{catatanResep || "—"}</div>
             </div>
             <div>
+              {customerFee > 0 && <SumRow label="Admin pembayaran DEMO" value={rp(customerFee)}/>}
               <SumRow label="Subtotal (Obat + Jasa)" value={rp(subtotal)} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0" }}>
                 <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
@@ -476,8 +513,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
                 <i className="ti ti-printer" /> Cetak
               </span>
             )}
-            <SubmitButton className="btn-acc" name="finalize" value="0" disabled={!!splitError} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>Simpan</SubmitButton>
-            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={!!splitError} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
+            <SubmitButton className="btn-acc" name="finalize" value="0" disabled={!!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>{demoEnabled ? "Simpan lunas DEMO" : "Simpan"}</SubmitButton>
+            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={!!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
           </div>
         </div>
       </div>

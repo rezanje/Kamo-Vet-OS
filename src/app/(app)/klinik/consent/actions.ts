@@ -28,12 +28,15 @@ export async function buatConsent(formData: FormData) {
   }
 
   const [{ data: tpl }, { data: visit }] = await Promise.all([
-    supabase.from("consent_templates").select("id, isi").eq("id", templateId).maybeSingle(),
+    supabase.from("consent_templates").select("id, isi, is_active, branch_id").eq("id", templateId).maybeSingle(),
     supabase.from("visits")
-      .select("id, dokter, created_at, pets(name, species), customers(name), branches(name)")
+      .select("id, branch_id, dokter, created_at, pets(name, species), customers(name), branches(name)")
       .eq("id", visitId).maybeSingle(),
   ]);
   if (!tpl || !visit) redirect(`${back}?error=${encodeURIComponent("Template atau kunjungan tidak ditemukan")}`);
+  if (!tpl.is_active || (tpl.branch_id && tpl.branch_id !== visit.branch_id)) {
+    redirect(`${back}?error=${encodeURIComponent("Pilih template aktif untuk cabang pasien")}`);
+  }
 
   const pet = one(visit.pets as Rel<{ name: string; species: string | null }>);
   const cust = one(visit.customers as Rel<{ name: string }>);

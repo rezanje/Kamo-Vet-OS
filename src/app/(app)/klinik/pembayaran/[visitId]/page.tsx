@@ -1,3 +1,4 @@
+import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { daftarPenjual } from "@/lib/penjual";
@@ -53,7 +54,11 @@ export default async function PembayaranPage({
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
-  const { data: inpat } = await supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle();
+  const { data: inpat } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
+  if (inpat?.consent_id) {
+    const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
+    if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
+  }
   const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
 
   const pet = one(visit.pets);
@@ -76,6 +81,13 @@ export default async function PembayaranPage({
   const { data: invoice } = await supabase
     .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+  const [demoPolicy, demoStaffResult, demoSnapshotResult] = await Promise.all([
+    !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
+    !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
+    invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
+  ]);
+  if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
+  const demoSnapshot = demoSnapshotResult.data;
   const { data: invItems } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
     : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null }[] };
@@ -87,7 +99,7 @@ export default async function PembayaranPage({
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const paidAmount = Number(invoice?.dp_amount ?? 0) + (paymentRows ?? [])
     .reduce((sum, p) => sum + Number(p.amount), 0);
-  const canEdit = invoice && !hasPayments
+  const canEdit = invoice && !demoSnapshot && !hasPayments
     && (invoice.correction_pending || ((paymentRows ?? []).length === 0 && invoice.paid_status !== "Lunas"));
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
@@ -420,6 +432,7 @@ export default async function PembayaranPage({
         />
       ) : invoice ? (
         <>
+          {demoSnapshot && <div className="p2ban">DEMO: admin {demoSnapshot.fee_bearer === "customer" ? "pelanggan" : "perusahaan"} {rp(Number(demoSnapshot.fee_amount))} · satu pool insentif {rp(Number(demoSnapshot.incentive_pool))}. Snapshot uang terkunci; terbit ulang mempertahankan nominal dan penerima.</div>}
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
             {invoice.paid_status === "DP" && ` — diterima ${rp(paidAmount)}, sisa ${rp(Number(invoice.total) - paidAmount)}`}
@@ -508,6 +521,8 @@ export default async function PembayaranPage({
           masterObat={masterObat}
           masterJasa={masterJasa}
           bekal={bekal}
+          demoPolicy={demoPolicy}
+          demoStaff={demoStaffResult.data ?? []}
           salespeople={salespeople}
           initialSalespersonId={defaultSalespersonId}
           catatanResep={mr?.catatan_resep ?? null}

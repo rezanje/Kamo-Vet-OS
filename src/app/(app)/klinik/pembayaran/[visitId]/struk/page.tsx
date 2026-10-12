@@ -1,3 +1,4 @@
+import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -29,6 +30,9 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
     .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at");
   const { data: payments } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
+  const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
+    .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
+  if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
   const credit = (payments ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const received = Number(invoice.dp_amount) + (payments ?? [])
@@ -82,6 +86,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Hr />
         <Row k="Metode" v={(payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-"} />
         {(payments ?? []).filter(p => !p.transferred_from).map(payment => <Row key={payment.id} k={payment.metode ?? "Pembayaran"} v={rp(Number(payment.amount))} />)}
+        <ClinicDemoFees snapshot={demoSnapshot}/>
         <Row k="Status" v={invoice.paid_status} />
         {credit > 0 && <Row k="Dialihkan" v={rp(credit)} />}
         {invoice.paid_status === "DP" && <Row k="Sisa" v={rp(Math.max(0, Number(invoice.total) - received))} />}

@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PLACEHOLDERS } from "@/lib/consent";
+import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
 import { simpanTemplate } from "./actions";
 
 export type TemplateRow = {
-  id: string; nama: string; isi: string; branch_id: string | null; is_active: boolean;
+  id: string; nama: string; isi: string; branch_id: string | null; is_active: boolean; kategori?: string;
 };
 
 const CONTOH = `Saya yang bertanda tangan di bawah ini, {nama_pemilik}, selaku pemilik hewan {nama_hewan} ({jenis_hewan}), menyatakan telah menerima penjelasan mengenai tindakan {tindakan} yang akan dilakukan oleh {dokter} di {cabang}.
@@ -58,6 +59,12 @@ export function TemplateForm({ branches, editing }: {
         </div>
       </div>
 
+      <div className="fg">
+        <label className="flab">Jenis persetujuan</label>
+        <select className="fi" name="kategori" defaultValue={editing?.kategori ?? "Umum"}>
+          {["Umum", ...TINDAKAN_KATEGORI].map(kategori => <option key={kategori}>{kategori}</option>)}
+        </select>
+      </div>
       <div className="fg">
         <label className="flab">Isi form *</label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 5 }}>

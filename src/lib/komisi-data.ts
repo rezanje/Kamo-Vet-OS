@@ -6,7 +6,7 @@ import { completeReportQuery } from "./report-query";
 // sumber angka yang sama persis.
 
 import { lineSubtotal } from "./pos-calc";
-import { hitungKomisi, type AturanKomisi, type BarisJual, type HasilKomisi } from "./komisi";
+import { mergeSharedIncentives, hitungKomisi, type AturanKomisi, type BarisJual, type HasilKomisi } from "./komisi";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -46,6 +46,7 @@ type ReturRow = {
 type InvoiceRow = {
   id: string;
   paid_at: string;
+  clinic_demo_invoice_snapshots?: {invoice_id:string} | {invoice_id:string}[] | null;
   total: number;
   salesperson_id: string | null;
   visits: { branch_id: string | null; doctor_id: string | null } | { branch_id: string | null; doctor_id: string | null }[] | null;
@@ -192,8 +193,8 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
   const { data: invData } = await completeReportQuery(supabase
     .from("invoices")
-    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp)", { count: "exact" })
-    .eq("paid_status", "Lunas")
+    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp), clinic_demo_invoice_snapshots(invoice_id)", { count: "exact" })
+    .eq("paid_status", "Lunas").is("voided_at", null)
     .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
 
   for (const inv of (invData ?? []) as InvoiceRow[]) {
@@ -214,6 +215,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       baris.push({
         tanggal: inv.paid_at.slice(0, 10),
         sumber: "klinik",
+        fixedCommission: Array.isArray(inv.clinic_demo_invoice_snapshots) ? inv.clinic_demo_invoice_snapshots.length>0 : !!inv.clinic_demo_invoice_snapshots,
         employeeId,
         branchId: v?.branch_id ?? null,
         itemId: it.item_id,
@@ -357,5 +359,12 @@ export async function komisiPeriode(
     kumpulkanBarisKomisi(supabase, periode),
     muatAturanKomisi(supabase),
   ]);
-  return { hasil: hitungKomisi(baris, aturan), baris, omzetTanpaPenjual };
+  const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
+    .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})
+    .eq("invoices.paid_status","Lunas").is("invoices.voided_at",null)
+    .gte("clinic_demo_invoice_snapshots.earned_at",`${awalPeriode(periode)}T00:00:00`).lte("clinic_demo_invoice_snapshots.earned_at",`${akhirPeriode(periode)}T23:59:59`));
+  type Allocation = {invoice_id:string;employee_id:string;amount:number;clinic_demo_invoice_snapshots:{service_basis:number}|{service_basis:number}[]};
+  const shared = (allocations as Allocation[]).map(row=>({employeeId:row.employee_id,invoiceId:row.invoice_id,amount:Number(row.amount),
+    basis:Number((Array.isArray(row.clinic_demo_invoice_snapshots) ? row.clinic_demo_invoice_snapshots[0] : row.clinic_demo_invoice_snapshots).service_basis)}));
+  return { hasil: mergeSharedIncentives(hitungKomisi(baris, aturan),shared), baris, omzetTanpaPenjual };
 }

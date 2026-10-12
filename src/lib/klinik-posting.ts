@@ -109,6 +109,10 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       UNIT_INVALID: "Satuan barang tidak cocok",
     };
     const fixedMessages: Record<string, string> = {
+      POLICY_INVALID: "Versi aturan DEMO berubah atau tidak valid. Muat ulang halaman dan periksa aturan.",
+      INCENTIVE_INVALID: "Pilih petugas aktif yang tercatat menangani pasien di cabang ini.",
+      CONSENT_REQUIRED: "Tandatangani persetujuan khusus rawat inap yang berlaku sebelum melanjutkan.",
+      INVOICE_POSTED: "Uang dan penerima insentif DEMO terkunci; terbit ulang mempertahankan snapshot.",
       ACCESS_DENIED: "Akses cabang atau kunjungan tidak diizinkan.",
       IDEMPOTENCY_CONFLICT: "Permintaan racikan bertentangan dengan penyimpanan sebelumnya.",
       RECIPE_LINKED: "Racikan sudah terhubung ke invoice dan tidak dapat dibatalkan di sini.",
