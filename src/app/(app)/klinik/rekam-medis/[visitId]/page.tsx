@@ -10,7 +10,7 @@ import { performersForService } from '@/lib/clinical-staff';
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
-import { templatesForBranch } from "@/lib/consent";
+import { hasInpatientConsent, templatesForBranch } from "@/lib/consent";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
@@ -178,15 +178,18 @@ export default async function RekamMedisPage({
   // Form persetujuan (spec 2026-07-20) — template yang berlaku utk cabang kunjungan ini.
   const [{ data: consentRows }, { data: tplRows }] = await Promise.all([
     supabase.from("consents")
-      .select("id, tindakan, isi_snapshot, status, signer_name, signature_data, signed_at")
+      .select("id, tindakan, isi_snapshot, kategori, template_id, status, signer_name, signature_data, signed_at")
       .eq("visit_id", visitId).order("created_at"),
-    supabase.from("consent_templates").select("id, nama, branch_id, is_active"),
+    supabase.from("consent_templates").select("id, nama, kategori, branch_id, is_active"),
   ]);
   const consents = (consentRows ?? []) as ConsentRow[];
   const templates = templatesForBranch(
-    (tplRows ?? []) as { id: string; nama: string; branch_id: string | null; is_active: boolean }[],
+    (tplRows ?? []) as { id: string; nama: string; kategori?: string; branch_id: string | null; is_active: boolean }[],
     (visit.branch_id as string) ?? null,
   );
+  const { data: inpatientConsentRule } = await supabase.from("consent_rules")
+    .select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle();
+  const canAdmit = inpatientConsentRule?.wajib === false || hasInpatientConsent(consentRows ?? [], inpatientConsentRule?.template_id);
 
   // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
   // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
@@ -447,6 +450,7 @@ export default async function RekamMedisPage({
             ) : (
               <TransactionForm userId={draftUserId} scope={`inpatient-admit:${visitId}`} action={admitInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <input type="hidden" name="visitId" value={visit.id} />
+                <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
                 <div style={{ flex: 2, minWidth: 240 }}>
                   <label className="flab">Rencana tindakan dari dokter PIC *</label>
                   <input className="fi" name="treatment_plan" required placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />
@@ -455,7 +459,8 @@ export default async function RekamMedisPage({
                   <label className="flab">Dokter PIC</label>
                   <input className="fi" name="doctor_name" readOnly defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
                 </div>
-                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…">Masukkan Rawat Inap</SubmitButton>
+                {!canAdmit && <p style={{ fontSize: 11, color: "#b45309" }}>Buat dan tandatangani persetujuan khusus Rawat Inap sebelum masuk.</p>}
+                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…" disabled={!canAdmit}>Masukkan Rawat Inap</SubmitButton>
               </TransactionForm>
             )}
           </div>

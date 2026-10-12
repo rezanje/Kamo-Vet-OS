@@ -34,7 +34,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 vi.mock("@/lib/dokter", () => ({ daftarDokter: async () => [] }));
 vi.mock("@/lib/rombongan-server", () => ({ bacaSaudaraKunjungan: async () => [] }));
-vi.mock("@/lib/consent", () => ({ templatesForBranch: () => [] }));
+vi.mock("@/lib/consent", async () => ({...await import("../consent"), templatesForBranch: () => [] }));
 vi.mock("../../app/(app)/klinik/rekam-medis/[visitId]/RekamForm", () => ({ RekamForm: () => null }));
 vi.mock("../../app/(app)/klinik/rawat-inap/[id]/catatan/CatatanForm", () => ({ CatatanForm: () => null }));
 vi.mock("../../app/(app)/klinik/rekam-medis/[visitId]/RacikanInline", () => ({ RacikanInline: () => null }));

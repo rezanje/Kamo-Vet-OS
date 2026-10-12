@@ -20,38 +20,16 @@ function bacaPetugas(formData:FormData,back:string,allowLegacy=false) {
 // Admit pasien rawat inap dari rekam medis (popup design klinik/07).
 export async function admitInpatient(formData: FormData) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
   const visitId = String(formData.get("visitId") ?? "");
   const treatmentPlan = String(formData.get("treatment_plan") ?? "").trim();
-  const doctorName = String(formData.get("doctor_name") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "").trim();
   const back = `/klinik/rekam-medis/${visitId}`;
-  if (!visitId || !treatmentPlan) redirect(`${back}?error=${encodeURIComponent("Isi rencana tindakan rawat inap")}`);
-
-  const { data: visit } = await supabase.from("visits").select("branch_id, dokter").eq("id", visitId).maybeSingle();
-  if (!visit) redirect(`${back}?error=${encodeURIComponent("Kunjungan tidak ditemukan")}`);
-
-  const { data: mr } = await supabase
-    .from("medical_records").select("id").eq("visit_id", visitId)
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
-
-  const { data: rec, error } = await supabase
-    .from("inpatient_records")
-    .insert({
-      branch_id: visit!.branch_id, visit_id: visitId, medical_record_id: mr?.id ?? null,
-      doctor_name: doctorName || visit!.dokter || null, treatment_plan: treatmentPlan,
-      created_by: user?.id ?? null,
-    })
-    .select("id").single();
-  if (error || !rec) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal admit rawat inap")}`);
-
-  const { error: statusLogError } = await supabase.from("inpatient_status_log").insert({
-    inpatient_record_id: rec!.id, previous_status: null, new_status: "stabil",
-    changed_by: user?.id ?? null, notes: "Admit rawat inap",
+  if (!visitId || !treatmentPlan || !requestKey) redirect(`${back}?error=${encodeURIComponent("Isi rencana tindakan dan muat ulang formulir rawat inap")}`);
+  const { data: recordId, error } = await supabase.rpc("clinic_admit_inpatient", {
+    p_visit_id: visitId, p_treatment_plan: treatmentPlan, p_request_key: requestKey,
   });
-
-  if(statusLogError) throw new Error("Admit tersimpan tetapi riwayat status belum terkonfirmasi. Periksa rawat inap sebelum menyimpan ulang.");
-  redirect(`/klinik/rawat-inap/${rec!.id}?success=admit${transactionDraftAck(formData)}`);
+  if (error || !recordId) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal masuk rawat inap")}`);
+  redirect(`/klinik/rawat-inap/${recordId}?success=admit${transactionDraftAck(formData)}`);
 }
 
 // Kolom pemantauan harian (migrasi 0106). Kosong disimpan sebagai NULL — "belum

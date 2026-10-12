@@ -9,10 +9,10 @@ vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
   let id="";
   const invoice={id:"invoice",invoice_no:"INV-FIC",request_key:state.retry?"request":"original-key",subtotal:100,discount:0,tax:0,total:100,dp_amount:0,paid_status:"Belum Lunas",metode_bayar:"Tunai",voucher_code:null,correction_pending:false};
   const q={select:()=>q,eq:(key:string,value:string)=>{if(key==="id")id=value;return q;},is:()=>q,order:()=>q,limit:()=>q,update:(patch:{points?:number})=>{if(table==="customers"&&patch.points!==undefined)state.balance=patch.points;return q;},insert:(row:{delta:number})=>{if(table==="point_ledger")state.pointWrites.push(row);return q;},
-   maybeSingle:async()=>({data:table==="customers"?{points:state.balance,customer_categories:{is_active:true,rupiah_per_poin:10}}:table==="visits"?{branch_id:"branch",customer_id:state.customer?"customer":null,doctor_id:null,service_provider_id:"groomer"}:table==="employees"?(id==="groomer"?{id,branch_id:"branch"}:id==="foreign"?{id,branch_id:"other"}:null):table==="invoices"?(state.existing||id==="invoice"?invoice:null):null,error:null}),
+   maybeSingle:async()=>({data:table==="clinic_demo_policies"?{id:"policy",name:"DEMO",incentive_percent:5,fee_bearer:"customer",fee_rates:{Transfer:100},admin_revenue_code:"4303",admin_expense_code:"5501"}:table==="customers"?{points:state.balance,customer_categories:{is_active:true,rupiah_per_poin:10}}:table==="visits"?{branch_id:"branch",customer_id:state.customer?"customer":null,doctor_id:null,service_provider_id:"groomer"}:table==="employees"?(id==="groomer"?{id,branch_id:"branch"}:id==="foreign"?{id,branch_id:"other"}:null):table==="invoices"?(state.existing||id==="invoice"?invoice:null):null,error:null}),
    then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:[],error:null}).then(resolve)};return q;
  },
- rpc:async(name:string,params:Record<string,unknown>)=>{state.calls.push({name,params});return {data:["clinic_post_invoice","clinic_post_split_invoice"].includes(name)?"invoice":null,error:null};},
+ rpc:async(name:string,params:Record<string,unknown>)=>{state.calls.push({name,params});return {data:["clinic_post_invoice","clinic_post_split_invoice","clinic_post_demo_invoice"].includes(name)?"invoice":null,error:null};},
 })}));
 vi.mock("@/lib/shift",()=>({getOpenShift:async()=>({id:"shift"})}));
 vi.mock("@/lib/tindakan",()=>({bolehBayar:()=>true,kategoriBerisiko:()=>[]}));
@@ -76,6 +76,22 @@ describe("clinic payment salesperson boundary",()=>{
   state.existing=true;state.retry=true;
   await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
   expect(state.balance).toBe(110);expect(state.pointWrites).toHaveLength(1);
+ });
+
+ it("sends base mixed payments and selected staff to the DEMO atomic wrapper",async()=>{
+  const data=form("groomer");data.set("finalize","1");data.set("demo_policy_id","policy");data.set("demo_employee_ids",'["groomer"]');
+  data.set("split_payments",JSON.stringify([{method:"Tunai",amount:40},{method:"Transfer",amount:60}]));
+  await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
+  expect(state.calls[0]).toMatchObject({name:"clinic_post_demo_invoice",params:{p_policy_id:"policy",p_employee_ids:["groomer"],p_invoice:{total:100},p_payments:[{amount:40},{amount:60}]}});
+ });
+ it("rejects single DEMO payment that omits the customer fee",async()=>{
+  const data=form("groomer");data.set("finalize","1");data.set("demo_policy_id","policy");data.set("demo_employee_ids",'["groomer"]');data.set("metode_bayar","Transfer");data.set("demo_received","100");
+  await expect(bayarVisit(data)).rejects.toThrow("?error=");expect(state.calls).toEqual([]);
+  data.set("demo_received","101");await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});expect(state.calls[0].name).toBe("clinic_post_demo_invoice");
+ });
+ it("does not allow an empty recipient set",async()=>{
+  const data=form("groomer");data.set("finalize","1");data.set("demo_policy_id","policy");data.set("demo_employee_ids","[]");data.set("demo_received","100");
+  await expect(bayarVisit(data)).rejects.toThrow("?error=");expect(state.calls).toEqual([]);
  });
 
 });

@@ -46,6 +46,14 @@ export function hasSignedConsent(rows: { status: string }[]): boolean {
   return rows.some((r) => r.status === "sudah_ttd");
 }
 
+export function hasInpatientConsent(
+  rows: readonly { status: string; kategori?: string | null; template_id?: string | null }[],
+  requiredTemplateId?: string | null,
+): boolean {
+  return rows.some(row => row.status === "sudah_ttd" && row.kategori === "Rawat Inap"
+    && (!requiredTemplateId || row.template_id === requiredTemplateId));
+}
+
 // Template yang berlaku utk cabang tsb: khusus cabang itu + yang berlaku semua cabang.
 export function templatesForBranch<T extends { branch_id: string | null; is_active: boolean }>(
   templates: T[],

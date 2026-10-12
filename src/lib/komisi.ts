@@ -11,6 +11,8 @@
 export type SumberJual = "kasir" | "klinik" | "reseller";
 
 export type BarisJual = {
+  /** Posted DEMO allocation replaces legacy commission while retaining target revenue. */
+  fixedCommission?: boolean;
   tanggal: string;              // YYYY-MM-DD
   sumber: SumberJual;
   // null = struknya tidak terhubung ke karyawan mana pun. Barisnya tetap dibawa
@@ -88,6 +90,7 @@ export function realisasiTarget(baris: BarisJual[], t: TargetPenjualan): { reali
 }
 
 function cocok(b: BarisJual, a: AturanKomisi): boolean {
+  if (b.fixedCommission) return false;
   // Tanpa saringan sumber, aturan "insentif dokter" ikut membayar penjualan petshop
   // begitu dokternya sekali saja menutup struk kasir.
   if (a.sumber !== "semua" && a.sumber !== b.sumber) return false;
@@ -163,4 +166,20 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilK
   }
 
   return hasil;
+}
+
+export type SharedIncentive = {employeeId: string;invoiceId: string;amount: number;basis: number};
+export function mergeSharedIncentives(hasil: HasilKomisi[], allocations: readonly SharedIncentive[]): HasilKomisi[] {
+  const rows = new Map(hasil.map(row=>[row.employeeId,{...row,rincian:[...row.rincian]}]));
+  const seen = new Set<string>();
+  for (const allocation of allocations) {
+    const key = `${allocation.invoiceId}:${allocation.employeeId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const row = rows.get(allocation.employeeId) ?? {employeeId:allocation.employeeId,omzet:0,laba:0,barisTanpaHpp:0,komisi:0,rincian:[]};
+    row.komisi += allocation.amount;
+    row.rincian.push({aturanId:`demo:${allocation.invoiceId}`,nama:"Pool jasa DEMO",dasar:allocation.basis,komisi:allocation.amount,cair:true});
+    rows.set(row.employeeId,row);
+  }
+  return [...rows.values()];
 }

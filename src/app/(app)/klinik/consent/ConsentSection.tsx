@@ -9,6 +9,7 @@ import { buatConsent, tandaTanganConsent } from "./actions";
 
 export type ConsentRow = {
   id: string; tindakan: string; isi_snapshot: string; status: ConsentStatus;
+  kategori?: string;
   signer_name: string | null; signature_data: string | null; signed_at: string | null;
 };
 
@@ -20,7 +21,7 @@ const waktu = (iso: string) => new Date(iso).toLocaleString("id-ID", { timeZone:
 export function ConsentSection({ visitId, consents, templates }: {
   visitId: string;
   consents: ConsentRow[];
-  templates: { id: string; nama: string }[];
+  templates: { id: string; nama: string; kategori?: string }[];
 }) {
   const [buka, setBuka] = useState(false);
   const [signing, setSigning] = useState<string | null>(null);
@@ -53,7 +54,7 @@ export function ConsentSection({ visitId, consents, templates }: {
             <label className="flab">Template *</label>
             <select className="fi" name="templateId" required defaultValue="">
               <option value="" disabled>Pilih template</option>
-              {templates.map((t) => <option key={t.id} value={t.id}>{t.nama}</option>)}
+              {templates.map((t) => <option key={t.id} value={t.id}>{t.nama}{t.kategori && t.kategori !== "Umum" ? ` · ${t.kategori}` : ""}</option>)}
             </select>
           </div>
           <div className="fg">

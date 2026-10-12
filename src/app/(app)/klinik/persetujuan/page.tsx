@@ -22,7 +22,7 @@ export default async function PersetujuanPage({
 
   const [{ data: templates }, { data: branches }, { data: aturanRows }] = await Promise.all([
     supabase.from("consent_templates")
-      .select("id, nama, isi, branch_id, is_active, updated_at, branches(name)")
+      .select("id, nama, isi, kategori, branch_id, is_active, updated_at, branches(name)")
       .order("created_at", { ascending: false }),
     supabase.from("branches").select("id, name").eq("is_active", true)
       .in("type", ["KLINIK", "BOTH"]).order("name"),

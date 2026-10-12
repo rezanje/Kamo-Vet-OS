@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
 
 const BACK = "/klinik/persetujuan";
 
@@ -14,19 +15,21 @@ export async function simpanTemplate(formData: FormData) {
   const nama = String(formData.get("nama") ?? "").trim();
   const isi = String(formData.get("isi") ?? "").trim();
   const branchId = String(formData.get("branchId") ?? "") || null;
+  const kategori = String(formData.get("kategori") ?? "Umum");
+  if (!["Umum", ...TINDAKAN_KATEGORI].includes(kategori)) redirect(`${BACK}?error=${encodeURIComponent("Jenis persetujuan tidak valid")}`);
 
   if (!nama || !isi) redirect(`${BACK}?error=${encodeURIComponent("Nama dan isi template wajib diisi")}`);
 
   if (id) {
     const { error } = await supabase
       .from("consent_templates")
-      .update({ nama, isi, branch_id: branchId, updated_at: new Date().toISOString() })
+      .update({ nama, isi, kategori, branch_id: branchId, updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) redirect(`${BACK}?error=${encodeURIComponent(error.message)}`);
   } else {
     const { error } = await supabase
       .from("consent_templates")
-      .insert({ nama, isi, branch_id: branchId, created_by: user?.id ?? null });
+      .insert({ nama, isi, kategori, branch_id: branchId, created_by: user?.id ?? null });
     if (error) redirect(`${BACK}?error=${encodeURIComponent(error.message)}`);
   }
 
