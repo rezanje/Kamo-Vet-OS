@@ -248,7 +248,7 @@ export default async function KomisiPage({
               ))}
               {aturan.length === 0 && (
                 <tr><td colSpan={bolehKelola ? 7 : 6} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
-                  Belum ada aturan komisi — komisi semua karyawan masih nol.
+                  Belum ada aturan komisi tambahan. Insentif dari checkout DEMO tetap dihitung.
                 </td></tr>
               )}
             </tbody>

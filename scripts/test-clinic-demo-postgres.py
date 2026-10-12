@@ -80,5 +80,30 @@ alter default privileges in schema public grant all on sequences to authenticate
         if moved.returncode == 0 or 'CONSENT_LOCKED:' not in moved.stderr or 'UPDATE 0' not in duplicate.stdout:
             raise RuntimeError('Concurrent signature/identity mutation was not protected')
     print('Consent signing versus branch move and duplicate signature: passed in concurrent database transactions.')
+    sql("""begin;
+insert into public.visits(id,branch_id,customer_id,pet_id,doctor_id,dokter,status,service_started_at,service_finished_at)
+values ('ca600000-0000-4000-8000-000000000003','ca200000-0000-4000-8000-000000000001','ca300000-0000-4000-8000-000000000001','ca400000-0000-4000-8000-000000000001','ca500000-0000-4000-8000-000000000001','DEMO Doctor','Pembayaran',now(),now());
+insert into public.medical_records(visit_id) values ('ca600000-0000-4000-8000-000000000003');
+insert into public.consents(visit_id,template_id,tindakan,isi_snapshot,status,signer_name,signature_data,signed_at)
+values ('ca600000-0000-4000-8000-000000000003','ca800000-0000-4000-8000-000000000002','DEMO concurrency','DEMO snapshot','sudah_ttd','DEMO Owner','DEMO signature',now());
+commit;""")
+    admission = "select public.clinic_admit_inpatient('ca600000-0000-4000-8000-000000000003','DEMO concurrent admission','demo-admission-race');"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(sql, "begin;" + actor + "set local application_name='clinic-demo-admission-race';" + admission + "select pg_sleep(2);commit;")
+        for _ in range(100):
+            if sql("select count(*) from pg_stat_activity where application_name='clinic-demo-admission-race' and wait_event='PgSleep'", tuples=True).stdout.strip() == '1':
+                break
+            if first.done():
+                first.result()
+                raise RuntimeError('Admission finished before concurrency check')
+            time.sleep(.02)
+        else:
+            raise RuntimeError('Admission did not acquire its visit lock')
+        second = pool.submit(sql, "begin;" + actor + admission + "commit;")
+        first.result(); second.result()
+    if sql("select count(*) from public.inpatient_records where visit_id='ca600000-0000-4000-8000-000000000003'", tuples=True).stdout.strip() != '1' or sql("select count(*) from public.inpatient_status_log l join public.inpatient_records r on r.id=l.inpatient_record_id where r.visit_id='ca600000-0000-4000-8000-000000000003'", tuples=True).stdout.strip() != '1':
+        raise RuntimeError('Concurrent admission duplicated record or initial status')
+    print('Concurrent admission retry: one admission and one initial status history.')
+
 finally:
     subprocess.run(['docker', 'rm', '-f', CONTAINER], capture_output=True)
