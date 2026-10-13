@@ -17,6 +17,8 @@ import { bacaDraftKasir, KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draf
 import type { PilihanPenjual } from "@/lib/penjual";
 import { BATAS_KATEGORI_KASIR, kategoriKasirTerlihat } from "@/lib/kasir-kategori";
 import { nomorHalamanKasirTerlihat } from "@/lib/kasir-halaman";
+import { digitHp } from "@/lib/kontak";
+import { normalPhone } from "@/lib/booking";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -206,8 +208,14 @@ export function KasirClient({
   const custHits = useMemo(() => {
     const s = custQ.trim().toLowerCase();
     if (!s || cust) return [];
-    const digits = s.replace(/\D/g, "");
-    return customers.filter((c) => (digits && c.phone.replace(/\D/g, "").includes(digits)) || c.name.toLowerCase().includes(s)).slice(0, 5);
+    const digits = digitHp(s);
+    const localDigits = normalPhone(digits);
+    const phoneQuery = /^[\d\s()+.-]+$/.test(s);
+    return customers.filter((c) => {
+      const phone = digitHp(c.phone);
+      return (digits && (phone.includes(digits) || (phoneQuery && normalPhone(phone).includes(localDigits))))
+        || c.name.toLowerCase().includes(s);
+    }).slice(0, 5);
   }, [customers, custQ, cust]);
 
   // Barang masuk keranjang langsung memakai aturan masternya: qty mulai dari
@@ -406,6 +414,11 @@ export function KasirClient({
                   {c.name} <span style={{ color: "var(--td)" }}>· {c.phone}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {!cust && custQ.trim() && custHits.length === 0 && (
+            <div role="status" style={{ fontSize: 11, color: "var(--td)", marginTop: 5 }}>
+              Customer tidak ditemukan. Coba nama atau nomor HP lain.
             </div>
           )}
         </div>
