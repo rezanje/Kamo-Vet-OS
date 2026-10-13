@@ -29,7 +29,7 @@ export default async function KasirLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <DraftUserProvider userId={user.id}><Suspense fallback={null}><TransactionDraftComplete userId={user.id}/></Suspense><div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
+    <DraftUserProvider userId={user.id}><Suspense fallback={null}><TransactionDraftComplete userId={user.id}/></Suspense><div className="kasir-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
       <PosNav
         branchName={shift?.branchName ?? null}
         userName={(profile?.full_name ?? user.email ?? "Kasir").split(" ")[0]}
@@ -37,7 +37,7 @@ export default async function KasirLayout({ children }: { children: React.ReactN
         notifications={notifications}
       />
       {shift && <NotifBanner notifications={notifications} />}
-      <div style={{ flex: 1, padding: 16, overflowY: "auto" }}>{children}</div>
+      <div className="kasir-content" style={{ flex: 1, padding: 16, overflowY: "auto" }}>{children}</div>
     </div></DraftUserProvider>
   );
 }

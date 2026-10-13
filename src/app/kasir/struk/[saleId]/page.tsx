@@ -33,7 +33,15 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   return (
     <>
-      <style>{`@media print { @page { size: 80mm auto; margin: 3mm; } .pos-topbar { display: none !important; } }`}</style>
+      <style>{`@media print {
+        /* The Windows driver supplies the 58 mm roll size and page length. */
+        @page { size: auto; margin: 0; }
+        html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+        .pos-topbar, .no-print { display: none !important; }
+        .kasir-shell { display: block !important; min-height: 0 !important; height: auto !important; background: #fff !important; }
+        .kasir-content { padding: 0 !important; overflow: visible !important; }
+        .kasir-receipt { padding: 0 !important; border-radius: 0 !important; }
+      }`}</style>
       {autoPrint && <AutoPrint />}
       <ClearKasirDraft />
 
@@ -42,7 +50,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
         <PrintButton label="Cetak Struk" />
       </div>
 
-      <div style={{ width: "74mm", margin: "0 auto", background: "#fff", padding: "10px 8px", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5, borderRadius: 6 }}>
+      <div className="kasir-receipt" style={{ width: "48mm", maxWidth: "100%", boxSizing: "border-box", margin: "0 auto", background: "#fff", padding: "10px 0", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5, borderRadius: 6, overflowWrap: "anywhere" }}>
         <div style={{ textAlign: "center", marginBottom: 6 }}>
           <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PETSHOP</div>
           <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Petshop"}</div>
@@ -62,10 +70,10 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           return (
             <div key={i} style={{ marginBottom: 3 }}>
               <div>{it.nama}</div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 4, alignItems: "start" }}>
                 {/* Satuan ikut tercetak (permintaan Bu Nisa, meeting 14 Agustus):
                     "2 x 35.000" tidak memberi tahu 2 botol atau 2 dus. */}
-                <span>{it.qty} {it.satuan || "pcs"} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
+                <span style={{ minWidth: 0 }}>{it.qty} {it.satuan || "pcs"} x {rp(it.harga)}</span><span style={{ flexShrink: 0, whiteSpace: "nowrap" }}>{rp(it.qty * it.harga)}</span>
               </div>
               {components.map((component) => (
                 <div key={`${component.sort_order}-${component.component_name}`} style={{ paddingLeft: 10, fontSize: 9.5 }}>
@@ -109,5 +117,9 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
 function Hr() { return <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />; }
 function Row({ k, v }: { k: string; v: string }) {
-  return <div style={{ display: "flex", justifyContent: "space-between" }}><span>{k}</span><span>{v}</span></div>;
+  const money = /^-?Rp /.test(v);
+  return <div style={{ display: "flex", justifyContent: "space-between", gap: 4, alignItems: "start" }}>
+    <span style={{ minWidth: 0, ...(money ? { flex: "1 1 0" } : { flexShrink: 0, maxWidth: "40%" }) }}>{k}</span>
+    <span style={{ minWidth: 0, textAlign: "right", ...(money ? { flexShrink: 0, whiteSpace: "nowrap" as const } : {}) }}>{v}</span>
+  </div>;
 }

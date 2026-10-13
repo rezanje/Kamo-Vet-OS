@@ -1,0 +1,78 @@
+// @vitest-environment jsdom
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { beforeEach, expect, it, vi } from "vitest";
+
+const fixture = vi.hoisted(() => ({ long: false, voucher: false }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/kasir/struk/receipt", useSearchParams: () => new URLSearchParams(),
+  redirect: () => { throw Error("redirect"); }, notFound: () => { throw Error("not found"); } }));
+vi.mock("@/app/login/actions", () => ({ logout: async () => {} }));
+vi.mock("@/lib/shift", () => ({ getOpenShift: async () => ({ branch_id: "branch", branchName: "Cabang Uji" }) }));
+vi.mock("@/components/PrintButton", () => ({ PrintButton: () => <button className="no-print">Cetak Struk</button>,
+  AutoPrint: () => <span className="no-print" data-auto-print="true" /> }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
+  auth: { getUser: async () => ({ data: { user: { id: "actor", email: "operator@example.test" } } }) },
+  from(table: string) {
+    const sale = { id: "receipt", no_struk: "POS-20261013-0001", subtotal: fixture.long ? 750000 : 125000,
+      discount: fixture.long ? 0 : 5000, total: fixture.long ? 750000 : 120000, metode_bayar: "Tunai",
+      bayar: fixture.long ? 1000000 : 150000, kembali: fixture.long ? 250000 : 30000,
+      poin_earned: 15, poin_digunakan: 0, voucher_code: fixture.voucher ? "VOUCHER1234567890123456789" : null, created_at: "2026-10-13T07:00:00Z",
+      customers: { name: "PelangganDenganNamaSangatPanjangTanpaSpasiUntukMemeriksaPembungkusanTeks" }, branches: { name: "Cabang Uji Struk" } };
+    const item = { nama: "BarangDenganNamaSangatPanjangTanpaSpasiUntukPengujianCetak", qty: fixture.long ? 1 : 5,
+      satuan: "BotolDenganUkuranSangatPanjang100mL", harga: 25000, item_discount_type: null,
+      item_discount_value: 0, promos: null, sale_item_group_components: [{ component_name: "Komponen panjang", qty_per_group: 2, unit: "pcs", sort_order: 1 }] };
+    const data = table === "sales" ? sale : table === "sale_items" ? Array.from({ length: fixture.long ? 30 : 1 }, () => item)
+      : table === "profiles" ? { full_name: "Operator Uji", is_active: true } : [];
+    const q = { select: () => q, eq: () => q, is: () => q, order: () => q,
+      maybeSingle: async () => ({ data, error: null }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
+    return q;
+  },
+}) }));
+import ReceiptPage from "@/app/kasir/struk/[saleId]/page";
+import KasirLayout from "@/app/kasir/layout";
+
+beforeEach(() => { fixture.long = false; fixture.voucher = false; });
+async function render(print = "") {
+  const page = await ReceiptPage({ params: Promise.resolve({ saleId: "receipt" }), searchParams: Promise.resolve({ print }) });
+  const markup = renderToStaticMarkup(await KasirLayout({ children: page }));
+  const output = process.env.POS58_RENDER_DIR;
+  if (output) {
+    mkdirSync(output, { recursive: true });
+    const css = readFileSync("src/app/globals.css", "utf8").replace('@import "tailwindcss";', "");
+    writeFileSync(join(output, `${fixture.voucher ? "voucher" : fixture.long ? "long" : "short"}.html`), `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${markup}</body></html>`);
+  }
+  return new DOMParser().parseFromString(markup, "text/html");
+}
+
+it("fits the 48 mm printable area of a POS58 receipt", async () => {
+  const doc = await render();
+  const receipt = [...doc.querySelectorAll<HTMLDivElement>('div[style*="mm"]')].find(div => div.textContent?.includes("KAMO PETSHOP"))!;
+  expect(receipt).toBeDefined();
+  expect(parseFloat(receipt.style.width)).toBeLessThanOrEqual(48);
+});
+
+it("retains item quantities, discounts, totals and cash change", async () => {
+  const doc = await render("1");
+  expect(doc.body.textContent).toContain("5 BotolDenganUkuranSangatPanjang100mL x Rp 25.000");
+  for (const amount of ["Rp 125.000", "Rp 5.000", "Rp 120.000", "Rp 150.000", "Rp 30.000"]) expect(doc.body.textContent).toContain(amount);
+  expect(doc.querySelector('[data-auto-print="true"]')).not.toBeNull();
+});
+
+it("keeps long receipts complete without auto-printing a manual view", async () => {
+  fixture.long = true;
+  const doc = await render();
+  expect(doc.body.textContent).toContain("Rp 750.000");
+  expect(doc.body.textContent).toContain("Rp 250.000");
+  expect(doc.body.textContent?.match(/BarangDenganNamaSangatPanjang/g)).toHaveLength(30);
+  expect(doc.querySelector('[data-auto-print="true"]')).toBeNull();
+});
+
+it("retains a long voucher code alongside its discount and total", async () => {
+  fixture.voucher = true;
+  const doc = await render();
+  expect(doc.body.textContent).toContain("Diskon + voucher VOUCHER1234567890123456789");
+  expect(doc.body.textContent).toContain("-Rp 5.000");
+  expect(doc.body.textContent).toContain("Rp 120.000");
+});
