@@ -8,7 +8,7 @@ import { type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
 import { PetPhotoUpload } from "@/components/PetPhotoUpload";
 import { FollowUpTable, type FollowUpDraft } from "@/components/FollowUpTable";
-import { kategoriWajibConsent } from "@/lib/tindakan";
+import { ClinicServicePicker } from "@/components/ClinicServicePicker";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { batasBeratWajar } from "@/lib/anabul";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
@@ -19,7 +19,7 @@ import { isMedicalService } from "@/lib/clinic-required-fields";
 
 export type ItemLite = {
   id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
-  tindakan_kategori?: string | null;
+  tindakan_kategori?: string | null; item_type?: string;
   units?: ItemUnit[];   // satuan berjenjang (pcs/box, ml/btl) — kosong = hanya satuan dasar
 };
 type CartRow = {
@@ -47,7 +47,7 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service }: {
   visitId: string; petId: string; requestKey: string; draftUserId: string;
   service?: string | null;
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
@@ -55,19 +55,19 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   racikanItems: ItemLite[];
   bahanItems: ItemLite[];
   jasaItems: ItemLite[];
+  tindakanItems: ItemLite[];
   katalogRacikan: KatalogRacikan[];
   bolehManual: boolean;
   currentWeight: number | null;
   dokterOpsi: { id: string; nama: string; jabatan: string | null }[];
   providerOpsi: { id: string; nama: string; jabatan: string | null }[];
 }) {
-  const [tab, setTab] = useState<"Obat" | "Jasa" | "Paket" | "Racikan">("Obat");
+  const [tab, setTab] = useState<"Obat" | "Jasa" | "Tindakan" | "Racikan">("Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
-  const [jasaSearch, setJasaSearch] = useState("");
 
   // Builder racikan
   const [racikNama, setRacikNama] = useState("");
@@ -127,33 +127,18 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     setCart((c) => {
       const ex = c.find((r) => r.item_id === it.id);
       if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
-      const u = (it.units ?? [])[0];
+      const isService = it.item_type === "Jasa";
+      const u = isService ? undefined : (it.units ?? [])[0];
       return [...c, {
         key: it.id, item_id: it.id, nama_obat: it.name, qty: 1,
-        satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: "obat",
-      }];
-    });
-  };
-  const jasaFiltered = useMemo(
-    () => jasaItems.filter((it) => it.name.toLowerCase().includes(jasaSearch.toLowerCase())).slice(0, 40),
-    [jasaItems, jasaSearch],
-  );
-
-  // Jasa hanya dari master SKU — kategori tindakan ikut item, bukan pilihan bebas staff,
-  // supaya aturan wajib-consent (§6.3) tidak bisa dilewati.
-  const addJasa = (it: ItemLite) => {
-    setCart((c) => {
-      const ex = c.find((r) => r.item_id === it.id);
-      if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
-      return [...c, {
-        key: it.id, item_id: it.id, nama_obat: it.name, qty: 1, satuan: it.unit || "tindakan", faktor: 1,
-        harga: it.sell_price, jenis: "jasa", kategori: it.tindakan_kategori ?? undefined,
+        satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
+        kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
       }];
     });
   };
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
   // Ganti satuan obat (mis. ml → btl): harga & faktor ikut satuan yang dipilih.
-  const unitsOf = (itemId: string | null) => (itemId ? [...items, ...racikanItems].find((i) => i.id === itemId)?.units ?? [] : []);
+  const unitsOf = (itemId: string | null) => (itemId ? [...items, ...racikanItems, ...jasaItems, ...tindakanItems].find((i) => i.id === itemId)?.units ?? [] : []);
   const setSatuan = (key: string, itemId: string | null, unit: string) =>
     setCart((c) => c.map((r) => {
       if (r.key !== key) return r;
@@ -262,7 +247,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 
           {/* Tab jenis */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {([["Obat", "ti-pill"], ["Jasa", "ti-stethoscope"], ["Paket", "ti-package"], ["Racikan", "ti-flask"]] as const).map(([t, ic]) => (
+            {([["Obat", "ti-pill"], ["Jasa", "ti-stethoscope"], ["Tindakan", "ti-package"], ["Racikan", "ti-flask"]] as const).map(([t, ic]) => (
               <button key={t} type="button" onClick={() => setTab(t)} className="back-btn" style={{
                 flex: 1, justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 600,
                 border: ".5px solid var(--bd)", background: tab === t ? "var(--posb)" : "#fff", color: tab === t ? "#fff" : "var(--tm)",
@@ -306,46 +291,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                   </div>
                 </>
               )}
-              {tab === "Jasa" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ position: "relative" }}>
-                    <input className="fi" placeholder="Cari jasa / tindakan..." value={jasaSearch} onChange={(e) => setJasaSearch(e.target.value)} style={{ paddingRight: 28 }} />
-                    <i className="ti ti-search" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 13 }} />
-                  </div>
-                  <div style={{ maxHeight: 210, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
-                    {jasaItems.length === 0 && (
-                      <div style={{ fontSize: 10.5, color: "var(--td)", padding: "10px" }}>
-                        Belum ada SKU jasa. Tambahkan dulu di POS &amp; Inventori → Master SKU (kategori Jasa).
-                      </div>
-                    )}
-                    {jasaItems.length > 0 && jasaFiltered.length === 0 && (
-                      <div style={{ fontSize: 10.5, color: "var(--td)", padding: "10px" }}>Tidak ada jasa cocok.</div>
-                    )}
-                    {jasaFiltered.map((it) => (
-                      <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderBottom: ".5px solid var(--bd)" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</div>
-                          <div style={{ fontSize: 9, color: "var(--tm)", display: "flex", alignItems: "center", gap: 5 }}>
-                            {rp(it.sell_price)}
-                            {it.tindakan_kategori && (
-                              <span className={`bge ${kategoriWajibConsent(it.tindakan_kategori) ? "r" : "b"}`} style={{ fontSize: 8 }}>
-                                {it.tindakan_kategori}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <button type="button" onClick={() => addJasa(it)} className="btn-acc"
-                          style={{ padding: "3px 8px", background: "var(--posb)" }}><i className="ti ti-plus" /></button>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 9, color: "var(--td)" }}>
-                    <i className="ti ti-info-circle" /> Jasa &amp; tarifnya diatur di Master SKU, tidak bisa diketik bebas di sini.
-                  </div>
-                </div>
-              )}
-              {tab === "Paket" && (
-                <div style={{ fontSize: 11, color: "var(--td)", padding: "12px 0" }}>Paket bundling — dalam pengembangan.</div>
+              {(tab === "Jasa" || tab === "Tindakan") && (
+                <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
               )}
               {tab === "Racikan" && (
                 <CompoundEditor items={racikanItems} materials={bahanItems} catalog={katalogRacikan} allowCustom={bolehManual}

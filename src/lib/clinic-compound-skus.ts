@@ -1,26 +1,26 @@
 import { ListLoadError, readCompleteList } from "./checked-list";
 import type { ItemUnit } from "./satuan";
 import type { HargaCabang } from "./harga-cabang";
+import { loadClinicItemCategories, type ClinicItemCategory } from "./clinic-item-categories";
 
 export type CompoundSkuRow = {
   id: string; code: string | null; name: string; unit: string; sell_price: number;
   is_compound_material: boolean; item_type: string; tindakan_kategori: string | null;
+  category_id: string | null;
 };
 
 /** Imported finished medicines belong to master categories, not formula versions.
  * Never invent ingredients or convert their stock into a clinical recipe. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadClinicCompoundSkus(client: any): Promise<CompoundSkuRow[]> {
-  const categories = await readCompleteList<{ id: string; name: string }>((from, to) => client
-    .from("item_categories").select("id,name", { count: "exact" })
-    .order("id").range(from, to), "Kategori obat racik");
+export async function loadClinicCompoundSkus(client: any, categories?: ClinicItemCategory[]): Promise<CompoundSkuRow[]> {
+  categories ??= await loadClinicItemCategories(client);
   const categoryIds = categories.filter(c => ["OBAT RACIK", "OBAT RACIKAN", "RACIKAN"].includes(
     c.name.trim().replace(/\s+/g, " ").toUpperCase(),
   )).map(c => c.id);
   const choices = ["name.ilike.Obat Racik *", "name.ilike.Obat Racikan *"];
   if (categoryIds.length) choices.push(`category_id.in.(${categoryIds.join(",")})`);
   return readCompleteList<CompoundSkuRow>((from, to) => client.from("items")
-    .select("id,code,name,unit,sell_price,is_compound_material,item_type,tindakan_kategori", { count: "exact" })
+    .select("id,code,name,unit,sell_price,is_compound_material,item_type,tindakan_kategori,category_id", { count: "exact" })
     .or(choices.join(",")).eq("is_active", true)
     .eq("item_type", "Persediaan").eq("is_compound_material", false)
     .order("name").order("id").range(from, to), "Obat racik dari Barang & Jasa");

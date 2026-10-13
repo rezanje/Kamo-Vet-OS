@@ -82,7 +82,7 @@ export async function addDailyLog(formData: FormData) {
 // yang diberikan (masuk ke resep visit → ikut tagihan) + opsi ubah kondisi sekalian.
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
-  nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string;
+  nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string; kategori?: string;
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
   official_version_id?: string;
@@ -134,7 +134,7 @@ export async function addDailyLogPos(formData: FormData) {
   if (resep.length && !mrId) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
-  let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string }[] = [];
+  let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string; kategori: string | null }[] = [];
   if (mrId && resep.length) {
     // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
     const unitOpts = await loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x));
@@ -147,6 +147,7 @@ export async function addDailyLogPos(formData: FormData) {
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" — sama seperti jalur simpanRekamMedis.
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
+      kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
     }));
   }
 

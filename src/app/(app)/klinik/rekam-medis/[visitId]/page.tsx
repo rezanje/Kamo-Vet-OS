@@ -1,3 +1,4 @@
+import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
@@ -129,23 +130,25 @@ export default async function RekamMedisPage({
   // + jasa. Jasa wajib dari master SKU — dokter tidak boleh mengetik jasa bebas.
   type ItemLiteFull = {
     id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
-    is_compound_material: boolean; tindakan_kategori?: string | null;
+    is_compound_material: boolean; item_type?: string; tindakan_kategori?: string | null;
     units?: ItemUnit[];
   };
   let obatItems: ItemLiteFull[] = [];
   let bahanItems: ItemLiteFull[] = [];
   let jasaItems: ItemLiteFull[] = [];
+  let tindakanItems: ItemLiteFull[] = [];
   let racikanItems: ItemLiteFull[] = [];
   const katalogRacikan = !recorded ? await loadKatalogRacikan() : [];
   const bolehManual = await bolehRacikKhusus();
   if (!recorded) {
     const masterRows = await readCompleteList<{
       id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean;
-      item_type: string; tindakan_kategori: string | null;
+      item_type: string; tindakan_kategori: string | null; category_id: string | null;
     }>((from, to) => supabase
-      .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori", { count: "exact" })
+      .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
       .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
-    const compoundRows = await loadClinicCompoundSkus(supabase);
+    const categories = await loadClinicItemCategories(supabase);
+    const compoundRows = await loadClinicCompoundSkus(supabase, categories);
     const compoundIds = new Set(compoundRows.map(item => item.id));
     const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
     const ids = (itemRows ?? []).map((i) => i.id);
@@ -165,14 +168,15 @@ export default async function RekamMedisPage({
       ),
       is_compound_material: Boolean(i.is_compound_material),
       item_type: (i.item_type as string) ?? "Persediaan",
+      category_id: i.category_id,
       tindakan_kategori: (i.tindakan_kategori as string | null) ?? null,
     }));
-    // Jenis barang (migrasi 0065) menggantikan trik lama "kategori bernama Jasa".
-    const isJasa = (i: { item_type: string }) => i.item_type === "Jasa";
-    jasaItems = all.filter(isJasa);
-    obatItems = all.filter((i) => !i.is_compound_material && !isJasa(i) && !compoundIds.has(i.id));
-    racikanItems = all.filter(i => compoundIds.has(i.id));
-    bahanItems = all.filter((i) => i.is_compound_material);
+    const groups = splitClinicItems(all, categories, compoundIds);
+    jasaItems = groups.jasa;
+    tindakanItems = groups.tindakan;
+    obatItems = groups.obat;
+    racikanItems = groups.racikan;
+    bahanItems = groups.bahan;
   }
 
   // Form persetujuan (spec 2026-07-20) — template yang berlaku utk cabang kunjungan ini.
@@ -479,6 +483,7 @@ export default async function RekamMedisPage({
           racikanItems={racikanItems}
           bahanItems={bahanItems}
           jasaItems={jasaItems}
+          tindakanItems={tindakanItems}
           katalogRacikan={katalogRacikan}
           bolehManual={bolehManual}
           patient={{

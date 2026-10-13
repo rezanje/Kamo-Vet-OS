@@ -49,7 +49,7 @@ alter default privileges in schema public grant all on sequences to authenticate
         except RuntimeError as error:
             raise RuntimeError(migration.name + ': ' + str(error)) from error
     print(f'Applied {len(migrations)} repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.')
-    for name in ['inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql']:
+    for name in ['inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql', 'clinic_inpatient_action_category.sql']:
         sql((ROOT / 'supabase/tests' / name).read_text())
         print(name + ': passed with real FIFO and prescription triggers.')
     # Commit test-only CA fixtures inside this disposable container, then race
