@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
+import { completeReportQuery } from "@/lib/report-query";
 import type { BarangRow, KandidatKomponenGrup } from "./BarangForm";
 
 export const BARANG_FIELDS =
@@ -27,11 +28,13 @@ export async function siapkanFormBarang() {
     supabase.from("units").select("id, nama").eq("is_active", true).order("nama"),
     supabase.from("suppliers").select("id, nama").order("nama"),
     // Kandidat barang substitusi — jasa tidak punya stok, jadi tidak bisa jadi pengganti.
-    supabase.from("items").select("id, code, name").eq("is_active", true)
-      .eq("item_type", "Persediaan").order("name").limit(1000),
+    completeReportQuery<{ id: string; code: string; name: string }>(
+      supabase.from("items").select("id, code, name", { count: "exact" }).eq("is_active", true)
+        .eq("item_type", "Persediaan").order("name")),
     // Komponen Grup boleh Persediaan/Jasa/Non-Persediaan, tetapi tidak boleh Grup.
-    supabase.from("items").select("id, code, name, unit, item_type, sell_price, buy_price")
-      .eq("is_active", true).neq("item_type", "Grup").order("name").limit(5000),
+    completeReportQuery<Omit<KandidatKomponenGrup, "units">>(
+      supabase.from("items").select("id, code, name, unit, item_type, sell_price, buy_price", { count: "exact" })
+        .eq("is_active", true).neq("item_type", "Grup").order("name")),
   ]);
 
   const kandidatIds = ((kandidatGrupRaw ?? []) as { id: string }[]).map((row) => row.id);
