@@ -56,13 +56,13 @@ beforeEach(() => {
     profiles: [{ id: "owner", role: "OWNER" }], visits: [visit],
     inpatient_records: [{ id: "inpatient", visit_id: "visit", condition_status: "stable", admitted_at: visit.created_at, visits: visit }],
     warehouses: [{ id: "retail", branch_id: "branch", type: "RETAIL", is_active: true }, { id: "warehouse", branch_id: "branch", type: "VET", is_active: true }],
-    item_categories: [{ id: "cat", name: "OBAT RACIK" }],
+    item_categories: [{ id: "cat", name: "OBAT RACIK" }, { id: "services", name: "Jasa" }],
     items: [
       ...Array.from({ length: 550 }, (_, i) => ({ id: `ordinary-${i}`, name: `A ordinary ${i}`, is_active: true, is_compound_material: false, item_type: "Persediaan", category_id: "ordinary", unit: "PCS", sell_price: 1000 })),
       { id: "racik", name: "Obat Racik Sirup Flu", is_active: true, is_compound_material: false, item_type: "Persediaan", category_id: "cat", unit: "PCS", sell_price: 20000 },
       { id: "inactive", name: "Nonaktif", is_active: false, is_compound_material: false, item_type: "Persediaan", category_id: "cat" },
       { id: "material", name: "Bahan", is_active: true, is_compound_material: true, item_type: "Persediaan", category_id: "cat" },
-      { id: "service", name: "Jasa", is_active: true, is_compound_material: false, item_type: "Jasa", category_id: "cat" },
+      { id: "service", name: "Jasa", is_active: true, is_compound_material: false, item_type: "Jasa", category_id: "services" },
     ],
     stock: [{ id: "stock", warehouse_id: "warehouse", item_id: "racik", qty: 8 }, { id: "foreign", warehouse_id: "other-branch", item_id: "racik", qty: 99 }],
     item_branch_prices: [{ id: "price", item_id: "racik", branch_id: "branch", unit: "PCS", sell_price: 25000 }],
@@ -124,5 +124,36 @@ describe("compound master SKUs reach clinic POS", () => {
     expect(result).toBeInstanceOf(Error);
     expect(result?.message).toMatch(/belum.*dimuat/i);
     expect(result?.message).not.toContain("secret detail");
+  });
+});
+
+
+describe("clinic item categories", () => {
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s splits Jasa and Tindakan by category, including child categories", async (_name, page) => {
+    fixture.tables.item_categories.push(
+      { id: "actions", name: " TINDAKAN " },
+      { id: "surgery", name: "Operasi", parent_id: "actions" },
+      { id: "food", name: "Makanan" },
+    );
+    const base = { is_active: true, is_compound_material: false, unit: "pcs", sell_price: 35000 };
+    fixture.tables.items = [
+      { ...base, id: "consult", name: "Konsultasi", item_type: "Jasa", category_id: "services" },
+      { ...base, id: "steril", name: "Steril", item_type: "Jasa", category_id: "surgery", tindakan_kategori: "Operasi" },
+      { ...base, id: "scaling", name: "Scaling", item_type: "Jasa", category_id: "actions" },
+      { ...base, id: "vaccine", name: "Vaksin", item_type: "Jasa", category_id: "vaccine" },
+      { ...base, id: "lab", name: "Cek darah", item_type: "Jasa", category_id: "lab" },
+      { ...base, id: "food", name: "Makanan kucing", item_type: "Persediaan", category_id: "food" },
+      { ...base, id: "group", name: "Grouping", item_type: "Grup", category_id: "food" },
+      { ...base, id: "uncategorized", name: "Tanpa kategori", item_type: "Persediaan", category_id: null },
+      { ...base, id: "ingredient", name: "Bahan racik", item_type: "Persediaan", category_id: "food", is_compound_material: true },
+    ];
+    fixture.tables.item_branch_prices = [{ id: "steril-price", item_id: "steril", branch_id: "branch", unit: "pcs", sell_price: 75000 }];
+    const props = formProps(await page());
+    const ids = (key: string) => (props?.[key] as { id: string }[]).map(item => item.id);
+    expect(ids("jasaItems")).toEqual(["consult"]);
+    expect(ids("tindakanItems")).toEqual(["steril", "scaling"]);
+    expect(ids("items")).toEqual(["vaccine", "lab", "food", "group", "uncategorized"]);
+    expect(ids("bahanItems")).toEqual(["ingredient"]);
+    expect(props?.tindakanItems).toEqual(expect.arrayContaining([expect.objectContaining({ id: "steril", sell_price: 75000, tindakan_kategori: "Operasi" })]));
   });
 });

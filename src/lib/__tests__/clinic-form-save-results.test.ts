@@ -6,13 +6,21 @@ vi.mock('@/lib/dokter',()=>({resolveDokter:async()=>({doctorId:fixture.doctorId,
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:'user'}}})},
  rpc:async(name:string,args:Record<string,unknown>)=>{fixture.calls.push({name,args});return {data:null,error:fixture.error}},
- from(table:string){const q={select(){return q},eq(){return q},order(){return q},limit(){return q},in(){return q},
+ from(table:string){const q={select(){return q},eq(){return q},order(){return q},limit(){return q},in(){return q},range(){return q},
  maybeSingle:async()=>({data:table==='inpatient_records'?{condition_status:'stabil',visit_id:'visit',medical_record_id:'record'}:table==='visits'?{branch_id:'branch',poli:fixture.service,status:'Diperiksa',pets:{species:'Kucing'}}:{role:'OWNER'},error:null}),
- then(resolve:(value:unknown)=>void){return Promise.resolve({data:[],error:null}).then(resolve)}};return q},
+ then(resolve:(value:unknown)=>void){return Promise.resolve({data:table==='items'?[{id:'action-sku',unit:'tindakan',sell_price:75000}]:[],error:null}).then(resolve)}};return q},
 })}));
 import { simpanRekamMedis } from '../../app/(app)/klinik/rekam-medis/[visitId]/actions';
 import { addDailyLogPos } from '../../app/(app)/klinik/rawat-inap/actions';
 beforeEach(()=>{fixture.error=null;fixture.calls=[];fixture.revalidated=[];fixture.doctorId='doctor';fixture.service='Poli Umum'});
+it.each([['initial', simpanRekamMedis, 'clinic_save_initial_record'], ['inpatient', addDailyLogPos, 'clinic_save_inpatient_log_with_status']] as const)('%s preserves catalog action identity, amount and consent category at save', async (_name, save, rpc) => {
+ const data=form();
+ data.set('resep', JSON.stringify([{ item_id:'action-sku', nama_obat:'Steril', qty:2, satuan:'tindakan', harga:75000, jenis:'jasa', kategori:'Operasi' }]));
+ expect(await save(data)).toMatchObject({saved:true});
+ expect(fixture.calls.find(call=>call.name===rpc)?.args.p_rows).toEqual([
+  expect.objectContaining({item_id:'action-sku',nama_obat:'Steril',qty:2,satuan:'tindakan',harga:75000,jenis:'jasa',kategori:'Operasi'})
+ ]);
+});
 function form(){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',condition_note:'Fictional clinical note',next:'resep',resep:'[]'}))data.set(key,value);return data;}
 it('rejects medical completion with no resolved doctor',async()=>{
  fixture.doctorId=null;await expect(simpanRekamMedis(form())).rejects.toThrow(/^REDIRECT .*\?error=/);expect(fixture.revalidated).toEqual([]);

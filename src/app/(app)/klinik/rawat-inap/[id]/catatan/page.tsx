@@ -1,3 +1,4 @@
+import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -36,11 +37,12 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   ]);
 
   const masterRows = await readCompleteList<{
-    id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string;
+    id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string; category_id: string | null; tindakan_kategori: string | null;
   }>((from, to) => supabase
-    .from("items").select("id, name, unit, sell_price, is_compound_material, item_type", { count: "exact" })
+    .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, category_id, tindakan_kategori", { count: "exact" })
     .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
-  const compoundRows = await loadClinicCompoundSkus(supabase);
+  const categories = await loadClinicItemCategories(supabase);
+  const compoundRows = await loadClinicCompoundSkus(supabase, categories);
   const compoundIds = new Set(compoundRows.map(item => item.id));
   const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
   const ids = (itemRows ?? []).map((i) => i.id);
@@ -51,6 +53,8 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
     stok: stok.get(i.id as string) ?? 0,
     is_compound_material: !!i.is_compound_material,
     item_type: i.item_type,
+    category_id: i.category_id,
+    tindakan_kategori: i.tindakan_kategori,
     units: applyHargaCabang(
       unitOptions(
         { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },
@@ -60,7 +64,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
       hargaMap,
     ),
   }));
-  const bahanItems = items.filter((i) => i.is_compound_material);
+  const groups = splitClinicItems(items, categories, compoundIds);
   const katalogRacikan = await loadKatalogRacikan();
   const bolehManual = await bolehRacikKhusus();
 
@@ -92,9 +96,11 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
         requestKey={crypto.randomUUID()}
         draftUserId={user?.id ?? ""}
         backHref={`/klinik/rawat-inap/${id}`}
-        items={items.filter(item => !compoundIds.has(item.id) && !item.is_compound_material && item.item_type !== "Jasa")}
-        racikanItems={items.filter(item => compoundIds.has(item.id))}
-        bahanItems={bahanItems}
+        items={groups.obat}
+        jasaItems={groups.jasa}
+        tindakanItems={groups.tindakan}
+        racikanItems={groups.racikan}
+        bahanItems={groups.bahan}
         katalogRacikan={katalogRacikan}
         bolehManual={bolehManual}
         doctors={doctors}

@@ -10,16 +10,18 @@ import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { addDailyLogPos } from "../../actions";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
+import { ClinicServicePicker } from "@/components/ClinicServicePicker";
 import { CompoundEditor } from "@/components/CompoundEditor";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
 import { InpatientStaffFields } from '@/components/InpatientStaffFields';
 import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 
-export type ItemLite = { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number; units?: ItemUnit[] };
+export type ItemLite = { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: ItemUnit[] };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   faktor: number;
   jenis: "obat" | "jasa" | "racikan";
+  kategori?: string;
   ingredients?: RacikanIngredient[]; dosage_form?: string; aturan_pakai?: string;
   official_version_id?: string;
   sale_item_id?: string;
@@ -29,17 +31,19 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const TABS = [
   { id: "Obat", icon: "ti-capsule" },
   { id: "Jasa", icon: "ti-stethoscope" },
-  { id: "Paket", icon: "ti-gift" },
+  { id: "Tindakan", icon: "ti-gift" },
   { id: "Racikan", icon: "ti-flask" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[] }: {
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[] }: {
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
   racikanItems: ItemLite[];
   bahanItems: ItemLite[];
+  jasaItems: ItemLite[];
+  tindakanItems: ItemLite[];
   katalogRacikan: KatalogRacikan[];
   bolehManual: boolean;
   doctors?:ClinicalStaff[];paramedics?:ClinicalStaff[];
@@ -51,6 +55,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const [cart, setCart] = useState<CartRow[]>([]);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
+  // Retain legacy draft fields so older snapshots still recover intact.
   const [jasaNama, setJasaNama] = useState("");
   const [jasaHarga, setJasaHarga] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -124,17 +129,14 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const addObat = (it: ItemLite) => setCart((c) => {
     const ex = c.find((r) => r.item_id === it.id);
     if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
-    const u = (it.units ?? [])[0];
+    const isService = it.item_type === "Jasa";
+    const u = isService ? undefined : (it.units ?? [])[0];
     return [...c, {
       key: it.id, item_id: it.id, nama_obat: it.name, qty: 1,
-      satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: "obat",
+      satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
+      kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
     }];
   });
-  const addJasa = () => {
-    if (!jasaNama.trim()) return;
-    setCart((c) => [...c, { key: `jasa-${c.length}-${jasaNama}`, item_id: null, nama_obat: jasaNama.trim(), qty: 1, satuan: "jasa", faktor: 1, harga: jasaHarga, jenis: "jasa" }]);
-    setJasaNama(""); setJasaHarga(0);
-  };
   const compoundDraft: CompoundDraft = { saleItemId, formulaId: officialVersionId, dosageForm: racikForm, instruction: racikAturan, ingredients: racikBahan };
   const changeCompound = (value: CompoundDraft) => {
     setSaleItemId(value.saleItemId); setOfficialVersionId(value.formulaId); setRacikForm(value.dosageForm);
@@ -150,7 +152,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
 
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
   // Satuan berjenjang: ganti ml→btl, harga & faktor ikut satuan yang dipilih.
-  const unitsOf = (itemId: string | null) => (itemId ? [...items, ...racikanItems].find((i) => i.id === itemId)?.units ?? [] : []);
+  const unitsOf = (itemId: string | null) => (itemId ? [...items, ...racikanItems, ...jasaItems, ...tindakanItems].find((i) => i.id === itemId)?.units ?? [] : []);
   const setSatuan = (key: string, itemId: string | null, unit: string) =>
     setCart((c) => c.map((r) => {
       if (r.key !== key) return r;
@@ -394,14 +396,9 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                   </div>
                 </>
               )}
-              {tab === "Jasa" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <input className="fi" placeholder="Nama jasa (mis. Rawat inap/hari)" value={jasaNama} onChange={(e) => setJasaNama(e.target.value)} />
-                  <input className="fi" type="number" min={0} step="any" placeholder="Harga" value={jasaHarga || ""} onChange={(e) => setJasaHarga(Number(e.target.value))} />
-                  <button type="button" onClick={addJasa} className="btn-acc" style={{ background: "var(--posb)", justifyContent: "center" }}><i className="ti ti-plus" /> Tambah jasa</button>
-                </div>
+              {(tab === "Jasa" || tab === "Tindakan") && (
+                <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
               )}
-              {tab === "Paket" && <div style={{ fontSize: 11, color: "var(--td)", padding: "12px 0" }}>Paket bundling — dalam pengembangan.</div>}
               {tab === "Racikan" && (
                 <CompoundEditor items={racikanItems} materials={bahanItems} catalog={katalogRacikan} allowCustom={bolehManual}
                   value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} onAddStock={addObat} />
