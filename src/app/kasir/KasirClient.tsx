@@ -15,7 +15,6 @@ import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import type { ItemType } from "@/lib/barang";
 import { bacaDraftKasir, KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
-import { BATAS_KATEGORI_KASIR, kategoriKasirTerlihat } from "@/lib/kasir-kategori";
 import { nomorHalamanKasirTerlihat } from "@/lib/kasir-halaman";
 import { digitHp } from "@/lib/kontak";
 import { normalPhone } from "@/lib/booking";
@@ -99,7 +98,6 @@ export function KasirClient({
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
-  const [kategoriDibuka, setKategoriDibuka] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 8;
   const [cartRaw, setCart] = useState<CartLine[]>([]);
@@ -187,11 +185,6 @@ export function KasirClient({
   };
 
   const kategoris = useMemo(() => ["Semua", ...new Set(items.map((i) => i.kategori))], [items]);
-  const kategoriTerlihat = useMemo(
-    () => kategoriKasirTerlihat(kategoris, kategoriDibuka, kat),
-    [kategoris, kategoriDibuka, kat],
-  );
-  const adaKategoriTersembunyi = kategoris.length > BATAS_KATEGORI_KASIR;
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -458,7 +451,7 @@ export function KasirClient({
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.5fr) minmax(360px, 1fr)", gap: 12, alignItems: "start" }}>
+      <div className="kpos-workspace">
         {/* DAFTAR PRODUK */}
         <div className="card" style={{ padding: 0 }}>
           <div style={{ padding: "13px 15px 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -477,26 +470,14 @@ export function KasirClient({
               <i className="ti ti-search" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 12 }} />
             </div>
           </div>
-          <div style={{ padding: "0 15px 10px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderBottom: ".5px solid var(--bd)" }}>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
-            {kategoriTerlihat.map((k) => (
-              <button key={k} type="button" onClick={() => { setKat(k); setPage(1); }}
-                className={`kpos-catTab ${kat === k ? "on" : ""}`}>
-                {k}
-              </button>
-            ))}
+          <div style={{ padding: "0 15px 10px", borderBottom: ".5px solid var(--bd)" }}>
+            <div style={{ width: "100%", maxWidth: 320 }}>
+              <label className="flab" htmlFor="kasir-category-filter">Kategori produk</label>
+              <select id="kasir-category-filter" className="fi" value={kat}
+                onChange={(event) => { setKat(event.target.value); setPage(1); }}>
+                {kategoris.map((kategori) => <option key={kategori} value={kategori}>{kategori}</option>)}
+              </select>
             </div>
-            {adaKategoriTersembunyi && (
-              <button
-                type="button"
-                className="btn-def"
-                onClick={() => setKategoriDibuka((dibuka) => !dibuka)}
-                style={{ padding: "4px 9px", fontSize: 10.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-              >
-                <i className={`ti ${kategoriDibuka ? "ti-chevron-up" : "ti-chevron-down"}`} />
-                {kategoriDibuka ? "Ciutkan kategori" : `Lihat ${kategoris.length - BATAS_KATEGORI_KASIR} kategori lagi`}
-              </button>
-            )}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
