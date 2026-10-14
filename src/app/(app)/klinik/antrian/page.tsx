@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { updateVisitStatus } from "./actions";
 import { CancelButton } from "./CancelButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LiveRefresh } from "./LiveRefresh";
-import { estimatedWaitMinutes } from "@/lib/queue";
+import { estimatedWaitMinutes, queueDayBounds } from "@/lib/queue";
 import { hariIniWIB } from "@/lib/tanggal";
 import { UlasanBadge } from "@/components/UlasanBadge";
 import { serviceDurations } from "@/lib/operasional-klinik";
@@ -50,47 +52,47 @@ export default async function AntrianPage({
 }) {
   const { filter = "aktif", success, tanggal = "", cabang = "" } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const branch = await requireOperationalBranch(supabase, user.id, "klinik");
 
-  // Antrian hari lain & per cabang (permintaan Pak Andri, meeting 14 Agustus):
-  // dulu layar ini selalu memakai antrian berjalan seluruh cabang, jadi menengok
-  // antrian kemarin cuma bisa lewat database.
-  const hariDipilih = tanggal || hariIniWIB();
-  const mulaiHari = `${hariDipilih}T00:00:00+07:00`;
-  const akhirHari = `${hariDipilih}T23:59:59+07:00`;
+  // Keep historical views within the authenticated operational branch.
+  const requestedDay = queueDayBounds(tanggal || hariIniWIB());
+  const day = requestedDay ?? queueDayBounds(hariIniWIB())!;
+  const hariDipilih = day.date;
+  const mulaiHari = day.from;
+  const akhirHari = day.until;
 
   let query = supabase
     .from("visits")
     .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code)")
-    .gte("created_at", mulaiHari).lte("created_at", akhirHari)
+    .eq("branch_id", branch.id)
+    .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
   if (filter === "aktif") query = query.neq("status", "Selesai");
   if (filter === "menunggu") query = query.eq("status", "Menunggu");
   if (filter === "diperiksa") query = query.eq("status", "Diperiksa");
   if (filter === "selesai") query = query.eq("status", "Selesai");
-  if (cabang) query = query.eq("branch_id", cabang);
 
-  // 4 query independen → jalan barengan (kurangi latency berurutan).
-  // Kartu angka & "berikutnya dipanggil" ikut hari + cabang yang sedang dilihat,
-  // supaya menengok kemarin tidak menampilkan angka hari ini.
-  let qWaiting = supabase
+  // Counters and next-up use the same day/branch, independent of the status tab.
+  const qWaiting = supabase
     .from("visits")
     .select("id, poli, dokter, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone)")
     .eq("status", "Menunggu")
-    .gte("created_at", mulaiHari).lte("created_at", akhirHari)
+    .eq("branch_id", branch.id)
+    .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
-  if (cabang) qWaiting = qWaiting.eq("branch_id", cabang);
 
-  let qHari = supabase.from("visits").select("status")
-    .gte("created_at", mulaiHari).lte("created_at", akhirHari);
-  if (cabang) qHari = qHari.eq("branch_id", cabang);
+  const qHari = supabase.from("visits").select("status")
+    .eq("branch_id", branch.id)
+    .gte("created_at", mulaiHari).lt("created_at", akhirHari);
 
-  const [{ data: visits }, { data: allWaiting }, { data: today }, { data: cabangList }, { data: voucherAktif }] =
+  const [visitsResult, waitingResult, todayResult, { data: voucherAktif }] =
     await Promise.all([
       query,
       qWaiting,
       qHari,
-      supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
       // Pengingat voucher untuk admin klinik (permintaan Pak Aldi, meeting 14
       // Agustus): voucher hari-ini-saja tidak ada gunanya kalau petugas depan
       // tidak tahu harus menawarkannya.
@@ -98,6 +100,16 @@ export default async function AntrianPage({
         .select("code, tipe, nilai, valid_from, valid_until, customer_id, category_id, customers(name), customer_categories(nama)")
         .eq("is_active", true),
     ]);
+  if (visitsResult.error || waitingResult.error || todayResult.error) {
+    return <>
+      <LiveRefresh branchId={branch.id} />
+      <div role="alert" className="p2ban">Antrian gagal dimuat. Periksa koneksi dan coba lagi. Data pasien belum dapat ditampilkan.</div>
+      <Link href={`/klinik/antrian?${new URLSearchParams({ filter, tanggal: hariDipilih })}`} className="btn-def">Coba lagi</Link>
+    </>;
+  }
+  const visits = visitsResult.data;
+  const allWaiting = waitingResult.data;
+  const today = todayResult.data;
 
   type VoucherIngat = {
     code: string; tipe: string; nilai: number;
@@ -125,23 +137,28 @@ export default async function AntrianPage({
   const totalToday = today?.length ?? 0;
 
   const fmtTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
   const fmtOptional = (iso: string | null | undefined) => iso ? fmtTime(iso) : "—";
 
   const nextPet = nextUp ? one(nextUp.pets) : null;
 
   return (
     <>
-      <LiveRefresh />
+      <LiveRefresh branchId={branch.id} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
         <Link href="/klinik" className="back-btn">
           <i className="ti ti-arrow-left" /> Kembali
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 9.5, color: "var(--td)" }}>
-          <i className="ti ti-broadcast" style={{ color: "#16a34a" }} /> live — update otomatis via realtime
+          <i className="ti ti-broadcast" /> Pembaruan otomatis · cabang {branch.name}
         </span>
       </div>
+
+      {(!requestedDay || (cabang && cabang !== branch.id)) && <div role="status" className="p2ban">
+        {!requestedDay ? "Tanggal tidak valid; menampilkan hari ini. " : ""}
+        {cabang && cabang !== branch.id ? "Filter cabang pada tautan berbeda; menampilkan cabang aktif. Gunakan Ganti cabang untuk berpindah." : ""}
+      </div>}
 
       {/* Judul besar (gaya referensi) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
@@ -215,7 +232,7 @@ export default async function AntrianPage({
                 { key: "aktif", label: "Aktif" },
               ].map((t) => (
                 <Link key={t.key}
-                  href={`/klinik/antrian?filter=${t.key}${tanggal ? `&tanggal=${tanggal}` : ""}${cabang ? `&cabang=${cabang}` : ""}`}
+                  href={`/klinik/antrian?filter=${t.key}&tanggal=${hariDipilih}`}
                   className="back-btn"
                   style={{
                     padding: "5px 12px", borderRadius: 7, border: ".5px solid var(--bd)",
@@ -240,10 +257,7 @@ export default async function AntrianPage({
             </div>
             <div style={{ minWidth: 190 }}>
               <label className="flab">Cabang</label>
-              <select className="fi" name="cabang" defaultValue={cabang}>
-                <option value="">Semua cabang</option>
-                {(cabangList ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              <input className="fi" value={branch.name} readOnly aria-label="Cabang aktif" />
             </div>
             <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
             {hariDipilih !== hariIniWIB() && (
@@ -358,7 +372,8 @@ export default async function AntrianPage({
                 })}
                 {(visits ?? []).length === 0 && (
                   <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                    Tidak ada pasien di antrian.
+                    Tidak ada pasien untuk filter ini di {branch.name}, tanggal {hariDipilih}.
+                    {filter === "selesai" ? " Pasien baru ada di tab Menunggu atau Aktif." : ""}
                   </td></tr>
                 )}
               </tbody>
