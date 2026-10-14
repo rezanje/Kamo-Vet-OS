@@ -246,6 +246,9 @@ export default async function KasirPage({
 
   return (
     <KasirClient
+      key={shift.id}
+      draftContext={`${user.id}:${shift.branch_id}:${shift.id}`}
+      shiftId={shift.id}
       branchName={shift.branchName}
       items={itemRows}
       customers={custRows}

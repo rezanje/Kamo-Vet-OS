@@ -18,12 +18,7 @@ export default async function BaruPermintaanKasirPage({
   if (!shift) redirect("/kasir/mulai");
 
   // gudang tujuan: gudang DC (kode diawali "DC").
-  const { data: warehouses } = await supabase
-    .from("warehouses")
-    .select("id, name")
-    .ilike("code", "DC%")
-    .eq("is_active", true)
-    .order("name");
+  const { data: warehouses } = await supabase.rpc("operational_request_destinations", { p_dc_only: true });
 
   // katalog barang (hanya Persediaan) + satuan berjenjang buat item picker.
   const katalog = await loadKatalogPermintaan(supabase);

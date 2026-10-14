@@ -1,6 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
+import { BRANCH_HEADER, MODE_HEADER, branchCookie, operationalMode, parseBranchContext } from "@/lib/operational-context";
+import { resolveOperationalBranch } from "@/lib/operational-branch";
+import { getOpenShift } from "@/lib/shift";
 
 function loginRedirect(request: NextRequest) {
   const url = request.nextUrl.clone();
@@ -65,12 +68,12 @@ export async function updateSession(request: NextRequest) {
     const isInternal = path.startsWith("/_next") || path.startsWith("/api");
     const isPublic = publik || path.startsWith("/login") || path.startsWith("/auth");
     if (!isInternal && !isPublic) {
-      const [{ data: profile, error: profileError }, { data: aturan }] = await Promise.all([
-        supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
+      const [{ data: profile, error: profileError }, { data: aturan, error: rulesError }] = await Promise.all([
+        supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle(),
         supabase.from("role_modules").select("role, module_id"),
       ]);
       // Auth deletion cascades the profile; an unexpired JWT alone is not enough.
-      if (profileError || !profile) return loginRedirect(request);
+      if (profileError || rulesError || !profile || profile.is_active === false) return loginRedirect(request);
       const role = profile?.role ?? "";
       const tersimpan = (aturan ?? []) as { role: string; module_id: string }[];
 
@@ -79,9 +82,41 @@ export async function updateSession(request: NextRequest) {
         url.pathname = tujuanSaatDiblokir(role, tersimpan);
         return NextResponse.redirect(url);
       }
+
+      const mode = operationalMode(path);
+      if (mode) {
+        const context = parseBranchContext(request.cookies.get(branchCookie(mode))?.value, userId);
+        const branch = context ? await resolveOperationalBranch(supabase, userId, mode, context.branchId) : null;
+        // Read without operational scope so a stale/tampered cookie cannot hide
+        // another open shift and bypass the switching guard.
+        const shift = branch ? await getOpenShift(supabase, userId, mode) : null;
+        if (!branch || (shift && shift.branch_id !== branch.id)) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/mulai/cabang";
+          url.search = "";
+          url.searchParams.set("mode", mode);
+          if (request.method !== "GET") url.searchParams.set("error", "Pilih cabang aktif, lalu ulangi tindakan.");
+          const response = NextResponse.redirect(url, { status: 303 });
+          supabaseResponse.cookies.getAll().forEach(cookie => response.cookies.set(cookie));
+          return response;
+        }
+        // Replace client-supplied headers. Context is always revalidated against
+        // live account grants; cookies are convenience, never authorization.
+        request.headers.set(BRANCH_HEADER, branch.id);
+        request.headers.set(MODE_HEADER, mode);
+      } else {
+        request.headers.delete(BRANCH_HEADER);
+        request.headers.delete(MODE_HEADER);
+      }
     }
   }
 
-  // IMPORTANT: return supabaseResponse unchanged (keeps cookies in sync).
-  return supabaseResponse;
+  // Strip spoofed headers also on public/API requests.
+  if (!userId || !operationalMode(request.nextUrl.pathname)) {
+    request.headers.delete(BRANCH_HEADER);
+    request.headers.delete(MODE_HEADER);
+  }
+  const response = NextResponse.next({ request: { headers: request.headers } });
+  supabaseResponse.cookies.getAll().forEach(cookie => response.cookies.set(cookie));
+  return response;
 }

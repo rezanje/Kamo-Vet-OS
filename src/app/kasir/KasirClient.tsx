@@ -86,9 +86,10 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 };
 
 export function KasirClient({
-  branchName, items, customers, vouchers, hariIni, promos = [], promoHitung = [],
+  branchName, items, customers, vouchers, hariIni, draftContext, shiftId, promos = [], promoHitung = [],
   aturanDiskon = {}, infoBarang = {}, salespeople = [], error,
 }: {
+  draftContext?: string; shiftId?: string;
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
@@ -116,9 +117,10 @@ export function KasirClient({
   const [addPending, startAdd] = useTransition();
   const router = useRouter();
   const draftSiap = useRef(false);
+  const draftKey = draftContext ? `${KASIR_DRAFT_KEY}:${draftContext}` : KASIR_DRAFT_KEY;
 
   useEffect(() => {
-    const draft = bacaDraftKasir(window.sessionStorage.getItem(KASIR_DRAFT_KEY));
+    const draft = bacaDraftKasir(window.sessionStorage.getItem(draftKey));
     const timer = window.setTimeout(() => {
       if (!draft) {
         draftSiap.current = true;
@@ -156,20 +158,20 @@ export function KasirClient({
       draftSiap.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [customers, items, salespeople]);
+  }, [customers, items, salespeople, draftKey]);
 
   useEffect(() => {
     if (!draftSiap.current) return;
     if (cartRaw.length === 0) {
-      window.sessionStorage.removeItem(KASIR_DRAFT_KEY);
+      window.sessionStorage.removeItem(draftKey);
       return;
     }
     const draft: KasirDraft = {
       version: 1, savedAt: Date.now(), customerId: cust?.id ?? "", salespersonId,
       metode, diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
     };
-    window.sessionStorage.setItem(KASIR_DRAFT_KEY, JSON.stringify(draft));
-  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar]);
+    window.sessionStorage.setItem(draftKey, JSON.stringify(draft));
+  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar, draftKey]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -570,6 +572,7 @@ export function KasirClient({
 
         {/* KERANJANG BELANJA */}
         <form action={checkoutKasir} className="card">
+          {shiftId && <input type="hidden" name="operationalShiftId" value={shiftId} />}
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
           <input type="hidden" name="salespersonId" value={salespersonId} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />

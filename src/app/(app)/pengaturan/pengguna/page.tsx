@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { buatPengguna, togglePengguna } from "./actions";
+import { assertMasterAdmin } from "@/lib/master-guard";
+import { buatPengguna, togglePengguna, tautkanPengguna } from "./actions";
 
 type ProfileRow = {
   id: string;
@@ -11,7 +11,7 @@ type ProfileRow = {
 };
 
 type UB = { user_id: string; branches: { name: string } | null };
-type Emp = { id: string; nama: string; jabatan: string | null; profile_id: string | null };
+type Emp = { nik: string | null; status: string; id: string; nama: string; jabatan: string | null; profile_id: string | null };
 
 const ROLE_BADGE: Record<string, string> = { OWNER: "r", ADMIN: "b", FINANCE: "o", DOCTOR: "g", STAFF: "x" };
 
@@ -21,13 +21,13 @@ export default async function PenggunaPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
-  const supabase = await createClient();
+  const supabase = await assertMasterAdmin("/mulai", "akun karyawan");
 
   const [{ data: profiles }, { data: ubs }, { data: branches }, { data: employees }] = await Promise.all([
     supabase.from("profiles").select("id, full_name, role, is_active").order("full_name"),
     supabase.from("user_branches").select("user_id, branches(name)"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    supabase.from("employees").select("id, nama, jabatan, profile_id").order("nama"),
+    supabase.from("employees").select("id, nik, nama, jabatan, profile_id, status").order("nama"),
   ]);
 
   const rows = (profiles ?? []) as unknown as ProfileRow[];
@@ -38,8 +38,8 @@ export default async function PenggunaPage({
     ubMap.set(u.user_id, arr);
   }
   const emps = (employees ?? []) as unknown as Emp[];
-  const empByProfile = new Map(emps.filter((e) => e.profile_id).map((e) => [e.profile_id as string, e.nama]));
-  const empBebas = emps.filter((e) => !e.profile_id);
+  const empByProfile = new Map(emps.filter((e) => e.profile_id).map((e) => [e.profile_id as string, `${e.nama} · ${e.nik ?? e.id}`]));
+  const empBebas = emps.filter((e) => !e.profile_id && e.status === "Aktif");
 
   return (
     <>
@@ -79,8 +79,16 @@ export default async function PenggunaPage({
                 <tr key={p.id} style={!p.is_active ? { opacity: 0.55 } : undefined}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{p.full_name ?? "—"}</td>
                   <td><span className={`bge ${ROLE_BADGE[p.role] ?? "x"}`}>{p.role}</span></td>
-                  <td style={{ fontSize: 11 }}>{(ubMap.get(p.id) ?? []).join(", ") || "Semua (tanpa penugasan)"}</td>
-                  <td style={{ fontSize: 11 }}>{empByProfile.get(p.id) ?? "—"}</td>
+                  <td style={{ fontSize: 11 }}>{(ubMap.get(p.id) ?? []).join(", ") || (["OWNER", "ADMIN", "FINANCE"].includes(p.role) ? "Semua sesuai peran" : "Belum ada akses cabang")}</td>
+                  <td style={{ fontSize: 11 }}>{empByProfile.has(p.id) ? empByProfile.get(p.id) : <form action={tautkanPengguna}>
+                    <input type="hidden" name="profile_id" value={p.id} />
+                    <label className="flab" htmlFor={`employee-${p.id}`}>Belum tertaut HRIS</label>
+                    <select id={`employee-${p.id}`} className="fi" name="employee_id" required defaultValue="">
+                      <option value="" disabled>Pilih karyawan</option>
+                      {empBebas.map(e => <option key={e.id} value={e.id}>{e.nik ?? e.id} · {e.nama}</option>)}
+                    </select>
+                    <button className="btn-def" type="submit">Tautkan akun</button>
+                  </form>}</td>
                   <td><span className={`bge ${p.is_active ? "g" : "r"}`}>{p.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   <td>
                     <form action={togglePengguna}>
@@ -116,7 +124,7 @@ export default async function PenggunaPage({
             </div>
             <div className="fg" style={{ marginBottom: 0 }}>
               <label className="flab">Password awal * (min. 8)</label>
-              <input className="fi" name="password" required minLength={8} placeholder="Password sementara" />
+              <input className="fi" name="password" type="password" required minLength={8} placeholder="Password sementara" />
             </div>
             <div className="fg" style={{ marginBottom: 0 }}>
               <label className="flab">Role *</label>
@@ -129,18 +137,18 @@ export default async function PenggunaPage({
               </select>
             </div>
             <div className="fg" style={{ marginBottom: 0 }}>
-              <label className="flab">Link karyawan HRIS</label>
-              <select className="fi" name="employee_id">
-                <option value="">— Tidak dilink —</option>
+              <label className="flab">Karyawan HRIS *</label>
+              <select className="fi" name="employee_id" required defaultValue="">
+                <option value="" disabled>Pilih identitas dari HRIS</option>
                 {empBebas.map((e) => (
-                  <option key={e.id} value={e.id}>{e.nama}{e.jabatan ? ` (${e.jabatan})` : ""}</option>
+                  <option key={e.id} value={e.id}>{e.nik ?? e.id} · {e.nama}{e.jabatan ? ` (${e.jabatan})` : ""}</option>
                 ))}
               </select>
             </div>
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <div className="flab" style={{ marginBottom: 6 }}>Penugasan cabang (kosong = akses semua sesuai role)</div>
+            <div className="flab" style={{ marginBottom: 6 }}>Penugasan akun (wajib untuk STAFF/DOCTOR; akses OWNER/ADMIN/FINANCE mengikuti peran)</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {(branches ?? []).map((b) => (
                 <label key={b.id} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, border: ".5px solid var(--bd)", borderRadius: 6, padding: "5px 9px", cursor: "pointer" }}>

@@ -3,7 +3,7 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
+import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { bacaShift, tutupShift } from "@/lib/tutup-shift";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -18,11 +18,8 @@ export async function mulaiShiftKlinik(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/klinik/shift?error=${encodeURIComponent("Sesi kamu habis — masuk ulang.")}`);
 
-  // RLS transaksi klinik dilonggarkan untuk demo, jadi cabang dijaga di sini.
-  const allowed = await allowedBranchIds(supabase, user.id);
-  if (!canUseBranch(allowed, branchId)) {
-    redirect(`/klinik/shift?error=${encodeURIComponent("Kamu tidak bertugas di cabang ini — pilih cabang penempatanmu.")}`);
-  }
+  const branch = await requireOperationalBranch(supabase, user.id, "klinik");
+  if (branch.id !== branchId) redirect(`/klinik/shift?error=${encodeURIComponent("Cabang form berubah. Muat ulang sebelum membuka shift.")}`);
 
   const { error } = await supabase
     .from("cashier_shifts")

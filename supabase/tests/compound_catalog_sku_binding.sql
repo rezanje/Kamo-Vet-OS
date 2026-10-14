@@ -35,7 +35,8 @@ values ('fe000000-0000-4000-8000-000000000001', 'fd000000-0000-4000-8000-0000000
 
 insert into public.items(id, code, name, unit, item_type, is_active, is_compound_material, sell_price)
 values ('fb000000-0000-4000-8000-000000000003', 'CAT-SKU-OTHER', 'Obat Racik Katalog Lain', 'pcs', 'Persediaan', true, false, 95);
-create function pg_temp.binding_state() returns jsonb language sql as $$
+-- Compare physical state independently of caller visibility while changing claims.
+create function pg_temp.binding_state() returns jsonb language sql security definer set search_path='' as $$
 select jsonb_build_object('sales',(select count(*) from public.clinic_compound_sales),
   'recipes',(select count(*) from public.compounding_recipes),
   'prescriptions',(select count(*) from public.prescription_items),

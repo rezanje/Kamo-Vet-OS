@@ -11,6 +11,7 @@ import { KlinikTopbar } from "@/components/KlinikTopbar";
 import { getOpenShift } from "@/lib/shift";
 import { NavigationFeedback } from "@/components/NavigationFeedback";
 import { ReleaseNotice } from "@/components/ReleaseNotice";
+import { ActiveBranch } from "@/components/ActiveBranch";
 
 export default async function AppLayout({
   children,
@@ -47,6 +48,7 @@ export default async function AppLayout({
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
   const isStaff = profile?.role === "STAFF";
   const staffBranch = isStaff ? await getOpenShift(supabase as never, user.id, "klinik") : null;
+  const activeBranch = await ActiveBranch();
 
   return (
     <DraftUserProvider userId={user.id}><div className="shell">
@@ -76,6 +78,7 @@ export default async function AppLayout({
             </div>
           </>
         )}
+        {activeBranch}
         <div className="ct">{children}</div>
       </div>
     </div></DraftUserProvider>

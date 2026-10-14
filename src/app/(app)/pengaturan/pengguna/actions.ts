@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSbClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
+import { assertMasterAdmin } from "@/lib/master-guard";
 
 const BACK = "/pengaturan/pengguna";
 
@@ -12,7 +12,7 @@ const BACK = "/pengaturan/pengguna";
 // Catatan: bila Supabase "Confirm email" aktif, user baru harus konfirmasi dulu —
 // matikan di dashboard Supabase (Authentication → Email) untuk akun internal.
 export async function buatPengguna(formData: FormData) {
-  const supabase = await createClient(); // sesi admin (RLS is_admin utk update role)
+  const supabase = await assertMasterAdmin(BACK, "akun karyawan");
 
   const full_name = String(formData.get("full_name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -25,6 +25,16 @@ export async function buatPengguna(formData: FormData) {
 
   if (!full_name || !email || password.length < 8) fail("Nama, email, dan password (min. 8 karakter) wajib diisi.");
   if (!["OWNER", "ADMIN", "FINANCE", "STAFF", "DOCTOR"].includes(role)) fail("Role tidak dikenal.");
+
+  if (!employee_id) fail("Pilih karyawan HRIS terlebih dahulu.");
+  const { data: employee, error: employeeError } = await supabase.from("employees")
+    .select("id, profile_id, status").eq("id", employee_id).maybeSingle();
+  if (employeeError || !employee || employee.status !== "Aktif" || employee.profile_id) fail("Karyawan tidak tersedia atau sudah memiliki akun. Periksa HRIS.");
+  if (["STAFF", "DOCTOR"].includes(role) && !branchIds.length) fail("Pilih penugasan cabang akun.");
+  if (branchIds.length) {
+    const { data: valid, error } = await supabase.from("branches").select("id").in("id", branchIds).eq("is_active", true);
+    if (error || valid?.length !== new Set(branchIds).size) fail("Penugasan cabang tidak valid.");
+  }
 
   // klien terpisah tanpa cookie — sesi admin di browser tidak tertimpa.
   const anon = createSbClient(
@@ -41,22 +51,12 @@ export async function buatPengguna(formData: FormData) {
   const newId = signUpData?.user?.id;
   if (!newId) fail("Akun tidak terbentuk (cek pengaturan email Supabase).");
 
-  // set role + nama (baris profiles dibuat trigger; update sebagai admin)
-  const { error: updErr } = await supabase
-    .from("profiles").update({ full_name, role, is_active: true }).eq("id", newId);
-  if (updErr) fail(`Akun terbentuk tapi gagal set role: ${updErr.message}`);
-
-  // penugasan cabang
-  if (branchIds.length) {
-    await supabase.from("user_branches").insert(
-      branchIds.map((b, i) => ({ user_id: newId, branch_id: b, role: i === 0 ? "PRIMARY" : "FLOATING" })),
-    );
-  }
-
-  // link ke data karyawan HRIS (quest/KPI/absensi nyambung)
-  if (employee_id) {
-    await supabase.from("employees").update({ profile_id: newId }).eq("id", employee_id);
-  }
+  // Account grants, role and HRIS identity commit together.
+  const { error: configureError } = await supabase.rpc("configure_employee_account", {
+    p_profile_id: newId, p_employee_id: employee_id, p_full_name: full_name,
+    p_role: role, p_branch_ids: [...new Set(branchIds)],
+  });
+  if (configureError) fail("Akun terbentuk tetapi penautan HRIS belum selesai. Admin perlu meninjau akun sebelum digunakan; jangan membuat ulang akun.");
 
   revalidatePath(BACK);
   redirect(`${BACK}?success=${encodeURIComponent(`Akun ${email} dibuat. Sampaikan password awal ke karyawan ybs.`)}`);
@@ -64,14 +64,28 @@ export async function buatPengguna(formData: FormData) {
 
 // Aktif/nonaktifkan akun. Nonaktif = tidak bisa masuk (dicek di layout).
 export async function togglePengguna(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await assertMasterAdmin(BACK, "akun karyawan");
   const id = String(formData.get("id") ?? "");
   const aktif = String(formData.get("aktif") ?? "") === "1";
 
   const { data: { user } } = await supabase.auth.getUser();
   if (user?.id === id) redirect(`${BACK}?error=${encodeURIComponent("Tidak bisa menonaktifkan akun sendiri.")}`);
 
-  await supabase.from("profiles").update({ is_active: aktif }).eq("id", id);
+  const { error } = await supabase.from("profiles").update({ is_active: aktif }).eq("id", id);
+  if (error) redirect(`${BACK}?error=${encodeURIComponent("Status akun gagal disimpan.")}`);
   revalidatePath(BACK);
   redirect(BACK);
+}
+
+// Explicit review action; preserves the existing role and branch grants.
+export async function tautkanPengguna(form: FormData) {
+  const client = await assertMasterAdmin(BACK, "tautan HRIS");
+  const profileId = String(form.get("profile_id") ?? "");
+  const employeeId = String(form.get("employee_id") ?? "");
+  if (!profileId || !employeeId) redirect(`${BACK}?error=${encodeURIComponent("Pilih akun dan karyawan HRIS.")}`);
+  const { error } = await client.rpc("link_employee_account", { p_profile_id: profileId, p_employee_id: employeeId });
+  if (error) redirect(`${BACK}?error=${encodeURIComponent("Tautan tidak tersedia atau berubah. Muat ulang dan periksa HRIS.")}`);
+  revalidatePath(BACK);
+  revalidatePath("/hris/karyawan");
+  redirect(`${BACK}?success=${encodeURIComponent("Akun sudah tertaut ke karyawan HRIS.")}`);
 }

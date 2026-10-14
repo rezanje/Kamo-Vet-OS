@@ -3,6 +3,7 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { nextQueueNumber } from "@/lib/queue";
 import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
@@ -33,6 +34,10 @@ async function daftar(formData: FormData): Promise<string[]> {
   // form, supaya nama di dokumen cetak tidak pernah beda dari orang yang dibayar.
   const { doctorId, nama: dokter } = await resolveDokter(supabase, String(formData.get("doctor_id") ?? "").trim() || null);
   const branchId = String(formData.get("branchId") ?? "");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const branch = await requireOperationalBranch(supabase, user.id, "klinik");
+  if (branch.id !== branchId) redirect("/klinik/registrasi?error=" + encodeURIComponent("Cabang form berubah. Muat ulang pendaftaran."));
   const bookingId = String(formData.get("bookingId") ?? "").trim();
   const kontrol = String(formData.get("kontrol") ?? "baru");
   const tujuanKontrol = String(formData.get("tujuanKontrol") ?? "").trim();

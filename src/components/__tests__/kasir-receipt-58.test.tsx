@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({ long: false, voucher: false }));
+vi.mock("@/components/ActiveBranch", () => ({ ActiveBranch: async () => null }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/kasir/struk/receipt", useSearchParams: () => new URLSearchParams(),
   redirect: () => { throw Error("redirect"); }, notFound: () => { throw Error("not found"); } }));
 vi.mock("@/app/login/actions", () => ({ logout: async () => {} }));
