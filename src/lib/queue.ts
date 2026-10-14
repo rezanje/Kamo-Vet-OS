@@ -1,4 +1,13 @@
 // Nomor antrian & estimasi tunggu (Addendum §4) — pure.
+import { waktuInputWIB } from "./tanggal";
+
+// Shared by registration and the queue so server/browser timezone cannot move
+// a visit into a different day. The exclusive end includes 23:59:59.999 WIB.
+export function queueDayBounds(date: string) {
+  const start = waktuInputWIB(date, "00:00");
+  if (!start) return null;
+  return { date, from: start.toISOString(), until: new Date(start.getTime() + 86_400_000).toISOString() };
+}
 
 // [Huruf][3 digit] per cabang per hari; huruf dari poli (default A).
 export function queueLetter(poli: string): string {

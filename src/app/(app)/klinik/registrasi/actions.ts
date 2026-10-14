@@ -4,7 +4,8 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireOperationalBranch } from "@/lib/operational-branch-server";
-import { nextQueueNumber } from "@/lib/queue";
+import { nextQueueNumber, queueDayBounds } from "@/lib/queue";
+import { hariIniWIB } from "@/lib/tanggal";
 import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 import { resolveDokter } from "@/lib/dokter";
@@ -88,12 +89,15 @@ async function daftar(formData: FormData): Promise<string[]> {
   // keputusan meeting 14 Agustus). Dibaca SEKALI lalu ditambah di memori: kalau
   // dibaca ulang tiap hewan, tiga kunjungan yang dibuat dalam hitungan milidetik
   // bisa dapat nomor yang sama.
-  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
-  const [{ data: todayQ }, { data: cabang }] = await Promise.all([
+  const day = queueDayBounds(hariIniWIB())!;
+  const [{ data: todayQ, error: queueError }, { data: cabang, error: branchError }] = await Promise.all([
     supabase.from("visits").select("queue_number")
-      .eq("branch_id", branchId).gte("created_at", startOfDay.toISOString()),
+      .eq("branch_id", branchId).gte("created_at", day.from).lt("created_at", day.until),
     supabase.from("branches").select("code").eq("id", branchId).maybeSingle(),
   ]);
+  if (queueError || branchError || !cabang) {
+    redirect(`/klinik/registrasi?error=${encodeURIComponent("Nomor antrian gagal dimuat. Coba lagi sebelum mendaftarkan pasien.")}`);
+  }
   const nomorTerpakai = (todayQ ?? []).map((v) => v.queue_number as string);
   const kodeCabang = cabang?.code ?? null;
 
