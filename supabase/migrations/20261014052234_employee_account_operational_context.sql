@@ -124,6 +124,7 @@ do $$ declare r record; predicate text; begin
  for r in select * from (values
  ('sale_items','sale_id','sales'),('sale_item_group_components','sale_item_id','sale_items'),
  ('medical_records','visit_id','visits'),('prescription_items','medical_record_id','medical_records'),
+ ('compounding_recipes','medical_record_id','medical_records'),('compounding_ingredients','recipe_id','compounding_recipes'),
  ('invoices','visit_id','visits'),('invoice_items','invoice_id','invoices'),('invoice_payments','invoice_id','invoices'),('invoice_edit_log','invoice_id','invoices'),
  ('consents','visit_id','visits'),('inpatient_records','visit_id','visits'),
  ('inpatient_status_log','inpatient_record_id','inpatient_records'),('inpatient_daily_logs','inpatient_record_id','inpatient_records'),
@@ -159,7 +160,7 @@ begin
  if tg_op='UPDATE' then
    v_old:=to_jsonb(old);
    -- Deleting an auth account can null its profile FK; keep the HRIS snapshot.
-   if v_actor is not null and (v_new->>tg_argv[0]) is distinct from (v_old->>tg_argv[0]) then raise exception 'OPERATIONAL_ACTOR_IMMUTABLE'; end if;
+   if (v_actor is not null or auth.role()='authenticated') and (v_new->>tg_argv[0]) is distinct from (v_old->>tg_argv[0]) then raise exception 'OPERATIONAL_ACTOR_IMMUTABLE'; end if;
    v_employee:=(v_old->>tg_argv[1])::uuid;
  else
    select id into v_employee from public.employees where profile_id=v_actor and status='Aktif';

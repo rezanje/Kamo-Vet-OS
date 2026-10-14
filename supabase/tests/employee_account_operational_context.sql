@@ -21,6 +21,11 @@ insert into visits(id,branch_id,customer_id,pet_id) values
  ('eb610000-0000-4000-8000-000000000001','eb200000-0000-4000-8000-000000000001','eb300000-0000-4000-8000-000000000001','eb400000-0000-4000-8000-000000000001'),
  ('eb610000-0000-4000-8000-000000000002','eb200000-0000-4000-8000-000000000002','eb300000-0000-4000-8000-000000000001','eb400000-0000-4000-8000-000000000001');
 insert into medical_records(visit_id) values ('eb610000-0000-4000-8000-000000000001'),('eb610000-0000-4000-8000-000000000002');
+insert into compounding_recipes(medical_record_id,recipe_name,dosage_instruction,total_volume,dosage_form,compounding_steps)
+select id,case when visit_id='eb610000-0000-4000-8000-000000000001' then 'CTX own compound' else 'CTX other compound' end,'Fictional instruction','1 ml','sirup','Fictional steps'
+from medical_records where visit_id in ('eb610000-0000-4000-8000-000000000001','eb610000-0000-4000-8000-000000000002');
+insert into compounding_ingredients(recipe_id,ingredient_name,quantity,unit)
+select id,case when recipe_name='CTX own compound' then 'CTX own ingredient' else 'CTX other ingredient' end,1,'ml' from compounding_recipes where recipe_name like 'CTX%';
 set local role authenticated;
 select set_config('request.jwt.claims','{"role":"authenticated","sub":"eb100000-0000-4000-8000-000000000001"}',true);
 select configure_employee_account('eb100000-0000-4000-8000-000000000002','eb500000-0000-4000-8000-000000000001','Fictional account','STAFF',array['eb200000-0000-4000-8000-000000000001']::uuid[]);
@@ -77,6 +82,26 @@ update cashier_shifts set employee_id='eb500000-0000-4000-8000-000000000002' whe
 do $$ begin
  if (select employee_id from cashier_shifts where id='eb700000-0000-4000-8000-000000000001') is distinct from 'eb500000-0000-4000-8000-000000000001'::uuid then raise exception 'historical snapshot changed'; end if;
 end $$;
+do $$ declare affected integer; begin
+ if (select count(*) from compounding_recipes where recipe_name='CTX own compound')<>1
+   or exists(select 1 from compounding_recipes where recipe_name='CTX other compound')
+   or exists(select 1 from compounding_ingredients where ingredient_name='CTX other ingredient') then raise exception 'compound branch isolation failed'; end if;
+ update compounding_recipes set total_volume='2 ml' where recipe_name='CTX other compound';
+ get diagnostics affected=row_count;
+ if affected<>0 then raise exception 'foreign compound mutation accepted'; end if;
+ begin
+  update cashier_shifts set opened_by=null where id='eb700000-0000-4000-8000-000000000001';
+  raise exception 'shift orphaning accepted';
+ exception when raise_exception then if sqlerrm<>'OPERATIONAL_ACTOR_IMMUTABLE' then raise; end if; end;
+ begin
+  update sales set cashier_id=null where id='eb600000-0000-4000-8000-000000000001';
+  raise exception 'sale actor clearing accepted';
+ exception when raise_exception then if sqlerrm<>'OPERATIONAL_ACTOR_IMMUTABLE' then raise; end if; end;
+ begin
+  update expenses set created_by=null where kategori='CTX test';
+  raise exception 'expense actor clearing accepted';
+ exception when raise_exception then if sqlerrm<>'OPERATIONAL_ACTOR_IMMUTABLE' then raise; end if; end;
+end $$;
 -- Global accounts retain backoffice access but operational context narrows them.
 select set_config('request.jwt.claims','{"role":"authenticated","sub":"eb100000-0000-4000-8000-000000000001"}',true);
 do $$ begin
@@ -91,5 +116,13 @@ update profiles set is_active=false where id='eb100000-0000-4000-8000-0000000000
 select set_config('request.jwt.claims','{"role":"authenticated","sub":"eb100000-0000-4000-8000-000000000002"}',true);
 do $$ begin
  if user_can_access_branch('eb200000-0000-4000-8000-000000000001') then raise exception 'disabled account allowed'; end if;
+end $$;
+-- Legitimate system auth deletion clears profile FKs while preserving HRIS snapshots.
+reset role;
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+delete from auth.users where id='eb100000-0000-4000-8000-000000000002';
+do $$ begin
+ if not exists(select 1 from cashier_shifts where id='eb700000-0000-4000-8000-000000000001' and opened_by is null and employee_id='eb500000-0000-4000-8000-000000000001') then raise exception 'auth deletion lost shift employee snapshot'; end if;
+ if not exists(select 1 from expenses where kategori='CTX test' and created_by is null and created_by_employee_id='eb500000-0000-4000-8000-000000000001') then raise exception 'auth deletion lost expense employee snapshot'; end if;
 end $$;
 rollback;
