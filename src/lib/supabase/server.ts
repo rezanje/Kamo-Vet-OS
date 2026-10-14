@@ -1,13 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { BRANCH_HEADER } from "@/lib/operational-context";
 
 export async function createClient() {
   const cookieStore = await cookies();
+  const requestHeaders = await headers();
+  const branchId = requestHeaders.get(BRANCH_HEADER);
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { headers: branchId ? { [BRANCH_HEADER]: branchId } : {} },
       cookies: {
         getAll() {
           return cookieStore.getAll();

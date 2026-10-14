@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { getOpenShift } from "@/lib/shift";
 import { daftarDokter } from "@/lib/dokter";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -16,6 +17,7 @@ export default async function RegistrasiPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const activeBranch = await requireOperationalBranch(supabase, user.id, "klinik");
 
   const { data: profile } = await supabase
     .from("profiles").select("role").eq("id", user.id).single();
@@ -29,11 +31,11 @@ export default async function RegistrasiPage({
 
   const { data: branches } = shift
     ? { data: [{ id: shift.branch_id, code: "", name: shift.branchName }] }
-    : await supabase.from("branches").select("id, code, name").order("name");
+    : { data: [activeBranch] };
 
   // Ditandai siapa yang memang jaga hari ini — pendaftaran sering menugaskan
   // dokter yang ternyata libur, dan baru ketahuan saat pasien sudah menunggu.
-  const dokter = await daftarDokter(supabase, { tanggal: hariIniWIB(), branchId: shift?.branch_id ?? null });
+  const dokter = await daftarDokter(supabase, { tanggal: hariIniWIB(), branchId: activeBranch.id });
 
   // Datang dari booking online: isian awal diambil dari pesanan pelanggan supaya
   // staf tidak mengetik ulang. Booking yang sudah dipakai mendaftar tidak boleh

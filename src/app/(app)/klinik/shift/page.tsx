@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { allowedBranchIds } from "@/lib/branch-access";
+import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { mulaiShiftKlinik, tutupShiftKlinik } from "./actions";
 
@@ -19,6 +19,7 @@ export default async function KlinikShiftPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const activeBranch = await requireOperationalBranch(supabase, user.id, "klinik");
   const shift = await getOpenShift(supabase as never, user.id, "klinik");
 
   if (shift) {
@@ -71,12 +72,7 @@ export default async function KlinikShiftPage({
     );
   }
 
-  // Cuma cabang penempatan akun ini yang boleh dipilih (peran global = semua).
-  const allowed = await allowedBranchIds(supabase, user.id);
-  let q = supabase
-    .from("branches").select("id, name").eq("is_active", true).in("type", ["KLINIK", "BOTH"]);
-  if (allowed !== null) q = q.in("id", allowed.length ? allowed : ["-"]);
-  const { data: branches } = await q.order("name");
+  const branches = [activeBranch];
 
   return (
     <div className="skl-wrap" style={{ minHeight: "60vh" }}>
@@ -98,7 +94,7 @@ export default async function KlinikShiftPage({
         </div>
       )}
 
-      <TransactionForm scope={"clinic-shift-open"} action={mulaiShiftKlinik} className="card" style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 440, padding: 22 }}>
+      <TransactionForm scope={`clinic-shift-open:${activeBranch.id}`} action={mulaiShiftKlinik} className="card" style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 440, padding: 22 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
@@ -113,7 +109,7 @@ export default async function KlinikShiftPage({
 
         <div style={{ marginBottom: 10 }}>
           <label className="flab">Cabang klinik *</label>
-          <select className="fi" name="branchId" required defaultValue="">
+          <select className="fi" name="branchId" required defaultValue={activeBranch.id}>
             <option value="" disabled>Pilih cabang tempat kamu bertugas</option>
             {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>

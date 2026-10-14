@@ -15,7 +15,6 @@ import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import type { ItemType } from "@/lib/barang";
 import { bacaDraftKasir, KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
-import { BATAS_KATEGORI_KASIR, kategoriKasirTerlihat } from "@/lib/kasir-kategori";
 import { nomorHalamanKasirTerlihat } from "@/lib/kasir-halaman";
 import { digitHp } from "@/lib/kontak";
 import { normalPhone } from "@/lib/booking";
@@ -86,9 +85,10 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 };
 
 export function KasirClient({
-  branchName, items, customers, vouchers, hariIni, promos = [], promoHitung = [],
+  branchName, items, customers, vouchers, hariIni, draftContext, shiftId, promos = [], promoHitung = [],
   aturanDiskon = {}, infoBarang = {}, salespeople = [], error,
 }: {
+  draftContext?: string; shiftId?: string;
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
@@ -98,7 +98,6 @@ export function KasirClient({
 }) {
   const [q, setQ] = useState("");
   const [kat, setKat] = useState("Semua");
-  const [kategoriDibuka, setKategoriDibuka] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 8;
   const [cartRaw, setCart] = useState<CartLine[]>([]);
@@ -116,9 +115,10 @@ export function KasirClient({
   const [addPending, startAdd] = useTransition();
   const router = useRouter();
   const draftSiap = useRef(false);
+  const draftKey = draftContext ? `${KASIR_DRAFT_KEY}:${draftContext}` : KASIR_DRAFT_KEY;
 
   useEffect(() => {
-    const draft = bacaDraftKasir(window.sessionStorage.getItem(KASIR_DRAFT_KEY));
+    const draft = bacaDraftKasir(window.sessionStorage.getItem(draftKey));
     const timer = window.setTimeout(() => {
       if (!draft) {
         draftSiap.current = true;
@@ -156,20 +156,20 @@ export function KasirClient({
       draftSiap.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [customers, items, salespeople]);
+  }, [customers, items, salespeople, draftKey]);
 
   useEffect(() => {
     if (!draftSiap.current) return;
     if (cartRaw.length === 0) {
-      window.sessionStorage.removeItem(KASIR_DRAFT_KEY);
+      window.sessionStorage.removeItem(draftKey);
       return;
     }
     const draft: KasirDraft = {
       version: 1, savedAt: Date.now(), customerId: cust?.id ?? "", salespersonId,
       metode, diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
     };
-    window.sessionStorage.setItem(KASIR_DRAFT_KEY, JSON.stringify(draft));
-  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar]);
+    window.sessionStorage.setItem(draftKey, JSON.stringify(draft));
+  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar, draftKey]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -185,11 +185,6 @@ export function KasirClient({
   };
 
   const kategoris = useMemo(() => ["Semua", ...new Set(items.map((i) => i.kategori))], [items]);
-  const kategoriTerlihat = useMemo(
-    () => kategoriKasirTerlihat(kategoris, kategoriDibuka, kat),
-    [kategoris, kategoriDibuka, kat],
-  );
-  const adaKategoriTersembunyi = kategoris.length > BATAS_KATEGORI_KASIR;
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -456,7 +451,7 @@ export function KasirClient({
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.5fr) minmax(360px, 1fr)", gap: 12, alignItems: "start" }}>
+      <div className="kpos-workspace">
         {/* DAFTAR PRODUK */}
         <div className="card" style={{ padding: 0 }}>
           <div style={{ padding: "13px 15px 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -475,26 +470,14 @@ export function KasirClient({
               <i className="ti ti-search" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 12 }} />
             </div>
           </div>
-          <div style={{ padding: "0 15px 10px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderBottom: ".5px solid var(--bd)" }}>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
-            {kategoriTerlihat.map((k) => (
-              <button key={k} type="button" onClick={() => { setKat(k); setPage(1); }}
-                className={`kpos-catTab ${kat === k ? "on" : ""}`}>
-                {k}
-              </button>
-            ))}
+          <div style={{ padding: "0 15px 10px", borderBottom: ".5px solid var(--bd)" }}>
+            <div style={{ width: "100%", maxWidth: 320 }}>
+              <label className="flab" htmlFor="kasir-category-filter">Kategori produk</label>
+              <select id="kasir-category-filter" className="fi" value={kat}
+                onChange={(event) => { setKat(event.target.value); setPage(1); }}>
+                {kategoris.map((kategori) => <option key={kategori} value={kategori}>{kategori}</option>)}
+              </select>
             </div>
-            {adaKategoriTersembunyi && (
-              <button
-                type="button"
-                className="btn-def"
-                onClick={() => setKategoriDibuka((dibuka) => !dibuka)}
-                style={{ padding: "4px 9px", fontSize: 10.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-              >
-                <i className={`ti ${kategoriDibuka ? "ti-chevron-up" : "ti-chevron-down"}`} />
-                {kategoriDibuka ? "Ciutkan kategori" : `Lihat ${kategoris.length - BATAS_KATEGORI_KASIR} kategori lagi`}
-              </button>
-            )}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
@@ -570,6 +553,7 @@ export function KasirClient({
 
         {/* KERANJANG BELANJA */}
         <form action={checkoutKasir} className="card">
+          {shiftId && <input type="hidden" name="operationalShiftId" value={shiftId} />}
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
           <input type="hidden" name="salespersonId" value={salespersonId} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />

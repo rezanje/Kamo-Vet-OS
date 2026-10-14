@@ -52,6 +52,8 @@ export async function checkoutKasir(formData: FormData) {
     .from("cashier_shifts").select("id, branch_id")
     .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
   if (!shift) redirect("/kasir/mulai");
+  const submittedShift = String(formData.get("operationalShiftId") ?? "");
+  if (submittedShift && submittedShift !== shift.id) redirect("/kasir?error=" + encodeURIComponent("Shift berubah. Muat ulang kasir sebelum membayar."));
 
   const branchId = shift!.branch_id;
   const customerId = String(formData.get("customerId") ?? "") || null;

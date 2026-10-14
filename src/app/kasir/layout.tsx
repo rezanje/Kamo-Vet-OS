@@ -6,6 +6,7 @@ import { getOpenShift } from "@/lib/shift";
 import { notificationActiveFor, type NotificationRow } from "@/lib/notifications";
 import { PosNav } from "./PosNav";
 import { NotifBanner } from "./NotifBanner";
+import { ActiveBranch } from "@/components/ActiveBranch";
 
 // Dunia POS kasir: shell sendiri (tanpa sidebar VetOS), top-nav Kasir/Pengeluaran/Persediaan.
 export default async function KasirLayout({ children }: { children: React.ReactNode }) {
@@ -20,6 +21,7 @@ export default async function KasirLayout({ children }: { children: React.ReactN
     redirect("/login?error=" + encodeURIComponent("Akun Anda dinonaktifkan. Hubungi admin."));
   }
   const shift = await getOpenShift(supabase as never, user.id);
+  const activeBranch = await ActiveBranch();
 
   let notifications: NotificationRow[] = [];
   if (shift) {
@@ -36,6 +38,7 @@ export default async function KasirLayout({ children }: { children: React.ReactN
         hasShift={!!shift}
         notifications={notifications}
       />
+      {activeBranch}
       {shift && <NotifBanner notifications={notifications} />}
       <div className="kasir-content" style={{ flex: 1, padding: 16, overflowY: "auto" }}>{children}</div>
     </div></DraftUserProvider>

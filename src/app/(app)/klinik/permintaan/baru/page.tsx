@@ -19,7 +19,7 @@ export default async function KlinikPermintaanBaruPage({
 
   // Gudang tujuan: semua gudang aktif (DC/pusat + gudang cabang lain).
   const [{ data: warehouses }, items] = await Promise.all([
-    supabase.from("warehouses").select("id, name").eq("is_active", true).order("name"),
+    supabase.rpc("operational_request_destinations"),
     loadKatalogPermintaan(supabase),
   ]);
 
@@ -31,7 +31,7 @@ export default async function KlinikPermintaanBaruPage({
         <span style={{ fontSize: 13, fontWeight: 500 }}>Permintaan Baru</span>
       </div>
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      <PermintaanFormKlinik userId={user.id} branchName={shift.branchName} warehouses={warehouses ?? []} items={items} />
+      <PermintaanFormKlinik userId={user.id} branchName={shift.branchName} shiftId={shift.id} warehouses={warehouses ?? []} items={items} />
     </>
   );
 }

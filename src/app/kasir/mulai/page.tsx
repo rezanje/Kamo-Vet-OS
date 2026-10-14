@@ -2,7 +2,7 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { allowedBranchIds } from "@/lib/branch-access";
+import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { mulaiShiftKasir } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -18,15 +18,11 @@ export default async function MulaiShiftPage({
   if (!user) redirect("/login");
 
   // sudah ada shift → langsung ke kasir.
+  const activeBranch = await requireOperationalBranch(supabase, user.id, "petshop");
   const shift = await getOpenShift(supabase as never, user.id);
   if (shift) redirect("/kasir");
 
-  // Cuma cabang penempatan akun ini yang boleh dipilih (peran global = semua).
-  const allowed = await allowedBranchIds(supabase, user.id);
-  let q = supabase
-    .from("branches").select("id, name").eq("is_active", true).in("type", ["PETSHOP", "BOTH"]);
-  if (allowed !== null) q = q.in("id", allowed.length ? allowed : ["-"]);
-  const { data: branches } = await q.order("name");
+  const branches = [activeBranch];
 
   return (
     <div className="pshop-wrap">
@@ -49,7 +45,7 @@ export default async function MulaiShiftPage({
         </div>
       )}
 
-      <TransactionForm userId={user.id} scope={"cashier-shift-open"} action={mulaiShiftKasir} className="card pshop-card" style={{ width: "100%", maxWidth: 440, padding: 22 }}>
+      <TransactionForm userId={user.id} scope={`cashier-shift-open:${activeBranch.id}`} action={mulaiShiftKasir} className="card pshop-card" style={{ width: "100%", maxWidth: 440, padding: 22 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <i className="ti ti-cash-banknote" style={{ fontSize: 20, color: "var(--posb)" }} />
@@ -64,7 +60,7 @@ export default async function MulaiShiftPage({
 
         <div style={{ marginBottom: 10 }}>
           <label className="flab">Cabang / toko *</label>
-          <select className="fi" name="branchId" required defaultValue="">
+          <select className="fi" name="branchId" required defaultValue={activeBranch.id}>
             <option value="" disabled>Pilih cabang tempat kamu bertugas</option>
             {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>

@@ -18,13 +18,14 @@ export async function getOpenShift(
   userId: string,
   shiftType: ShiftType = "petshop",
 ): Promise<(OpenShift & { branchName: string }) | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("cashier_shifts")
     .select("id, branch_id, opening_balance, opened_at, branches(name, code)")
     .eq("opened_by", userId)
     .eq("status", "open")
     .eq("shift_type", shiftType)
     .maybeSingle();
+  if (error) throw new Error("Shift gagal dimuat. Coba lagi sebelum memilih cabang atau melakukan transaksi.");
   if (!data) return null;
   const b = Array.isArray(data.branches) ? data.branches[0] : data.branches;
   return { ...data, branchName: b?.name ?? "—" };
