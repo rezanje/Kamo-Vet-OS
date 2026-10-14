@@ -12,8 +12,12 @@ import { cekPeriode } from "@/lib/jurnal-guard";
 export async function mulaiShiftKlinik(formData: FormData) {
   const supabase = await createClient();
   const branchId = String(formData.get("branchId") ?? "");
-  const opening = Number(formData.get("opening_balance")) || 0;
+  const openingInput = String(formData.get("opening_balance") ?? "").trim();
+  const opening = Number(openingInput);
   if (!branchId) redirect(`/klinik/shift?error=${encodeURIComponent("Pilih cabang dulu")}`);
+  if (!openingInput || !Number.isFinite(opening) || opening < 0) {
+    redirect(`/klinik/shift?error=${encodeURIComponent("Isi modal awal kas dengan angka nol atau lebih.")}`);
+  }
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/klinik/shift?error=${encodeURIComponent("Sesi kamu habis — masuk ulang.")}`);
