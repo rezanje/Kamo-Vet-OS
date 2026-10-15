@@ -2,6 +2,7 @@ import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
+import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -12,7 +13,7 @@ function awalBulan(): string {
   return hariIniWIB().slice(0, 8) + "01";
 }
 
-type SaleRow = {
+type SaleRow = SaleCompletion & {
   cashier_id: string | null; total: number; discount: number;
   branches: Rel<{ name: string }>;
 };
@@ -37,7 +38,7 @@ export default async function PenjualanKasirPage({
   const supabase = await createClient();
   const [{ data: sales }, { data: returs }, { data: profiles }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, cashier_id, total, discount, branches(name)", { count: "exact" })
+      .select("id, cashier_id, total, discount, payment_plan, payments_finalized_at, branches(name)", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
     completeReportQuery(supabase.from("sales_returns")
       .select("id, total, sales(cashier_id, branches(name))", { count: "exact" })
@@ -54,7 +55,7 @@ export default async function PenjualanKasirPage({
   const kosong = (): Agg => ({ trx: 0, omset: 0, diskon: 0, retur: 0, cabang: new Set<string>() });
   const agg = new Map<string, Agg>();
 
-  for (const s of (sales ?? []) as unknown as SaleRow[]) {
+  for (const s of ((sales ?? []) as unknown as SaleRow[]).filter(isCompletedSale)) {
     if (cabang && one(s.branches)?.name !== cabang) continue;
     const kunci = s.cashier_id ?? "—";
     const a = agg.get(kunci) ?? kosong();

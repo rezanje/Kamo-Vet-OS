@@ -22,6 +22,7 @@ import { jurnalTersimpan } from "./jurnal-guard";
 import { postJournal } from "./posting";
 import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "./shift-calc";
 import { hariIniWIB } from "./tanggal";
+import { salePaymentRows } from "./sale-payment-reporting";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -85,9 +86,10 @@ export async function pemasukanShift(
     )];
   }
 
-  const { data: sales } = await supabase
-    .from("sales").select("total, metode_bayar").eq("shift_id", shift.id);
-  return (sales ?? []) as { total: number; metode_bayar: string }[];
+  const { data: sales, error } = await supabase
+    .from("sales").select("no_struk, total, metode_bayar, payment_plan, payments_finalized_at, sale_payments(method, amount)").eq("shift_id", shift.id);
+  if (error) throw new Error("Rincian pembayaran shift belum dapat dibaca. Coba lagi sebelum menutup shift.");
+  return salePaymentRows(sales ?? []);
 }
 
 /** Hitung target kas shift tanpa menutupnya — dipakai juga oleh force-close. */
@@ -116,7 +118,13 @@ export async function tutupShift(
   const { shift, closing } = o;
   if (shift.status !== "open") return { ok: false, error: "Shift sudah ditutup." };
 
-  const { breakdown, expected } = await hitungShift(supabase, shift);
+  let calculation: Awaited<ReturnType<typeof hitungShift>>;
+  try {
+    calculation = await hitungShift(supabase, shift);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Rincian pembayaran shift belum dapat dihitung." };
+  }
+  const { breakdown, expected } = calculation;
   const selisih = closing === null ? 0 : cashVariance(closing, expected);
 
   // Syarat `status = open` ikut di UPDATE, bukan cuma dicek di baris terpisah:

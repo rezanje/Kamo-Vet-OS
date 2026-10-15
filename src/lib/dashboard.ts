@@ -1,6 +1,7 @@
 // Agregat dashboard keuangan (ala Accurate). Read-only, hitung di JS.
 import { getAccountBalances, nilaiSeksi } from "./ledger";
 import { kodeSemuaRekening } from "./kas-akun";
+import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -35,7 +36,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
 
   const [balances, salesRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
-    supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status"),
+    supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at"),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
     supabase.from("invoice_payments").select("invoice_id, amount"),
     // Faktur penjualan reseller (rantai dokumen, migrasi 0098) — aliran pendapatan
@@ -86,7 +87,8 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   const arusKas = hari7.map((t) => ({ tanggal: t, ...cashByDay.get(t)! }));
 
   // ── Penjualan (tahun ini): POS + Online + invoice klinik + faktur reseller, lunas vs belum ──
-  const salesRowsThisYear = (salesRows.data ?? []).filter((s: { created_at: string }) => s.created_at >= awalTahun);
+  const completedSales = ((salesRows.data ?? []) as (SaleCompletion & { total: number; created_at: string; marketplace_status: string | null })[]).filter(isCompletedSale);
+  const salesRowsThisYear = completedSales.filter((s) => s.created_at >= awalTahun);
   const salesTotal = salesRowsThisYear.reduce((a: number, s: { total: number }) => a + Number(s.total), 0);
 
   const paidMap = new Map<string, number>();
@@ -140,7 +142,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   // ── Tren penjualan harian (7 hari) ──
   const trenMap = new Map<string, number>();
   for (const h of hari7) trenMap.set(h, 0);
-  for (const s of (salesRows.data ?? []) as { total: number; created_at: string }[]) {
+  for (const s of completedSales) {
     const t = s.created_at.slice(0, 10);
     if (trenMap.has(t)) trenMap.set(t, trenMap.get(t)! + Number(s.total));
   }

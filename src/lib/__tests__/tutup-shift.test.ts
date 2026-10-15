@@ -80,6 +80,24 @@ const shift = (o: Partial<ShiftTutup> = {}): ShiftTutup => ({
 });
 
 describe("pemasukanShift", () => {
+  it("does not count an unfinished planned sale in shift cash", async () => {
+    const db: Db = { sales: [{ total: 100000, metode_bayar: "Split", payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }],
+      payments_finalized_at: null, sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }] }] };
+    expect(await pemasukanShift(makeClient(db), shift())).toEqual([]);
+  });
+
+  it("flattens POS allocations so a split sale only contributes its cash share to the drawer", async () => {
+    const db: Db = { sales: [{ total: 100000, metode_bayar: "Split", bayar: 110000, kembali: 10000,
+      sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }] }],
+      expenses: [{ jumlah: 2000, metode_bayar: "Tunai" }, { jumlah: 8000, metode_bayar: "Transfer" }] };
+    expect(await pemasukanShift(makeClient(db), shift())).toEqual([
+      { total: 20000, metode_bayar: "Tunai" }, { total: 80000, metode_bayar: "Transfer" },
+    ]);
+    const result = await hitungShift(makeClient(db), shift());
+    expect(result.expected).toBe(118000);
+    expect(result.breakdown.Transfer).toBe(80000);
+  });
+
   it("counts original mixed checkout parts separately in the clinic shift", async () => {
     const db: Db = {
       invoices: [{ id: "mixed", total: 1000000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai" }],
@@ -151,6 +169,27 @@ describe("hitungShift", () => {
 });
 
 describe("tutupShift", () => {
+  it("does not create a shortage receivable or journal when fractional payments match counted cash", async () => {
+    const db: Db = {
+      sales: [
+        { total: 0.2, metode_bayar: "Split", sale_payments: [{ method: "Tunai", amount: 0.1 }, { method: "Transfer", amount: 0.1 }] },
+        { total: 0.3, metode_bayar: "Split", sale_payments: [{ method: "Tunai", amount: 0.2 }, { method: "Transfer", amount: 0.1 }] },
+      ],
+      expenses: [], employees: [{ id: "E1", nama: "Siti" }],
+    };
+    const result = await tutupShift(makeClient(db), { shift: shift({ opening_balance: 0 }), closing: 0.3 });
+    expect(result).toMatchObject({ ok: true, expected: 0.3, selisih: 0, dibebankanKe: null });
+    expect(db.cash_advances_inserted ?? []).toHaveLength(0);
+    expect(db.journal).toHaveLength(0);
+  });
+
+  it("refuses to close when a split sale has no reliable allocation", async () => {
+    const db: Db = { sales: [{ total: 100000, metode_bayar: "Split", sale_payments: [] }] };
+    const result = await tutupShift(makeClient(db), { shift: shift(), closing: 100000 });
+    expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/pembayaran/i) });
+    expect(db.journal).toHaveLength(0);
+  });
+
   it("menolak shift yang statusnya bukan open", async () => {
     const hasil = await tutupShift(makeClient({}), { shift: shift({ status: "closed" }), closing: 0 });
     expect(hasil).toEqual({ ok: false, error: "Shift sudah ditutup." });

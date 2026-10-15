@@ -1,4 +1,5 @@
 import { completeReportQuery } from "./report-query";
+import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
 // Pengumpul data komisi: menarik penjualan + retur satu periode lalu menyusunnya
 // jadi baris siap hitung untuk `hitungKomisi`.
 //
@@ -27,7 +28,7 @@ type SaleItemRow = {
   hpp: number | null;
 };
 
-type SaleRow = {
+type SaleRow = SaleCompletion & {
   id: string;
   created_at: string;
   branch_id: string | null;
@@ -86,14 +87,14 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
+      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, payment_plan, payments_finalized_at, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
       .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`)),
     completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
     completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
     completeReportQuery(supabase.from("item_categories").select("id, parent_id", { count: "exact" })),
   ]);
 
-  const sales = (salesData ?? []) as SaleRow[];
+  const sales = ((salesData ?? []) as SaleRow[]).filter(isCompletedSale);
   const empPerProfile = new Map(
     ((empData ?? []) as { id: string; profile_id: string }[]).map((e) => [e.profile_id, e.id]),
   );
@@ -312,8 +313,8 @@ async function infoStrukLuarPeriode(
   empPerProfile: Map<string, string>,
 ): Promise<{ employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number> } | null> {
   const { data } = await supabase
-    .from("sales").select("branch_id, cashier_id, salesperson_id, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
-  if (!data) return null;
+    .from("sales").select("branch_id, cashier_id, salesperson_id, payment_plan, payments_finalized_at, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
+  if (!data || !isCompletedSale(data)) return null;
   const hppPerUnit = new Map<string, number>();
   for (const it of (data.sale_items ?? []) as { item_id: string | null; qty: number; hpp: number | null }[]) {
     if (it.item_id && it.hpp !== null && Number(it.qty) > 0) hppPerUnit.set(it.item_id, Number(it.hpp) / Number(it.qty));

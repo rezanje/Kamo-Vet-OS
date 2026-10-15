@@ -4,6 +4,7 @@ import { getDashboard } from "@/lib/dashboard";
 import { Donut, LineChart, CashFlowChart } from "@/components/Charts";
 import { bacaSudut, LABEL_SUDUT, SUDUT, type Sudut } from "@/lib/dashboard-peran";
 import { hariIniWIB } from "@/lib/tanggal";
+import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const rpJt = (n: number) => {
@@ -209,13 +210,13 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
       supabase.from("visits").select("poli").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("visits").select("*", { count: "exact", head: true })
         .eq("status", "Menunggu").gte("created_at", mulai).lte("created_at", akhir),
-      supabase.from("sales").select("total").gte("created_at", mulai).lte("created_at", akhir),
+      supabase.from("sales").select("total, payment_plan, payments_finalized_at").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),
     ]);
 
     const kunjungan = (visits ?? []) as { poli: string | null }[];
     const grooming = kunjungan.filter((v) => (v.poli ?? "").toLowerCase().includes("grooming")).length;
-    const struk = (sales ?? []) as { total: number }[];
+    const struk = (sales ?? []).filter(isCompletedSale) as { total: number }[];
     const omzet = struk.reduce((a, s) => a + Number(s.total), 0);
     type StokRow = { qty: number; items: { name: string; min_stock: number } | { name: string; min_stock: number }[] | null };
     const menipis = ((stok ?? []) as unknown as StokRow[]).filter((r) => {
@@ -264,13 +265,15 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
       supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("is_active", true),
       supabase.from("customers").select("*", { count: "exact", head: true }).gte("created_at", `${awalBulan}T00:00:00+07:00`),
       supabase.from("customers").select("points").gt("points", 0),
-      supabase.from("sale_items").select("nama, qty, sales!inner(created_at)")
+      supabase.from("sale_items").select("nama, qty, sales!inner(created_at, payment_plan, payments_finalized_at)")
         .gte("sales.created_at", `${awalBulan}T00:00:00+07:00`),
     ]);
 
   const poinBeredar = ((poin ?? []) as { points: number }[]).reduce((a, c) => a + Number(c.points), 0);
   const perProduk = new Map<string, number>();
-  for (const r of (laku ?? []) as unknown as { nama: string; qty: number }[]) {
+  for (const r of (laku ?? []) as unknown as { nama: string; qty: number; sales: SaleCompletion | SaleCompletion[] | null }[]) {
+    const sale = Array.isArray(r.sales) ? r.sales[0] : r.sales;
+    if (!sale || !isCompletedSale(sale)) continue;
     perProduk.set(r.nama, (perProduk.get(r.nama) ?? 0) + Number(r.qty));
   }
   const teratas = [...perProduk.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);

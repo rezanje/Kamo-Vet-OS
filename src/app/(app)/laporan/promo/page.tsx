@@ -6,6 +6,7 @@ import { lineDiscount } from "@/lib/pos-calc";
 import { rentangBulan } from "@/lib/pertumbuhan";
 import { hariIniWIB, tanggalWIB } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
+import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 
 // Promo, Voucher & Diskon — permintaan Kamo Group 24 Agu 2026:
 // "voucher: diterbitkan, ditukarkan, redemption rate per program per cabang" dan
@@ -38,7 +39,7 @@ export default async function PromoPage({
   const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData }] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
-        .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
+        .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, payment_plan, payments_finalized_at, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
         .gte("created_at", mulai).lte("created_at", akhir)),
       completeReportQuery(supabase.from("invoices")
         .select("id, total, subtotal, discount, voucher_code, created_at, visits(branch_id, branches(name))", { count: "exact" })
@@ -58,7 +59,7 @@ export default async function PromoPage({
     qty: number; harga: number; item_discount_type: string | null; item_discount_value: number | null;
     promo_id: string | null; promo_discount: number | null;
   };
-  type Sale = {
+  type Sale = SaleCompletion & {
     id: string; total: number; subtotal: number; discount: number; diskon_kategori: number | null;
     poin_digunakan: number | null; voucher_code: string | null; created_at: string;
     branch_id: string | null; branches: Rel<{ name: string }>; sale_items: SaleItem[] | null;
@@ -68,7 +69,7 @@ export default async function PromoPage({
     visits: Rel<{ branch_id: string | null; branches: Rel<{ name: string }> }>;
   };
 
-  const sales = (salesData ?? []) as unknown as Sale[];
+  const sales = ((salesData ?? []) as unknown as Sale[]).filter(isCompletedSale);
   const invoices = (invData ?? []) as unknown as Inv[];
 
   // ── Diskon per cabang ──────────────────────────────────────────────────────

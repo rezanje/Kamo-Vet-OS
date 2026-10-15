@@ -15,7 +15,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from(table: string) {
     let activeOnly = false;
     const rows = () => table === "items" ? (activeOnly && state.inactive ? [] : [{ id: "a", name: "Medicine", nama: "Medicine", unit: "pcs", sell_price: 100, buy_price: 50, item_type: "Persediaan", is_active: !state.inactive }]) : [];
-    const single = () => ({ data: table === "warehouses" ? { id: "warehouse", branch_id: "branch" } : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" } : { id: "po" }, error: null });
+    const single = () => ({ data: table === "sales" ? null : table === "warehouses" ? { id: "warehouse", branch_id: "branch" } : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" } : { id: "po" }, error: null });
     const query = {
       select: () => query, in: () => query, order: () => query, range: () => query,
       eq: (column: string, value: unknown) => { if (column === "is_active" && value === true) activeOnly = true; return query; },
@@ -40,6 +40,6 @@ it.each([false, true])("rejects invalid PO units/inactive masters before inserti
 it.each(["direct", "pos", "cashier"])("rejects an explicitly removed unit before writing a %s transaction", async kind => {
   const row = { item_id: "a", nama: "Medicine", qty: 2, harga: 1000, satuan: "removed-box" };
   const action = kind === "direct" ? buatFakturLangsung : kind === "pos" ? checkoutSale : checkoutKasir;
-  await expect(action(form({ supplier_id: "supplier", warehouse_id: "warehouse", branchId: "branch", customerId: "customer", salespersonId: "seller", metode: "Tunai", items: JSON.stringify([row]), cart: JSON.stringify([row]) }))).rejects.toThrow(/Satuan/);
+  await expect(action(form({ checkout_key: "unit-fixture", supplier_id: "supplier", warehouse_id: "warehouse", branchId: "branch", customerId: "customer", salespersonId: "seller", metode: "Tunai", items: JSON.stringify([row]), cart: JSON.stringify([row]) }))).rejects.toThrow(/Satuan/);
   expect(state.writes).toEqual([]);
 });

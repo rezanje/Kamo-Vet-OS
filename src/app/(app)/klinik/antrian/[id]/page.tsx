@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { PrintButton } from "@/components/PrintButton";
 import { RiwayatTabs, type MedEntry, type RacikanEntry, type InapEntry, type InvoiceEntry } from "./RiwayatTabs";
+import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -113,7 +114,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
   // ===== Ringkasan transaksi customer (petshop + klinik, semua waktu) =====
   const [{ data: salesAgg }, { data: invAgg }] = cust?.id
     ? await Promise.all([
-        supabase.from("sales").select("total").eq("customer_id", cust.id),
+        supabase.from("sales").select("total, payment_plan, payments_finalized_at").eq("customer_id", cust.id),
         supabase
           .from("invoices")
           .select("total, visits!inner(customer_id)")
@@ -123,7 +124,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
       ])
     : [{ data: [] }, { data: [] }];
   const trxTotals = [
-    ...((salesAgg ?? []) as { total: number }[]).map((s) => Number(s.total || 0)),
+    ...((salesAgg ?? []).filter(isCompletedSale) as { total: number }[]).map((s) => Number(s.total || 0)),
     ...((invAgg ?? []) as { total: number }[]).map((iv) => Number(iv.total || 0)),
   ];
   const trxCount = trxTotals.length;

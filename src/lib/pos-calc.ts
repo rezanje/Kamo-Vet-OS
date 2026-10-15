@@ -4,6 +4,7 @@
 //   1) diskon per item  → subtotal per item = qty*harga - diskon item
 //   2) diskon level transaksi (manual + voucher), di-cap sisa setelah (1)
 //   3) poin redeem, di-cap sisa setelah (2)
+import { PosDecimal, posSubtotal } from "./pos-money";
 
 export type CartLine = {
   qty: number;
@@ -18,13 +19,13 @@ export type CartLine = {
 // potongan sendiri sedang menimpa harga dengan sengaja (nego, barang cacat).
 // Menumpuk keduanya diam-diam bikin harga jatuh di bawah modal tanpa disadari.
 function manualDiscount(l: CartLine): number {
-  const gross = l.qty * l.harga;
+  const gross = new PosDecimal(l.qty).times(l.harga).toNumber();
   const val = Number(l.item_discount_value) || 0;
-  return l.item_discount_type === "percent" ? Math.round((gross * val) / 100) : val;
+  return l.item_discount_type === "percent" ? new PosDecimal(gross).times(val).div(100).toDecimalPlaces(0).toNumber() : val;
 }
 
 export function lineDiscount(l: CartLine): number {
-  const gross = l.qty * l.harga;
+  const gross = new PosDecimal(l.qty).times(l.harga).toNumber();
   const manual = manualDiscount(l);
   const raw = manual > 0 ? manual : Math.max(0, Number(l.promo_discount) || 0);
   return Math.min(Math.max(0, raw), gross);
@@ -36,23 +37,23 @@ export function lineDiscount(l: CartLine): number {
  * berapa uang yang keluar untuk tiap program, bukan cuma berapa kali dipakai.
  */
 export function linePromoApplied(l: CartLine): number {
-  const gross = l.qty * l.harga;
+  const gross = new PosDecimal(l.qty).times(l.harga).toNumber();
   if (manualDiscount(l) > 0) return 0;
   return Math.min(Math.max(0, Number(l.promo_discount) || 0), gross);
 }
 
 export function lineSubtotal(l: CartLine): number {
-  return l.qty * l.harga - lineDiscount(l);
+  return new PosDecimal(l.qty).times(l.harga).minus(lineDiscount(l)).toNumber();
 }
 
 export function computeTotals(lines: CartLine[], txnDiscount: number, voucherValue: number, poinValue: number) {
-  const itemsGross = lines.reduce((a, l) => a + l.qty * l.harga, 0);
-  const itemDiscountTotal = lines.reduce((a, l) => a + lineDiscount(l), 0);
-  const afterItems = itemsGross - itemDiscountTotal;
-  const txnLevel = Math.min(afterItems, Math.max(0, txnDiscount) + Math.max(0, voucherValue));
-  const afterTxn = afterItems - txnLevel;
+  const itemsGross = posSubtotal(lines);
+  const itemDiscountTotal = lines.reduce((sum, line) => sum.plus(lineDiscount(line)), new PosDecimal(0)).toNumber();
+  const afterItems = new PosDecimal(itemsGross).minus(itemDiscountTotal).toNumber();
+  const txnLevel = PosDecimal.min(afterItems, PosDecimal.max(0, txnDiscount).plus(PosDecimal.max(0, voucherValue))).toNumber();
+  const afterTxn = new PosDecimal(afterItems).minus(txnLevel).toNumber();
   const poin = Math.min(afterTxn, Math.max(0, poinValue));
-  return { itemsGross, itemDiscountTotal, afterItems, txnLevel, poin, total: afterTxn - poin };
+  return { itemsGross, itemDiscountTotal, afterItems, txnLevel, poin, total: new PosDecimal(afterTxn).minus(poin).toNumber() };
 }
 
 export type PromoRule = {

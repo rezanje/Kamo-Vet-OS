@@ -3,18 +3,20 @@ import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { PosClient, type Item, type Cust } from "./PosClient";
 import { daftarPenjual } from "@/lib/penjual";
+import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
+import { loadPromoAktif } from "@/lib/promo-hitung";
 
 export default async function TransaksiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; completed_sale_id?: string; draft_used?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: items }, { data: customers }, { data: branches }, salespeople] = await Promise.all([
     supabase.from("items").select("id, name, unit, sell_price, target_species").eq("is_active", true).order("name"),
-    supabase.from("customers").select("id, name, phone, points, customer_categories(nama, diskon_persen), pets(id, name, species)").order("name"),
+    supabase.from("customers").select("id, name, phone, points, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), pets(id, name, species)").order("name"),
     supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
     daftarPenjual(supabase, ""),
   ]);
@@ -40,12 +42,25 @@ export default async function TransaksiPage({
 
   // Relasi Supabase bisa datang sebagai objek ATAU array — dinormalkan sekali di sini
   // supaya kasir cukup baca satu bentuk (`golongan`).
+  type CustomerCategory = { nama: string; diskon_persen: number; rupiah_per_poin: number | null; is_active: boolean };
   const pelanggan = ((customers ?? []) as unknown as (Omit<Cust, "golongan"> & {
-    customer_categories: { nama: string; diskon_persen: number } | { nama: string; diskon_persen: number }[] | null;
+    category_id: string | null;
+    customer_categories: CustomerCategory | CustomerCategory[] | null;
   })[]).map((c) => {
     const k = Array.isArray(c.customer_categories) ? c.customer_categories[0] : c.customer_categories;
-    return { ...c, golongan: k ? { nama: k.nama, diskon_persen: Number(k.diskon_persen) } : null };
+    return {
+      ...c,
+      golonganId: k?.is_active ? c.category_id : null,
+      golongan: k?.is_active ? { nama: k.nama, diskon_persen: Number(k.diskon_persen), rupiah_per_poin: k.rupiah_per_poin == null ? null : Number(k.rupiah_per_poin) } : null,
+    };
   });
+
+  const categoryIds = [...new Set(pelanggan.flatMap(customer => customer.golonganId ? [customer.golonganId] : []))];
+  const [promoEntries, discountEntries, itemInfo] = await Promise.all([
+    Promise.all((branches ?? []).map(async branch => [branch.id, await loadPromoAktif(supabase, branch.id)] as const)),
+    Promise.all(categoryIds.map(async categoryId => [categoryId, await loadAturanDiskon(supabase, categoryId)] as const)),
+    loadInfoBarang(supabase, katalog.map(item => item.id)),
+  ]);
 
   const { data: { user } } = await supabase.auth.getUser();
   const { data: openShift } = await supabase
@@ -65,6 +80,13 @@ export default async function TransaksiPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {completedSaleId && usedDraftKey && (
+        <div className="p2ban">
+          <Link href={`/pos/struk/${encodeURIComponent(completedSaleId)}?draft_done=${encodeURIComponent(usedDraftKey)}`}>
+            Lihat struk &amp; mulai transaksi baru
+          </Link>
+        </div>
+      )}
       {!openShift && (
         <div className="p2ban" style={{ justifyContent: "space-between" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -80,6 +102,9 @@ export default async function TransaksiPage({
         branches={branches ?? []}
         salespeople={salespeople}
         hargaPerCabang={hargaPerCabang}
+        promoPerCabang={Object.fromEntries(promoEntries)}
+        aturanDiskon={Object.fromEntries(discountEntries)}
+        infoBarang={Object.fromEntries(itemInfo)}
       />
     </>
   );

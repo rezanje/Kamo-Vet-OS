@@ -4,15 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
-import { diskonGolongan } from "@/lib/harga-golongan";
+import { diskonGolonganKeranjang, poinDidapat, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { bacaDraftPos, POS_DRAFT_KEY, type PosDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
+import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
+import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
+import { hitungPromoKeranjang, totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
+import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 
 export type Item = { id: string; name: string; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
 export type Cust = {
   id: string; name: string; phone: string; points: number; pets: Pet[];
-  golongan: { nama: string; diskon_persen: number } | null;
+  golonganId?: string | null;
+  golongan: { nama: string; diskon_persen: number; rupiah_per_poin?: number | null } | null;
 };
 type Branch = { id: string; code: string; name: string };
 type Line = {
@@ -20,7 +25,7 @@ type Line = {
   satuan: string; faktor: number;
 };
 
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 // Satu baris keranjang = kombinasi item + satuan; 1 box dan 3 pcs obat yang sama
 // harus berdiri sendiri karena harganya beda.
 const lineKey = (l: { item_id: string; satuan: string }) => `${l.item_id}::${l.satuan}`;
@@ -30,8 +35,11 @@ const lineKey = (l: { item_id: string; satuan: string }) => `${l.item_id}::${l.s
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, salespeople, hargaPerCabang = {} }: {
+export function PosClient({ items, customers, branches, salespeople, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {} }: {
   items: Item[]; customers: Cust[]; branches: Branch[]; salespeople: PilihanPenjual[]; hargaPerCabang?: HargaPerCabang;
+  promoPerCabang?: Record<string, PromoHitung[]>;
+  aturanDiskon?: Record<string, AturanDiskon[]>;
+  infoBarang?: Record<string, BarangDiskon>;
 }) {
   const [branchId, setBranchId] = useState("");
   const [q, setQ] = useState("");
@@ -42,12 +50,17 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
   const [metode, setMetode] = useState("Tunai");
   const [discount, setDiscount] = useState(0);
   const [bayar, setBayar] = useState(0);
+  const [split, setSplit] = useState(false);
+  const [payments, setPayments] = useState<PosPaymentPart[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
   const [salespersonId, setSalespersonId] = useState("");
+  const [checkoutKey, setCheckoutKey] = useState("");
   const draftReady = useRef(false);
 
   useEffect(() => {
+    if (draftReady.current) return;
     const timer = window.setTimeout(() => {
       const draft = bacaDraftPos(sessionStorage.getItem(POS_DRAFT_KEY));
+      setCheckoutKey(draft?.checkoutKey ?? crypto.randomUUID());
       if (draft) {
         const branchExists = branches.some((branch) => branch.id === draft.branchId);
         const branch = branchExists ? draft.branchId : "";
@@ -65,6 +78,8 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
         setPetId(customer?.pets.some((pet) => pet.id === draft.petId) ? draft.petId : "");
         setSalespersonId(salespeople.some((person) => person.id === draft.salespersonId) ? draft.salespersonId : "");
         setMetode(draft.metode || "Tunai");
+        setSplit(draft.split ?? draft.metode === "Split");
+        if (draft.payments?.length) setPayments(draft.payments);
         setDiscount(draft.discount);
         setBayar(draft.bayar);
         setCart(restoredCart);
@@ -83,17 +98,20 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
     const draft: PosDraft = {
       version: 1,
       savedAt: Date.now(),
+      checkoutKey,
       branchId,
       customerId: cust?.id ?? "",
       petId,
       salespersonId,
       metode,
+      split,
+      payments,
       discount,
       bayar,
       cart,
     };
     sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
-  }, [branchId, bayar, cart, cust?.id, discount, metode, petId, salespersonId]);
+  }, [branchId, bayar, cart, cust?.id, discount, metode, split, payments, petId, salespersonId, checkoutKey]);
 
   // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
   const katalog = useMemo(() => {
@@ -160,26 +178,36 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
       return c.map((x) => (x === l ? baru : x));
     });
 
-  const subtotal = cart.reduce((a, l) => a + l.qty * l.harga, 0);
-  // Diskon golongan dihitung di sini HANYA untuk ditampilkan; angka yang disimpan
-  // dihitung ulang di server dari master (kasir tidak boleh bisa mengarangnya).
-  const diskonKategori = diskonGolongan(subtotal, cust?.golongan?.diskon_persen ?? 0);
-  const total = Math.max(0, subtotal - diskonKategori - discount);
+  const subtotal = posSubtotal(cart);
+  // Pakai rumus dan master yang sama dengan checkout, termasuk promo cabang
+  // serta pengecualian diskon golongan per produk/kategori.
+  const promoDiscount = totalPotonganPromo(hitungPromoKeranjang(promoPerCabang[branchId] ?? [], cart));
+  const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
+  const diskonKategori = diskonGolonganKeranjang(
+    cart, cust?.golonganId ? aturanDiskon[cust.golonganId] ?? [] : [],
+    cust?.golongan?.diskon_persen ?? 0, infoMap,
+  );
+  const total = posNetTotal(subtotal, promoDiscount, diskonKategori, discount);
   const kembali = Math.max(0, bayar - total);
-  const poin = cust ? Math.floor(total / 1000) : 0;
+  const poin = cust ? poinDidapat(total, cust.golongan?.rupiah_per_poin) : 0;
   const kurang = metode === "Tunai" && bayar < total;
-  const canPay = branchId && salespersonId && cart.length > 0 && !kurang;
+  let paymentValid = true;
+  try { resolvePosPayments({ total, method: split ? "Split" : metode, bayar, payments: split ? payments : [] }); }
+  catch { paymentValid = false; }
+  const canPay = checkoutKey && branchId && salespersonId && cart.length > 0 && paymentValid;
 
   const pickCust = (c: Cust) => { setCust(c); setCustQ(c.name); setPetId(""); };
   const clearCust = () => { setCust(null); setCustQ(""); setPetId(""); };
 
   return (
     <form action={checkoutSale}>
+      <input type="hidden" name="checkout_key" value={checkoutKey} />
       <input type="hidden" name="branchId" value={branchId} />
       <input type="hidden" name="customerId" value={cust?.id ?? ""} />
       <input type="hidden" name="petId" value={petId} />
       <input type="hidden" name="salespersonId" value={salespersonId} />
-      <input type="hidden" name="metode" value={metode} />
+      <input type="hidden" name="metode" value={split ? "Split" : metode} />
+      <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="bayar" value={bayar} />
       <input type="hidden" name="cart" value={JSON.stringify(cart)} />
@@ -292,12 +320,13 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
           {/* Totals */}
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 7 }}>
             <Row k="Subtotal" v={rp(subtotal)} />
+            {promoDiscount > 0 && <Row k="Promo otomatis" v={`-${rp(promoDiscount)}`} />}
             {diskonKategori > 0 && cust?.golongan && (
-              <Row k={`Diskon ${cust.golongan.nama} (${cust.golongan.diskon_persen}%)`} v={`-${rp(diskonKategori)}`} />
+              <Row k={`Diskon ${cust.golongan.nama}`} v={`-${rp(diskonKategori)}`} />
             )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
               <span>Diskon manual / promo</span>
-              <input className="fi" type="number" min={0} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
+              <input className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>
               <span style={{ fontSize: 12, fontWeight: 500 }}>Total</span>
@@ -307,14 +336,16 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
           </div>
 
           {/* Metode */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+          <PosPaymentFields total={total} split={split} payments={payments} bayar={bayar}
+            onSplitChange={setSplit} onPaymentsChange={setPayments} onBayarChange={setBayar} />
+          {!split && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
             {["Tunai", "QRIS", "Transfer"].map((m) => (
               <button type="button" key={m} onClick={() => setMetode(m)} className="back-btn"
                 style={{ padding: "5px 0", justifyContent: "center", borderRadius: 6, border: ".5px solid var(--bd)", fontSize: 10.5,
                   background: metode === m ? "var(--sb)" : "#fff", color: metode === m ? "#fff" : "var(--tm)" }}>{m}</button>
             ))}
-          </div>
-          {metode === "Tunai" && (
+          </div>}
+          {!split && metode === "Tunai" && (
             <div style={{ marginTop: 6 }}>
               <input className="fi" type="number" min={0} placeholder="Uang dibayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
               {bayar > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginTop: 4, color: kurang ? "#b91c1c" : "#16a34a" }}>

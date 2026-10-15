@@ -5,8 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { loadSaleReturnRows, type ReturnFormRow } from "@/lib/return-source-units";
 import { ReturJualForm } from "@/app/(app)/penjualan/retur/baru/ReturJualForm";
+import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 
-type SaleRow = {
+type SaleRow = SaleCompletion & {
   id: string;
   no_struk: string | null;
   branch_id: string;
@@ -58,7 +59,7 @@ export default async function ReturKasirPage({
   if (struk?.trim()) {
     const { data } = await supabase
       .from("sales")
-      .select("id, no_struk, branch_id, subtotal, total, created_at, customers(name), sale_items(id, item_id, nama, qty, harga, satuan, faktor, sale_item_group_components(component_item_id, component_name, item_type, qty_per_group, unit, sort_order))")
+      .select("id, no_struk, branch_id, subtotal, total, created_at, payment_plan, payments_finalized_at, customers(name), sale_items(id, item_id, nama, qty, harga, satuan, faktor, sale_item_group_components(component_item_id, component_name, item_type, qty_per_group, unit, sort_order))")
       .eq("no_struk", struk.trim())
       .is("channel", null)
       .maybeSingle();
@@ -66,6 +67,9 @@ export default async function ReturKasirPage({
 
     if (!sale) {
       pesan = `Struk "${struk}" tidak ditemukan.`;
+    } else if (!isCompletedSale(sale)) {
+      pesan = "Pembayaran struk ini belum selesai. Retur hanya bisa diproses setelah transaksi berhasil.";
+      sale = null;
     } else if (sale.branch_id !== shift.branch_id) {
       pesan = `Struk ${sale.no_struk} bukan penjualan ${shift.branchName} — retur harus di cabang tempat barang dijual.`;
       sale = null;

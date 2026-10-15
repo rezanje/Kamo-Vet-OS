@@ -1,8 +1,10 @@
+import { formatPosMoney } from "@/lib/pos-money";
 import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
+import { isCompletedSale, salePaymentDescription, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 
 // Rincian penjualan PER DOKUMEN (per struk / per invoice) — pelengkap laporan
 // "Penjualan per Kasir" yang hanya menampilkan rekap per orang. Sebelum halaman ini
@@ -11,7 +13,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = formatPosMoney;
 const jam = (iso: string) =>
   new Date(iso).toLocaleString("id-ID", {
     day: "2-digit", month: "short", year: "2-digit",
@@ -62,7 +64,7 @@ export default async function PenjualanRinciPage({
   const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase
       .from("sales")
-      .select("id, no_struk, total, metode_bayar, channel, marketplace_status, created_at, branches(name), customers(name)", { count: "exact" })
+      .select("id, no_struk, total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, sale_payments(method, amount), branches(name), customers(name)", { count: "exact" })
       .gte("created_at", mulai).lte("created_at", akhir)
       .order("created_at", { ascending: false })),
     completeReportQuery(supabase
@@ -82,7 +84,7 @@ export default async function PenjualanRinciPage({
     returPerStruk.set(r.sale_id, (returPerStruk.get(r.sale_id) ?? 0) + (Number(r.total) || 0));
   }
 
-  type SaleRow = {
+  type SaleRow = SalePaymentSource & {
     id: string; no_struk: string | null; total: number; metode_bayar: string | null;
     channel: string | null; marketplace_status: string | null; created_at: string;
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
@@ -93,7 +95,7 @@ export default async function PenjualanRinciPage({
     visits: Rel<{ branches: Rel<{ name: string }>; customers: Rel<{ name: string }> }>;
   };
 
-  const barisSales: Baris[] = ((sales ?? []) as unknown as SaleRow[]).map((s) => ({
+  const barisSales: Baris[] = ((sales ?? []) as unknown as SaleRow[]).filter(isCompletedSale).map((s) => ({
     id: s.id,
     href: `/penjualan/${s.id}`,
     nomor: s.no_struk ?? "—",
@@ -101,7 +103,7 @@ export default async function PenjualanRinciPage({
     kanal: s.channel ? "Online" : "POS",
     cabang: one(s.branches)?.name ?? "—",
     pelanggan: one(s.customers)?.name ?? "—",
-    metode: s.channel ?? s.metode_bayar ?? "—",
+    metode: s.channel ?? salePaymentDescription(s),
     total: Number(s.total) || 0,
     retur: returPerStruk.get(s.id) ?? 0,
     // Order marketplace baru jadi uang setelah dana cair; POS selalu lunas di kasir.

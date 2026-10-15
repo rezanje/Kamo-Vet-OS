@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { tanggalIndo } from "@/lib/followup";
 import { hariIniWIB } from "@/lib/tanggal";
+import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -35,7 +36,7 @@ export default async function PelangganTeratasPage({
   // salah satunya saja bikin pelanggan klinik terlihat tidak pernah belanja.
   const [{ data: sales }, { data: invoices }, { data: customers }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, customer_id, total, created_at", { count: "exact" })
+      .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
     completeReportQuery(supabase.from("invoices")
       .select("id, total, created_at, visits!inner(customer_id)", { count: "exact" })
@@ -55,7 +56,7 @@ export default async function PelangganTeratasPage({
     agg.set(custId, a);
   };
 
-  for (const s of (sales ?? []) as { customer_id: string | null; total: number; created_at: string }[]) {
+  for (const s of (sales ?? []).filter(isCompletedSale) as { customer_id: string | null; total: number; created_at: string }[]) {
     catat(s.customer_id, s.total, s.created_at);
   }
   for (const iv of (invoices ?? []) as unknown as

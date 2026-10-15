@@ -6,6 +6,7 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { isMarketplace } from "@/lib/online";
+import { isCompletedSale, salePaymentAllocations } from "@/lib/sale-payment-reporting";
 
 const back = "/keuangan/sinkron";
 
@@ -15,6 +16,7 @@ type MissingInvoice = {
 };
 type MissingSale = {
   no_struk: string; tanggal: string; total: number; metode_bayar: string; branch_id: string | null;
+  payments: ReturnType<typeof salePaymentAllocations>;
 };
 type MissingSaleOnline = {
   no_struk: string; tanggal: string; total: number; channel: string; branch_id: string | null;
@@ -66,16 +68,22 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
 
   // Order online punya jurnalnya sendiri (source "sale-online", akun Piutang Marketplace/Bank).
   // Dipisah dari arm "sale" biasa (akun beda) = false positive + repost dengan akun salah kalau digabung.
-  const { data: sls } = await supabase
+  const { data: sls, error: saleError } = await supabase
     .from("sales")
-    .select("no_struk, total, metode_bayar, branch_id, created_at")
+    .select("no_struk, total, metode_bayar, branch_id, created_at, payment_plan, payments_finalized_at, sale_payments(method, amount, coa_code)")
     .is("channel", null);
+  if (saleError) throw new Error("Rincian pembayaran penjualan belum dapat dibaca. Coba lagi sebelum melakukan sinkronisasi.");
   const sales: MissingSale[] = (sls ?? [])
+    .filter(isCompletedSale)
     .filter((s) => s.no_struk && !saleRefs.has(s.no_struk) && Number(s.total) > 0)
-    .map((s) => ({
-      no_struk: s.no_struk, tanggal: String(s.created_at).slice(0, 10),
-      total: Number(s.total), metode_bayar: s.metode_bayar ?? "Tunai", branch_id: s.branch_id ?? null,
-    }));
+    .map((s) => {
+      if (s.payment_plan != null) throw new Error(`Jurnal pembayaran ${s.no_struk} memerlukan pemeriksaan keuangan. Jangan posting ulang dengan pengaturan pajak saat ini.`);
+      return {
+        no_struk: s.no_struk, tanggal: String(s.created_at).slice(0, 10),
+        total: Number(s.total), metode_bayar: s.metode_bayar ?? "Tunai", branch_id: s.branch_id ?? null,
+        payments: salePaymentAllocations(s),
+      };
+    });
 
   // Order online (channel terisi) — postJournal juga best-effort di sini (lihat actions.ts online),
   // jadi drift-nya sama-sama bisa senyap: stok terpotong, marketplace_status berubah, tapi jurnal
@@ -186,7 +194,9 @@ export async function perbaikiDrift() {
 
   const pajak = await getPajakSettings(supabase);
   for (const s of sales) {
-    const kasCode = await kodeAkunBayar(supabase, s.metode_bayar, s.branch_id);
+    const paymentLines = await Promise.all(s.payments.map(async part => ({
+      code: part.coa_code ?? await kodeAkunBayar(supabase, part.method, s.branch_id), debit: part.amount, credit: 0,
+    })));
     const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
     await postJournal(supabase, {
       tanggal: s.tanggal,
@@ -195,7 +205,7 @@ export async function perbaikiDrift() {
       sourceRef: s.no_struk,
       branchId: s.branch_id,
       lines: [
-        { code: kasCode, debit: s.total, credit: 0 },
+        ...paymentLines,
         { code: "4101", debit: 0, credit: dpp },
         ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
       ],

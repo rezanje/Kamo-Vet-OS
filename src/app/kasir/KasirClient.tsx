@@ -18,6 +18,9 @@ import type { PilihanPenjual } from "@/lib/penjual";
 import { nomorHalamanKasirTerlihat } from "@/lib/kasir-halaman";
 import { digitHp } from "@/lib/kontak";
 import { normalPhone } from "@/lib/booking";
+import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
+import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
+import { roundPosMoney } from "@/lib/pos-money";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -71,7 +74,7 @@ type CartLine = {
   groupComponents?: GroupComponentRow[];
 };
 
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 
 // Kunci baris keranjang: barang + satuan.
 const kunciBaris = (l: { item_id: string; satuan?: string }) => `${l.item_id}|${l.satuan ?? ""}`;
@@ -110,6 +113,8 @@ export function KasirClient({
   const [voucher, setVoucher] = useState("");
   const [metode, setMetode] = useState("");
   const [bayar, setBayar] = useState(0);
+  const [split, setSplit] = useState(false);
+  const [payments, setPayments] = useState<PosPaymentPart[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
   const [showAddCust, setShowAddCust] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addPending, startAdd] = useTransition();
@@ -135,6 +140,8 @@ export function KasirClient({
       setCustQ(customer?.name ?? "");
       setSalespersonId(salespeople.some((p) => p.id === draft.salespersonId) ? draft.salespersonId : "");
       setMetode(draft.metode);
+      setSplit(draft.split ?? draft.metode === "Split");
+      if (draft.payments?.length) setPayments(draft.payments);
       setDiskon(draft.diskon);
       setDiskonPct(draft.diskonPct);
       setPoin(draft.poin);
@@ -172,10 +179,10 @@ export function KasirClient({
     }
     const draft: KasirDraft = {
       version: 1, savedAt: Date.now(), checkoutKey, customerId: cust?.id ?? "", salespersonId,
-      metode, diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
+      metode, split, payments, diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
     };
     window.sessionStorage.setItem(draftKey, JSON.stringify(draft));
-  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
+  }, [cartRaw, cust?.id, salespersonId, metode, split, payments, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -347,16 +354,19 @@ export function KasirClient({
   const voucherVal = v && !tolakVoucher ? potonganVoucher(afterItems, v) : 0;
   const voucherInvalid = tolakVoucher !== null;
   const totals = computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, 0);
-  const maxPoin = cust ? Math.min(cust.points, totals.afterItems - totals.txnLevel) : 0;
+  const maxPoin = cust ? Math.min(cust.points, Math.floor(totals.total)) : 0;
   const poinUsed = Math.min(poin, maxPoin);
-  const total = computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, poinUsed).total;
+  const total = roundPosMoney(computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, poinUsed).total);
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
+  let paymentValid = true;
+  try { resolvePosPayments({ total, method: split ? "Split" : metode, bayar, payments: split ? payments : [] }); }
+  catch { paymentValid = false; }
   // Minimum jual dari master: kasir tidak boleh menjual di bawahnya.
   // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
-  const canPay = cart.length > 0 && !!metode && !!salespersonId && !kurang && !voucherInvalid && !!cust && dibawahMin.length === 0;
+  const canPay = cart.length > 0 && (split || !!metode) && !!salespersonId && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
@@ -561,13 +571,17 @@ export function KasirClient({
         <form action={checkoutKasir} className="card">
           {shiftId && <input type="hidden" name="operationalShiftId" value={shiftId} />}
           <input type="hidden" name="checkout_key" value={checkoutKey} />
+          <input type="hidden" name="checkout_poin_requested" value={poin} />
+          <input type="hidden" name="checkout_diskon_requested" value={diskon} />
+          <input type="hidden" name="checkout_diskon_pct" value={diskonPct ? "1" : "0"} />
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
           <input type="hidden" name="salespersonId" value={salespersonId} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />
           <input type="hidden" name="diskon" value={diskonVal} />
           <input type="hidden" name="poinDigunakan" value={poinUsed} />
           <input type="hidden" name="voucherCode" value={v ? v.code : ""} />
-          <input type="hidden" name="metode" value={metode} />
+          <input type="hidden" name="metode" value={split ? "Split" : metode} />
+          <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
           <input type="hidden" name="bayar" value={bayar} />
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -705,7 +719,7 @@ export function KasirClient({
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Diskon</span>
               <span style={{ display: "flex", gap: 4 }}>
-                <input className="fi" type="number" min={0} value={diskon || ""} onChange={(e) => setDiskon(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
+                <input className="fi" type="number" min={0} step="0.01" value={diskon || ""} onChange={(e) => setDiskon(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
                 <button type="button" onClick={() => setDiskonPct(!diskonPct)} className="btn-def" style={{ padding: "2px 8px", fontSize: 10 }}>{diskonPct ? "%" : "Rp"}</button>
               </span>
             </div>
@@ -713,7 +727,7 @@ export function KasirClient({
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0" }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Poin digunakan {cust ? `(maks ${maxPoin.toLocaleString("id-ID")})` : ""}</span>
-              <input className="fi" type="number" min={0} max={maxPoin} value={poin || ""} disabled={!cust}
+              <input className="fi" type="number" min={0} max={maxPoin} value={poinUsed || ""} disabled={!cust}
                 onChange={(e) => setPoin(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
             </div>
             {poinUsed > 0 && <Row k="" v={`- ${rp(poinUsed)}`} red />}
@@ -732,9 +746,12 @@ export function KasirClient({
             </div>
 
             <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--tm)", letterSpacing: ".04em", marginBottom: 5 }}>METODE PEMBAYARAN</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+            <PosPaymentFields total={total} split={split} payments={payments} bayar={bayar}
+              onSplitChange={setSplit} onPaymentsChange={setPayments} onBayarChange={setBayar} />
+            {!split && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
               {[
                 { m: "Tunai", ic: "ti-cash" },
+                { m: "Transfer", ic: "ti-building-bank" },
                 { m: "Debit", ic: "ti-credit-card" },
                 { m: "Kredit", ic: "ti-credit-card-pay" },
                 { m: "QRIS", ic: "ti-qrcode" },
@@ -746,9 +763,9 @@ export function KasirClient({
                   <i className={`ti ${ic}`} /> {m}
                 </button>
               ))}
-            </div>
+            </div>}
 
-            {metode === "Tunai" && (
+            {!split && metode === "Tunai" && (
               <div style={{ marginBottom: 8 }}>
                 <input className="fi" type="number" min={0} placeholder="Uang bayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginTop: 4, color: kurang ? "#b91c1c" : "#15803d" }}>
