@@ -24,6 +24,18 @@ function query(result: QueryResult) {
 describe("tarikTransaksi clinic invoices", () => {
   beforeEach(() => createClient.mockReset());
 
+  it("counts a finalized split sale once and excludes an unfinished planned sale", async () => {
+    const sale = { id: "split", customer_id: "c1", total: 100000, channel: null, created_at: "2026-10-15T05:00:00Z", branches: { name: "A" },
+      sale_items: [{ id: "item" }], payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }],
+      sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }], payments_finalized_at: "2026-10-15T05:00:01Z" };
+    const tables = { sales: query({ data: [sale, { ...sale, id: "pending", payments_finalized_at: null }], error: null }),
+      invoices: query({ data: [], error: null }), sales_returns: query({ data: [], error: null }), branches: query({ data: [], error: null }) };
+    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    const result = await tarikTransaksi("2026-10-15", "2026-10-15");
+    expect(result.trx).toHaveLength(1);
+    expect(result.trx[0].omzet).toBe(100000);
+  });
+
   it("includes nonvoid clinic revenue and item count in its branch alongside POS", async () => {
     const invoices = query({ data: [{ id: "inv-1", total: 125_000,
       created_at: "2026-09-24T04:00:00Z", visits: { customer_id: "c1", branches: { name: "Klinik A" } },

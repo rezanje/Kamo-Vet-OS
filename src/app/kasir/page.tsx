@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -12,6 +13,7 @@ import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow
 import { hariIniWIB } from "@/lib/tanggal";
 import { daftarPenjual } from "@/lib/penjual";
 import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } from "@/lib/kasir-catalog";
+import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -21,9 +23,9 @@ function one<T>(r: Rel<T>): T | null {
 export default async function KasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; completed_sale_id?: string; draft_used?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -39,7 +41,7 @@ export default async function KasirPage({
     supabase.from("customers")
       .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)")
       .order("name"),
-    supabase.from("sales").select("customer_id, total"),
+    supabase.from("sales").select("customer_id, total, payment_plan, payments_finalized_at"),
     supabase
       .from("invoices")
       .select("total, visits!inner(customer_id)")
@@ -94,7 +96,7 @@ export default async function KasirPage({
   // semua waktu) — sama pola dengan header detail owner di antrian.
   const trxCount: Record<string, number> = {};
   const trxSum: Record<string, number> = {};
-  for (const s of (salesAgg ?? []) as { customer_id: string | null; total: number }[]) {
+  for (const s of (salesAgg ?? []).filter(isCompletedSale) as { customer_id: string | null; total: number }[]) {
     if (!s.customer_id) continue;
     trxCount[s.customer_id] = (trxCount[s.customer_id] ?? 0) + 1;
     trxSum[s.customer_id] = (trxSum[s.customer_id] ?? 0) + Number(s.total || 0);
@@ -216,7 +218,7 @@ export default async function KasirPage({
     });
   }
 
-  return (
+  const cashier = (
     <KasirClient
       key={shift.id}
       draftContext={`${user.id}:${shift.branch_id}:${shift.id}`}
@@ -233,5 +235,16 @@ export default async function KasirPage({
       salespeople={salespeople}
       error={error}
     />
+  );
+  if (!completedSaleId || !usedDraftKey) return cashier;
+  return (
+    <>
+      <div className="p2ban">
+        <Link href={`/kasir/struk/${encodeURIComponent(completedSaleId)}?draft_done=${encodeURIComponent(usedDraftKey)}`}>
+          Lihat struk &amp; mulai transaksi baru
+        </Link>
+      </div>
+      {cashier}
+    </>
   );
 }

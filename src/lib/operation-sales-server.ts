@@ -17,6 +17,7 @@ import {
 } from "./operation-sales";
 import { collectOperationalClinic } from "./operasional-klinik-server";
 import { batasTanggalWIB } from "./laporan-transaksi";
+import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
 
 type AnyClient = any;
 
@@ -168,7 +169,7 @@ function applyChannel(query: AnyClient, channel: Channel): AnyClient {
 }
 
 type SaleItem = { item_id: string | null; qty: number; hpp: number | null; harga: number; items?: { item_type: string | null; tindakan_kategori: string | null } | { item_type: string | null; tindakan_kategori: string | null }[] | null };
-type SaleRow = { id: string; branch_id: string; customer_id: string | null; total: number; channel: string | null; created_at: string; sale_items: SaleItem[] | null };
+type SaleRow = SaleCompletion & { id: string; branch_id: string; customer_id: string | null; total: number; channel: string | null; created_at: string; sale_items: SaleItem[] | null };
 type InvoiceItem = { item_id: string | null; qty: number; hpp: number | null; harga: number; jenis: string | null };
 type VisitRow = { id: string; branch_id: string; customer_id: string | null };
 type InvoiceRow = { id: string; visit_id: string; total: number; created_at: string; voided_at: string | null; invoice_items: InvoiceItem[] | null };
@@ -212,12 +213,12 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
 
   if (filter.channel !== "klinik" && filter.channel !== "reseller") {
     let query = supabase.from("sales")
-      .select("id,branch_id,customer_id,total,channel,created_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))")
+      .select("id,branch_id,customer_id,total,channel,created_at,payment_plan,payments_finalized_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))")
       .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end);
     query = applyChannel(query, filter.channel);
     const salesResult = await read(query);
     queryError(salesResult);
-    const sales = (salesResult.data ?? []) as SaleRow[];
+    const sales = ((salesResult.data ?? []) as SaleRow[]).filter(isCompletedSale);
     if (sales.length > 0) {
       const returnResult = await read(supabase.from("sales_returns").select("sale_id,total").in("sale_id", sales.map((sale) => sale.id)).lte("tanggal", filter.to));
       queryError(returnResult);
@@ -356,14 +357,14 @@ export async function collectBranchBlock(scope: DashboardScope, filter: Dashboar
 export async function collectCustomerBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<CustomerBlock> {
   const { start, end } = dateBounds(filter);
   const currentResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,created_at,channel")
+    .select("id,customer_id,total,created_at,channel,payment_plan,payments_finalized_at")
     .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end));
   queryError(currentResult);
   const historyResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,created_at,channel")
+    .select("id,customer_id,total,created_at,channel,payment_plan,payments_finalized_at")
     .in("branch_id", scope.branchIds).lte("created_at", end));
   queryError(historyResult);
-  const rows = [...(historyResult.data ?? []) as any[]].map((row) => ({
+  const rows = [...(historyResult.data ?? []) as any[]].filter(isCompletedSale).map((row) => ({
     customerId: row.customer_id ?? null,
     saleId: row.id,
     date: String(row.created_at).slice(0, 10),

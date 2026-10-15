@@ -17,7 +17,9 @@ vi.mock("@/lib/satuan", async importOriginal => ({ ...await importOriginal<typeo
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "cashier" } } }) },
+  rpc: async (_name: string, values: { p_sale_id: string }) => ({ data: { sale_id: values.p_sale_id, finalized: true }, error: null }),
   from(table: string) {
+    let lookup = false;
     const group = { id: "group", code: "GRUP", name: "Paket", nama: "Paket", unit: "pcs", item_type: "Grup", sell_price: 1000, min_sell_qty: 1, is_active: true };
     const components = Array.from({ length: 1002 }, (_, index) => ({
       id: `component-${index}`, code: `C-${index}`, name: `Jasa ${index}`, item_type: "Jasa", is_active: true,
@@ -27,11 +29,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
         id: `recipe-${index}`, group_item_id: "group", component_item_id: component.id, qty: 1, unit: "pcs", factor: 1, sort_order: index, component,
       })) : [];
     let from = 0; let to = 999; let count = false;
-    const single = () => ({ data: table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
+    const single = () => ({ data: table === "sales" && lookup ? null : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
       : table === "customers" ? { points: 0, category_id: null, customer_categories: null }
         : table === "warehouses" ? null : { id: table === "sales" ? "sale" : "sale-item" }, error: null });
     const query = {
-      select: (_fields: string, options?: { count: string }) => { count = options?.count === "exact"; return query; },
+      select: (_fields: string, options?: { count: string }) => { lookup = _fields.includes("checkout_fingerprint"); count = options?.count === "exact"; return query; },
       eq: () => query, order: () => query, limit: () => query,
       in: (column: string, ids: string[]) => { rows = rows.filter(row => ids.includes(row[column] as string)); return query; },
       range: (start: number, end: number) => { from = start; to = end; return query; },

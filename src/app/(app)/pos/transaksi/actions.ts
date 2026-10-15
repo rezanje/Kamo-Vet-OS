@@ -2,9 +2,6 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { kodeAkunBayar } from "@/lib/kas-akun";
-import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { stockOut } from "@/lib/inventory";
@@ -16,7 +13,10 @@ import {
 import { hitungPromoKeranjang, loadPromoAktif, totalPotonganPromo } from "@/lib/promo-hitung";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { penjualValid } from "@/lib/penjual";
-import { jurnalPenjualanInklusif } from "@/lib/penjualan-jurnal";
+import { resolvePosPayments } from "@/lib/pos-payments";
+import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
+import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
+import { recomputeCustomerTier } from "@/lib/customer-tier";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -26,6 +26,8 @@ type CartLine = {
 
 export async function checkoutSale(formData: FormData) {
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
   const branchId = String(formData.get("branchId") ?? "");
   const customerId = String(formData.get("customerId") ?? "") || null;
@@ -36,6 +38,10 @@ export async function checkoutSale(formData: FormData) {
   const salespersonId = String(formData.get("salespersonId") ?? "");
 
   if (!branchId) redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih cabang dulu")}`);
+  let checkout: ReturnType<typeof posCheckoutIdentity>;
+  try { checkout = posCheckoutIdentity(formData, branchId); }
+  catch (error) { redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Identitas transaksi tidak valid")}`); }
+  await resumePosCheckout(supabase, user.id, checkout, "backoffice");
   if (!(await penjualValid(supabase, salespersonId, branchId))) {
     redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih tenaga penjual atau pelaksana yang bertugas di cabang ini")}`);
   }
@@ -73,7 +79,7 @@ export async function checkoutSale(formData: FormData) {
     };
   });
 
-  const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+  const subtotal = posSubtotal(rows);
 
   // Promo otomatis (migrasi 0079) — dihitung dari master, aturannya sama persis
   // dengan layar kasir. Sengaja dipasang di KEDUA jalur POS: diskon golongan
@@ -118,10 +124,16 @@ export async function checkoutSale(formData: FormData) {
     }
   }
 
-  const total = Math.max(0, subtotal - potonganPromo - diskonKategori - discount);
-  const kembali = Math.max(0, bayar - total);
-
-  const { data: { user } } = await supabase.auth.getUser();
+  const total = posNetTotal(subtotal, potonganPromo, diskonKategori, discount);
+  const invoiceSubtotal = roundPosMoney(subtotal);
+  const invoiceDiscount = posNetTotal(invoiceSubtotal, total);
+  const invoiceCategoryDiscount = Math.min(roundPosMoney(diskonKategori), invoiceDiscount);
+  let payment: ReturnType<typeof resolvePosPayments>;
+  try {
+    payment = resolvePosPayments({ total, method: metode, bayar, payments: String(formData.get("split_payments") ?? "") });
+  } catch (error) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
+  }
 
   // §2.1: tautkan ke shift kasir yang sedang terbuka (kalau ada) untuk rekonsiliasi kas.
   const { data: openShift } = await supabase
@@ -148,78 +160,60 @@ export async function checkoutSale(formData: FormData) {
       // Potongan promo digabung ke `discount` (potongan tingkat transaksi) —
       // `diskon_kategori` sengaja tetap berisi diskon golongan saja supaya
       // laporan yang memisahkan keduanya tidak berubah artinya.
-      subtotal, discount: discount + potonganPromo, diskon_kategori: diskonKategori,
-      total, metode_bayar: metode, bayar, kembali, poin_earned: poin,
+      subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
+      diskon_kategori: invoiceCategoryDiscount,
+      total, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
+      payment_plan: payment.parts, poin_earned: poin,
+      checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
       salesperson_id: salespersonId,
     })
     .select("id").single();
-  if (saleErr || !sale) redirect(`/pos/transaksi?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+  if (saleErr || !sale) {
+    await resumePosCheckout(supabase, user.id, checkout, "backoffice");
+    redirect(`/pos/transaksi?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+  }
 
-  const { error: itErr } = await supabase.from("sale_items").insert(
-    rows.map((l) => ({
-      sale_id: sale!.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
-      target_species: l.target_species, satuan: l.satuan, faktor: l.faktor,
-      promo_id: l.item_id ? (promoPerItem.get(l.item_id)?.promoId ?? null) : null,
-      promo_discount: l.item_id ? (promoPerItem.get(l.item_id)?.potongan ?? 0) : 0,
-    }))
-  );
-  if (itErr) redirect(`/pos/transaksi?error=${encodeURIComponent(itErr.message)}`);
-
-  // Stok keluar via FIFO — total cost jadi HPP riil (PRD §10.2).
-  let hppFifo = 0;
+  // HPP disimpan per baris agar finalisasi database membukukan biaya FIFO riil.
   const { data: wh } = await supabase
     .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
-  if (wh) {
-    for (const r of rows) {
-      if (!r.item_id) continue;
-      // Stok disimpan dalam satuan dasar: jual 1 box = keluar 12 pcs.
-      const { cost } = await stockOut(supabase, {
-        warehouseId: wh.id, itemId: r.item_id, qty: toBaseQty(r.qty, r.faktor), source: "sale", ref: noStruk,
+  let checkoutFailure: string | null = null;
+  try {
+    for (const l of rows) {
+      let lineHpp = 0;
+      if (wh && l.item_id) {
+        const { cost } = await stockOut(supabase, {
+          warehouseId: wh.id, itemId: l.item_id, qty: toBaseQty(l.qty, l.faktor), source: "sale", ref: noStruk,
+        });
+        lineHpp = cost;
+      }
+      const { error: itemErr } = await supabase.from("sale_items").insert({
+        sale_id: sale.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
+        target_species: l.target_species, satuan: l.satuan, faktor: l.faktor,
+        promo_id: l.item_id ? (promoPerItem.get(l.item_id)?.promoId ?? null) : null,
+        promo_discount: l.item_id ? (promoPerItem.get(l.item_id)?.potongan ?? 0) : 0,
+        hpp: l.item_id ? lineHpp : null,
       });
-      hppFifo += cost;
+      if (itemErr) throw new Error(itemErr.message);
     }
+  } catch (error) {
+    checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
+  }
+  if (checkoutFailure) {
+    const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
+    if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
+    redirect(`/pos/transaksi?error=${encodeURIComponent(checkoutFailure)}`);
   }
 
-  // §1.4: poin masuk ledger + saldo berjalan, total_spending pelanggan naik.
-  if (customerId && poin > 0) {
-    const { data: cust } = await supabase.from("customers").select("points, total_spending").eq("id", customerId).single();
-    const saldo = (cust?.points ?? 0) + poin;
-    await supabase.from("customers").update({ points: saldo, total_spending: (Number(cust?.total_spending) || 0) + total }).eq("id", customerId);
-    await supabase.from("point_ledger").insert({ customer_id: customerId, delta: poin, saldo, ref: noStruk, description: `Transaksi ${noStruk}` });
+  const { data: finalized, error: finalizationErr } = await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
+  if (finalizationErr || finalized?.sale_id !== sale.id || finalized?.finalized !== true) {
+    await resumePosCheckout(supabase, user.id, checkout, "backoffice", sale.id);
+    const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
+    if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
+    redirect(`/pos/transaksi?error=${encodeURIComponent(finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
   }
 
-  // Accounting: Dr Kas/Bank; Cr Pendapatan (+ PPN Keluaran bila Mode PKP aktif).
-  // Harga POS = PPN-inklusif (standar retail).
-  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
-  const pajak = await getPajakSettings(supabase);
-  const todayIso = hariIniWIB();
-  await postJournal(supabase, {
-    tanggal: todayIso,
-    deskripsi: `Penjualan POS ${noStruk}`,
-    source: "sale",
-    sourceRef: noStruk,
-    branchId,
-    lines: jurnalPenjualanInklusif({
-      kasCode, subtotal, total,
-      splitPajak: (nilai) => splitPpnInklusif(nilai, pajak),
-    }),
-  });
+  if (customerId) await recomputeCustomerTier(supabase, customerId);
 
-  // HPP = cost FIFO riil dari layer yang terkonsumsi (bukan buy_price statis).
-  if (hppFifo > 0) {
-    await postJournal(supabase, {
-      tanggal: todayIso,
-      deskripsi: `HPP penjualan ${noStruk}`,
-      source: "sale-hpp",
-      sourceRef: noStruk,
-      branchId,
-      lines: [
-        { code: "5101", debit: hppFifo, credit: 0 },
-        { code: "1301", debit: 0, credit: hppFifo },
-      ],
-    });
-  }
-
-  redirect(`/pos/struk/${sale!.id}`);
+  redirect(`/pos/struk/${sale!.id}?draft_done=${encodeURIComponent(checkout.key)}`);
 }

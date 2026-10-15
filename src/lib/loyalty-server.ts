@@ -1,6 +1,7 @@
 // Perawatan loyalty otomatis. Dipakai proses akhir bulan dan tombol OWNER.
 
 import { bolehTurunTier, poinKedaluwarsa, tierSebelumnya } from "./loyalty";
+import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -71,11 +72,11 @@ export async function jalankanPerawatanLoyalty(
     const ids = ((customers ?? []) as { id: string; tier: string; tier_downgraded_at: string | null }[]).map((c) => c.id);
     if (ids.length) {
       const [{ data: sales }, { data: invoices }] = await Promise.all([
-        supabase.from("sales").select("customer_id, created_at").in("customer_id", ids),
+        supabase.from("sales").select("customer_id, created_at, payment_plan, payments_finalized_at").in("customer_id", ids),
         supabase.from("invoices").select("created_at, visits!inner(customer_id)").in("visits.customer_id", ids).is("voided_at", null),
       ]);
       const lastByCustomer = new Map<string, string>();
-      for (const row of (sales ?? []) as { customer_id: string; created_at: string }[]) {
+      for (const row of ((sales ?? []) as (SaleCompletion & { customer_id: string; created_at: string })[]).filter(isCompletedSale)) {
         if (!lastByCustomer.get(row.customer_id) || row.created_at > lastByCustomer.get(row.customer_id)!) lastByCustomer.set(row.customer_id, row.created_at);
       }
       for (const row of (invoices ?? []) as { created_at: string; visits: { customer_id: string } | { customer_id: string }[] | null }[]) {

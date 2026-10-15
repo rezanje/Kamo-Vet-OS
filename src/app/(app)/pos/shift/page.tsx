@@ -1,14 +1,17 @@
+import { formatPosMoney } from "@/lib/pos-money";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { openShift, closeShift, forceCloseShift } from "./actions";
+import { cashExpenseTotal, expectedCash, methodBreakdown } from "@/lib/shift-calc";
+import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = formatPosMoney;
 const fmtDt = (iso: string) => new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default async function ShiftPage({
@@ -33,13 +36,19 @@ export default async function ShiftPage({
     .maybeSingle();
 
   // penjualan tunai selama shift berjalan (untuk expected kas).
-  let tunai = 0, trxCount = 0;
+  let tunai = 0, trxCount = 0, cashExpenses = 0;
   if (open) {
-    const { data: cs } = await supabase.from("sales").select("total").eq("shift_id", open.id).eq("metode_bayar", "Tunai");
-    tunai = (cs ?? []).reduce((a, s) => a + Number(s.total), 0);
-    trxCount = (cs ?? []).length;
+    const [{ data: cs, error: saleError }, { data: expenses, error: expenseError }] = await Promise.all([
+      supabase.from("sales").select("total, metode_bayar, payment_plan, payments_finalized_at, sale_payments(method, amount)").eq("shift_id", open.id),
+      supabase.from("expenses").select("jumlah, metode_bayar").eq("shift_id", open.id),
+    ]);
+    if (saleError || expenseError) throw new Error("Rincian pembayaran shift belum dapat dibaca. Coba lagi.");
+    const sales = (cs ?? []).filter(isCompletedSale);
+    tunai = methodBreakdown(sales).Tunai;
+    trxCount = sales.length;
+    cashExpenses = cashExpenseTotal(expenses ?? []);
   }
-  const expected = open ? Number(open.opening_balance) + tunai : 0;
+  const expected = open ? expectedCash(Number(open.opening_balance), { Tunai: tunai }, cashExpenses) : 0;
 
   const { data: branches } = await supabase.from("branches").select("id, name").eq("is_active", true).order("name");
   const { data: history } = await supabase

@@ -56,6 +56,14 @@ it("makes products after the API's first 1,000 rows available to cashier search 
   expect(page.props.items.at(-1)?.name).toBe("Zebra Tuna");
 });
 
+it("does not include an unfinished sale in customer purchase history", async () => {
+  fixture.tables.customers = [{ id: "customer", name: "Customer", phone: "", points: 0, tier: "New" }];
+  fixture.tables.sales = [{ total: 100000, customer_id: "customer" },
+    { total: 100000, customer_id: "customer", payment_plan: [{ method: "Tunai", amount: 100000 }], payments_finalized_at: null }];
+  const page = await KasirPage({ searchParams: Promise.resolve({}) });
+  expect(page.props.customers[0]).toMatchObject({ trx: 1, belanja: 100000 });
+});
+
 it("loads stock, branch prices, quantity prices and category discounts for the final product", async () => {
   const page = await KasirPage({ searchParams: Promise.resolve({}) });
   const last = page.props.items.find((item: { id: string }) => item.id === "item-1204");

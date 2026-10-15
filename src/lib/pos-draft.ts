@@ -1,6 +1,25 @@
+import { POS_PAYMENT_METHODS, type PosPaymentPart } from "./pos-payments";
+
 export const POS_DRAFT_KEY = "vetos:pos-transaksi:draft:v1";
 export const KASIR_DRAFT_KEY = "vetos:kasir:draft:v1";
 const MAX_AGE_MS = 24 * 60 * 60 * 1_000;
+
+type PaymentDraft = { split?: boolean; payments?: PosPaymentPart[] };
+
+function paymentDraftFields(draft: PaymentDraft): PaymentDraft {
+  const fields: PaymentDraft = {};
+  if (typeof draft.split === "boolean") fields.split = draft.split;
+  if (Array.isArray(draft.payments)) {
+    const seen = new Set<string>();
+    fields.payments = draft.payments.filter((part): part is PosPaymentPart => {
+      if (!part || !(POS_PAYMENT_METHODS as readonly string[]).includes(part.method)
+        || !Number.isFinite(part.amount) || part.amount < 0 || seen.has(part.method)) return false;
+      seen.add(part.method);
+      return true;
+    }).map(part => ({ method: part.method, amount: part.amount }));
+  }
+  return fields;
+}
 
 export function kasirDraftKey(context?: string): string {
   return context ? `${KASIR_DRAFT_KEY}:${context}` : KASIR_DRAFT_KEY;
@@ -16,9 +35,11 @@ export type PosDraftLine = {
   faktor: number;
 };
 
-export type PosDraft = {
+export type PosDraft = PaymentDraft & {
   version: 1;
   savedAt: number;
+  /** Stable database posting identity, retained until checkout is confirmed. */
+  checkoutKey?: string;
   branchId: string;
   customerId: string;
   petId: string;
@@ -38,11 +59,13 @@ export function bacaDraftPos(raw: string | null, now = Date.now()): PosDraft | n
     return {
       version: 1,
       savedAt: Number(draft.savedAt),
+      ...(typeof draft.checkoutKey === "string" && draft.checkoutKey ? { checkoutKey: draft.checkoutKey } : {}),
       branchId: String(draft.branchId ?? ""),
       customerId: String(draft.customerId ?? ""),
       petId: String(draft.petId ?? ""),
       salespersonId: String(draft.salespersonId ?? ""),
       metode: String(draft.metode ?? "Tunai"),
+      ...paymentDraftFields(draft),
       discount: Math.max(0, Number(draft.discount) || 0),
       bayar: Math.max(0, Number(draft.bayar) || 0),
       cart: draft.cart.filter((line): line is PosDraftLine => Boolean(
@@ -64,10 +87,10 @@ export type KasirDraftLine = {
   [key: string]: unknown;
 };
 
-export type KasirDraft = {
+export type KasirDraft = PaymentDraft & {
   version: 1;
   savedAt: number;
-  /** Browser draft acknowledgement only; not a database posting/replay key. */
+  /** Stable database posting identity, also used to acknowledge its browser draft. */
   checkoutKey?: string;
   customerId: string;
   salespersonId: string;
@@ -97,6 +120,7 @@ export function bacaDraftKasir(raw: string | null, now = Date.now()): KasirDraft
       customerId: String(draft.customerId ?? ""),
       salespersonId: String(draft.salespersonId ?? ""),
       metode: String(draft.metode ?? ""),
+      ...paymentDraftFields(draft),
       diskon: Math.max(0, Number(draft.diskon) || 0),
       diskonPct: Boolean(draft.diskonPct),
       poin: Math.max(0, Number(draft.poin) || 0),

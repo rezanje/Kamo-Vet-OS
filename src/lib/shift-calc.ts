@@ -1,12 +1,16 @@
 // Kalkulasi rekonsiliasi shift (Addendum §1) — pure, dipakai server action + laporan.
+import { SALE_PAYMENT_METHODS, salePaymentRows, type SalePaymentSource } from "./sale-payment-reporting";
+import { PosDecimal } from "./pos-money";
 
-export const PAYMENT_METHODS = ["Tunai", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
+export const PAYMENT_METHODS = SALE_PAYMENT_METHODS;
 
-export function methodBreakdown(sales: { total: number; metode_bayar: string }[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const m of PAYMENT_METHODS) out[m] = 0;
-  for (const s of sales) out[s.metode_bayar] = (out[s.metode_bayar] ?? 0) + Number(s.total);
-  return out;
+export function methodBreakdown(sales: readonly SalePaymentSource[]): Record<string, number> {
+  const totals = new Map<string, InstanceType<typeof PosDecimal>>();
+  for (const method of PAYMENT_METHODS) totals.set(method, new PosDecimal(0));
+  for (const sale of salePaymentRows(sales)) {
+    totals.set(sale.metode_bayar, (totals.get(sale.metode_bayar) ?? new PosDecimal(0)).plus(sale.total));
+  }
+  return Object.fromEntries([...totals].map(([method, total]) => [method, total.toDecimalPlaces(2).toNumber()]));
 }
 
 // Kas seharusnya = modal awal + penjualan tunai − pengeluaran tunai (uang yang
@@ -16,7 +20,7 @@ export function expectedCash(
   breakdown: Record<string, number>,
   cashExpenses = 0,
 ): number {
-  return openingBalance + (breakdown["Tunai"] ?? 0) - cashExpenses;
+  return new PosDecimal(openingBalance).plus(breakdown["Tunai"] ?? 0).minus(cashExpenses).toDecimalPlaces(2).toNumber();
 }
 
 // Pengeluaran yang mengurangi laci = yang dibayar tunai saja (transfer/QRIS keluar
@@ -24,11 +28,13 @@ export function expectedCash(
 export function cashExpenseTotal(expenses: { jumlah: number; metode_bayar: string }[]): number {
   return expenses
     .filter((e) => e.metode_bayar === "Tunai")
-    .reduce((a, e) => a + Number(e.jumlah || 0), 0);
+    .reduce((sum, expense) => sum.plus(Number(expense.jumlah || 0)), new PosDecimal(0))
+    .toDecimalPlaces(2).toNumber();
 }
 
 export function cashVariance(actual: number, expected: number): number {
-  return actual - expected;
+  const variance = new PosDecimal(actual).minus(expected).toDecimalPlaces(2).toNumber();
+  return variance === 0 ? 0 : variance;
 }
 
 /**

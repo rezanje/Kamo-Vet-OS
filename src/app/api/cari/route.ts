@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
 import { amankanKueri, type HasilData } from "@/lib/cari-global";
+import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 const BATAS = 5; // per jenis — daftar panjang bikin orang malah tidak membaca
 
@@ -134,9 +135,9 @@ export async function GET(req: Request) {
   if (boleh("/pos/transaksi")) {
     tugas.push((async () => {
       const { data } = await supabase
-        .from("sales").select("id, no_struk, total, metode_bayar")
+        .from("sales").select("id, no_struk, total, metode_bayar, payment_plan, payments_finalized_at")
         .ilike("no_struk", pola).limit(BATAS);
-      for (const r of data ?? []) {
+      for (const r of (data ?? []).filter(isCompletedSale)) {
         hasil.push({
           jenis: "struk-kasir", judul: r.no_struk as string,
           keterangan: `${rp(Number(r.total))} · ${r.metode_bayar ?? "—"}`,

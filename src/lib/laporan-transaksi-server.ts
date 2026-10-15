@@ -5,6 +5,7 @@ import { createClient } from "./supabase/server";
 import { tanggalWIB } from "./tanggal";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import type { Trx } from "./laporan-transaksi";
+import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -25,7 +26,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   const [hasilSales, hasilInvoices, hasilReturs, hasilCabang] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
-        .select("id, customer_id, total, channel, created_at, branches(name), sale_items(id)", { count: "exact" })
+        .select("id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, branches(name), sale_items(id)", { count: "exact" })
         .gte("created_at", mulai).lte("created_at", akhir)),
       // Tagihan klinik yang dibatalkan tidak dihitung sebagai transaksi.
       completeReportQuery(supabase.from("invoices")
@@ -49,7 +50,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
     returPerStruk.set(r.sale_id, (returPerStruk.get(r.sale_id) ?? 0) + (Number(r.total) || 0));
   }
 
-  type SaleRow = {
+  type SaleRow = SaleCompletion & {
     id: string; customer_id: string | null; total: number; channel: string | null;
     created_at: string; branches: Rel<{ name: string }>; sale_items: { id: string }[] | null;
   };
@@ -61,7 +62,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
 
   const trx: Trx[] = [];
 
-  for (const s of (sales ?? []) as unknown as SaleRow[]) {
+  for (const s of ((sales ?? []) as unknown as SaleRow[]).filter(isCompletedSale)) {
     trx.push({
       tanggal: tanggalWIB(s.created_at),
       cabang: one(s.branches)?.name ?? "—",
@@ -106,7 +107,7 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
   const akhir = `${sampai}T23:59:59+07:00`;
   const [hasilSales, hasilInvoices] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, customer_id, total, created_at, branches(name)", { count: "exact" })
+      .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, branches(name)", { count: "exact" })
       .lte("created_at", akhir)),
     completeReportQuery(supabase.from("invoices")
       .select("id, total, created_at, visits(customer_id, branches(name))", { count: "exact" })
@@ -115,11 +116,11 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
   const { data: sales } = hasilSales;
   const { data: invoices } = hasilInvoices;
 
-  type S = { customer_id: string | null; total: number; created_at: string; branches: Rel<{ name: string }> };
+  type S = SaleCompletion & { customer_id: string | null; total: number; created_at: string; branches: Rel<{ name: string }> };
   type I = { total: number; created_at: string; visits: Rel<{ customer_id: string | null; branches: Rel<{ name: string }> }> };
 
   const trx: TrxRiwayat[] = [];
-  for (const s of (sales ?? []) as unknown as S[]) {
+  for (const s of ((sales ?? []) as unknown as S[]).filter(isCompletedSale)) {
     trx.push({
       customerId: s.customer_id,
       tanggal: tanggalWIB(s.created_at),

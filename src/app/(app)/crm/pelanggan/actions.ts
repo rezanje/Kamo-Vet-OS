@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 export type DetailPelanggan = {
   purchases: { tgl: string; produk: string; qty: number; total: number; cabang: string; anabul: string }[];
@@ -15,12 +16,12 @@ export async function detailPelanggan(customerId: string): Promise<DetailPelangg
   if (!customerId) return kosong;
   const supabase = await createClient();
   const [{ data: sales }, { data: ledger }, { data: userData }] = await Promise.all([
-    supabase.from("sales").select("created_at, pets(name), branches(code), sale_items(nama, qty, harga)").eq("customer_id", customerId).order("created_at", { ascending: false }),
+    supabase.from("sales").select("created_at, payment_plan, payments_finalized_at, pets(name), branches(code), sale_items(nama, qty, harga)").eq("customer_id", customerId).order("created_at", { ascending: false }),
     supabase.from("point_ledger").select("created_at, description, delta, saldo").eq("customer_id", customerId).order("created_at", { ascending: false }),
     supabase.auth.getUser(),
   ]);
   const purchases: DetailPelanggan["purchases"] = [];
-  for (const sale of (sales ?? []) as Record<string, unknown>[]) {
+  for (const sale of (sales ?? []).filter(isCompletedSale) as Record<string, unknown>[]) {
     const branchRel = sale.branches as { code: string } | { code: string }[] | null;
     const petRel = sale.pets as { name: string } | { name: string }[] | null;
     const branch = Array.isArray(branchRel) ? branchRel[0] : branchRel;
@@ -33,11 +34,11 @@ export async function detailPelanggan(customerId: string): Promise<DetailPelangg
   const { data: me } = await supabase.from("profiles").select("role").eq("id", userData.user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) return { purchases, ledger: pointHistory, stat: null };
   const [{ data: salesAgg }, { data: invAgg }] = await Promise.all([
-    supabase.from("sales").select("total, channel").eq("customer_id", customerId),
+    supabase.from("sales").select("total, channel, payment_plan, payments_finalized_at").eq("customer_id", customerId),
     supabase.from("invoices").select("total, visits!inner(customer_id)").eq("paid_status", "Lunas").is("voided_at", null).eq("visits.customer_id", customerId),
   ]);
   const stat = { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0, onlineCount: 0, onlineTotal: 0 };
-  for (const sale of (salesAgg ?? []) as { total: number; channel: string | null }[]) {
+  for (const sale of (salesAgg ?? []).filter(isCompletedSale) as { total: number; channel: string | null }[]) {
     if (sale.channel) { stat.onlineCount++; stat.onlineTotal += Number(sale.total || 0); }
     else { stat.petshopCount++; stat.petshopTotal += Number(sale.total || 0); }
   }

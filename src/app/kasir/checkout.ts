@@ -2,9 +2,6 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { kodeAkunBayar } from "@/lib/kas-akun";
-import { getPajakSettings, splitPpnInklusif } from "@/lib/pajak";
 import { stockOut } from "@/lib/inventory";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
@@ -21,7 +18,9 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { penjualValid } from "@/lib/penjual";
-import { jurnalPenjualanInklusif } from "@/lib/penjualan-jurnal";
+import { resolvePosPayments } from "@/lib/pos-payments";
+import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
+import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import {
   expandBarisGrup,
@@ -47,6 +46,11 @@ const RUPIAH_PER_POIN = 1;    // redeem: 1 poin = Rp1
 export async function checkoutKasir(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  let checkout: ReturnType<typeof posCheckoutIdentity>;
+  try { checkout = posCheckoutIdentity(formData, ""); }
+  catch (error) { redirect(`/kasir?error=${encodeURIComponent(error instanceof Error ? error.message : "Identitas transaksi tidak valid")}`); }
+  await resumePosCheckout(supabase, user.id, checkout, "cashier");
 
   // shift & cabang dari server (jangan percaya client).
   const { data: shift } = await supabase
@@ -251,7 +255,7 @@ export async function checkoutKasir(formData: FormData) {
   }
 
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lib/pos-calc — jangan diubah).
-  const subtotal = rows.reduce((a, l) => a + l.qty * l.harga, 0);
+  const subtotal = posSubtotal(rows);
   const afterItems = subtotal - rows.reduce((a, l) => a + lineDiscount(l), 0);
 
   // voucher divalidasi server-side (persen dihitung setelah diskon item).
@@ -319,15 +323,22 @@ export async function checkoutKasir(formData: FormData) {
     redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu untuk pakai poin")}`);
   }
 
+  poinDigunakan = Math.min(poinDigunakan, Math.floor(computeTotals(rows, diskon + diskonKategori, voucherVal, 0).total));
   const potonganPoin = poinDigunakan * RUPIAH_PER_POIN;
   // Diskon golongan digabung ke potongan tingkat transaksi bersama diskon manual
   // kasir, jadi urutan §6 (item → transaksi → poin) tetap utuh.
   const totals = computeTotals(rows, diskon + diskonKategori, voucherVal, potonganPoin);
   poinDigunakan = totals.poin; // poin efektif setelah cap (tidak melebihi sisa tagihan)
-  const totalDiskon = totals.itemDiscountTotal + totals.txnLevel + totals.poin;
-  const total = totals.total;
-  const kembali = metode === "Tunai" ? Math.max(0, bayar - total) : 0;
-  if (metode === "Tunai" && bayar < total) redirect(`/kasir?error=${encodeURIComponent("Uang bayar kurang")}`);
+  const total = roundPosMoney(totals.total);
+  const invoiceSubtotal = roundPosMoney(subtotal);
+  const invoiceDiscount = posNetTotal(invoiceSubtotal, total);
+  const invoiceCategoryDiscount = Math.min(roundPosMoney(diskonKategori), invoiceDiscount);
+  let payment: ReturnType<typeof resolvePosPayments>;
+  try {
+    payment = resolvePosPayments({ total, method: metode, bayar, payments: String(formData.get("split_payments") ?? "") });
+  } catch (error) {
+    redirect(`/kasir?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
+  }
 
   // Cabang tetap wajib punya gudang aktif untuk mencatat stok keluar. Bila stok
   // kurang, layar kasir mengingatkan tetapi owner boleh melanjutkan transaksi.
@@ -358,18 +369,23 @@ export async function checkoutKasir(formData: FormData) {
     .from("sales")
     .insert({
       branch_id: branchId, customer_id: customerId, no_struk: noStruk,
-      subtotal, discount: totalDiskon - diskonKategori, diskon_kategori: diskonKategori,
-      total, metode_bayar: metode, bayar: metode === "Tunai" ? bayar : total,
-      kembali, poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
+      subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
+      diskon_kategori: invoiceCategoryDiscount,
+      total, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
+      payment_plan: payment.parts,
+      checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
+      poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
       cashier_id: user?.id ?? null, shift_id: shift!.id,
       salesperson_id: salespersonId,
     })
     .select("id").single();
-  if (saleErr || !sale) redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+  if (saleErr || !sale) {
+    await resumePosCheckout(supabase, user.id, checkout, "cashier");
+    redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+  }
 
   // Stok dipotong DULU per baris, lalu sale_item + snapshot disimpan. HPP Grup
   // adalah total cost FIFO komponen Persediaan, bukan buy_price induk virtual.
-  let hppFifo = 0;
   let checkoutFailure: string | null = null;
   try {
     for (const r of rows) {
@@ -418,7 +434,6 @@ export async function checkoutKasir(formData: FormData) {
         );
         if (snapshotErr) throw new Error(`Gagal simpan rincian Grup ${r.nama}: ${snapshotErr.message}`);
       }
-      hppFifo += lineHpp;
     }
   } catch (error) {
     checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
@@ -432,44 +447,18 @@ export async function checkoutKasir(formData: FormData) {
     redirect(`/kasir?error=${encodeURIComponent(checkoutFailure)}`);
   }
 
-  // poin: redeem (minus) lalu earn (plus), saldo berjalan konsisten di ledger.
-  if (customerId) {
-    let saldo = custPoints;
-    if (poinDigunakan > 0) {
-      saldo -= poinDigunakan;
-      await supabase.from("point_ledger").insert({ customer_id: customerId, delta: -poinDigunakan, saldo, ref: noStruk, description: `Poin digunakan ${noStruk}` });
-    }
-    if (poinEarned > 0) {
-      saldo += poinEarned;
-      await supabase.from("point_ledger").insert({ customer_id: customerId, delta: poinEarned, saldo, ref: noStruk, description: `Transaksi ${noStruk}` });
-    }
-    await supabase.from("customers").update({ points: saldo }).eq("id", customerId);
-    await recomputeCustomerTier(supabase, customerId);
+  // Pembayaran dan HPP diposting bersama oleh database. Struk tidak boleh
+  // dinyatakan selesai jika finalisasi pembukuannya gagal.
+  const { data: finalized, error: finalizationErr } = await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
+  if (finalizationErr || finalized?.sale_id !== sale.id || finalized?.finalized !== true) {
+    await resumePosCheckout(supabase, user.id, checkout, "cashier", sale.id);
+    const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
+    if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
+    redirect(`/kasir?error=${encodeURIComponent(finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
   }
 
-  // Jurnal: pendapatan (PPN-inklusif, dipisah) + HPP. Total sudah net semua potongan.
-  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
-  const pajak = await getPajakSettings(supabase);
-  const todayIso = hariIniWIB();
-  if (total > 0) {
-    await postJournal(supabase, {
-      tanggal: todayIso, deskripsi: `Penjualan POS ${noStruk}`, source: "sale", sourceRef: noStruk, branchId,
-      lines: jurnalPenjualanInklusif({
-        kasCode, subtotal, total,
-        splitPajak: (nilai) => splitPpnInklusif(nilai, pajak),
-      }),
-    });
-  }
-  // HPP = cost FIFO riil dari layer yang terkonsumsi (bukan buy_price statis).
-  if (hppFifo > 0) {
-    await postJournal(supabase, {
-      tanggal: todayIso, deskripsi: `HPP penjualan ${noStruk}`, source: "sale-hpp", sourceRef: noStruk, branchId,
-      lines: [
-        { code: "5101", debit: hppFifo, credit: 0 },
-        { code: "1301", debit: 0, credit: hppFifo },
-      ],
-    });
-  }
+  // Saldo/ledger poin disimpan atomik oleh finalizer; golongan mengikuti penjualan selesai.
+  if (customerId) await recomputeCustomerTier(supabase, customerId);
 
   // Addendum §8: progres quest staff (best-effort, tidak mem-block checkout).
   if (user?.id) {

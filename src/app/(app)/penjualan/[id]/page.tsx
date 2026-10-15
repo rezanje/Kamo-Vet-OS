@@ -1,19 +1,21 @@
+import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
+import { salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = formatPosMoney;
 const fmtDt = (iso: string) =>
   new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
-type Sale = {
+type Sale = SalePaymentSource & {
   id: string;
   no_struk: string | null;
   created_at: string;
@@ -46,12 +48,13 @@ export default async function PenjualanDetailPage({
 
   const { data } = await supabase
     .from("sales")
-    .select("id, no_struk, created_at, subtotal, discount, total, metode_bayar, bayar, kembali, branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
+    .select("id, no_struk, created_at, subtotal, discount, total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
     .eq("id", id)
     .maybeSingle();
 
   const sale = data as unknown as Sale | null;
   if (!sale) notFound();
+  const payments = salePaymentAllocations(sale);
 
   const { data: returData } = await supabase
     .from("sales_returns")
@@ -103,6 +106,7 @@ export default async function PenjualanDetailPage({
           <Info label="Pelanggan" value={cust?.name ? `${cust.name}${cust.phone ? ` · ${cust.phone}` : ""}` : "Umum"} />
           <Info label="Kasir" value={one(sale.kasir)?.full_name ?? "—"} />
           <Info label="Metode bayar" value={sale.metode_bayar} />
+          {payments.length > 1 && payments.map(part => <Info key={part.method} label={part.method} value={rp(part.amount)} />)}
           <Info label="Subtotal" value={rp(Number(sale.subtotal))} />
           <Info label="Diskon" value={rp(Number(sale.discount))} />
           <Info label="Dibayar" value={rp(Number(sale.bayar))} />

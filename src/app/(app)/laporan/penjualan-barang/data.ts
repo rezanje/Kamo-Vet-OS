@@ -5,6 +5,7 @@ import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { nilaiBaris } from "@/lib/tagihan-klinik";
 import { lineDiscount } from "@/lib/pos-calc";
 import { jenisBarisKlinik, kunciRacikan, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? (value[0] ?? null) : value;
@@ -29,7 +30,7 @@ type SaleItem = {
   id: string; nama: string; qty: number; harga: number;
   item_discount_type: "nominal" | "percent" | null;
   item_discount_value: number | null; promo_discount: number | null;
-  sales: Rel<{
+  sales: Rel<SaleCompletion & {
     id: string; no_struk: string | null; created_at: string; channel: string | null;
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
   }>;
@@ -77,7 +78,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         }) : Promise.resolve([] as InvoiceItem[]),
         bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("sale_items")
-            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, sales!inner(id, no_struk, created_at, channel, branches(name), customers(name))", { count: "exact" })
+            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, sales!inner(id, no_struk, created_at, channel, payment_plan, payments_finalized_at, branches(name), customers(name))", { count: "exact" })
             .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
             .order("id").range(awal, ujung);
           return { data: data as unknown as SaleItem[] | null, error, count };
@@ -125,7 +126,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       }
       for (const item of saleItems) {
         const sale = one(item.sales);
-        if (!sale) continue;
+        if (!sale || !isCompletedSale(sale)) continue;
         const itemKanal = sale.channel ? "Online" : "POS";
         if (kanal !== itemKanal) continue;
         const qty = Number(item.qty) || 0;

@@ -1,24 +1,31 @@
+import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { ClearPosDraft } from "@/components/ClearPosDraft";
+import { receiptPaymentRows } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = formatPosMoney;
 
-export default async function PosStrukPage({ params }: { params: Promise<{ saleId: string }> }) {
+export default async function PosStrukPage({ params, searchParams }: {
+  params: Promise<{ saleId: string }>;
+  searchParams?: Promise<{ draft_done?: string }>;
+}) {
   const { saleId } = await params;
+  const checkoutKey = (await searchParams)?.draft_done;
   const supabase = await createClient();
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, subtotal, discount, diskon_kategori, total, metode_bayar, bayar, kembali, poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
+    .select("id, no_struk, subtotal, discount, diskon_kategori, total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount), poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
+  const paymentRows = receiptPaymentRows(sale);
 
   const { data: items } = await supabase
     .from("sale_items").select("nama, qty, harga, satuan").eq("sale_id", saleId).order("created_at");
@@ -34,7 +41,7 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
 
   return (
     <>
-      <ClearPosDraft />
+      <ClearPosDraft checkoutKey={checkoutKey} />
       <style>{`@media print { @page { size: 80mm auto; margin: 3mm; } }`}</style>
 
       <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
@@ -68,8 +75,8 @@ export default async function PosStrukPage({ params }: { params: Promise<{ saleI
         {sale.discount > 0 && <Row k="Diskon" v={`-${rp(sale.discount)}`} />}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12, marginTop: 2 }}><span>TOTAL</span><span>{rp(sale.total)}</span></div>
         <Hr />
-        <Row k={sale.metode_bayar} v={rp(sale.bayar)} />
-        {sale.metode_bayar === "Tunai" && <Row k="Kembali" v={rp(sale.kembali)} />}
+        {paymentRows.map(row => <Row key={row.label} k={row.label} v={rp(row.amount)} />)}
+        {Number(sale.kembali) > 0 && <Row k="Kembali" v={rp(sale.kembali)} />}
         {sale.poin_earned > 0 && <Row k="Poin didapat" v={`+${sale.poin_earned}`} />}
         <Hr />
         <div style={{ textAlign: "center", fontSize: 10, marginTop: 6 }}>Terima kasih 🐾<br />Barang dibeli tidak dapat dikembalikan</div>

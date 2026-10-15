@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { TileGrid } from "@/components/ModuleHome";
 import { hariIniWIB, tanggalWIB } from "@/lib/tanggal";
+import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 
 // ponytail: format rupiah helper
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -23,7 +24,7 @@ async function semuaBaris<T>(ambil: (awal: number, akhir: number) => Promise<{ d
   }
 }
 
-type SaleRow = {
+type SaleRow = SaleCompletion & {
   id: string;
   branch_id: string | null;
   total: number;
@@ -61,9 +62,9 @@ export default async function PenjualanPage({
   const MONTH_END = TODAY_STR;
 
   // Ambil seluruh halaman; batas bawaan database 1000 baris tidak boleh memotong laporan diam-diam.
-  const [salesAll, saleItemsAll, invoicesAll, invoiceItemsAll] = await Promise.all([
+  const [salesRead, saleItemsAll, invoicesAll, invoiceItemsAll] = await Promise.all([
     semuaBaris<SaleRow>((awal, akhir) => supabase.from("sales")
-      .select("id, branch_id, total, created_at, channel, branches(code, name)")
+      .select("id, branch_id, total, created_at, channel, payment_plan, payments_finalized_at, branches(code, name)")
       .order("id").range(awal, akhir) as unknown as Promise<{ data: SaleRow[] | null; error: { message: string } | null }>),
     semuaBaris<SaleItemRow>((awal, akhir) => supabase.from("sale_items")
       .select("sale_id, nama, qty, harga").order("id").range(awal, akhir) as unknown as Promise<{ data: SaleItemRow[] | null; error: { message: string } | null }>),
@@ -73,6 +74,7 @@ export default async function PenjualanPage({
     semuaBaris<InvoiceItemRow>((awal, akhir) => supabase.from("invoice_items")
       .select("invoice_id, deskripsi, qty, harga").order("id").range(awal, akhir) as unknown as Promise<{ data: InvoiceItemRow[] | null; error: { message: string } | null }>),
   ]);
+  const salesAll = salesRead.filter(isCompletedSale);
 
   // filter periode (laporan Penjualan ala Accurate): berlaku ke seksi per cabang & per barang
   const dalamPeriode = (iso: string) => {

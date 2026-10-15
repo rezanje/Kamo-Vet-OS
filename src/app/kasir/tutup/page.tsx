@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { TutupForm } from "./TutupForm";
+import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 // Selesai shift (kasir buta): kasir hanya input kas fisik; tanpa breakdown/ekspektasi
 // (spec 2026-07-17). Selisih dihitung server-side, hanya terlihat manajer/finance.
@@ -20,8 +21,8 @@ export default async function TutupShiftPage({
   if (!shift) redirect("/kasir/mulai");
 
   const { data: sales } = await supabase
-    .from("sales").select("id").eq("shift_id", shift.id);
-  const trx = (sales ?? []).length;
+    .from("sales").select("id, payment_plan, payments_finalized_at").eq("shift_id", shift.id);
+  const trx = (sales ?? []).filter(isCompletedSale).length;
 
   return (
     <div className="pshop-wrap">
