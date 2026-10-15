@@ -11,14 +11,15 @@ function one<T>(r: Rel<T>): T | null {
 }
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function KasirStrukPage({ params, searchParams }: { params: Promise<{ saleId: string }>; searchParams: Promise<{ print?: string }> }) {
+export default async function KasirStrukPage({ params, searchParams }: { params: Promise<{ saleId: string }>; searchParams: Promise<{ print?: string; draft_done?: string }> }) {
   const { saleId } = await params;
-  const autoPrint = (await searchParams).print === "1";
+  const { print, draft_done } = await searchParams;
+  const autoPrint = print === "1";
   const supabase = await createClient();
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, subtotal, discount, total, metode_bayar, bayar, kembali, poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
+    .select("id, no_struk, cashier_id, branch_id, shift_id, subtotal, discount, total, metode_bayar, bayar, kembali, poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
 
@@ -42,8 +43,11 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
         .kasir-content { padding: 0 !important; overflow: visible !important; }
         .kasir-receipt { padding: 0 !important; border-radius: 0 !important; }
       }`}</style>
+      <ClearKasirDraft
+        draftContext={sale.cashier_id && sale.branch_id && sale.shift_id ? `${sale.cashier_id}:${sale.branch_id}:${sale.shift_id}` : undefined}
+        checkoutKey={draft_done}
+      />
       {autoPrint && <AutoPrint />}
-      <ClearKasirDraft />
 
       <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}>
         <Link href="/kasir" className="back-btn"><i className="ti ti-arrow-left" /> Transaksi baru</Link>

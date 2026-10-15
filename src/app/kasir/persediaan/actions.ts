@@ -4,10 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
+import { parseBarisInput } from "@/lib/permintaan";
 import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
-import { nomorBerikutnya } from "@/lib/no-dokumen";
-import { hariIniWIB } from "@/lib/tanggal";
 
 // Buat permintaan barang dari dunia kasir — cabang asal otomatis dari shift terbuka.
 export async function buatPermintaanKasir(formData: FormData) {
@@ -21,41 +19,31 @@ export async function buatPermintaanKasir(formData: FormData) {
   const to_warehouse_id = String(formData.get("to_warehouse_id") ?? "");
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const priority = String(formData.get("priority") ?? "normal") === "tinggi" ? "tinggi" : "normal";
+  const requestKey = String(formData.get("request_key") ?? "");
+  const scope = `cashier-stock-request:${shift.branch_id}`;
+  const fail = (message: string): never => redirect("/kasir/persediaan/baru?error=" + encodeURIComponent(message));
 
-  if (!to_warehouse_id) {
-    redirect("/kasir/persediaan/baru?error=" + encodeURIComponent("Gudang tujuan wajib diisi."));
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestKey)) {
+    fail("Identitas permintaan belum siap. Muat ulang halaman dan periksa draf sebelum mengirim.");
   }
+  if (!to_warehouse_id) fail("Gudang tujuan wajib diisi.");
 
-  // Satuan & jenis barang ditentukan ulang dari master — kiriman klien tidak dipercaya.
-  const input = parseBarisInput(formData.get("items"));
-  const master = await loadMasterPermintaan(supabase, input.map((b) => String(b.item_id ?? "")));
-  const { rows: baris, error: barisErr } = siapkanBaris(input, master);
-  if (barisErr) redirect("/kasir/persediaan/baru?error=" + encodeURIComponent(barisErr));
+  const baris = parseBarisInput(formData.get("items"))
+    .filter((row) => row?.item_id && Number(row.qty_diminta) > 0)
+    .map((row) => ({ item_id: String(row.item_id), qty_diminta: Number(row.qty_diminta), satuan: row.satuan ?? "", catatan: row.catatan ?? "" }));
+  if (!baris.length) fail("Minimal 1 barang dengan jumlah lebih dari 0.");
 
-  // no_request = PRM-YYYYMMDD-NNNN (urutan hari ini +1, padded 4). Today 2026-07-01.
-  // Formatnya dibaca dari master penomoran; bawaannya PRM-YYYYMMDD-NNNN,
-  // dilanjutkan dari nomor tertinggi hari itu.
-  const { nomor: no_request } = await nomorBerikutnya(supabase, "PRM", hariIniWIB(), {
-    table: "stock_requests", column: "no_request",
+  // The database checks live branch/shift access and resolves item snapshots.
+  // Header, lines and global numbering commit together; an identical retry
+  // returns the original request, including after a lost response.
+  const { data: requestId, error } = await supabase.rpc("create_cashier_stock_request_atomic", {
+    p_key: requestKey, p_branch_id: shift.branch_id, p_to_warehouse_id: to_warehouse_id,
+    p_priority: priority, p_notes: catatan, p_items: baris,
   });
-
-  const { data: req, error: reqErr } = await supabase
-    .from("stock_requests")
-    .insert({ no_request, from_branch_id: shift.branch_id, to_warehouse_id, catatan, priority, requested_by: user.id })
-    .select("id")
-    .single();
-
-  if (reqErr || !req) {
-    redirect("/kasir/persediaan/baru?error=" + encodeURIComponent("Gagal menyimpan permintaan."));
-  }
-
-  // §5: catatan per item ("stok menipis", dst) ikut tersimpan dari siapkanBaris.
-  await supabase.from("stock_request_items").insert(
-    baris.map((b) => ({ ...b, request_id: (req as { id: string }).id })),
-  );
+  if (error || !requestId) fail(error?.message ?? "Hasil simpan permintaan belum terkonfirmasi. Draf tetap tersedia; periksa daftar permintaan sebelum mengirim ulang.");
 
   revalidatePath("/kasir/persediaan");
-  redirect("/kasir/persediaan?tab=permintaan&success=1");
+  redirect(`/kasir/persediaan?tab=permintaan&success=1&draft_done=${encodeURIComponent(requestKey)}&draft_scope=${encodeURIComponent(scope)}`);
 }
 
 // Penerimaan barang (Addendum §5): buat dokumen penerimaan (TRM) dgn rekonsiliasi

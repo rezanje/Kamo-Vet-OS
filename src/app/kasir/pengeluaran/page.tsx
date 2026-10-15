@@ -1,4 +1,5 @@
-import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { ExpenseForm, ExpenseSubmitButton, ExpensePendingRecovery } from "@/components/pengeluaran/ExpenseForm";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -31,15 +32,23 @@ const KAT_BADGE: Record<string, string> = {
 export default async function PengeluaranKasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; draft_scope?: string; draft_done?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, draft_scope, draft_done } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const shift = await getOpenShift(supabase as never, user.id);
-  if (!shift) redirect("/kasir/mulai");
+  if (!shift) return <>
+    {success === "1" && <div className="p2ban" role="status">Pengeluaran sudah terkonfirmasi tersimpan. Anda dapat memulai shift baru untuk pengeluaran berikutnya.</div>}
+    <div className="card" style={{ padding: 16 }}>
+      <h1 style={{ fontSize: 18 }}>Pengeluaran</h1>
+      <p style={{ fontSize: 12 }}>Tidak ada shift terbuka. Hasil simpan pengeluaran sebelumnya tetap dapat diperiksa.</p>
+      <ExpensePendingRecovery userId={user.id} confirmedScope={draft_scope} confirmedKey={draft_done} />
+      <Link href="/kasir/mulai" className="btn-acc">Mulai shift</Link>
+    </div>
+  </>;
 
   // Tanggal ini dulu dipaku mati — ringkasan pengeluaran kasir berhenti di 1 Juli 2026.
   const today = hariIniWIB();
@@ -86,8 +95,7 @@ export default async function PengeluaranKasirPage({
         {/* KIRI — form tambah pengeluaran */}
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)", marginBottom: 12, letterSpacing: ".03em" }}>TAMBAH PENGELUARAN</div>
-          <TransactionForm userId={user.id} scope={`cashier-expense:${shift.id}`} action={simpanPengeluaranKasir}>
-            <input type="hidden" name="branchId" value={shift.branch_id} />
+          <ExpenseForm userId={user.id} scope={`cashier-expense:${shift.id}`} action={simpanPengeluaranKasir}>
             <div style={{ marginBottom: 10 }}>
               <label className="flab">Tanggal *</label>
               <input className="fi" name="tanggal" type="date" defaultValue={today} required />
@@ -120,8 +128,8 @@ export default async function PengeluaranKasirPage({
               <label className="flab">Lampiran bukti *</label>
               <LampiranPicker folder="pengeluaran" wajib />
             </div>
-            <button type="submit" className="pay-btn" style={{ width: "100%" }}>Simpan Pengeluaran</button>
-          </TransactionForm>
+            <ExpenseSubmitButton className="pay-btn" style={{ width: "100%" }}>Simpan Pengeluaran</ExpenseSubmitButton>
+          </ExpenseForm>
         </div>
 
         {/* KANAN — daftar pengeluaran + total */}

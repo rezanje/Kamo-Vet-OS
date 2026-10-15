@@ -22,6 +22,7 @@ import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { penjualValid } from "@/lib/penjual";
 import { jurnalPenjualanInklusif } from "@/lib/penjualan-jurnal";
+import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import {
   expandBarisGrup,
   kebutuhanStokCheckout,
@@ -109,38 +110,17 @@ export async function checkoutKasir(formData: FormData) {
       .map((line) => line.item_id ? pusat.get(line.item_id) : undefined)
       .filter((item): item is ItemHarga => item?.item_type === "Grup")
       .map((item) => item.id))];
-    type RecipeRaw = {
-      group_item_id: string; component_item_id: string; qty: number;
-      unit: string; factor: number; sort_order: number;
-    };
-    const { data: recipeRaw, error: recipeErr } = groupIds.length
-      ? await supabase.from("item_group_components")
-        .select("group_item_id, component_item_id, qty, unit, factor, sort_order")
-        .in("group_item_id", groupIds).order("sort_order")
-      : { data: [], error: null };
-    if (recipeErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca rincian Grup: ${recipeErr.message}`)}`);
-
-    const recipeRows = (recipeRaw ?? []) as RecipeRaw[];
+    const recipeRows = await loadKasirGroupComponents(supabase, groupIds);
     const componentIds = [...new Set(recipeRows.map((recipe) => recipe.component_item_id))];
-    const [{ data: componentItemsRaw, error: componentErr }, componentUnitMap] = componentIds.length
-      ? await Promise.all([
-        supabase.from("items").select("id, code, name, item_type, is_active").in("id", componentIds),
-        loadUnitOptions(supabase, componentIds),
-      ])
-      : [{ data: [], error: null }, new Map()];
-    if (componentErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca komponen Grup: ${componentErr.message}`)}`);
-
-    type ComponentMaster = {
-      id: string; code: string | null; name: string;
-      item_type: JenisKomponen; is_active: boolean;
-    };
-    const componentById = new Map(
-      ((componentItemsRaw ?? []) as ComponentMaster[]).map((component) => [component.id, component]),
-    );
+    const componentUnitMap = await loadUnitOptions(supabase, componentIds);
+    const componentById = new Map(recipeRows.flatMap(recipe => {
+      const component = Array.isArray(recipe.component) ? recipe.component[0] : recipe.component;
+      return component ? [[component.id, component] as const] : [];
+    }));
     const recipeByGroup = new Map<string, ResepKomponenCheckout[]>();
     for (const groupId of groupIds) {
       const rawForGroup = recipeRows.filter((recipe) => recipe.group_item_id === groupId);
-      const normalized = rawForGroup.map((recipe) => {
+      const normalized = rawForGroup.map((recipe): ResepKomponenCheckout | null => {
         const master = componentById.get(recipe.component_item_id);
         const officialUnit = componentUnitMap.get(recipe.component_item_id)
           ?.find((unit: { unit: string; factor: number }) =>
@@ -500,5 +480,6 @@ export async function checkoutKasir(formData: FormData) {
   }
 
   // Auto-cetak struk (fire window.print di halaman struk) — semua metode bayar.
-  redirect(`/kasir/struk/${sale!.id}?print=1`);
+  const checkoutKey = String(formData.get("checkout_key") ?? "");
+  redirect(`/kasir/struk/${sale!.id}?print=1${checkoutKey ? `&draft_done=${encodeURIComponent(checkoutKey)}` : ""}`);
 }

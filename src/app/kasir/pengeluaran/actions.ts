@@ -1,88 +1,14 @@
 "use server";
-import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { kodeAkunBayar } from "@/lib/kas-akun";
-import { parseLampiran } from "@/lib/dokumen";
-import { hariIniWIB } from "@/lib/tanggal";
-import { cekPeriode } from "@/lib/jurnal-guard";
+import { revalidatePath } from "next/cache";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { saveExpense } from "@/lib/expense-save";
 
-// Catat pengeluaran dari dunia kasir — cabang otomatis dari shift terbuka (bukan pilihan bebas).
 export async function simpanPengeluaranKasir(formData: FormData) {
-  const supabase = await createClient();
-  const branchId = String(formData.get("branchId") ?? "");
-  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
-  const kategori = String(formData.get("kategori") ?? "");
-  const deskripsi = String(formData.get("deskripsi") ?? "");
-  const jumlah = Number(formData.get("jumlah")) || 0;
-  const metode = String(formData.get("metode_bayar") ?? "Tunai");
-
-  if (!branchId) redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Shift tidak valid")}`);
-  if (!kategori) redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Pilih kategori dulu")}`);
-  if (jumlah <= 0) redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Jumlah pengeluaran harus lebih dari 0")}`);
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) redirect(`/kasir/pengeluaran?error=${encodeURIComponent(pesanPeriode)}`);
-
-  // Pengeluaran WAJIB berlampir bukti — kas keluar tanpa nota tidak bisa diaudit.
-  const lampiran = parseLampiran(formData.get("lampiran"));
-  if (lampiran.length === 0) {
-    redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Lampiran bukti wajib diisi sebelum pengeluaran bisa disimpan")}`);
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Tempel ke shift berjalan biar pengeluaran tunai ikut ngurangin kas seharusnya saat tutup shift.
-  const { data: shift } = await supabase
-    .from("cashier_shifts").select("id")
-    .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
-
-  const { data: expense, error } = await supabase.from("expenses").insert({
-    branch_id: branchId,
-    tanggal,
-    kategori,
-    deskripsi: deskripsi || null,
-    jumlah,
-    metode_bayar: metode,
-    bukti_url: lampiran[0].path,
-    shift_id: shift?.id ?? null,
-    created_by: user?.id ?? null,
-  }).select("id").single();
-  if (error || !expense) {
-    redirect(`/kasir/pengeluaran?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
-  }
-
-  const { error: attachmentError } = await supabase.from("document_attachments").insert(
-    lampiran.map((l) => ({ ...l, modul: "pengeluaran", ref_id: expense!.id, uploaded_by: user?.id ?? null })),
-  );
-
-  if(attachmentError) throw new Error("Pengeluaran tersimpan tetapi bukti belum terkonfirmasi. Periksa transaksi sebelum menyimpan ulang.");
-
-  // Accounting: Dr Beban, Cr Kas/Bank.
-  const kategoriToCode: Record<string, string> = {
-    "Listrik & Air": "5301",
-    "Perlengkapan": "5302",
-    "Transportasi": "5303",
-    "Perawatan": "5304",
-    "Operasional": "5401",
-    "Lain-lain": "5401",
-  };
-  const bebanCode = kategoriToCode[kategori] ?? "5401";
-  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
-  await postJournal(supabase, {
-    tanggal: tanggal || hariIniWIB(),
-    deskripsi: `Pengeluaran: ${deskripsi || kategori}`,
-    source: "expense",
-    sourceRef: expense!.id,
-    branchId,
-    lines: [
-      { code: bebanCode, debit: jumlah, credit: 0 },
-      { code: kasCode, debit: 0, credit: jumlah },
-    ],
-  });
-
-  await assertDraftJournal(supabase,{tanggal:tanggal||hariIniWIB(),source:"expense",sourceRef:expense!.id,branchId,lines:[{code:bebanCode,debit:jumlah,credit:0},{code:kasCode,debit:0,credit:jumlah}]});
+  await saveExpense(formData, "cashier");
+  revalidatePath("/kasir/pengeluaran");
+  revalidatePath("/pos/expense");
+  revalidatePath("/buku-besar/beban");
   redirect(`/kasir/pengeluaran?success=1${transactionDraftAck(formData)}`);
 }

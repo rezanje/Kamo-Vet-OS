@@ -13,7 +13,7 @@ import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import type { ItemType } from "@/lib/barang";
-import { bacaDraftKasir, KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draft";
+import { bacaDraftKasir, kasirDraftKey, type KasirDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
 import { nomorHalamanKasirTerlihat } from "@/lib/kasir-halaman";
 import { digitHp } from "@/lib/kontak";
@@ -114,12 +114,18 @@ export function KasirClient({
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addPending, startAdd] = useTransition();
   const router = useRouter();
+  const [checkoutKey, setCheckoutKey] = useState("");
   const draftSiap = useRef(false);
-  const draftKey = draftContext ? `${KASIR_DRAFT_KEY}:${draftContext}` : KASIR_DRAFT_KEY;
+  const restoredDraftKey = useRef("");
+  const draftKey = kasirDraftKey(draftContext);
 
   useEffect(() => {
+    if (restoredDraftKey.current === draftKey) return;
+    draftSiap.current = false;
     const draft = bacaDraftKasir(window.sessionStorage.getItem(draftKey));
     const timer = window.setTimeout(() => {
+      restoredDraftKey.current = draftKey;
+      setCheckoutKey(draft?.checkoutKey ?? crypto.randomUUID());
       if (!draft) {
         draftSiap.current = true;
         return;
@@ -165,11 +171,11 @@ export function KasirClient({
       return;
     }
     const draft: KasirDraft = {
-      version: 1, savedAt: Date.now(), customerId: cust?.id ?? "", salespersonId,
+      version: 1, savedAt: Date.now(), checkoutKey, customerId: cust?.id ?? "", salespersonId,
       metode, diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
     };
     window.sessionStorage.setItem(draftKey, JSON.stringify(draft));
-  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar, draftKey]);
+  }, [cartRaw, cust?.id, salespersonId, metode, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -554,6 +560,7 @@ export function KasirClient({
         {/* KERANJANG BELANJA */}
         <form action={checkoutKasir} className="card">
           {shiftId && <input type="hidden" name="operationalShiftId" value={shiftId} />}
+          <input type="hidden" name="checkout_key" value={checkoutKey} />
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
           <input type="hidden" name="salespersonId" value={salespersonId} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />

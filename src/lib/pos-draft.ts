@@ -2,6 +2,10 @@ export const POS_DRAFT_KEY = "vetos:pos-transaksi:draft:v1";
 export const KASIR_DRAFT_KEY = "vetos:kasir:draft:v1";
 const MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 
+export function kasirDraftKey(context?: string): string {
+  return context ? `${KASIR_DRAFT_KEY}:${context}` : KASIR_DRAFT_KEY;
+}
+
 export type PosDraftLine = {
   item_id: string;
   nama: string;
@@ -63,6 +67,8 @@ export type KasirDraftLine = {
 export type KasirDraft = {
   version: 1;
   savedAt: number;
+  /** Browser draft acknowledgement only; not a database posting/replay key. */
+  checkoutKey?: string;
   customerId: string;
   salespersonId: string;
   metode: string;
@@ -87,6 +93,7 @@ export function bacaDraftKasir(raw: string | null, now = Date.now()): KasirDraft
     return {
       version: 1,
       savedAt: Number(draft.savedAt),
+      ...(typeof draft.checkoutKey === "string" && draft.checkoutKey ? { checkoutKey: draft.checkoutKey } : {}),
       customerId: String(draft.customerId ?? ""),
       salespersonId: String(draft.salespersonId ?? ""),
       metode: String(draft.metode ?? ""),
