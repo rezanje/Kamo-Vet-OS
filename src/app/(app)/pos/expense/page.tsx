@@ -4,6 +4,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { simpanExpense } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { redirect } from "next/navigation";
+import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/ExpenseForm";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -32,6 +34,8 @@ export default async function ExpensePage({
 }) {
   const { error, success } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
   // Sebelumnya tanggal ini dipaku mati, jadi kartu "hari ini"/"bulan ini" berhenti
   // di 1 Juli 2026 selamanya.
@@ -72,7 +76,7 @@ export default async function ExpensePage({
 
       <div className="crm-sec">
         <SecHeader num="01" title="CATAT PENGELUARAN" desc="Tambahkan pengeluaran operasional klinik." />
-        <form action={simpanExpense}>
+        <ExpenseForm userId={user.id} scope="backoffice-expense" action={simpanExpense}>
           <div className="grid2">
             <div>
               <label className="flab">Cabang *</label>
@@ -112,9 +116,9 @@ export default async function ExpensePage({
             <LampiranPicker folder="pengeluaran" wajib />
           </div>
           <div style={{ marginTop: 12, borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
-            <button type="submit" className="btn-acc"><i className="ti ti-plus" /> Simpan Pengeluaran</button>
+            <ExpenseSubmitButton className="btn-acc"><i className="ti ti-plus" /> Simpan Pengeluaran</ExpenseSubmitButton>
           </div>
-        </form>
+        </ExpenseForm>
       </div>
 
       <div className="crm-sec">

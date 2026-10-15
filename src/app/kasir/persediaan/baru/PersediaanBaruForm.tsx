@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { PreservedForm } from "@/components/LocalTransactionDraft";
+import { TransactionDraft, draftRows, transactionDraftName } from "@/components/TransactionDraft";
 import { buatPermintaanKasir } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit } from "@/lib/satuan";
@@ -14,11 +16,44 @@ type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: stri
 
 const today = hariIniWIB();
 
-export function PersediaanBaruForm({
-  branchName, warehouses, items, userName,
-}: { branchName: string; warehouses: Warehouse[]; items: Item[]; userName: string }) {
+type Props = { userId: string; branchId: string; branchName: string; warehouses: Warehouse[]; items: Item[]; userName: string };
+export function PersediaanBaruForm(props: Props) {
+  return <PersediaanBaruFields key={`${props.userId}:${props.branchId}`} {...props} />;
+}
+
+function PersediaanBaruFields({ userId, branchId, branchName, warehouses, items, userName }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
+  const [requestKey, setRequestKey] = useState("");
+  const [draftFailure, setDraftFailure] = useState("");
+  const scope = `cashier-stock-request:${branchId}`;
   const itemMap = useMemo(() => Object.fromEntries(items.map((i) => [i.id, i])), [items]);
+
+  // This identity is persisted with the actual form contents and is also the
+  // RPC retry key. Do not generate a new identity after an uncertain response.
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const name = transactionDraftName(userId, "transaction", scope);
+      const raw = sessionStorage.getItem(name);
+      // Verify storage before allowing a request whose identity must survive reload.
+      sessionStorage.setItem(name, raw ?? "");
+      if (raw === null) sessionStorage.removeItem(name);
+      let saved: { requestKey?: unknown; savedAt?: number } | null = null;
+      try { saved = JSON.parse(raw ?? "null"); } catch { /* TransactionDraft reports malformed drafts. */ }
+      const validKey = typeof saved?.requestKey === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saved.requestKey)
+        && Number.isFinite(saved.savedAt) && saved.savedAt! > 0 && saved.savedAt! <= Date.now() && Date.now() - saved.savedAt! <= 12 * 60 * 60 * 1000;
+      const key = validKey ? saved!.requestKey as string : crypto.randomUUID();
+      queueMicrotask(() => { if (!cancelled) setRequestKey(key); });
+    } catch {
+      queueMicrotask(() => { if (!cancelled) setDraftFailure("Draf browser tidak dapat disimpan. Isian tetap tersedia di halaman ini; aktifkan penyimpanan browser sebelum mengirim."); });
+    }
+    const confirmed = (event: Event) => {
+      const detail = (event as CustomEvent<{ scope: string; key: string }>).detail;
+      if (detail?.scope === scope) setRequestKey(current => current === detail.key ? crypto.randomUUID() : current);
+    };
+    window.addEventListener("vetos:transaction-confirmed", confirmed);
+    return () => { cancelled = true; window.removeEventListener("vetos:transaction-confirmed", confirmed); };
+  }, [userId, scope]);
 
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -36,7 +71,19 @@ export function PersediaanBaruForm({
   const totalItem = rows.reduce((a, r) => a + (Number(r.qty_diminta) || 0), 0);
 
   return (
-    <form action={buatPermintaanKasir}>
+    <PreservedForm action={buatPermintaanKasir}>
+      <input type="hidden" name="request_key" value={requestKey} />
+      <input type="hidden" name="draft_key" value={requestKey} />
+      <input type="hidden" name="draft_scope" value={scope} />
+      <TransactionDraft userId={userId} domain="transaction" scope={scope} requestKey={requestKey} state={{
+        snapshot: { rows },
+        restore: snapshot => {
+          if (!(Array.isArray(snapshot.rows) && snapshot.rows.length === 0) && !draftRows(snapshot.rows, { item_id: "", qty_diminta: 0, satuan: "", catatan: "" })) return false;
+          setRows(snapshot.rows as Row[]); return true;
+        },
+        reset: () => setRows([]),
+      }} />
+      {draftFailure && <div role="alert" className="p2ban">{draftFailure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
       {/* Header halaman */}
@@ -119,6 +166,7 @@ export function PersediaanBaruForm({
                     <td style={{ minWidth: 200 }}>
                       <select className="fi" value={r.item_id} onChange={(e) => setItem(i, e.target.value)} style={{ fontSize: 11 }}>
                         <option value="">Pilih barang...</option>
+                        {r.item_id && !it && <option value={r.item_id}>Barang tidak tersedia — pilih ulang</option>}
                         {items.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                     </td>
@@ -180,8 +228,8 @@ export function PersediaanBaruForm({
           <span style={{ fontSize: 11, color: "var(--tm)" }}>Dibuat Oleh</span>
           <input className="fi" value={userName} disabled style={{ background: "var(--sf1)", color: "var(--tm)", width: 220 }} />
         </div>
-        <SubmitButton className="pay-btn" icon="ti-send" style={{ width: "auto", padding: "9px 22px" }} pendingText="Mengirim…">Kirim Permintaan</SubmitButton>
+        <SubmitButton disabled={!requestKey} className="pay-btn" icon="ti-send" style={{ width: "auto", padding: "9px 22px" }} pendingText="Mengirim…">Kirim Permintaan</SubmitButton>
       </div>
-    </form>
+    </PreservedForm>
   );
 }

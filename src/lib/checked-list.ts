@@ -29,14 +29,15 @@ function checked<T extends Identified>(result: Result<T>, label: string, from: n
 }
 
 /** Stable caller ordering must end in a unique id; never return partial totals. */
-export async function readCompleteList<T extends Identified>(fetch: Fetch<T>, label: string): Promise<T[]> {
+export async function readCompleteList<T extends Identified>(fetch: Fetch<T>, label: string, options: { maxRows?: number | null } = {}): Promise<T[]> {
+  const cap = options.maxRows === undefined ? SOURCE_CAP : options.maxRows;
   let count: number | undefined;
   const rows: T[] = [];
   const ids = new Set<string>();
   for (let from = 0; count === undefined || from < count; from += SOURCE_PAGE_SIZE) {
     const page = checked(await fetchResult(fetch, from, from + SOURCE_PAGE_SIZE - 1, label), label, from, SOURCE_PAGE_SIZE, count);
     count = page.count;
-    if (count > SOURCE_CAP) throw new ListLoadError(`${label} melebihi batas 10.000 baris dan belum dapat ditampilkan lengkap.`);
+    if (cap !== null && count > cap) throw new ListLoadError(`${label} melebihi batas ${cap.toLocaleString("id-ID")} baris dan belum dapat ditampilkan lengkap.`);
     for (const row of page.rows) {
       if (ids.has(row.id)) throw new ListLoadError(`${label}: ID data duplikat saat dimuat. Coba muat ulang.`);
       ids.add(row.id);

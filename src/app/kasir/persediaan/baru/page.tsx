@@ -46,6 +46,8 @@ export default async function BaruPermintaanKasirPage({
       )}
 
       <PersediaanBaruForm
+        userId={user.id}
+        branchId={shift.branch_id}
         branchName={shift.branchName}
         warehouses={warehouses ?? []}
         items={items}

@@ -1,3 +1,5 @@
+import { readCompleteList } from "./checked-list";
+
 // Diskon golongan pelanggan (customer_categories.diskon_persen), migrasi 0066.
 // Dipakai KLIEN untuk menampilkan dan SERVER sebagai satu-satunya sumber angka
 // yang disimpan — kasir tidak boleh bisa mengarang diskon golongan.
@@ -101,11 +103,10 @@ export async function loadAturanDiskon(
   customerCategoryId: string | null | undefined,
 ): Promise<AturanDiskon[]> {
   if (!customerCategoryId) return [];
-  const { data } = await supabase
-    .from("category_discounts")
-    .select("item_id, item_category_id, diskon_persen")
-    .eq("customer_category_id", customerCategoryId);
-  return ((data ?? []) as AturanDiskon[]).map((a) => ({ ...a, diskon_persen: Number(a.diskon_persen) }));
+  const rows = await readCompleteList<AturanDiskon & { id: string }>((from, to) => supabase
+    .from("category_discounts").select("id,item_id,item_category_id,diskon_persen", { count: "exact" })
+    .eq("customer_category_id", customerCategoryId).order("id").range(from, to), "Diskon golongan", { maxRows: null });
+  return rows.map(({ item_id, item_category_id, diskon_persen }) => ({ item_id, item_category_id, diskon_persen: Number(diskon_persen) }));
 }
 
 // Kategori + kategori induk tiap barang, bahan baku persenUntukBarang().

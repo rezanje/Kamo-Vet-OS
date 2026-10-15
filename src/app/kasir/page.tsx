@@ -4,14 +4,14 @@ import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
 import type { PromoHitung } from "@/lib/promo-hitung";
-import { loadInfoBarang, type AturanDiskon } from "@/lib/harga-golongan";
-import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
+import { type AturanDiskon } from "@/lib/harga-golongan";
+import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions } from "@/lib/satuan";
-import { stokEfektifGrup, type JenisKomponen } from "@/lib/grup-barang";
-import type { ItemType } from "@/lib/barang";
+import { stokEfektifGrup } from "@/lib/grup-barang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 import { hariIniWIB } from "@/lib/tanggal";
 import { daftarPenjual } from "@/lib/penjual";
+import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } from "@/lib/kasir-catalog";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -32,8 +32,8 @@ export default async function KasirPage({
   const shift = await getOpenShift(supabase as never, user.id);
   if (!shift) redirect("/kasir/mulai");
 
-  const [{ data: items }, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
-    supabase.from("items").select("id, code, name, unit, item_type, sell_price, buy_price, target_species, min_sell_qty, default_discount, substitute_item_id, item_categories(name)").eq("is_active", true).order("name"),
+  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
+    loadKasirItems(supabase),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
     supabase.from("customers")
@@ -83,13 +83,12 @@ export default async function KasirPage({
   const vouchersAktif = ((vouchers ?? []) as unknown as VoucherFull[]).filter((v) => voucherBerlaku(v, wibToday));
 
   // stok di gudang pertama cabang shift (tampilan stok toko).
-  const { data: wh } = await supabase
+  const { data: wh, error: warehouseError } = await supabase
     .from("warehouses").select("id").eq("branch_id", shift.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle();
+  if (warehouseError) throw new Error("Gudang kasir belum dapat dimuat. Coba muat ulang.");
+  const details = await loadKasirCatalogDetails(supabase, shift.branch_id, wh?.id ?? null);
   const stockMap: Record<string, number> = {};
-  if (wh) {
-    const { data: st } = await supabase.from("stock").select("item_id, qty").eq("warehouse_id", wh.id);
-    for (const s of st ?? []) stockMap[s.item_id as string] = Number(s.qty);
-  }
+  for (const row of details.stock) stockMap[row.item_id] = Number(row.qty);
 
   // Ringkasan transaksi per pelanggan (petshop sales + klinik invoices lunas,
   // semua waktu) — sama pola dengan header detail owner di antrian.
@@ -108,15 +107,7 @@ export default async function KasirPage({
   }
 
   // Harga jual bisa beda per cabang (migrasi 0073) — dipakai harga cabang shift ini.
-  const harga = await loadHargaCabang(supabase, shift.branch_id);
-
-  type ItemRaw = {
-    id: string; code: string; name: string; unit: string; item_type: ItemType;
-    sell_price: number; buy_price: number; target_species: string;
-    min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
-    item_categories: Rel<{ name: string }>;
-  };
-  const itemsRaw = (items ?? []) as unknown as ItemRaw[];
+  const harga = new Map(details.prices.map(row => [`${row.item_id}|${row.unit}`, Number(row.sell_price)]));
   // Nama barang substitusi diambil dari daftar yang sama — tidak perlu query lagi.
   const namaById = new Map(itemsRaw.map((i) => [i.id, i.name]));
 
@@ -128,27 +119,10 @@ export default async function KasirPage({
   // Grup tidak punya stok sendiri. Stok jualnya = jumlah paket paling kecil yang
   // masih bisa dirakit dari seluruh komponen Persediaan di gudang shift.
   const groupIds = itemsRaw.filter((i) => i.item_type === "Grup").map((i) => i.id);
-  const { data: groupComponentRowsRaw } = groupIds.length
-    ? await supabase.from("item_group_components")
-      .select("group_item_id, component_item_id, qty, unit, factor, sort_order")
-      .in("group_item_id", groupIds).order("sort_order")
-    : { data: [] };
-  type GroupComponentRaw = {
-    group_item_id: string; component_item_id: string; qty: number;
-    unit: string; factor: number; sort_order: number;
-  };
-  const groupComponentRows = (groupComponentRowsRaw ?? []) as GroupComponentRaw[];
-  const componentIds = [...new Set(groupComponentRows.map((row) => row.component_item_id))];
-  const { data: componentItemsRaw } = componentIds.length
-    ? await supabase.from("items").select("id, code, name, item_type").in("id", componentIds)
-    : { data: [] };
-  const componentById = new Map(
-    ((componentItemsRaw ?? []) as { id: string; code: string; name: string; item_type: JenisKomponen }[])
-      .map((row) => [row.id, row]),
-  );
+  const groupComponentRows = await loadKasirGroupComponents(supabase, groupIds);
   const groupMap = new Map<string, ItemRow["groupComponents"]>();
   for (const row of groupComponentRows) {
-    const component = componentById.get(row.component_item_id);
+    const component = one(row.component);
     if (!component || component.item_type === "Grup") continue;
     const current = groupMap.get(row.group_item_id) ?? [];
     current.push({
@@ -165,10 +139,8 @@ export default async function KasirPage({
 
   // Harga bertingkat per jumlah beli (meeting 14 Agustus) — dikirim bersama
   // barangnya supaya harga di keranjang ikut turun begitu qty-nya cukup.
-  const { data: tierRows } = await supabase
-    .from("item_price_tiers").select("item_id, min_qty, harga").order("min_qty");
   const tierMap = new Map<string, { min_qty: number; harga: number }[]>();
-  for (const t of (tierRows ?? []) as { item_id: string; min_qty: number; harga: number }[]) {
+  for (const t of details.tiers) {
     const arr = tierMap.get(t.item_id) ?? [];
     arr.push({ min_qty: Number(t.min_qty), harga: Number(t.harga) });
     tierMap.set(t.item_id, arr);
@@ -233,12 +205,12 @@ export default async function KasirPage({
   // Pengecualian diskon per produk/kategori (0082) + kategori tiap barang.
   // Dikirim ke layar supaya angka yang dilihat kasir sama dengan yang nanti
   // dihitung server saat bayar — bukan supaya klien yang menentukan diskonnya.
-  const [{ data: aturanRows }, infoBarang] = await Promise.all([
-    supabase.from("category_discounts").select("customer_category_id, item_id, item_category_id, diskon_persen"),
-    loadInfoBarang(supabase),
-  ]);
+  const infoBarang = new Map(itemsRaw.map(item => [item.id, {
+    item_id: item.id, category_id: item.category_id,
+    parent_category_id: one(item.item_categories)?.parent_id ?? null,
+  }]));
   const aturanPerGolongan: Record<string, AturanDiskon[]> = {};
-  for (const a of (aturanRows ?? []) as (AturanDiskon & { customer_category_id: string })[]) {
+  for (const a of details.discounts) {
     (aturanPerGolongan[a.customer_category_id] ??= []).push({
       item_id: a.item_id, item_category_id: a.item_category_id, diskon_persen: Number(a.diskon_persen),
     });
