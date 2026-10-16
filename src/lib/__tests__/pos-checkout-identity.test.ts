@@ -40,3 +40,12 @@ it("preserves raw points and percentage-discount intent when committed balances/
   after.set("checkout_diskon_requested", "10"); after.set("checkout_diskon_pct", "1"); after.set("diskon", "12000");
   expect(posCheckoutIdentity(after, "branch")).toEqual(posCheckoutIdentity(before, "branch"));
 });
+
+it("includes merchant rate in intent without changing historical zero-fee identity", () => {
+  const input = form(); input.set("metode", "Debit"); input.set("split_payments", "[]");
+  const old = posCheckoutIdentity(input, "branch");
+  input.set("merchant_fee_percent", "0");
+  expect(posCheckoutIdentity(input, "branch")).toEqual(old);
+  input.set("merchant_fee_percent", "2");
+  expect(posCheckoutIdentity(input, "branch").fingerprint).not.toBe(old.fingerprint);
+});

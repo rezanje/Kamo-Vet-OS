@@ -30,6 +30,7 @@ export function posCheckoutIdentity(form: FormData, branchId: string): PosChecko
     item_discount_type: line.item_discount_type || null, item_discount_value: Number(line.item_discount_value || 0),
   })) : rawCart;
   const intent = canonical({ branchId, cart, customerId: text("customerId"), petId: text("petId"), salespersonId: text("salespersonId"),
+    ...(number("merchant_fee_percent") !== 0 ? { merchant_fee_percent: number("merchant_fee_percent") } : {}),
     method: text("metode"), payments: parsed("split_payments"), bayar: number("bayar"),
     diskon: Number(form.get("checkout_diskon_requested") ?? form.get("diskon") ?? 0), diskonPct: text("checkout_diskon_pct"),
     discount: number("discount"), poin: Number(form.get("checkout_poin_requested") ?? form.get("poinDigunakan") ?? 0), voucher: text("voucherCode").trim().toUpperCase() });

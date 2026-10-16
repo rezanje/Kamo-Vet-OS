@@ -9,6 +9,7 @@ import { bacaDraftPos, POS_DRAFT_KEY, type PosDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
 import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
 import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
+import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { hitungPromoKeranjang, totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 
@@ -51,6 +52,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
   const [discount, setDiscount] = useState(0);
   const [bayar, setBayar] = useState(0);
   const [split, setSplit] = useState(false);
+  const [merchantFeePercent, setMerchantFeePercent] = useState(0);
   const [payments, setPayments] = useState<PosPaymentPart[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
   const [salespersonId, setSalespersonId] = useState("");
   const [checkoutKey, setCheckoutKey] = useState("");
@@ -78,6 +80,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
         setPetId(customer?.pets.some((pet) => pet.id === draft.petId) ? draft.petId : "");
         setSalespersonId(salespeople.some((person) => person.id === draft.salespersonId) ? draft.salespersonId : "");
         setMetode(draft.metode || "Tunai");
+        setMerchantFeePercent(draft.merchantFeePercent ?? 0);
         setSplit(draft.split ?? draft.metode === "Split");
         if (draft.payments?.length) setPayments(draft.payments);
         setDiscount(draft.discount);
@@ -106,12 +109,13 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
       metode,
       split,
       payments,
+      ...(merchantFeePercent ? { merchantFeePercent } : {}),
       discount,
       bayar,
       cart,
     };
     sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
-  }, [branchId, bayar, cart, cust?.id, discount, metode, split, payments, petId, salespersonId, checkoutKey]);
+  }, [branchId, bayar, cart, cust?.id, discount, metode, split, payments, merchantFeePercent, petId, salespersonId, checkoutKey]);
 
   // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
   const katalog = useMemo(() => {
@@ -192,8 +196,14 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
   const poin = cust ? poinDidapat(total, cust.golongan?.rupiah_per_poin) : 0;
   const kurang = metode === "Tunai" && bayar < total;
   let paymentValid = true;
-  try { resolvePosPayments({ total, method: split ? "Split" : metode, bayar, payments: split ? payments : [] }); }
-  catch { paymentValid = false; }
+  let feeTotal = 0;
+  let finalTotal = total;
+  try {
+    const quote = quotePosMerchantFees({ total, method: split ? "Split" : metode, payments: split ? payments : [], feePercent: split ? 0 : merchantFeePercent });
+    feeTotal = quote.feeTotal;
+    finalTotal = quote.total;
+    resolvePosPayments({ total: quote.total, method: split ? "Split" : metode, bayar, payments: split ? quote.parts : [] });
+  } catch { paymentValid = false; }
   const canPay = checkoutKey && branchId && salespersonId && cart.length > 0 && paymentValid;
 
   const pickCust = (c: Cust) => { setCust(c); setCustQ(c.name); setPetId(""); };
@@ -208,6 +218,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
       <input type="hidden" name="salespersonId" value={salespersonId} />
       <input type="hidden" name="metode" value={split ? "Split" : metode} />
       <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
+      <input type="hidden" name="merchant_fee_percent" value={split ? 0 : merchantFeePercent} />
       <input type="hidden" name="discount" value={discount} />
       <input type="hidden" name="bayar" value={bayar} />
       <input type="hidden" name="cart" value={JSON.stringify(cart)} />
@@ -328,19 +339,22 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
               <span>Diskon manual / promo</span>
               <input className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
             </div>
+            <Row k="Tagihan barang" v={rp(total)} />
+            <Row k="Fee merchant" v={rp(feeTotal)} />
             <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>
               <span style={{ fontSize: 12, fontWeight: 500 }}>Total</span>
-              <span style={{ fontSize: 17, fontWeight: 600, color: "var(--acc)" }}>{rp(total)}</span>
+              <span style={{ fontSize: 17, fontWeight: 600, color: "var(--acc)" }}>{rp(finalTotal)}</span>
             </div>
             {cust && <div style={{ fontSize: 9.5, color: "#16a34a", textAlign: "right" }}>+{poin} poin untuk {cust.name.split(" ")[0]}</div>}
           </div>
 
           {/* Metode */}
           <PosPaymentFields total={total} split={split} payments={payments} bayar={bayar}
-            onSplitChange={setSplit} onPaymentsChange={setPayments} onBayarChange={setBayar} />
+            method={metode} feePercent={merchantFeePercent} onFeePercentChange={setMerchantFeePercent}
+            onSplitChange={enabled => { setSplit(enabled); setMerchantFeePercent(0); if (!enabled) setPayments(payments.map(part => ({ method: part.method, amount: part.amount }))); }} onPaymentsChange={setPayments} onBayarChange={setBayar} />
           {!split && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
             {["Tunai", "QRIS", "Transfer"].map((m) => (
-              <button type="button" key={m} onClick={() => setMetode(m)} className="back-btn"
+              <button type="button" key={m} onClick={() => { if (m !== metode) setMerchantFeePercent(0); setMetode(m); }} className="back-btn"
                 style={{ padding: "5px 0", justifyContent: "center", borderRadius: 6, border: ".5px solid var(--bd)", fontSize: 10.5,
                   background: metode === m ? "var(--sb)" : "#fff", color: metode === m ? "#fff" : "var(--tm)" }}>{m}</button>
             ))}
@@ -354,7 +368,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
             </div>
           )}
 
-          <SubmitButton className="pay-btn" icon="ti-circle-check" disabled={!canPay} style={{ marginTop: 8, opacity: canPay ? 1 : 0.5 }} pendingText="Memproses…">Bayar {rp(total)}</SubmitButton>
+          <SubmitButton className="pay-btn" icon="ti-circle-check" disabled={!canPay} style={{ marginTop: 8, opacity: canPay ? 1 : 0.5 }} pendingText="Memproses…">Bayar {rp(finalTotal)}</SubmitButton>
         </div>
       </div>
     </form>

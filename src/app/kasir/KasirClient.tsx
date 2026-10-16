@@ -20,6 +20,7 @@ import { digitHp } from "@/lib/kontak";
 import { normalPhone } from "@/lib/booking";
 import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
 import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
+import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { roundPosMoney } from "@/lib/pos-money";
 
 export type GroupComponentRow = {
@@ -114,6 +115,7 @@ export function KasirClient({
   const [metode, setMetode] = useState("");
   const [bayar, setBayar] = useState(0);
   const [split, setSplit] = useState(false);
+  const [merchantFeePercent, setMerchantFeePercent] = useState(0);
   const [payments, setPayments] = useState<PosPaymentPart[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
   const [showAddCust, setShowAddCust] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
@@ -140,6 +142,7 @@ export function KasirClient({
       setCustQ(customer?.name ?? "");
       setSalespersonId(salespeople.some((p) => p.id === draft.salespersonId) ? draft.salespersonId : "");
       setMetode(draft.metode);
+      setMerchantFeePercent(draft.merchantFeePercent ?? 0);
       setSplit(draft.split ?? draft.metode === "Split");
       if (draft.payments?.length) setPayments(draft.payments);
       setDiskon(draft.diskon);
@@ -179,10 +182,10 @@ export function KasirClient({
     }
     const draft: KasirDraft = {
       version: 1, savedAt: Date.now(), checkoutKey, customerId: cust?.id ?? "", salespersonId,
-      metode, split, payments, diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
+      metode, split, payments, ...(merchantFeePercent ? { merchantFeePercent } : {}), diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
     };
     window.sessionStorage.setItem(draftKey, JSON.stringify(draft));
-  }, [cartRaw, cust?.id, salespersonId, metode, split, payments, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
+  }, [cartRaw, cust?.id, salespersonId, metode, split, payments, merchantFeePercent, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -360,8 +363,14 @@ export function KasirClient({
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
   let paymentValid = true;
-  try { resolvePosPayments({ total, method: split ? "Split" : metode, bayar, payments: split ? payments : [] }); }
-  catch { paymentValid = false; }
+  let feeTotal = 0;
+  let finalTotal = total;
+  try {
+    const quote = quotePosMerchantFees({ total, method: split ? "Split" : metode, payments: split ? payments : [], feePercent: split ? 0 : merchantFeePercent });
+    feeTotal = quote.feeTotal;
+    finalTotal = quote.total;
+    resolvePosPayments({ total: quote.total, method: split ? "Split" : metode, bayar, payments: split ? quote.parts : [] });
+  } catch { paymentValid = false; }
   // Minimum jual dari master: kasir tidak boleh menjual di bawahnya.
   // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
@@ -582,6 +591,7 @@ export function KasirClient({
           <input type="hidden" name="voucherCode" value={v ? v.code : ""} />
           <input type="hidden" name="metode" value={split ? "Split" : metode} />
           <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
+          <input type="hidden" name="merchant_fee_percent" value={split ? 0 : merchantFeePercent} />
           <input type="hidden" name="bayar" value={bayar} />
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -740,14 +750,17 @@ export function KasirClient({
             {voucherVal > 0 && <Row k="" v={`- ${rp(voucherVal)}`} red />}
             {tolakVoucher && <div style={{ fontSize: 9.5, color: "#b91c1c", textAlign: "right", lineHeight: 1.5 }}>{tolakVoucher}</div>}
 
+            <Row k="Tagihan barang" v={rp(total)} />
+            <Row k="Fee merchant" v={rp(feeTotal)} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0", paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: "var(--posb)" }}>TOTAL</span>
-              <span style={{ fontSize: 19, fontWeight: 800, color: "var(--posb)" }}>{rp(total)}</span>
+              <span style={{ fontSize: 19, fontWeight: 800, color: "var(--posb)" }}>{rp(finalTotal)}</span>
             </div>
 
             <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--tm)", letterSpacing: ".04em", marginBottom: 5 }}>METODE PEMBAYARAN</div>
             <PosPaymentFields total={total} split={split} payments={payments} bayar={bayar}
-              onSplitChange={setSplit} onPaymentsChange={setPayments} onBayarChange={setBayar} />
+              method={metode} feePercent={merchantFeePercent} onFeePercentChange={setMerchantFeePercent}
+              onSplitChange={enabled => { setSplit(enabled); setMerchantFeePercent(0); if (!enabled) setPayments(payments.map(part => ({ method: part.method, amount: part.amount }))); }} onPaymentsChange={setPayments} onBayarChange={setBayar} />
             {!split && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
               {[
                 { m: "Tunai", ic: "ti-cash" },
@@ -757,7 +770,7 @@ export function KasirClient({
                 { m: "QRIS", ic: "ti-qrcode" },
                 { m: "E-Wallet", ic: "ti-wallet" },
               ].map(({ m, ic }) => (
-                <button key={m} type="button" onClick={() => setMetode(m)}
+                <button key={m} type="button" onClick={() => { if (m !== metode) setMerchantFeePercent(0); setMetode(m); }}
                   className={`kpos-pay ${metode === m ? "on" : ""}`} style={{ minWidth: "31%" }}>
                   <span className="kpos-radio" />
                   <i className={`ti ${ic}`} /> {m}
@@ -781,7 +794,7 @@ export function KasirClient({
               </div>
             )}
 
-            <SubmitButton className="kpos-bayar" icon="ti-circle-check" disabled={!canPay} pendingText="Memproses…">Bayar {rp(total)}</SubmitButton>
+            <SubmitButton className="kpos-bayar" icon="ti-circle-check" disabled={!canPay} pendingText="Memproses…">Bayar {rp(finalTotal)}</SubmitButton>
           </div>
         </form>
       </div>

@@ -19,6 +19,7 @@ import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { penjualValid } from "@/lib/penjual";
 import { resolvePosPayments } from "@/lib/pos-payments";
+import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
@@ -334,8 +335,10 @@ export async function checkoutKasir(formData: FormData) {
   const invoiceDiscount = posNetTotal(invoiceSubtotal, total);
   const invoiceCategoryDiscount = Math.min(roundPosMoney(diskonKategori), invoiceDiscount);
   let payment: ReturnType<typeof resolvePosPayments>;
+  let quote: ReturnType<typeof quotePosMerchantFees>;
   try {
-    payment = resolvePosPayments({ total, method: metode, bayar, payments: String(formData.get("split_payments") ?? "") });
+    quote = quotePosMerchantFees({ total, method: metode, payments: String(formData.get("split_payments") ?? ""), feePercent: Number(formData.get("merchant_fee_percent") ?? 0) });
+    payment = resolvePosPayments({ total: quote.total, method: metode, bayar, payments: metode === "Split" ? quote.parts : [] });
   } catch (error) {
     redirect(`/kasir?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
   }
@@ -371,8 +374,8 @@ export async function checkoutKasir(formData: FormData) {
       branch_id: branchId, customer_id: customerId, no_struk: noStruk,
       subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
       diskon_kategori: invoiceCategoryDiscount,
-      total, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
-      payment_plan: payment.parts,
+      total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
+      payment_plan: quote.parts,
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
       cashier_id: user?.id ?? null, shift_id: shift!.id,

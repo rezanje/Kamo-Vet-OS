@@ -143,3 +143,28 @@ it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s
   expect(outcome).toContain("/struk/sale");
   expect(state.headers[0]).toMatchObject({ subtotal: 10000.01, total: 10000.01, discount: 0 });
 });
+
+it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s persists gross split fee allocations while keeping goods and earned points separate", async (_label, action) => {
+  const input = form(); input.set("split_payments", '[{"method":"Tunai","amount":20000},{"method":"Debit","amount":80000,"feePercent":2}]'); input.set("bayar", "50000");
+  const outcome = await action(input).then(() => "unexpected success", error => error.message);
+  expect(outcome).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ subtotal: 100000, total: 101600, merchant_fee_total: 1600, discount: 0, bayar: 131600, kembali: 30000, poin_earned: 100,
+    payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Debit", amount: 81600, fee_percent: 2, fee_amount: 1600 }] });
+});
+
+it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s charges a single method fee and recovers only the same rate after lost response", async (_label, action) => {
+  const input = form(); input.set("metode", "Debit"); input.set("split_payments", "[]"); input.set("merchant_fee_percent", "2"); input.set("bayar", "0");
+  state.lostResponse = true;
+  expect(await action(input).catch(error => error.message)).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ total: 102000, merchant_fee_total: 2000, payment_plan: [{ method: "Debit", amount: 102000, fee_percent: 2, fee_amount: 2000 }] });
+  expect(await action(input).catch(error => error.message)).toContain("/struk/sale");
+  input.set("merchant_fee_percent", "3");
+  expect(await action(input).catch(error => error.message)).not.toContain("/struk/");
+  expect(state.headers).toHaveLength(1);
+});
+
+it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s rejects a forged cash fee before writing", async (_label, action) => {
+  const input = form(); input.set("metode", "Tunai"); input.set("split_payments", "[]"); input.set("bayar", "100000"); input.set("merchant_fee_percent", "2");
+  expect(await action(input).catch(error => error.message)).not.toContain("/struk/");
+  expect(state.headers).toHaveLength(0);
+});

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
-import { isCompletedSale, salePaymentDescription, type SalePaymentSource } from "@/lib/sale-payment-reporting";
+import { isCompletedSale, saleMerchandiseTotal, salePaymentDescription, saleRefundMerchantFee, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 
 // Rincian penjualan PER DOKUMEN (per struk / per invoice) — pelengkap laporan
 // "Penjualan per Kasir" yang hanya menampilkan rekap per orang. Sebelum halaman ini
@@ -34,6 +34,9 @@ type Baris = {
   pelanggan: string;
   metode: string;
   total: number;
+  merchandise: number;
+  merchantFee: number;
+  refundedFee: number;
   retur: number;
   status: string;
 };
@@ -64,7 +67,7 @@ export default async function PenjualanRinciPage({
   const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase
       .from("sales")
-      .select("id, no_struk, total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, sale_payments(method, amount), branches(name), customers(name)", { count: "exact" })
+      .select("id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
       .gte("created_at", mulai).lte("created_at", akhir)
       .order("created_at", { ascending: false })),
     completeReportQuery(supabase
@@ -105,6 +108,9 @@ export default async function PenjualanRinciPage({
     pelanggan: one(s.customers)?.name ?? "—",
     metode: s.channel ?? salePaymentDescription(s),
     total: Number(s.total) || 0,
+    merchandise: saleMerchandiseTotal(s),
+    merchantFee: Number(s.merchant_fee_total) || 0,
+    refundedFee: saleRefundMerchantFee(s, returPerStruk.get(s.id) ?? 0),
     retur: returPerStruk.get(s.id) ?? 0,
     // Order marketplace baru jadi uang setelah dana cair; POS selalu lunas di kasir.
     status: s.channel ? (s.marketplace_status === "piutang" ? "Belum cair" : "Cair") : "Lunas",
@@ -122,6 +128,9 @@ export default async function PenjualanRinciPage({
       pelanggan: one(v?.customers ?? null)?.name ?? "—",
       metode: i.metode_bayar ?? "—",
       total: Number(i.total) || 0,
+      merchandise: Number(i.total) || 0,
+      merchantFee: 0,
+      refundedFee: 0,
       retur: 0,               // retur klinik dicatat sebagai pembatalan invoice, bukan retur barang
       status: i.paid_status ?? "—",
     };
@@ -134,6 +143,8 @@ export default async function PenjualanRinciPage({
 
   const totalOmzet = rows.reduce((a, r) => a + r.total, 0);
   const totalRetur = rows.reduce((a, r) => a + r.retur, 0);
+  const totalFee = rows.reduce((a, r) => a + r.merchantFee, 0);
+  const totalRefundedFee = rows.reduce((a, r) => a + r.refundedFee, 0);
   // Omzet yang dipakai per kanal = bersih setelah retur, supaya angka di kartu
   // ringkasan sama dengan uang yang benar-benar tinggal di perusahaan.
   const perKanal = (k: Kanal) =>
@@ -175,9 +186,12 @@ export default async function PenjualanRinciPage({
       ringkasan={
         <KartuAngka items={[
           { label: "Jumlah transaksi", nilai: `${rows.length}x` },
-          { label: "Omzet kotor", nilai: rp(totalOmzet) },
+          { label: "Nilai sebelum fee", nilai: rp(totalOmzet - totalFee) },
+          { label: "Fee merchant", nilai: rp(totalFee) },
+          { label: "Total tagihan", nilai: rp(totalOmzet) },
           { label: "Retur", nilai: totalRetur ? `− ${rp(totalRetur)}` : "—", warna: totalRetur ? "#b91c1c" : undefined },
-          { label: "Omzet bersih", nilai: rp(totalOmzet - totalRetur), warna: "#15803d" },
+          { label: "Retur fee", nilai: totalRefundedFee ? `− ${rp(totalRefundedFee)}` : "—" },
+          { label: "Tagihan bersih", nilai: rp(totalOmzet - totalRetur), warna: "#15803d" },
           { label: "Kasir (POS)", nilai: rp(perKanal("POS")) },
           { label: "Online", nilai: rp(perKanal("Online")) },
           { label: "Klinik", nilai: rp(perKanal("Klinik")) },
@@ -186,7 +200,7 @@ export default async function PenjualanRinciPage({
     >
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 900 }}>
+          <table className="tbl" style={{ minWidth: 1200 }}>
             <thead>
               <tr>
                 <th style={{ width: 160 }}>No. Dokumen</th>
@@ -196,7 +210,10 @@ export default async function PenjualanRinciPage({
                 <th>Pelanggan</th>
                 <th style={{ width: 110 }}>Pembayaran</th>
                 <th style={{ width: 90, textAlign: "center" }}>Status</th>
+                <th style={{ width: 120, textAlign: "right" }}>Nilai sebelum fee</th>
+                <th style={{ width: 110, textAlign: "right" }}>Fee merchant</th>
                 <th style={{ width: 110, textAlign: "right" }}>Retur</th>
+                <th style={{ width: 100, textAlign: "right" }}>Retur fee</th>
                 <th style={{ width: 120, textAlign: "right" }}>Total bersih</th>
               </tr>
             </thead>
@@ -218,9 +235,12 @@ export default async function PenjualanRinciPage({
                       {r.status}
                     </span>
                   </td>
+                  <td style={{ textAlign: "right", fontSize: 10.5 }}>{rp(r.merchandise)}</td>
+                  <td style={{ textAlign: "right", fontSize: 10.5 }}>{rp(r.merchantFee)}</td>
                   <td style={{ textAlign: "right", fontSize: 10.5, color: r.retur ? "#b91c1c" : "var(--td)" }}>
                     {r.retur ? `− ${rp(r.retur)}` : "—"}
                   </td>
+                  <td style={{ textAlign: "right", fontSize: 10.5 }}>{r.refundedFee ? `− ${rp(r.refundedFee)}` : "—"}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 700 }}>
                     {rp(r.total - r.retur)}
                     {r.retur > 0 && (
@@ -229,14 +249,16 @@ export default async function PenjualanRinciPage({
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <TabelKosong kolom={9} pesan="Belum ada transaksi di rentang tanggal ini." />}
+              {rows.length === 0 && <TabelKosong kolom={12} pesan="Belum ada transaksi di rentang tanggal ini." />}
             </tbody>
           </table>
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
           Invoice klinik yang dibatalkan tidak ditampilkan. Order online berstatus &quot;Belum cair&quot;
           berarti dananya masih ditahan marketplace. Struk yang sebagian barangnya dikembalikan tampil
-          dengan nilai bersihnya — retur dihitung berapa pun tanggal returnya.
+          dengan nilai bersihnya — retur dihitung berapa pun tanggal returnya. Fee merchant POS
+          ditampilkan terpisah dari nilai belanja. Retur sudah termasuk retur fee; total bersih
+          dan angka per jenis tetap menunjukkan uang setelah retur.
         </div>
       </div>
     </LaporanPage>

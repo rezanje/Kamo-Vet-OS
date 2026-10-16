@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ long: false, voucher: false, split: false, invalidSplit: false, pending: false, decimal: false }));
+const fixture = vi.hoisted(() => ({ long: false, voucher: false, split: false, invalidSplit: false, pending: false, decimal: false, merchantFee: false }));
 vi.mock("@/components/ActiveBranch", () => ({ ActiveBranch: async () => null }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/kasir/struk/receipt", useSearchParams: () => new URLSearchParams(),
   redirect: () => { throw Error("redirect"); }, notFound: () => { throw Error("not found"); } }));
@@ -26,6 +26,12 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       customers: { name: "PelangganDenganNamaSangatPanjangTanpaSpasiUntukMemeriksaPembungkusanTeks" }, branches: { name: "Cabang Uji Struk" } };
     if (fixture.decimal) Object.assign(sale, { subtotal: 33.33, discount: 0.01, total: 33.32, metode_bayar: "Split", bayar: 33.32, kembali: 0,
       sale_payments: [{ method: "Tunai", amount: 10 }, { method: "Transfer", amount: 23.32 }] });
+    if (fixture.merchantFee) Object.assign(sale, { subtotal: fixture.decimal ? 100000.5 : 100000, discount: 0,
+      total: fixture.decimal ? 101600.51 : 101600, merchant_fee_total: fixture.decimal ? 1600.01 : 1600,
+      metode_bayar: "Split", bayar: fixture.decimal ? 131600.51 : 131600, kembali: 30000,
+      payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Debit", amount: fixture.decimal ? 81600.51 : 81600, fee_percent: 2, fee_amount: fixture.decimal ? 1600.01 : 1600 }],
+      payments_finalized_at: "2026-10-16T07:00:01Z",
+      sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Debit", amount: fixture.decimal ? 81600.51 : 81600, fee_percent: 2, fee_amount: fixture.decimal ? 1600.01 : 1600 }] });
     const item = { nama: "BarangDenganNamaSangatPanjangTanpaSpasiUntukPengujianCetak", qty: fixture.long ? 1 : 5,
       satuan: "BotolDenganUkuranSangatPanjang100mL", harga: 25000, item_discount_type: null,
       item_discount_value: 0, promos: null, sale_item_group_components: [{ component_name: "Komponen panjang", qty_per_group: 2, unit: "pcs", sort_order: 1 }] };
@@ -40,7 +46,7 @@ import ReceiptPage from "@/app/kasir/struk/[saleId]/page";
 import BackofficeReceiptPage from "@/app/(app)/pos/struk/[saleId]/page";
 import KasirLayout from "@/app/kasir/layout";
 
-beforeEach(() => { fixture.long = false; fixture.voucher = false; fixture.split = false; fixture.invalidSplit = false; fixture.pending = false; fixture.decimal = false; });
+beforeEach(() => { fixture.long = false; fixture.voucher = false; fixture.split = false; fixture.invalidSplit = false; fixture.pending = false; fixture.decimal = false; fixture.merchantFee = false; });
 async function render(print = "") {
   const page = await ReceiptPage({ params: Promise.resolve({ saleId: "receipt" }), searchParams: Promise.resolve({ print }) });
   const markup = renderToStaticMarkup(await KasirLayout({ children: page }));
@@ -76,6 +82,19 @@ it("prints the same split allocation on the backoffice receipt", async () => {
   const doc = new DOMParser().parseFromString(renderToStaticMarkup(page), "text/html");
   for (const text of ["TunaiRp 20.000", "TransferRp 80.000", "Tunai diterimaRp 30.000", "KembaliRp 10.000"]) {
     expect(doc.body.textContent).toContain(text);
+  }
+});
+
+it.each([false, true])("separates merchandise, merchant fee and gross receipt on both receipts (cents=%s)", async decimal => {
+  fixture.merchantFee = true;
+  fixture.decimal = decimal;
+  const cashier = await render();
+  const backoffice = new DOMParser().parseFromString(renderToStaticMarkup(await BackofficeReceiptPage({ params: Promise.resolve({ saleId: "receipt" }) })), "text/html");
+  for (const doc of [cashier, backoffice]) {
+    for (const text of [decimal ? "Total barangRp 100.000,5" : "Total barangRp 100.000", decimal ? "Fee merchantRp 1.600,01" : "Fee merchantRp 1.600",
+      decimal ? "TOTALRp 101.600,51" : "TOTALRp 101.600", "TunaiRp 20.000", decimal ? "DebitRp 81.600,51" : "DebitRp 81.600", "Tunai diterimaRp 50.000", "KembaliRp 30.000"]) {
+      expect(doc.body.textContent).toContain(text);
+    }
   }
 });
 

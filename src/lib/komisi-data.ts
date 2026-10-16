@@ -1,5 +1,6 @@
 import { completeReportQuery } from "./report-query";
-import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
+import { isCompletedSale, saleMerchandiseTotal, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
+import { PosDecimal } from "./pos-money";
 // Pengumpul data komisi: menarik penjualan + retur satu periode lalu menyusunnya
 // jadi baris siap hitung untuk `hitungKomisi`.
 //
@@ -28,7 +29,7 @@ type SaleItemRow = {
   hpp: number | null;
 };
 
-type SaleRow = SaleCompletion & {
+type SaleRow = SaleCompletion & SaleMerchantTotal & {
   id: string;
   created_at: string;
   branch_id: string | null;
@@ -87,7 +88,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, payment_plan, payments_finalized_at, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
+      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
       .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`)),
     completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
     completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
@@ -109,7 +110,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   let omzetTanpaPenjual = 0;
 
   // Untuk baris retur: modal & pemilik struk asli.
-  const infoStruk = new Map<string, { employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number> }>();
+  const infoStruk = new Map<string, { employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number>; sale: SaleMerchantTotal }>();
 
   for (const s of sales) {
     const employeeId = s.salesperson_id ?? (s.cashier_id ? empPerProfile.get(s.cashier_id) ?? null : null);
@@ -126,7 +127,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     // Potongan tingkat struk (voucher, poin, diskon golongan, diskon manual kasir) tidak
     // tersimpan per baris. Selisih antara jumlah baris dan total struk dibagi rata secara
     // proporsional supaya komisi tidak dihitung dari harga sebelum potongan.
-    const potonganStruk = Math.max(0, jumlahBaris - Number(s.total));
+    const potonganStruk = Math.max(0, jumlahBaris - saleMerchandiseTotal(s));
 
     const hppPerUnit = new Map<string, number>();
     for (const [idx, it] of items.entries()) {
@@ -153,7 +154,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       });
     }
 
-    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit });
+    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s });
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
@@ -167,13 +168,13 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     // Struk asalnya di luar periode ini — ambil pemiliknya langsung dari struk itu.
     const info = asal ?? (await infoStrukLuarPeriode(supabase, r.sale_id, empPerProfile));
     if (!info) continue;
-    if (!info.employeeId) {
-      omzetTanpaPenjual -= (r.sales_return_items ?? []).reduce((a, i) => a + Number(i.qty) * Number(i.harga), 0);
-    }
-
     for (const it of r.sales_return_items ?? []) {
       const qty = Number(it.qty);
-      const nilai = qty * Number(it.harga);
+      // Return prices contain the customer's fee too; it never belongs to a seller's base.
+      const gross = new PosDecimal(qty).times(it.harga);
+      const nilai = Number(info.sale.merchant_fee_total) > 0 && Number(info.sale.total) > 0
+        ? gross.times(saleMerchandiseTotal(info.sale)).div(info.sale.total).toNumber() : gross.toNumber();
+      if (!info.employeeId) omzetTanpaPenjual -= nilai;
       const hppUnit = it.item_id ? info.hppPerUnit.get(it.item_id) : undefined;
       baris.push({
         tanggal: r.tanggal,
@@ -311,9 +312,9 @@ async function infoStrukLuarPeriode(
   supabase: AnyClient,
   saleId: string,
   empPerProfile: Map<string, string>,
-): Promise<{ employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number> } | null> {
+): Promise<{ employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number>; sale: SaleMerchantTotal } | null> {
   const { data } = await supabase
-    .from("sales").select("branch_id, cashier_id, salesperson_id, payment_plan, payments_finalized_at, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
+    .from("sales").select("branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
   if (!data || !isCompletedSale(data)) return null;
   const hppPerUnit = new Map<string, number>();
   for (const it of (data.sale_items ?? []) as { item_id: string | null; qty: number; hpp: number | null }[]) {
@@ -323,6 +324,7 @@ async function infoStrukLuarPeriode(
     employeeId: data.salesperson_id ?? (data.cashier_id ? empPerProfile.get(data.cashier_id) ?? null : null),
     branchId: data.branch_id,
     hppPerUnit,
+    sale: data,
   };
 }
 

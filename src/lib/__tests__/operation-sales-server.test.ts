@@ -10,6 +10,7 @@ function fakeSupabase(options: {
   errors?: Record<string, { message: string; code?: string }>;
   layers?: { warehouse_id: string; item_id: string; qty_left: number; unit_cost: number }[];
   sales?: Record<string, unknown>[];
+  returns?: Record<string, unknown>[];
 }) {
   const records: QueryRecord[] = [];
   const errors = options.errors ?? {};
@@ -26,7 +27,7 @@ function fakeSupabase(options: {
             ? [{ id: "w1", branch_id: "b1" }]
           : table === "stock_layers"
             ? options.layers ?? []
-          : table === "sales" ? options.sales ?? [] : [], error: errors[table] ?? null };
+          : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? [] : [], error: errors[table] ?? null };
     const query: Record<string, unknown> = {};
     for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "not", "neq", "order", "limit", "maybeSingle"]) {
       query[method] = (...args: unknown[]) => {
@@ -50,6 +51,24 @@ function fakeSupabase(options: {
 }
 
 describe("operation sales server collector", () => {
+  it("deducts merchandise refunds separately from returned merchant fee", async () => {
+    const result = await collectDashboard(fakeSupabase({
+      sales: [{ id: "sale", total: 101600.01, merchant_fee_total: 1600.01, branch_id: "b1", customer_id: "c1", channel: null, created_at: "2026-08-15T05:00:00Z",
+        sale_items: [{ item_id: "item", qty: 1, harga: 100000, hpp: 50000 }] }],
+      returns: [{ sale_id: "sale", total: 50800 }],
+    }), { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 50000, transactions: 1 } } });
+  });
+  it("excludes merchant fee from product sales, margin, targets and customer spending", async () => {
+    const sale = { id: "sale", total: 101600, merchant_fee_total: 1600, branch_id: "b1", customer_id: "c1", channel: null, created_at: "2026-08-15T05:00:00Z",
+      sale_items: [{ item_id: "item", qty: 1, harga: 100000, hpp: 50000 }],
+      payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Debit", amount: 81600, fee_percent: 2, fee_amount: 1600 }], payments_finalized_at: "2026-08-15T05:00:01Z" };
+    const result = await collectDashboard(fakeSupabase({ sales: [sale, { ...sale, id: "pending", payments_finalized_at: null }] }), {
+      from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all",
+    });
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 100000, transactions: 1, grossMargin: 50000 } } });
+    expect(result.customer).toMatchObject({ status: "ready", data: { topSpenders: [{ customerId: "c1", spending: 100000 }] } });
+  });
   it("counts finalized split sales once in revenue and customer spending while excluding pending sales", async () => {
     const sale = { id: "sale", total: 100000, branch_id: "b1", customer_id: "c1", channel: null, created_at: "2026-08-15T05:00:00Z",
       sale_items: [{ item_id: "item", qty: 1, harga: 100000, hpp: 50000 }],

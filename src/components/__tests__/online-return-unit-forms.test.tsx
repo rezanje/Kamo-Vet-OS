@@ -61,3 +61,11 @@ it('a same-mounted success rotates only its matching acknowledgement and resets 
   expect(JSON.parse(c.querySelector<HTMLInputElement>('input[name="items"]')!.value)).toHaveLength(1);
  }finally{await act(async()=>root.unmount());c.remove();sessionStorage.clear();}
 });
+it('shows the exact refund including fee cents instead of rounding whole rupiah', async()=>{
+ const {c,dispose}=await mount(<ReturJualForm saleId="fee-sale" info="Fee sale" rows={[{source_line_id:'line',item_id:'sku',nama:'SKU',harga:102000.01,sisa:1,units}]}/>);
+ try {
+  const input=c.querySelector<HTMLInputElement>('input[title="Qty retur"]')!;
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'1');input.dispatchEvent(new Event('input',{bubbles:true}));});
+  expect(c.textContent).toContain('Total refund: Rp 102.000,01');
+ } finally {await dispose();}
+});

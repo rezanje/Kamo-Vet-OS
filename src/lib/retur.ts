@@ -57,14 +57,13 @@ export function alokasiReturGrup(
 //
 // Rasio dihitung dari total dibayar ÷ nilai kotor struk, lalu dipakai ke tiap
 // baris. Sederhana, dan tidak pernah mengembalikan lebih dari yang masuk.
-export function rasioBayar(subtotalKotor: number, totalDibayar: number): number {
+export function rasioBayar(subtotalKotor: number, totalDibayar: number, plannedPos = false): number {
   const kotor = Number(subtotalKotor);
   const bayar = Number(totalDibayar);
   if (!Number.isFinite(kotor) || kotor <= 0) return 1;
   if (!Number.isFinite(bayar) || bayar < 0) return 1;
-  // Rasio > 1 tidak masuk akal (bayar lebih besar dari harga daftar) — jangan
-  // sampai refund justru membengkak karena data aneh.
-  return Math.min(1, bayar / kotor);
+  // Canonical POS totals include customer fees; legacy totals retain their cap.
+  return plannedPos ? bayar / kotor : Math.min(1, bayar / kotor);
 }
 
 export function hargaRefund(hargaSatuan: number, rasio: number): number {
