@@ -11,6 +11,7 @@ vi.mock("@/app/(app)/pos/transaksi/actions", () => ({ checkoutSale: vi.fn() }));
 import { KasirClient } from "@/app/kasir/KasirClient";
 import { PosClient } from "@/app/(app)/pos/transaksi/PosClient";
 import { ClearKasirDraft } from "@/components/ClearKasirDraft";
+import { ClearPosDraft } from "@/components/ClearPosDraft";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -249,4 +250,81 @@ it("clears combined payment only with the matching completed cashier receipt", a
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Bayar Gabungan"]')?.checked).toBe(false);
   expect(JSON.parse(hidden("split_payments")!)).toEqual([]);
   expect(hidden("bayar")).toBe("0");
+});
+
+it.each(["cashier", "backoffice"] as const)("%s adds the non-cash fee to the final bill without changing the base allocation or cash change", async kind => {
+  seed(kind, { split: true, payments: [{ method: "Tunai", amount: 20_000 }, { method: "Debit", amount: 80_000, feePercent: 2 }], bayar: 50_000 });
+  await render(kind);
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Fee merchant Debit (%)"]')?.value).toBe("2");
+  expect(host.querySelector('input[aria-label="Fee merchant Tunai (%)"]')).toBeNull();
+  expect(host.textContent).toContain("Fee merchant");
+  expect(host.textContent).toContain("Rp 1.600");
+  expect(host.textContent).toContain("Diterima Debit");
+  expect(host.textContent).toContain("Rp 81.600");
+  expect(host.textContent).toContain("Rp 30.000");
+  expect(pay().textContent).toContain("Rp 101.600");
+  expect(pay().disabled).toBe(false);
+  expect(JSON.parse(hidden("split_payments")!)[1]).toEqual({ method: "Debit", amount: 80_000, feePercent: 2 });
+  await act(async () => root.unmount()); root = createRoot(host); await render(kind);
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Fee merchant Debit (%)"]')?.value).toBe("2");
+  expect(pay().textContent).toContain("Rp 101.600");
+  const select = host.querySelector<HTMLSelectElement>('select[aria-label="Metode pembayaran 2"]')!;
+  await act(async () => { select.value = "QRIS"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Fee merchant QRIS (%)"]')?.value).toBe("0");
+  expect(JSON.parse(hidden("split_payments")!)[1]).toEqual({ method: "QRIS", amount: 80_000 });
+  expect(pay().textContent).toContain("Rp 100.000");
+});
+
+it.each(["cashier", "backoffice"] as const)("%s restores and validates single merchant rates, resets them on method changes and retains failed draft identity", async kind => {
+  seed(kind, { metode: "Transfer", merchantFeePercent: 2, checkoutKey: "fee-draft" }); await render(kind);
+  expect(hidden("merchant_fee_percent")).toBe("2");
+  expect(pay().textContent).toContain("Rp 102.000");
+  expect(pay().disabled).toBe(false);
+  await amount("Fee merchant Transfer (%)", 1.25);
+  expect(pay().textContent).toContain("Rp 101.250");
+  await act(async () => root.unmount()); root = createRoot(host); await render(kind);
+  expect(hidden("merchant_fee_percent")).toBe("1.25");
+  expect(hidden("checkout_key")).toBe("fee-draft");
+  await amount("Fee merchant Transfer (%)", 1.234);
+  expect(pay().disabled).toBe(true);
+  await amount("Fee merchant Transfer (%)", 101);
+  expect(pay().disabled).toBe(true);
+  const cash = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Tunai")!;
+  await act(async () => cash.click());
+  expect(hidden("merchant_fee_percent")).toBe("0");
+  expect(host.querySelector('input[aria-label="Fee merchant Tunai (%)"]')).toBeNull();
+  const transfer = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Transfer")!;
+  await act(async () => transfer.click());
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Fee merchant Transfer (%)"]')?.value).toBe("0");
+  expect(pay().textContent).toContain("Rp 100.000");
+});
+
+
+it.each(["cashier", "backoffice"] as const)("%s preserves pending fee rates for old receipts and clears them for the exact successful checkout", async kind => {
+  const feeParts = [{ method: "Tunai", amount: 20_000 }, { method: "Debit", amount: 80_000, feePercent: 2 }];
+  seed(kind, { split: true, payments: feeParts, merchantFeePercent: 1.25, checkoutKey: "pending-fee", bayar: 50_000 });
+  const key = kind === "cashier" ? kasirDraftKey(context) : POS_DRAFT_KEY;
+  await act(async () => root.render(kind === "cashier"
+    ? <ClearKasirDraft draftContext={context} checkoutKey="older" /> : <ClearPosDraft checkoutKey="older" />));
+  expect(JSON.parse(sessionStorage.getItem(key)!)).toMatchObject({ merchantFeePercent: 1.25, payments: feeParts });
+  await act(async () => root.render(kind === "cashier"
+    ? <ClearKasirDraft draftContext={context} checkoutKey="pending-fee" /> : <ClearPosDraft checkoutKey="pending-fee" />));
+  expect(sessionStorage.getItem(key)).toBeNull();
+  await render(kind);
+  expect(hidden("merchant_fee_percent")).toBe("0");
+  expect(JSON.parse(hidden("split_payments")!)).toEqual([]);
+});
+
+it.each(["cashier", "backoffice"] as const)("%s clears hidden single and split rates when changing payment mode", async kind => {
+  seed(kind, { merchantFeePercent: 2, metode: "Transfer" }); await render(kind);
+  await toggleSplit();
+  expect(hidden("merchant_fee_percent")).toBe("0");
+  await amount("Nominal pembayaran 1", 20_000); await amount("Nominal pembayaran 2", 80_000);
+  await amount("Fee merchant Transfer (%)", 2);
+  expect(pay().textContent).toContain("Rp 101.600");
+  await toggleSplit();
+  expect(hidden("merchant_fee_percent")).toBe("0");
+  expect(pay().textContent).toContain("Rp 100.000");
+  await toggleSplit();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Fee merchant Transfer (%)"]')?.value).toBe("0");
 });

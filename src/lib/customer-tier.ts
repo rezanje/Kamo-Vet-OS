@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isCompletedSale } from "./sale-payment-reporting";
+import { isCompletedSale, saleMerchandiseTotal } from "./sale-payment-reporting";
 
 export type TierThresholds = { bronze_min: number; silver_min: number; gold_min: number; platinum_min: number };
 
@@ -19,7 +19,7 @@ export async function recomputeCustomerTier(supabase: SupabaseClient, customerId
   if (!customerId) return;
 
   const [{ data: sales }, { data: invs }, { data: cfg }] = await Promise.all([
-    supabase.from("sales").select("total, payment_plan, payments_finalized_at").eq("customer_id", customerId),
+    supabase.from("sales").select("total, merchant_fee_total, payment_plan, payments_finalized_at").eq("customer_id", customerId),
     supabase
       .from("invoices")
       .select("total, visits!inner(customer_id)")
@@ -29,7 +29,7 @@ export async function recomputeCustomerTier(supabase: SupabaseClient, customerId
     supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min").eq("id", 1).maybeSingle(),
   ]);
 
-  const petshop = (sales ?? []).filter(isCompletedSale).reduce((a, s) => a + Number(s.total || 0), 0);
+  const petshop = (sales ?? []).filter(isCompletedSale).reduce((a, s) => a + saleMerchandiseTotal(s), 0);
   const klinik = (invs ?? []).reduce((a, i) => a + Number(i.total || 0), 0);
   const combined = petshop + klinik;
 

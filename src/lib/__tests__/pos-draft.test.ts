@@ -73,3 +73,17 @@ describe("pending mixed POS payment drafts", () => {
     expect(bacaDraftKasir(JSON.stringify(saved), 2_000)).toMatchObject({ split: true, payments });
   });
 });
+
+describe("merchant fee drafts", () => {
+  it.each([bacaDraftKasir, bacaDraftPos])("restores valid per-method fee input without changing raw base amounts", reader => {
+    const saved = { ...draft, ...kasirDraft, merchantFeePercent: 1.25, split: true,
+      payments: [{ method: "Tunai", amount: 20_000, feePercent: 4 }, { method: "Debit", amount: 80_000, feePercent: 2 }] };
+    expect(reader(JSON.stringify(saved), 2_000)).toMatchObject({ merchantFeePercent: 1.25,
+      payments: [{ method: "Tunai", amount: 20_000 }, { method: "Debit", amount: 80_000, feePercent: 2 }] });
+  });
+  it("omits zero merchant rates from legacy draft intent and removes single cash fees", () => {
+    const restored = bacaDraftPos(JSON.stringify({ ...draft, merchantFeePercent: 2, payments: [{ method: "Debit", amount: 10, feePercent: 0 }] }), 2_000)!;
+    expect(restored).not.toHaveProperty("merchantFeePercent");
+    expect(restored.payments).toEqual([{ method: "Debit", amount: 10 }]);
+  });
+});

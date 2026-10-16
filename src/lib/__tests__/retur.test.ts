@@ -153,3 +153,9 @@ describe("pisahModalRetur", () => {
     expect(h.total).toBe(20_000);
   });
 });
+
+it("refunds the customer's fee above list price only for canonical POS sales", () => {
+  expect(rasioBayar(100000, 102000, true)).toBe(1.02);
+  expect(rasioBayar(100000, 102000)).toBe(1);
+  expect(rasioBayar(100000, 81600, true)).toBe(0.816);
+});

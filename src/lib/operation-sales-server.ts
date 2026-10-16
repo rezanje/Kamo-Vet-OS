@@ -17,7 +17,7 @@ import {
 } from "./operation-sales";
 import { collectOperationalClinic } from "./operasional-klinik-server";
 import { batasTanggalWIB } from "./laporan-transaksi";
-import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
+import { isCompletedSale, saleMerchandiseTotal, saleRefundMerchantFee, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
 
 type AnyClient = any;
 
@@ -169,7 +169,7 @@ function applyChannel(query: AnyClient, channel: Channel): AnyClient {
 }
 
 type SaleItem = { item_id: string | null; qty: number; hpp: number | null; harga: number; items?: { item_type: string | null; tindakan_kategori: string | null } | { item_type: string | null; tindakan_kategori: string | null }[] | null };
-type SaleRow = SaleCompletion & { id: string; branch_id: string; customer_id: string | null; total: number; channel: string | null; created_at: string; sale_items: SaleItem[] | null };
+type SaleRow = SaleCompletion & SaleMerchantTotal & { id: string; branch_id: string; customer_id: string | null; total: number; channel: string | null; created_at: string; sale_items: SaleItem[] | null };
 type InvoiceItem = { item_id: string | null; qty: number; hpp: number | null; harga: number; jenis: string | null };
 type VisitRow = { id: string; branch_id: string; customer_id: string | null };
 type InvoiceRow = { id: string; visit_id: string; total: number; created_at: string; voided_at: string | null; invoice_items: InvoiceItem[] | null };
@@ -213,7 +213,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
 
   if (filter.channel !== "klinik" && filter.channel !== "reseller") {
     let query = supabase.from("sales")
-      .select("id,branch_id,customer_id,total,channel,created_at,payment_plan,payments_finalized_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))")
+      .select("id,branch_id,customer_id,total,merchant_fee_total,channel,created_at,payment_plan,payments_finalized_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))")
       .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end);
     query = applyChannel(query, filter.channel);
     const salesResult = await read(query);
@@ -233,7 +233,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
         sale.branch_id,
         sale.customer_id,
         sale.created_at,
-        Number(sale.total) || 0,
+        saleMerchandiseTotal(sale),
         items.map((item) => {
           const master = one(item.items);
           return {
@@ -244,7 +244,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
             kind: master?.item_type === "Jasa" ? "service" : "product",
           };
         }),
-        returnMap.get(sale.id) ?? 0,
+        (returnMap.get(sale.id) ?? 0) - saleRefundMerchantFee(sale, returnMap.get(sale.id) ?? 0),
       ));
     }
   }
@@ -357,18 +357,18 @@ export async function collectBranchBlock(scope: DashboardScope, filter: Dashboar
 export async function collectCustomerBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<CustomerBlock> {
   const { start, end } = dateBounds(filter);
   const currentResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,created_at,channel,payment_plan,payments_finalized_at")
+    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at")
     .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end));
   queryError(currentResult);
   const historyResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,created_at,channel,payment_plan,payments_finalized_at")
+    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at")
     .in("branch_id", scope.branchIds).lte("created_at", end));
   queryError(historyResult);
   const rows = [...(historyResult.data ?? []) as any[]].filter(isCompletedSale).map((row) => ({
     customerId: row.customer_id ?? null,
     saleId: row.id,
     date: String(row.created_at).slice(0, 10),
-    net: Number(row.total) || 0,
+    net: saleMerchandiseTotal(row),
     status: "paid",
   }));
   const classification = classifyCustomers(rows, filter, 90, filter.to);

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { ClearPosDraft } from "@/components/ClearPosDraft";
-import { receiptPaymentRows } from "@/lib/sale-payment-reporting";
+import { receiptPaymentRows, saleMerchandiseTotal } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -22,7 +22,7 @@ export default async function PosStrukPage({ params, searchParams }: {
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, subtotal, discount, diskon_kategori, total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount), poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
+    .select("id, no_struk, subtotal, discount, diskon_kategori, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
   const paymentRows = receiptPaymentRows(sale);
@@ -73,6 +73,10 @@ export default async function PosStrukPage({ params, searchParams }: {
           <Row k={`Diskon ${golongan?.nama ?? "golongan"}`} v={`-${rp(diskonKategori)}`} />
         )}
         {sale.discount > 0 && <Row k="Diskon" v={`-${rp(sale.discount)}`} />}
+        {Number(sale.merchant_fee_total) > 0 && <>
+          <Row k="Total barang" v={rp(saleMerchandiseTotal(sale))} />
+          <Row k="Fee merchant" v={rp(sale.merchant_fee_total)} />
+        </>}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12, marginTop: 2 }}><span>TOTAL</span><span>{rp(sale.total)}</span></div>
         <Hr />
         {paymentRows.map(row => <Row key={row.label} k={row.label} v={rp(row.amount)} />)}

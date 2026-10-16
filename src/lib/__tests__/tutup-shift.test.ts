@@ -80,6 +80,16 @@ const shift = (o: Partial<ShiftTutup> = {}): ShiftTutup => ({
 });
 
 describe("pemasukanShift", () => {
+  it("includes merchant fee in gross bank receipts without increasing cash drawer or counting the bill twice", async () => {
+    const sale = { total: 101600, merchant_fee_total: 1600, metode_bayar: "Split", bayar: 131600, kembali: 30000,
+      payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Debit", amount: 81600, fee_percent: 2, fee_amount: 1600 }],
+      payments_finalized_at: "2026-10-16T05:00:01Z",
+      sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Debit", amount: 81600, fee_percent: 2, fee_amount: 1600 }] };
+    const result = await hitungShift(makeClient({ sales: [sale, { ...sale, payments_finalized_at: null }] }), shift());
+    expect(result.breakdown).toMatchObject({ Tunai: 20000, Debit: 81600 });
+    expect(Object.values(result.breakdown).reduce((sum, value) => sum + value, 0)).toBe(101600);
+    expect(result.expected).toBe(120000);
+  });
   it("does not count an unfinished planned sale in shift cash", async () => {
     const db: Db = { sales: [{ total: 100000, metode_bayar: "Split", payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }],
       payments_finalized_at: null, sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }] }] };

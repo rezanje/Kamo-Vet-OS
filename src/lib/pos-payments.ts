@@ -1,6 +1,6 @@
 export const POS_PAYMENT_METHODS = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
 
-export type PosPaymentPart = { method: string; amount: number };
+export type PosPaymentPart = { method: string; amount: number; feePercent?: number };
 
 function cents(amount: number): number {
   const value = Math.round(amount * 100);

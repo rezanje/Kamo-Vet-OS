@@ -1,5 +1,7 @@
 "use client";
 
+import { formatPosMoney, PosDecimal } from "@/lib/pos-money";
+
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatReturJual } from "../actions";
@@ -11,7 +13,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 
 type Row = ReturnFormRow;
 
-const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+const rp = formatPosMoney;
 
 export function ReturJualForm({
   saleId, info, rows, dari, lockBranchId, userId, confirmedScope, confirmedKey,
@@ -35,7 +37,7 @@ export function ReturJualForm({
       exp_date: exp[r.source_line_id] || undefined,
     }))
     .filter((r) => r.qty > 0);
-  const total = rows.reduce((a, r) => a + (Number(qty[r.source_line_id]) || 0) * (chosen(r)?.factor ?? 1) * r.harga, 0);
+  const total = rows.reduce((sum, r) => sum.plus(new PosDecimal(Number(qty[r.source_line_id]) || 0).times(chosen(r)?.factor ?? 1).times(r.harga)), new PosDecimal(0)).toDecimalPlaces(2).toNumber();
   const adaRusak = payload.some((r) => r.kondisi === "rusak");
 
   return (

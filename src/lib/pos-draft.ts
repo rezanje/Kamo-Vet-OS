@@ -4,10 +4,18 @@ export const POS_DRAFT_KEY = "vetos:pos-transaksi:draft:v1";
 export const KASIR_DRAFT_KEY = "vetos:kasir:draft:v1";
 const MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 
-type PaymentDraft = { split?: boolean; payments?: PosPaymentPart[] };
+type PaymentDraft = { split?: boolean; payments?: PosPaymentPart[]; merchantFeePercent?: number };
 
-function paymentDraftFields(draft: PaymentDraft): PaymentDraft {
+function validFeeRate(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100
+    && Math.round(value * 100) / 100 === value;
+}
+
+function paymentDraftFields(draft: PaymentDraft & { metode?: string }): PaymentDraft {
   const fields: PaymentDraft = {};
+  if (draft.metode !== "Tunai" && validFeeRate(draft.merchantFeePercent) && draft.merchantFeePercent > 0) {
+    fields.merchantFeePercent = draft.merchantFeePercent;
+  }
   if (typeof draft.split === "boolean") fields.split = draft.split;
   if (Array.isArray(draft.payments)) {
     const seen = new Set<string>();
@@ -16,7 +24,9 @@ function paymentDraftFields(draft: PaymentDraft): PaymentDraft {
         || !Number.isFinite(part.amount) || part.amount < 0 || seen.has(part.method)) return false;
       seen.add(part.method);
       return true;
-    }).map(part => ({ method: part.method, amount: part.amount }));
+    }).map(part => ({ method: part.method, amount: part.amount,
+      ...(part.method !== "Tunai" && validFeeRate(part.feePercent) && part.feePercent > 0 ? { feePercent: part.feePercent } : {}),
+    }));
   }
   return fields;
 }

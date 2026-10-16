@@ -14,6 +14,7 @@ import { hitungPromoKeranjang, loadPromoAktif, totalPotonganPromo } from "@/lib/
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { penjualValid } from "@/lib/penjual";
 import { resolvePosPayments } from "@/lib/pos-payments";
+import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
@@ -129,8 +130,10 @@ export async function checkoutSale(formData: FormData) {
   const invoiceDiscount = posNetTotal(invoiceSubtotal, total);
   const invoiceCategoryDiscount = Math.min(roundPosMoney(diskonKategori), invoiceDiscount);
   let payment: ReturnType<typeof resolvePosPayments>;
+  let quote: ReturnType<typeof quotePosMerchantFees>;
   try {
-    payment = resolvePosPayments({ total, method: metode, bayar, payments: String(formData.get("split_payments") ?? "") });
+    quote = quotePosMerchantFees({ total, method: metode, payments: String(formData.get("split_payments") ?? ""), feePercent: Number(formData.get("merchant_fee_percent") ?? 0) });
+    payment = resolvePosPayments({ total: quote.total, method: metode, bayar, payments: metode === "Split" ? quote.parts : [] });
   } catch (error) {
     redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
   }
@@ -162,8 +165,8 @@ export async function checkoutSale(formData: FormData) {
       // laporan yang memisahkan keduanya tidak berubah artinya.
       subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
       diskon_kategori: invoiceCategoryDiscount,
-      total, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
-      payment_plan: payment.parts, poin_earned: poin,
+      total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
+      payment_plan: quote.parts, poin_earned: poin,
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
       salesperson_id: salespersonId,

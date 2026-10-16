@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
-import { salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
+import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -48,7 +48,7 @@ export default async function PenjualanDetailPage({
 
   const { data } = await supabase
     .from("sales")
-    .select("id, no_struk, created_at, subtotal, discount, total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
+    .select("id, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
     .eq("id", id)
     .maybeSingle();
 
@@ -109,6 +109,10 @@ export default async function PenjualanDetailPage({
           {payments.length > 1 && payments.map(part => <Info key={part.method} label={part.method} value={rp(part.amount)} />)}
           <Info label="Subtotal" value={rp(Number(sale.subtotal))} />
           <Info label="Diskon" value={rp(Number(sale.discount))} />
+          {Number(sale.merchant_fee_total) > 0 && <>
+            <Info label="Total barang" value={rp(saleMerchandiseTotal(sale))} />
+            <Info label="Fee merchant" value={rp(Number(sale.merchant_fee_total))} />
+          </>}
           <Info label="Dibayar" value={rp(Number(sale.bayar))} />
           <Info label="Kembalian" value={rp(Number(sale.kembali))} />
         </div>

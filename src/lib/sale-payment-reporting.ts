@@ -1,18 +1,33 @@
+import { formatPosMoney, PosDecimal } from "./pos-money";
+
 export const SALE_PAYMENT_METHODS = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
 
 export type SaleCompletion = { payment_plan?: unknown; payments_finalized_at?: string | null };
-export type SalePaymentPart = { method: string; amount: number | string; coa_code?: string | null };
+export type SalePaymentPart = { method: string; amount: number | string; coa_code?: string | null; fee_percent?: number | string; fee_amount?: number | string };
+export type SaleMerchantTotal = { total: number | string; merchant_fee_total?: number | string | null };
 export type SalePaymentSource = SaleCompletion & {
   total: number | string; metode_bayar: string | null; no_struk?: string | null;
+  merchant_fee_total?: number | string | null;
   sale_payments?: readonly SalePaymentPart[] | null;
 };
+
+/** Merchandise alone qualifies for loyalty, targets and staff commission. */
+export function saleMerchandiseTotal(sale: SaleMerchantTotal): number {
+  return new PosDecimal(sale.total || 0).minus(sale.merchant_fee_total || 0).toDecimalPlaces(2).toNumber();
+}
+
+/** Pass cumulative gross refunds so cent rounding matches the original journal reversal. */
+export function saleRefundMerchantFee(sale: SaleMerchantTotal, cumulativeRefund: number): number {
+  if (Number(sale.total) <= 0 || !Number(sale.merchant_fee_total)) return 0;
+  return new PosDecimal(sale.merchant_fee_total || 0).times(cumulativeRefund).div(sale.total).toDecimalPlaces(2).toNumber();
+}
 
 /** Legacy sales are complete immediately; planned payments become sales only after finalization. */
 export function isCompletedSale(sale: SaleCompletion): boolean {
   return sale.payment_plan == null || !!sale.payments_finalized_at;
 }
 
-/** Net allocations: cash change has already been excluded, so each sale still sums to its total. */
+/** Gross method receipts include merchant fees and exclude cash change; their sum is the final bill. */
 export function salePaymentAllocations(sale: SalePaymentSource): { method: string; amount: number; coa_code: string | null }[] {
   if (!isCompletedSale(sale)) throw new Error("Pembayaran belum selesai. Transaksi belum dapat ditampilkan sebagai penjualan.");
   const parts = sale.sale_payments ?? [];
@@ -59,5 +74,5 @@ export function receiptPaymentRows(sale: SalePaymentSource & { bayar: number | s
 export function salePaymentDescription(sale: SalePaymentSource): string {
   const parts = salePaymentAllocations(sale);
   if (parts.length === 0) return "Tanpa pembayaran";
-  return parts.length === 1 ? parts[0].method : parts.map(part => `${part.method} Rp ${part.amount.toLocaleString("id-ID")}`).join(" + ");
+  return parts.length === 1 ? parts[0].method : parts.map(part => `${part.method} ${formatPosMoney(part.amount)}`).join(" + ");
 }

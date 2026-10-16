@@ -23,14 +23,14 @@ export type ReturnFormRow = Omit<ReturnType<typeof returnSourceRows>[number], 's
  components?:{component_item_id:string|null;component_name:string;item_type:string;qty_per_group:number;unit:string}[];
 };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadSaleReturnRows(db:any, sale:{id:string;subtotal:number;total:number;sale_items:(ReturnSource & {sale_item_group_components?:ReturnFormRow['components']|null})[]|null}):Promise<ReturnFormRow[]> {
+export async function loadSaleReturnRows(db:any, sale:{id:string;subtotal:number;total:number;payment_plan?:unknown;sale_items:(ReturnSource & {sale_item_group_components?:ReturnFormRow['components']|null})[]|null}):Promise<ReturnFormRow[]> {
  const {data,error}=await db.from('sales_returns').select('sales_return_items(source_line_id,item_id,qty)').eq('sale_id',sale.id);
  if(error) throw new Error('Gagal memuat retur sebelumnya.');
  const sources=sale.sale_items??[];
  const rows=returnSourceRows(sources,(data??[]).flatMap((d:{sales_return_items:PriorReturn[]|null})=>d.sales_return_items??[]));
  const ids=sources.flatMap(s=>[s.item_id,...(s.sale_item_group_components??[]).map(c=>c.component_item_id)]).filter((id):id is string=>!!id);
  const [units,info]=await Promise.all([loadUnitOptions(db,ids,{includeInactive:true}),infoBarangRetur(db,ids)]);
- const ratio=rasioBayar(Number(sale.subtotal),Number(sale.total));
+ const ratio=rasioBayar(Number(sale.subtotal),Number(sale.total),sale.payment_plan!=null);
  return rows.map(r=>{
   const components=sources.find(s=>s.id===r.source_line_id)?.sale_item_group_components??[];
   const inventory=components.filter(c=>c.item_type==='Persediaan');
