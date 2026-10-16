@@ -2,6 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { POForm, type Item } from "./POForm";
+import { readCompleteList } from "@/lib/checked-list";
+
+type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number; buy_price: number };
 
 // ponytail: create PO page — server component fetches suppliers, warehouses, branches.
 
@@ -14,11 +17,14 @@ export default async function BaruPOPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const [{ data: suppliers }, { data: warehouses }, { data: branches }, { data: items }] = await Promise.all([
+  const [{ data: suppliers }, { data: warehouses }, { data: branches }, items] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name").order("name"),
     supabase.from("branches").select("id, name").order("name"),
-    supabase.from("items").select("id, code, name, unit, sell_price, buy_price").eq("is_active", true).order("name"),
+    readCompleteList<CatalogItem>((from, to) => supabase.from("items")
+      .select("id, code, name, unit, sell_price, buy_price", { count: "exact" })
+      .eq("is_active", true).order("name").order("id").range(from, to),
+      "Daftar barang PO", { maxRows: null }),
   ]);
 
   // Satuan berjenjang: PO bisa dibuat per box/sak, stok tetap masuk dalam satuan dasar.
