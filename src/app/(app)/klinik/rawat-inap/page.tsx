@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { availableOperationalBranches } from "@/lib/operational-branch";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL } from "@/lib/inpatient";
@@ -36,11 +38,15 @@ export default async function RawatInapPage({
   const { branch = "", filter = "aktif" } = await searchParams;
   const supabase = await createClient();
 
-  const { data: branches } = await supabase.from("branches").select("id, name").eq("is_active", true).order("name");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const branches = await availableOperationalBranches(supabase, user.id, "klinik");
+  const branchIds = branches.map(b => b.id);
 
   let query = supabase
     .from("inpatient_records")
     .select("id, condition_status, admitted_at, discharged_at, doctor_name, treatment_plan, branches(name), visits(pets(name, species, breed, dob, photo_url), customers(name, phone))")
+    .in("branch_id", branchIds)
     .order("admitted_at", { ascending: false });
   if (branch) query = query.eq("branch_id", branch);
   if (filter === "aktif") query = query.is("discharged_at", null);
@@ -48,7 +54,7 @@ export default async function RawatInapPage({
   const { data: records } = await query;
 
   // Card counters (§3 dashboard req) — dihitung dari query terpisah tanpa filter tabel.
-  let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at");
+  let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at").in("branch_id", branchIds);
   if (branch) counterQ = counterQ.eq("branch_id", branch);
   const { data: allRecs } = await counterQ;
 

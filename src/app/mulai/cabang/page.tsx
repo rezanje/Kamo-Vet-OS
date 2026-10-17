@@ -1,3 +1,5 @@
+import { ALL_BRANCHES } from "@/lib/operational-context";
+import { allowedBranchIds } from "@/lib/branch-access";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -22,6 +24,7 @@ export default async function BranchSelectionPage({ searchParams }: { searchPara
   let loadError = "";
   try { branches = await availableOperationalBranches(client, user.id, mode); }
   catch { loadError = "Cabang gagal dimuat. Muat ulang untuk mencoba lagi."; }
+  const canViewAll = mode === "klinik" && await allowedBranchIds(client, user.id) === null;
   const shift = await getOpenShift(client, user.id, mode);
   return <main className="pshop-wrap" style={{ minHeight: "100vh", borderRadius: 0 }}>
     <div className="card pshop-card" style={{ width: "100%", maxWidth: 480, padding: 24 }}>
@@ -34,6 +37,7 @@ export default async function BranchSelectionPage({ searchParams }: { searchPara
         <label htmlFor="branchId" className="flab">Cabang aktif *</label>
         <select id="branchId" className="fi" name="branchId" required defaultValue={shift?.branch_id ?? ""}>
           <option value="" disabled>Pilih cabang tempat bertugas</option>
+          {canViewAll && <option value={ALL_BRANCHES} disabled={!!shift}>Semua cabang</option>}
           {branches.map(branch => <option key={branch.id} value={branch.id} disabled={!!shift && shift.branch_id !== branch.id}>{branch.code} · {branch.name}</option>)}
         </select>
         <SubmitButton className="btn-acc" pendingText="Memilih cabang…">Lanjutkan</SubmitButton>

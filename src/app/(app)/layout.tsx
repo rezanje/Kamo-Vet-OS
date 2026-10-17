@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { Suspense } from "react";
 import { DraftUserProvider, TransactionDraftComplete } from "@/components/LocalTransactionDraft";
 import { redirect } from "next/navigation";
@@ -49,6 +51,7 @@ export default async function AppLayout({
   const isStaff = profile?.role === "STAFF";
   const staffBranch = isStaff ? await getOpenShift(supabase as never, user.id, "klinik") : null;
   const activeBranch = await ActiveBranch();
+  const canCreateAccount = (await loadRoleCapabilities(supabase, profile?.role ?? "")).create_accounts;
 
   return (
     <DraftUserProvider userId={user.id}><div className="shell">
@@ -79,6 +82,7 @@ export default async function AppLayout({
           </>
         )}
         {activeBranch}
+        {canCreateAccount && <div style={{ padding: "8px 16px" }}><Link href="/pengaturan/pengguna" className="back-btn">Tambah akun karyawan</Link></div>}
         <div className="ct">{children}</div>
       </div>
     </div></DraftUserProvider>

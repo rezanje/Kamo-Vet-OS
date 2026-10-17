@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({ role: "STAFF", user: "staff-a" as string | null, shift: null as null | { id: string; branch_id: string; opened_by: string; status: string; shift_type: string; opening_balance: number; opened_at: string; branches: { name: string; code: string } } }));
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: fixture.user ? { id: fixture.user } : null } }) },

@@ -1,6 +1,8 @@
+import { roleCapabilities, type RoleCapabilities } from "@/lib/role-capabilities";
+import { allowedBranchIds } from "@/lib/branch-access";
 import Link from "next/link";
 import { SecHeader } from "@/components/SecHeader";
-import { assertMasterAdmin } from "@/lib/master-guard";
+import { assertAccountCreator } from "@/lib/master-guard";
 import { buatPengguna, togglePengguna, tautkanPengguna } from "./actions";
 
 type ProfileRow = {
@@ -21,15 +23,21 @@ export default async function PenggunaPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
-  const supabase = await assertMasterAdmin("/mulai", "akun karyawan");
+  const supabase = await assertAccountCreator("/mulai");
 
-  const [{ data: profiles }, { data: ubs }, { data: branches }, { data: employees }] = await Promise.all([
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: actor } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const canManage = ["OWNER", "ADMIN"].includes(actor?.role ?? "");
+  const allowed = await allowedBranchIds(supabase, user!.id);
+  const [{ data: profiles }, { data: ubs }, { data: branches }, { data: employees }, { data: capabilityRows }] = await Promise.all([
     supabase.from("profiles").select("id, full_name, role, is_active").order("full_name"),
     supabase.from("user_branches").select("user_id, branches(name)"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, nik, nama, jabatan, profile_id, status").order("nama"),
+    supabase.from("role_capabilities").select("role, all_branches, create_accounts"),
   ]);
 
+  const capabilityMap = new Map((capabilityRows ?? []).map((r: RoleCapabilities & { role: string }) => [r.role, r]));
   const rows = (profiles ?? []) as unknown as ProfileRow[];
   const ubMap = new Map<string, string[]>();
   for (const u of (ubs ?? []) as unknown as UB[]) {
@@ -79,8 +87,8 @@ export default async function PenggunaPage({
                 <tr key={p.id} style={!p.is_active ? { opacity: 0.55 } : undefined}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{p.full_name ?? "—"}</td>
                   <td><span className={`bge ${ROLE_BADGE[p.role] ?? "x"}`}>{p.role}</span></td>
-                  <td style={{ fontSize: 11 }}>{(ubMap.get(p.id) ?? []).join(", ") || (["OWNER", "ADMIN", "FINANCE"].includes(p.role) ? "Semua sesuai peran" : "Belum ada akses cabang")}</td>
-                  <td style={{ fontSize: 11 }}>{empByProfile.has(p.id) ? empByProfile.get(p.id) : <form action={tautkanPengguna}>
+                  <td style={{ fontSize: 11 }}>{roleCapabilities(p.role, capabilityMap.get(p.role)).all_branches ? "Semua cabang" : (ubMap.get(p.id) ?? []).join(", ") || "Belum ada akses cabang"}</td>
+                  <td style={{ fontSize: 11 }}>{empByProfile.has(p.id) ? empByProfile.get(p.id) : canManage ? <form action={tautkanPengguna}>
                     <input type="hidden" name="profile_id" value={p.id} />
                     <label className="flab" htmlFor={`employee-${p.id}`}>Belum tertaut HRIS</label>
                     <select id={`employee-${p.id}`} className="fi" name="employee_id" required defaultValue="">
@@ -88,16 +96,16 @@ export default async function PenggunaPage({
                       {empBebas.map(e => <option key={e.id} value={e.id}>{e.nik ?? e.id} · {e.nama}</option>)}
                     </select>
                     <button className="btn-def" type="submit">Tautkan akun</button>
-                  </form>}</td>
+                  </form> : "Belum tertaut HRIS"}</td>
                   <td><span className={`bge ${p.is_active ? "g" : "r"}`}>{p.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   <td>
-                    <form action={togglePengguna}>
+                    {canManage && <form action={togglePengguna}>
                       <input type="hidden" name="id" value={p.id} />
                       <input type="hidden" name="aktif" value={p.is_active ? "0" : "1"} />
                       <button type="submit" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, color: p.is_active ? "#b91c1c" : "#15803d" }}>
                         {p.is_active ? "Nonaktifkan" : "Aktifkan"}
                       </button>
-                    </form>
+                    </form>}
                   </td>
                 </tr>
               ))}
@@ -132,8 +140,8 @@ export default async function PenggunaPage({
                 <option value="STAFF">STAFF (kasir/staf)</option>
                 <option value="DOCTOR">DOCTOR (dokter)</option>
                 <option value="FINANCE">FINANCE (keuangan)</option>
-                <option value="ADMIN">ADMIN</option>
-                <option value="OWNER">OWNER</option>
+                {actor?.role === "OWNER" && <option value="ADMIN">ADMIN</option>}
+                {actor?.role === "OWNER" && <option value="OWNER">OWNER</option>}
               </select>
             </div>
             <div className="fg" style={{ marginBottom: 0 }}>
@@ -148,9 +156,9 @@ export default async function PenggunaPage({
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <div className="flab" style={{ marginBottom: 6 }}>Penugasan akun (wajib untuk STAFF/DOCTOR; akses OWNER/ADMIN/FINANCE mengikuti peran)</div>
+            <div className="flab" style={{ marginBottom: 6 }}>Penugasan akun (wajib untuk STAFF/DOCTOR; akses semua cabang diatur Super Admin di Akses Grup)</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {(branches ?? []).map((b) => (
+              {(branches ?? []).filter(b => allowed === null || allowed.includes(b.id)).map((b) => (
                 <label key={b.id} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, border: ".5px solid var(--bd)", borderRadius: 6, padding: "5px 9px", cursor: "pointer" }}>
                   <input type="checkbox" name="branch_ids" value={b.id} /> {b.name}
                 </label>

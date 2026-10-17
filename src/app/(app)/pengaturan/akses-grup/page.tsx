@@ -1,3 +1,4 @@
+import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -6,10 +7,10 @@ import { MODULES } from "@/lib/nav";
 import {
   JALUR_TAMBAHAN, modulDiizinkan, pakaiAturanSendiri, SEMUA_PERAN, type AturanTersimpan,
 } from "@/lib/akses";
-import { kembalikanBawaan, mulaiAturSendiri, simpanAksesPeran } from "./actions";
+import { kembalikanBawaan, mulaiAturSendiri, simpanAksesPeran, simpanKemampuanPeran } from "./actions";
 
 const KETERANGAN_PERAN: Record<string, string> = {
-  OWNER: "Pemilik — selalu penuh, tidak bisa dibatasi",
+  OWNER: "Super Admin / Pemilik — selalu penuh, tidak bisa dibatasi",
   ADMIN: "Admin kantor",
   FINANCE: "Keuangan",
   STAFF: "Kasir & staf operasional",
@@ -43,6 +44,7 @@ export default async function AksesGrupPage({
 
   const bisaDiatur = SEMUA_PERAN.filter((r) => r !== "OWNER");
   const dipilih = sp.peran && (bisaDiatur as readonly string[]).includes(sp.peran) ? sp.peran : bisaDiatur[0];
+  const capabilities = await loadRoleCapabilities(supabase, dipilih);
   const modulDipilih = modulDiizinkan(dipilih, tersimpan);
   const punyaAturanSendiri = pakaiAturanSendiri(dipilih, tersimpan);
   const dicentang = new Set(modulDipilih ?? MODULES.map((m) => m.id));
@@ -106,6 +108,17 @@ export default async function AksesGrupPage({
             </form>
           }
         />
+
+        <form key={`capabilities-${dipilih}`} action={simpanKemampuanPeran} style={{ marginBottom: 20 }}>
+          <input type="hidden" name="role" value={dipilih} />
+          <fieldset disabled={!akuOwner} style={{ border: 0, padding: 0, display: "grid", gap: 10 }}>
+            <legend style={{ fontWeight: 700, marginBottom: 10 }}>Hak cabang &amp; akun</legend>
+            <label><input type="checkbox" name="all_branches" defaultChecked={capabilities.all_branches} /> Akses semua cabang (termasuk pilihan Semua cabang di klinik)</label>
+            <label><input type="checkbox" name="create_accounts" defaultChecked={capabilities.create_accounts} /> Boleh menambahkan akun karyawan</label>
+            <p style={{ fontSize: 11, color: "var(--tm)", margin: 0 }}>Hanya Super Admin yang dapat mengubah hak ini. Pemberian akses akun tidak memberikan hak mengubah pengaturan akses.</p>
+            {akuOwner && <SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan hak cabang &amp; akun {dipilih}</SubmitButton>}
+          </fieldset>
+        </form>
 
         {!punyaAturanSendiri && (
           <div className="p2ban">

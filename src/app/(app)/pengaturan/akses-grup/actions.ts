@@ -18,8 +18,8 @@ async function assertOwner() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER") gagal("Hanya pemilik yang boleh mengubah hak akses");
+  const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
+  if (profile?.role !== "OWNER" || !profile.is_active) gagal("Hanya pemilik yang boleh mengubah hak akses");
   return supabase;
 }
 
@@ -84,4 +84,17 @@ export async function mulaiAturSendiri(formData: FormData) {
   if (error) gagal(error.message);
 
   redirect(`${BASE}?success=${encodeURIComponent(`${role} sekarang diatur sendiri — silakan sesuaikan centangnya.`)}&peran=${role}`);
+}
+
+/** Hanya Super Admin yang dapat mendelegasikan kemampuan peran. */
+export async function simpanKemampuanPeran(form: FormData) {
+  const client = await assertOwner();
+  const role = String(form.get("role") ?? "");
+  if (!peranValid(role)) gagal("Peran tidak dikenal");
+  const { error } = await client.from("role_capabilities").upsert({
+    role, all_branches: form.get("all_branches") === "on",
+    create_accounts: form.get("create_accounts") === "on",
+  }, { onConflict: "role" });
+  if (error) gagal("Hak akses gagal disimpan.");
+  redirect(`${BASE}?success=${encodeURIComponent(`Hak cabang dan akun ${role} disimpan.`)}&peran=${role}`);
 }

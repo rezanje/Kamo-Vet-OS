@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { headers } from "next/headers";
+import { ALL_BRANCHES, BRANCH_HEADER } from "@/lib/operational-context";
+import { availableOperationalBranches, resolveOperationalBranch } from "@/lib/operational-branch";
 import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { updateVisitStatus } from "./actions";
 import { CancelButton } from "./CancelButton";
@@ -54,7 +57,13 @@ export default async function AntrianPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  const branch = await requireOperationalBranch(supabase, user.id, "klinik");
+  const allMode = (await headers()).get(BRANCH_HEADER) === ALL_BRANCHES;
+  const allAccess = allMode ? await resolveOperationalBranch(supabase, user.id, "klinik", ALL_BRANCHES) : null;
+  if (allMode && !allAccess) redirect("/mulai/cabang?mode=klinik");
+  const branches = allMode ? await availableOperationalBranches(supabase, user.id, "klinik") : [];
+  const selected = branches.find(b => b.id === cabang);
+  const branch = allAccess ? selected ?? allAccess : await requireOperationalBranch(supabase, user.id, "klinik");
+  const scopeIds = allAccess ? selected ? [selected.id] : branches.map(b => b.id) : [branch.id];
 
   // Keep historical views within the authenticated operational branch.
   const requestedDay = queueDayBounds(tanggal || hariIniWIB());
@@ -66,7 +75,7 @@ export default async function AntrianPage({
   let query = supabase
     .from("visits")
     .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code)")
-    .eq("branch_id", branch.id)
+    .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
@@ -80,12 +89,12 @@ export default async function AntrianPage({
     .from("visits")
     .select("id, poli, dokter, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone)")
     .eq("status", "Menunggu")
-    .eq("branch_id", branch.id)
+    .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
   const qHari = supabase.from("visits").select("status")
-    .eq("branch_id", branch.id)
+    .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari);
 
   const [visitsResult, waitingResult, todayResult, { data: voucherAktif }] =
@@ -104,7 +113,7 @@ export default async function AntrianPage({
     return <>
       <LiveRefresh branchId={branch.id} />
       <div role="alert" className="p2ban">Antrian gagal dimuat. Periksa koneksi dan coba lagi. Data pasien belum dapat ditampilkan.</div>
-      <Link href={`/klinik/antrian?${new URLSearchParams({ filter, tanggal: hariDipilih })}`} className="btn-def">Coba lagi</Link>
+      <Link href={`/klinik/antrian?${new URLSearchParams({ filter, tanggal: hariDipilih, cabang: selected?.id ?? "" })}`} className="btn-def">Coba lagi</Link>
     </>;
   }
   const visits = visitsResult.data;
@@ -155,9 +164,9 @@ export default async function AntrianPage({
         </span>
       </div>
 
-      {(!requestedDay || (cabang && cabang !== branch.id)) && <div role="status" className="p2ban">
+      {(!requestedDay || (!allMode && cabang && cabang !== branch.id)) && <div role="status" className="p2ban">
         {!requestedDay ? "Tanggal tidak valid; menampilkan hari ini. " : ""}
-        {cabang && cabang !== branch.id ? "Filter cabang pada tautan berbeda; menampilkan cabang aktif. Gunakan Ganti cabang untuk berpindah." : ""}
+        {!allMode && cabang && cabang !== branch.id ? "Filter cabang pada tautan berbeda; menampilkan cabang aktif. Gunakan Ganti cabang untuk berpindah." : ""}
       </div>}
 
       {/* Judul besar (gaya referensi) */}
@@ -232,7 +241,7 @@ export default async function AntrianPage({
                 { key: "aktif", label: "Aktif" },
               ].map((t) => (
                 <Link key={t.key}
-                  href={`/klinik/antrian?filter=${t.key}&tanggal=${hariDipilih}`}
+                  href={`/klinik/antrian?filter=${t.key}&tanggal=${hariDipilih}&cabang=${selected?.id ?? ""}`}
                   className="back-btn"
                   style={{
                     padding: "5px 12px", borderRadius: 7, border: ".5px solid var(--bd)",
@@ -257,7 +266,10 @@ export default async function AntrianPage({
             </div>
             <div style={{ minWidth: 190 }}>
               <label className="flab">Cabang</label>
-              <input className="fi" value={branch.name} readOnly aria-label="Cabang aktif" />
+              {allMode ? <select className="fi" name="cabang" defaultValue={selected?.id ?? ""} aria-label="Filter cabang">
+                <option value="">Semua cabang</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select> : <input className="fi" value={branch.name} readOnly aria-label="Cabang aktif" />}
             </div>
             <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
             {hariDipilih !== hariIniWIB() && (

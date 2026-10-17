@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSbClient } from "@supabase/supabase-js";
-import { assertMasterAdmin } from "@/lib/master-guard";
+import { assertAccountCreator, assertMasterAdmin } from "@/lib/master-guard";
 
 const BACK = "/pengaturan/pengguna";
 
@@ -12,7 +12,7 @@ const BACK = "/pengaturan/pengguna";
 // Catatan: bila Supabase "Confirm email" aktif, user baru harus konfirmasi dulu —
 // matikan di dashboard Supabase (Authentication → Email) untuk akun internal.
 export async function buatPengguna(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "akun karyawan");
+  const supabase = await assertAccountCreator(BACK);
 
   const full_name = String(formData.get("full_name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -25,6 +25,12 @@ export async function buatPengguna(formData: FormData) {
 
   if (!full_name || !email || password.length < 8) fail("Nama, email, dan password (min. 8 karakter) wajib diisi.");
   if (!["OWNER", "ADMIN", "FINANCE", "STAFF", "DOCTOR"].includes(role)) fail("Role tidak dikenal.");
+
+  if (["OWNER", "ADMIN"].includes(role)) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: actor } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+    if (actor?.role !== "OWNER") fail("Hanya Super Admin yang boleh membuat akun Admin atau Super Admin.");
+  }
 
   if (!employee_id) fail("Pilih karyawan HRIS terlebih dahulu.");
   const { data: employee, error: employeeError } = await supabase.from("employees")

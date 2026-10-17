@@ -1,5 +1,6 @@
 import type { ShiftType } from "./shift";
 
+export const ALL_BRANCHES = "all";
 export const BRANCH_HEADER = "x-kamo-operational-branch";
 export const MODE_HEADER = "x-kamo-operational-mode";
 export const branchCookie = (mode: ShiftType) => `kamo-branch-${mode}`;
@@ -14,7 +15,7 @@ export function operationalMode(path: string): ShiftType | null {
 export function parseBranchContext(value: string | undefined, userId: string): BranchContext | null {
   try {
     const parsed = JSON.parse(value ?? "null");
-    return parsed?.userId === userId && typeof parsed.branchId === "string" && uuid.test(parsed.branchId)
+    return parsed?.userId === userId && typeof parsed.branchId === "string" && (uuid.test(parsed.branchId) || parsed.branchId === ALL_BRANCHES)
       ? { userId, branchId: parsed.branchId } : null;
   } catch { return null; }
 }

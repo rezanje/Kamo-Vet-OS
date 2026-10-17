@@ -27,6 +27,10 @@ vi.mock("@supabase/ssr", () => ({
     },
     from: (table: string) => {
       state.reads.push(table);
+      if (table === "role_capabilities") {
+        const chain = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: null }) };
+        return chain;
+      }
       if (["branches", "cashier_shifts", "user_branches"].includes(table)) {
         const result = table === "branches" ? {data:state.branch} : table === "cashier_shifts" ? {data:state.shift} : {data:state.grants.map(branch_id=>({branch_id}))};
         const chain = {select:()=>chain,eq:()=>chain,maybeSingle:async()=>result,then:(resolve:(r:unknown)=>unknown)=>Promise.resolve(result).then(resolve)};

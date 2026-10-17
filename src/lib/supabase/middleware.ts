@@ -1,3 +1,4 @@
+import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
@@ -77,7 +78,9 @@ export async function updateSession(request: NextRequest) {
       const role = profile?.role ?? "";
       const tersimpan = (aturan ?? []) as { role: string; module_id: string }[];
 
-      if (role && !bolehBukaPath(role, path, tersimpan)) {
+      const accountPage = path === "/pengaturan/pengguna";
+      const canCreateAccount = accountPage && (await loadRoleCapabilities(supabase, role)).create_accounts;
+      if (role && !canCreateAccount && !bolehBukaPath(role, path, tersimpan)) {
         const url = request.nextUrl.clone();
         url.pathname = tujuanSaatDiblokir(role, tersimpan);
         return NextResponse.redirect(url);

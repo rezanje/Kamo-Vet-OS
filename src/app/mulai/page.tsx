@@ -1,3 +1,4 @@
+import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -20,6 +21,7 @@ export default async function MulaiPage({
   // FINANCE tidak pegang POS — langsung ke dashboard, skip pilihan mode kerja.
   if (profile?.role === "FINANCE") redirect("/");
 
+  const capabilities = await loadRoleCapabilities(supabase, profile?.role ?? "");
   const nama = profile?.full_name ?? user.email ?? "Pengguna";
 
   return (
@@ -36,6 +38,7 @@ export default async function MulaiPage({
           <i className="ti ti-circle-check" /> Shift ditutup.
         </div>
       )}
+      {capabilities.create_accounts && <Link href="/pengaturan/pengguna" className="btn-def">Tambah akun karyawan</Link>}
       <div className="pshop-hero">
         <div style={{ width: 52, height: 52, background: "var(--acc)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
           <i className="ti ti-paw" style={{ fontSize: 28, color: "#fff" }} />

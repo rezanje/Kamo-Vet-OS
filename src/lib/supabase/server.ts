@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies, headers } from "next/headers";
-import { BRANCH_HEADER } from "@/lib/operational-context";
+import { ALL_BRANCHES, BRANCH_HEADER } from "@/lib/operational-context";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -11,7 +11,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      global: { headers: branchId ? { [BRANCH_HEADER]: branchId } : {} },
+      global: { headers: branchId && branchId !== ALL_BRANCHES ? { [BRANCH_HEADER]: branchId } : {} },
       cookies: {
         getAll() {
           return cookieStore.getAll();

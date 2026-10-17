@@ -21,7 +21,7 @@ export function LiveRefresh({ branchId }: { branchId: string }) {
     };
     const channel = supabase
       .channel(`antrian-live-${branchId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "visits", filter: `branch_id=eq.${branchId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "visits", ...(branchId === "all" ? {} : { filter: `branch_id=eq.${branchId}` }) }, refresh)
       .subscribe((status) => {
         // Catch a registration committed between the initial read and subscribe.
         if (status === "SUBSCRIBED") refresh();

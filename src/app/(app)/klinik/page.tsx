@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+import { ALL_BRANCHES, BRANCH_HEADER } from "@/lib/operational-context";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -15,7 +17,7 @@ export default async function Page() {
   const shift = await getOpenShift(supabase, user.id, "klinik");
 
   // STAFF dapat layar sambutan klinik; admin/owner tetap tile-grid.
-  if (profile?.role === "STAFF") {
+  if (profile?.role === "STAFF" && (await headers()).get(BRANCH_HEADER) !== ALL_BRANCHES) {
     if (!shift) redirect("/klinik/shift");
     return <StaffKlinikHome fullName={profile.full_name ?? "Staff"} />;
   }

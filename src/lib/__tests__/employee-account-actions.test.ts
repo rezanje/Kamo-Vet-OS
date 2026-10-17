@@ -6,14 +6,15 @@ const state=vi.hoisted(()=>({
 vi.mock("next/navigation",()=>({redirect:(url:string)=>{throw new Error(`REDIRECT:${url}`);}}));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
 vi.mock("@supabase/supabase-js",()=>({createClient:()=>({auth:{signUp:state.signup}})}));
-vi.mock("@/lib/master-guard",()=>({assertMasterAdmin:async()=>{
+async function guard(){
  if(!state.admin) throw new Error("ADMIN_REQUIRED");
  return {rpc:state.rpc,from:(table:string)=>{
   state.selected(table);
   const chain={select:()=>chain,eq:()=>chain,in:()=>chain,maybeSingle:async()=>({data:state.employee}),then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:[{id:"branch"}]}).then(resolve)};
   return chain;
  }};
-}}));
+}
+vi.mock("@/lib/master-guard",()=>({assertMasterAdmin:guard,assertAccountCreator:guard}));
 import { buatPengguna, tautkanPengguna } from "@/app/(app)/pengaturan/pengguna/actions";
 function form(){const f=new FormData();for(const [key,value] of Object.entries({full_name:"Fictional Employee",email:"employee@test.local",password:"fictional-password",role:"STAFF",employee_id:"employee"}))f.set(key,value);f.append("branch_ids","branch");return f;}
 beforeEach(()=>{state.admin=true;state.employee.profile_id=null;state.employee.status="Aktif";state.rpc.mockReset().mockResolvedValue({error:null});state.signup.mockReset().mockResolvedValue({data:{user:{id:"new-user"}},error:null});state.selected.mockClear();});
