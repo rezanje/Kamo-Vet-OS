@@ -26,7 +26,8 @@ select pg_temp.assert_true((select sum(debit)=101.50 and sum(credit)=101.50 and 
 select pg_temp.expect_error($q$select public.mutate_cash_transfer('transfer-create','create',null,null,jsonb_set((select header from transfer_input),'{jumlah}','200'),null)$q$,'rincian berbeda');
 select pg_temp.expect_error($q$select public.mutate_cash_transfer('bad-cent','create',null,null,jsonb_set((select header from transfer_input),'{jumlah}','100.251'),null)$q$,'Nilai');
 select pg_temp.expect_error($q$select public.mutate_cash_transfer('bad-fee','create',null,null,jsonb_set((select header from transfer_input),'{biaya_admin}','-1'),null)$q$,'Nilai');
-select pg_temp.expect_error($q$select public.mutate_cash_transfer('future','create',null,null,jsonb_set((select header from transfer_input),'{tanggal}',to_jsonb(current_date+1)),null)$q$,'Tanggal');
+select pg_temp.expect_error($q$select public.mutate_cash_transfer('future','create',null,null,jsonb_set((select header from transfer_input),'{tanggal}',to_jsonb((now() at time zone 'Asia/Jakarta')::date+1)),null)$q$,'Tanggal');
+select pg_temp.expect_error($q$select public.mutate_cash_transfer('infinite-create','create',null,null,jsonb_set((select header from transfer_input),'{tanggal}','"-infinity"'),null)$q$,'Tanggal');
 select pg_temp.expect_error($q$select public.mutate_cash_transfer('rollback-create','create',null,null,jsonb_set((select header from transfer_input),'{keterangan}','"Injected failure"'),null)$q$,'INJECTED_TRANSFER_FAILURE');
 select pg_temp.assert_true((select count(*)=1 from public.cash_transfers),'failed create leaves no header');
 select public.mutate_cash_transfer('transfer-edit','edit',(select (result->>'transfer_id')::uuid from transfer_result),0,jsonb_set((select header from transfer_input),'{jumlah}','200.50'),'Koreksi jumlah');
@@ -66,6 +67,16 @@ select pg_temp.assert_true((select jumlah=100.25 and revision=0 from public.cash
 select pg_temp.assert_true((select count(*)=5 from public.journal_entries),'failed edit rolls back reversal and replacement journals');
 reset role;
 select pg_temp.assert_true(not exists(select 1 from public.cash_transfer_requests where request_key='failed-edit'),'failed edit leaves no request');
+update public.cash_transfers set tanggal=(now() at time zone 'Asia/Jakarta')::date+1 where id=(select (result->>'transfer_id')::uuid from transfer_result);
+set local role authenticated;
+select pg_temp.expect_error($q$select public.mutate_cash_transfer('future-source','void',(select (result->>'transfer_id')::uuid from transfer_result),0,'{}','Future original')$q$,'Tanggal transfer sumber');
+reset role;
+update public.cash_transfers set tanggal='-infinity' where id=(select (result->>'transfer_id')::uuid from transfer_result);
+set local role authenticated;
+select pg_temp.expect_error($q$select public.mutate_cash_transfer('infinite-source','void',(select (result->>'transfer_id')::uuid from transfer_result),0,'{}','Infinite original')$q$,'Tanggal transfer sumber');
+reset role;
+update public.cash_transfers set tanggal=((select header from transfer_input)->>'tanggal')::date where id=(select (result->>'transfer_id')::uuid from transfer_result);
+select pg_temp.assert_true(not exists(select 1 from public.cash_transfer_requests where request_key in('future-source','infinite-source','infinite-create')),'invalid dates leave no requests');
 update public.accounting_locks set closed_until=current_date-1 where id;
 set local role authenticated;
 select pg_temp.expect_error($q$select public.mutate_cash_transfer('closed-create','create',null,null,(select header from transfer_input),null)$q$,'ditutup');

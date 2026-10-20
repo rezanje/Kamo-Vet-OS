@@ -105,6 +105,7 @@ begin
  if p_action<>'create' then
   if doc.voided_at is not null then raise exception 'Transfer sudah dibatalkan';end if;
   if doc.revision<>p_expected_revision then raise exception 'Transfer sudah berubah. Muat ulang sebelum mengoreksi';end if;
+  if not isfinite(doc.tanggal) or doc.tanggal>(now() at time zone 'Asia/Jakarta')::date then raise exception 'Tanggal transfer sumber belum boleh dikoreksi';end if;
   if closed is not null and doc.tanggal<=closed then raise exception 'Periode akuntansi sudah ditutup';end if;
   before_value:=to_jsonb(doc);
   if doc.journal_entry_id is not null then
@@ -126,7 +127,7 @@ begin
   d:=(p_header->>'tanggal')::date; amount:=(p_header->>'jumlah')::numeric;fee:=(p_header->>'biaya_admin')::numeric;
   notes:=nullif(btrim(p_header->>'keterangan'),'');
   if length(coalesce(notes,''))>1000 then raise exception 'Keterangan transfer terlalu panjang';end if;
-  if d is null or d>(now() at time zone 'Asia/Jakarta')::date then raise exception 'Tanggal transfer tidak valid';end if;
+  if d is null or not isfinite(d) or d>(now() at time zone 'Asia/Jakarta')::date then raise exception 'Tanggal transfer tidak valid';end if;
   if closed is not null and d<=closed then raise exception 'Periode akuntansi sudah ditutup';end if;
   if amount is null or fee is null or amount<=0 or fee<0 or amount+fee>1000000000000
    or amount<>round(amount,2) or fee<>round(fee,2) or amount::text in ('NaN','Infinity','-Infinity') or fee::text in ('NaN','Infinity','-Infinity') then raise exception 'Nilai transfer tidak valid';end if;
