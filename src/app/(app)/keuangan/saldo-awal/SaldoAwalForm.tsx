@@ -1,9 +1,10 @@
 "use client";
-import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
+import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
+import { SubmitButton } from "@/components/SubmitButton";
 import { draftRows } from "@/components/TransactionDraft";
 
 import { useMemo, useState } from "react";
-import { simpanSaldoAwal } from "./actions";
+import { simpanSaldoAwal, hapusSaldoAwal } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type Akun = { code: string; name: string; type: string; normal: string };
@@ -16,15 +17,16 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 // adalah posisi harta, bukan riwayat laba rugi (itu sudah lebur jadi modal).
 const TIPE_BOLEH = ["ASET", "LIABILITAS", "EKUITAS"];
 
-export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: Akun[]; usulan: Usulan[] }) {
-  const [tanggal, setTanggal] = useState(hariIniWIB());
+export function SaldoAwalForm({ userId, akun, usulan, existing }: { userId: string; akun: Akun[]; usulan: Usulan[]; existing?: {id:string;tanggal:string;rows:{code:string;nilai:number;sisi:"D"|"K"}[]} }) {
+  const [expectedEntryId,setExpectedEntryId]=useState(existing?.id ?? "");
+  const [tanggal, setTanggal] = useState(existing?.tanggal ?? hariIniWIB());
   const [baris, setBaris] = useState<Baris[]>(
-    usulan.length > 0
+    existing?.rows.length ? existing.rows.map(row=>({...row,nilai:String(row.nilai)})) : usulan.length > 0
       ? usulan.map((u) => ({ code: u.code, nilai: String(u.selisih), sisi: u.sisi }))
       : [{ code: "", nilai: "", sisi: "D" }],
   );
 
-  const pilihan = akun.filter((a) => TIPE_BOLEH.includes(a.type));
+  const pilihan = akun.filter((a) => TIPE_BOLEH.includes(a.type) && a.code!=="3101");
   const set = (i: number, patch: Partial<Baris>) =>
     setBaris((bs) => bs.map((b, x) => (x === i ? { ...b, ...patch } : b)));
   const tambah = () => setBaris((bs) => [...bs, { code: "", nilai: "", sisi: "D" }]);
@@ -44,8 +46,9 @@ export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: 
   );
 
   return (
-    <PreservedForm action={simpanSaldoAwal}>
-      <LocalTransactionDraft userId={userId} scope="opening-balance-create" state={{snapshot:{tanggal,baris},restore(value){if(typeof value.tanggal!=="string"||!draftRows(value.baris,{code:"",nilai:"",sisi:"D"})||!value.baris.every(b=>b.sisi==="D"||b.sisi==="K"))return false;setTanggal(value.tanggal);setBaris(value.baris as Baris[]);return true;},reset(){setTanggal(hariIniWIB());setBaris([{code:"",nilai:"",sisi:"D"}]);}}}/>
+    <CorrectionTransactionForm userId={userId} scope="opening-balance-create" action={simpanSaldoAwal} state={{snapshot:{tanggal,baris,expectedEntryId},restore(value){if(typeof value.tanggal!=="string"||!draftRows(value.baris,{code:"",nilai:"",sisi:"D"})||!value.baris.every(b=>b.sisi==="D"||b.sisi==="K"))return false;if(value.expectedEntryId!==undefined&&typeof value.expectedEntryId!=="string")return false;setExpectedEntryId(typeof value.expectedEntryId==="string"?value.expectedEntryId:existing?.id ?? "");setTanggal(value.tanggal);setBaris(value.baris as Baris[]);return true;},reset(){setExpectedEntryId(existing?.id ?? "");setTanggal(hariIniWIB());setBaris([{code:"",nilai:"",sisi:"D"}]);}}}>
+      {({ready})=><>
+      <input type="hidden" name="expected_entry_id" value={expectedEntryId}/>
       <input type="hidden" name="baris" value={serial} />
       <input type="hidden" name="tanggal" value={tanggal} />
 
@@ -83,7 +86,7 @@ export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: 
                 </td>
                 <td>
                   <input
-                    className="fi" type="number" step="any" style={{ textAlign: "right" }}
+                    className="fi" type="number" step="1" style={{ textAlign: "right" }}
                     value={b.nilai} onChange={(e) => set(i, { nilai: e.target.value })} placeholder="0"
                   />
                 </td>
@@ -114,12 +117,12 @@ export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: 
         </div>
       </div>
 
+      {expectedEntryId && <div className="fg" style={{marginTop:12}}><label className="flab">Alasan koreksi *</label><input className="fi" name="reason" minLength={3} maxLength={1000} required/></div>}
       <div style={{ marginTop: 14 }}>
-        <button type="submit" className="pay-btn" disabled={!bolehSimpan} style={{ opacity: bolehSimpan ? 1 : 0.5 }}>
-          <i className="ti ti-device-floppy" /> Simpan Saldo Awal
-        </button>
+        <SubmitButton className="pay-btn" disabled={!ready || !bolehSimpan} pendingText="Menyimpan…" icon="ti-device-floppy">Simpan Saldo Awal</SubmitButton>
       </div>
-    </PreservedForm>
+      </>}
+    </CorrectionTransactionForm>
   );
 }
 
@@ -129,4 +132,12 @@ function Row({ label, value }: { label: string; value: number }) {
       <span>{label}</span><span>{rp(value)}</span>
     </div>
   );
+}
+
+export function BatalSaldoAwalForm({userId,entryId}:{userId:string;entryId:string}) {
+ return <CorrectionTransactionForm userId={userId} scope={`opening-balance-void-${entryId}`} action={hapusSaldoAwal}>{({ready})=><>
+  <input type="hidden" name="expected_entry_id" value={entryId}/>
+  <label className="flab">Alasan pembatalan *</label><input className="fi" name="reason" minLength={3} maxLength={1000} required/>
+  <SubmitButton className="btn-def" disabled={!ready} pendingText="Membatalkan…">Batalkan saldo awal</SubmitButton>
+ </>}</CorrectionTransactionForm>;
 }

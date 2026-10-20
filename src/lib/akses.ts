@@ -22,7 +22,7 @@ export const MODULE_PATHS: Record<string, string[]> = {
   perusahaan: ["/perusahaan"],
   "buku-besar": [
     "/buku-besar", "/keuangan/coa", "/keuangan/jurnal", "/keuangan/jurnal-berulang",
-    "/keuangan/buku-besar", "/keuangan/tutup-buku", "/keuangan/sinkron",
+    "/keuangan/buku-besar", "/keuangan/tutup-buku", "/keuangan/sinkron", "/keuangan/saldo-awal",
   ],
   "kas-bank": [
     "/kas-bank", "/keuangan/hutang", "/keuangan/piutang", "/keuangan/rekonsiliasi",

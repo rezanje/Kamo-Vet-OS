@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { bacaSaldoAwal, hapusSaldoAwal } from "./actions";
-import { SaldoAwalForm } from "./SaldoAwalForm";
+import { bacaSaldoAwal } from "./actions";
+import { SaldoAwalForm, BatalSaldoAwalForm } from "./SaldoAwalForm";
+import { OpeningBalanceRecovery } from "./OpeningBalanceRecovery";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string) => (s ? new Date(s.includes("T") ? s : s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 export default async function SaldoAwalPage({
   searchParams,
@@ -15,7 +16,12 @@ export default async function SaldoAwalPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
-  const { usulan, sudahAda, akun } = await bacaSaldoAwal(supabase);
+  const {data:profile}=await supabase.from("profiles").select("role,is_active").eq("id",user?.id ?? "").maybeSingle();
+  if(!profile?.is_active||!["OWNER","ADMIN","FINANCE"].includes(profile.role))return <div className="p2ban">Akses keuangan aktif diperlukan untuk saldo awal.</div>;
+  const {data:allBranches,error:accessError}=await supabase.rpc("has_role_capability",{capability:"all_branches"});
+  if(accessError||!allBranches)return <div className="p2ban">Saldo awal membutuhkan akses keuangan seluruh cabang.</div>;
+  const { usulan, sudahAda, akun, barisAktif } = await bacaSaldoAwal(supabase);
+  const {data:history}=await supabase.from("opening_balance_revisions").select("id,action,reason,created_at").order("created_at",{ascending:false}).limit(30);
 
   return (
     <>
@@ -27,16 +33,15 @@ export default async function SaldoAwalPage({
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success}</div>}
+      <OpeningBalanceRecovery userId={user?.id ?? ""}/>
 
       {sudahAda && (
         <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #93c5fd", color: "#1d4ed8", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <span>
             <i className="ti ti-info-circle" /> Saldo awal sudah tersimpan: {sudahAda.no_jurnal} per {fmtDate(sudahAda.tanggal)}.
-            Menyimpan lagi akan menggantikan yang lama.
+            Koreksi memakai catatan pembalik; catatan lama tetap tersimpan.
           </span>
-          <form action={hapusSaldoAwal}>
-            <button type="submit" className="back-btn" style={{ fontSize: 11 }}>Hapus</button>
-          </form>
+          {profile.role === "OWNER" && <details><summary>Batalkan</summary><BatalSaldoAwalForm userId={user?.id ?? ""} entryId={sudahAda.id}/></details>}
         </div>
       )}
 
@@ -82,9 +87,10 @@ export default async function SaldoAwalPage({
         <SecHeader
           num="02"
           title="ISI SALDO AWAL"
-          desc="Baris di bawah sudah terisi dari hitungan di atas. Tambahkan sendiri kas, piutang, dan utang yang sudah ada sebelum sistem dipakai."
+          desc={sudahAda?"Isian menampilkan saldo awal aktif secara penuh. Ubah nilai yang perlu dikoreksi dan isi alasannya.":"Baris di bawah terisi dari hitungan di atas. Tambahkan kas, piutang, dan utang sebelum sistem dipakai."}
         />
-        <SaldoAwalForm key={user?.id} userId={user?.id ?? ""} akun={akun} usulan={usulan} />
+        {(!sudahAda||profile.role === "OWNER") ? <SaldoAwalForm key={`${user?.id}:${sudahAda?.id ?? "new"}`} userId={user?.id ?? ""} akun={akun} usulan={usulan} existing={sudahAda?{...sudahAda,rows:barisAktif}:undefined}/> : <div className="p2ban">Koreksi saldo awal dilakukan Super Admin.</div>}
+        {history?.length ? <details style={{marginTop:14}}><summary>Riwayat saldo awal</summary>{history.map(h=><p key={h.id}>{fmtDate(h.created_at)} · {h.action === "void" ? "Pembatalan" : "Penyimpanan"}: {h.reason}</p>)}</details> : null}
       </div>
     </>
   );

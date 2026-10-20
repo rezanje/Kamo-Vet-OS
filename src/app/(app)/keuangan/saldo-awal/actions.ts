@@ -5,12 +5,11 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAccountBalances } from "@/lib/ledger";
-import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
-import { formatNomor } from "@/lib/no-dokumen";
-import { cekPeriode } from "@/lib/jurnal-guard";
+import { assertRole } from "@/lib/master-guard";
+import { completeReportQuery } from "@/lib/report-query";
 import { hariIniWIB } from "@/lib/tanggal";
 import {
-  AKUN_MODAL_PEMILIK, jurnalSaldoAwal, nilaiPersediaan, selisihSaldoAwal,
+  nilaiPersediaan, selisihSaldoAwal,
   type BarisSaldoAwal,
 } from "@/lib/saldo-awal";
 
@@ -23,7 +22,8 @@ export type Usulan = {
 
 export type RingkasSaldoAwal = {
   usulan: Usulan[];
-  sudahAda: { no_jurnal: string; tanggal: string } | null;
+  sudahAda: { id: string; no_jurnal: string; tanggal: string } | null;
+  barisAktif: BarisSaldoAwal[];
   akun: { code: string; name: string; type: string; normal: string }[];
 };
 
@@ -33,16 +33,24 @@ export type RingkasSaldoAwal = {
  * dan tidak muncul sebagai usulan.
  */
 export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createClient>>): Promise<RingkasSaldoAwal> {
-  const [balances, { data: layers }, { data: assets }, { data: deps }, { data: entry }, { data: coa }] =
+  const [balances, layerResult, assetResult, depResult, entryResult, coaResult] =
     await Promise.all([
       getAccountBalances(supabase as never),
-      supabase.from("stock_layers").select("qty_left, unit_cost").gt("qty_left", 0),
-      supabase.from("fixed_assets").select("harga_perolehan").eq("is_active", true),
-      supabase.from("asset_depreciations").select("amount"),
-      supabase.from("journal_entries").select("no_jurnal, tanggal").eq("source", "saldo-awal").maybeSingle(),
-      supabase.from("coa_accounts").select("code, name, type, normal_balance").eq("is_active", true).order("code"),
+      completeReportQuery(supabase.from("stock_layers").select("id, qty_left, unit_cost",{count:"exact"}).gt("qty_left", 0)),
+      completeReportQuery(supabase.from("fixed_assets").select("id, harga_perolehan",{count:"exact"}).eq("is_active", true)),
+      completeReportQuery(supabase.from("asset_depreciations").select("id, amount",{count:"exact"})),
+      supabase.from("journal_entries").select("id, no_jurnal, tanggal").eq("source", "saldo-awal").is("opening_retired_at",null).maybeSingle(),
+      completeReportQuery(supabase.from("coa_accounts").select("id, code, name, type, normal_balance",{count:"exact"}).eq("is_active", true).eq("is_header",false).order("code")),
     ]);
 
+  for (const result of [layerResult,assetResult,depResult,entryResult,coaResult]) if (result.error) throw new Error("Data saldo awal belum lengkap. Muat ulang sebelum membuat perubahan.");
+  const {data:layers}=layerResult, {data:assets}=assetResult, {data:deps}=depResult, {data:entry}=entryResult, {data:coa}=coaResult;
+  let barisAktif: BarisSaldoAwal[]=[];
+  if(entry){
+    const {data,error}=await completeReportQuery(supabase.from("journal_lines").select("id,debit,credit,coa_accounts!inner(code)",{count:"exact"}).eq("entry_id",entry.id));
+    if(error)throw new Error("Rincian saldo awal aktif belum dapat dibaca.");
+    barisAktif=(data??[]).flatMap(line=>{const account=Array.isArray(line.coa_accounts)?line.coa_accounts[0]:line.coa_accounts;return account&&account.code!=="3101"?[{code:account.code,nilai:Number(line.debit)>0?Number(line.debit):Number(line.credit),sisi:Number(line.debit)>0?"D" as const:"K" as const}]:[];});
+  }
   const saldo = (code: string) => balances.find((b) => b.code === code)?.saldo ?? 0;
 
   const persediaanNyata = nilaiPersediaan((layers ?? []) as { qty_left: number; unit_cost: number }[]);
@@ -73,85 +81,36 @@ export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createCl
 
   return {
     usulan,
-    sudahAda: entry ? { no_jurnal: entry.no_jurnal as string, tanggal: entry.tanggal as string } : null,
+    sudahAda: entry ? { id:entry.id, no_jurnal: entry.no_jurnal as string, tanggal: entry.tanggal as string } : null,
+    barisAktif,
     akun: (coa ?? []).map((a) => ({
       code: a.code as string, name: a.name as string, type: a.type as string, normal: a.normal_balance as string,
     })),
   };
 }
 
-/** Posting saldo awal: satu jurnal, selisihnya otomatis ke Modal Pemilik. */
-export async function simpanSaldoAwal(formData: FormData) {
-  const supabase = await createClient();
-  const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
-
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) gagal("Tanggal saldo awal tidak valid.");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  let baris: BarisSaldoAwal[] = [];
-  try {
-    baris = JSON.parse(String(formData.get("baris") ?? "[]")) as BarisSaldoAwal[];
-  } catch {
-    baris = [];
-  }
-  baris = baris.filter((b) => b.code?.trim() && Number(b.nilai));
-  if (baris.length === 0) gagal("Isi minimal satu baris saldo awal.");
-
-  const { lines, modal } = jurnalSaldoAwal(baris);
-  if (lines.length === 0) gagal("Semua nilai nol — tidak ada yang perlu diposting.");
-
-  // Semua kode akun wajib ada, termasuk akun modalnya.
-  const codes = [...new Set(lines.map((l) => l.code))];
-  const { data: accounts } = await supabase.from("coa_accounts").select("id, code").in("code", codes);
-  const codeToId = new Map((accounts ?? []).map((a) => [a.code as string, a.id as string]));
-  for (const c of codes) if (!codeToId.has(c)) gagal(`Akun ${c} tidak ada di daftar akun.`);
-
-  // Saldo awal hanya boleh satu (dijaga juga unique index di DB). Yang lama dihapus
-  // supaya angkanya bisa dikoreksi sebelum go-live tanpa menumpuk jurnal ganda.
-  const { data: lama } = await supabase
-    .from("journal_entries").select("id").eq("source", "saldo-awal");
-  for (const l of lama ?? []) await supabase.from("journal_entries").delete().eq("id", l.id);
-
-  // Posting langsung (bukan postJournal best-effort) — saldo awal wajib ketahuan gagalnya.
-  const prefix = `${prefixJurnal(tanggal)}-`;
-  const no_jurnal = formatNomor(prefix, await nextSeqJurnal(supabase, tanggal), 4);
-
-  const { data: entry, error: entryErr } = await supabase
-    .from("journal_entries")
-    .insert({
-      no_jurnal, tanggal, deskripsi: `Saldo awal per ${tanggal}`,
-      source: "saldo-awal", source_ref: tanggal, branch_id: null,
-    })
-    .select("id").single();
-  if (entryErr || !entry) gagal(`Gagal menyimpan saldo awal: ${entryErr?.message ?? "tidak diketahui"}`);
-
-  const { error: lineErr } = await supabase.from("journal_lines").insert(
-    lines.map((l) => ({ entry_id: entry!.id, account_id: codeToId.get(l.code), debit: l.debit, credit: l.credit })),
-  );
-  if (lineErr) {
-    await supabase.from("journal_entries").delete().eq("id", entry!.id);
-    gagal(`Gagal menyimpan baris saldo awal: ${lineErr.message}`);
-  }
-
+async function simpan(formData:FormData,action:"save"|"void") {
+  const supabase=await assertRole(BACK,"saldo awal",action==="void"?["OWNER"]:["OWNER","ADMIN","FINANCE"]);
+  const gagal=(message:string):never=>redirect(`${BACK}?error=${encodeURIComponent(message)}`);
+  const key=String(formData.get("draft_key")??"").trim();
+  const expected=String(formData.get("expected_entry_id")??"").trim()||null;
+  const reason=String(formData.get("reason")??"").trim()||null;
+  const tanggal=action==="save"?String(formData.get("tanggal")??"").trim()||hariIniWIB():null;
+  if(!key||key.length>120)gagal("Identitas simpan belum tersedia. Muat ulang formulir.");
+  let rows:unknown=[];
+  if(action==="save")try {rows=JSON.parse(String(formData.get("baris")??"[]"));}catch{gagal("Baris saldo awal tidak valid.");}
+  if(!Array.isArray(rows)||(action==="save"&&rows.length===0))gagal("Isi minimal satu baris saldo awal.");
+  const {data,error}=await supabase.rpc("mutate_opening_balance",{p_request_key:key,p_expected_entry_id:expected,p_action:action,p_tanggal:tanggal,p_rows:rows,p_reason:reason});
+  if(error||!data?.entry_id)gagal(error?.message??"Hasil saldo awal belum terkonfirmasi. Isian tetap tersedia.");
   revalidatePath(BACK);
-  const arah = modal >= 0 ? "Modal Pemilik" : "defisit modal";
-  redirect(`${BACK}?success=${encodeURIComponent(
-    `Saldo awal per ${tanggal} tersimpan (${no_jurnal}) — selisih Rp ${Math.abs(modal).toLocaleString("id-ID")} masuk ${arah} (${AKUN_MODAL_PEMILIK}).`,
-  )}${transactionDraftAck(formData)}`);
+  redirect(`${BACK}?success=${encodeURIComponent(action==="void"?"Saldo awal dibatalkan; catatan lama dan pembaliknya tetap tersimpan.":"Saldo awal tersimpan; riwayat perubahan tetap tersedia.")}${transactionDraftAck(formData)}`);
 }
-
-/** Hapus saldo awal (koreksi sebelum go-live). */
-export async function hapusSaldoAwal() {
-  const supabase = await createClient();
-  const { data: lama } = await supabase.from("journal_entries").select("id, tanggal").eq("source", "saldo-awal");
-  for (const l of lama ?? []) {
-    const pesan = await cekPeriode(supabase, l.tanggal as string);
-    if (pesan) redirect(`${BACK}?error=${encodeURIComponent(pesan)}`);
-    await supabase.from("journal_entries").delete().eq("id", l.id);
-  }
-  revalidatePath(BACK);
-  redirect(`${BACK}?success=${encodeURIComponent("Saldo awal dihapus — silakan isi ulang.")}`);
+export async function simpanSaldoAwal(formData:FormData){return simpan(formData,"save");}
+export async function hapusSaldoAwal(formData:FormData){return simpan(formData,"void");}
+export async function pulihkanSaldoAwal(formData:FormData){
+ const supabase=await assertRole(BACK,"saldo awal",["OWNER","ADMIN","FINANCE"]);
+ const key=String(formData.get("draft_key")??"").trim();
+ const {data,error}=await supabase.rpc("get_opening_balance_result",{p_request_key:key});
+ if(error||!data?.entry_id)redirect(`${BACK}?error=${encodeURIComponent(error?.message??"Permintaan belum tercatat. Draf tetap tersedia; periksa saldo aktif sebelum menyimpan ulang.")}`);
+ redirect(`${BACK}?success=${encodeURIComponent("Hasil permintaan sebelumnya sudah dikonfirmasi.")}${transactionDraftAck(formData)}`);
 }

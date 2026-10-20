@@ -39,6 +39,11 @@ describe("pakaiAturanSendiri", () => {
 });
 
 describe("bolehBukaPath", () => {
+  it("requires Buku Besar access for opening balances",()=>{
+    expect(bolehBukaPath("STAFF","/keuangan/saldo-awal",kosong)).toBe(false);
+    expect(bolehBukaPath("FINANCE","/keuangan/saldo-awal",kosong)).toBe(true);
+    expect(bolehBukaPath("FINANCE","/keuangan/saldo-awal",[{role:"FINANCE",module_id:"kas-bank"}])).toBe(false);
+  });
   it("halaman login & dashboard pribadi tidak pernah diblokir", () => {
     for (const p of ["/me", "/me/kpi", "/mulai", "/login", "/auth/callback"]) {
       expect(bolehBukaPath("FINANCE", p, kosong)).toBe(true);
