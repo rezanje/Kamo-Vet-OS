@@ -27,6 +27,7 @@ REQUIRED_MIGRATIONS = (
     "20261020130000_expense_backoffice_account.sql",
     "20261017090000_role_capabilities.sql",
     "20261020134639_atomic_manual_journal_create.sql",
+    "20261020170538_atomic_bank_transfers.sql",
 )
 
 
@@ -107,11 +108,63 @@ grant select, insert, update, delete on public.cash_entries,
 grant select, update on public.profiles, public.accounting_locks, public.coa_accounts, public.cash_accounts to authenticated;
 grant select on
   public.coa_accounts, public.profiles, public.branches, public.user_branches, public.cash_accounts,
-  public.accounting_locks, public.cashier_shifts, public.payment_account_map to authenticated;
+  public.accounting_locks, public.cashier_shifts, public.payment_account_map, public.role_modules to authenticated;
 """)
-    for suite in ("expense-workflow.sql", "manual-journal-corrections.sql", "cash-entry-corrections.sql", "manual-journal-create.sql"):
+    for suite in ("expense-workflow.sql", "manual-journal-corrections.sql", "cash-entry-corrections.sql", "manual-journal-create.sql", "bank-transfer-lifecycle.sql"):
         run(*PSQL, "-d", DB, "-o", os.devnull, "-f", str(ROOT / "supabase/tests" / suite))
         print(f"PASS {suite}")
+    run(*PSQL, "-d", DB, input="""
+insert into auth.users(id,raw_user_meta_data) values('ef710000-0000-4000-8000-000000000001','{}');
+alter table public.profiles disable trigger guard_profile_privileges;
+update public.profiles set role='OWNER',is_active=true where id='ef710000-0000-4000-8000-000000000001';
+alter table public.profiles enable trigger guard_profile_privileges;
+""")
+    transfer_header = "jsonb_build_object('tanggal',current_date,'from_account_id',(select id from public.cash_accounts where coa_code='1101'),'to_account_id',(select id from public.cash_accounts where coa_code='1102'),'jumlah',100.25,'biaya_admin',1.25)"
+    race_calls = (
+        f"select public.mutate_cash_transfer('race-create','create',null,null,{transfer_header},null)",
+        "select public.mutate_cash_transfer('race-void','void',(select id from public.cash_transfers),0,'{}','Concurrent cancellation')",
+    )
+    for call in race_calls:
+        session_prefix = "begin;set local role authenticated;set local request.jwt.claim.sub='ef710000-0000-4000-8000-000000000001';"
+        first = subprocess.Popen([*PSQL, "-d", DB, "-c", session_prefix + call + ";select pg_sleep(0.5);commit;"], env={**PG_ENV, "PGAPPNAME": "vetos-bank-race-a"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        second = None
+        try:
+            for _ in range(30):
+                probe = subprocess.run([*PSQL, "-d", DB, "-Atc", "select count(*) from pg_stat_activity where application_name='vetos-bank-race-a' and wait_event='PgSleep'"], env=PG_ENV, capture_output=True, text=True, check=True)
+                if probe.stdout.strip() == "1":
+                    break
+                time.sleep(0.02)
+            else:
+                raise RuntimeError("First transfer session never held its completed posting lock")
+            second = subprocess.Popen([*PSQL, "-d", DB, "-c", session_prefix + call + ";commit;"], env={**PG_ENV, "PGAPPNAME": "vetos-bank-race-b"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            for _ in range(15):
+                probe = subprocess.run([*PSQL, "-d", DB, "-Atc", "select count(*) from pg_stat_activity where application_name='vetos-bank-race-b' and wait_event_type='Lock'"], env=PG_ENV, capture_output=True, text=True, check=True)
+                if probe.stdout.strip() == "1":
+                    break
+                time.sleep(0.01)
+            else:
+                raise RuntimeError("Second transfer session did not wait on the durable posting lock")
+            _, first_error = first.communicate(timeout=10)
+            _, second_error = second.communicate(timeout=10)
+            if first.returncode or second.returncode:
+                raise RuntimeError(f"Concurrent transfer failed: {first_error} {second_error}")
+        finally:
+            for process in (first, second):
+                if process is not None and process.poll() is None:
+                    process.kill()
+                    process.communicate()
+    run(*PSQL, "-d", DB, input="""
+do $$begin
+ if (select count(*) from public.cash_transfers)<>1
+  or (select count(*) from public.cash_transfer_requests)<>2
+  or (select count(*) from public.cash_transfer_revisions)<>1
+  or (select count(*) from public.journal_entries)<>2
+  or exists(select 1 from public.cash_transfers where voided_at is null or revision<>1)
+  or exists(select account_id from public.journal_lines group by account_id having sum(debit-credit)<>0)
+ then raise exception 'Concurrent transfer create/void duplicated or lost accounting effects';end if;
+end$$;
+""")
+    print("PASS concurrent transfer create/void retries")
     print(f"feedback finance SQL acceptance passed ({len(REQUIRED_MIGRATIONS)} required migrations)")
 finally:
     if created:
