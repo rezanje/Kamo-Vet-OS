@@ -8,6 +8,8 @@ function fakeClient(withFee = false, withReturn = false) {
   const base = { id: "sale", total: 100000, customer_id: "c1", branch_id: "b1", cashier_id: "actor", salesperson_id: "employee", created_at: "2026-10-15T05:00:00Z",
     sale_items: [{ item_id: "item", qty: 1, harga: 100000, hpp: 50000, item_discount_type: null, item_discount_value: 0 }] };
   const sales = [base,
+    { ...base, id: "voided-legacy", voided_at: "2026-10-16T01:00:00Z" },
+    { ...base, id: "voided-final", payment_plan: [], payments_finalized_at: "2026-10-15T05:00:01Z", voided_at: "2026-10-16T01:00:00Z" },
     { ...base, id: "final", ...(withFee ? { total: 101600, merchant_fee_total: 1600, sale_items: [{ ...base.sale_items[0], harga: 120000 }] } : {}), payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 81600 }], payments_finalized_at: "2026-10-15T05:00:01Z" },
     { ...base, id: "pending", payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }], payments_finalized_at: null }];
   const updates: Record<string, unknown>[] = [];
@@ -63,6 +65,7 @@ it("does not let an unfinished sale reset the customer's inactivity period", asy
   const client = { from(table: string) {
     const rows = table === "customers" ? [{ id: "customer", tier: "Bronze", tier_downgraded_at: null }]
       : table === "sales" ? [{ customer_id: "customer", created_at: "2025-01-01" },
+        { customer_id: "customer", created_at: "2026-10-15", voided_at: "2026-10-15T06:00:00Z" },
         { customer_id: "customer", created_at: "2026-10-14", payment_plan: [{ method: "Tunai", amount: 100000 }], payments_finalized_at: null }] : [];
     const q = { select: () => q, eq: () => q, neq: () => q, in: () => q, is: () => q, update: () => q,
       maybeSingle: async () => ({ data: { points_expiry_enabled: false, tier_downgrade_enabled: true, tier_downgrade_days: 180 }, error: null }),

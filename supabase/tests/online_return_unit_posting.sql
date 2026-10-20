@@ -97,10 +97,10 @@ do $$ declare r jsonb; retry jsonb; header jsonb:=jsonb_build_object('tanggal',c
  if not exists(select 1 from purchase_return_items where return_id=(r->>'document_id')::uuid and hpp=12) then raise exception 'Purchase actual FIFO snapshot missing';end if;
  begin
   update purchase_order_items set qty_terima=99 where id='f7000000-0000-4000-8000-000000000010';raise exception 'Returned PO source forged';
- exception when sqlstate '22023' then null;end;
+ exception when sqlstate '22023' or sqlstate '42501' then null;end;
  begin
   update purchase_order_items set po_id='f6000000-0000-4000-8000-000000000010',qty_terima=99 where id='f7000000-0000-4000-8000-000000000025';raise exception 'Draft line reparented into returned PO';
- exception when sqlstate '22023' then null;end;
+ exception when sqlstate '22023' or sqlstate '42501' then null;end;
  update stock_layers set unit_cost=30 where warehouse_id='f3000000-0000-4000-8000-000000000001' and unit_cost=2;
  r:=post_unit_return('purchase','f6000000-0000-4000-8000-000000000010','purchase-negative-variance',header,'[{"item_id":"f5000000-0000-4000-8000-000000000001","source_line_id":"f7000000-0000-4000-8000-000000000011","qty":1,"satuan":"pcs"}]');
  if (select total from purchase_returns where id=(r->>'document_id')::uuid)<>20 or not exists(select 1 from purchase_return_items where return_id=(r->>'document_id')::uuid and hpp=30) then raise exception 'Negative variance lost debt or actual cost';end if;

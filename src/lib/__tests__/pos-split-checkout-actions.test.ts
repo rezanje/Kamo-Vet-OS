@@ -168,3 +168,12 @@ it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s
   expect(await action(input).catch(error => error.message)).not.toContain("/struk/");
   expect(state.headers).toHaveLength(0);
 });
+
+it.each(["invalid-input", "finalization", "pending-retry"])("keeps cashier replacement draft context on %s", async failure => {
+ const input=form(); const source="00000000-0000-4000-8000-000000000001";input.set("replacementSaleId",source);
+ if(failure==="invalid-input") input.set("customerId","");
+ if(failure==="finalization") state.finalizationError="Period closed";
+ if(failure==="pending-retry") state.prior={id:"pending",no_struk:"Pending source",checkout_fingerprint:"changed",payments_finalized_at:null};
+ const outcome=await checkoutKasir(input).then(()=>"unexpected success",error=>error.message);
+ expect(outcome).toContain(`replace_sale=${source}`);expect(outcome).toContain("error=");expect(outcome).not.toContain("/struk/");
+});

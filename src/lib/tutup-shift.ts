@@ -87,7 +87,7 @@ export async function pemasukanShift(
   }
 
   const { data: sales, error } = await supabase
-    .from("sales").select("no_struk, total, metode_bayar, payment_plan, payments_finalized_at, sale_payments(method, amount)").eq("shift_id", shift.id);
+    .from("sales").select("no_struk, total, metode_bayar, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount)").eq("shift_id", shift.id);
   if (error) throw new Error("Rincian pembayaran shift belum dapat dibaca. Coba lagi sebelum menutup shift.");
   return salePaymentRows(sales ?? []);
 }

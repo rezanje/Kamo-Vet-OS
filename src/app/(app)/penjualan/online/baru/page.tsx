@@ -1,23 +1,26 @@
+import { loadSaleReplacement } from "@/lib/sale-replacement";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { OnlineForm } from "./OnlineForm";
 import { readCompleteList } from "@/lib/checked-list";
 
-type WhRow = { id: string; name: string; branches: { name: string } | { name: string }[] | null };
+type WhRow = { branch_id: string; id: string; name: string; branches: { name: string } | { name: string }[] | null };
 
 export default async function OnlineBaruPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; request_scope?:string; request_done?:string; success?: string }>;
+  searchParams: Promise<{ error?: string; replace_sale?: string; request_scope?:string; request_done?:string; success?: string }>;
 }) {
-  const { error, success, request_scope, request_done } = await searchParams;
+  const { error, success, request_scope, request_done, replace_sale } = await searchParams;
   const supabase = await createClient();
+  const replacement = await loadSaleReplacement(supabase, replace_sale);
+  if (replacement && !replacement.channel) throw new Error("Gunakan kasir untuk pengganti penjualan toko.");
   const {data:{user}} = await supabase.auth.getUser();
 
   const [{ data: whRaw, error: whErr }, items, { data: customers }] = await Promise.all([
     supabase
-      .from("warehouses").select("id, name, branches(name)")
+      .from("warehouses").select("id, branch_id, name, branches(name)")
       .eq("type", "ONLINE").eq("is_active", true).order("name"),
     readCompleteList<{ id: string; code: string; name: string; sell_price: number }>((from, to) => supabase.from("items").select("id, code, name, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang order online", { maxRows: null }),
     supabase.from("customers").select("id, name, phone").order("name").limit(2000),
@@ -26,7 +29,7 @@ export default async function OnlineBaruPage({
   // gudang ONLINE" (M6), supaya operator tidak disuruh minta admin buat sesuatu yang sudah ada.
   if (whErr) console.error("[OnlineBaruPage] gagal query gudang online:", whErr);
 
-  const warehouses = ((whRaw ?? []) as unknown as WhRow[]).map((w) => {
+  const warehouses = ((whRaw ?? []) as unknown as WhRow[]).filter(w => !replacement || w.branch_id === replacement.branch_id).map((w) => {
     const br = Array.isArray(w.branches) ? w.branches[0] : w.branches;
     return { id: w.id, name: w.name, branch_name: br?.name ?? "—" };
   });
@@ -62,6 +65,7 @@ export default async function OnlineBaruPage({
         </div>
       ) : (
         <OnlineForm
+          replacement={replacement ?? undefined}
           userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done}
           warehouses={warehouses}
           items={items.map(it => ({...it, units: units.get(it.id) ?? []}))}

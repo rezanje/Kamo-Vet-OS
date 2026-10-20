@@ -88,7 +88,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
+      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
       .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`)),
     completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
     completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
@@ -314,7 +314,7 @@ async function infoStrukLuarPeriode(
   empPerProfile: Map<string, string>,
 ): Promise<{ employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number>; sale: SaleMerchantTotal } | null> {
   const { data } = await supabase
-    .from("sales").select("branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
+    .from("sales").select("branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
   if (!data || !isCompletedSale(data)) return null;
   const hppPerUnit = new Map<string, number>();
   for (const it of (data.sale_items ?? []) as { item_id: string | null; qty: number; hpp: number | null }[]) {

@@ -36,7 +36,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
 
   const [balances, salesRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
-    supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at"),
+    supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at, voided_at"),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
     supabase.from("invoice_payments").select("invoice_id, amount"),
     // Faktur penjualan reseller (rantai dokumen, migrasi 0098) — aliran pendapatan

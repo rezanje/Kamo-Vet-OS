@@ -1,3 +1,4 @@
+import { loadSaleReplacement, saleReplacementDraft } from "@/lib/sale-replacement";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -23,16 +24,24 @@ function one<T>(r: Rel<T>): T | null {
 export default async function KasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; completed_sale_id?: string; draft_used?: string }>;
+  searchParams: Promise<{ error?: string; replace_sale?: string; completed_sale_id?: string; draft_used?: string }>;
 }) {
-  const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey } = await searchParams;
+  const { error, replace_sale, completed_sale_id: completedSaleId, draft_used: usedDraftKey } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   // hard gate: tanpa shift terbuka tidak boleh masuk kasir.
   const shift = await getOpenShift(supabase as never, user.id);
-  if (!shift) redirect("/kasir/mulai");
+  if (!shift) {
+    if (replace_sale) redirect(`/penjualan/${encodeURIComponent(replace_sale)}?error=${encodeURIComponent("Buka shift kasir pada cabang sumber, lalu pilih Siapkan transaksi pengganti.")}`);
+    redirect("/kasir/mulai");
+  }
+  const replacement = await loadSaleReplacement(supabase, replace_sale);
+  if (replacement && (replacement.channel || replacement.branch_id !== shift.branch_id)) {
+    redirect(`/penjualan/${replacement.id}?error=${encodeURIComponent("Gunakan shift pada cabang penjualan sumber untuk menyiapkan pengganti.")}`);
+  }
+  const replacementDraft = replacement ? saleReplacementDraft(replacement) : undefined;
 
   const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
     loadKasirItems(supabase),
@@ -41,7 +50,7 @@ export default async function KasirPage({
     supabase.from("customers")
       .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)")
       .order("name"),
-    supabase.from("sales").select("customer_id, total, payment_plan, payments_finalized_at"),
+    supabase.from("sales").select("customer_id, total, payment_plan, payments_finalized_at, voided_at"),
     supabase
       .from("invoices")
       .select("total, visits!inner(customer_id)")
@@ -57,6 +66,9 @@ export default async function KasirPage({
 
   // Addendum: promo yang aktif hari ini untuk cabang shift (branch + tanggal).
   const wibToday = hariIniWIB();
+  if (replacement && replacement.sale_items.some(row => !itemsRaw.some(item => item.id === row.item_id))) {
+    redirect(`/penjualan/${replacement.id}?error=${encodeURIComponent("Sebagian barang sumber tidak tersedia di katalog aktif. Aktifkan atau tentukan barang pengganti sebelum membuat transaksi baru.")}`);
+  }
   const promosActive = ((promos ?? []) as unknown as PromoFull[]).filter((p) => promoActiveFor(p, shift.branch_id, wibToday));
 
   // Barang yang kena tiap promo (migrasi 0079). Promo tanpa baris di sini
@@ -220,7 +232,9 @@ export default async function KasirPage({
 
   const cashier = (
     <KasirClient
-      key={shift.id}
+      key={`${shift.id}:${replacement?.id ?? ""}`}
+      replacementDraft={replacementDraft}
+      replacementId={replacement?.id}
       draftContext={`${user.id}:${shift.branch_id}:${shift.id}`}
       shiftId={shift.id}
       branchName={shift.branchName}

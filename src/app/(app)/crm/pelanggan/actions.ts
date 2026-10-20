@@ -16,7 +16,7 @@ export async function detailPelanggan(customerId: string): Promise<DetailPelangg
   if (!customerId) return kosong;
   const supabase = await createClient();
   const [{ data: sales }, { data: ledger }, { data: userData }] = await Promise.all([
-    supabase.from("sales").select("created_at, payment_plan, payments_finalized_at, pets(name), branches(code), sale_items(nama, qty, harga)").eq("customer_id", customerId).order("created_at", { ascending: false }),
+    supabase.from("sales").select("created_at, payment_plan, payments_finalized_at, voided_at, pets(name), branches(code), sale_items(nama, qty, harga)").eq("customer_id", customerId).order("created_at", { ascending: false }),
     supabase.from("point_ledger").select("created_at, description, delta, saldo").eq("customer_id", customerId).order("created_at", { ascending: false }),
     supabase.auth.getUser(),
   ]);
@@ -34,7 +34,7 @@ export async function detailPelanggan(customerId: string): Promise<DetailPelangg
   const { data: me } = await supabase.from("profiles").select("role").eq("id", userData.user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) return { purchases, ledger: pointHistory, stat: null };
   const [{ data: salesAgg }, { data: invAgg }] = await Promise.all([
-    supabase.from("sales").select("total, channel, payment_plan, payments_finalized_at").eq("customer_id", customerId),
+    supabase.from("sales").select("total, channel, payment_plan, payments_finalized_at, voided_at").eq("customer_id", customerId),
     supabase.from("invoices").select("total, visits!inner(customer_id)").eq("paid_status", "Lunas").is("voided_at", null).eq("visits.customer_id", customerId),
   ]);
   const stat = { petshopCount: 0, petshopTotal: 0, klinikCount: 0, klinikTotal: 0, onlineCount: 0, onlineTotal: 0 };
