@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { terimaBarang } from "../../actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { PreservedForm, useDraftUserId } from "@/components/LocalTransactionDraft";
+import { TransactionDraft, draftRows, transactionDraftName } from "@/components/TransactionDraft";
 import { receiptSummary } from "@/lib/stock-recon";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -21,32 +23,70 @@ const KONDISI = [
 ];
 
 const today = hariIniWIB();
-
-// Penerimaan barang (Addendum §5, mockup petshop): dipesan vs diterima, kondisi per item,
-// ringkasan footer, scan barcode auto-isi qty. Layout mengikuti mockup PENERIMAAN BARANG.
-export function TerimaForm({
-  requestId, noRequest, whName, userName, items, catalog, action = terimaBarang, backHref = "/kasir/persediaan?tab=penerimaan",
-}: {
+type Props = {
   requestId: string; noRequest: string; whName: string; userName: string;
   items: ItemIn[]; catalog: CatalogItem[];
   action?: (formData: FormData) => void | Promise<void>; backHref?: string;
-}) {
+};
+
+// Penerimaan barang (Addendum §5, mockup petshop): dipesan vs diterima, kondisi per item,
+// ringkasan footer, scan barcode auto-isi qty. Layout mengikuti mockup PENERIMAAN BARANG.
+export function TerimaForm(props: Props) {
+  const userId = useDraftUserId();
+  return <TerimaFormFields key={`${userId}:${props.requestId}`} {...props} />;
+}
+
+function TerimaFormFields({
+  requestId, noRequest, whName, userName, items, catalog, action = terimaBarang, backHref = "/kasir/persediaan?tab=penerimaan",
+}: Props) {
+  const userId = useDraftUserId();
+  const scope = `cashier-stock-receipt:${requestId}`;
+  const identity = `${userId}:${scope}`;
+  const initialRows = useMemo(() => items.map((it) => ({
+    ...it,
+    qty_diterima: Number(it.qty_disetujui ?? it.qty_diminta) || 0,
+    kondisi: "baik", notes: "",
+  })), [items]);
   // Isi awal = qty yang DISETUJUI gudang (kalau gudang menyesuaikan), bukan qty diminta.
-  const [rows, setRows] = useState<Row[]>(
-    items.map((it) => ({
-      ...it,
-      qty_diterima: Number(it.qty_disetujui ?? it.qty_diminta) || 0,
-      kondisi: "baik", notes: "",
-    }))
-  );
+  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [requestKey, setRequestKey] = useState("");
+  const [keyContext, setKeyContext] = useState("");
+  const [draftFailure, setDraftFailure] = useState("");
   const [barcode, setBarcode] = useState("");
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const catMap = useMemo(() => Object.fromEntries(catalog.map((c) => [c.id, c])), [catalog]);
 
+  // This identity is kept with the browser draft so an uncertain response can
+  // be checked/retried without changing the server request identity.
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const name = transactionDraftName(userId, "transaction", scope);
+      const raw = sessionStorage.getItem(name);
+      let saved: { requestKey?: unknown; savedAt?: number } | null = null;
+      try { saved = JSON.parse(raw ?? "null"); } catch { /* TransactionDraft reports malformed drafts. */ }
+      const validKey = typeof saved?.requestKey === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saved.requestKey)
+        && Number.isFinite(saved.savedAt) && saved.savedAt! > 0 && saved.savedAt! <= Date.now() && Date.now() - saved.savedAt! <= 12 * 60 * 60 * 1000;
+      queueMicrotask(() => { if (!cancelled) { setKeyContext(identity); setRequestKey(validKey ? saved!.requestKey as string : crypto.randomUUID()); } });
+    } catch {
+      queueMicrotask(() => { if (!cancelled) setDraftFailure("Draf browser tidak dapat disimpan. Isian tetap tersedia di halaman ini; aktifkan penyimpanan browser sebelum mengirim."); });
+    }
+    return () => { cancelled = true; };
+  }, [identity, scope, userId]);
+
+  useEffect(() => {
+    const confirmed = (event: Event) => {
+      const detail = (event as CustomEvent<{ scope: string; key: string }>).detail;
+      if (detail?.scope === scope) setRequestKey(current => current === detail.key ? crypto.randomUUID() : current);
+    };
+    window.addEventListener("vetos:transaction-confirmed", confirmed);
+    return () => window.removeEventListener("vetos:transaction-confirmed", confirmed);
+  }, [scope]);
+
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const del = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
+  const activeRequestKey = keyContext === identity ? requestKey : "";
 
   // scan barcode → lookup items.upc → auto-tambah qty diterima baris yang cocok (§5).
   const onScan = () => {
@@ -73,7 +113,28 @@ export function TerimaForm({
   const summary = receiptSummary(rows.map((r) => ({ qty_ordered: Number(r.qty_diminta) || 0, qty_received: Number(r.qty_diterima) || 0 })));
 
   return (
-    <form action={action}>
+    <PreservedForm action={async (data) => { data.set("request_key", activeRequestKey); await action(data); }}>
+      <input type="hidden" name="request_key" value={activeRequestKey} />
+      <input type="hidden" name="draft_key" value={activeRequestKey} />
+      <input type="hidden" name="draft_scope" value={scope} />
+      <TransactionDraft userId={userId} domain="transaction" scope={scope} requestKey={activeRequestKey} state={{
+        snapshot: { rows },
+        restore: snapshot => {
+          if (!(Array.isArray(snapshot.rows) && snapshot.rows.length === 0) && !draftRows(snapshot.rows, { id: "", item_id: null, nama: "", qty_diminta: 0, qty_diterima: 0, kondisi: "", notes: "" })) return false;
+          if (Array.isArray(snapshot.rows)) {
+            const saved = new Map((snapshot.rows as Row[]).map(row => [row.id, row]));
+            const sameIds = saved.size === initialRows.length && initialRows.every(row => saved.has(row.id));
+            setRows(initialRows.map(row => {
+              const prior = saved.get(row.id);
+              return prior ? { ...row, qty_diterima: Math.max(0, Number(prior.qty_diterima) || 0), kondisi: KONDISI.some(k => k.v === prior.kondisi) ? prior.kondisi : "baik", notes: typeof prior.notes === "string" ? prior.notes : "" } : { ...row, qty_diterima: 0 };
+            }));
+            if (!sameIds) setDraftFailure("Draf penerimaan disesuaikan dengan baris permintaan terbaru; baris yang hilang dikembalikan dengan jumlah 0.");
+          }
+          return true;
+        },
+        reset: () => setRows(initialRows),
+      }} />
+      {draftFailure && <div role="alert" className="p2ban">{draftFailure}</div>}
       <input type="hidden" name="request_id" value={requestId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
@@ -199,9 +260,7 @@ export function TerimaForm({
                         onChange={(e) => set(i, { notes: e.target.value })} style={{ minWidth: 140, fontSize: 11 }} />
                     </td>
                     <td style={{ textAlign: "center" }}>
-                      <button type="button" onClick={() => del(i)} className="kpos-qtybtn" style={{ color: "#b91c1c", borderColor: "#fca5a5" }} title="Hapus">
-                        <i className="ti ti-trash" />
-                      </button>
+                      <span aria-hidden="true" />
                     </td>
                   </tr>
                 );
@@ -227,11 +286,11 @@ export function TerimaForm({
           <span style={{ fontSize: 11 }}>Diterima <b>{summary.received}</b></span>
           <span style={{ fontSize: 11, color: summary.selisih === 0 ? "#15803d" : "#b91c1c" }}>Selisih <b>{summary.selisih > 0 ? "+" : ""}{summary.selisih}</b></span>
         </div>
-        <SubmitButton className="pay-btn" icon="ti-circle-check" style={{ width: "auto", padding: "9px 22px" }} disabled={rows.length === 0} pendingText="Menyimpan…">Simpan Penerimaan</SubmitButton>
+        <SubmitButton className="pay-btn" icon="ti-circle-check" style={{ width: "auto", padding: "9px 22px" }} disabled={rows.length === 0 || !activeRequestKey} pendingText="Menyimpan…">Simpan Penerimaan</SubmitButton>
       </div>
       <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, textAlign: "right" }}>
         Stok cabang bertambah sesuai QTY DITERIMA (bukan dipesan) — selisih tercatat di dokumen TRM.
       </div>
-    </form>
+    </PreservedForm>
   );
 }

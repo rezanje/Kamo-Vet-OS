@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { parseBarisInput } from "@/lib/permintaan";
 import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 // Buat permintaan barang dari dunia kasir — cabang asal otomatis dari shift terbuka.
 export async function buatPermintaanKasir(formData: FormData) {
@@ -59,7 +60,10 @@ export async function terimaBarang(formData: FormData) {
 
   const requestId = String(formData.get("request_id") ?? "");
   if (!requestId) redirect("/kasir/persediaan?tab=penerimaan");
-
+  const requestKey = String(formData.get("request_key") ?? "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestKey)) {
+    redirect(`/kasir/persediaan?tab=penerimaan&error=${encodeURIComponent("Identitas penerimaan belum siap. Muat ulang halaman dan periksa draf sebelum mengirim.")}`);
+  }
   let rows: BarisTerima[] = [];
   try {
     rows = JSON.parse(String(formData.get("items") ?? "[]")) as BarisTerima[];
@@ -75,5 +79,5 @@ export async function terimaBarang(formData: FormData) {
   }
 
   revalidatePath("/kasir/persediaan");
-  redirect(`/kasir/persediaan?tab=penerimaan&success=terima&trm=${hasil.receiptNumber}&selisih=${hasil.selisih}`);
+  redirect(`/kasir/persediaan?tab=penerimaan&success=terima&trm=${hasil.receiptNumber}&selisih=${hasil.selisih}${transactionDraftAck(formData)}`);
 }
