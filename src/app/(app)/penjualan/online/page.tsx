@@ -38,7 +38,7 @@ export default async function PenjualanOnlinePage({
   const { data } = await supabase
     .from("sales")
     .select("id, no_struk, created_at, channel, buyer_name, external_ref, total, komisi, marketplace_status, customers(name)")
-    .not("channel", "is", null)
+    .not("channel", "is", null).is("voided_at", null)
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
@@ -54,7 +54,7 @@ export default async function PenjualanOnlinePage({
   const { data: piutangRows } = await supabase
     .from("sales")
     .select("total")
-    .eq("marketplace_status", "piutang");
+    .eq("marketplace_status", "piutang").is("voided_at", null);
   const piutang = (piutangRows ?? []).reduce((a, r) => a + Number(r.total), 0);
 
   return (

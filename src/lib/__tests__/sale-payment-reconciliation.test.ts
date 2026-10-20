@@ -63,3 +63,11 @@ it("requires a financial review for a planned finalized sale whose protected jou
   await expect(perbaikiDrift()).rejects.toThrow(/pemeriksaan keuangan/i);
   expect(fixture.journal).toHaveLength(0);
 });
+
+
+it("does not re-post a cancelled source sale", async () => {
+  fixture.sales = [{ no_struk: "POS-void", total: 100000, metode_bayar: "Tunai", created_at: "2026-10-15", voided_at: "2026-10-16" }];
+  expect((await findDrift(client() as never)).sales).toEqual([]);
+  await expect(perbaikiDrift()).rejects.toThrow("redirect");
+  expect(fixture.journal).toHaveLength(0);
+});

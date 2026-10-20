@@ -72,7 +72,7 @@ export async function jalankanPerawatanLoyalty(
     const ids = ((customers ?? []) as { id: string; tier: string; tier_downgraded_at: string | null }[]).map((c) => c.id);
     if (ids.length) {
       const [{ data: sales }, { data: invoices }] = await Promise.all([
-        supabase.from("sales").select("customer_id, created_at, payment_plan, payments_finalized_at").in("customer_id", ids),
+        supabase.from("sales").select("customer_id, created_at, payment_plan, payments_finalized_at, voided_at").in("customer_id", ids),
         supabase.from("invoices").select("created_at, visits!inner(customer_id)").in("visits.customer_id", ids).is("voided_at", null),
       ]);
       const lastByCustomer = new Map<string, string>();

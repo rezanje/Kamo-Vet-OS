@@ -1,10 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ snapshots: [] as Record<string, unknown>[], failPage: -1 }));
+const state = vi.hoisted(() => ({ snapshots: [] as Record<string, unknown>[], issues: [] as Record<string, unknown>[], lines: [] as Record<string, unknown>[], stockComponents: false, failPage: -1 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-TEST" }) }));
+vi.mock("@/lib/inventory", () => ({ stockOut: async (_db: unknown, values: Record<string, unknown>) => { state.issues.push(values); return { cost: 13.70295 }; } }));
 vi.mock("@/lib/quest-hook", () => ({ processQuestProgress: async () => {} }));
 vi.mock("@/lib/customer-tier", () => ({ recomputeCustomerTier: async () => {} }));
 vi.mock("@/lib/posting", () => ({ postJournal: async () => {} }));
@@ -21,23 +22,23 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from(table: string) {
     let lookup = false;
     const group = { id: "group", code: "GRUP", name: "Paket", nama: "Paket", unit: "pcs", item_type: "Grup", sell_price: 1000, min_sell_qty: 1, is_active: true };
-    const components = Array.from({ length: 1002 }, (_, index) => ({
-      id: `component-${index}`, code: `C-${index}`, name: `Jasa ${index}`, item_type: "Jasa", is_active: true,
+    const components = Array.from({ length: state.stockComponents ? 2 : 1002 }, (_, index) => ({
+      id: `component-${index}`, code: `C-${index}`, name: `Jasa ${index}`, item_type: state.stockComponents ? "Persediaan" : "Jasa", is_active: true,
     }));
     let rows: Record<string, unknown>[] = table === "items" ? [group, ...components]
       : table === "item_group_components" ? components.map((component, index) => ({
-        id: `recipe-${index}`, group_item_id: "group", component_item_id: component.id, qty: 1, unit: "pcs", factor: 1, sort_order: index, component,
+        id: `recipe-${index}`, group_item_id: "group", component_item_id: component.id, qty: state.stockComponents ? 0.111 : 1, unit: "pcs", factor: 1, sort_order: index, component,
       })) : [];
     let from = 0; let to = 999; let count = false;
     const single = () => ({ data: table === "sales" && lookup ? null : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
       : table === "customers" ? { points: 0, category_id: null, customer_categories: null }
-        : table === "warehouses" ? null : { id: table === "sales" ? "sale" : "sale-item" }, error: null });
+        : table === "warehouses" ? (state.stockComponents ? { id: "warehouse" } : null) : { id: table === "sales" ? "sale" : (state.lines.at(-1)?.id ?? "sale-item") }, error: null });
     const query = {
       select: (_fields: string, options?: { count: string }) => { lookup = _fields.includes("checkout_fingerprint"); count = options?.count === "exact"; return query; },
       eq: () => query, order: () => query, limit: () => query,
       in: (column: string, ids: string[]) => { rows = rows.filter(row => ids.includes(row[column] as string)); return query; },
       range: (start: number, end: number) => { from = start; to = end; return query; },
-      insert: (values: Record<string, unknown>[]) => { if (table === "sale_item_group_components") state.snapshots.push(...values); return query; },
+      insert: (values: Record<string, unknown>[] | Record<string, unknown>) => { if (table === "sale_item_group_components" && Array.isArray(values)) state.snapshots.push(...values); if (table === "sale_items" && !Array.isArray(values)) state.lines.push(values); return query; },
       update: () => query, delete: () => query,
       maybeSingle: async () => single(), single: async () => single(),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows.slice(from, to + 1), count: count ? rows.length : null,
@@ -48,7 +49,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 import { checkoutKasir } from "@/app/kasir/checkout";
 
-beforeEach(() => { state.snapshots = []; state.failPage = -1; });
+beforeEach(() => { state.snapshots = []; state.issues = []; state.lines = []; state.stockComponents = false; state.failPage = -1; });
 function form() {
   const data = new FormData();
   Object.entries({ customerId: "customer", salespersonId: "seller", metode: "Debit", operationalShiftId: "shift", checkout_key: "checkout-identity",
@@ -67,4 +68,17 @@ it("does not issue a receipt when a later group component page cannot be verifie
   expect(result).not.toContain("/struk/");
   expect(result).toMatch(/belum.*dimuat/);
   expect(state.snapshots).toHaveLength(0);
+});
+
+it("captures the same future parent identity for every fractional group issue and saved snapshot", async () => {
+ state.stockComponents=true;
+ await expect(checkoutKasir(form())).rejects.toThrow("/kasir/struk/sale");
+ expect(state.issues).toHaveLength(2);expect(state.lines).toHaveLength(1);expect(state.snapshots).toHaveLength(2);
+ const id=state.lines[0].id;
+ expect(id).toMatch(/^[0-9a-f-]{36}$/i);
+ expect(state.issues.map(issue=>issue.saleLineId)).toEqual([id,id]);
+ expect(state.snapshots.map(row=>row.sale_item_id)).toEqual([id,id]);
+ expect(state.issues.map(issue=>issue.qty)).toEqual([0.111,0.111]);
+ expect(state.snapshots.map(row=>row.hpp)).toEqual([13.70295,13.70295]);
+ expect(state.lines[0].hpp).toBeCloseTo(27.40590,8);
 });

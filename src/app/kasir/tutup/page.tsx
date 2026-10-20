@@ -21,7 +21,7 @@ export default async function TutupShiftPage({
   if (!shift) redirect("/kasir/mulai");
 
   const { data: sales } = await supabase
-    .from("sales").select("id, payment_plan, payments_finalized_at").eq("shift_id", shift.id);
+    .from("sales").select("id, payment_plan, payments_finalized_at, voided_at").eq("shift_id", shift.id);
   const trx = (sales ?? []).filter(isCompletedSale).length;
 
   return (

@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stockOut } from "@/lib/inventory";
@@ -48,28 +49,31 @@ export async function checkoutKasir(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const submittedReplacement = String(formData.get("replacementSaleId") ?? "");
+  const replacementId = /^[0-9a-f-]{36}$/i.test(submittedReplacement) ? submittedReplacement : undefined;
+  const failureUrl = `/kasir?${replacementId ? `replace_sale=${encodeURIComponent(replacementId)}&` : ""}error=`;
   let checkout: ReturnType<typeof posCheckoutIdentity>;
   try { checkout = posCheckoutIdentity(formData, ""); }
-  catch (error) { redirect(`/kasir?error=${encodeURIComponent(error instanceof Error ? error.message : "Identitas transaksi tidak valid")}`); }
-  await resumePosCheckout(supabase, user.id, checkout, "cashier");
+  catch (error) { redirect(`${failureUrl}${encodeURIComponent(error instanceof Error ? error.message : "Identitas transaksi tidak valid")}`); }
+  await resumePosCheckout(supabase, user.id, checkout, "cashier", undefined, replacementId);
 
   // shift & cabang dari server (jangan percaya client).
   const { data: shift } = await supabase
     .from("cashier_shifts").select("id, branch_id")
     .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "petshop").maybeSingle();
-  if (!shift) redirect("/kasir/mulai");
+  if (!shift) redirect(replacementId ? `${failureUrl}${encodeURIComponent("Buka shift pada cabang sumber untuk melanjutkan pengganti.")}` : "/kasir/mulai");
   const submittedShift = String(formData.get("operationalShiftId") ?? "");
-  if (submittedShift && submittedShift !== shift.id) redirect("/kasir?error=" + encodeURIComponent("Shift berubah. Muat ulang kasir sebelum membayar."));
+  if (submittedShift && submittedShift !== shift.id) redirect(failureUrl + encodeURIComponent("Shift berubah. Muat ulang kasir sebelum membayar."));
 
   const branchId = shift!.branch_id;
   const customerId = String(formData.get("customerId") ?? "") || null;
-  if (!customerId) redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu sebelum bayar")}`);
+  if (!customerId) redirect(`${failureUrl}${encodeURIComponent("Pilih pelanggan dulu sebelum bayar")}`);
   const salespersonId = String(formData.get("salespersonId") ?? "");
   if (!(await penjualValid(supabase, salespersonId, branchId))) {
-    redirect(`/kasir?error=${encodeURIComponent("Pilih tenaga penjual atau pelaksana yang aktif di cabang ini")}`);
+    redirect(`${failureUrl}${encodeURIComponent("Pilih tenaga penjual atau pelaksana yang aktif di cabang ini")}`);
   }
   const metode = String(formData.get("metode") ?? "");
-  if (!metode) redirect(`/kasir?error=${encodeURIComponent("Pilih metode pembayaran dulu")}`);
+  if (!metode) redirect(`${failureUrl}${encodeURIComponent("Pilih metode pembayaran dulu")}`);
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
   // normalizeKode = aturan yang sama dengan layar pengelola voucher, jadi kode
   // yang diketik pakai spasi ("HEMAT 10") tetap ketemu barisnya.
@@ -84,12 +88,12 @@ export async function checkoutKasir(formData: FormData) {
     cart = [];
   }
   const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
-  if (rows.length === 0) redirect(`/kasir?error=${encodeURIComponent("Keranjang kosong")}`);
+  if (rows.length === 0) redirect(`${failureUrl}${encodeURIComponent("Keranjang kosong")}`);
 
   // Struk boleh tersimpan hanya kalau jurnalnya juga bisa. Kalau periodenya terkunci,
   // penjualan akan tercatat di kasir tapi hilang dari buku besar tanpa peringatan.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
-  if (pesanPeriode) redirect(`/kasir?error=${encodeURIComponent(pesanPeriode)}`);
+  if (pesanPeriode) redirect(`${failureUrl}${encodeURIComponent(pesanPeriode)}`);
 
   // Harga ditetapkan ULANG di server: harga jual sekarang bisa beda per cabang
   // (migrasi 0073), jadi layar kasir yang sudah lama terbuka tidak boleh menentukan
@@ -147,7 +151,7 @@ export async function checkoutKasir(formData: FormData) {
       });
       const groupName = pusat.get(groupId)?.nama ?? "Grup";
       if (normalized.some((component) => component == null)) {
-        redirect(`/kasir?error=${encodeURIComponent(`Rincian Grup "${groupName}" rusak atau punya komponen nonaktif`)}`);
+        redirect(`${failureUrl}${encodeURIComponent(`Rincian Grup "${groupName}" rusak atau punya komponen nonaktif`)}`);
       }
       const complete = normalized.filter((component): component is ResepKomponenCheckout => component != null);
       const validation = validasiKomponenGrup(
@@ -160,7 +164,7 @@ export async function checkoutKasir(formData: FormData) {
         new Map(complete.map((component) => [component.component_item_id, component.item_type])),
       );
       if (validation) {
-        redirect(`/kasir?error=${encodeURIComponent(`Rincian Grup "${groupName}" tidak valid: ${validation}`)}`);
+        redirect(`${failureUrl}${encodeURIComponent(`Rincian Grup "${groupName}" tidak valid: ${validation}`)}`);
       }
       recipeByGroup.set(groupId, complete);
     }
@@ -173,7 +177,7 @@ export async function checkoutKasir(formData: FormData) {
         continue;
       }
       if (!p?.is_active) {
-        redirect(`/kasir?error=${encodeURIComponent(`Barang "${l.nama}" sudah nonaktif atau tidak ditemukan`)}`);
+        redirect(`${failureUrl}${encodeURIComponent(`Barang "${l.nama}" sudah nonaktif atau tidak ditemukan`)}`);
       }
       l.nama = p.nama;
       l.item_type = p.item_type;
@@ -210,7 +214,7 @@ export async function checkoutKasir(formData: FormData) {
       .filter(({ l, p }) => p && Number(p.min_sell_qty) > 0 && toBaseQty(l.qty, l.faktor ?? 1) < Number(p.min_sell_qty));
     if (kurangMin.length > 0) {
       const pesan = kurangMin.map(({ p }) => `${p!.nama} minimal ${Number(p!.min_sell_qty)}`).join(", ");
-      redirect(`/kasir?error=${encodeURIComponent(`Di bawah minimum jual: ${pesan}`)}`);
+      redirect(`${failureUrl}${encodeURIComponent(`Di bawah minimum jual: ${pesan}`)}`);
     }
   }
 
@@ -282,7 +286,7 @@ export async function checkoutKasir(formData: FormData) {
       customerId,
       categoryId: custVoucher?.category_id ?? null,
     });
-    if (tolak) redirect(`/kasir?error=${encodeURIComponent(tolak)}`);
+    if (tolak) redirect(`${failureUrl}${encodeURIComponent(tolak)}`);
     voucherVal = potonganVoucher(afterItems, v as VoucherRow);
   }
 
@@ -321,7 +325,7 @@ export async function checkoutKasir(formData: FormData) {
       rupiahPerPoin = Number(kat.rupiah_per_poin);
     }
   } else if (poinReq > 0) {
-    redirect(`/kasir?error=${encodeURIComponent("Pilih pelanggan dulu untuk pakai poin")}`);
+    redirect(`${failureUrl}${encodeURIComponent("Pilih pelanggan dulu untuk pakai poin")}`);
   }
 
   poinDigunakan = Math.min(poinDigunakan, Math.floor(computeTotals(rows, diskon + diskonKategori, voucherVal, 0).total));
@@ -340,7 +344,7 @@ export async function checkoutKasir(formData: FormData) {
     quote = quotePosMerchantFees({ total, method: metode, payments: String(formData.get("split_payments") ?? ""), feePercent: Number(formData.get("merchant_fee_percent") ?? 0) });
     payment = resolvePosPayments({ total: quote.total, method: metode, bayar, payments: metode === "Split" ? quote.parts : [] });
   } catch (error) {
-    redirect(`/kasir?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
+    redirect(`${failureUrl}${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
   }
 
   // Cabang tetap wajib punya gudang aktif untuk mencatat stok keluar. Bila stok
@@ -355,9 +359,9 @@ export async function checkoutKasir(formData: FormData) {
   const { data: wh, error: whErr } = await supabase
     .from("warehouses").select("id").eq("branch_id", branchId)
     .eq("is_active", true).order("type").limit(1).maybeSingle();
-  if (whErr) redirect(`/kasir?error=${encodeURIComponent(`Gagal membaca gudang: ${whErr.message}`)}`);
+  if (whErr) redirect(`${failureUrl}${encodeURIComponent(`Gagal membaca gudang: ${whErr.message}`)}`);
   if (kebutuhanStok.length > 0 && !wh) {
-    redirect(`/kasir?error=${encodeURIComponent("Cabang belum punya gudang aktif untuk memotong stok")}`);
+    redirect(`${failureUrl}${encodeURIComponent("Cabang belum punya gudang aktif untuk memotong stok")}`);
   }
   // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
   const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {
@@ -383,8 +387,8 @@ export async function checkoutKasir(formData: FormData) {
     })
     .select("id").single();
   if (saleErr || !sale) {
-    await resumePosCheckout(supabase, user.id, checkout, "cashier");
-    redirect(`/kasir?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+    await resumePosCheckout(supabase, user.id, checkout, "cashier", undefined, replacementId);
+    redirect(`${failureUrl}${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
   }
 
   // Stok dipotong DULU per baris, lalu sale_item + snapshot disimpan. HPP Grup
@@ -392,13 +396,14 @@ export async function checkoutKasir(formData: FormData) {
   let checkoutFailure: string | null = null;
   try {
     for (const r of rows) {
+      const saleLineId = randomUUID();
       let lineHpp = 0;
       const snapshots = (r.group_components ?? []).map((snapshot) => ({ ...snapshot }));
 
       if (wh && r.item_type === "Persediaan" && r.item_id) {
         const { cost } = await stockOut(supabase, {
           warehouseId: wh.id, itemId: r.item_id, qty: toBaseQty(r.qty, r.faktor ?? 1),
-          source: "sale", ref: noStruk,
+          source: "sale", ref: noStruk, saleLineId,
         });
         lineHpp += cost;
       }
@@ -409,7 +414,7 @@ export async function checkoutKasir(formData: FormData) {
             warehouseId: wh.id,
             itemId: snapshot.component_item_id,
             qty: snapshot.total_base_qty,
-            source: "sale-group",
+            source: "sale-group", saleLineId,
             ref: noStruk,
           });
           snapshot.hpp = cost;
@@ -418,7 +423,7 @@ export async function checkoutKasir(formData: FormData) {
       }
 
       const { data: saleItem, error: itemErr } = await supabase.from("sale_items").insert({
-        sale_id: sale.id, item_id: r.item_id, nama: r.nama, qty: r.qty, harga: r.harga,
+        id: saleLineId, sale_id: sale.id, item_id: r.item_id, nama: r.nama, qty: r.qty, harga: r.harga,
         satuan: r.satuan ?? null, faktor: r.faktor ?? 1,
         target_species: r.target_species ?? "Universal",
         item_discount_type: r.item_discount_type ?? null,
@@ -447,17 +452,17 @@ export async function checkoutKasir(formData: FormData) {
     // nontransaksional; kegagalannya tidak disamarkan sebagai transaksi sukses.
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
-    redirect(`/kasir?error=${encodeURIComponent(checkoutFailure)}`);
+    redirect(`${failureUrl}${encodeURIComponent(checkoutFailure)}`);
   }
 
   // Pembayaran dan HPP diposting bersama oleh database. Struk tidak boleh
   // dinyatakan selesai jika finalisasi pembukuannya gagal.
   const { data: finalized, error: finalizationErr } = await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
   if (finalizationErr || finalized?.sale_id !== sale.id || finalized?.finalized !== true) {
-    await resumePosCheckout(supabase, user.id, checkout, "cashier", sale.id);
+    await resumePosCheckout(supabase, user.id, checkout, "cashier", sale.id, replacementId);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
-    redirect(`/kasir?error=${encodeURIComponent(finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
+    redirect(`${failureUrl}${encodeURIComponent(finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
   }
 
   // Saldo/ledger poin disimpan atomik oleh finalizer; golongan mengikuti penjualan selesai.
@@ -466,8 +471,7 @@ export async function checkoutKasir(formData: FormData) {
   // Addendum §8: progres quest staff (best-effort, tidak mem-block checkout).
   if (user?.id) {
     await processQuestProgress(supabase, {
-      staffId: user.id, branchId, saleTotal: total,
-      lines: rows.map((r) => ({ item_id: r.item_id || null, qty: r.qty })),
+      saleId: sale.id,
     });
   }
 

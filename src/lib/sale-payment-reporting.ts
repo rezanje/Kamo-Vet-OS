@@ -2,7 +2,7 @@ import { formatPosMoney, PosDecimal } from "./pos-money";
 
 export const SALE_PAYMENT_METHODS = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
 
-export type SaleCompletion = { payment_plan?: unknown; payments_finalized_at?: string | null };
+export type SaleCompletion = { payment_plan?: unknown; payments_finalized_at?: string | null; voided_at?: string | null };
 export type SalePaymentPart = { method: string; amount: number | string; coa_code?: string | null; fee_percent?: number | string; fee_amount?: number | string };
 export type SaleMerchantTotal = { total: number | string; merchant_fee_total?: number | string | null };
 export type SalePaymentSource = SaleCompletion & {
@@ -24,12 +24,12 @@ export function saleRefundMerchantFee(sale: SaleMerchantTotal, cumulativeRefund:
 
 /** Legacy sales are complete immediately; planned payments become sales only after finalization. */
 export function isCompletedSale(sale: SaleCompletion): boolean {
-  return sale.payment_plan == null || !!sale.payments_finalized_at;
+  return !sale.voided_at && (sale.payment_plan == null || !!sale.payments_finalized_at);
 }
 
 /** Gross method receipts include merchant fees and exclude cash change; their sum is the final bill. */
 export function salePaymentAllocations(sale: SalePaymentSource): { method: string; amount: number; coa_code: string | null }[] {
-  if (!isCompletedSale(sale)) throw new Error("Pembayaran belum selesai. Transaksi belum dapat ditampilkan sebagai penjualan.");
+  if (sale.payment_plan != null && !sale.payments_finalized_at) throw new Error("Pembayaran belum selesai. Transaksi belum dapat ditampilkan sebagai penjualan.");
   const parts = sale.sale_payments ?? [];
   if (parts.length === 0 && Number(sale.total) === 0 && sale.metode_bayar !== "Split") return [];
   if (parts.length === 0 && sale.payment_plan == null && sale.metode_bayar !== "Split") {

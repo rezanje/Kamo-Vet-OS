@@ -70,7 +70,7 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
   // Dipisah dari arm "sale" biasa (akun beda) = false positive + repost dengan akun salah kalau digabung.
   const { data: sls, error: saleError } = await supabase
     .from("sales")
-    .select("no_struk, total, metode_bayar, branch_id, created_at, payment_plan, payments_finalized_at, sale_payments(method, amount, coa_code)")
+    .select("no_struk, total, metode_bayar, branch_id, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, coa_code)")
     .is("channel", null);
   if (saleError) throw new Error("Rincian pembayaran penjualan belum dapat dibaca. Coba lagi sebelum melakukan sinkronisasi.");
   const sales: MissingSale[] = (sls ?? [])
@@ -91,7 +91,7 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
   const { data: slsOnline } = await supabase
     .from("sales")
     .select("no_struk, total, channel, branch_id, created_at")
-    .not("channel", "is", null);
+    .not("channel", "is", null).is("voided_at", null);
   const salesOnline: MissingSaleOnline[] = (slsOnline ?? [])
     .filter((s) => s.no_struk && s.channel && !saleOnlineRefs.has(s.no_struk) && Number(s.total) > 0)
     .map((s) => ({

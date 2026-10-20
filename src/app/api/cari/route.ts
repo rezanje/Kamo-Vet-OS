@@ -135,7 +135,7 @@ export async function GET(req: Request) {
   if (boleh("/pos/transaksi")) {
     tugas.push((async () => {
       const { data } = await supabase
-        .from("sales").select("id, no_struk, total, metode_bayar, payment_plan, payments_finalized_at")
+        .from("sales").select("id, no_struk, total, metode_bayar, payment_plan, payments_finalized_at, voided_at")
         .ilike("no_struk", pola).limit(BATAS);
       for (const r of (data ?? []).filter(isCompletedSale)) {
         hasil.push({

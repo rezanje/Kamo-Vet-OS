@@ -67,7 +67,7 @@ export default async function PenjualanRinciPage({
   const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase
       .from("sales")
-      .select("id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
+      .select("id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
       .gte("created_at", mulai).lte("created_at", akhir)
       .order("created_at", { ascending: false })),
     completeReportQuery(supabase

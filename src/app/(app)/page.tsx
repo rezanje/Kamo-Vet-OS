@@ -210,7 +210,7 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
       supabase.from("visits").select("poli").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("visits").select("*", { count: "exact", head: true })
         .eq("status", "Menunggu").gte("created_at", mulai).lte("created_at", akhir),
-      supabase.from("sales").select("total, payment_plan, payments_finalized_at").gte("created_at", mulai).lte("created_at", akhir),
+      supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),
     ]);
 
@@ -265,7 +265,7 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
       supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("is_active", true),
       supabase.from("customers").select("*", { count: "exact", head: true }).gte("created_at", `${awalBulan}T00:00:00+07:00`),
       supabase.from("customers").select("points").gt("points", 0),
-      supabase.from("sale_items").select("nama, qty, sales!inner(created_at, payment_plan, payments_finalized_at)")
+      supabase.from("sale_items").select("nama, qty, sales!inner(created_at, payment_plan, payments_finalized_at, voided_at)")
         .gte("sales.created_at", `${awalBulan}T00:00:00+07:00`),
     ]);
 
