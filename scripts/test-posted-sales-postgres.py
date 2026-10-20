@@ -39,7 +39,7 @@ def concurrency_tests():
         return err
     def wait(predicate):
         for _ in range(200):
-            if sql('select exists(select 1 from pg_stat_activity where '+predicate+');').stdout.strip()=='t':return
+            if sql('select exists(select 1 from pg_stat_activity where datname=current_database() and ('+predicate+'));').stdout.strip()=='t':return
             time.sleep(.01)
         raise RuntimeError('Concurrency barrier missing: '+predicate)
     def cancel(ref,key):return f"select cancel_posted_sale((select id from sales where no_struk='{ref}'),0,'{key}','Race cancellation');"

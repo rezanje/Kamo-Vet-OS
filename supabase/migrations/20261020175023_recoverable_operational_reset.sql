@@ -74,6 +74,8 @@ create function kamo_maintenance.reset_operational_tables() returns text[] langu
  'asset_transfers',
  'attendance',
  'bank_reconciliations',
+ 'bank_reconciliation_requests',
+ 'bank_reconciliation_revisions',
  'bookings',
  'budget_transfers',
  'cash_advance_installments',

@@ -40,7 +40,7 @@ def main():
         return out,err
     def barrier(predicate):
         for _ in range(300):
-            if source.sql('select exists(select 1 from pg_stat_activity where '+predicate+');').stdout.strip()=='t':return
+            if source.sql('select exists(select 1 from pg_stat_activity where datname=current_database() and ('+predicate+'));').stdout.strip()=='t':return
             time.sleep(.01)
         raise AssertionError('Expected concurrent lock wait missing')
     def reset_statement(m):
