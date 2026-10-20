@@ -19,20 +19,11 @@ def load(name,path):
     spec.loader.exec_module(module)
     return module
 
-def main():
-    source=load("sale_schema",ROOT/"scripts/test-posted-sales-postgres.py")
-    restore=load("backup_restore",ROOT/"scripts/verify-simulation-backup.py")
-    source.DB=DB
-    source.ENV=restore.ENV
-    source.PSQL=["psql","-X","-q","-At",*LOCAL,"-d",DB,"-v","ON_ERROR_STOP=1"]
-    created=False
-    try:
-        subprocess.run(["createdb",*LOCAL,DB],check=True,capture_output=True,env=restore.ENV);created=True
-        source.bootstrap_database()
-        fixture=(ROOT/"supabase/tests/pos_merchant_fees.sql").read_text().rstrip()
-        assert fixture.endswith("rollback;")
-        source.sql(source.fixture_owner_updates(fixture[:-len("rollback;")]+"commit;"))
-        source.sql("""begin;
+def seed_source(source):
+    fixture=(ROOT/"supabase/tests/pos_merchant_fees.sql").read_text().rstrip()
+    assert fixture.endswith("rollback;")
+    source.sql(source.fixture_owner_updates(fixture[:-len("rollback;")]+"commit;"))
+    source.sql("""begin;
 alter table public.profiles disable trigger guard_profile_privileges;
 update public.profiles set role='OWNER',is_active=true where id='e1100000-0000-4000-8000-000000000001';
 alter table public.profiles enable trigger guard_profile_privileges;
@@ -47,6 +38,19 @@ insert into public.inpatient_records(id,branch_id,visit_id,medical_record_id) va
 insert into public.inpatient_daily_logs(inpatient_record_id,condition_note,submission_key,submission_hash) values('ef980000-0000-4000-8000-000000000001','Fictional recovery log','backup-log',repeat('b',64));
 insert into public.document_attachments(modul,ref_id,nama,path) select 'purchase','ef990000-0000-4000-8000-000000000001','Bukti uji — '||n,'fictional/backup/'||n from generate_series(1,1001) n;
 commit;""")
+
+
+def main():
+    source=load("sale_schema",ROOT/"scripts/test-posted-sales-postgres.py")
+    restore=load("backup_restore",ROOT/"scripts/verify-simulation-backup.py")
+    source.DB=DB
+    source.ENV=restore.ENV
+    source.PSQL=["psql","-X","-q","-At",*LOCAL,"-d",DB,"-v","ON_ERROR_STOP=1"]
+    created=False
+    try:
+        subprocess.run(["createdb",*LOCAL,DB],check=True,capture_output=True,env=restore.ENV);created=True
+        source.bootstrap_database()
+        seed_source(source)
         metadata=json.loads(source.sql("set role service_role;select public.prepare_simulation_backup('e1100000-0000-4000-8000-000000000001');").stdout.strip())
         backup_id=metadata["backup_id"]
         document=json.loads(source.sql("set role service_role;select public.download_simulation_backup('"+backup_id+"');").stdout.strip())

@@ -59,6 +59,10 @@ export async function runDepreciationPeriod(supabase: AnyClient, periode: string
     return { periode, total: 0, jumlahAset: 0 };
   }
 
+  const { data: resetCutoff, error: cutoffError } = await supabase.rpc("operational_reset_cutoff");
+  if (cutoffError) throw new Error("Batas periode setelah reset belum dapat diperiksa. Penyusutan belum dijalankan.");
+  if (resetCutoff && periode <= String(resetCutoff).slice(0, 7)) return { periode, total: 0, jumlahAset: 0 };
+
   const { data: assets } = await supabase
     .from("fixed_assets")
     .select("id, nama, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, asset_categories(akun_beban, akun_akumulasi)")

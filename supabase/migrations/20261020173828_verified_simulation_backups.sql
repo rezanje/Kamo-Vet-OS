@@ -54,6 +54,7 @@ begin
  if not found then raise exception 'An active application owner is required';end if;
  select string_agg(format('public.%I',c.relname),',' order by c.relname) into v_tables from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p');
  if v_tables is null then raise exception 'Public application schema not found';end if;
+ lock table auth.users in share mode;
  execute 'lock table '||v_tables||' in share mode';
  v_snapshot:=kamo_maintenance.public_snapshot();v_manifest:=kamo_maintenance.snapshot_manifest(v_snapshot);
  v_sha:=encode(sha256(convert_to(v_snapshot::text,'UTF8')),'hex');
