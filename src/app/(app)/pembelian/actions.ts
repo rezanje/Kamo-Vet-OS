@@ -20,6 +20,7 @@ type ItemInput = {
 
 export async function buatPO(formData: FormData) {
   const supabase = await createClient();
+  const requestKey = String(formData.get("request_key") ?? formData.get("draft_key") ?? "").trim();
 
   const supplier_id = String(formData.get("supplier_id") ?? "").trim() || null;
   const to_warehouse_id = String(formData.get("to_warehouse_id") ?? "").trim() || null;
@@ -54,32 +55,43 @@ export async function buatPO(formData: FormData) {
     };
   });
 
-  // Formatnya dibaca dari master penomoran; bawaannya PO-YYYYMMDD-NNNN,
-  // dilanjutkan dari nomor tertinggi hari itu.
-  const { nomor: no_po } = await nomorBerikutnya(supabase, "PO", tanggal, {
+  if (!requestKey || requestKey.length > 120) redirect("/pembelian/baru?error=" + encodeURIComponent("Formulir PO belum siap. Muat ulang lalu coba lagi."));
+  const { prefix, digit } = await nomorBerikutnya(supabase, "PO", tanggal, {
     table: "purchase_orders", column: "no_po",
   });
-
-  // compute total
-  const total = items.reduce((acc, it) => acc + (Number(it.qty) || 0) * (Number(it.harga_beli) || 0), 0);
-
-  const { data: po, error: poErr } = await supabase
-    .from("purchase_orders")
-    .insert({ no_po, supplier_id, to_warehouse_id, branch_id, tanggal, total, status: "Draft" })
-    .select("id")
-    .single();
-
-  if (poErr || !po) {
-    redirect("/pembelian/baru?error=" + encodeURIComponent("Gagal membuat PO."));
-  }
-
-  const poId = (po as { id: string }).id;
-  const { error: itemsError } = await supabase.from("purchase_order_items").insert(rows.map(row => ({ ...row, po_id: poId })));
-  if (itemsError) redirect(`/pembelian/baru?error=${encodeURIComponent("Baris PO belum terkonfirmasi. Periksa daftar PO sebelum menyimpan ulang.")}`);
+  const { data, error } = await supabase.rpc("create_purchase_order_atomic", {
+    p_request_key: requestKey, p_no_po_prefix: prefix, p_no_po_digits: digit,
+    p_supplier_id: supplier_id, p_to_warehouse_id: to_warehouse_id, p_branch_id: branch_id,
+    p_tanggal: tanggal, p_items: rows,
+  });
+  if (error || !data?.po_id) redirect(`/pembelian/baru?error=${encodeURIComponent(error?.message ?? "PO belum terkonfirmasi. Isian tetap tersedia; periksa daftar PO sebelum menyimpan ulang.")}`);
 
   revalidatePath("/pembelian");
-  redirect(`/pembelian?success=1${transactionDraftAck(formData)}`);
+  const scope = String(formData.get("request_scope") ?? "po-create");
+  redirect(`/pembelian?success=1&request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(scope)}`);
 }
+
+async function revisePO(formData: FormData, action: "edit" | "void") {
+  const id = String(formData.get("id") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? formData.get("draft_key") ?? "").trim();
+  const revision = Number(formData.get("revision"));
+  const reason = String(formData.get("alasan") ?? "").trim();
+  if (!id || !requestKey || !Number.isSafeInteger(revision) || revision < 0 || reason.length < 3) throw new Error("Identitas dan alasan koreksi PO wajib diisi.");
+  let items: ItemInput[] = [];
+  try { items = JSON.parse(String(formData.get("items") ?? "[]")) as ItemInput[]; } catch { /* RPC rejects malformed input. */ }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("revise_purchase_order", {
+    p_request_key: requestKey, p_purchase_order_id: id, p_expected_revision: revision,
+    p_action: action, p_header: { supplier_id: String(formData.get("supplier_id") ?? "").trim() || null, to_warehouse_id: String(formData.get("to_warehouse_id") ?? "").trim(), tanggal: String(formData.get("tanggal") ?? "").trim() },
+    p_items: items, p_reason: reason,
+  });
+  if (error || !data?.po_id) throw new Error(error?.message ?? "Koreksi PO belum terkonfirmasi. Isian tetap tersedia.");
+  revalidatePath("/pembelian"); revalidatePath(`/pembelian/${id}`);
+  redirect(`/pembelian/${id}?success=${action}${transactionDraftAck(formData)}`);
+}
+
+export async function ubahPO(formData: FormData) { await revisePO(formData, "edit"); }
+export async function batalkanPO(formData: FormData) { await revisePO(formData, "void"); }
 
 // ─── Tambah Supplier ──────────────────────────────────────────────────────────
 
@@ -145,7 +157,18 @@ export async function updatePOStatus(formData: FormData) {
     redirect(`/pembelian/${id}/terima`);
   }
 
-  await supabase.from("purchase_orders").update({ status: newStatus }).eq("id", id);
+  if (newStatus === "Batal") {
+    const requestKey = String(formData.get("request_key") ?? "").trim();
+    const revision = Number(formData.get("revision"));
+    if (!requestKey || !Number.isSafeInteger(revision)) { revalidatePath("/pembelian"); return; }
+    const { error } = await supabase.rpc("revise_purchase_order", { p_request_key: requestKey, p_purchase_order_id: id, p_expected_revision: revision, p_action: "void", p_header: {}, p_items: [], p_reason: "Pembatalan PO dari daftar" });
+    if (error) redirect(`/pembelian?error=${encodeURIComponent(error.message)}`);
+  } else if (newStatus === "Dipesan") {
+    const { error } = await supabase.rpc("transition_purchase_order_status", { p_purchase_order_id: id, p_status: "Dipesan" });
+    if (error) redirect(`/pembelian?error=${encodeURIComponent(error.message)}`);
+  } else {
+    redirect(`/pembelian?error=${encodeURIComponent("Status PO tidak diizinkan.")}`);
+  }
 
   revalidatePath("/pembelian");
 }
@@ -198,13 +221,19 @@ export async function terimaBarang(formData: FormData) {
 export async function recoverPurchaseSubmission(formData: FormData) {
   const scope = String(formData.get("request_scope") ?? "");
   const requestKey = String(formData.get("request_key") ?? "").trim();
-  const kind = scope.startsWith("receipt:") ? "receipt" : scope;
+  const kind = scope.startsWith("receipt:") ? "receipt" : scope === "po-create" ? "po-create" : scope;
   const back = kind === "receipt" ? `/pembelian/${scope.slice(8)}/terima`
-    : kind === "invoice" ? "/pembelian/faktur/baru" : "/keuangan/aset";
-  if (!["receipt", "invoice", "asset"].includes(kind) || !requestKey) {
+    : kind === "invoice" ? "/pembelian/faktur/baru" : kind === "po-create" ? "/pembelian/baru" : "/keuangan/aset";
+  if (!["receipt", "invoice", "asset", "po-create"].includes(kind) || !requestKey) {
     redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid.")}`);
   }
   const supabase = await createClient();
+  if (kind === "po-create") {
+    const { data, error } = await supabase.rpc("get_purchase_order_result", { p_request_key: requestKey });
+    if (error || !data?.po_id) redirect(`/pembelian/baru?error=${encodeURIComponent(error?.message ?? "Belum ada PO tersimpan untuk draf ini.")}`);
+    revalidatePath("/pembelian");
+    redirect(`/pembelian?success=1&request_done=${encodeURIComponent(requestKey)}&request_scope=po-create`);
+  }
   const { data, error } = await supabase.rpc("get_purchase_operation_result", {
     p_kind: kind, p_request_key: requestKey,
   });

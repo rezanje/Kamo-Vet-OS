@@ -4,7 +4,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/no-dokumen", () => ({ formatDokumen: async () => ({ prefix: "PO", digit: 3 }), urutanBerikutnya: async () => 1, formatNomor: () => "PO001" }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
- rpc: async (_name: string, value: unknown) => { state.writes.push({table:"rpc",value}); return {data:"saved",error:null}; },
+ rpc: async (_name: string, value: unknown) => { state.writes.push({table:"rpc",value}); return {data:{po_id:"saved"},error:null}; },
  auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
  from(table: string) {
   let ids: string[] | undefined;
@@ -39,6 +39,13 @@ it.each(["deleted", "unconfigured"])("preflights every supplier group before wri
  const f = form({ warehouse_id: "warehouse" }); f.append("pilih", "material|first|1"); f.append("pilih", "output|second|2");
  await expect(buatPOdariUsulan(f)).rejects.toThrow(/satuan|Satuan/);
  expect(state.writes).toEqual([]);
+});
+it("creates each minimum-stock PO through the atomic purchase RPC", async () => {
+ const f = form({ warehouse_id: "warehouse", draft_key: "minimum-key" });
+ f.append("pilih", "material|first|1");
+ await expect(buatPOdariUsulan(f)).rejects.toThrow(/success=/);
+ expect(state.writes.filter(row => row.table === "purchase_orders" || row.table === "purchase_order_items")).toEqual([]);
+ expect(state.writes.find(row => row.table === "rpc")?.value).toMatchObject({ p_request_key: "minimum-key:first", p_to_warehouse_id: "warehouse" });
 });
 it("normalizes chosen ingredient and output units using master factors", async () => {
  await expect(simpanResep(form({ item_id: "output", nama: "Recipe", output_qty: "2", output_unit: "box", bahan: JSON.stringify([{ item_id: "material", qty: 1.5, satuan: "kg", faktor: 1 }]) }))).rejects.toThrow(/success=/);

@@ -4,7 +4,7 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions, resolveSubmittedUnit } from "@/lib/satuan";
-import { formatDokumen, formatNomor, urutanBerikutnya } from "@/lib/no-dokumen";
+import { formatDokumen } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/pos/stok-minimum";
@@ -13,8 +13,10 @@ const BACK = "/pos/stok-minimum";
 // usulan itu hitungan mesin, pembeli tetap harus melihatnya sebelum dikirim.
 export async function buatPOdariUsulan(formData: FormData) {
   const supabase = await createClient();
-
   const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
+  const baseRequestKey = String(formData.get("draft_key") ?? formData.get("request_key") ?? `minimum-stock:${warehouseId}`).trim();
+  if (baseRequestKey.length > 120) redirect(`${BACK}?gudang=${warehouseId}&error=${encodeURIComponent("Formulir usulan belum siap. Muat ulang lalu coba lagi.")}`);
+
   if (!warehouseId) redirect(`${BACK}?error=${encodeURIComponent("Pilih gudang tujuan dulu")}`);
 
   // Baris terpilih: `pilih` = "<item_id>|<supplier_id>|<qty satuan beli>".
@@ -73,34 +75,17 @@ export async function buatPOdariUsulan(formData: FormData) {
   // Satu tarikan format untuk seluruh batch: PO-nya dibuat berurutan dalam satu putaran,
   // jadi nomornya cukup dihitung sekali lalu dinaikkan sendiri.
   const { prefix: prefixPo, digit: digitPo } = await formatDokumen(supabase, "PO", tanggal);
-  let seq = await urutanBerikutnya(supabase, {
-    table: "purchase_orders", column: "no_po", prefix: prefixPo, pad: digitPo,
-  }) - 1;
   let dibuat = 0;
 
   for (const [supplierKey, rows] of perPemasok) {
-    seq += 1;
-    const no_po = formatNomor(prefixPo, seq, digitPo);
-
     const lines = rows.map(b => prepared.get(b)!);
-    const total = lines.reduce((a, l) => a + l.qty * l.harga_beli, 0);
-
-    const { data: po, error: poErr } = await supabase
-      .from("purchase_orders")
-      .insert({
-        no_po, supplier_id: supplierKey || null, to_warehouse_id: warehouseId,
-        branch_id: wh.branch_id, tanggal, total, status: "Draft",
-      })
-      .select("id").single();
-    if (poErr || !po) {
-      redirect(`${BACK}?gudang=${warehouseId}&error=${encodeURIComponent(`Gagal membuat PO: ${poErr?.message ?? "tidak diketahui"}`)}`);
-    }
-
-    const { error: itErr } = await supabase.from("purchase_order_items")
-      .insert(lines.map((l) => ({ po_id: po!.id, ...l })));
-    if (itErr) {
-      redirect(`${BACK}?gudang=${warehouseId}&error=${encodeURIComponent(`Gagal mengisi PO: ${itErr.message}`)}`);
-    }
+    const { data: po, error: poErr } = await supabase.rpc("create_purchase_order_atomic", {
+      p_request_key: `${baseRequestKey}:${supplierKey || "tanpa-supplier"}`,
+      p_no_po_prefix: prefixPo, p_no_po_digits: digitPo,
+      p_supplier_id: supplierKey || null, p_to_warehouse_id: warehouseId,
+      p_branch_id: wh.branch_id, p_tanggal: tanggal, p_items: lines,
+    });
+    if (poErr || !po?.po_id) redirect(`${BACK}?gudang=${warehouseId}&error=${encodeURIComponent(`Gagal membuat PO: ${poErr?.message ?? "tidak diketahui"}`)}`);
     dibuat += 1;
   }
 
