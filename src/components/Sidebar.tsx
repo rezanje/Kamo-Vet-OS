@@ -105,9 +105,9 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
       <div className="sb-user">
         <div className="av">{initials || "?"}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: "#fff", fontSize: 11, fontWeight: 500 }}>
+          <Link href="/me" prefetch={false} style={{ color: "#fff", fontSize: 11, fontWeight: 500, textDecoration: "none" }} title="Buka dashboard pribadi">
             {fullName}
-          </div>
+          </Link>
           <div style={{ color: "rgba(255,255,255,.38)", fontSize: 9.5 }}>
             {role}
           </div>

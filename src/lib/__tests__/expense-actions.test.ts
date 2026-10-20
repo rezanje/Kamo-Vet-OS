@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
+const fixture = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), postJournal: vi.fn(), attachmentError: null as { message: string } | null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   rpc: fixture.rpc, from: fixture.from,
   auth: { getUser: async () => ({ data: { user: { id: "cashier" } } }) },
@@ -8,7 +8,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.assign(Error(url), { digest: "NEXT_REDIRECT" }); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
-vi.mock("@/lib/posting", () => ({ postJournal: async () => undefined }));
+vi.mock("@/lib/posting", () => ({ postJournal: fixture.postJournal }));
 vi.mock("@/lib/kas-akun", () => ({ kodeAkunBayar: async () => "1101" }));
 vi.mock("@/lib/transaction-draft-ack", async importOriginal => ({
   ...await importOriginal<object>(), assertDraftJournal: async () => undefined,
@@ -16,6 +16,7 @@ vi.mock("@/lib/transaction-draft-ack", async importOriginal => ({
 
 import { simpanPengeluaranKasir } from "@/app/kasir/pengeluaran/actions";
 import { simpanExpense } from "@/app/(app)/pos/expense/actions";
+import { catatBeban } from "@/app/(app)/buku-besar/beban/actions";
 
 function form() {
   const data = new FormData();
@@ -28,14 +29,21 @@ function form() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fixture.attachmentError = null;
   fixture.rpc.mockResolvedValue({ data: { expense_id: "expense", journal_id: "journal" }, error: null });
   const query = { select: vi.fn().mockReturnThis(), insert: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
     single: async () => ({ data: { id: "expense" }, error: null }),
     maybeSingle: async () => ({ data: { id: "shift", branch_id: "real-branch" }, error: null }),
-    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(resolve),
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: null, error: fixture.attachmentError }).then(resolve),
   };
   fixture.from.mockReturnValue(query);
 });
+
+function bebanForm() {
+  const data = new FormData();
+  Object.entries({ branch_id: "branch", tanggal: "2026-10-15", kategori: "Operasional", jumlah: "25000", metode: "Tunai", account_id: "", request_key: "beban-draft", draft_key: "beban-draft", draft_scope: "book-expense", lampiran: JSON.stringify([{ path: "pengeluaran/proof.jpg", nama: "proof.jpg" }]) }).forEach(([key, value]) => data.set(key, value));
+  return data;
+}
 
 it("saves cashier expense, attachments and journal atomically under one retry identity without accepting a client branch", async () => {
   await expect(simpanPengeluaranKasir(form())).rejects.toThrow("draft_done=retry-identity");
@@ -72,4 +80,17 @@ it.each(["NaN", "Infinity", "-1", "0"])("rejects invalid expense amount %s befor
   const data = form(); data.set("jumlah", value);
   await expect(simpanPengeluaranKasir(data)).rejects.toThrow("Jumlah");
   expect(fixture.rpc).not.toHaveBeenCalled();
+});
+
+it("uses the atomic workflow for beban and preserves the selected account", async () => {
+  const data = bebanForm(); data.set("account_id", "cash-account");
+  await expect(catatBeban(data)).rejects.toThrow("draft_done=beban-draft");
+  expect(fixture.rpc).toHaveBeenCalledWith("post_expense_atomic", expect.objectContaining({
+    p_context: "backoffice", p_branch_id: "branch", p_expense: expect.objectContaining({ account_id: "cash-account" }),
+  }));
+});
+
+it("keeps the beban draft unacknowledged when atomic posting fails", async () => {
+  fixture.rpc.mockResolvedValue({ data: null, error: { message: "journal failed" } });
+  await expect(catatBeban(bebanForm())).rejects.toThrow("journal failed");
 });

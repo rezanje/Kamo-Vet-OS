@@ -13,7 +13,7 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { hitungPromoKeranjang, totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 
-export type Item = { id: string; name: string; sell_price: number; target_species: string; units: ItemUnit[] };
+export type Item = { id: string; code?: string; name: string; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
 export type Cust = {
   id: string; name: string; phone: string; points: number; pets: Pet[];
@@ -129,7 +129,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return s ? katalog.filter((i) => i.name.toLowerCase().includes(s)) : katalog;
+    return s ? katalog.filter((i) => `${i.code ?? ""} ${i.name}`.toLowerCase().includes(s)) : katalog;
   }, [katalog, q]);
 
   const custHits = useMemo(() => {

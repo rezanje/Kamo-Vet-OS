@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { OnlineForm } from "./OnlineForm";
+import { readCompleteList } from "@/lib/checked-list";
 
 type WhRow = { id: string; name: string; branches: { name: string } | { name: string }[] | null };
 
@@ -14,11 +15,11 @@ export default async function OnlineBaruPage({
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
 
-  const [{ data: whRaw, error: whErr }, { data: items }, { data: customers }] = await Promise.all([
+  const [{ data: whRaw, error: whErr }, items, { data: customers }] = await Promise.all([
     supabase
       .from("warehouses").select("id, name, branches(name)")
       .eq("type", "ONLINE").eq("is_active", true).order("name"),
-    supabase.from("items").select("id, code, name, sell_price").eq("is_active", true).order("name").limit(2000),
+    readCompleteList<{ id: string; code: string; name: string; sell_price: number }>((from, to) => supabase.from("items").select("id, code, name, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang order online", { maxRows: null }),
     supabase.from("customers").select("id, name, phone").order("name").limit(2000),
   ]);
   // `data` juga null kalau query gagal (RLS/jaringan) — bedakan dari "memang belum ada
@@ -30,7 +31,7 @@ export default async function OnlineBaruPage({
     return { id: w.id, name: w.name, branch_name: br?.name ?? "—" };
   });
 
-  const units = await loadUnitOptions(supabase, (items ?? []).map(it => it.id));
+  const units = await loadUnitOptions(supabase, items.map(it => it.id));
 
   return (
     <>
@@ -63,7 +64,7 @@ export default async function OnlineBaruPage({
         <OnlineForm
           userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done}
           warehouses={warehouses}
-          items={(items ?? []).map(it => ({...it, units: units.get(it.id) ?? []}))}
+          items={items.map(it => ({...it, units: units.get(it.id) ?? []}))}
           customers={(customers ?? []) as { id: string; name: string; phone: string | null }[]}
         />
       )}

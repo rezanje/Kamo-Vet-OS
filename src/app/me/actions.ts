@@ -86,3 +86,34 @@ export async function ajukanCutiPribadi(formData: FormData) {
   if (error) redirect(`/me?error=${encodeURIComponent("Gagal simpan pengajuan")}`);
   redirect("/me?success=cuti");
 }
+
+export async function ubahPasswordPribadi(formData: FormData) {
+  const passwordLama = String(formData.get("password_lama") ?? "");
+  const passwordBaru = String(formData.get("password_baru") ?? "");
+  const konfirmasi = String(formData.get("konfirmasi_password") ?? "");
+  const gagal = (pesan: string): never => redirect(`/me?error=${encodeURIComponent(pesan)}`);
+
+  if (passwordBaru.length < 8) gagal("Password baru minimal 8 karakter");
+  if (passwordBaru !== konfirmasi) gagal("Konfirmasi password baru tidak cocok");
+  if (!passwordLama) gagal("Password saat ini wajib diisi");
+
+  const supabase = await createClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) gagal("Sesi login sudah berakhir. Silakan masuk lagi");
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles").select("is_active").eq("id", user!.id).maybeSingle();
+  if (profileError || !profile || profile.is_active !== true) gagal("Akun belum aktif");
+
+  const hasEmailPasswordIdentity = Boolean(user!.email && user!.email_confirmed_at && user!.identities?.some((identity) => identity.provider === "email"));
+  if (!hasEmailPasswordIdentity) gagal("Akun ini belum bisa diverifikasi dengan password");
+  const { data: reauthenticated, error: reauthError } = await supabase.auth.signInWithPassword({
+    email: user!.email!,
+    password: passwordLama,
+  });
+  if (reauthError || reauthenticated.user?.id !== user!.id) gagal("Password saat ini salah");
+
+  const { error } = await supabase.auth.updateUser({ password: passwordBaru });
+  if (error) gagal("Password baru gagal disimpan");
+  redirect("/me?success=password");
+}

@@ -1,4 +1,5 @@
 import { Clock } from "./Clock";
+import Link from "next/link";
 
 // Header biru berlogo untuk staff klinik (ala referensi KAMO CLINIC).
 // Hanya dirender di (app)/layout untuk role STAFF; admin tetap breadcrumb polos.
@@ -18,7 +19,7 @@ export function KlinikTopbar({ fullName, branchName }: { fullName: string; branc
         <Clock light />
         <span className="kt-divider" />
         <span className="kt-avatar">{initial}</span>
-        <span className="kt-user">{fullName}</span>
+        <Link href="/me" className="kt-user" title="Profil dan password">{fullName}</Link>
       </div>
     </div>
   );

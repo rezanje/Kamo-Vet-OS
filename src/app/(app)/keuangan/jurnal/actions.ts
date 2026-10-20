@@ -11,6 +11,44 @@ import { acakSuffix, kandidatNomor } from "@/lib/no-dokumen";
 
 type RawLine = { account_id: string; debit: number; credit: number };
 
+const kembali = (message: string) => redirect("/keuangan/jurnal?error=" + encodeURIComponent(message));
+
+function parseCorrection(formData: FormData) {
+  let lines: RawLine[] = [];
+  try { lines = JSON.parse(String(formData.get("lines") ?? "[]")); } catch { lines = []; }
+  return {
+    requestKey: String(formData.get("draft_key") ?? formData.get("requestKey") ?? "").trim(),
+    entryId: String(formData.get("entryId") ?? "").trim(),
+    revision: Number(formData.get("revision") ?? 0),
+    action: String(formData.get("action") ?? "").trim(),
+    tanggal: String(formData.get("tanggal") ?? "").trim(),
+    deskripsi: String(formData.get("deskripsi") ?? "").trim(),
+    reason: String(formData.get("reason") ?? "").trim(), lines,
+  };
+}
+
+export async function koreksiJurnal(formData: FormData) {
+  const c = parseCorrection(formData);
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("revise_manual_journal", {
+    p_request_key: c.requestKey, p_entry_id: c.entryId, p_expected_revision: c.revision,
+    p_action: "edit", p_header: { tanggal: c.tanggal, deskripsi: c.deskripsi }, p_lines: c.lines, p_reason: c.reason,
+  });
+  if (error || !data?.reversal_journal_id || !data?.replacement_journal_id) kembali(error?.message ?? "Koreksi jurnal belum terkonfirmasi");
+  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData));
+}
+
+export async function batalkanJurnal(formData: FormData) {
+  const c = parseCorrection(formData);
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("revise_manual_journal", {
+    p_request_key: c.requestKey, p_entry_id: c.entryId, p_expected_revision: c.revision,
+    p_action: "void", p_header: {}, p_lines: [], p_reason: c.reason,
+  });
+  if (error || !data?.reversal_journal_id) kembali(error?.message ?? "Pembatalan jurnal belum terkonfirmasi");
+  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData));
+}
+
 export async function jurnalManual(formData: FormData) {
   const supabase = await createClient();
 

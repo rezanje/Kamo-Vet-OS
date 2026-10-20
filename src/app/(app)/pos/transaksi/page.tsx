@@ -5,6 +5,9 @@ import { PosClient, type Item, type Cust } from "./PosClient";
 import { daftarPenjual } from "@/lib/penjual";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
+import { readCompleteList } from "@/lib/checked-list";
+
+type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number; target_species: string };
 
 export default async function TransaksiPage({
   searchParams,
@@ -14,17 +17,18 @@ export default async function TransaksiPage({
   const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: items }, { data: customers }, { data: branches }, salespeople] = await Promise.all([
-    supabase.from("items").select("id, name, unit, sell_price, target_species").eq("is_active", true).order("name"),
+  const [items, { data: customers }, { data: branches }, salespeople] = await Promise.all([
+    readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, unit, sell_price, target_species", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang POS", { maxRows: null }),
     supabase.from("customers").select("id, name, phone, points, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), pets(id, name, species)").order("name"),
     supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
     daftarPenjual(supabase, ""),
   ]);
 
   // Satuan berjenjang: kasir pilih pcs/box saat menambah ke keranjang.
-  const unitMap = await loadItemUnits(supabase, (items ?? []).map((i) => i.id as string));
-  const katalog: Item[] = (items ?? []).map((i) => ({
+  const unitMap = await loadItemUnits(supabase, items.map((i) => i.id));
+  const katalog: Item[] = items.map((i) => ({
     id: i.id as string,
+    code: i.code as string,
     name: i.name as string,
     sell_price: Number(i.sell_price),
     target_species: i.target_species as string,

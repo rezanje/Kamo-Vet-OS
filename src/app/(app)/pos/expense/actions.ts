@@ -52,7 +52,7 @@ export async function periksaExpense(formData: FormData) {
   if (!data?.expense_id || !data?.journal_id) throw new Error("Belum ada pengeluaran terkonfirmasi untuk draf ini. Isian tetap tersedia; simpan kembali dari draf yang sama.");
   const scope = String(formData.get("draft_scope") ?? "");
   const back = scope.startsWith("cashier-expense:") ? "/kasir/pengeluaran"
-    : scope === "backoffice-expense" ? "/pos/expense"
+    : scope === "backoffice-expense" || scope === "book-expense" ? (scope === "book-expense" ? "/buku-besar/beban" : "/pos/expense")
       : `${formData.get("kembali") === "/buku-besar/beban" ? "/buku-besar/beban" : "/pos/expense"}/${encodeURIComponent(String(data.expense_id))}`;
   formData.set("draft_key", requestKey);
   redirect(`${back}?success=1${transactionDraftAck(formData)}`);

@@ -9,8 +9,10 @@ import { BarisJualForm, type ItemJual } from "../BarisJualForm";
 import { loadItemUnits } from "@/lib/satuan";
 import { buatPesanan } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { readCompleteList } from "@/lib/checked-list";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number };
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type Rel<T> = T | T[] | null;
@@ -36,7 +38,7 @@ export default async function PesananPage({
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
-  const [{ data: docData }, { data: custData }, { data: cabData }, { data: gudangData }, { data: itemData }] =
+  const [{ data: docData }, { data: custData }, { data: cabData }, { data: gudangData }, itemData] =
     await Promise.all([
       supabase.from("sales_orders")
         .select("id, no_pesanan, tanggal, rencana_kirim, total, status, customers(name), sales_order_items(qty, qty_kirim, qty_faktur)")
@@ -44,7 +46,7 @@ export default async function PesananPage({
       supabase.from("customers").select("id, name, phone").order("name").limit(500),
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
       supabase.from("warehouses").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("items").select("id, code, name, unit, sell_price").eq("is_active", true).order("name"),
+      readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, unit, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang pesanan", { maxRows: null }),
     ]);
 
   const dok = (docData ?? []) as unknown as Pesanan[];
@@ -54,7 +56,7 @@ export default async function PesananPage({
   // Satuan turunan ikut dikirim supaya baris pesanan bisa memilih dus/box, bukan
   // cuma satuan dasar (permintaan Bu Nisa, meeting 14 Agustus).
   const unitMap = await loadItemUnits(supabase);
-  const items = ((itemData ?? []) as ItemJual[]).map((it) => ({ ...it, units: unitMap.get(it.id) ?? [] }));
+  const items = (itemData as ItemJual[]).map((it) => ({ ...it, units: unitMap.get(it.id) ?? [] }));
 
   const progres = (p: Pesanan) => {
     const b = p.sales_order_items ?? [];

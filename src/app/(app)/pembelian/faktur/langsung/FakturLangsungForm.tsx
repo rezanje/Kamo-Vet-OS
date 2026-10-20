@@ -5,6 +5,7 @@ import { draftRows, draftString } from "@/components/TransactionDraft";
 import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { LampiranPicker } from "@/components/LampiranPicker";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB, geserHari } from "@/lib/tanggal";
 import { buatFakturLangsung } from "./actions";
@@ -165,10 +166,7 @@ export function FakturLangsungForm({
                 return (
                   <tr key={r.key}>
                     <td>
-                      <select className="fi" value={r.item_id} onChange={(e) => gantiBarang(r.key, e.target.value)}>
-                        <option value="">— pilih barang —</option>
-                        {items.map((i) => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}
-                      </select>
+                      <SearchableItemPicker items={items} value={r.item_id} onChange={(id) => gantiBarang(r.key, id)} />
                     </td>
                     <td>
                       {it && it.satuan.length > 1 ? (

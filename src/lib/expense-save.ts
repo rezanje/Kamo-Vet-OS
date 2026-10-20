@@ -10,6 +10,7 @@ export async function saveExpense(formData: FormData, context: "cashier" | "back
   const lampiran = parseLampiran(formData.get("lampiran"));
   if (!requestKey || requestKey.length > 120) throw new Error("Identitas pengeluaran belum siap. Muat ulang halaman tanpa menghapus draf.");
   if (!Number.isFinite(jumlah) || jumlah <= 0 || jumlah > 1_000_000_000_000) throw new Error("Jumlah pengeluaran harus lebih dari 0 dan valid.");
+  if (Number(jumlah.toFixed(2)) !== jumlah) throw new Error("Jumlah pengeluaran maksimal 2 angka desimal.");
   if (!kategori) throw new Error("Pilih kategori dulu.");
   if (!lampiran.length) throw new Error("Lampiran bukti wajib diisi sebelum pengeluaran bisa disimpan.");
   const supabase = await createClient();
@@ -22,6 +23,8 @@ export async function saveExpense(formData: FormData, context: "cashier" | "back
       tanggal: String(formData.get("tanggal") ?? "") || hariIniWIB(), kategori,
       deskripsi: String(formData.get("deskripsi") ?? "").trim() || null,
       jumlah, metode_bayar: String(formData.get("metode_bayar") ?? "Tunai"),
+      ...(context === "backoffice" && String(formData.get("account_id") ?? "").trim()
+        ? { account_id: String(formData.get("account_id")).trim() } : {}),
     },
     p_attachments: lampiran,
   });

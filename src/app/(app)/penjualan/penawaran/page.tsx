@@ -9,8 +9,10 @@ import { BarisJualForm, type ItemJual } from "../BarisJualForm";
 import { loadItemUnits } from "@/lib/satuan";
 import { buatPenawaran, jadikanPesanan, ubahStatusPenawaran } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { readCompleteList } from "@/lib/checked-list";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number };
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type Rel<T> = T | T[] | null;
@@ -36,13 +38,13 @@ export default async function PenawaranPage({
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
-  const [{ data: docData }, { data: custData }, { data: cabData }, { data: itemData }] = await Promise.all([
+  const [{ data: docData }, { data: custData }, { data: cabData }, itemData] = await Promise.all([
     supabase.from("sales_quotations")
       .select("id, no_penawaran, tanggal, berlaku_sampai, total, status, customers(name), sales_orders(no_pesanan)")
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(200),
     supabase.from("customers").select("id, name, phone").order("name").limit(500),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    supabase.from("items").select("id, code, name, unit, sell_price").eq("is_active", true).order("name"),
+    readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, unit, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang penawaran", { maxRows: null }),
   ]);
 
   const dok = (docData ?? []) as unknown as Penawaran[];
@@ -51,7 +53,7 @@ export default async function PenawaranPage({
   // Satuan turunan ikut dikirim supaya baris pesanan bisa memilih dus/box, bukan
   // cuma satuan dasar (permintaan Bu Nisa, meeting 14 Agustus).
   const unitMap = await loadItemUnits(supabase);
-  const items = ((itemData ?? []) as ItemJual[]).map((it) => ({ ...it, units: unitMap.get(it.id) ?? [] }));
+  const items = (itemData as ItemJual[]).map((it) => ({ ...it, units: unitMap.get(it.id) ?? [] }));
 
   return (
     <MasterPage
