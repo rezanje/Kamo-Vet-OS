@@ -26,8 +26,8 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   // 7 hari terakhir termasuk hari ini (untuk chart harian).
   const hari7: string[] = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(today + "T00:00:00");
-    d.setDate(d.getDate() - i);
+    const d = new Date(today + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - i);
     hari7.push(iso(d));
   }
   const awal7 = hari7[0];

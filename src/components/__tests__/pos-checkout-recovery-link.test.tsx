@@ -15,9 +15,9 @@ vi.mock("@/lib/harga-golongan", () => ({ loadAturanDiskon: async () => [], loadI
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "cashier" } } }) },
   from() {
-    const query = { select: () => query, eq: () => query, is: () => query, order: () => query, limit: () => query,
+    const query = { select: () => query, eq: () => query, is: () => query, order: () => query, limit: () => query, range: () => query,
       maybeSingle: async () => ({ data: { id: "fixture" }, error: null }),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [] }).then(resolve) };
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], count: 0, error: null }).then(resolve) };
     return query;
   },
 }) }));

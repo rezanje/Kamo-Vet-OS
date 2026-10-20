@@ -1,10 +1,18 @@
 -- Disposable local acceptance only. Every fixture and mutation rolls back.
 begin;
+select set_config('request.jwt.claim.role','service_role',true);
+alter table auth.users disable trigger all;
 insert into auth.users(id,raw_user_meta_data) values
  ('ee100000-0000-4000-8000-000000000001','{"full_name":"Expense test cashier"}'),
  ('ee100000-0000-4000-8000-000000000002','{"full_name":"Expense test finance"}');
+alter table auth.users enable trigger all;
+insert into public.profiles(id,full_name) values
+ ('ee100000-0000-4000-8000-000000000001','Expense test cashier'),
+ ('ee100000-0000-4000-8000-000000000002','Expense test finance');
+alter table public.profiles disable trigger all;
 update public.profiles set role=case when id='ee100000-0000-4000-8000-000000000002' then 'FINANCE'::public.user_role else 'STAFF'::public.user_role end,is_active=true
  where id in ('ee100000-0000-4000-8000-000000000001','ee100000-0000-4000-8000-000000000002');
+alter table public.profiles enable trigger all;
 insert into public.branches(id,code,name,type) values
  ('ee200000-0000-4000-8000-000000000001','EXP-TEST-A','Expense test A','PETSHOP'),
  ('ee200000-0000-4000-8000-000000000002','EXP-TEST-B','Expense test B','PETSHOP');
@@ -12,8 +20,12 @@ insert into public.user_branches(user_id,branch_id) values('ee100000-0000-4000-8
 insert into public.cashier_shifts(id,branch_id,opened_by,shift_type) values
  ('ee300000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000001','ee100000-0000-4000-8000-000000000001','petshop');
 insert into public.coa_accounts(code,name,type,normal_balance,is_header,is_active) values
- ('5401','Expense acceptance','BEBAN','D',false,true),('1101','Cash acceptance','ASET','D',false,true)
+ ('5401','Expense acceptance','BEBAN','D',false,true),('1101','Cash acceptance','ASET','D',false,true),
+ ('1103','Branch A cash acceptance','ASET','D',false,true),('1104','Branch B cash acceptance','ASET','D',false,true)
  on conflict(code) do update set is_active=true,is_header=false;
+insert into public.cash_accounts(id,nama,jenis,coa_code,branch_id,is_active) values
+ ('ee400000-0000-4000-8000-000000000001','Branch A cash','Kas','1103','ee200000-0000-4000-8000-000000000001',true),
+ ('ee400000-0000-4000-8000-000000000002','Branch B cash','Kas','1104','ee200000-0000-4000-8000-000000000002',true);
 delete from public.payment_account_map where metode='Tunai';
 update public.accounting_locks set closed_until=null where id;
 
@@ -28,6 +40,11 @@ create function pg_temp.save_expense(key text,amount numeric default 25000) retu
  select public.post_expense_atomic(key,'cashier','ee200000-0000-4000-8000-000000000002',
    jsonb_build_object('tanggal',(now() at time zone 'Asia/Jakarta')::date,'kategori','Operasional','jumlah',amount,'metode_bayar','Tunai','deskripsi','Acceptance proof'),
    '[{"path":"pengeluaran/acceptance.jpg","nama":"acceptance.jpg","mime":"image/jpeg","ukuran":100}]'::jsonb)
+$$;
+create function pg_temp.save_backoffice(key text,account uuid default null) returns jsonb language sql as $$
+ select public.post_expense_atomic(key,'backoffice','ee200000-0000-4000-8000-000000000001',
+   jsonb_build_object('tanggal',(now() at time zone 'Asia/Jakarta')::date,'kategori','Operasional','jumlah',25000,'metode_bayar','Tunai','deskripsi','Backoffice acceptance','account_id',account),
+   '[{"path":"pengeluaran/backoffice.jpg","nama":"backoffice.jpg","mime":"image/jpeg","ukuran":100}]'::jsonb)
 $$;
 create temp table expense_test_results(name text primary key,result jsonb);
 grant all on expense_test_results to authenticated;
@@ -46,6 +63,15 @@ select pg_temp.assert_true((select count(*)=1 from public.journal_entries where 
 select pg_temp.expect_error(format('insert into public.expenses(branch_id,tanggal,kategori,jumlah,created_by,journal_entry_id) values(%L::uuid,current_date,%L,25000,auth.uid(),%L::uuid)','ee200000-0000-4000-8000-000000000001','Operasional',(select result->>'journal_id' from expense_test_results where name='first')),'row-level security');
 select pg_temp.assert_true(public.get_expense_posting_result('expense-first')=(select result from expense_test_results where name='first'),'read-only recovery confirms exact committed identity');
 select pg_temp.expect_error($q$select pg_temp.save_expense('expense-first',30000)$q$,'rincian berbeda');
+select pg_temp.expect_error($q$select pg_temp.save_expense('expense-three-decimals',25000.123)$q$,'jumlah');
+select set_config('request.jwt.claim.sub','ee100000-0000-4000-8000-000000000002',true);
+select set_config('request.jwt.claims','{"sub":"ee100000-0000-4000-8000-000000000002","role":"authenticated"}',true);
+insert into expense_test_results values('backoffice-account',pg_temp.save_backoffice('backoffice-account','ee400000-0000-4000-8000-000000000001'));
+select pg_temp.assert_true((select count(*)=1 from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.id=(select (result->>'journal_id')::uuid from expense_test_results where name='backoffice-account') and a.code='1103'),'backoffice uses selected account');
+select pg_temp.assert_true(pg_temp.save_backoffice('backoffice-account','ee400000-0000-4000-8000-000000000001')=(select result from expense_test_results where name='backoffice-account'),'backoffice selected-account retry is idempotent');
+select pg_temp.expect_error($q$select pg_temp.save_backoffice('backoffice-wrong-branch','ee400000-0000-4000-8000-000000000002')$q$,'Rekening kas/bank tidak valid');
+select set_config('request.jwt.claim.sub','ee100000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"ee100000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 insert into expense_test_results values('second',pg_temp.save_expense('expense-second'));
 select pg_temp.assert_true((select count(*)=2 from public.expenses where created_by=auth.uid()),'two independent identical expenses remain permitted');
 select pg_temp.expect_error(format('select public.revise_expense_atomic(%L,%L::uuid,0,%L,%L::jsonb,%L)','staff-edit',(select result->>'expense_id' from expense_test_results where name='first'),'edit','{"jumlah":30000}','Correction'),'Akses');
@@ -73,7 +99,7 @@ select pg_temp.assert_true(public.revise_expense_atomic('finance-void',(select (
 select pg_temp.assert_true((select jumlah=0 and voided_at is not null and revision=2 from public.expenses where id=(select (result->>'expense_id')::uuid from expense_test_results where name='first')),'void removes effective outflow and retains document');
 select pg_temp.assert_true((select count(*)=2 from public.expense_revisions where expense_id=(select (result->>'expense_id')::uuid from expense_test_results where name='first')),'void retry does not duplicate audit or reversal');
 select pg_temp.assert_true((select sum(jumlah)=25000 from public.expenses where shift_id='ee300000-0000-4000-8000-000000000001'),'shift excludes voided outflow');
-select pg_temp.assert_true((select sum(l.debit-l.credit)=25000 from public.journal_lines l join public.coa_accounts a on a.id=l.account_id join public.journal_entries j on j.id=l.entry_id where j.branch_id='ee200000-0000-4000-8000-000000000001' and a.code='5401'),'journal net expense equals effective shift expense');
+select pg_temp.assert_true((select sum(l.debit-l.credit)=50000 from public.journal_lines l join public.coa_accounts a on a.id=l.account_id join public.journal_entries j on j.id=l.entry_id where j.branch_id='ee200000-0000-4000-8000-000000000001' and a.code='5401'),'journal net expense includes active backoffice and shift expenses');
 
 reset role;
 update public.cashier_shifts set status='closed' where id='ee300000-0000-4000-8000-000000000001';

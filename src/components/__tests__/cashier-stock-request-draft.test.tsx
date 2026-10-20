@@ -35,8 +35,10 @@ async function fill() {
   await edit(host.querySelector<HTMLSelectElement>('select[name="priority"]')!, "tinggi");
   await edit(host.querySelector<HTMLInputElement>('input[name="catatan"]')!, "Stok minggu ini");
   await act(async () => Array.from(host.querySelectorAll("button")).find(b => b.textContent?.includes("Tambah Barang"))!.click());
-  await edit(host.querySelector<HTMLSelectElement>("tbody select")!, "item-a");
-  await edit(host.querySelectorAll<HTMLSelectElement>("tbody select")[1], "box");
+  const picker = host.querySelector<HTMLInputElement>('tbody input[role="combobox"]')!;
+  await act(async () => { picker.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(picker, "Obat A"); picker.dispatchEvent(new Event("input", { bubbles: true })); });
+  await act(async () => (host.querySelector<HTMLButtonElement>('tbody button[role="option"]')!).click());
+  await edit(host.querySelector<HTMLSelectElement>("tbody select")!, "box");
   await edit(host.querySelector<HTMLInputElement>('input[type="number"]')!, "3");
   await edit(host.querySelector<HTMLInputElement>('input[placeholder="mis. stok menipis"]')!, "stok menipis");
 }

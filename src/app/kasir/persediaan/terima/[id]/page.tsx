@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { TerimaForm } from "./TerimaForm";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -44,10 +45,10 @@ export default async function TerimaBarangPage({
     .maybeSingle();
 
   // katalog barang: barcode scan + detail (kode/kategori/satuan) per item penerimaan.
-  const { data: catalogRaw } = await supabase
-    .from("items").select("id, code, name, unit, upc, item_categories(name)").eq("is_active", true);
+  const catalogRaw = await readCompleteList<{ id: string; code: string; name: string; unit: string; upc: string | null; item_categories: CatRel }>((from, to) => supabase
+    .from("items").select("id, code, name, unit, upc, item_categories(name)", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Katalog barcode penerimaan", { maxRows: null });
   type CatRel = { name: string } | { name: string }[] | null;
-  const catalog = ((catalogRaw ?? []) as { id: string; code: string; name: string; unit: string; upc: string | null; item_categories: CatRel }[]).map((c) => ({
+  const catalog = catalogRaw.map((c) => ({
     id: c.id, code: c.code, name: c.name, unit: c.unit, upc: c.upc,
     kategori: (Array.isArray(c.item_categories) ? c.item_categories[0]?.name : c.item_categories?.name) ?? "Lainnya",
   }));

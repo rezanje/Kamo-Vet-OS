@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyEmployee } from "@/lib/employee";
 import { attendanceState, nextAction } from "@/lib/attendance";
-import { clockIn, clockOut } from "./actions";
+import { clockIn, clockOut, ubahPasswordPribadi } from "./actions";
 import { AbsenTombol } from "./AbsenTombol";
 import { CutiForm } from "./CutiForm";
 import { PengajuanCards, type Kasbon, type Lembur, type Reimburse } from "./PengajuanCards";
+import { PasswordForm } from "./PasswordForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const LEAVE_BADGE: Record<string, string> = { Menunggu: "o", Disetujui: "g", Ditolak: "r" };
@@ -75,9 +76,15 @@ export default async function MePage({
       {success === "kasbon" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengajuan kasbon terkirim — menunggu persetujuan.</div>}
       {success === "reimburse" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengajuan reimburse terkirim — menunggu persetujuan.</div>}
       {success === "cuti" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pengajuan terkirim — menunggu persetujuan manajer.</div>}
+      {success === "password" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-lock-check" /> Password berhasil diubah.</div>}
 
       <div style={{ fontSize: 18, fontWeight: 800, color: "var(--posb)", marginBottom: 4 }}>Halo, {emp?.nama?.split(" ")[0] ?? "Staff"}!</div>
       <div style={{ fontSize: 11.5, color: "var(--tm)", marginBottom: 14 }}>{emp?.jabatan ?? "Staff Kasir"} · ringkasan pribadi kamu hari ini.</div>
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 8 }}><i className="ti ti-lock" /> KEAMANAN AKUN</div>
+        <PasswordForm action={ubahPasswordPribadi} />
+      </div>
 
       {/* 1. Ringkasan Quest */}
       <div className="card" style={{ marginBottom: 12 }}>

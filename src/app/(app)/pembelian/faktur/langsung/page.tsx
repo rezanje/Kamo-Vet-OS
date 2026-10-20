@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
+import { readCompleteList } from "@/lib/checked-list";
 import { FakturLangsungForm } from "./FakturLangsungForm";
 
 // Faktur Pembelian Langsung — beli barang tanpa PO, barang masuk di dokumen yang sama.
@@ -14,18 +15,18 @@ export default async function FakturLangsungPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const [{ data: suppliers }, { data: warehouses }, { data: items }] = await Promise.all([
+  const [{ data: suppliers }, { data: warehouses }, items] = await Promise.all([
     // Tabel pemasok tidak punya penanda aktif/nonaktif — jangan saring kolom yang
     // tidak ada, daftarnya jadi kosong tanpa pesan error.
     supabase.from("suppliers").select("id, nama, termin_hari").order("nama"),
     supabase.from("warehouses").select("id, code, name, branches(name)").eq("is_active", true).order("code"),
-    supabase.from("items").select("id, code, name, buy_price, unit, track_expiry")
-      .eq("is_active", true).eq("item_type", "Persediaan").order("name"),
+    readCompleteList<{ id: string; code: string; name: string; buy_price: number; unit: string; track_expiry: boolean | null }>((from, to) => supabase
+      .from("items").select("id, code, name, buy_price, unit, track_expiry", { count: "exact" })
+      .eq("is_active", true).eq("item_type", "Persediaan").order("name").order("id").range(from, to),
+      "Daftar barang faktur langsung", { maxRows: null }),
   ]);
 
-  const daftar = (items ?? []) as {
-    id: string; code: string; name: string; buy_price: number; unit: string; track_expiry: boolean | null;
-  }[];
+  const daftar = items ?? [];
   const unitMap = await loadUnitOptions(supabase, daftar.map((i) => i.id));
 
   type Rel<T> = T | T[] | null;

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { JurnalForm } from "./JurnalForm";
+import { JurnalCorrectionForm } from "./JurnalCorrectionForm";
 import { NoDok } from "@/components/NoDok";
 import { postRecurringCatchUp } from "@/lib/recurring";
 
@@ -10,7 +11,7 @@ import { postRecurringCatchUp } from "@/lib/recurring";
 type CoaAccount = { id: string; code: string; name: string };
 type Branch = { id: string; code: string; name: string };
 
-type Akun = { code: string; name: string };
+type Akun = { id?: string; code: string; name: string };
 type JournalLine = { debit: number; credit: number; coa_accounts: Akun | Akun[] | null };
 type JournalEntry = {
   id: string;
@@ -21,6 +22,8 @@ type JournalEntry = {
   source_ref: string | null;
   branches: { name: string } | { name: string }[] | null;
   journal_lines: JournalLine[];
+  revision: number;
+  voided_at: string | null;
 };
 
 const akunDari = (l: JournalLine): Akun | null =>
@@ -30,6 +33,8 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   manual:  { label: "Manual",  cls: "x" },
+  "manual-correction": { label: "Koreksi manual", cls: "o" },
+  "manual-reversal": { label: "Pembalik manual", cls: "r" },
   expense: { label: "Expense", cls: "o" },
   sale:    { label: "Sale",    cls: "b" },
   "sale-hpp": { label: "HPP", cls: "b" },
@@ -65,6 +70,8 @@ export default async function JurnalPage({
   const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "" } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
+  const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
+  const isOwner = profile?.role === "OWNER" && profile.is_active === true;
 
   // Jurnal berulang: catch-up bulan tertinggal (idempotent via last_posted).
   let recurringPosted: { nama: string; periode: string }[] = [];
@@ -79,7 +86,7 @@ export default async function JurnalPage({
   // supaya mencari jurnal bulan lalu tidak perlu menggulir ratusan baris.
   let qEntries = supabase
     .from("journal_entries")
-    .select("id, no_jurnal, tanggal, deskripsi, source, source_ref, branch_id, branches(name), journal_lines(debit, credit, coa_accounts(code, name))")
+    .select("id, no_jurnal, tanggal, deskripsi, source, source_ref, branch_id, revision, voided_at, branches(name), journal_lines(debit, credit, coa_accounts(id, code, name))")
     .order("tanggal", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(200);
@@ -229,6 +236,7 @@ export default async function JurnalPage({
                   <th style={{ width: 80, textAlign: "center" }}>Sumber</th>
                   <th style={{ width: 120, textAlign: "right" }}>Total Debit</th>
                   <th style={{ width: 120, textAlign: "right" }}>Total Kredit</th>
+                  <th style={{ width: 245 }}>Tindakan</th>
                 </tr>
               </thead>
               <tbody>
@@ -293,6 +301,11 @@ export default async function JurnalPage({
                       </td>
                       <td style={{ textAlign: "right", fontFamily: "monospace", fontSize: 10.5, color: "#16a34a" }}>
                         {rp(totK)}
+                      </td>
+                      <td>
+                        {e.voided_at ? <span className="bge r" style={{ fontSize: 9 }}>Dibatalkan / digantikan</span> : ["manual", "manual-correction"].includes(e.source) && isOwner ? (
+                          <JurnalCorrectionForm userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />
+                        ) : ["manual", "manual-correction"].includes(e.source) ? <span style={{ color: "var(--tm)", fontSize: 10 }}>Khusus Super Admin</span> : <span style={{ color: "var(--tm)", fontSize: 10 }}>Koreksi dari transaksi sumber</span>}
                       </td>
                     </tr>
                   );

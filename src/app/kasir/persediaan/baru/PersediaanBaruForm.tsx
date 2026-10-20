@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit } from "@/lib/satuan";
 import type { KatalogItem } from "@/lib/permintaan";
 import { hariIniWIB } from "@/lib/tanggal";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 
 type Warehouse = { id: string; name: string };
 type Item = KatalogItem & { stok: number };
@@ -164,11 +165,7 @@ function PersediaanBaruFields({ userId, branchId, branchName, warehouses, items,
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 10.5, color: "var(--tm)" }}>{it?.code ?? "—"}</td>
                     <td style={{ minWidth: 200 }}>
-                      <select className="fi" value={r.item_id} onChange={(e) => setItem(i, e.target.value)} style={{ fontSize: 11 }}>
-                        <option value="">Pilih barang...</option>
-                        {r.item_id && !it && <option value={r.item_id}>Barang tidak tersedia — pilih ulang</option>}
-                        {items.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
+                      <SearchableItemPicker items={items} value={r.item_id} onChange={(id) => setItem(i, id)} ariaLabel={`Barang baris ${i + 1}`} />
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{it?.kategori ?? "—"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>

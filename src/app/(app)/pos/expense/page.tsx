@@ -6,6 +6,8 @@ import { simpanExpense } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { redirect } from "next/navigation";
 import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/ExpenseForm";
+import { readCompleteList } from "@/lib/checked-list";
+import { totalPengeluaranAktif } from "@/lib/expense-summary";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -21,6 +23,7 @@ type ExpenseRow = {
   deskripsi: string | null;
   jumlah: number;
   metode_bayar: string;
+  voided_at: string | null;
   branches: Rel<{ name: string }>;
 };
 
@@ -46,16 +49,16 @@ export default async function ExpensePage({
   const { data: branches } = await supabase.from("branches").select("id, name").eq("is_active", true).order("name");
 
   // semua expense dalam tahun berjalan (scope cabang ditentukan RLS) untuk ringkasan + riwayat.
-  const { data: rowsRaw } = await supabase
+  const rows = await readCompleteList<ExpenseRow>((from, to) => supabase
     .from("expenses")
-    .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, branches(name)")
+    .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, voided_at, branches(name)", { count: "exact" })
     .gte("tanggal", yearStart)
-    .order("tanggal", { ascending: false });
-  const rows = (rowsRaw ?? []) as unknown as ExpenseRow[];
+    .order("tanggal", { ascending: false }).order("id")
+    .range(from, to), "Riwayat pengeluaran", { maxRows: null });
 
-  const totHari = rows.filter((r) => r.tanggal === today).reduce((a, r) => a + Number(r.jumlah), 0);
-  const totBulan = rows.filter((r) => r.tanggal >= monthStart).reduce((a, r) => a + Number(r.jumlah), 0);
-  const totTahun = rows.reduce((a, r) => a + Number(r.jumlah), 0);
+  const totHari = totalPengeluaranAktif(rows.filter((r) => r.tanggal === today));
+  const totBulan = totalPengeluaranAktif(rows.filter((r) => r.tanggal >= monthStart));
+  const totTahun = totalPengeluaranAktif(rows);
 
   return (
     <>
@@ -133,15 +136,15 @@ export default async function ExpensePage({
                 const br = one(r.branches);
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}{r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}</td>
                     <td style={{ fontSize: 11 }}><span className="bge o">{r.kategori}</span></td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.deskripsi || "—"}</td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.metode_bayar}</td>
-                    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>
+                    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600, textDecoration: r.voided_at ? "line-through" : undefined }}>{rp(Number(r.jumlah))}</td>
                     <td style={{ textAlign: "center" }}>
                       <Link href={`/pos/expense/${r.id}`} className="btn-def" style={{ padding: "2px 8px", fontSize: 10, textDecoration: "none" }} title="Lihat bukti & dokumen">
-                        <i className="ti ti-paperclip" />
+                        Detail / koreksi
                       </Link>
                     </td>
                   </tr>

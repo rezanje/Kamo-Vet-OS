@@ -72,6 +72,9 @@ export function PosNav({ branchName, userName, hasShift, notifications }: { bran
             <i className="ti ti-chevron-down" style={{ fontSize: 12, color: "rgba(255,255,255,.6)" }} />
           </summary>
           <div style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", background: "#fff", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.18)", minWidth: 190, padding: 6, zIndex: 60 }}>
+            <Link href="/me" style={{ ...menuItem, textDecoration: "none" }}>
+              <i className="ti ti-user" style={{ fontSize: 14 }} /> Profil dan password
+            </Link>
             <Link href="/mulai" style={{ ...menuItem, textDecoration: "none" }}>
               <i className="ti ti-arrows-exchange" style={{ fontSize: 14 }} /> Ganti mode kerja
             </Link>

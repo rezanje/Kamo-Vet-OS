@@ -6,7 +6,9 @@ import { LampiranPicker } from "@/components/LampiranPicker";
 import { getAccountBalances } from "@/lib/ledger";
 import { hariIniWIB } from "@/lib/tanggal";
 import { akunLawanTerlarang, type JenisKas } from "@/lib/kas-entry";
-import { simpanKasEntry, batalkanKasEntry } from "./actions";
+import { simpanKasEntry } from "./actions";
+import { KasCorrectionForm, KasVoidForm } from "./KasCorrectionForm";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -14,7 +16,7 @@ function one<T>(r: Rel<T>): T | null {
 }
 
 type Baris = {
-  id: string; no_bukti: string; tanggal: string; jumlah: number; lawan_code: string;
+  id: string; no_bukti: string; tanggal: string; jumlah: number; lawan_code: string; account_id: string; revision: number;
   keterangan: string | null; voided_at: string | null;
   rekening: Rel<{ nama: string }>; branches: Rel<{ name: string }>;
 };
@@ -42,6 +44,9 @@ export async function KasEntryScreen({
   const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal" } = await searchParams;
   const supabase = await createClient();
   const boleh = await bolehTransaksiKas();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
+  const isOwner = profile?.role === "OWNER" && profile.is_active === true;
   const keluar = jenis === "Keluar";
 
   const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }, saldoAkun] = await Promise.all([
@@ -50,7 +55,7 @@ export async function KasEntryScreen({
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase
       .from("cash_entries")
-      .select("id, no_bukti, tanggal, jumlah, lawan_code, keterangan, voided_at, rekening:account_id(nama), branches(name)")
+      .select("id, no_bukti, tanggal, jumlah, lawan_code, account_id, revision, keterangan, voided_at, rekening:account_id(nama), branches(name)")
       .eq("jenis", jenis)
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(50),
     getAccountBalances(supabase),
@@ -66,19 +71,19 @@ export async function KasEntryScreen({
   const { data: bebanRows } = keluar
     ? await supabase
         .from("expenses")
-        .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, branches(name)")
+        .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, voided_at, branches(name)")
         .order("tanggal", { ascending: false }).limit(100)
     : { data: [] };
 
   type BebanRow = {
     id: string; tanggal: string; kategori: string | null; deskripsi: string | null;
-    jumlah: number; metode_bayar: string | null; branches: Rel<{ name: string }>;
+    jumlah: number; metode_bayar: string | null; voided_at: string | null; branches: Rel<{ name: string }>;
   };
 
   type BarisGabung = {
     key: string; no: string; tanggal: string; rekening: string; akun: string;
     keterangan: string | null; jumlah: number; cabang: string;
-    dibatalkan: boolean; asal: "kas" | "beban"; id: string;
+    dibatalkan: boolean; asal: "kas" | "beban"; id: string; accountId: string; lawanCode: string; revision: number;
   };
 
   // Rekening kas/bank dikeluarkan dari pilihan akun lawan — pindah antar rekening
@@ -99,7 +104,7 @@ export async function KasEntryScreen({
     akun: `${t.lawan_code} — ${namaAkun.get(t.lawan_code) ?? "—"}`,
     keterangan: t.keterangan, jumlah: Number(t.jumlah),
     cabang: one(t.branches)?.name ?? "Pusat",
-    dibatalkan: !!t.voided_at, asal: "kas",
+    dibatalkan: !!t.voided_at, asal: "kas", accountId: t.account_id, lawanCode: t.lawan_code, revision: t.revision,
   }));
 
   const dariBeban: BarisGabung[] = ((bebanRows ?? []) as unknown as BebanRow[]).map((b) => ({
@@ -108,7 +113,7 @@ export async function KasEntryScreen({
     akun: b.kategori ?? "Beban lain",
     keterangan: b.deskripsi, jumlah: Number(b.jumlah),
     cabang: one(b.branches)?.name ?? "Pusat",
-    dibatalkan: false, asal: "beban",
+    dibatalkan: !!b.voided_at, asal: "beban", accountId: "", lawanCode: "", revision: 0,
   }));
 
   const q = cari.trim().toLowerCase();
@@ -178,7 +183,7 @@ export async function KasEntryScreen({
       )}
 
       {boleh && rekening.length > 0 && (
-        <form action={simpanKasEntry} className="crm-sec" style={{ marginBottom: 14 }}>
+        <TransactionForm userId={user?.id ?? ""} scope={`cash-create-${jenis}`} action={simpanKasEntry} className="crm-sec" style={{ marginBottom: 14 }}>
           <input type="hidden" name="jenis" value={jenis} />
           <div className="frow">
             <div>
@@ -232,7 +237,7 @@ export async function KasEntryScreen({
               Simpan kas {keluar ? "keluar" : "masuk"}
             </SubmitButton>
           </div>
-        </form>
+        </TransactionForm>
       )}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
@@ -308,15 +313,7 @@ export async function KasEntryScreen({
                     <td>
                       {/* Pengeluaran kasir dibatalkan dari layar kasirnya sendiri — di sini
                           cuma ditampilkan, supaya satu dokumen tidak punya dua tombol batal. */}
-                      {!t.dibatalkan && t.asal === "kas" && (
-                        <form action={batalkanKasEntry}>
-                          <input type="hidden" name="id" value={t.id} />
-                          <input type="hidden" name="jenis" value={jenis} />
-                          <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
-                            Batalkan
-                          </SubmitButton>
-                        </form>
-                      )}
+                      {!t.dibatalkan && t.asal === "kas" && (isOwner ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
                     </td>
                   )}
                 </tr>

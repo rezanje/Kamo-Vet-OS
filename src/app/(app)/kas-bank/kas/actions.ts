@@ -3,7 +3,6 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
-import { jurnalBalik } from "@/lib/transfer-kas";
 import { akunLawanTerlarang, hrefKas, jurnalKasEntry, validasiKasEntry, type JenisKas } from "@/lib/kas-entry";
 import { parseLampiran } from "@/lib/dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -11,6 +10,7 @@ import { postJournal } from "@/lib/posting";
 import { cekPersetujuan } from "@/lib/persetujuan-server";
 import { kunciKasKeluar } from "@/lib/persetujuan";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
 
@@ -97,9 +97,13 @@ export async function simpanKasEntry(formData: FormData) {
   }
 
   if (lampiran.length > 0) {
-    await supabase.from("document_attachments").insert(
+    const { error: attachmentError } = await supabase.from("document_attachments").insert(
       lampiran.map((l) => ({ ...l, modul: "pengeluaran", ref_id: entry!.id, uploaded_by: user?.id ?? null })),
     );
+    if (attachmentError) {
+      await supabase.from("cash_entries").delete().eq("id", entry!.id);
+      gagal("Bukti gagal disimpan. Periksa daftar kas sebelum mencoba lagi.");
+    }
   }
 
   await postJournal(supabase, {
@@ -117,7 +121,13 @@ export async function simpanKasEntry(formData: FormData) {
     gagal("Jurnal gagal tersimpan, transaksi dibatalkan — coba lagi");
   }
 
-  redirect(`${BACK}?success=1`);
+  try {
+    await assertDraftJournal(supabase, { source: "kas-entry", sourceRef: noBukti, tanggal, branchId,
+      lines: jurnalKasEntry(jenis, rek.coa_code, lawanCode, jumlah) });
+  } catch {
+    gagal("Jurnal kas belum terkonfirmasi lengkap. Periksa transaksi sebelum menyimpan ulang.");
+  }
+  redirect(`${BACK}?success=1` + transactionDraftAck(formData));
 }
 
 export async function batalkanKasEntry(formData: FormData) {
@@ -128,46 +138,27 @@ export async function batalkanKasEntry(formData: FormData) {
   const supabase = await assertRole(BACK, "kas masuk/keluar", BOLEH);
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Transaksi tidak valid");
-
-  const { data: entry } = await supabase
-    .from("cash_entries")
-    .select("id, no_bukti, jenis, tanggal, jumlah, lawan_code, branch_id, voided_at, account_id")
-    .eq("id", id).maybeSingle();
+  const { data: entry } = await supabase.from("cash_entries").select("revision").eq("id", id).maybeSingle();
   if (!entry) gagal("Transaksi tidak ditemukan");
-  if (entry.voided_at) gagal("Transaksi ini sudah dibatalkan");
-
-  // Jurnal balik bertanggal SAMA dengan bukti asli — kalau dilempar ke hari ini,
-  // laporan dua bulan sama-sama jadi salah.
-  const pesanPeriode = await cekPeriode(supabase, entry.tanggal as string);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  const { data: rekData } = await supabase
-    .from("cash_accounts").select("id, nama, coa_code, is_active").eq("id", entry.account_id as string);
-  const rek = ((rekData ?? []) as Rekening[])[0];
-  if (!rek) gagal("Rekening transaksi ini tidak ditemukan");
-
-  // Predikat voided_at ada di UPDATE-nya sendiri supaya klik dobel tidak
-  // menghasilkan dua jurnal balik.
-  const { data: updated } = await supabase
-    .from("cash_entries").update({ voided_at: new Date().toISOString() })
-    .eq("id", id).is("voided_at", null).select("id");
-  if (!updated || updated.length === 0) gagal("Transaksi ini sudah dibatalkan");
-
-  await postJournal(supabase, {
-    tanggal: entry.tanggal as string,
-    deskripsi: `Pembatalan kas ${entry.jenis} ${entry.no_bukti}`,
-    source: "kas-entry-void",
-    sourceRef: entry.no_bukti as string,
-    branchId: (entry.branch_id as string | null) ?? null,
-    lines: jurnalBalik(jurnalKasEntry(
-      entry.jenis as JenisKas, rek.coa_code, entry.lawan_code as string, Number(entry.jumlah),
-    )),
+  const { data: result, error } = await supabase.rpc("revise_cash_entry", {
+    p_request_key: String(formData.get("draft_key") ?? formData.get("requestKey") ?? ""), p_cash_entry_id: id,
+    p_expected_revision: Number(formData.get("revision") ?? entry.revision ?? 0), p_action: "void", p_header: {},
+    p_reason: String(formData.get("reason") ?? "").trim(),
   });
+  if (error || !result?.reversal_journal_id) gagal(error?.message ?? "Pembatalan kas belum terkonfirmasi");
+  redirect(`${BACK}?success=batal` + transactionDraftAck(formData));
+}
 
-  if (!(await jurnalTersimpan(supabase, "kas-entry-void", entry.no_bukti as string))) {
-    await supabase.from("cash_entries").update({ voided_at: null }).eq("id", id);
-    gagal("Jurnal pembatalan gagal tersimpan, pembatalan dibatalkan — coba lagi");
-  }
-
-  redirect(`${BACK}?success=batal`);
+export async function koreksiKasEntry(formData: FormData) {
+  const jenis = bacaJenis(formData); const BACK = hrefKas(jenis);
+  const supabase = await assertRole(BACK, "kas masuk/keluar", ["OWNER"]);
+  let header: Record<string, string | number>;
+  try { header = { tanggal: String(formData.get("tanggal") ?? ""), account_id: String(formData.get("account_id") ?? ""), lawan_code: String(formData.get("lawan_code") ?? ""), jumlah: Number(formData.get("jumlah")), keterangan: String(formData.get("keterangan") ?? "") }; } catch { redirect(`${BACK}?error=Data koreksi tidak valid`); }
+  const { data: result, error } = await supabase.rpc("revise_cash_entry", {
+    p_request_key: String(formData.get("draft_key") ?? formData.get("requestKey") ?? ""), p_cash_entry_id: String(formData.get("id") ?? ""),
+    p_expected_revision: Number(formData.get("revision") ?? 0), p_action: "edit", p_header: header!,
+    p_reason: String(formData.get("reason") ?? "").trim(),
+  });
+  if (error || !result?.reversal_journal_id || !result?.replacement_journal_id) redirect(`${BACK}?error=${encodeURIComponent(error?.message ?? "Koreksi kas belum terkonfirmasi")}`);
+  redirect(`${BACK}?success=edit` + transactionDraftAck(formData));
 }
