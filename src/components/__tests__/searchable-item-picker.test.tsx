@@ -30,10 +30,10 @@ it("syncs restored and cleared values, and selects with keyboard without submitt
   const onChange = (id: string) => { selected = id; };
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={onChange} />));
   const input = host.querySelector<HTMLInputElement>("input")!;
-  expect(input.value).toContain("Produk 1204");
+  expect(input.value).toBe("SKU-1204 · Produk 1204");
   selected = "item-1001";
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={onChange} />));
-  expect(host.querySelector<HTMLInputElement>("input")!.value).toContain("Produk 1001");
+  expect(host.querySelector<HTMLInputElement>("input")!.value).toBe("SKU-1001 · Produk 1001");
   selected = "";
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={onChange} />));
   const restoredInput = host.querySelector<HTMLInputElement>("input")!;
