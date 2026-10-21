@@ -1,88 +1,53 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
-import {transactionDraftAck} from "@/lib/transaction-draft-ack";
-import { cekPeriode } from "@/lib/jurnal-guard";
+import { assertRole } from "@/lib/master-guard";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { hariIniWIB } from "@/lib/tanggal";
 
-// Rekonsiliasi bank (saldo-level) PER REKENING: bandingkan saldo buku rekening terpilih
-// dengan saldo rekening korannya, catat biaya adm / bunga sbg jurnal penyesuaian.
-export async function prosesRekonsiliasi(formData: FormData) {
-  const supabase = await createClient();
-  const back = "/keuangan/rekonsiliasi";
-  const gagal = (msg: string) => redirect(`${back}?error=${encodeURIComponent(msg)}`);
-
-  const accountId = String(formData.get("account_id") ?? "").trim();
-  const tanggal = String(formData.get("tanggal") ?? "") || hariIniWIB();
-  const saldoBank = Number(formData.get("saldo_bank")??0);
-  const biayaAdm = Number(formData.get("biaya_adm")??0);
-  const bunga = Number(formData.get("bunga")??0);
-  const catatan = String(formData.get("catatan") ?? "") || null;
-
-  if (![saldoBank,biayaAdm,bunga].every(Number.isFinite)||biayaAdm<0||bunga<0) gagal("Nilai rekonsiliasi tidak valid");
-  if (!accountId) gagal("Pilih rekening yang direkonsiliasi");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  const { data: rek, error:rekError } = await supabase
-    .from("cash_accounts").select("id, nama, coa_code").eq("id", accountId).maybeSingle();
-  if(rekError)throw new Error(rekError.message);
-  if (!rek) gagal("Rekening tidak ditemukan");
-
-  // Saldo buku rekening terpilih (bukan lagi akun 1102 mati).
-  const { data: acc, error:accountError } = await supabase
-    .from("coa_accounts").select("id").eq("code", rek!.coa_code).maybeSingle();
-  if(accountError||!acc)throw new Error(accountError?.message??"Akun rekening tidak ditemukan");
-  let saldoBuku = 0;
-  if (acc) {
-    // Dibatasi S/D tanggal rekonsiliasi. Tanpa batas ini, saldo buku selalu posisi
-    // HARI INI sementara saldo rekening korannya posisi tanggal tertentu — rekonsiliasi
-    // untuk tanggal lampau pasti melaporkan selisih palsu.
-    const { data: lines, error:balanceError } = await supabase
-      .from("journal_lines")
-      .select("debit, credit, journal_entries!inner(tanggal)")
-      .eq("account_id", acc.id)
-      .lte("journal_entries.tanggal", tanggal);
-    if(balanceError)throw new Error(balanceError.message);
-    saldoBuku = (lines ?? []).reduce((a, l) => a + Number(l.debit) - Number(l.credit), 0);
+const BACK = "/keuangan/rekonsiliasi";
+async function simpan(formData: FormData, action: "create" | "edit" | "void") {
+  const supabase = await assertRole(BACK, "rekonsiliasi bank", action === "create" ? ["OWNER", "ADMIN", "FINANCE"] : ["OWNER"]);
+  const key = String(formData.get("draft_key") ?? "").trim();
+  const id = String(formData.get("id") ?? "").trim();
+  const revisionText = String(formData.get("revision") ?? "");
+  const revision = Number(revisionText);
+  const reason = String(formData.get("reason") ?? "").trim();
+  const back = action === "create" || !/^[0-9a-f-]{36}$/i.test(id) ? BACK : `${BACK}/${id}`;
+  const fail = (message: string): never => redirect(`${back}?error=${encodeURIComponent(message)}`);
+  if (!key || key.length > 120) fail("Identitas simpan belum tersedia. Muat ulang formulir.");
+  if (action !== "create" && (!id || !/^\d+$/.test(revisionText) || !Number.isSafeInteger(revision) || reason.length < 3 || reason.length > 1000)) fail("Identitas atau alasan koreksi tidak valid.");
+  const header = action === "void" ? {} : {
+    account_id: String(formData.get("account_id") ?? "").trim(),
+    tanggal: String(formData.get("tanggal") ?? "").trim() || hariIniWIB(),
+    saldo_bank: Number(formData.get("saldo_bank") ?? 0),
+    biaya_adm: Number(formData.get("biaya_adm") ?? 0),
+    bunga: Number(formData.get("bunga") ?? 0),
+    catatan: String(formData.get("catatan") ?? "").trim() || null,
+  };
+  if (action !== "void") {
+    const h = header as { account_id: string; tanggal: string; saldo_bank: number; biaya_adm: number; bunga: number };
+    if (!h.account_id || !/^\d{4}-\d{2}-\d{2}$/.test(h.tanggal) || h.tanggal > hariIniWIB() || ![h.saldo_bank, h.biaya_adm, h.bunga].every(Number.isFinite) || h.biaya_adm < 0 || h.bunga < 0) fail("Rekening, tanggal atau nilai rekonsiliasi tidak valid.");
   }
-  const adjusted = saldoBuku + bunga - biayaAdm;
-  const selisih = saldoBank - adjusted;
-
-  const {error:reconciliationError} = await supabase.from("bank_reconciliations").insert({
-    tanggal, cash_account_id: accountId,
-    saldo_buku: saldoBuku, saldo_bank: saldoBank, biaya_adm: biayaAdm, bunga, selisih, catatan,
+  const { data, error } = await supabase.rpc("mutate_bank_reconciliation", {
+    p_request_key: key, p_action: action, p_id: action === "create" ? null : id,
+    p_expected_revision: action === "create" ? null : revision, p_header: header,
+    p_reason: action === "create" ? null : reason,
   });
-
-  if(reconciliationError) throw new Error(reconciliationError.message);
-
-  // Jurnal penyesuaian → buku ikut bergerak ke arah bank.
-  if (biayaAdm > 0) {
-    await checkedReconciliationJournal(supabase, {
-      tanggal, deskripsi: `Biaya administrasi bank — ${rek!.nama}`, source: "bank-rec", branchId: null,
-      lines: [{ code: "5501", debit: biayaAdm, credit: 0 }, { code: rek!.coa_code, debit: 0, credit: biayaAdm }],
-    });
-  }
-  if (bunga > 0) {
-    await checkedReconciliationJournal(supabase, {
-      tanggal, deskripsi: `Pendapatan bunga bank — ${rek!.nama}`, source: "bank-rec", branchId: null,
-      lines: [{ code: rek!.coa_code, debit: bunga, credit: 0 }, { code: "4301", debit: 0, credit: bunga }],
-    });
-  }
-
-  redirect(`${back}?success=1&rek=${accountId}${transactionDraftAck(formData)}`);
+  if (error && ["40P01", "55P03", "57014"].includes(error.code)) fail("Pembukuan sedang dipakai proses lain. Isian tetap tersedia; coba simpan lagi.");
+  if (error || !data?.reconciliation_id) fail(error?.message ?? "Hasil rekonsiliasi belum terkonfirmasi. Isian tetap tersedia.");
+  redirect(`${BACK}/${data.reconciliation_id}?success=${action}${transactionDraftAck(formData)}`);
 }
+export async function prosesRekonsiliasi(formData: FormData) { return simpan(formData, "create"); }
+export async function koreksiRekonsiliasi(formData: FormData) { return simpan(formData, "edit"); }
+export async function batalkanRekonsiliasi(formData: FormData) { return simpan(formData, "void"); }
 
-// Reconciliation is itself an accounting transaction: every write must be checked.
-async function checkedReconciliationJournal(supabase: Awaited<ReturnType<typeof createClient>>,o:{tanggal:string;deskripsi:string;source:string;branchId:null;lines:{code:string;debit:number;credit:number}[]}) {
-  const {data:accounts,error:accountError}=await supabase.from("coa_accounts").select("id,code,is_header,is_active").in("code",o.lines.map(l=>l.code));
-  if(accountError||!accounts||o.lines.some(l=>!accounts.some(a=>a.code===l.code&&!a.is_header&&a.is_active)))throw new Error("Akun jurnal rekonsiliasi tidak tersedia. Periksa transaksi sebelum mengulang.");
-  const seq=await nextSeqJurnal(supabase,o.tanggal);
-  const {data:entry,error:entryError}=await supabase.from("journal_entries").insert({no_jurnal:`${prefixJurnal(o.tanggal)}-${String(seq).padStart(4,"0")}`,tanggal:o.tanggal,deskripsi:o.deskripsi,source:o.source,branch_id:null}).select("id").single();
-  if(entryError||!entry)throw new Error(entryError?.message??"Jurnal belum terkonfirmasi");
-  const {error:lineError}=await supabase.from("journal_lines").insert(o.lines.map(l=>({entry_id:entry.id,account_id:accounts.find(a=>a.code===l.code)!.id,debit:l.debit,credit:l.credit})));
-  if(lineError){await supabase.from("journal_entries").delete().eq("id",entry.id);throw new Error(lineError.message);}
+export async function pulihkanRekonsiliasi(formData: FormData) {
+  const supabase = await assertRole(BACK, "rekonsiliasi bank", ["OWNER", "ADMIN", "FINANCE"]);
+  const key = String(formData.get("draft_key") ?? "");
+  const scope = String(formData.get("draft_scope") ?? "");
+  if (!key || key.length > 120 || !/^bank-reconciliation-(create|(?:edit|void)-[0-9a-f-]{36}-\d+)$/i.test(scope)) redirect(`${BACK}?error=${encodeURIComponent("Identitas pemeriksaan tidak valid.")}`);
+  const { data, error } = await supabase.rpc("get_bank_reconciliation_result", { p_request_key: key });
+  if (error || !data?.reconciliation_id) redirect(`${BACK}?error=${encodeURIComponent(error?.message ?? "Hasil belum tercatat. Isian lama tetap disimpan; periksa formulir sebelum mengirim ulang.")}`);
+  redirect(`${BACK}/${data.reconciliation_id}?success=recovered${transactionDraftAck(formData)}`);
 }

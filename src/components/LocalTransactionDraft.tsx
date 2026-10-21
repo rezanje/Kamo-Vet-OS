@@ -32,7 +32,9 @@ export function LocalTransactionDraft({userId: explicitUserId,scope,state}:{user
 }
 export function TransactionDraftComplete({userId}:{userId:string}) {
   const params=useSearchParams();const scope=params.get("draft_scope"),key=params.get("draft_done");
-  useEffect(()=>{if(!scope||!key)return;clearTransactionDraft(userId,"transaction",scope,key);
+  useEffect(()=>{if(!scope||!key)return;
+    try { const name=`vetos:correction-key:v1:${userId}:${scope}`;if(sessionStorage.getItem(name)===key)sessionStorage.removeItem(name); } catch { /* Acknowledged server result remains authoritative. */ }
+    clearTransactionDraft(userId,"transaction",scope,key);
     window.dispatchEvent(new CustomEvent("vetos:transaction-confirmed",{detail:{scope,key}}));},[userId,scope,key]);
   return null;
 }
