@@ -2,10 +2,14 @@
 
 ## Delivered
 
-1. New Accurate opening-stock imports debit Persediaan 1301 and credit Modal
-   Pemilik 3101 using exact source quantities, costs, branch and date, atomically
-   with stock and import status. Blank/missing HPP is rejected separately from an
-   explicitly supplied zero. Existing posted imports are not backfilled.
+1. New Accurate opening-stock imports use the reviewed OWNER-only inventory
+   accounting flow: exact source value debits Persediaan 1301 and credits the
+   explicitly selected equity account, atomically with stock and import status.
+   One protected `accurate-stock-opening` journal is created per reviewed batch;
+   the superseded automatic opening writer was removed. Blank/missing HPP is
+   rejected separately from an explicitly supplied zero. Existing posted imports
+   are not backfilled. Inventory closing is included in review evidence, and
+   posting acquires the inventory lock before journal/stock relation locks.
 2. Moving weighted average valuation per warehouse/item is independent of
    physical FEFO acquisition layers. Activation preserves reconciled opening
    carrying value and historical sale HPP. Current issues include all sold units,
@@ -54,10 +58,10 @@ Clinic, import, correction and blank-HPP fixes also have observed red/green test
 
 Final application verification:
 
-- `npm test`: **271 files, 2236 tests passed**, no failed tests.
+- `npm test`: **283 files, 2299 tests passed**, no failed tests.
 - `npm run build`: passed, including the new closing route.
 - `npx tsc --noEmit`: passed.
-- Changed-source ESLint: **38 files passed**.
+- Changed-source ESLint: **38 task files passed before integration**; merged build lint/type checks passed.
 - `git diff --check`: passed.
 
 Disposable PostgreSQL verification applies all repository migrations, uses only
@@ -74,9 +78,11 @@ fictional fixtures at localhost:5432, and removes each database afterward:
   FIFO purchase and sale cancellation suites also pass.
 - `scripts/test-moving-average-clinic-postgres.py`: clinic issue/edit, compound
   restoration/billing, delivery/invoice allocation and four existing FIFO suites.
-- `scripts/test-import-balance-sheet-postgres.py`: exact opening journal,
-  duplicate/branch/date/value rejection, late-failure rollback and concurrent
-  first imports with exactly one committed opening.
+- `scripts/test-reviewed-inventory-import-postgres.py`: existing reviewed
+  accounting/guard/source-protection suites; FIFO and moving-average imports of
+  mixed-price lots; exactly one opening journal across all sources; explicit
+  equity selection and exact retries; unknown-price rejection; inventory cutoff
+  review evidence; and activation/import concurrency without a lock inversion.
 - `scripts/test-negative-stock-hpp-postgres.py`: prior negative-stock regression
   plus merchant fees, online returns, sale cancellations and atomic transfers.
 - Original full purchase-invoice and posted-sales runners passed, including their
@@ -87,12 +93,16 @@ fictional fixtures at localhost:5432, and removes each database afterward:
 ## Release status and limitations
 
 This new feedback package is implemented and verified locally. It has **not** been
-deployed to production. The earlier negative-stock correction remains the last
-production rollout recorded in this chat.
+deployed to production at this commit; rollout evidence will be recorded after
+verification. Live preflight found five positive WH_PDRY balances with zero source
+and master HPP: 100587 (10), 100909 (12), 100911 (10), CODRC0006 (6), OBT-00455 (4).
+The user approved continuing deployment with activation pending reconciliation.
+No prices will be inferred, so FIFO remains active until that reconciliation.
 
-New migration order: `20261021110000_import_balance_sheet`,
-`20261021120000_moving_average_inventory`, `20261021123000_average_clinic_paths`,
-`20261021124000_average_corrections`. The schema starts in FIFO for a controlled
+New migration order: `20261021120000_moving_average_inventory`,
+`20261021123100_average_clinic_paths`, `20261021124000_average_corrections`,
+`20261021140000_accurate_inventory_average_integration`. The superseded unshipped
+automatic opening migration was removed in favor of the current reviewed bridge. The schema starts in FIFO for a controlled
 prospective cutover; an authorized all-branch OWNER/FINANCE activates moving
 average through the new page/RPC after initial-stock reconciliation. Past HPP,
 existing import balances and posted journals are not silently rewritten.

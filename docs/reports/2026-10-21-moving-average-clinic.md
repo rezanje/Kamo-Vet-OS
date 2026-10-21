@@ -1,6 +1,6 @@
 # Moving-average clinic and order delivery integration
 
-`20261021123000_average_clinic_paths.sql` switches the existing direct clinic and sales-order stock writers to the effective moving-average unit cost when the global method is active. FEFO ordering, physical layer consumption, stock availability checks, branch/auth checks, request replay, and accounting flows remain in their existing routines. Guarded function-definition replacements fail the migration if an expected upstream anchor changes.
+`20261021123100_average_clinic_paths.sql` switches the existing direct clinic and sales-order stock writers to the effective moving-average unit cost when the global method is active. FEFO ordering, physical layer consumption, stock availability checks, branch/auth checks, request replay, and accounting flows remain in their existing routines. Guarded function-definition replacements fail the migration if an expected upstream anchor changes.
 
 - Clinic invoice HPP uses the current warehouse/item average; the stock move retains the exact rate before the invoice rounds cents.
 - Compound issuance stores the recognized cost in `compound_issues.unit_cost` and the consumed physical price in `physical_unit_cost`, alongside its existing layer ID and expiry. Historical FIFO issues backfill the physical snapshot from their original issued cost.

@@ -96,7 +96,10 @@ $new$ if public.inventory_is_average() then
 
 -- This old public helper has no document date, journal identity, or idempotency
 -- key. Keep FIFO compatibility; average corrections use the official invoice RPC.
-select pg_temp.patch_average_correction('public.reprice_purchase_invoice_layers(jsonb,jsonb)'::regprocedure,
+do $legacy$ begin
+ -- Some deployed installations already removed this obsolete helper.
+ if to_regprocedure('public.reprice_purchase_invoice_layers(jsonb,jsonb)') is not null then
+  perform pg_temp.patch_average_correction('public.reprice_purchase_invoice_layers(jsonb,jsonb)'::regprocedure,
 $old$begin
   if jsonb_typeof$old$,
 $new$begin
@@ -104,6 +107,8 @@ $new$begin
     raise exception 'Penyesuaian HPP average harus melalui faktur resmi';
   end if;
   if jsonb_typeof$new$);
+ end if;
+end $legacy$;
 
 -- Sale values come from the issue's recorded method, never today's setting.
 -- Physical takes still carry acquisition costs and prove exact restorability.
