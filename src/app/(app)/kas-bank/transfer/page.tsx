@@ -1,11 +1,11 @@
-import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { TransferRecovery } from "./TransferRecovery";
+import { TransferForm } from "./TransferForm";
 import Link from "next/link";
+import { readListPage } from "@/lib/checked-list";
+import { ListPagination } from "@/components/ListPagination";
 import { createClient } from "@/lib/supabase/server";
 import { bolehTransaksiKas } from "@/lib/master-guard";
-import { SubmitButton } from "@/components/SubmitButton";
 import { getAccountBalances } from "@/lib/ledger";
-import { hariIniWIB } from "@/lib/tanggal";
-import { buatTransfer, batalkanTransfer } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -14,7 +14,7 @@ function one<T>(r: Rel<T>): T | null {
 
 type Baris = {
   id: string; no_transfer: string; tanggal: string; jumlah: number; biaya_admin: number;
-  keterangan: string | null; voided_at: string | null;
+  keterangan: string | null; voided_at: string | null; void_reason: string | null; replacement_of: string | null; branch_id: string | null; revision: number; from_account_id: string; to_account_id: string;
   from: Rel<{ nama: string }>; to: Rel<{ nama: string }>; branches: Rel<{ name: string }>;
 };
 
@@ -25,26 +25,40 @@ const fmtTgl = (d: string) =>
 export default async function TransferPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; koreksi?: string; batal?: string; hal?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, koreksi, batal, hal } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
+  const {data: profile} = await supabase.from("profiles").select("role,is_active").eq("id",user?.id ?? "").maybeSingle();
 
-  const [{ data: rekData }, { data: branches }, { data: rows }, saldoAkun] = await Promise.all([
+  const columns = "id, no_transfer, tanggal, jumlah, biaya_admin, keterangan, voided_at, void_reason, replacement_of, branch_id, revision, from_account_id, to_account_id, from:from_account_id(nama), to:to_account_id(nama), branches(name)";
+  const loadTransfers = readListPage<Baris>((from, to) => supabase.from("cash_transfers")
+    .select(columns, {count:"exact"}).order("tanggal", {ascending:false}).order("created_at", {ascending:false}).order("id").range(from,to)
+    .then(result => ({...result,data:result.data as unknown as Baris[] | null})), "Catatan transfer", hal)
+    .then(page => ({page,error:null})).catch((error: unknown) => ({page:null,error}));
+  const [{ data: rekData }, { data: branches }, { page: transferPage, error: transferError }, saldoAkun] = await Promise.all([
     supabase.from("cash_accounts").select("id, nama, jenis, coa_code").eq("is_active", true).order("nama"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    supabase
-      .from("cash_transfers")
-      .select("id, no_transfer, tanggal, jumlah, biaya_admin, keterangan, voided_at, from:from_account_id(nama), to:to_account_id(nama), branches(name)")
-      .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(50),
+    loadTransfers,
     getAccountBalances(supabase),
   ]);
 
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
   const rekening = (rekData ?? []) as { id: string; nama: string; jenis: string; coa_code: string }[];
-  const daftar = (rows ?? []) as unknown as Baris[];
+  const daftar = transferPage?.rows ?? [];
+  const mayCorrect = profile?.role === "OWNER" && profile?.is_active;
+  let selected = daftar.find(t => t.id === (koreksi ?? batal));
+  let selectionError: unknown = null;
+  if ((koreksi || batal) && !selected) {
+    const result = await supabase.from("cash_transfers").select(columns).eq("id",koreksi ?? batal ?? "").maybeSingle();
+    selected = (result.data as unknown as Baris | null) ?? undefined;
+    selectionError = result.error;
+  }
+  const historyIds = [...new Set([...daftar.map(t=>t.id), ...(selected ? [selected.id] : [])])];
+  const {data: history, error: historyError} = historyIds.length ? await supabase.from("cash_transfer_revisions")
+    .select("id,transfer_id,replacement_transfer_id,created_by,original_journal_id,reversal_journal_id,replacement_journal_id,action,reason,created_at").in("transfer_id",historyIds).order("created_at",{ascending:false}) : {data:[],error:null};
 
   // Saldo ditempel di label dropdown — keputusan boss: saldo minus tidak dilarang,
   // tapi harus kelihatan sebelum transfer disimpan.
@@ -66,7 +80,7 @@ export default async function TransferPage({
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>TRANSFER BANK</div>
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
-            Setor tunai, tarik tunai, dan pindah antar rekening — semuanya lewat sini
+            Catatan perpindahan antar rekening internal. Halaman ini tidak mengirim uang melalui bank.
           </div>
         </div>
       </div>
@@ -78,10 +92,12 @@ export default async function TransferPage({
       )}
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> {success === "batal" ? "Transfer dibatalkan." : "Transfer tersimpan."}
+          <i className="ti ti-circle-check" /> {success === "batal" ? "Transfer dibatalkan." : success === "koreksi" ? "Catatan asli dibalik dan pengganti tersimpan. Saldo kedua rekening sudah dikoreksi." : "Transfer tersimpan."}
         </div>
       )}
       {!boleh && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN/FINANCE yang bisa membuat transfer.</div>}
+      {(koreksi || batal) && !mayCorrect && <div role="alert" className="p2ban">Hanya Super Admin/OWNER aktif yang berhak mengoreksi atau membatalkan catatan transfer.</div>}
+      <TransferRecovery userId={user?.id ?? ""}/>
       {rekening.length < 2 && (
         <div className="p2ban">
           <i className="ti ti-info-circle" /> Butuh minimal dua rekening aktif. Tambah di{" "}
@@ -89,60 +105,16 @@ export default async function TransferPage({
         </div>
       )}
 
-      {boleh && rekening.length >= 2 && (
-        <TransactionForm userId={user?.id ?? ""} scope={"bank-transfer-create"} action={buatTransfer} className="crm-sec" style={{ marginBottom: 14 }}>
-          <div className="frow">
-            <div>
-              <label className="flab">Tanggal *</label>
-              <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} required />
-            </div>
-            <div>
-              <label className="flab">Cabang</label>
-              <select className="fi" name="branch_id" defaultValue="">
-                <option value="">— Pusat / tanpa cabang —</option>
-                {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="frow" style={{ marginTop: 10 }}>
-            <div>
-              <label className="flab">Dari rekening *</label>
-              <select className="fi" name="from_account_id" defaultValue="" required>
-                <option value="">— pilih —</option>
-                {opsi.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="flab">Ke rekening *</label>
-              <select className="fi" name="to_account_id" defaultValue="" required>
-                <option value="">— pilih —</option>
-                {opsi.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="frow" style={{ marginTop: 10 }}>
-            <div>
-              <label className="flab">Jumlah *</label>
-              <input className="fi" type="number" name="jumlah" min={1} step="any" required />
-            </div>
-            <div>
-              <label className="flab">Biaya admin bank</label>
-              <input className="fi" type="number" name="biaya_admin" min={0} step="any" defaultValue={0} />
-              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-                Dipotong dari rekening sumber, masuk Beban Administrasi Bank.
-              </div>
-            </div>
-          </div>
-          <div className="fg" style={{ marginTop: 10 }}>
-            <label className="flab">Keterangan</label>
-            <input className="fi" name="keterangan" placeholder="mis. setoran omzet Sabtu" />
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-            <SubmitButton className="btn-acc" icon="ti-send" pendingText="Menyimpan…">
-              Simpan transfer
-            </SubmitButton>
-          </div>
-        </TransactionForm>
+      {(transferError || selectionError) && <div role="alert" className="p2ban">Daftar catatan transfer gagal dimuat. Muat ulang atau hubungi administrator.</div>}
+      {historyError && <div role="alert" className="p2ban">Riwayat koreksi gagal dimuat. Muat ulang sebelum melanjutkan.</div>}
+      {mayCorrect && selected && !selected.voided_at && <section id="koreksi-transfer" className="crm-sec" style={{marginBottom:14}}>
+        <h2>{koreksi ? "Koreksi" : "Batalkan"} catatan {selected.no_transfer}</h2>
+        <TransferForm userId={user?.id ?? ""} mode={koreksi ? "edit" : "void"} header={selected} rekening={opsi}/>
+        <Link href="/kas-bank/transfer" className="btn-def">Tutup koreksi</Link>
+      </section>}
+      {mayCorrect && (koreksi || batal) && (!selected || selected.voided_at) && <div role="alert" className="p2ban">Catatan tidak tersedia atau sudah berubah/dibatalkan. Periksa hasil sebelumnya atau pilih catatan aktif.</div>}
+      {boleh && rekening.length >= 2 && !koreksi && !batal && (
+        <div className="crm-sec" style={{marginBottom:14}}><TransferForm userId={user?.id ?? ""} rekening={opsi} branches={branches ?? []}/></div>
       )}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
@@ -167,6 +139,8 @@ export default async function TransferPage({
                   <td style={{ fontSize: 10.5 }}>{fmtTgl(t.tanggal)}</td>
                   <td style={{ fontSize: 11 }}>
                     {one(t.from)?.nama ?? "—"} → {one(t.to)?.nama ?? "—"}
+                    {t.replacement_of && <div style={{fontSize:10}}>Pengganti catatan {t.replacement_of}</div>}
+                    {t.void_reason && <div style={{fontSize:10}}>Alasan pembatalan: {t.void_reason}</div>}
                     {t.keterangan && <div style={{ fontSize: 9.5, color: "var(--td)" }}>{t.keterangan}</div>}
                   </td>
                   <td style={{ fontSize: 11, textAlign: "right", fontWeight: 600 }}>{rp(Number(t.jumlah))}</td>
@@ -180,13 +154,12 @@ export default async function TransferPage({
                   {boleh && (
                     <td>
                       {!t.voided_at && (
-                        <form action={batalkanTransfer}>
-                          <input type="hidden" name="id" value={t.id} />
-                          <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
-                            Batalkan
-                          </SubmitButton>
-                        </form>
+                        <div>
+                          {mayCorrect && <Link href={`/kas-bank/transfer?koreksi=${t.id}&hal=${transferPage?.pageInfo.page ?? 1}#koreksi-transfer`}>Koreksi</Link>}
+                          {mayCorrect && <div><Link href={`/kas-bank/transfer?batal=${t.id}&hal=${transferPage?.pageInfo.page ?? 1}#koreksi-transfer`}>Batalkan catatan</Link></div>}
+                        </div>
                       )}
+                      {history?.some(h=>h.transfer_id===t.id) && <details style={{marginTop:6}}><summary>Riwayat</summary>{history.filter(h=>h.transfer_id===t.id).map((h)=><p key={h.id} style={{fontSize:11}}>{fmtTgl(h.created_at)} · {h.action === "edit" ? "Koreksi" : "Pembatalan"}: {h.reason}<br/>Pelaku: {h.created_by}<br/>Jurnal asli: {h.original_journal_id}<br/>Pembalik: {h.reversal_journal_id}{h.replacement_journal_id && <><br/>Jurnal pengganti: {h.replacement_journal_id}</>}{h.replacement_transfer_id && <><br/>Catatan pengganti: {h.replacement_transfer_id}</>}</p>)}</details>}
                     </td>
                   )}
                 </tr>
@@ -201,9 +174,9 @@ export default async function TransferPage({
         </div>
       </div>
 
+      {transferPage && <ListPagination path="/kas-bank/transfer" query={{}} total={transferPage.count} pageInfo={transferPage.pageInfo}/>}
       <div style={{ fontSize: 10, color: "var(--td)", marginTop: 10 }}>
-        Transfer tidak bisa dihapus — dibatalkan dengan jurnal balik bertanggal sama, supaya laporan
-        bulan mana pun tidak ikut bergeser.
+        Hanya Super Admin/OWNER dapat mengoreksi atau membatalkan. Catatan asli tetap tersimpan; jurnal pembalik dan pengganti memakai tanggal serta cabang yang sama. Saldo rekening asal dan tujuan diperbaiki bersama tanpa menambah pendapatan.
       </div>
     </>
   );

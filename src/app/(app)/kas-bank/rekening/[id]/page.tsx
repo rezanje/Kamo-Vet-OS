@@ -23,6 +23,7 @@ const ASAL: Record<string, string> = {
   "kas-entry-void": "Pembatalan kas",
   transfer: "Transfer antar rekening",
   "transfer-void": "Pembatalan transfer",
+  "transfer-reversal": "Pembalik koreksi transfer",
   "purchase-pay": "Pembayaran pemasok",
   "sales-return": "Retur penjualan",
   "bank-rec": "Penyesuaian rekonsiliasi",
