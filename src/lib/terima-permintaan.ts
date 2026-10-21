@@ -38,5 +38,9 @@ export async function prosesTerimaPermintaan(
   if (error) return { ok: false, error: error.message };
   const result = Array.isArray(data) ? data[0] : data;
   if (!result) return { ok: false, error: "Hasil penerimaan kosong." };
+  if (typeof result.receipt_number !== "string" || !result.receipt_number.trim()
+    || !["number", "string"].includes(typeof result.selisih) || String(result.selisih).trim() === "" || !Number.isFinite(Number(result.selisih))) {
+    return { ok: false, error: "Hasil penerimaan belum terkonfirmasi lengkap. Periksa riwayat sebelum mengirim ulang." };
+  }
   return { ok: true, receiptNumber: result.receipt_number, selisih: Number(result.selisih) };
 }
