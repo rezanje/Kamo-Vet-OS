@@ -149,6 +149,7 @@ begin;
 select set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000001',true);
 do $$declare doc uuid;plan jsonb;result jsonb;rows jsonb;begin
  doc:=test_stock_source('adjustment','SIGN',5,10);
+ update inventory_adjustments set created_at=now()-interval '1 day' where id=doc;
  rows:='[{"item_id":"ef400000-0000-4000-8000-000000000001","qty":8}]';
  set local role authenticated;
  plan:=preview_stock_document_correction('adjustment',doc,rows);
@@ -163,6 +164,10 @@ do $$declare doc uuid;plan jsonb;result jsonb;rows jsonb;begin
  perform correct_stock_document('adjustment',doc,rows,'Cancel original stock effect','sign-cancel',plan->>'token');
  if (select sum(qty_left*unit_cost) from stock_layers)<>1000 then raise exception 'Cancellation did not restore original layers';end if;
  if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1301')<>0 then raise exception 'Cancellation journal net is not zero';end if;
+ rows:='[{"item_id":"ef400000-0000-4000-8000-000000000001","qty":11}]';
+ plan:=preview_stock_document_correction('adjustment',doc,rows);
+ perform correct_stock_document('adjustment',doc,rows,'Correct after zero-effect cancellation','after-zero',plan->>'token');
+ if (select qty from stock where item_id='ef400000-0000-4000-8000-000000000001')<>11 then raise exception 'Correction after zero-effect replacement failed';end if;
  if (get_stock_document_correction_result('adjustment',doc,'sign-negative')->>'correction_id') is distinct from result->>'correction_id' then raise exception 'Recovery did not preserve original result';end if;
  begin update inventory_adjustments set keterangan='tamper' where id=doc;raise exception 'source tamper accepted';exception when insufficient_privilege then null;end;
  begin delete from stock_moves where source='stock-correction';raise exception 'stock ledger delete accepted';exception when insufficient_privilege then null;end;

@@ -232,7 +232,10 @@ begin
    end if;
   end if;
   if old_diff<>0 and (m.qty is distinct from old_diff or m.unit_cost<0 or m.unit_cost::text in('NaN','Infinity','-Infinity')) then raise exception 'Nilai mutasi sumber tidak konsisten. Rekonsiliasi diperlukan';end if;
-  if exists(select 1 from public.stock_moves other where other.warehouse_id=wh and other.item_id=r.item_id and other.created_at>coalesce(m.created_at,(state->'source_snapshot'->'document'->>'created_at')::timestamptz) and other.source_ref is distinct from state->>'ref') then raise exception 'Stok sudah terpakai, terjual, diretur atau dipindahkan. Rekonsiliasi dokumen lanjutan terlebih dahulu';end if;
+  -- Later revisions already compare every layer and movement to their recorded
+  -- after-state. A zero-effect replacement has no own move/timestamp; falling
+  -- back to the original date would mistake its prior reversals for dependencies.
+  if (state->>'revision')::integer=0 and exists(select 1 from public.stock_moves other where other.warehouse_id=wh and other.item_id=r.item_id and other.created_at>coalesce(m.created_at,(state->'source_snapshot'->'document'->>'created_at')::timestamptz) and other.source_ref is distinct from state->>'ref') then raise exception 'Stok sudah terpakai, terjual, diretur atau dipindahkan. Rekonsiliasi dokumen lanjutan terlebih dahulu';end if;
   virtual:='[]';
   for l in select x.* from jsonb_to_recordset(layers)x(id uuid,item_id uuid,qty_in numeric,qty_left numeric,unit_cost numeric,source text,source_ref text,exp_date date,tanggal date,created_at timestamptz) where x.item_id=r.item_id order by exp_date nulls last,tanggal,created_at,id loop
    restored:=l.qty_left;

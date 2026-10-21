@@ -48,6 +48,8 @@ The SQL runner creates an owned PostgreSQL 16 Docker container with networking d
 
 SQL assertions cover both source families, incoming/outgoing corrections, mixed-cost/expiry lot restoration, correction-to-baseline cancellation, fractional counts, read-only preview, immutable originals, inventory quantity/card/layer/journal agreement, exact/conflicting retries, source-issuance retry, access denial, missing evidence, duplicate/NaN input, stale price preview, closed period, linked invoice, transfer/return dependency, insufficient stock, protected history/private request tables, and full snapshot rollback after injected replacement-journal failure. Injected proof-storage failure also rolls the initial stock issue back. Independent sessions demonstrably wait on locks for identical requests, both correction/consumption orderings and actor revocation during a source-document wait.
 
+A final red/green SQL regression covers a correction after cancellation to a zero-effect replacement. Later revisions use the exact complete after-state comparison; they do not mistake earlier reversal movements for downstream activity by falling back to the original document timestamp.
+
 Nine focused application tests, TypeScript, scoped ESLint and production build passed. Build retains unrelated existing warnings.
 
 Full suite: **2,203 passed, 3 failed; 264 passed files, 2 failed files**. The same three failures reproduced on an untouched archive of main d6d9c70 using the same dependency installation:
