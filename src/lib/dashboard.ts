@@ -49,7 +49,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     // Tabel po_payments sudah tidak ditulis layar mana pun — membacanya bikin dashboard
     // selalu melaporkan seluruh PO sebagai belum dibayar.
     supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_items(po_item_id,item_id,qty,faktor), purchase_invoice_payments(amount)").is("voided_at", null),
-    supabase.from("purchase_returns").select("po_id, total"),
+    supabase.from("purchase_returns").select("po_id, total").is("voided_at", null),
     // baris jurnal kas/bank 7 hari terakhir untuk arus kas harian.
     supabase
       .from("journal_lines")

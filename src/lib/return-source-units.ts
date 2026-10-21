@@ -24,7 +24,7 @@ export type ReturnFormRow = Omit<ReturnType<typeof returnSourceRows>[number], 's
 };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadSaleReturnRows(db:any, sale:{id:string;subtotal:number;total:number;payment_plan?:unknown;sale_items:(ReturnSource & {sale_item_group_components?:ReturnFormRow['components']|null})[]|null}):Promise<ReturnFormRow[]> {
- const {data,error}=await db.from('sales_returns').select('sales_return_items(source_line_id,item_id,qty)').eq('sale_id',sale.id);
+ const {data,error}=await db.from('sales_returns').select('sales_return_items(source_line_id,item_id,qty)').is("voided_at", null).eq('sale_id',sale.id);
  if(error) throw new Error('Gagal memuat retur sebelumnya.');
  const sources=sale.sale_items??[];
  const rows=returnSourceRows(sources,(data??[]).flatMap((d:{sales_return_items:PriorReturn[]|null})=>d.sales_return_items??[]));

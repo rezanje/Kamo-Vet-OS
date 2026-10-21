@@ -41,7 +41,7 @@ export default async function PenjualanKasirPage({
       .select("id, cashier_id, total, discount, payment_plan, payments_finalized_at, voided_at, branches(name)", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
     completeReportQuery(supabase.from("sales_returns")
-      .select("id, total, sales(cashier_id, branches(name))", { count: "exact" })
+      .select("id, total, sales(cashier_id, branches(name))", { count: "exact" }).is("voided_at", null)
       .gte("tanggal", dari).lte("tanggal", sampai)),
     // Kasir dikenali lewat akun login (sales.cashier_id → profiles), bukan lewat
     // tabel karyawan: tidak semua akun kasir punya kartu karyawan.
