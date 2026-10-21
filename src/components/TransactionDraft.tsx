@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 
 export type DraftSnapshot = { snapshot: Record<string, unknown>; restore: (value: Record<string, unknown>) => boolean; reset?: () => void };
 type Draft = { version: 1; savedAt: number; requestKey: string; fields: Record<string, string>; snapshot: Record<string, unknown> };
@@ -22,6 +23,7 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
   userId: string; domain: "purchase" | "sales" | "transaction"; scope: string; requestKey: string; state?: DraftSnapshot;
 }) {
   const anchor = useRef<HTMLSpanElement>(null);
+  const { pending } = useFormStatus();
   const latest = useRef(state);
   useLayoutEffect(() => { latest.current = state; });
   const save = useRef<() => void>(() => {});
@@ -93,7 +95,7 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
     };
   }, [userId, domain, scope, requestKey]);
   useEffect(() => { save.current(); }, [serialized, fields]);
-  return <span ref={anchor}>{notice && <span role="status" className="p2ban" style={{ display: "block", marginBottom: 12 }}>{notice}</span>}</span>;
+  return <span ref={anchor}>{(pending || notice) && <span role="status" className="p2ban" style={{ display: "block", marginBottom: 12 }}>{pending ? "Memproses transaksi…" : notice}</span>}</span>;
 }
 export function eligible(control: Element): control is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
   return (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)

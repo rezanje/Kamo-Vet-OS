@@ -39,11 +39,13 @@ export function TransactionDraftComplete({userId}:{userId:string}) {
 /** Keep the page and draft on transport failure; require a human to verify uncertain commit. */
 export function usePreservedAction(action:(data:FormData)=>void|Promise<void>) {
   const [failure,setFailure]=useState("");
-  const save=async(data:FormData)=>{setFailure("");try{await action(data);}catch(error){
+  const save=async(data:FormData)=>{setFailure("");let detail="";try{await action(data);}catch(error){
     if(typeof error==="object"&&error!==null&&"digest" in error&&String(error.digest).startsWith("NEXT_REDIRECT"))throw error;
-    const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
+    detail = error instanceof Error && error.message ? ` ${error.message}` : "";
+  }
+    // These actions confirm completion by redirecting; a plain return is uncertain.
     setFailure(`Respons simpan belum terkonfirmasi.${detail} Isian tetap tersedia. Periksa daftar transaksi sebelum menyimpan ulang agar tidak menggandakan transaksi.`);
-  }};
+  };
   return {save,failure};
 }
 export function TransactionForm({userId: explicitUserId,scope,action,children,...props}:{userId?:string;scope:string;action:(data:FormData)=>void|Promise<void>;children:ReactNode}&Omit<React.FormHTMLAttributes<HTMLFormElement>,"action">) {
