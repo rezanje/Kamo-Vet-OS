@@ -1,0 +1,92 @@
+{
+  "base": "d6d9c70d24fed05ff16a2dfd32f55cbeaa48fb3f",
+  "priority_merged_source": "426b3584eb5d1a860922bb6f056859158f08472c",
+  "pr_heads": {
+    "62": "108a719f5b4462fa5bae02fb6e95d3f95fd12518",
+    "68": "264fb237c978d2ec84cf09e65a9d7cbd0f241f61",
+    "69": "d40c22b923bb4b6141d38164081bdc4407c5ccea",
+    "70": "cc2a89e4d271b9b96ceaee14adab9ef84c2ea24c",
+    "71": "5dde2ef40a0928ba57ef521aae2468e3a2dd4cd3",
+    "72": "0eb82ad95445fb886405193537a3c092c49c9079",
+    "73": "5677efb4c407c5b7b624a3836694c71c6f4d5894",
+    "74": "af4599401703379a974bed9489722991089588ee",
+    "75": "94b4474a60c2774f910ac76df277d82e1a73f2cc",
+    "76": "cb0cb3b87e7ffac0c9bfd1e9710d5e7aac47fdef",
+    "77": "12a964d874706e93be9a2bd35458d9b129da1778"
+  },
+  "primary_prs": [
+    74,
+    75,
+    76,
+    77
+  ],
+  "excluded_prs": [
+    62,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73
+  ],
+  "kartustok": "Included PR77 exact reviewed head; runtime fixture rerun on final composition",
+  "postgres_image": "postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690",
+  "github_reviews_observed": {
+    "62": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "68": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "69": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "70": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "71": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "72": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "73": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "74": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "75": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "76": {
+      "reviews": 0,
+      "review_threads": 0
+    },
+    "77": {
+      "reviews": 0,
+      "review_threads": 0
+    }
+  },
+  "review_context": "PR76 delta independent static review confirmed by parent; no claim of GitHub approval or production acceptance; parent also confirmed independent static PR77 review",
+  "supplementary_branches": {
+    "codex/kamo-integration-68-75-20261021": "9739ca1",
+    "codex/kamo-integration-68-76-20261021": "161aaa8b8d474d7852b982b261416c23444cadfe"
+  },
+  "final_vitest": {
+    "passed": 2257,
+    "failed": 3,
+    "baseline_passed": 2194,
+    "baseline_failed": 3,
+    "new_failures_observed": 0
+  }
+}

@@ -1,0 +1,6 @@
+All production migrations applied to disposable local PostgreSQL.
+Existing sales posting SQL regression suite passed.
+Wholesale SQL acceptance suite passed.
+Two-session correction retry, receipt retry, competing final payments, and both payment/correction orderings passed.
+Payroll epoch tests passed: absent0, same-period increment once, both snapshot/write races, cross-period increment of both months.
+Advance funding journal INSERT/first-usage races passed in both orders: blocked phantom or rejected invalid funding, no leaked allocation.

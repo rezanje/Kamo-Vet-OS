@@ -1,0 +1,9 @@
+Applied 215 migrations to disposable PostgreSQL 16.
+Existing online/return transaction regression suite passed.
+Existing merchant-fee suite and split-method 80% to 60% correction/cancel/full re-return passed.
+Return record correction SQL passed.
+Customer/supplier prior-day and prior-year restatement, cancellation and closed-original-year checks passed.
+Real waiting sessions: identical retry returns one audit; competing correction rejects stale revision.
+Concurrent downstream stock issue commits first; waiting correction rechecks and rejects without reversal.
+Both bank ledger lock orders passed: covering reconciliation blocks, or waiting snapshot includes reversal.
+Actor revoked in an earlier waiting transaction cannot complete correction.

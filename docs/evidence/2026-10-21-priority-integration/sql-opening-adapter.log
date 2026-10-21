@@ -1,0 +1,7 @@
+Tool exec session 66483 exit0.
+Applied 215 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+monetary_opening_corrections.sql: PASS
+monetary_opening_creation.sql: PASS
+PASS real concurrent duplicate/recovery, competing revisions, ledger change, both reconciliation orderings, period closure and current account/actor authorization
+Removed owned PostgreSQL test container and volumes.
+Harness adaptation: imported PR74 DisposablePostgres; used db.command() for opening source.PSQL/source.sql; invoked PR70 concurrency(source) without createdb on host. No implementation changes.
