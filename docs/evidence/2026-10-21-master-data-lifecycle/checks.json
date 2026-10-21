@@ -4,7 +4,7 @@
   "native": {
     "source_migrations": 209,
     "lifecycle_suite": "pass",
-    "waiting_session_races": 11,
+    "waiting_session_races": 15,
     "races": "pass",
     "regressions": [
       "pos_merchant_fees.sql",
@@ -17,7 +17,7 @@
     "sha": "af4599401703379a974bed9489722991089588ee",
     "migrations": 210,
     "lifecycle_suite": "pass",
-    "waiting_session_races": 11,
+    "waiting_session_races": 15,
     "races": "pass",
     "combined_application_acceptance": false
   },
@@ -55,5 +55,16 @@
     "merge": false,
     "deploy": false,
     "live_acceptance": false
+  },
+  "code_rename_review": {
+    "reproduced_on": "06c2a5b",
+    "reproduction": "CODE-USED to CODE-RENAMED then trash at revision 0 succeeded before fix",
+    "sql_fixture": "master_item_code_history.sql",
+    "rename_with_code_history": "rejected",
+    "ordinary_edits_and_unused_rename": "pass",
+    "extra_waiting_session_races": 4,
+    "rejected_reference_rows_committed": 0,
+    "history_rewritten": false,
+    "application_sources_unchanged_from": "06c2a5b"
   }
 }

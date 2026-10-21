@@ -32,6 +32,30 @@ create policy master_lifecycle_audit_read on public.master_data_lifecycle_audit 
 revoke all on public.master_data_lifecycle_audit from anon,authenticated;
 grant select on public.master_data_lifecycle_audit to authenticated;
 
+-- Stable code provenance is shared by trash eligibility and the rename guard.
+-- A UUID-only FK does not freeze a code; only actual code-bearing evidence does.
+create function public.master_item_code_has_references(p_code text)
+returns boolean language plpgsql security definer set search_path='' as $$
+declare r record; used boolean;
+begin
+ if p_code is null then return false; end if;
+ if exists(select 1 from public.import_run_rows where lower(btrim(source_code))=lower(btrim(p_code))) then return true; end if;
+ for r in
+  select c.oid::regclass relation,a.attname from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+  join pg_catalog.pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped
+  where n.nspname='public' and c.relkind in ('r','p')
+   and c.relname not in ('master_data_lifecycle_audit','profiles','user_branches','role_capabilities')
+   and a.atttypid in ('json'::regtype,'jsonb'::regtype)
+ loop
+  execute format('select exists(select 1 from %s t cross join lateral jsonb_path_query(t.%I::jsonb, %L) j where lower(btrim(j #>> %L))=lower(btrim($1)))',r.relation,r.attname,'$.** ? (@.type() == "string")','{}')
+   into used using p_code;
+  if used then return true; end if;
+ end loop;
+ return false;
+end $$;
+revoke all on function public.master_item_code_has_references(text) from public,anon,authenticated,service_role;
+
 -- Discover every incoming FK (including CASCADE/SET NULL). Also conservatively
 -- inspect UUID and JSON snapshots without FKs, and unit labels stored as text.
 -- Private helper; no browser-supplied relation or column is executed.
@@ -39,7 +63,7 @@ create function public.master_data_has_references(p_entity text,p_id uuid,p_labe
 returns boolean language plpgsql security definer set search_path='' as $$
 declare r record; used boolean;
 begin
- if p_entity='items' and exists(select 1 from public.import_run_rows where lower(btrim(source_code))=lower(btrim(p_label))) then
+ if p_entity='items' and public.master_item_code_has_references(p_label) then
   return true;
  end if;
  for r in
@@ -66,7 +90,7 @@ begin
    -- UUID snapshots are checked too; unit JSON labels are conservatively matched.
    execute format('select exists(select 1 from %s where position($1 in lower((%I::jsonb)::text))>0)',r.relation,r.attname)
     into used using p_id::text;
-   if not used and p_entity in ('units','items') then
+   if not used and p_entity='units' then
     execute format('select exists(select 1 from %s t cross join lateral jsonb_path_query(t.%I::jsonb, %L) j where lower(btrim(j #>> %L))=lower(btrim($1)))',r.relation,r.attname,'$.** ? (@.type() == "string")','{}')
      into used using p_label;
    end if;
@@ -168,6 +192,35 @@ end $$;
 revoke all on function public.guard_used_unit_rename() from public,anon,authenticated,service_role;
 create trigger guard_used_unit_rename before update of nama on public.units for each row execute function public.guard_used_unit_rename();
 
+-- The UPDATE already owns the item row lock. Code-reference writers lock the
+-- same row, so a committed earlier reference is visible before rename is allowed.
+create function public.guard_used_item_code_rename() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.code is distinct from old.code and public.master_item_code_has_references(old.code) then
+  raise exception 'Kode SKU sudah memiliki riwayat berbasis kode. Kode lama dipertahankan; ubah nama atau nonaktifkan barang';
+ end if;
+ return new;
+end $$;
+revoke all on function public.guard_used_item_code_rename() from public,anon,authenticated,service_role;
+create trigger guard_used_item_code_rename before update of code on public.items for each row execute function public.guard_used_item_code_rename();
+
+-- Resolve code to identity before waiting, then lock/recheck by that identity.
+-- A waiting writer must not silently accept the old code after an unused rename.
+create function public.lock_master_item_code_references(p_codes text[]) returns void
+language plpgsql security definer set search_path='' as $$
+declare expected record; actual record; normalized text[];
+begin
+ select array_agg(distinct lower(btrim(c))) into normalized from unnest(p_codes) c where c is not null;
+ for expected in select id,code from public.items where lower(btrim(code))=any(coalesce(normalized,array[]::text[])) order by id loop
+  select code,trashed_at into actual from public.items where id=expected.id for key share;
+  if not found or actual.code is distinct from expected.code then
+   raise exception 'Kode SKU sudah berubah. Muat ulang sumber sebelum menyimpan referensi';
+  end if;
+  if actual.trashed_at is not null then raise exception 'Master berada di Sampah. Pulihkan sebelum membuat referensi baru'; end if;
+ end loop;
+end $$;
+revoke all on function public.lock_master_item_code_references(text[]) from public,anon,authenticated,service_role;
+
 -- Reference writers take a parent lock BEFORE checking trash, including RPCs
 -- running with elevated permissions. Existing unchanged links remain usable for
 -- historical corrections. Inactive parents retain their historical links.
@@ -192,14 +245,17 @@ begin
    -- Match whole canonical JSON strings, including escaped source labels.
    select array_agg(distinct lower(btrim(j #>> '{}'))) into label_tokens
     from jsonb_path_query(value::jsonb,'$.** ? (@.type() == "string")') j;
-   foreach target in array array['items','units'] loop
+   perform public.lock_master_item_code_references(label_tokens);
+   foreach target in array array['units'] loop
     label_column:=case when target='items' then 'code' else 'nama' end;
     for reference_row in execute format('select trashed_at from public.%I where lower(btrim(%I))=any($1) order by id for key share',target,label_column) using coalesce(label_tokens,array[]::text[]) loop
      if reference_row.trashed_at is not null then raise exception 'Master berada di Sampah. Pulihkan sebelum membuat referensi baru'; end if;
     end loop;
    end loop;
   end if;
- elsif tg_argv[0] in ('units_text','items_text') then
+ elsif tg_argv[0]='items_text' then
+  perform public.lock_master_item_code_references(array[value]);
+ elsif tg_argv[0]='units_text' then
   target:=case when tg_argv[0]='items_text' then 'items' else 'units' end;
   label_column:=case when tg_argv[0]='items_text' then 'code' else 'nama' end;
   for reference_row in execute format('select trashed_at from public.%I where lower(btrim(%I))=lower(btrim($1)) order by id for key share',target,label_column) using value loop

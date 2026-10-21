@@ -50,6 +50,8 @@ try:
     print(f'PASS {len(migrations)} source migrations (auth/storage shims, fictional pre-0068 COA).',flush=True)
     sql((ROOT/'supabase/tests/master_data_lifecycle.sql').read_text())
     print('PASS master_data_lifecycle.sql',flush=True)
+    sql((ROOT/'supabase/tests/master_item_code_history.sql').read_text())
+    print('PASS master_item_code_history.sql',flush=True)
     for name in options.regression_suite:
         path=(ROOT/'supabase/tests'/name).resolve()
         if path.parent!=(ROOT/'supabase/tests').resolve(): raise RuntimeError('Regression must be a repository test filename')
@@ -107,6 +109,23 @@ insert into import_runs(id,kind,source_name,source_hash,created_by) values('b900
          "insert into import_run_rows(run_id,source_row,source_code,status,payload) values('b9000000-0000-4000-8000-000000000001',1,'CODE-RACE-ONE','valid','{}');",'Sampah','trash wins / new import source code rejected')
     pair("begin;insert into import_run_rows(run_id,source_row,source_code,status,payload) values('b9000000-0000-4000-8000-000000000001',2,null,'valid',jsonb_build_object('code','CODE-RACE-TWO'));BARRIER commit;",
          auth+"select change_master_data_lifecycle('items','bf000000-0000-4000-8000-000000000002','trash',0,'code snapshot first');",'pemakaian atau riwayat','JSON code snapshot wins / trash rejected')
+    sql("""insert into items(id,code,name) values
+('cf000000-0000-4000-8000-000000000001','CODE-LOCK-SOURCE','Fictional source-code rename guard'),
+('cf000000-0000-4000-8000-000000000002','CODE-LOCK-JSON','Fictional JSON-code rename guard'),
+('cf000000-0000-4000-8000-000000000003','CODE-CHANGE-SOURCE','Fictional unused source-code rename'),
+('cf000000-0000-4000-8000-000000000004','CODE-CHANGE-JSON','Fictional unused JSON-code rename');
+""")
+    pair("begin;insert into import_run_rows(run_id,source_row,source_code,status,payload) values('b9000000-0000-4000-8000-000000000001',11,'CODE-LOCK-SOURCE','valid','{}');BARRIER commit;",
+         auth+"update items set code='CODE-LOCK-SOURCE-RENAMED' where id='cf000000-0000-4000-8000-000000000001';",'Kode SKU sudah memiliki riwayat','source code reference wins / rename rejected')
+    pair("begin;insert into import_run_rows(run_id,source_row,source_code,status,payload) values('b9000000-0000-4000-8000-000000000001',12,null,'valid',jsonb_build_object('code','CODE-LOCK-JSON'));BARRIER commit;",
+         auth+"update items set code='CODE-LOCK-JSON-RENAMED' where id='cf000000-0000-4000-8000-000000000002';",'Kode SKU sudah memiliki riwayat','JSON code reference wins / rename rejected')
+    pair(auth+"begin;select id from items where id='cf000000-0000-4000-8000-000000000003' for update;BARRIER update items set code='CODE-CHANGED-SOURCE' where id='cf000000-0000-4000-8000-000000000003';commit;",
+         "insert into import_run_rows(run_id,source_row,source_code,status,payload) values('b9000000-0000-4000-8000-000000000001',13,'CODE-CHANGE-SOURCE','valid','{}');",'Kode SKU sudah berubah','unused rename wins / waiting source-code writer rejects old identity')
+    pair(auth+"begin;select id from items where id='cf000000-0000-4000-8000-000000000004' for update;BARRIER update items set code='CODE-CHANGED-JSON' where id='cf000000-0000-4000-8000-000000000004';commit;",
+         "insert into import_run_rows(run_id,source_row,source_code,status,payload) values('b9000000-0000-4000-8000-000000000001',14,null,'valid',jsonb_build_object('code','CODE-CHANGE-JSON'));",'Kode SKU sudah berubah','unused rename wins / waiting JSON-code writer rejects old identity')
+    if sql("select count(*) from import_run_rows where run_id='b9000000-0000-4000-8000-000000000001' and source_row in (13,14);",tuples=True).stdout.strip()!='0': raise RuntimeError('Rename race committed stale provenance')
+    if sql("select count(*) from items where id in ('cf000000-0000-4000-8000-000000000001','cf000000-0000-4000-8000-000000000002') and code in ('CODE-LOCK-SOURCE','CODE-LOCK-JSON') and trashed_at is null;",tuples=True).stdout.strip()!='2': raise RuntimeError('Referenced identities changed during rename race')
+    print('PASS code rename race provenance and unchanged referenced identities',flush=True)
     sql("""insert into auth.users(id) values('ba000000-0000-4000-8000-000000000002');
 update profiles set role='ADMIN',is_active=true where id='ba000000-0000-4000-8000-000000000002';
 insert into role_capabilities(role,all_branches,create_accounts) values('ADMIN',false,false) on conflict(role) do update set all_branches=false;
