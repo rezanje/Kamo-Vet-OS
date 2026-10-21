@@ -11,6 +11,7 @@ import { depreciationPerMonth } from "@/lib/aging";
 import { akumulasiFiskal, nilaiBuku, penyusutanFiskalTahunKe, tahunBerjalan, type GolonganPajak } from "@/lib/aset";
 import { disposisiAset, pindahAset, setGolonganPajak, tambahNilaiAset, ubahUmurAset } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { AssetCorrectionForm } from "./AssetCorrectionForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -29,11 +30,13 @@ export default async function DetailAsetPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
+  const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle() : { data: null };
+  const bolehKoreksi = profile?.is_active && profile.role === "OWNER";
 
   const [{ data: aset }, { data: depData }, { data: golData }, { data: cabData }, { data: ubahData }, { data: pindahData }, { data: lepasData }, rekening] =
     await Promise.all([
       supabase.from("fixed_assets")
-        .select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, branch_id, status, tax_category_id, asset_categories(nama), branches(name), tax_asset_categories(nama, umur_bulan, metode, tarif_persen)")
+        .select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, branch_id, status, tax_category_id, correction_revision, asset_categories(nama), branches(name), tax_asset_categories(nama, umur_bulan, metode, tarif_persen)")
         .eq("id", id).maybeSingle(),
       supabase.from("asset_depreciations").select("periode, amount").eq("asset_id", id).order("periode"),
       supabase.from("tax_asset_categories").select("id, nama").eq("is_active", true).order("umur_bulan"),
@@ -45,6 +48,9 @@ export default async function DetailAsetPage({
     ]);
 
   if (!aset) notFound();
+  const { data: koreksiData } = bolehKoreksi ? await supabase.from("fixed_asset_corrections")
+    .select("id,reason,before_value,after_value,created_at,actor:profiles!fixed_asset_corrections_actor_id_fkey(full_name),original:journal_entries!fixed_asset_corrections_original_journal_id_fkey(no_jurnal),reversal:journal_entries!fixed_asset_corrections_reversal_journal_id_fkey(no_jurnal),replacement:journal_entries!fixed_asset_corrections_replacement_journal_id_fkey(no_jurnal)")
+    .eq("asset_id",id).order("created_at",{ascending:false}) : { data: [] };
 
   const dep = (depData ?? []) as { periode: string; amount: number }[];
   const akumulasi = dep.reduce((a, d) => a + Number(d.amount), 0);
@@ -100,6 +106,19 @@ export default async function DetailAsetPage({
           <KV k="Nilai sisa" v={rp(Number(aset.nilai_sisa))} />
         </div>
       </div>
+
+      {bolehKoreksi && <>
+        <AssetCorrectionForm userId={user?.id ?? ""} assetId={id} revision={aset.correction_revision} tanggal={aset.tanggal_perolehan} harga={harga}/>
+        {(koreksiData??[]).length>0 && <div className="crm-sec">
+          <h3>Riwayat koreksi pembelian</h3>
+          {(koreksiData??[]).map(c=><div key={c.id} style={{marginBottom:12}}>
+            <p>{new Date(c.created_at).toLocaleString("id-ID",{timeZone:"Asia/Jakarta"})} · {c.reason}</p>
+            <p>{rp(Number(c.before_value.harga_perolehan))} → {rp(Number(c.after_value.harga_perolehan))} · {tgl(c.before_value.tanggal_perolehan)} → {tgl(c.after_value.tanggal_perolehan)}</p>
+            <p>Dikoreksi oleh {one(c.actor as Rel<{full_name:string}>)?.full_name ?? "Super Admin"}.</p>
+            <p><JurnalKoreksi label="Jurnal asal" entry={c.original}/> · <JurnalKoreksi label="Pembalik" entry={c.reversal}/> · <JurnalKoreksi label="Pengganti" entry={c.replacement}/></p>
+          </div>)}
+        </div>}
+      </>}
 
       {lepasData && (
         <div className="crm-sec">
@@ -307,4 +326,9 @@ function KV({ k, v }: { k: string; v: string }) {
       <span style={{ fontWeight: 600 }}>{v}</span>
     </div>
   );
+}
+
+function JurnalKoreksi({label,entry}:{label:string;entry:unknown}) {
+  const number=one(entry as Rel<{no_jurnal:string}>)?.no_jurnal;
+  return number?<Link href={`/keuangan/jurnal?cari=${encodeURIComponent(number)}`}>{label}: {number}</Link>:<span>{label}: belum terbaca</span>;
 }
