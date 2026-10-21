@@ -33,7 +33,6 @@ import {
 import {
   bacaWorkbookSaldoAwal,
   initialStockScopeMappingKeys,
-  reconcileInitialStock,
   resolveInitialStockSourceScope,
   resolveSaldoAwalRows,
   type InitialStockScopeClarification,
@@ -51,8 +50,8 @@ async function assertBolehKelola() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") {
+  const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
+  if (!profile?.is_active || (profile.role !== "OWNER" && profile.role !== "ADMIN")) {
     redirect(`${BACK}?error=${encodeURIComponent("Hanya OWNER/ADMIN yang boleh mengimpor barang")}`);
   }
   return supabase;
@@ -1067,21 +1066,6 @@ function initialStockSummary(rows: ResolvedSaldoAwal[]) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadInitialScope(supabase: any, branchId: string, warehouseId: string) {
-  if (!branchId || !warehouseId) throw new Error("Cabang dan gudang wajib dipilih.");
-  const [{ data: branch, error: branchError }, { data: warehouse, error: warehouseError }] = await Promise.all([
-    supabase.from("branches").select("id, name, is_active").eq("id", branchId).maybeSingle(),
-    supabase.from("warehouses").select("id, name, branch_id, is_active").eq("id", warehouseId).maybeSingle(),
-  ]);
-  if (branchError) throw new Error(branchError.message);
-  if (warehouseError) throw new Error(warehouseError.message);
-  if (!branch?.is_active || !warehouse?.is_active || warehouse.branch_id !== branchId) {
-    throw new Error("Cabang atau gudang tidak tersedia untuk batch ini.");
-  }
-  return { branch, warehouse };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadInitialScopeFromFile(supabase: any,
   rows: Awaited<ReturnType<typeof bacaWorkbookSaldoAwal>>["rows"],
   selectedAsOf: string,
@@ -1313,96 +1297,9 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function reconcilePostedInitialStock(supabase: any, runId: string, sourceQty: number, sourceValue: number, warehouseId: string, itemIds: string[]) {
-  const [{ data: stock }, { data: layers }, { data: moves }] = await Promise.all([
-    supabase.from("stock").select("qty").eq("warehouse_id", warehouseId).in("item_id", itemIds),
-    supabase.from("stock_layers").select("qty_left, unit_cost").eq("warehouse_id", warehouseId)
-      .eq("source", "saldo-awal-accurate").eq("source_ref", runId).in("item_id", itemIds),
-    supabase.from("stock_moves").select("qty").eq("warehouse_id", warehouseId)
-      .eq("source", "saldo-awal-accurate").eq("source_ref", runId).in("item_id", itemIds),
-  ]);
-  const stockQty = (stock ?? []).reduce((total: number, row: { qty: number }) => total + Number(row.qty), 0);
-  const layerQty = (layers ?? []).reduce((total: number, row: { qty_left: number }) => total + Number(row.qty_left), 0);
-  const moveQty = (moves ?? []).reduce((total: number, row: { qty: number }) => total + Number(row.qty), 0);
-  const layerValue = (layers ?? []).reduce((total: number, row: { qty_left: number; unit_cost: number }) => total + Number(row.qty_left) * Number(row.unit_cost), 0);
-  const result = reconcileInitialStock({ sourceQty, stockQty, layerQty, moveQty, sourceValue, layerValue });
-  return [
-    { label: "Qty stok" as const, ok: Math.abs(result.differences.stock) < 0.000001, difference: result.differences.stock },
-    { label: "Qty layer" as const, ok: Math.abs(result.differences.layers) < 0.000001, difference: result.differences.layers },
-    { label: "Qty kartu" as const, ok: Math.abs(result.differences.moves) < 0.000001, difference: result.differences.moves },
-    { label: "Nilai layer" as const, ok: Math.abs(result.differences.value) < 0.000001, difference: result.differences.value },
-  ];
-}
-
+/** Stock and its journal must now be reviewed and committed together. */
 export async function postSaldoAwalAccurate(formData: FormData): Promise<InitialStockState> {
-  try {
-    const supabase = await assertBolehKelola();
-    if (String(formData.get("confirm_scope") ?? "") !== "on") {
-      return initialStockStateError("Centang konfirmasi gudang dan tanggal sebelum posting.");
-    }
-    const runId = String(formData.get("run_id") ?? "").trim();
-    const branchId = String(formData.get("branch_id") ?? "").trim();
-    const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
-    const asOf = String(formData.get("as_of") ?? "").trim();
-    const selectedAsOf = getInitialStockAsOf(formData);
-    const masterRunId = String(formData.get("master_run_id") ?? "").trim();
-    if (!runId || !branchId || !warehouseId || !asOf) return initialStockStateError("Batch saldo awal tidak lengkap.");
-    await assertMasterImportPosted(supabase, masterRunId);
-    await loadInitialScope(supabase, branchId, warehouseId);
-    const file = getInitialStockFile(formData);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const parsed = await bacaWorkbookSaldoAwal(bytes);
-    if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
-    const fileScope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf, getInitialStockScopeSelection(formData));
-    if (!fileScope.ok) return initialStockStateError(fileScope.message, fileScope.clarification ?? null);
-    if (fileScope.branch.id !== branchId || fileScope.warehouse.id !== warehouseId || fileScope.asOf !== asOf) {
-      return initialStockStateError("File, tanggal posisi, atau tujuan batch berubah. Jalankan preview lagi.");
-    }
-    const sourceHash = await hashFiles([
-      { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v4:${fileScope.branch.id}:${fileScope.warehouse.id}:${asOf}`) },
-    ]);
-    const run = await supabase.from("import_runs")
-      .select("id,kind,status,source_hash,branch_id,warehouse_id,as_of_date,summary")
-      .eq("id", runId).maybeSingle();
-    if (run.error) throw new Error(run.error.message);
-    if (!run.data || run.data.kind !== "initial_stock" || run.data.status !== "previewed"
-      || run.data.source_hash !== sourceHash || run.data.branch_id !== branchId
-      || run.data.warehouse_id !== warehouseId || run.data.as_of_date !== asOf) {
-      return initialStockStateError("File atau pilihan batch berubah. Jalankan preview lagi.");
-    }
-    const rpc = await supabase.rpc("post_accurate_initial_stock", { p_run_id: runId });
-    if (rpc.error) throw new Error(rpc.error.message);
-    const posted = await supabase.from("import_run_rows").select("payload").eq("run_id", runId).eq("status", "posted");
-    if (posted.error) throw new Error(posted.error.message);
-    const payloads = (posted.data ?? []).map((row: { payload: Record<string, unknown> }) => row.payload);
-    const itemIds = [...new Set(payloads.map((row) => String(row.item_id)).filter(Boolean))];
-    const sourceQty = payloads.reduce((total, row) => total + Number(row.base_qty ?? 0), 0);
-    const sourceValue = payloads.reduce((total, row) => total + Number(row.base_qty ?? 0) * Number(row.base_unit_cost ?? 0), 0);
-    const checks = await reconcilePostedInitialStock(supabase, runId, sourceQty, sourceValue, warehouseId, itemIds);
-    revalidatePath("/pos/stok");
-    revalidatePath(BACK);
-    const ok = checks.every((check) => check.ok);
-    return {
-      ok,
-      phase: "done",
-      message: ok
-        ? `${payloads.length} saldo stok awal berhasil masuk dan seluruh pengecekan akhir cocok.`
-        : "Posting selesai, tetapi pengecekan akhir belum cocok. Hasil perlu ditinjau.",
-      branch_id: branchId,
-      warehouse_id: warehouseId,
-      as_of: asOf,
-      run_id: runId,
-      master_run_id: masterRunId,
-      source_hash: sourceHash,
-      rows: [],
-      source_qty: sourceQty,
-      source_value: sourceValue,
-      checks,
-      scope_clarification: null,
-    };
-  } catch (error) {
-    return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal diposting.");
-  }
+  void formData;
+  await assertBolehKelola();
+  return initialStockStateError("Batch disiapkan. Lanjutkan ke Keuangan / Persediaan Awal untuk meninjau akun lawan, cabang, dan posting stok + jurnal secara atomik.");
 }

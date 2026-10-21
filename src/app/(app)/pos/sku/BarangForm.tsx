@@ -5,7 +5,7 @@ import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
 import { ITEM_TYPES, ITEM_TYPE_HINT, type ItemType } from "@/lib/barang";
-import { flatOptions, type KategoriRow } from "@/lib/kategori";
+import { flatOptions, labelPath, type KategoriRow } from "@/lib/kategori";
 import type { ItemUnit } from "@/lib/satuan";
 import { rapikanTingkat, type Tingkat } from "@/lib/harga-tingkat";
 import type { KomponenGrupDraft } from "@/lib/grup-barang";
@@ -29,6 +29,7 @@ export type BarangRow = {
   is_active: boolean; tindakan_kategori: string | null;
   supplier_id: string | null; buy_unit: string | null; min_buy: number;
   min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
+  brand_name?: string | null; supplier_name?: string | null;
   units?: ItemUnit[];
   /** Harga jual bertingkat menurut jumlah beli (meeting 14 Agustus). */
   tiers?: Tingkat[];
@@ -145,6 +146,7 @@ export function BarangForm({
             <label className="flab">Kategori barang *</label>
             <select className="fi" name="category_id" defaultValue={editing?.category_id ?? ""} required>
               <option value="">— pilih —</option>
+              {editing?.category_id && !flatOptions(categories).some(c => c.id === editing.category_id) && <option value={editing.category_id}>{labelPath(editing.category_id, categories)} (Nonaktif)</option>}
               {flatOptions(categories).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
@@ -165,6 +167,7 @@ export function BarangForm({
             <label className="flab">Merek barang</label>
             <select className="fi" name="brand_id" defaultValue={editing?.brand_id ?? ""}>
               <option value="">— tanpa merek —</option>
+              {editing?.brand_id && !brands.some(b => b.id === editing.brand_id) && <option value={editing.brand_id}>{editing.brand_name ?? "Merek tersimpan"} (Nonaktif)</option>}
               {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
@@ -396,6 +399,7 @@ export function BarangForm({
                 <label className="flab">Pemasok utama</label>
                 <select className="fi" name="supplier_id" defaultValue={editing?.supplier_id ?? ""}>
                   <option value="">— belum ditentukan —</option>
+                  {editing?.supplier_id && !suppliers.some(s => s.id === editing.supplier_id) && <option value={editing.supplier_id}>{editing.supplier_name ?? "Pemasok tersimpan"} (Nonaktif)</option>}
                   {suppliers.map((s) => <option key={s.id} value={s.id}>{s.nama}</option>)}
                 </select>
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
@@ -429,6 +433,7 @@ export function BarangForm({
                 <label className="flab">Substitusi dengan</label>
                 <select className="fi" name="substitute_item_id" defaultValue={editing?.substitute_item_id ?? ""}>
                   <option value="">— tidak ada —</option>
+                  {editing?.substitute_item_id && !barangLain.some(b => b.id === editing.substitute_item_id) && <option value={editing.substitute_item_id}>Barang pengganti tersimpan (Nonaktif)</option>}
                   {barangLain.filter((b) => b.id !== editing?.id).map((b) => (
                     <option key={b.id} value={b.id}>{b.code ? `${b.code} — ` : ""}{b.name}</option>
                   ))}

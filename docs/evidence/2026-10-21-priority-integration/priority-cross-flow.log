@@ -1,0 +1,3 @@
+Applied 210 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS PR74 posting/retry/protected basis + PR76 code rename/trash denial, label edit and archive preserve identity/journal.
+Removed owned PostgreSQL test container and volumes.

@@ -1,3 +1,5 @@
+import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
+import { masterView } from "@/lib/master-lifecycle";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -17,7 +19,7 @@ function one<T>(r: Rel<T>): T | null {
 
 type Row = {
   id: string; name: string; code: string | null; unit: string; category_id: string | null;
-  item_type: string; sell_price: number; buy_price: number; min_stock: number; is_active: boolean;
+  item_type: string; sell_price: number; buy_price: number; min_stock: number; is_active: boolean; trashed_at: string | null; lifecycle_revision: number;
   upc: string | null; track_expiry: boolean; supplier_id: string | null; buy_unit: string | null;
   min_buy: number; default_discount: number; tindakan_kategori: string | null;
   brands: Rel<{ name: string }>;
@@ -30,15 +32,16 @@ type Row = {
 export default async function BarangJasaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; kat?: string; induk?: string; jenis?: string; cari?: string; hal?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kat?: string; induk?: string; jenis?: string; cari?: string; hal?: string; view?: string }>;
 }) {
-  const { error, success, kat, induk, jenis, cari, hal } = await searchParams;
+  const { error, success, kat, induk, jenis, cari, hal, view: viewRaw } = await searchParams;
+  const view = masterView(viewRaw);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
-  const bolehKelola = profile?.role === "OWNER" || profile?.role === "ADMIN";
+  const bolehKelola = profile?.is_active === true && (profile.role === "OWNER" || profile.role === "ADMIN");
 
   const { data: categories } = await supabase
     .from("item_categories").select("id, name, parent_id, is_active").order("name");
@@ -51,7 +54,9 @@ export default async function BarangJasaPage({
 
   const requestedPage = Math.max(1, Number.parseInt(hal ?? "1", 10) || 1);
   const pageSize = 100;
-  let q = supabase.from("items").select(`${BARANG_FIELDS}, brands(name), suppliers(nama)`, { count: "exact" }).order("name").order("id");
+  let q = supabase.from("items").select(`${BARANG_FIELDS}, trashed_at, lifecycle_revision, brands(name), suppliers(nama)`, { count: "exact" }).order("name").order("id");
+  q = view === "trash" ? q.not("trashed_at", "is", null) : q.is("trashed_at", null);
+  if (view === "active" || view === "inactive") q = q.eq("is_active", view === "active");
   if (selectedSubcategory) q = q.eq("category_id", selectedSubcategory.id);
   else if (selectedTree) q = q.in("category_id", [selectedTree.induk.id, ...selectedTree.anak.map((anak) => anak.id)]);
   else if (kat) q = q.eq("category_id", kat);
@@ -64,6 +69,7 @@ export default async function BarangJasaPage({
   const pageInfo = infoHalaman(hal, count ?? 0, pageSize);
   const pageHref = (page: number) => {
     const params = new URLSearchParams();
+    if (view !== "all") params.set("view", view);
     if (jenis) params.set("jenis", jenis);
     if (induk) params.set("induk", induk);
     if (kat) params.set("kat", kat);
@@ -108,6 +114,7 @@ export default async function BarangJasaPage({
     track_expiry: row.track_expiry,
     default_discount: Number(row.default_discount),
     is_active: row.is_active,
+    trashed_at: row.trashed_at, lifecycle_revision: row.lifecycle_revision,
     tindakan_kategori: row.tindakan_kategori,
     ...(hppRows ? { average_cost: row.item_type === "Persediaan" ? hppMap.get(row.id)?.averageCost ?? null : null,
       cost_note: row.item_type === "Persediaan" ? hppMap.get(row.id)?.flags.join("; ") || (hppMap.get(row.id)?.averageCost != null ? "Lengkap" : "Belum ada saldo ber-HPP") : "Tidak melacak persediaan" } : {}),
@@ -144,7 +151,8 @@ export default async function BarangJasaPage({
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "1" ? "Barang tersimpan." : success}</div>}
       {!bolehKelola && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengubah master barang. Kamu bisa melihat daftarnya saja.</div>}
 
-      <BarangFilters key={[induk, kat, jenis, cari].join(":")} categories={katRows}
+      <MasterLifecycleFilter entity="items" view={view} />
+      <BarangFilters view={view} key={[induk, kat, jenis, cari].join(":")} categories={katRows}
         parentId={selectedTree?.induk.id ?? ""} childId={selectedSubcategory?.id ?? ""}
         jenis={jenis ?? ""} cari={cari ?? ""} />
 

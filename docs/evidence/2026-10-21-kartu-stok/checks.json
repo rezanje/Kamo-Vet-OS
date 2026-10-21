@@ -1,0 +1,42 @@
+[
+  {
+    "viewport": 1280,
+    "catalogSize": 1205,
+    "passed": [
+      "query restore",
+      "name after 1000",
+      "duplicate codes",
+      "arrow/Enter no submit",
+      "code/name/hidden ID sync",
+      "GET submit",
+      "warehouse/date change",
+      "history back",
+      "clear",
+      "code search and mouse select",
+      "Escape",
+      "no overflow",
+      "no runtime error",
+      "no external request"
+    ]
+  },
+  {
+    "viewport": 390,
+    "catalogSize": 1205,
+    "passed": [
+      "query restore",
+      "name after 1000",
+      "duplicate codes",
+      "arrow/Enter no submit",
+      "code/name/hidden ID sync",
+      "GET submit",
+      "warehouse/date change",
+      "history back",
+      "clear",
+      "code search and mouse select",
+      "Escape",
+      "no overflow",
+      "no runtime error",
+      "no external request"
+    ]
+  }
+]

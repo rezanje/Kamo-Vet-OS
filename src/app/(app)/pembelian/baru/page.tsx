@@ -19,7 +19,7 @@ export default async function BaruPOPage({
   const { data: { user } } = await supabase.auth.getUser();
 
   const [{ data: suppliers }, { data: warehouses }, { data: branches }, items] = await Promise.all([
-    supabase.from("suppliers").select("id, nama").order("nama"),
+    supabase.from("suppliers").select("id, nama").eq("is_active", true).order("nama"),
     supabase.from("warehouses").select("id, name").order("name"),
     supabase.from("branches").select("id, name").order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items")

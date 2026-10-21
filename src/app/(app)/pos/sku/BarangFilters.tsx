@@ -5,8 +5,8 @@ import { useState } from "react";
 import { ITEM_TYPES } from "@/lib/barang";
 import { buildTree, labelPath, type KategoriRow } from "@/lib/kategori";
 
-export function BarangFilters({ categories, parentId, childId, jenis, cari }: {
-  categories: KategoriRow[]; parentId: string; childId: string; jenis: string; cari: string;
+export function BarangFilters({ categories, parentId, childId, jenis, cari, view }: {
+  categories: KategoriRow[]; parentId: string; childId: string; jenis: string; cari: string; view?: string;
 }) {
   const tree = buildTree(categories);
   const [parent, setParent] = useState(parentId);
@@ -14,6 +14,7 @@ export function BarangFilters({ categories, parentId, childId, jenis, cari }: {
   const children = tree.find(row => row.induk.id === parent)?.anak ?? [];
   return (
     <form action="/pos/sku" className="crm-sec" style={{ marginBottom: 12, padding: 12 }}>
+      {view && <input type="hidden" name="view" value={view} />}
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ width: 230 }}>
           <label className="flab" htmlFor="sku-cari">Cari barang</label>

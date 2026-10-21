@@ -1,0 +1,32 @@
+-- Entirely fictional fixtures; runner owns an isolated network-none database.
+begin;
+insert into auth.users(id) values(md5('ai-owner')::uuid),(md5('ai-admin')::uuid);
+alter table profiles disable trigger guard_profile_privileges;
+update profiles set role=case when id=md5('ai-owner')::uuid then 'OWNER'::user_role else 'ADMIN'::user_role end,is_active=true where id in(md5('ai-owner')::uuid,md5('ai-admin')::uuid);
+alter table profiles enable trigger guard_profile_privileges;
+insert into branches(id,code,name,type) values(md5('ai-branch')::uuid,'AI-A','Fiction A','PETSHOP'),(md5('ai-other')::uuid,'AI-B','Fiction B','PETSHOP');
+insert into warehouses(id,branch_id,code,name,type) values(md5('ai-wh')::uuid,md5('ai-branch')::uuid,'AI-W','Fiction W','RETAIL');
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false) on conflict(code) do update set is_active=true,is_header=false;
+insert into items(id,code,name,unit,item_type) values(md5('ai-item')::uuid,'AI-I','Fiction item','pcs','Persediaan');
+insert into import_runs(id,kind,source_name,source_hash,branch_id,warehouse_id,as_of_date,created_by,summary) values(md5('ai-run')::uuid,'initial_stock','fiction.xlsx','fiction-hash',md5('ai-branch')::uuid,md5('ai-wh')::uuid,'2026-01-01',md5('ai-owner')::uuid,'{"valid":1}');
+insert into import_run_rows(run_id,source_row,status,payload) values(md5('ai-run')::uuid,1,'valid',jsonb_build_object('item_id',md5('ai-item')::uuid,'warehouse_id',md5('ai-wh')::uuid,'base_qty',10,'base_unit_cost',12.5,'as_of','2026-01-01')),(md5('ai-run')::uuid,2,'rejected','{"base_qty":999,"base_unit_cost":999}');
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('ai-owner')::uuid::text,true);
+do $$ declare p jsonb; r jsonb; eq uuid; begin
+ select id into eq from coa_accounts where code='3101';
+ p:=preview_accurate_inventory_accounting(md5('ai-run')::uuid,eq);
+ if not (p->>'can_post')::boolean or (p->>'original_value')::numeric<>125 or (p->>'selected_rows')::int<>1 or (p->>'excluded_rows')::int<>1 then raise exception 'Partial preview incorrect: %',p;end if;
+ if exists(select 1 from stock_moves where source_ref=md5('ai-run')::uuid::text) then raise exception 'Preview wrote stock';end if;
+ r:=post_accurate_inventory_accounting(md5('ai-run')::uuid,eq,p,'Fiction explicit equity approval');
+ if r is distinct from post_accurate_inventory_accounting(md5('ai-run')::uuid,eq,p,'Fiction explicit equity approval') then raise exception 'Retry changed result';end if;
+ if (select count(*) from journal_entries where source='accurate-stock-opening' and source_ref=md5('ai-run')::uuid::text)<>1 then raise exception 'Duplicate journal';end if;
+ if not exists(select 1 from journal_entries where id=(r->>'entry_id')::uuid and branch_id=md5('ai-branch')::uuid and tanggal='2026-01-01') then raise exception 'Wrong branch/date';end if;
+ if (select sum(debit-credit) from journal_lines where entry_id=(r->>'entry_id')::uuid)<>0 or (select sum(debit) from journal_lines where entry_id=(r->>'entry_id')::uuid)<>125 then raise exception 'Unbalanced journal';end if;
+ begin perform post_accurate_inventory_accounting(md5('ai-run')::uuid,eq,p,'Conflicting retry reason');raise exception 'Expected conflicting retry denial';exception when sqlstate '22023' then null;end;
+ begin delete from journal_entries where id=(r->>'entry_id')::uuid;raise exception 'Expected protected journal';exception when insufficient_privilege then null;end;
+ begin update stock_moves set unit_cost=99 where source='saldo-awal-accurate' and source_ref=md5('ai-run')::uuid::text;raise exception 'Expected protected stock move';exception when insufficient_privilege then null;end;
+ begin update stock_layers set unit_cost=99 where source='saldo-awal-accurate' and source_ref=md5('ai-run')::uuid::text;raise exception 'Expected protected original FIFO basis';exception when insufficient_privilege then null;end;
+ update stock_layers set qty_left=qty_left-1 where source='saldo-awal-accurate' and source_ref=md5('ai-run')::uuid::text;
+ begin update import_run_rows set payload='{}' where run_id=md5('ai-run')::uuid;raise exception 'Expected protected provenance';exception when insufficient_privilege then null;end;
+end $$;
+rollback;

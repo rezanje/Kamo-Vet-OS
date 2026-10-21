@@ -4,6 +4,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { susunKartuStok, labelSource, type Mutasi } from "@/lib/kartu-stok";
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
+import { KartuStokItemFilter } from "./KartuStokItemFilter";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -97,15 +98,9 @@ export default async function KartuStokPage({
         <span style={{ fontSize: 13, fontWeight: 500 }}>Kartu Stok</span>
       </div>
 
-      <form className="crm-sec" style={{ marginBottom: 12 }}>
+      <form method="get" className="crm-sec" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <label className="flab">Barang *</label>
-            <select className="fi" name="item" defaultValue={itemId}>
-              <option value="">— pilih barang —</option>
-              {items.map((i) => <option key={i.id} value={i.id}>{i.code} — {i.name}</option>)}
-            </select>
-          </div>
+          <KartuStokItemFilter key={itemId} items={items} initialItemId={itemId} />
           <div style={{ minWidth: 170 }}>
             <label className="flab">Gudang</label>
             <select className="fi" name="gudang" defaultValue={gudangId}>

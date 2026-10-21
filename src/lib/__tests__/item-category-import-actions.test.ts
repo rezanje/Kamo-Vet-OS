@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     function result(single = false) {
       let data: Record<string, unknown>[] = [];
       if (table === "item_units" && operation === "delete" && state.failUnits) return { data: null, error: { message: "unit delete failed" } };
-      if (table === "profiles") data = [{ role: "OWNER" }];
+      if (table === "profiles") data = [{ role: "OWNER", is_active: true }];
       if (table === "import_runs") data = [{ id: "run", kind: "master_accurate", source_hash: state.hash, status: state.runStatus, summary: state.summary }];
       if (table === "units") data = [{ id: "unit", nama: "PCS" }];
       if (table === "item_categories") data = state.categories;

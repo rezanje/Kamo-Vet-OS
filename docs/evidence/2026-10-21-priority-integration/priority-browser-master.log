@@ -1,0 +1,1 @@
+PASS Chromium desktop/390px: confirmation, referenced rejection, retained reason, explicit inactive restore, uncertain outcome, no horizontal overflow, filters after navigation/reload, zero runtime errors. Fictional UI only; no DB writes.

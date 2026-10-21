@@ -12,7 +12,6 @@ import {
 import { canProceedWithMasterOnly } from "@/lib/impor-saldo-accurate";
 import {
   konfirmasiImporAccurate,
-  postSaldoAwalAccurate,
   previewImporAccurate,
   preflightSaldoAwalSekali,
   previewSaldoAwalAccurate,
@@ -260,34 +259,8 @@ export function AccurateImportForm({
         return;
       }
 
-      setOneClickStatus("Menyimpan saldo stok awal…");
-      setOneClickPercentage(90);
-      const stockPostData = new FormData();
-      stockPostData.append("initial_stock_file", file);
-      stockPostData.append("master_run_id", masterDone.run_id);
-      stockPostData.append("run_id", stockPreview.run_id);
-      stockPostData.append("branch_id", stockPreview.branch_id);
-      stockPostData.append("warehouse_id", stockPreview.warehouse_id);
-      stockPostData.append("as_of", stockPreview.as_of);
-      stockPostData.append("initial_stock_as_of", initialStockAsOf);
-      stockPostData.append("confirm_scope", "on");
-      isiPilihanTujuan(stockPostData);
-      const postedStock = await postSaldoAwalAccurate(stockPostData);
-      const postedRows = stockPreview.rows.filter((row) => row.status === "valid").length;
-      const problemRows = stockPreview.rows.filter((row) => row.status === "rejected").length;
-      setOneClickStockState(postedStock.ok && postedStock.phase === "done"
-        ? { ...postedStock, rows: stockPreview.rows }
-        : postedStock);
       setOneClickPercentage(100);
-      setOneClickStatus(postedStock.message);
-      if (postedStock.ok && postedStock.phase === "done") {
-        const params = new URLSearchParams({
-          import_success: "1",
-          stock_count: String(postedRows),
-          problem_count: String(problemRows),
-        });
-        window.history.replaceState(window.history.state, "", `/pos/sku/impor?${params.toString()}`);
-      }
+      setOneClickStatus("Master tersimpan dan batch stok siap. Tinjau akun lawan di Keuangan / Persediaan Awal sebelum posting stok + jurnal.");
       } catch {
         stopProgressPolling();
         setProgress(null);
@@ -311,7 +284,7 @@ export function AccurateImportForm({
           </div>
         </div>
         <span style={{ fontSize: 10, fontWeight: 800, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "5px 9px" }}>
-          SALDO DALAM ALUR INI
+          <Link href="/keuangan/persediaan-awal">Laporan stok awal &amp; Neraca cabang</Link>
         </span>
       </div>
 
