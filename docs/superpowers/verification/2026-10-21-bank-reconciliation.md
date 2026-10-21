@@ -41,3 +41,7 @@ Focused application tests cover atomic-action arguments/failure destinations, ex
 ## Remaining boundaries
 
 No guessed attribution of historical journals. No statement-file import, automatic allocation of unexplained differences, external bank integration, or production claim. The production reset remains pending its own production backup and isolated restore.
+
+## Cross-family purchase-payment ordering
+
+`python3 scripts/test-bank-purchase-payment-races-postgres.py` passed real separate-session ordering against all current migrations and the actual purchase receipt/invoice/payment fixture. A reconciliation committed first blocks cancellation with no journal/payment/request changes. A payment cancellation committed first restores exactly Rp300 cash, and the waiting reconciliation includes that reversal in its dated book balance. This test uses the Jakarta business date for both statement and ledger cutoff; the fixture original payment uses UTC current_date. Both orderings are local proof only. The runner owns and deletes its localhost database, sanitizes libpq routing through the existing payment runner, and scopes every lock barrier to that database.

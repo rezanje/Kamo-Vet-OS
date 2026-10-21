@@ -240,7 +240,8 @@ export async function bayarFaktur(formData: FormData) {
   const fail=(message:string):never=>redirect(`${back}?error=${encodeURIComponent(message)}`);
   if(!invoiceId||!requestKey||!Number.isFinite(amount)||amount<=0)fail("Nominal atau identitas pembayaran tidak valid. Muat ulang formulir.");
   if(!Number.isInteger(amount))fail("Nominal pembayaran harus dalam rupiah bulat.");
-  const payload={invoice_id:invoiceId,tanggal,amount,metode,catatan,account_id:accountId,advance_id:advanceId};
+  const replacesPaymentId=String(formData.get("replaces_payment_id")??"").trim()||null;
+  const payload={invoice_id:invoiceId,tanggal,amount,metode,catatan,account_id:accountId,advance_id:advanceId,replaces_payment_id:replacesPaymentId};
   const finish=(noFaktur:string):never=>{revalidatePath(back);redirect(`${back}?success=${encodeURIComponent(`Pembayaran ${noFaktur} tersimpan.`)}${transactionDraftAck(formData)}`);};
   const {data:recovered,error:recoveryError}=await supabase.rpc("recover_purchase_payment",{p_request_key:requestKey,p_payload:payload});
   if(recoveryError)fail(recoveryError.message);
@@ -251,7 +252,7 @@ export async function bayarFaktur(formData: FormData) {
   const {data:{user}}=await supabase.auth.getUser();
   const izin=await cekPersetujuan(supabase,{jenis:"bayar-faktur",refId:invoiceId,nilai:amount,noDokumen:inv!.no_faktur,keterangan:`Pembayaran faktur ${inv!.no_faktur} sebesar Rp ${Math.round(amount).toLocaleString("id-ID")}`,userId:user?.id??null,deferConsumption:true});
   if(!izin.boleh)fail(izin.pesan??"Transaksi ini butuh persetujuan atasan.");
-  const {data:result,error}=await supabase.rpc("pay_purchase_invoice_atomic",{p_request_key:requestKey,p_invoice_id:invoiceId,p_tanggal:tanggal,p_amount:amount,p_metode:metode,p_catatan:catatan,p_account_id:accountId,p_advance_id:advanceId});
+  const {data:result,error}=await supabase.rpc("pay_purchase_invoice_atomic",{p_request_key:requestKey,p_invoice_id:invoiceId,p_tanggal:tanggal,p_amount:amount,p_metode:metode,p_catatan:catatan,p_account_id:accountId,p_advance_id:advanceId,p_replaces_payment_id:replacesPaymentId});
   if(error)fail(error.message);
   if(!result?.payment_id||!result?.journal_id||!result?.no_faktur)throw new Error("Pembayaran belum terkonfirmasi lengkap. Periksa transaksi sebelum menyimpan ulang.");
   finish(result.no_faktur);

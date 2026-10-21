@@ -1,4 +1,5 @@
-import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { DurablePaymentOrderForm } from "./DurablePaymentOrderForm";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -18,9 +19,9 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 
 type Order = {
   id: string; no_pp: string; tanggal: string; rencana_bayar: string | null;
-  total: number; status: string; catatan: string | null;
+  total: number; status: string; revision: number; catatan: string | null;
   suppliers: Rel<{ nama: string }>;
-  payment_order_items: { id: string; jumlah: number; purchase_invoices: Rel<{ no_faktur: string }> }[] | null;
+  payment_order_items: { id: string; jumlah: number; purchase_invoices: Rel<{ id: string; no_faktur: string }> }[] | null;
 };
 
 const BADGE: Record<string, string> = { draft: "o", disetujui: "b", dibayar: "g", batal: "x" };
@@ -39,7 +40,7 @@ export default async function PerintahBayarPage({
   const [{ data: orderData }, { data: supData }, { data: invData }, { data: payData }, { data: antreData }, rekening] =
     await Promise.all([
       supabase.from("payment_orders")
-        .select("id, no_pp, tanggal, rencana_bayar, total, status, catatan, suppliers(nama), payment_order_items(id, jumlah, purchase_invoices(no_faktur))")
+        .select("id, no_pp, tanggal, rencana_bayar, total, status, revision, catatan, suppliers(nama), payment_order_items(id, jumlah, purchase_invoices(id, no_faktur))")
         .order("created_at", { ascending: false }),
       supabase.from("suppliers").select("id, nama").order("nama"),
       supabase.from("purchase_invoices").select("id, no_faktur, tanggal, jatuh_tempo, total, supplier_id, suppliers(nama)").order("jatuh_tempo"),
@@ -88,7 +89,7 @@ export default async function PerintahBayarPage({
         />
 
         {bolehAjukan && supplierDipilih && fakturBisa.length > 0 ? (
-          <TransactionForm userId={user?.id ?? ""} scope="payment-order" action={buatPerintahBayar}>
+          <DurablePaymentOrderForm userId={user?.id ?? ""} scope="payment-order" action={buatPerintahBayar}>
             <input type="hidden" name="supplier_id" value={supplierDipilih} />
 
             <div style={{ overflowX: "auto" }}>
@@ -137,7 +138,7 @@ export default async function PerintahBayarPage({
                 </SubmitButton>
               </div>
             </div>
-          </TransactionForm>
+          </DurablePaymentOrderForm>
         ) : (
           <div style={{ fontSize: 11, color: "var(--td)" }}>
             {!supplierDipilih
@@ -168,7 +169,7 @@ export default async function PerintahBayarPage({
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                     {o.no_pp}
                     <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>
-                      {(o.payment_order_items ?? []).map((i) => one(i.purchase_invoices)?.no_faktur).filter(Boolean).join(", ") || "—"}
+                      {(o.payment_order_items ?? []).map((i) => { const invoice = one(i.purchase_invoices); return invoice ? <Link key={i.id} href={`/pembelian/faktur/${invoice.id}`} style={{ marginRight: 8 }}>{invoice.no_faktur}</Link> : null; })}
                     </div>
                   </td>
                   <td style={{ fontSize: 11.5 }}>{one(o.suppliers)?.nama ?? "—"}</td>
@@ -178,16 +179,18 @@ export default async function PerintahBayarPage({
                   <td>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-end" }}>
                       {bolehSetuju && o.status === "draft" && (
-                        <form action={setujuiPerintahBayar}>
+                        <DurablePaymentOrderForm userId={user?.id ?? ""} scope={`payment-order-approve:${o.id}:${o.revision}`} action={setujuiPerintahBayar}>
                           <input type="hidden" name="id" value={o.id} />
+                          <input type="hidden" name="revision" value={o.revision} />
                           <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
                             Setujui
                           </SubmitButton>
-                        </form>
+                        </DurablePaymentOrderForm>
                       )}
                       {bolehSetuju && o.status === "disetujui" && (
-                        <TransactionForm userId={user?.id ?? ""} scope={`payment-order-pay:${o.id}`} action={bayarPerintahBayar} style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <DurablePaymentOrderForm userId={user?.id ?? ""} scope={`payment-order-pay:${o.id}:${o.revision}`} action={bayarPerintahBayar} style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap" }}>
                           <input type="hidden" name="id" value={o.id} />
+                          <input type="hidden" name="revision" value={o.revision} />
                           <select className="fi" name="metode" defaultValue="Transfer" style={{ width: 100, height: 26, fontSize: 10.5 }}>
                             {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
                           </select>
@@ -197,15 +200,16 @@ export default async function PerintahBayarPage({
                           <SubmitButton className="btn-acc" style={{ padding: "3px 9px", fontSize: 10.5, background: "#16a34a" }} pendingText="…">
                             Bayar
                           </SubmitButton>
-                        </TransactionForm>
+                        </DurablePaymentOrderForm>
                       )}
                       {bolehSetuju && o.status !== "dibayar" && o.status !== "batal" && (
-                        <form action={batalkanPerintahBayar}>
+                        <DurablePaymentOrderForm userId={user?.id ?? ""} scope={`payment-order-cancel:${o.id}:${o.revision}`} action={batalkanPerintahBayar}>
                           <input type="hidden" name="id" value={o.id} />
+                          <input type="hidden" name="revision" value={o.revision} />
                           <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
                             Batalkan
                           </SubmitButton>
-                        </form>
+                        </DurablePaymentOrderForm>
                       )}
                     </div>
                   </td>

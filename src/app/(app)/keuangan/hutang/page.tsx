@@ -1,12 +1,11 @@
-import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { PurchasePaymentForm, type PurchasePaymentDefaults } from "@/components/PurchasePaymentForm";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
-import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
+import { loadRekeningAktif } from "@/components/PilihRekening";
 import { NoDok } from "@/components/NoDok";
-import { bayarFaktur } from "../../pembelian/faktur/actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -22,8 +21,8 @@ type UangMukaSiap = { id: string; no_um: string; sisa: number };
 
 type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: string; nilai: number; warning: string | null };
 
-export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
-  const { success, error } = await searchParams;
+export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; replace_payment?: string }> }) {
+  const { success, error, replace_payment } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
   const today = hariIniWIB();
@@ -69,6 +68,18 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
       };
     })
     .filter((r) => r.sisa > 0);
+
+  let replacement: (PurchasePaymentDefaults & { invoice_id: string }) | undefined;
+  if (replace_payment) {
+    const [{ data: profile }, { data: source }] = await Promise.all([
+      supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
+      supabase.from("purchase_invoice_payments").select("id,invoice_id,amount,metode,advance_id,voided_at,reversal_of,payment_order_id").eq("id", replace_payment).maybeSingle(),
+    ]);
+    if (profile?.role === "OWNER" && profile.is_active && source?.voided_at && !source.reversal_of && !source.payment_order_id
+      && rows.some(row => row.id === source.invoice_id) && ["Transfer", "Tunai", "Debit"].includes(source.metode)) {
+      replacement = { id: source.id, invoice_id: source.invoice_id, amount: Number(source.amount), metode: source.metode, advance_id: source.advance_id };
+    }
+  }
 
   // Uang muka aktif per pemasok — ditawarkan di form bayar supaya DP yang sudah
   // dikeluarkan tidak terlupa dan dibayar dua kali.
@@ -153,6 +164,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         </div>
       )}
 
+      {replace_payment && !replacement && <div role="alert" className="p2ban">Pembayaran pengganti tidak tersedia. Periksa riwayat dan sisa hutang terbaru.</div>}
       <div className="crm-sec">
         <SecHeader num="01" title="UMUR HUTANG (AP AGING)" desc="Faktur pembelian belum lunas, dikelompokkan menurut umur JATUH TEMPO (pola Accurate)." />
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${AGING_BUCKETS.length + 1}, 1fr)`, gap: 8 }}>
@@ -209,44 +221,12 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                   <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(r.sisa)}</td>
                   <td><span className={`bge ${r.bucket === "current" ? "g" : r.bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[r.bucket]}</span></td>
                   <td>
-                    <details>
+                    <details open={replacement?.invoice_id === r.id}>
                       <summary className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-block" }}>
                         Bayar
                       </summary>
-                      <TransactionForm userId={user?.id ?? ""} scope={`payable-settle:${r.id}`} action={bayarFaktur} style={{ display: "flex", gap: 6, alignItems: "flex-end", padding: "8px 0", flexWrap: "wrap" }}>
-                        <input type="hidden" name="invoice_id" value={r.id} />
-                        <div>
-                          <label className="flab">Nominal (maks {rp(r.sisa)})</label>
-                          <input className="fi" type="number" name="amount" min={1} max={r.sisa} step="any" defaultValue={r.sisa} style={{ width: 140 }} />
-                        </div>
-                        <div>
-                          <label className="flab">Metode</label>
-                          <select className="fi" name="metode" defaultValue="Transfer" style={{ width: 110 }}>
-                            <option>Transfer</option>
-                            <option>Tunai</option>
-                            <option>Debit</option>
-                          </select>
-                        </div>
-                        <PilihRekening rekening={rekening} width={150} />
-                        {(umPerSupplier.get(r.supplier_id ?? "") ?? []).length > 0 && (
-                          <div>
-                            <label className="flab">Potong uang muka</label>
-                            <select className="fi" name="advance_id" defaultValue="" style={{ width: 190 }}>
-                              <option value="">— tidak pakai —</option>
-                              {(umPerSupplier.get(r.supplier_id ?? "") ?? []).map((u) => (
-                                <option key={u.id} value={u.id}>{u.no_um} · sisa {rp(u.sisa)}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                        <div>
-                          <label className="flab">Tanggal</label>
-                          <input className="fi" type="date" name="tanggal" defaultValue={today} style={{ width: 140 }} />
-                        </div>
-                        <button type="submit" className="btn-acc" style={{ padding: "7px 12px", fontSize: 11 }}>
-                          <i className="ti ti-cash" /> Simpan
-                        </button>
-                      </TransactionForm>
+                      <PurchasePaymentForm userId={user?.id ?? ""} invoiceId={r.id} remaining={r.sisa} today={today} accounts={rekening}
+                        advances={umPerSupplier.get(r.supplier_id ?? "") ?? []} replacement={replacement?.invoice_id === r.id ? replacement : undefined} />
                     </details>
                   </td>
                 </tr>
