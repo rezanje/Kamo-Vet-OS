@@ -104,7 +104,7 @@ export default async function OpnameDetailPage({
           </div>
         </div>
       ) : (
-        <HasilView orderId={order.id} />
+        <HasilView orderId={order.id} allowCorrections />
       )}
     </>
   );
