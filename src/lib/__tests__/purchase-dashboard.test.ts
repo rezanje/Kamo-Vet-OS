@@ -15,7 +15,7 @@ async function purchase(rows: object[], returns: object[] = []) {
   const client = { from: (table: string) => {
     let data = tables[table] ?? [];
     const query = {
-      select: () => query, eq: () => query, neq: () => query, in: () => query, gte: () => query, lte: () => query,
+      select: () => query, order: () => query, range: async () => ({ data, count: data.length, error: null }), eq: () => query, neq: () => query, in: () => query, gte: () => query, lte: () => query,
       is: (column: string, value: unknown) => { data = data.filter(row => (row as Record<string, unknown>)[column] === value); return query; },
       then: (resolve: (result: { data: object[] }) => unknown) => Promise.resolve(resolve({ data })),
     };

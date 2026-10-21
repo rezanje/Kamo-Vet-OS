@@ -75,6 +75,66 @@ set local role authenticated;
 select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''reconciled'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'replacement_id'),'Rekonsiliasi bank') from return_results where name='corrected';
 rollback;
 begin;
+-- bank_coa_code-only legacy statements must not disappear behind a cash-account JOIN.
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,'1101');
+set local role authenticated;
+select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''legacy-bank-code'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'replacement_id'),'Rekonsiliasi bank') from return_results where name='corrected';
+rollback;
+begin;
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,null);
+set local role authenticated;
+select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''legacy-bank-unmapped'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'replacement_id'),'Rekonsiliasi bank') from return_results where name='corrected';
+rollback;
+begin;
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,'UNVERIFIED-LEGACY-COA');
+set local role authenticated;
+select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''legacy-bank-invalid'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'replacement_id'),'Rekonsiliasi bank') from return_results where name='corrected';
+rollback;
+begin;
+-- An existing revenue, inventory or header COA is not a proven cash/bank mapping.
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('TESTHEADER','Test asset header','ASET','D',true);
+do $$declare code text;begin
+ for code in select unnest(array['4101','1301','TESTHEADER']) loop
+  insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,code);
+  perform pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''legacy-bank-noncash'',''Wrong qty'',''TEST receipt zero'',''[]'')',(select result->>'replacement_id' from return_results where name='corrected')),'Rekonsiliasi bank');
+  delete from bank_reconciliations where bank_coa_code=code;
+ end loop;
+end$$;
+rollback;
+begin;
+-- The refund journal remains bank-affecting after its custom master is deleted.
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('1199','Test custom bank','ASET','D',false);
+insert into cash_accounts(nama,jenis,coa_code) values('Test custom bank','Bank','1199');
+update journal_lines set account_id=(select id from coa_accounts where code='1199')
+ where debit>0 and entry_id in(select id from journal_entries where source='sale' and source_ref='SALE.UNIT.TEST');
+set local role authenticated;
+insert into return_results values('deleted-bank',post_unit_return('sales','f6000000-0000-4000-8000-000000000011','deleted-bank-source',jsonb_build_object('tanggal',current_date),
+ '[{"source_line_id":"f7000000-0000-4000-8000-000000000021","item_id":"f5000000-0000-4000-8000-000000000001","qty":1,"satuan":"pcs","kondisi":"baik"}]'));
+reset role;
+do $$begin
+ if not exists(select 1 from journal_entries e join journal_lines l on l.entry_id=e.id join coa_accounts a on a.id=l.account_id
+  where e.source='sales-return' and e.source_ref=(select result->>'document_no' from return_results where name='deleted-bank') and a.code='1199' and l.credit>0)
+ then raise exception 'Custom bank fixture did not record the refund';end if;
+end$$;
+delete from cash_accounts where coa_code='1199';
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,null);
+set local role authenticated;
+select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''legacy-deleted-bank'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'document_id'),'Rekonsiliasi bank') from return_results where name='deleted-bank';
+rollback;
+begin;
+-- An older statement cannot cover this return, even if its mapping is unknown.
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date-2,null,null);
+set local role authenticated;
+select correct_return_record('sales',(result->>'replacement_id')::uuid,0,'bank-before-return','Wrong qty','TEST receipt zero','[]') from return_results where name='corrected';
+rollback;
+begin;
+-- A proven unrelated bank account does not cover a cash 1101 refund.
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) select current_date,id,'1102' from cash_accounts where coa_code='1102';
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,'1102');
+set local role authenticated;
+select correct_return_record('sales',(result->>'replacement_id')::uuid,0,'bank-unrelated','Wrong qty','TEST receipt zero','[]') from return_results where name='corrected';
+rollback;
+begin;
 update journal_lines set debit=debit+1 where entry_id in(select id from journal_entries where source='sales-return' and source_ref=(select no_retur from sales_returns where id=(select (result->>'replacement_id')::uuid from return_results where name='corrected'))) and debit>0;
 set local role authenticated;
 select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''journal-mismatch'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'replacement_id'),'Provenance jurnal') from return_results where name='corrected';

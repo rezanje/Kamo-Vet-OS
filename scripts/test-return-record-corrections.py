@@ -134,6 +134,8 @@ alter default privileges in schema public grant all on sequences to authenticate
     sql(fixtures+'commit;')
     sql((ROOT/'supabase/tests/return_record_corrections.sql').read_text())
     print('Return record correction SQL passed.',flush=True)
+    sql((ROOT/'supabase/tests/return_date_windows.sql').read_text())
+    print('Customer/supplier prior-day and prior-year restatement, cancellation and closed-original-year checks passed.',flush=True)
     race_tests()
 finally:
     subprocess.run(['docker','rm','-f',CONTAINER],capture_output=True)

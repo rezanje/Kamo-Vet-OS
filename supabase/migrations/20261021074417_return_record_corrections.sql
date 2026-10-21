@@ -263,8 +263,19 @@ begin
  for j in select x from jsonb_array_elements(posting.snapshot->'journals')x loop
   select to_jsonb(e)||jsonb_build_object('lines',(select jsonb_agg(to_jsonb(jl) order by id) from public.journal_lines jl where entry_id=e.id)) into current_value from public.journal_entries e where id=(j->>'id')::uuid;
   if current_value is distinct from j or j->>'voided_at' is not null then raise exception 'Provenance jurnal retur tidak cocok';end if;
-  if exists(select 1 from public.bank_reconciliations r join public.cash_accounts a on a.id=r.cash_account_id join public.coa_accounts c on c.code=coalesce(r.bank_coa_code,a.coa_code)
-    where r.voided_at is null and r.tanggal>=(j->>'tanggal')::date and exists(select 1 from public.journal_lines jl where jl.entry_id=(j->>'id')::uuid and jl.account_id=c.id)) then raise exception 'Rekonsiliasi bank sudah mencakup retur. Koreksi rekonsiliasi dahulu';end if;
+  if exists(select 1 from public.bank_reconciliations r where r.voided_at is null and r.tanggal>=(j->>'tanggal')::date and (
+    -- Legacy statements may retain only their COA snapshot. Check it directly,
+    -- and also check a current mapping without discarding NULL-account rows.
+    exists(select 1 from public.journal_lines jl join public.coa_accounts c on c.id=jl.account_id where jl.entry_id=(j->>'id')::uuid
+      and (c.code=r.bank_coa_code or exists(select 1 from public.cash_accounts a where a.id=r.cash_account_id and a.coa_code=c.code)))
+    -- With no resolvable legacy mapping, a cash/bank refund cannot be proven
+    -- unrelated. Pure AP/inventory journals do not affect a bank statement.
+    or (r.cash_account_id is null and not exists(select 1 from public.coa_accounts c
+      where c.code=r.bank_coa_code and c.type='ASET' and not c.is_header
+       and (c.code in('1101','1102') or exists(select 1 from public.cash_accounts a where a.coa_code=c.code)))
+      -- Journal provenance survives deletion of a custom cash-account master.
+      and j->>'source'='sales-return')
+   )) then raise exception 'Rekonsiliasi bank mencakup retur atau mapping legacy belum pasti. Koreksi/cocokkan rekonsiliasi dahulu';end if;
  end loop;
  if jsonb_array_length(posting.snapshot->'journals')=0 then raise exception 'Jurnal retur tidak lengkap';end if;
  -- Reversal corrects recorded quantities only after the actor has checked the
