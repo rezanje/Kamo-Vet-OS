@@ -24,6 +24,8 @@ export async function simpanKaryawan(formData: FormData) {
   const gajiPokok = Number(formData.get("gaji_pokok")) || 0;
   const status = String(formData.get("status") ?? "Aktif");
 
+  if (!["Aktif", "Nonaktif"].includes(status)) redirect("/hris/karyawan?error=Status%20karyawan%20tidak%20valid");
+
   // ponytail: validasi nama wajib diisi sebelum insert.
   if (!nama) {
     redirect(`/hris/karyawan?error=${encodeURIComponent("Nama karyawan wajib diisi")}`);
@@ -92,7 +94,9 @@ export async function editKaryawan(formData: FormData) {
   let row;
   try { row = bacaEditKaryawan(formData); }
   catch (error) { redirect(`${back}?edit=1&error=${encodeURIComponent(error instanceof Error ? error.message : "Data tidak valid")}`); }
-  const { data, error } = await supabase.from("employees").update(row).eq("id", id).select("id").maybeSingle();
+  const { status: _status, ...fields } = row;
+  void _status; // Status uses the separate audited lifecycle action.
+  const { data, error } = await supabase.from("employees").update(fields).eq("id", id).select("id").maybeSingle();
   if (error || !data) redirect(`${back}?edit=1&error=${encodeURIComponent(error?.code === "23505" ? "NIK sudah terdaftar" : "Data karyawan gagal diperbarui")}`);
   revalidatePath("/hris/karyawan");
   revalidatePath(back);

@@ -1,7 +1,8 @@
 "use server";
 
+import { changeMasterLifecycle } from "@/app/(app)/master-data/actions";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { assertMasterAdmin } from "@/lib/master-guard";
 import { loadUnitOptions, parseUnitDrafts, resolveSubmittedUnit, unitOptions } from "@/lib/satuan";
 import { rapikanTingkat } from "@/lib/harga-tingkat";
 import { pickItemType, validasiBarang, validasiSatuanDasar, pesanSimpanGagal } from "@/lib/barang";
@@ -14,16 +15,7 @@ import {
 
 const LIST = "/pos/sku";
 
-async function assertBolehKelola() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") {
-    redirect(`${LIST}?error=${encodeURIComponent("Hanya OWNER/ADMIN yang boleh mengubah master barang")}`);
-  }
-  return supabase;
-}
+async function assertBolehKelola() { return assertMasterAdmin(LIST, "master data"); }
 
 export async function simpanBarang(formData: FormData) {
   const supabase = await assertBolehKelola();
@@ -199,7 +191,11 @@ export async function simpanBarang(formData: FormData) {
     });
     if (groupErr) {
       if (!id && isGroup) {
-        await supabase.rpc("delete_empty_group_item", { p_item_id: itemId });
+        // Recoverable compensation; the former delete helper could cascade history.
+        await supabase.rpc("change_master_data_lifecycle", {
+          p_entity: "items", p_id: itemId, p_action: "trash", p_expected_revision: 0,
+          p_reason: "Pembuatan resep grup gagal; master baru dikembalikan ke Sampah",
+        });
       }
       gagal(pesanSimpanGagal(groupErr.message));
     }
@@ -209,11 +205,7 @@ export async function simpanBarang(formData: FormData) {
 }
 
 export async function toggleBarang(formData: FormData) {
-  const supabase = await assertBolehKelola();
-  const id = String(formData.get("id") ?? "");
-  const aktif = String(formData.get("aktif") ?? "") === "1";
-  if (!id) redirect(`${LIST}?error=${encodeURIComponent("Barang tidak valid")}`);
-
-  const { error } = await supabase.from("items").update({ is_active: !aktif }).eq("id", id);
-  redirect(error ? `${LIST}?error=${encodeURIComponent(error.message)}` : `${LIST}?success=1`);
+  formData.set("entity", "items");
+  formData.set("action", formData.get("aktif") === "1" ? "archive" : "activate");
+  return changeMasterLifecycle(formData);
 }

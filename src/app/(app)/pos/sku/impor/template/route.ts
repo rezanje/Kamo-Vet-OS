@@ -9,8 +9,8 @@ export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 401 });
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") {
+  const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
+  if (!profile?.is_active || (profile.role !== "OWNER" && profile.role !== "ADMIN")) {
     return NextResponse.json({ error: "Akses impor tidak diizinkan" }, { status: 403 });
   }
 

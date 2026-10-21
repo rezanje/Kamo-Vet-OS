@@ -1,3 +1,7 @@
+import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
+import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
+import { masterView, visibleMasters, type LifecycleRow } from "@/lib/master-lifecycle";
+import { bolehKelolaMaster } from "@/lib/master-guard";
 import { PurchaseRecoveryComplete, PurchaseReceiptRecovery } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -43,7 +47,8 @@ type Supplier = {
   bank_nama: string | null;
   bank_rekening: string | null;
   supplier_categories: Rel<{ nama: string }>;
-};
+  is_active: boolean; alamat: string | null; category_id: string | null; bank_atas_nama: string | null;
+} & LifecycleRow;
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -51,9 +56,11 @@ const fmtDate = (d: string) =>
 export default async function PembelianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; success_sup?: string; success_terima?: string; recover_receipt?: string; error?: string; tab?: string }>;
+  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; success_sup?: string; success_terima?: string; recover_receipt?: string; error?: string; tab?: string; edit?: string; view?: string }>;
 }) {
-  const { request_done, request_scope, success, success_sup, success_terima, recover_receipt, error, tab } = await searchParams;
+  const { request_done, request_scope, success, success_sup, success_terima, recover_receipt, error, tab, edit, view: viewRaw } = await searchParams;
+  const view = masterView(viewRaw);
+  const bolehKelola = await bolehKelolaMaster();
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
@@ -63,12 +70,13 @@ export default async function PembelianPage({
       .from("purchase_orders")
       .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(qty, qty_terima, harga_beli)")
       .order("created_at", { ascending: false }),
-    supabase.from("suppliers").select("id, nama, kontak, telp, npwp, termin_hari, bank_nama, bank_rekening, supplier_categories(nama)").order("nama"),
+    supabase.from("suppliers").select("id, nama, kontak, telp, npwp, termin_hari, bank_nama, bank_rekening, alamat, category_id, bank_atas_nama, is_active, trashed_at, lifecycle_revision, supplier_categories(nama)").order("nama"),
     supabase.from("supplier_categories").select("id, nama").eq("is_active", true).order("nama"),
   ]);
 
   const pos = (poData ?? []) as unknown as PO[];
-  const suppliers = (supData ?? []) as unknown as Supplier[];
+  const suppliers = visibleMasters((supData ?? []) as unknown as Supplier[], view, row => row.is_active);
+  const editing = bolehKelola && edit ? suppliers.find(row => row.id === edit && !row.trashed_at) : null;
   const supplierCategories = (supCatData ?? []) as { id: string; nama: string }[];
   const showSupplier = tab === "supplier";
 
@@ -92,7 +100,7 @@ export default async function PembelianPage({
       )}
       {success_sup && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Supplier berhasil ditambahkan.
+          <i className="ti ti-circle-check" /> Data pemasok berhasil disimpan.
         </div>
       )}
       {success_terima && (
@@ -219,7 +227,7 @@ export default async function PembelianPage({
                 })}
                 {pos.length === 0 && (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                    <td colSpan={bolehKelola ? 9 : 8} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                       Belum ada Purchase Order.
                     </td>
                   </tr>
@@ -241,6 +249,7 @@ export default async function PembelianPage({
                 <i className="ti ti-file-spreadsheet" /> Impor
               </Link>
             </div>
+            <MasterLifecycleFilter entity="suppliers" view={view} />
             <div style={{ overflowX: "auto" }}>
               <table className="tbl" style={{ minWidth: 360 }}>
                 <thead>
@@ -251,7 +260,7 @@ export default async function PembelianPage({
                     <th>Telp</th>
                     <th style={{ width: 130 }}>NPWP</th>
                     <th style={{ width: 80 }}>Termin</th>
-                    <th style={{ width: 160 }}>Rekening</th>
+                    <th style={{ width: 160 }}>Rekening</th><th>Status</th>{bolehKelola && <th>Aksi</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -268,11 +277,15 @@ export default async function PembelianPage({
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
                         {s.bank_nama ? `${s.bank_nama} ${s.bank_rekening ?? ""}`.trim() : "—"}
                       </td>
+                      <td>{s.trashed_at ? "Sampah" : s.is_active ? "Aktif" : "Nonaktif"}</td>
+                      {bolehKelola && <td>{!s.trashed_at && <Link className="btn-def" href={`/pembelian?tab=supplier&edit=${s.id}&view=${view}`}>Edit</Link>}
+                        <MasterLifecycleActions entity="suppliers" id={s.id} name={s.nama} active={s.is_active} trashed={Boolean(s.trashed_at)} revision={s.lifecycle_revision} />
+                      </td>}
                     </tr>
                   ))}
                   {suppliers.length === 0 && (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
+                      <td colSpan={bolehKelola ? 9 : 8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
                         Belum ada supplier.
                       </td>
                     </tr>
@@ -283,17 +296,19 @@ export default async function PembelianPage({
           </div>
 
           {/* Tambah supplier form */}
-          <div className="crm-sec" style={{ marginBottom: 0 }}>
-            <SecHeader num="02" title="TAMBAH SUPPLIER" desc="Daftarkan supplier baru." />
-            <form action={tambahSupplier}>
+          {bolehKelola && <div className="crm-sec" style={{ marginBottom: 0 }}>
+            <SecHeader num="02" title={editing ? "EDIT PEMASOK" : "TAMBAH SUPPLIER"} desc="Perubahan master mempertahankan dokumen dan riwayat lama." />
+            <form action={tambahSupplier} key={editing?.id ?? "new"}>
+              <input type="hidden" name="id" value={editing?.id ?? ""} />
               <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Nama supplier *</label>
-                <input className="fi" name="nama" required placeholder="PT Maju Bersama" />
+                <input className="fi" name="nama" defaultValue={editing?.nama ?? ""} required placeholder="PT Maju Bersama" />
               </div>
               <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Kategori</label>
-                <select className="fi" name="category_id" defaultValue="">
+                <select className="fi" name="category_id" defaultValue={editing?.category_id ?? ""}>
                   <option value="">— tanpa kategori —</option>
+                  {editing?.category_id && !supplierCategories.some(k => k.id === editing.category_id) && <option value={editing.category_id}>{one(editing.supplier_categories)?.nama ?? "Kategori lama"} (Nonaktif)</option>}
                   {supplierCategories.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
                 </select>
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
@@ -302,47 +317,48 @@ export default async function PembelianPage({
               </div>
               <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Nama kontak</label>
-                <input className="fi" name="kontak" placeholder="Budi Santoso" />
+                <input className="fi" name="kontak" defaultValue={editing?.kontak ?? ""} placeholder="Budi Santoso" />
               </div>
               <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Telepon</label>
-                <input className="fi" name="telp" placeholder="08xxxxxxxx" />
+                <input className="fi" name="telp" defaultValue={editing?.telp ?? ""} placeholder="08xxxxxxxx" />
               </div>
               <div className="fg" style={{ marginBottom: 10 }}>
                 <label className="flab">Alamat</label>
-                <textarea className="fi" name="alamat" rows={2} placeholder="Jl. ..." style={{ resize: "vertical" }} />
+                <textarea className="fi" name="alamat" defaultValue={editing?.alamat ?? ""} rows={2} placeholder="Jl. ..." style={{ resize: "vertical" }} />
               </div>
               <div className="frow" style={{ marginBottom: 10 }}>
                 <div>
                   <label className="flab">NPWP</label>
-                  <input className="fi" name="npwp" maxLength={25} placeholder="untuk faktur pajak" />
+                  <input className="fi" name="npwp" defaultValue={editing?.npwp ?? ""} maxLength={25} placeholder="untuk faktur pajak" />
                 </div>
                 <div>
                   <label className="flab">Termin (hari)</label>
-                  <input className="fi" name="termin_hari" type="number" min={0} defaultValue={30} />
+                  <input className="fi" name="termin_hari" type="number" min={0} defaultValue={editing?.termin_hari ?? 30} />
                 </div>
               </div>
               <div className="frow" style={{ marginBottom: 12 }}>
                 <div>
                   <label className="flab">Bank</label>
-                  <input className="fi" name="bank_nama" maxLength={60} placeholder="BCA" />
+                  <input className="fi" name="bank_nama" defaultValue={editing?.bank_nama ?? ""} maxLength={60} placeholder="BCA" />
                 </div>
                 <div>
                   <label className="flab">No. rekening</label>
-                  <input className="fi" name="bank_rekening" maxLength={40} placeholder="1234567890" />
+                  <input className="fi" name="bank_rekening" defaultValue={editing?.bank_rekening ?? ""} maxLength={40} placeholder="1234567890" />
                 </div>
                 <div>
                   <label className="flab">Atas nama</label>
-                  <input className="fi" name="bank_atas_nama" maxLength={100} placeholder="PT Maju Bersama" />
+                  <input className="fi" name="bank_atas_nama" defaultValue={editing?.bank_atas_nama ?? ""} maxLength={100} placeholder="PT Maju Bersama" />
                 </div>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button type="submit" className="btn-acc">
-                  <i className="ti ti-plus" /> Simpan supplier
+                  <i className="ti ti-device-floppy" /> {editing ? "Simpan Perubahan" : "Simpan supplier"}
                 </button>
               </div>
             </form>
-          </div>
+            {editing && <Link className="btn-def" href="/pembelian?tab=supplier">Batal</Link>}
+          </div>}
         </div>
       )}
     </>

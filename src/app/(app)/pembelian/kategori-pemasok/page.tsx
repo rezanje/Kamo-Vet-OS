@@ -1,28 +1,32 @@
+import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
+import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
+import { masterView, visibleMasters, type LifecycleRow } from "@/lib/master-lifecycle";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
-import { simpanKategoriPemasok, toggleKategoriPemasok } from "./actions";
+import { simpanKategoriPemasok } from "./actions";
 
-type Kat = { id: string; nama: string; is_active: boolean };
+type Kat = { id: string; nama: string; is_active: boolean } & LifecycleRow;
 
 export default async function KategoriPemasokPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; view?: string }>;
 }) {
-  const { error, success, edit } = await searchParams;
+  const { error, success, edit, view: viewRaw } = await searchParams;
+  const view = masterView(viewRaw);
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
   const [{ data }, { data: supRows }] = await Promise.all([
-    supabase.from("supplier_categories").select("id, nama, is_active").order("nama"),
+    supabase.from("supplier_categories").select("id, nama, is_active, trashed_at, lifecycle_revision").order("nama"),
     supabase.from("suppliers").select("category_id").not("category_id", "is", null),
   ]);
 
-  const kategori = (data ?? []) as Kat[];
-  const editing = edit ? kategori.find((k) => k.id === edit) ?? null : null;
+  const kategori = visibleMasters((data ?? []) as Kat[], view, row => row.is_active);
+  const editing = edit ? kategori.find((k) => k.id === edit && !k.trashed_at) ?? null : null;
 
   const pakai = new Map<string, number>();
   for (const r of supRows ?? []) {
@@ -34,7 +38,7 @@ export default async function KategoriPemasokPage({
     <MasterPage
       back="/pembelian" icon="ti-tag" title="KATEGORI PEMASOK"
       desc="Golongkan pemasok — dipakai daftar pemasok & laporan hutang"
-      error={error} success={success} successMsg="Kategori tersimpan."
+      error={error} success={success} successMsg={success === "1" ? "Kategori tersimpan." : success ?? ""}
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah kategori pemasok."
     >
@@ -54,6 +58,7 @@ export default async function KategoriPemasokPage({
         </form>
       )}
 
+      <MasterLifecycleFilter entity="supplier_categories" view={view} />
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 520 }}>
@@ -70,18 +75,12 @@ export default async function KategoriPemasokPage({
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{k.nama}</td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pakai.get(k.id) ?? 0} pemasok</td>
-                  <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                  <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.trashed_at ? "Sampah" : k.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehKelola && (
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <Link href={`/pembelian/kategori-pemasok?edit=${k.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Ubah</Link>
-                        <form action={toggleKategoriPemasok}>
-                          <input type="hidden" name="id" value={k.id} />
-                          <input type="hidden" name="aktif" value={k.is_active ? "1" : "0"} />
-                          <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
-                            {k.is_active ? "Nonaktifkan" : "Aktifkan"}
-                          </SubmitButton>
-                        </form>
+                        {!k.trashed_at && <Link href={`/pembelian/kategori-pemasok?edit=${k.id}&view=${view}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Edit</Link>}
+                        <MasterLifecycleActions entity="supplier_categories" id={k.id} name={k.nama} active={k.is_active} trashed={Boolean(k.trashed_at)} revision={k.lifecycle_revision} />
                       </div>
                     </td>
                   )}

@@ -84,7 +84,7 @@ export async function GET(req: Request) {
   if (boleh("/pembelian")) {
     tugas.push((async () => {
       const { data } = await supabase
-        .from("suppliers").select("id, nama, kontak, telp")
+        .from("suppliers").select("id, nama, kontak, telp").is("trashed_at", null)
         .or(`nama.ilike.${pola},kontak.ilike.${pola}`).limit(BATAS);
       for (const r of data ?? []) {
         hasil.push({
@@ -99,7 +99,7 @@ export async function GET(req: Request) {
   if (boleh("/hris/karyawan")) {
     tugas.push((async () => {
       const { data } = await supabase
-        .from("employees").select("id, nik, nama, jabatan, status")
+        .from("employees").select("id, nik, nama, jabatan, status").is("trashed_at", null)
         .or(`nama.ilike.${pola},nik.ilike.${pola}`).limit(BATAS);
       for (const r of data ?? []) {
         hasil.push({
