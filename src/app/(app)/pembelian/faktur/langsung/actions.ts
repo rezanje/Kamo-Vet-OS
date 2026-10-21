@@ -31,6 +31,6 @@ export async function buatFakturLangsung(formData: FormData) {
   const { data, error } = await supabase.rpc("create_direct_purchase_invoice", { p_request_key: value("draft_key"), p_payload: payload });
   if (error) fail(error.message);
   if (!data?.invoice_id || !data.no_jurnal) fail("Hasil faktur belum terkonfirmasi. Periksa hasil terakhir sebelum mengulang.");
-  for (const path of ["/pembelian/faktur", "/keuangan/hutang", "/laporan/pembelian", "/dashboard"]) revalidatePath(path);
+  for (const path of ["/pembelian/faktur", "/keuangan/hutang", "/laporan/pembelian", "/pembelian/perintah-bayar", "/"]) revalidatePath(path);
   redirect(`/pembelian/faktur/${data.invoice_id}?success=${encodeURIComponent("Faktur tersimpan. Barang sudah masuk dan pembukuan terkonfirmasi.")}${transactionDraftAck(formData)}`);
 }

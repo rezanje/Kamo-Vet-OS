@@ -11,10 +11,11 @@ Baseline: main 8197ab7, with production purchase/payment/reconciliation and sale
 
 ## Current verification
 
-- 20 focused application suites / 125 tests passed: actual invoice/payment forms, draft acknowledgement/recovery, action payloads, signed dated debt, purchase dashboard, tax/operations readers and existing receipt feedback.
+- 20 focused application suites / 126 tests passed: actual invoice/payment forms, draft acknowledgement/recovery, action payloads, signed dated debt, purchase dashboard, tax/operations readers and existing receipt feedback.
 - Native PostgreSQL invoice suite passed with all release migrations: original purchase-recovery/receipt/FIFO assertions; actual PO/direct invoice, VAT/valuation, exact rollback, cancellation/replacement, payment prerequisite, dependency/access guards, same-key concurrent create/cancel, both stock-consumption/cancellation orders and inactive account detection after journal-counter waits.
 - Native purchase-payment suite passed, including original payment regressions, source deactivation, duplicate cancellation and supplier-wide shared-advance races.
 - Native sale/FIFO/payment/reward regression suite passed again.
+- Invoice create/cancel refreshes the real dashboard and payment-order candidates; the regression failed before the fix and passed afterward.
 - TypeScript, scoped ESLint and diff whitespace checks passed.
 - Fresh 199-table production backup 554f355e-4d73-453e-957e-6c5bb5b20e98 persisted with a verified checksum. Actual isolated restore passed and validated all 199 tables.
 

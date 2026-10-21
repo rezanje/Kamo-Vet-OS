@@ -32,7 +32,7 @@ export async function buatFaktur(formData: FormData) {
     ...(replacement ? { replaces_invoice_id: replacement } : {}),
   };
   const finish = (id: string): never => {
-    for (const path of ["/pembelian/faktur", "/keuangan/hutang", "/laporan/pembelian", "/dashboard"]) revalidatePath(path);
+    for (const path of ["/pembelian/faktur", "/keuangan/hutang", "/laporan/pembelian", "/pembelian/perintah-bayar", "/"]) revalidatePath(path);
     redirect(`/pembelian/faktur/${id}?success=${encodeURIComponent("Faktur tersimpan. Stok dan pembukuan sudah diperbarui.")}${transactionDraftAck(formData)}`);
   };
   const { data: recovered, error: recoveryError } = await supabase.rpc("recover_purchase_operation", { p_kind: "invoice", p_request_key: requestKey, p_payload: payload });

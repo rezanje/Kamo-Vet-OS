@@ -23,7 +23,7 @@ export async function batalkanPembayaranFaktur(formData: FormData) {
   if (!data?.cancellation_id || !data?.reversal_journal_id || data.payment_id !== paymentId || data.invoice_id !== invoiceId) {
     throw new Error("Pembatalan belum terkonfirmasi lengkap. Periksa riwayat pembayaran sebelum mengulang.");
   }
-  for (const path of [back, "/pembelian/faktur", "/keuangan/hutang", "/pembelian/perintah-bayar", "/pembelian/uang-muka", "/laporan/pembelian", "/dashboard"]) revalidatePath(path);
+  for (const path of [back, "/pembelian/faktur", "/keuangan/hutang", "/pembelian/perintah-bayar", "/pembelian/uang-muka", "/laporan/pembelian", "/pembelian/perintah-bayar", "/"]) revalidatePath(path);
   const ack = transactionDraftAck(formData);
   if (formData.get("tindakan") === "ganti") {
     if (data.order_id) redirect(`/pembelian/perintah-bayar?success=${encodeURIComponent("Pembayaran dibalik. Perintah bayar siap diperiksa dan dibayar kembali.")}${ack}`);
@@ -46,7 +46,7 @@ export async function batalkanFakturPembelian(formData: FormData) {
     });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   if (!data?.reversal_journal_id || data.invoice_id !== invoiceId) throw new Error("Pembatalan belum terkonfirmasi. Periksa hasil terakhir sebelum mengulang.");
-  for (const path of [back, "/pembelian/faktur", "/pembelian/faktur/baru", "/keuangan/hutang", "/laporan/pembelian", "/dashboard"]) revalidatePath(path);
+  for (const path of [back, "/pembelian/faktur", "/pembelian/faktur/baru", "/keuangan/hutang", "/laporan/pembelian", "/pembelian/perintah-bayar", "/"]) revalidatePath(path);
   const ack = transactionDraftAck(formData);
   if (formData.get("tindakan") === "ganti") redirect(`/pembelian/faktur/${data.po_id ? "baru" : "langsung"}?replace_invoice=${invoiceId}${ack}`);
   redirect(`${back}?success=${encodeURIComponent("Faktur dibatalkan. Nilai stok dan pembukuan sudah dikembalikan; riwayat tetap disimpan.")}${ack}`);
