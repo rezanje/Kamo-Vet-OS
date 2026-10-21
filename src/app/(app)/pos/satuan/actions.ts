@@ -1,5 +1,6 @@
 "use server";
 
+import { changeMasterLifecycle } from "@/app/(app)/master-data/actions";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { normalizeUnit } from "@/lib/satuan-master";
@@ -14,21 +15,17 @@ export async function simpanSatuan(formData: FormData) {
 
   if (!nama) redirect(`${BACK}?error=${encodeURIComponent("Nama satuan wajib diisi")}`);
 
-  const { error } = id
-    ? await supabase.from("units").update({ nama }).eq("id", id)
-    : await supabase.from("units").insert({ nama });
+  const { data, error } = id
+    ? await supabase.from("units").update({ nama }).eq("id", id).select("id").maybeSingle()
+    : await supabase.from("units").insert({ nama }).select("id").single();
 
-  redirect(error ? `${BACK}?error=${encodeURIComponent(pesanSimpanGagal(error.message))}` : `${BACK}?success=1`);
+  redirect(error || !data ? `${BACK}?error=${encodeURIComponent(pesanSimpanGagal(error?.message ?? "Data tidak ditemukan atau belum tersimpan"))}` : `${BACK}?success=1`);
 }
 
 // Satuan tidak dihapus: barang & riwayat masih menunjuk namanya.
 // Nonaktif = tidak muncul lagi di dropdown master barang.
 export async function toggleSatuan(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "satuan barang");
-  const id = String(formData.get("id") ?? "");
-  const aktif = String(formData.get("aktif") ?? "") === "1";
-  if (!id) redirect(`${BACK}?error=${encodeURIComponent("Satuan tidak valid")}`);
-
-  const { error } = await supabase.from("units").update({ is_active: !aktif }).eq("id", id);
-  redirect(error ? `${BACK}?error=${encodeURIComponent(error.message)}` : `${BACK}?success=1`);
+  formData.set("entity", "units");
+  formData.set("action", formData.get("aktif") === "1" ? "archive" : "activate");
+  return changeMasterLifecycle(formData);
 }

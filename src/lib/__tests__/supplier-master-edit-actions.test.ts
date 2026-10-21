@@ -1,0 +1,12 @@
+import {beforeEach,expect,it,vi} from "vitest";
+const mocks=vi.hoisted(()=>({guard:vi.fn(),update:vi.fn(),insert:vi.fn(),eq:vi.fn(),select:vi.fn(),single:vi.fn(),maybeSingle:vi.fn(),revalidate:vi.fn()}));
+vi.mock("@/lib/master-guard",()=>({assertMasterAdmin:mocks.guard}));
+vi.mock("next/navigation",()=>({redirect:(url:string)=>{throw new Error("REDIRECT:"+url)}}));
+vi.mock("next/cache",()=>({revalidatePath:mocks.revalidate}));
+import {tambahSupplier} from "../../app/(app)/pembelian/actions";
+const id="11111111-1111-4111-8111-111111111111";
+function form(extra:Record<string,string>={}){const data=new FormData();for(const[k,v]of Object.entries({id,nama:"Pemasok lama",kontak:"Kontak lama",alamat:"Alamat lama",termin_hari:"0",bank_nama:"Bank lama",bank_rekening:"123456789",bank_atas_nama:"Nama lama",...extra}))data.set(k,v);return data;}
+beforeEach(()=>{vi.resetAllMocks();const q={update:mocks.update,insert:mocks.insert,eq:mocks.eq,select:mocks.select,maybeSingle:mocks.maybeSingle,single:mocks.single};for(const fn of [mocks.update,mocks.insert,mocks.eq,mocks.select])fn.mockReturnValue(q);mocks.maybeSingle.mockResolvedValue({data:{id},error:null});mocks.single.mockResolvedValue({data:{id},error:null});mocks.guard.mockResolvedValue({from:(table:string)=>{expect(table).toBe("suppliers");return q;}});});
+it("edits the chosen supplier without inserting a duplicate or touching financial records",async()=>{await expect(tambahSupplier(form())).rejects.toThrow("REDIRECT:/pembelian?tab=supplier&success_sup=1");expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({nama:"Pemasok lama",termin_hari:0,bank_atas_nama:"Nama lama",bank_rekening:"123456789"}));expect(mocks.eq).toHaveBeenCalledWith("id",id);expect(mocks.insert).not.toHaveBeenCalled();expect(mocks.guard).toHaveBeenCalledWith("/pembelian?tab=supplier","pemasok");});
+it("rejects a missing/stale target instead of announcing a successful edit",async()=>{mocks.maybeSingle.mockResolvedValue({data:null,error:null});await expect(tambahSupplier(form())).rejects.toThrow(`REDIRECT:/pembelian?tab=supplier&edit=${id}&error=`);expect(mocks.revalidate).not.toHaveBeenCalled();});
+it("keeps create distinct from edit and validates payment term before writing",async()=>{await expect(tambahSupplier(form({id:"",termin_hari:"30"}))).rejects.toThrow("success_sup=1");expect(mocks.insert).toHaveBeenCalledOnce();mocks.insert.mockClear();await expect(tambahSupplier(form({id:"",termin_hari:"-1"}))).rejects.toThrow("error=");expect(mocks.insert).not.toHaveBeenCalled();});

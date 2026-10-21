@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { SubmitButton } from "@/components/SubmitButton";
+import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
 import {
   ACCURATE_MATRIX_COLUMNS,
   type AccurateMatrixColumn,
 } from "@/lib/accurate-matrix";
 import { kategoriWajibConsent } from "@/lib/tindakan";
 import type { ItemUnit } from "@/lib/satuan";
-import { toggleBarang } from "./actions";
+
 
 export type BarangMatrixRow = {
   id: string;
@@ -30,6 +30,8 @@ export type BarangMatrixRow = {
   track_expiry: boolean;
   default_discount: number;
   is_active: boolean;
+  trashed_at?: string | null;
+  lifecycle_revision?: number;
   tindakan_kategori: string | null;
   average_cost?: number | null;
   cost_note?: string;
@@ -174,14 +176,8 @@ export function BarangMatrixTable({ rows, bolehKelola, bolehLihatHpp = false, st
                 {bolehKelola && (
                   <td>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <Link href={`/pos/sku/${row.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Edit</Link>
-                      <form action={toggleBarang}>
-                        <input type="hidden" name="id" value={row.id} />
-                        <input type="hidden" name="aktif" value={row.is_active ? "1" : "0"} />
-                        <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
-                          {row.is_active ? "Nonaktifkan" : "Aktifkan"}
-                        </SubmitButton>
-                      </form>
+                      {!row.trashed_at && <Link href={`/pos/sku/${row.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Edit</Link>}
+                      <MasterLifecycleActions entity="items" id={row.id} name={row.name} active={row.is_active} trashed={Boolean(row.trashed_at)} revision={row.lifecycle_revision} />
                     </div>
                   </td>
                 )}

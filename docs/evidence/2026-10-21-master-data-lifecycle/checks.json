@@ -1,0 +1,70 @@
+{
+  "base": "d6d9c70d24fed05ff16a2dfd32f55cbeaa48fb3f",
+  "branch": "codex/kamo-masterdata-lifecycle",
+  "native": {
+    "source_migrations": 209,
+    "lifecycle_suite": "pass",
+    "waiting_session_races": 15,
+    "races": "pass",
+    "regressions": [
+      "pos_merchant_fees.sql",
+      "pos_split_payments.sql",
+      "online_return_unit_posting.sql"
+    ]
+  },
+  "compatibility": {
+    "pr": 74,
+    "sha": "af4599401703379a974bed9489722991089588ee",
+    "migrations": 210,
+    "lifecycle_suite": "pass",
+    "waiting_session_races": 15,
+    "races": "pass",
+    "combined_application_acceptance": false
+  },
+  "application": {
+    "focused_tests": 29,
+    "full_passed": 2223,
+    "full_failed": 3,
+    "known_failures_reproduced_on_base": true,
+    "typecheck": "pass",
+    "scoped_lint": "pass",
+    "production_build": "pass"
+  },
+  "legacy_sql": {
+    "suite": "employee_account_operational_context.sql",
+    "result": "fails at old direct UPDATE expenses",
+    "reproduced_on_base_migrations": 208,
+    "permissions_loosened": false
+  },
+  "chromium": {
+    "viewports": [
+      1280,
+      390
+    ],
+    "actual_components": true,
+    "fictional_action_responses": true,
+    "horizontal_overflow": false,
+    "runtime_errors": 0,
+    "external_requests_allowed": false
+  },
+  "production": {
+    "db_mutation": false,
+    "db_migration": false,
+    "deletion_or_reset": false,
+    "permission_or_credential_change": false,
+    "merge": false,
+    "deploy": false,
+    "live_acceptance": false
+  },
+  "code_rename_review": {
+    "reproduced_on": "06c2a5b",
+    "reproduction": "CODE-USED to CODE-RENAMED then trash at revision 0 succeeded before fix",
+    "sql_fixture": "master_item_code_history.sql",
+    "rename_with_code_history": "rejected",
+    "ordinary_edits_and_unused_rename": "pass",
+    "extra_waiting_session_races": 4,
+    "rejected_reference_rows_committed": 0,
+    "history_rewritten": false,
+    "application_sources_unchanged_from": "06c2a5b"
+  }
+}

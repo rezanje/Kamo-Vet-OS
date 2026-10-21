@@ -28,7 +28,7 @@ export default async function FakturLangsungPage({
   const [{ data: suppliers }, { data: warehouses }, items] = await Promise.all([
     // Tabel pemasok tidak punya penanda aktif/nonaktif — jangan saring kolom yang
     // tidak ada, daftarnya jadi kosong tanpa pesan error.
-    supabase.from("suppliers").select("id, nama, termin_hari").order("nama"),
+    supabase.from("suppliers").select("id, nama, termin_hari").eq("is_active", true).order("nama"),
     supabase.from("warehouses").select("id, code, name, branches(name)").eq("is_active", true).order("code"),
     readCompleteList<{ id: string; code: string; name: string; buy_price: number; unit: string; track_expiry: boolean | null }>((from, to) => supabase
       .from("items").select("id, code, name, buy_price, unit, track_expiry", { count: "exact" })

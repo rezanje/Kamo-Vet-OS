@@ -2,6 +2,8 @@
 
 // ponytail: server actions — buatPO, tambahSupplier, updatePOStatus (+ receiving logic).
 
+import { assertMasterAdmin } from "@/lib/master-guard";
+import { pesanSimpanGagal } from "@/lib/barang";
 import { revalidatePath } from "next/cache";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
@@ -96,7 +98,8 @@ export async function batalkanPO(formData: FormData) { await revisePO(formData, 
 // ─── Tambah Supplier ──────────────────────────────────────────────────────────
 
 export async function tambahSupplier(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await assertMasterAdmin("/pembelian?tab=supplier", "pemasok");
+  const id = String(formData.get("id") ?? "").trim();
   const nama = String(formData.get("nama") ?? "").trim();
   const kontak = String(formData.get("kontak") ?? "").trim() || null;
   const telp = String(formData.get("telp") ?? "").trim() || null;
@@ -111,17 +114,22 @@ export async function tambahSupplier(formData: FormData) {
   const termin = terminRaw === null || String(terminRaw).trim() === "" ? 30 : Number(terminRaw);
 
   if (!nama) {
-    redirect("/pembelian?error=" + encodeURIComponent("Nama supplier wajib diisi."));
+    redirect("/pembelian?tab=supplier&error=" + encodeURIComponent("Nama supplier wajib diisi."));
   }
   if (!Number.isFinite(termin) || termin < 0) {
-    redirect("/pembelian?error=" + encodeURIComponent("Termin pembayaran tidak valid."));
+    redirect("/pembelian?tab=supplier&error=" + encodeURIComponent("Termin pembayaran tidak valid."));
   }
 
-  await supabase.from("suppliers").insert({
+  const patch = {
     nama, kontak, telp, alamat, category_id: categoryId,
     npwp, termin_hari: termin, bank_nama: bankNama,
     bank_rekening: bankRekening, bank_atas_nama: bankAtasNama,
-  });
+  };
+  if (id && !/^[0-9a-f-]{36}$/i.test(id)) redirect("/pembelian?tab=supplier&error=Pemasok%20tidak%20valid");
+  const { data, error } = id
+    ? await supabase.from("suppliers").update(patch).eq("id", id).select("id").maybeSingle()
+    : await supabase.from("suppliers").insert(patch).select("id").single();
+  if (error || !data) redirect(`/pembelian?tab=supplier${id ? `&edit=${encodeURIComponent(id)}` : ""}&error=${encodeURIComponent(pesanSimpanGagal(error?.message ?? "Pemasok belum tersimpan"))}`);
 
   revalidatePath("/pembelian");
   redirect("/pembelian?tab=supplier&success_sup=1");
