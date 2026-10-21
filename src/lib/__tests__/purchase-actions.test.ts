@@ -5,7 +5,7 @@ vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: state.rpc, from: state.from }) }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ prefix: "TB.FIC.", digit: 5 }) }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
-import { terimaBarang, recoverPurchaseSubmission } from "../../app/(app)/pembelian/actions";
+import { terimaBarang, recoverPurchaseSubmission, ubahPO, batalkanPO } from "../../app/(app)/pembelian/actions";
 import { tambahPembelianAset } from "../../app/(app)/keuangan/aset/actions";
 import { buatFaktur } from "../../app/(app)/pembelian/faktur/actions";
 function form(values: Record<string,string | undefined>) { const f=new FormData();Object.entries(values).forEach(([k,v])=>v !== undefined && f.set(k,v));return f; }
@@ -60,4 +60,18 @@ describe("purchase server action boundaries",()=>{
   expect(state.rpc).toHaveBeenCalledWith("recover_purchase_operation",expect.objectContaining({p_kind:"invoice",p_request_key:"invoice-key",p_payload:expect.objectContaining({po_id:"po-1",items:[{po_item_id:"row-1",qty:2,harga:100}]})}));
   expect(state.from).not.toHaveBeenCalled();
  });
+  it("routes PO edit and cancel through the audited revision RPC",async()=>{
+    state.rpc.mockResolvedValue({data:{po_id:"po-1",revision:1},error:null});
+    const fields={id:"po-1",revision:"0",draft_key:"correction-key",draft_scope:"purchase-order:po-1:0",supplier_id:"supplier-1",to_warehouse_id:"warehouse-1",tanggal:"2026-10-04",items:'[{"nama":"Item","qty":2,"harga_beli":100}]',alasan:"Koreksi jumlah"};
+    await expect(ubahPO(form(fields))).rejects.toThrow("REDIRECT:/pembelian/po-1?success=edit");
+    expect(state.rpc).toHaveBeenCalledWith("revise_purchase_order",expect.objectContaining({p_action:"edit",p_expected_revision:0,p_request_key:"correction-key"}));
+    state.rpc.mockResolvedValue({data:{po_id:"po-1",revision:1},error:null});
+    await expect(batalkanPO(form({...fields,alasan:"Supplier batal"}))).rejects.toThrow("REDIRECT:/pembelian/po-1?success=void");
+    expect(state.rpc).toHaveBeenCalledWith("revise_purchase_order",expect.objectContaining({p_action:"void",p_reason:"Supplier batal"}));
+  });
+  it("recovers a created PO through the PO request store",async()=>{
+    state.rpc.mockResolvedValue({data:{po_id:"po-1",no_po:"PO-0001"},error:null});
+    await expect(recoverPurchaseSubmission(form({request_scope:"po-create",request_key:"po-key"}))).rejects.toThrow("REDIRECT:/pembelian?success=1");
+    expect(state.rpc).toHaveBeenCalledWith("get_purchase_order_result",{p_request_key:"po-key"});
+  });
 });

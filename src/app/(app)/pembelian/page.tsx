@@ -204,13 +204,9 @@ export default async function PembelianPage({
                               >
                                 <i className="ti ti-package-import" /> Terima Barang
                               </Link>
-                              <form action={updatePOStatus}>
-                                <input type="hidden" name="id" value={po.id} />
-                                <input type="hidden" name="status" value="Batal" />
-                                <button type="submit" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, color: "#b91c1c" }}>
-                                  Batal
-                                </button>
-                              </form>
+                              <Link href={`/pembelian/${po.id}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5, color: "#b91c1c" }}>
+                                Kelola PO
+                              </Link>
                             </>
                           )}
                           {(po.status === "Diterima" || po.status === "Batal") && (

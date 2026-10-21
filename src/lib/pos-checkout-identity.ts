@@ -38,20 +38,22 @@ export function posCheckoutIdentity(form: FormData, branchId: string): PosChecko
 }
 
 /** Redirect only for the exact intent; a changed draft is never silently cleared. */
-export async function resumePosCheckout(supabase: Client, cashierId: string, identity: PosCheckoutIdentity, kind: "cashier" | "backoffice", failedSaleId?: string): Promise<void> {
+export async function resumePosCheckout(supabase: Client, cashierId: string, identity: PosCheckoutIdentity, kind: "cashier" | "backoffice", failedSaleId?: string, replacementSaleId?: string): Promise<void> {
   const back = kind === "cashier" ? "/kasir" : "/pos/transaksi";
+  const context = kind === "cashier" && replacementSaleId && /^[0-9a-f-]{36}$/i.test(replacementSaleId)
+    ? `replace_sale=${encodeURIComponent(replacementSaleId)}&` : "";
   const { data: prior, error } = await supabase.from("sales")
-    .select("id, no_struk, customer_id, checkout_fingerprint, payments_finalized_at")
+    .select("id, no_struk, customer_id, checkout_fingerprint, payments_finalized_at, voided_at")
     .eq("cashier_id", cashierId).eq("checkout_key", identity.key).maybeSingle();
-  if (error) redirect(`${back}?error=${encodeURIComponent("Hasil transaksi sebelumnya belum dapat diperiksa. Coba lagi sebelum membayar.")}`);
+  if (error) redirect(`${back}?${context}error=${encodeURIComponent("Hasil transaksi sebelumnya belum dapat diperiksa. Coba lagi sebelum membayar.")}`);
   if (!prior) return;
   if (prior.checkout_fingerprint !== identity.fingerprint) {
     const recovery = prior.payments_finalized_at ? `&completed_sale_id=${encodeURIComponent(prior.id)}&draft_used=${encodeURIComponent(identity.key)}` : "";
-    redirect(`${back}?error=${encodeURIComponent(`Draft ini sudah digunakan untuk transaksi ${prior.no_struk ?? "sebelumnya"}. Periksa transaksi tersebut sebelum membuat pembayaran baru.`)}${recovery}`);
+    redirect(`${back}?${context}error=${encodeURIComponent(`Draft ini sudah digunakan untuk transaksi ${prior.no_struk ?? "sebelumnya"}. Periksa transaksi tersebut sebelum membuat pembayaran baru.`)}${recovery}`);
   }
   if (!prior.payments_finalized_at) {
     if (prior.id === failedSaleId) return;
-    redirect(`${back}?error=${encodeURIComponent("Transaksi ini masih diproses. Tunggu sebentar, lalu coba lagi untuk memeriksa hasilnya.")}`);
+    redirect(`${back}?${context}error=${encodeURIComponent("Transaksi ini masih diproses. Tunggu sebentar, lalu coba lagi untuk memeriksa hasilnya.")}`);
   }
   if (prior.customer_id) await recomputeCustomerTier(supabase, prior.customer_id);
   redirect(kind === "cashier" ? `/kasir/struk/${prior.id}?print=1&draft_done=${encodeURIComponent(identity.key)}` : `/pos/struk/${prior.id}?draft_done=${encodeURIComponent(identity.key)}`);

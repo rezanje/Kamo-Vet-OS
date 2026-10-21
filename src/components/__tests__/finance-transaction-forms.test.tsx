@@ -46,3 +46,44 @@ it.each(forms)("%s retains its real controlled amount after transport rejection 
  expect(host.textContent).toContain("Periksa daftar transaksi");expect(host.querySelector<HTMLInputElement>('input[type="number"]:not([name]), input[name="saldo_bank"]')!.value).toBe("123");
  expect(action).toHaveBeenCalledTimes(1);vi.mocked(action).mockClear();
 });
+
+it("manual journal rejects a one-cent imbalance before posting",async()=>{
+ await act(async()=>root.render(<JurnalForm userId="cent-owner" accounts={[{id:"cash",code:"1101",name:"Cash"},{id:"income",code:"4101",name:"Income"}]} branches={[]}/>));
+ const selects=host.querySelectorAll<HTMLSelectElement>("tbody select");
+ await act(async()=>{for(const [index,value] of ["cash","income"].entries()){selects[index].value=value;selects[index].dispatchEvent(new Event("change",{bubbles:true}));}});
+ await edit(host.querySelector<HTMLInputElement>('input[type="text"]')!,"Cent check");
+ const amounts=host.querySelectorAll<HTMLInputElement>('input[type="number"]');
+ await edit(amounts[0],"100.25");await edit(amounts[3],"100.24");
+ expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+ await edit(amounts[3],"100.25");
+ expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+});
+
+it("manual journal adopts an unsent draft saved before durable posting keys",async()=>{
+ const key="previous-journal-identity";
+ sessionStorage.setItem("vetos:transaction-draft:v1:upgrade-owner:transaction:journal-create",JSON.stringify({version:1,savedAt:Date.now(),requestKey:key,fields:{},snapshot:{tanggal:"2026-10-20",deskripsi:"Unsent journal",branchId:"",lines:[{account_id:"",debit:"123.45",credit:""},{account_id:"",debit:"",credit:"123.45"}]}}));
+ await act(async()=>root.render(<JurnalForm userId="upgrade-owner" accounts={[]} branches={[]}/>));
+ expect(host.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value).toBe(key);
+ expect(host.querySelector<HTMLInputElement>('input[type="text"]')!.value).toBe("Unsent journal");
+ expect(host.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("123.45");
+ expect(host.textContent).toContain("Draf dipulihkan");
+});
+
+it("opening correction prefills the complete active balance instead of a zero difference",async()=>{
+ await act(async()=>root.render(<SaldoAwalForm userId="opening-owner" akun={[]} usulan={[]} existing={{id:"active-entry",tanggal:"2026-10-20",rows:[{code:"1101",nilai:500,sisi:"D"}]}}/>));
+ expect(host.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("500");
+ expect(host.querySelector<HTMLInputElement>('input[name="expected_entry_id"]')!.value).toBe("active-entry");
+ expect(host.querySelector<HTMLInputElement>('input[name="reason"]')!.required).toBe(true);
+});
+
+it("opening retry preserves original expected identity after a lost response and reload",async()=>{
+ await act(async()=>root.render(<SaldoAwalForm userId="opening-retry" akun={[]} usulan={[]}/>));
+ await edit(host.querySelector<HTMLInputElement>('input[type="number"]')!,"500");
+ const key=host.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value;
+ await act(async()=>root.unmount());root=createRoot(host);
+ await act(async()=>root.render(<SaldoAwalForm userId="opening-retry" akun={[]} usulan={[]} existing={{id:"committed-entry",tanggal:"2026-10-20",rows:[{code:"1101",nilai:500,sisi:"D"}]}}/>));
+ expect(host.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value).toBe(key);
+ expect(host.querySelector<HTMLInputElement>('input[name="expected_entry_id"]')!.value).toBe("");
+ expect(host.querySelector('input[name="reason"]')).toBeNull();
+ expect(host.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("500");
+});

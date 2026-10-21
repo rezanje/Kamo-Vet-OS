@@ -93,7 +93,7 @@ export default async function FakturBeliPage({
                 const telat = sisa > 0 && r.jatuh_tempo < today;
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontWeight: 500, fontSize: 11.5 }}>{r.no_faktur}</td>
+                    <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/pembelian/faktur/${r.id}`}>{r.no_faktur}</Link></td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>
                       {r.no_faktur_pemasok ?? "—"}
                       {r.surat_jalan && <div style={{ fontSize: 9.5, color: "var(--td)" }}>SJ {r.surat_jalan}</div>}

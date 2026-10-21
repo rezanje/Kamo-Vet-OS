@@ -74,6 +74,15 @@ describe("atomic recurring catch-up", () => {
     expect(db.rpc).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts only the explicit reset skip when the historical marker has no journal", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-07-03T03:00:00Z"));
+    const db = database("2026-07");
+    db.rpc.mockResolvedValue({ data: [{ entry_id: null, no_jurnal: "RESET_PERIOD_SKIPPED", posted: false }], error: null } as never);
+    expect(await postRecurringCatchUp(db)).toEqual([]);
+    db.rpc.mockResolvedValue({ data: [{ entry_id: null, no_jurnal: null, posted: false }], error: null } as never);
+    await expect(postRecurringCatchUp(db)).rejects.toThrow("hasil posting tidak diterima");
+  });
+
   it("stops and surfaces a failed month so month-end cannot close over missing entries", async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-08-03T03:00:00Z"));
     const db = database();

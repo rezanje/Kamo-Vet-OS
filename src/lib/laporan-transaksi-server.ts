@@ -26,7 +26,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   const [hasilSales, hasilInvoices, hasilReturs, hasilCabang] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
-        .select("id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, branches(name), sale_items(id)", { count: "exact" })
+        .select("id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
         .gte("created_at", mulai).lte("created_at", akhir)),
       // Tagihan klinik yang dibatalkan tidak dihitung sebagai transaksi.
       completeReportQuery(supabase.from("invoices")
@@ -107,7 +107,7 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
   const akhir = `${sampai}T23:59:59+07:00`;
   const [hasilSales, hasilInvoices] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, branches(name)", { count: "exact" })
+      .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, voided_at, branches(name)", { count: "exact" })
       .lte("created_at", akhir)),
     completeReportQuery(supabase.from("invoices")
       .select("id, total, created_at, visits(customer_id, branches(name))", { count: "exact" })

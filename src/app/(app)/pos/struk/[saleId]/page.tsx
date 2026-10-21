@@ -22,7 +22,7 @@ export default async function PosStrukPage({ params, searchParams }: {
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, subtotal, discount, diskon_kategori, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
+    .select("id, no_struk, subtotal, discount, diskon_kategori, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
   const paymentRows = receiptPaymentRows(sale);
@@ -41,6 +41,7 @@ export default async function PosStrukPage({ params, searchParams }: {
 
   return (
     <>
+      {sale.voided_at && <div role="status" className="p2ban">STRUK DIBATALKAN — hanya untuk riwayat</div>}
       <ClearPosDraft checkoutKey={checkoutKey} />
       <style>{`@media print { @page { size: 80mm auto; margin: 3mm; } }`}</style>
 

@@ -90,9 +90,9 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 
 export function KasirClient({
   branchName, items, customers, vouchers, hariIni, draftContext, shiftId, promos = [], promoHitung = [],
-  aturanDiskon = {}, infoBarang = {}, salespeople = [], error,
+  aturanDiskon = {}, infoBarang = {}, salespeople = [], error, replacementDraft, replacementId,
 }: {
-  draftContext?: string; shiftId?: string;
+  draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
@@ -124,12 +124,12 @@ export function KasirClient({
   const [checkoutKey, setCheckoutKey] = useState("");
   const draftSiap = useRef(false);
   const restoredDraftKey = useRef("");
-  const draftKey = kasirDraftKey(draftContext);
+  const draftKey = kasirDraftKey(replacementId ? `${draftContext}:replacement:${replacementId}` : draftContext);
 
   useEffect(() => {
     if (restoredDraftKey.current === draftKey) return;
     draftSiap.current = false;
-    const draft = bacaDraftKasir(window.sessionStorage.getItem(draftKey));
+    const draft = bacaDraftKasir(window.sessionStorage.getItem(draftKey)) ?? replacementDraft;
     const timer = window.setTimeout(() => {
       restoredDraftKey.current = draftKey;
       setCheckoutKey(draft?.checkoutKey ?? crypto.randomUUID());
@@ -172,7 +172,7 @@ export function KasirClient({
       draftSiap.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [customers, items, salespeople, draftKey]);
+  }, [customers, items, salespeople, draftKey, replacementDraft]);
 
   useEffect(() => {
     if (!draftSiap.current) return;
@@ -409,6 +409,7 @@ export function KasirClient({
 
   return (
     <>
+      {replacementId && <div className="p2ban">Transaksi pengganti dari penjualan yang dibatalkan. Barang dan jumlah sudah diisi. Diskon, poin, dan voucher perlu ditentukan ulang; periksa harga serta pembayaran sebelum menyimpan.</div>}
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
@@ -583,6 +584,7 @@ export function KasirClient({
           <input type="hidden" name="checkout_poin_requested" value={poin} />
           <input type="hidden" name="checkout_diskon_requested" value={diskon} />
           <input type="hidden" name="checkout_diskon_pct" value={diskonPct ? "1" : "0"} />
+          <input type="hidden" name="replacementSaleId" value={replacementId ?? ""} />
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
           <input type="hidden" name="salespersonId" value={salespersonId} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />

@@ -70,7 +70,7 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
   // Dipisah dari arm "sale" biasa (akun beda) = false positive + repost dengan akun salah kalau digabung.
   const { data: sls, error: saleError } = await supabase
     .from("sales")
-    .select("no_struk, total, metode_bayar, branch_id, created_at, payment_plan, payments_finalized_at, sale_payments(method, amount, coa_code)")
+    .select("no_struk, total, metode_bayar, branch_id, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, coa_code)")
     .is("channel", null);
   if (saleError) throw new Error("Rincian pembayaran penjualan belum dapat dibaca. Coba lagi sebelum melakukan sinkronisasi.");
   const sales: MissingSale[] = (sls ?? [])
@@ -91,7 +91,7 @@ export async function findDrift(supabase: Awaited<ReturnType<typeof createClient
   const { data: slsOnline } = await supabase
     .from("sales")
     .select("no_struk, total, channel, branch_id, created_at")
-    .not("channel", "is", null);
+    .not("channel", "is", null).is("voided_at", null);
   const salesOnline: MissingSaleOnline[] = (slsOnline ?? [])
     .filter((s) => s.no_struk && s.channel && !saleOnlineRefs.has(s.no_struk) && Number(s.total) > 0)
     .map((s) => ({
@@ -111,13 +111,13 @@ export type DriftLain = { jenis: string; ref: string; tanggal: string; nilai: nu
 // mana). Menebaknya di sini justru menghasilkan jurnal yang salah tapi terlihat beres.
 // Yang dibutuhkan pemakai adalah TAHU dokumen mana yang bolong, lalu membukanya lagi.
 export async function findDriftLain(supabase: Awaited<ReturnType<typeof createClient>>): Promise<DriftLain[]> {
-  const { data: refs } = await supabase.from("journal_entries").select("source, source_ref").not("source_ref", "is", null);
+  const { data: refs } = await supabase.from("journal_entries").select("id, source, source_ref").not("source_ref", "is", null);
   const punya = (source: string, ref: string) =>
     (refs ?? []).some((r) => r.source === source && r.source_ref === ref);
 
   const [faktur, bayar, gaji, kas, transfer, returJual, returBeli] = await Promise.all([
     supabase.from("purchase_invoices").select("no_faktur, tanggal, total"),
-    supabase.from("purchase_invoice_payments").select("amount, tanggal, purchase_invoices(no_faktur)"),
+    supabase.from("purchase_invoice_payments").select("amount, tanggal, journal_id, purchase_invoices(no_faktur)").is("reversal_of", null),
     // Hanya slip yang SUDAH disahkan yang punya jurnal; yang masih draft memang belum.
     supabase.from("payrolls").select("periode, total").eq("status", "final"),
     supabase.from("cash_entries").select("no_bukti, tanggal, jumlah").is("voided_at", null),
@@ -133,10 +133,10 @@ export async function findDriftLain(supabase: Awaited<ReturnType<typeof createCl
     tambah(punya("purchase-invoice", f.no_faktur),
       { jenis: "Faktur Pembelian", ref: f.no_faktur, tanggal: f.tanggal, nilai: Number(f.total), layar: "/pembelian/faktur" });
   }
-  for (const p of (bayar.data ?? []) as { amount: number; tanggal: string; purchase_invoices: { no_faktur: string } | { no_faktur: string }[] | null }[]) {
+  for (const p of (bayar.data ?? []) as { amount: number; tanggal: string; journal_id: string | null; purchase_invoices: { no_faktur: string } | { no_faktur: string }[] | null }[]) {
     const inv = Array.isArray(p.purchase_invoices) ? p.purchase_invoices[0] : p.purchase_invoices;
     if (!inv?.no_faktur) continue;
-    tambah(punya("purchase-pay", inv.no_faktur),
+    tambah(p.journal_id ? (refs ?? []).some(r => r.id === p.journal_id) : punya("purchase-pay", inv.no_faktur),
       { jenis: "Pembayaran Hutang", ref: inv.no_faktur, tanggal: p.tanggal, nilai: Number(p.amount), layar: "/keuangan/hutang" });
   }
   // payrolls = satu baris per KARYAWAN; jurnalnya satu per periode → dijumlahkan dulu.

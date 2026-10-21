@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { monthlyLeaderboard, periodKey, type QuestDef } from "@/lib/quest-logic";
-import { claimQuest, redeemReward } from "./actions";
+import { claimQuest } from "./actions";
+import { RedeemRewardForm } from "./RedeemRewardForm";
 import { ResetCountdown } from "./ResetCountdown";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -273,14 +274,7 @@ export default async function QuestPage({
                     </div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 7, minHeight: 26 }}>{r.reward_name}</div>
                     <div style={{ fontSize: 13, fontWeight: 800, margin: "3px 0", color: "#b45309" }}>{r.points_cost.toLocaleString("id-ID")} <i className="ti ti-star" style={{ color: "#f59e0b", fontSize: 11 }} /></div>
-                    <form action={redeemReward}>
-                      <input type="hidden" name="rewardId" value={r.id} />
-                      <button type="submit" disabled={!afford}
-                        style={{ width: "100%", padding: "6px 0", fontSize: 10.5, fontWeight: 600, borderRadius: 7, border: "none", color: "#fff",
-                          background: afford ? "linear-gradient(90deg,var(--posb),var(--posb))" : "#cbd5e1", opacity: afford ? 1 : 0.7, cursor: afford ? "pointer" : "not-allowed" }}>
-                        Tukar
-                      </button>
-                    </form>
+                    <RedeemRewardForm userId={user.id} rewardId={r.id} afford={afford} />
                   </div>
                 );
               })}

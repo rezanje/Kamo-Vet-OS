@@ -1,134 +1,44 @@
 "use server";
 
-import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
-import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
-import { validasiTransfer, jurnalTransfer, jurnalBalik } from "@/lib/transfer-kas";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { validasiTransfer } from "@/lib/transfer-kas";
 import { hariIniWIB } from "@/lib/tanggal";
-import { postJournal } from "@/lib/posting";
-import { nomorBerikutnya } from "@/lib/no-dokumen";
 
 const BACK = "/kas-bank/transfer";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
-// Tipe ditulis di variabelnya (bukan cuma di arrow) supaya TypeScript memakai
-// `never` untuk mempersempit tipe sesudah pemanggilan — tanpa itu, setiap
-// pemakaian di bawah guard masih dianggap mungkin null.
-const gagal: (msg: string) => never = (msg) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
+const gagal = (message: string): never => redirect(`${BACK}?error=${encodeURIComponent(message)}`);
 
-type Rekening = { id: string; nama: string; coa_code: string; is_active: boolean };
-
-export async function buatTransfer(formData: FormData) {
-  const supabase = await assertRole(BACK, "transfer bank", BOLEH);
-
-  const tanggal = String(formData.get("tanggal") ?? "").trim();
-  const dariId = String(formData.get("from_account_id") ?? "").trim();
-  const keId = String(formData.get("to_account_id") ?? "").trim();
-  const jumlah = Number(formData.get("jumlah"));
-  const biayaAdmin = Number(formData.get("biaya_admin")) || 0;
-  const branchId = String(formData.get("branch_id") ?? "").trim() || null;
-  const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
-
-  const salah = validasiTransfer({ tanggal, dariId, keId, jumlah, biayaAdmin, hariIni: hariIniWIB() });
-  if (salah) gagal(salah);
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  // Kode akun diambil dari master, bukan dari form — form cuma mengirim id.
-  const { data: rekData } = await supabase
-    .from("cash_accounts").select("id, nama, coa_code, is_active").in("id", [dariId, keId]);
-  const rek = (rekData ?? []) as Rekening[];
-  const dari = rek.find((r) => r.id === dariId);
-  const ke = rek.find((r) => r.id === keId);
-  if (!dari || !ke) gagal("Rekening tidak ditemukan");
-  if (!dari!.is_active || !ke!.is_active) gagal("Rekening yang dipilih sudah nonaktif");
-
-  // Formatnya dibaca dari master penomoran; bawaannya TF.YYYY.MM.NNNNN,
-  // dilanjutkan dari nomor tertinggi bulan itu.
-  const { nomor: noTransfer } = await nomorBerikutnya(supabase, "TF", tanggal, {
-    table: "cash_transfers", column: "no_transfer",
-  });
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  const { data: trf, error: trfErr } = await supabase.from("cash_transfers").insert({
-    no_transfer: noTransfer, tanggal,
-    from_account_id: dariId, to_account_id: keId,
-    jumlah, biaya_admin: biayaAdmin, branch_id: branchId, keterangan,
-    created_by: user?.id ?? null,
-  }).select("id").maybeSingle();
-
-  if (trfErr || !trf) {
-    gagal(trfErr?.message.includes("cash_transfers_no_transfer_key")
-      ? "Nomor transfer bentrok, coba simpan sekali lagi"
-      : "Gagal menyimpan transfer, coba lagi");
-  }
-
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Transfer ${dari!.nama} → ${ke!.nama} (${noTransfer})`,
-    source: "transfer",
-    sourceRef: noTransfer,
-    branchId,
-    lines: jurnalTransfer(dari!.coa_code, ke!.coa_code, jumlah, biayaAdmin),
-  });
-
-  // Transfer tanpa jurnal = uang pindah di layar tapi tidak di pembukuan.
-  if (!(await jurnalTersimpan(supabase, "transfer", noTransfer))) {
-    await supabase.from("cash_transfers").delete().eq("id", trf!.id);
-    gagal("Jurnal gagal tersimpan, transfer dibatalkan — coba lagi");
-  }
-
-  await assertDraftJournal(supabase,{deskripsi:`Transfer ${dari!.nama} → ${ke!.nama} (${noTransfer})`,source:"transfer",sourceRef:noTransfer,tanggal,branchId,lines:jurnalTransfer(dari!.coa_code,ke!.coa_code,jumlah,biayaAdmin)});
-  redirect(`${BACK}?success=1${transactionDraftAck(formData)}`);
-}
-
-export async function batalkanTransfer(formData: FormData) {
-  const supabase = await assertRole(BACK, "transfer bank", BOLEH);
+async function simpan(formData: FormData, action: "create" | "edit" | "void") {
+  const supabase = await assertRole(BACK, "transfer bank", action === "edit" ? ["OWNER"] : ["OWNER", "ADMIN", "FINANCE"]);
+  const key = String(formData.get("draft_key") ?? "").trim();
   const id = String(formData.get("id") ?? "").trim();
-  if (!id) gagal("Transfer tidak valid");
-
-  const { data: trf } = await supabase
-    .from("cash_transfers")
-    .select("id, no_transfer, tanggal, jumlah, biaya_admin, branch_id, voided_at, from_account_id, to_account_id")
-    .eq("id", id).maybeSingle();
-  if (!trf) gagal("Transfer tidak ditemukan");
-  if (trf.voided_at) gagal("Transfer ini sudah dibatalkan");
-
-  // Jurnal balik bertanggal SAMA dengan transfer asli — kalau dilempar ke hari ini,
-  // laporan dua bulan (bulan asal & bulan pembatalan) sama-sama jadi salah.
-  const pesanPeriode = await cekPeriode(supabase, trf.tanggal as string);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  const { data: rekData } = await supabase
-    .from("cash_accounts").select("id, nama, coa_code, is_active")
-    .in("id", [trf.from_account_id as string, trf.to_account_id as string]);
-  const rek = (rekData ?? []) as Rekening[];
-  const dari = rek.find((r) => r.id === trf.from_account_id);
-  const ke = rek.find((r) => r.id === trf.to_account_id);
-  if (!dari || !ke) gagal("Rekening transfer ini tidak ditemukan");
-
-  // Predikat voided_at ada di UPDATE-nya sendiri (bukan cuma di pembacaan di atas)
-  // supaya klik dobel tidak menghasilkan dua jurnal balik.
-  const { data: updated } = await supabase
-    .from("cash_transfers").update({ voided_at: new Date().toISOString() })
-    .eq("id", id).is("voided_at", null).select("id");
-  if (!updated || updated.length === 0) gagal("Transfer ini sudah dibatalkan");
-
-  await postJournal(supabase, {
-    tanggal: trf.tanggal as string,
-    deskripsi: `Pembatalan transfer ${trf.no_transfer}`,
-    source: "transfer-void",
-    sourceRef: trf.no_transfer as string,
-    branchId: (trf.branch_id as string | null) ?? null,
-    lines: jurnalBalik(jurnalTransfer(dari!.coa_code, ke!.coa_code, Number(trf.jumlah), Number(trf.biaya_admin))),
-  });
-
-  if (!(await jurnalTersimpan(supabase, "transfer-void", trf.no_transfer as string))) {
-    await supabase.from("cash_transfers").update({ voided_at: null }).eq("id", id);
-    gagal("Jurnal pembatalan gagal tersimpan, pembatalan dibatalkan — coba lagi");
+  const revisionText = String(formData.get("revision") ?? "");
+  const revision = Number(revisionText);
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!key || key.length > 120) gagal("Identitas simpan belum tersedia. Muat ulang formulir.");
+  if (action !== "create" && (!id || !/^\d+$/.test(revisionText) || !Number.isSafeInteger(revision) || reason.length < 3 || reason.length > 1000)) gagal("Identitas atau alasan koreksi tidak valid.");
+  const header = action === "void" ? {} : {
+    tanggal: String(formData.get("tanggal") ?? "").trim(),
+    from_account_id: String(formData.get("from_account_id") ?? "").trim(),
+    to_account_id: String(formData.get("to_account_id") ?? "").trim(),
+    jumlah: Number(formData.get("jumlah")), biaya_admin: Number(formData.get("biaya_admin") ?? 0),
+    branch_id: String(formData.get("branch_id") ?? "").trim() || null,
+    keterangan: String(formData.get("keterangan") ?? "").trim() || null,
+  };
+  if (action !== "void") {
+    const h = header as { tanggal: string; from_account_id: string; to_account_id: string; jumlah: number; biaya_admin: number };
+    const error = validasiTransfer({ tanggal: h.tanggal, dariId: h.from_account_id, keId: h.to_account_id, jumlah: h.jumlah, biayaAdmin: h.biaya_admin, hariIni: hariIniWIB() });
+    if (error) gagal(error);
   }
-
-  redirect(`${BACK}?success=batal`);
+  const { data, error } = await supabase.rpc("mutate_cash_transfer", {
+    p_request_key: key, p_action: action, p_transfer_id: action === "create" ? null : id,
+    p_expected_revision: action === "create" ? null : revision, p_header: header,
+    p_reason: action === "create" ? null : reason,
+  });
+  if (error || !data?.transfer_id) gagal(error?.message ?? "Hasil transfer belum terkonfirmasi. Isian tetap tersedia.");
+  redirect(`${BACK}?success=${action === "void" ? "batal" : action === "edit" ? "koreksi" : "1"}${transactionDraftAck(formData)}`);
 }
+export async function buatTransfer(formData: FormData) { return simpan(formData, "create"); }
+export async function koreksiTransfer(formData: FormData) { return simpan(formData, "edit"); }
+export async function batalkanTransfer(formData: FormData) { return simpan(formData, "void"); }

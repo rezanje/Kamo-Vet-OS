@@ -24,7 +24,10 @@ function todayJakarta(): string {
 export async function buatPenjualanOnline(formData: FormData) {
   const db = await createClient();
   const key = String(formData.get("request_key") ?? "");
-  const fail = (msg: string) => redirect(`${BACK}/baru?error=${encodeURIComponent(msg)}`);
+  const requestedScope = String(formData.get("request_scope") ?? "online");
+  const replacementId = /^online-replacement:([0-9a-f-]{36})$/i.exec(requestedScope)?.[1];
+  const confirmedScope = replacementId ? requestedScope : "online";
+  const fail = (msg: string) => redirect(`${BACK}/baru?error=${encodeURIComponent(msg)}${replacementId ? `&replace_sale=${encodeURIComponent(replacementId)}` : ""}`);
   if (!key) fail("Identitas simpan belum tersedia. Muat ulang formulir.");
   let items: unknown;
   try { items = JSON.parse(String(formData.get("items") ?? "[]")); } catch { fail("Data barang tidak valid."); }
@@ -33,7 +36,7 @@ export async function buatPenjualanOnline(formData: FormData) {
   const { data, error } = await db.rpc("post_online_order", {p_request_key:key,p_header:header,p_items:items});
   if (error || !data) fail(error?.message ?? "Respons simpan belum terkonfirmasi. Periksa hasil transaksi terakhir sebelum menyimpan ulang.");
   revalidatePath(BACK);
-  redirect(`${BACK}/baru?success=${encodeURIComponent(`Order ${data.document_no} tersimpan.`)}&request_scope=online&request_done=${encodeURIComponent(key)}`);
+  redirect(`${BACK}/baru?success=${encodeURIComponent(`Order ${data.document_no} tersimpan.`)}&request_scope=${encodeURIComponent(confirmedScope)}&request_done=${encodeURIComponent(key)}${replacementId ? `&replace_sale=${encodeURIComponent(replacementId)}` : ""}`);
 }
 
 // Pencairan marketplace: input dana yang benar-benar masuk bank; selisihnya = komisi platform.
@@ -50,9 +53,10 @@ export async function tandaiCair(formData: FormData) {
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, total, channel, marketplace_status, branch_id")
+    .select("id, no_struk, total, channel, marketplace_status, branch_id, voided_at")
     .eq("id", saleId).maybeSingle();
   if (!sale) fail("Order tidak ditemukan.");
+  if (sale!.voided_at) fail("Order ini sudah dibatalkan.");
   if (!sale!.channel || !isMarketplace(sale!.channel)) fail("Order ini bukan order marketplace.");
   if (sale!.marketplace_status !== "piutang") fail("Order ini sudah dicairkan.");
 
@@ -84,7 +88,7 @@ export async function tandaiCair(formData: FormData) {
     .from("sales")
     .update({ marketplace_status: "cair", komisi, disbursed_at: now.toISOString() })
     .eq("id", saleId)
-    .eq("marketplace_status", "piutang")
+    .eq("marketplace_status", "piutang").is("voided_at", null)
     .select("id");
   if (updErr) {
     console.error("[tandaiCair] gagal update sales:", updErr);
@@ -111,11 +115,12 @@ export async function tandaiCair(formData: FormData) {
 export async function recoverUnitPosting(form: FormData) {
   const db = await createClient();
   const scope = String(form.get("request_scope") ?? "");
+  const replacementId = /^online-replacement:([0-9a-f-]{36})$/i.exec(scope)?.[1];
   const key = String(form.get("request_key") ?? "");
   const kasir = String(form.get("dari") ?? "") === "kasir";
-  const { data, error } = await db.rpc("get_unit_posting_result", {p_scope:scope,p_request_key:key});
+  const { data, error } = await db.rpc("get_unit_posting_result", {p_scope:replacementId ? "online" : scope,p_request_key:key});
   const back = kasir ? "/kasir/retur" : scope.startsWith("purchase-return") ? "/pembelian/retur/baru" : scope.startsWith("sales-return:") ? "/penjualan/retur/baru" : "/penjualan/online/baru";
-  const query = "struk=" + encodeURIComponent(String(form.get("source_ref") ?? ""));
+  const query = "struk=" + encodeURIComponent(String(form.get("source_ref") ?? "")) + (replacementId ? `&replace_sale=${encodeURIComponent(replacementId)}` : "");
   if(error || !data) redirect(`${back}?${query}&error=${encodeURIComponent(error?.message ?? "Transaksi belum ditemukan.")}`);
   redirect(`${back}?${query}&success=${encodeURIComponent(`Transaksi ${data.document_no} tersimpan.`)}&request_scope=${encodeURIComponent(scope)}&request_done=${encodeURIComponent(key)}`);
 }

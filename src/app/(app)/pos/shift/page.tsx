@@ -39,7 +39,7 @@ export default async function ShiftPage({
   let tunai = 0, trxCount = 0, cashExpenses = 0;
   if (open) {
     const [{ data: cs, error: saleError }, { data: expenses, error: expenseError }] = await Promise.all([
-      supabase.from("sales").select("total, metode_bayar, payment_plan, payments_finalized_at, sale_payments(method, amount)").eq("shift_id", open.id),
+      supabase.from("sales").select("total, metode_bayar, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount)").eq("shift_id", open.id),
       supabase.from("expenses").select("jumlah, metode_bayar").eq("shift_id", open.id),
     ]);
     if (saleError || expenseError) throw new Error("Rincian pembayaran shift belum dapat dibaca. Coba lagi.");

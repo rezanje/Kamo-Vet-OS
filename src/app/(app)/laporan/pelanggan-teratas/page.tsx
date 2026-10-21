@@ -36,7 +36,7 @@ export default async function PelangganTeratasPage({
   // salah satunya saja bikin pelanggan klinik terlihat tidak pernah belanja.
   const [{ data: sales }, { data: invoices }, { data: customers }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at", { count: "exact" })
+      .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, voided_at", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
     completeReportQuery(supabase.from("invoices")
       .select("id, total, created_at, visits!inner(customer_id)", { count: "exact" })

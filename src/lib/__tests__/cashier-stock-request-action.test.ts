@@ -1,9 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ rpc: vi.fn(), writes: [] as string[], auth: true, shift: true }));
+const state = vi.hoisted(() => ({ rpc: vi.fn(), receipt: vi.fn(), writes: [] as string[], auth: true, shift: true }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.assign(new Error(url), { digest: "NEXT_REDIRECT" }); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/shift", () => ({ getOpenShift: async () => state.shift ? { id: "shift-a", branch_id: "branch-a" } : null }));
+vi.mock("@/lib/terima-permintaan", () => ({ prosesTerimaPermintaan: state.receipt }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "PRM-COLLISION" }) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: state.auth ? { id: "user-a" } : null } }) },
@@ -18,7 +19,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     return query;
   },
 }) }));
-import { buatPermintaanKasir } from "@/app/kasir/persediaan/actions";
+import { buatPermintaanKasir, terimaBarang } from "@/app/kasir/persediaan/actions";
 
 const key = "f1000000-0000-4000-8000-000000000001";
 function form(values: Record<string, string> = {}) {
@@ -27,7 +28,7 @@ function form(values: Record<string, string> = {}) {
     items: JSON.stringify([{ item_id: "item-a", qty_diminta: 2, satuan: "pcs", catatan: "segera", nama: "FORGED", faktor: 999 }]), ...values }).forEach(([name, value]) => data.set(name, value));
   return data;
 }
-beforeEach(() => { state.rpc.mockReset(); state.rpc.mockResolvedValue({ data: "request-a", error: null }); state.writes.length = 0; state.auth = true; state.shift = true; });
+beforeEach(() => { state.rpc.mockReset(); state.rpc.mockResolvedValue({ data: "request-a", error: null }); state.receipt.mockReset(); state.receipt.mockResolvedValue({ ok: true, receiptNumber: "TRM-1", selisih: 0 }); state.writes.length = 0; state.auth = true; state.shift = true; });
 
 it("creates header and all items through one checked RPC using the authenticated shift branch", async () => {
   await expect(buatPermintaanKasir(form({ from_branch_id: "foreign-branch", draft_scope: "forged-scope" }))).rejects.toThrow(`/kasir/persediaan?tab=permintaan&success=1&draft_done=${key}&draft_scope=cashier-stock-request%3Abranch-a`);
@@ -50,6 +51,21 @@ it("reports a rejected atomic save without success or draft acknowledgement", as
 it("does not acknowledge a save without a confirmed document result", async () => {
   state.rpc.mockResolvedValue({ data: null, error: null });
   await expect(buatPermintaanKasir(form())).rejects.toThrow(/baru\?error=/);
+});
+
+it("posts cashier receipt through the atomic helper and acknowledges only a confirmed result", async () => {
+  const data = form({ request_id: "request-a", items: JSON.stringify([{ id: "line-a", qty_diterima: 2, kondisi: "baik", notes: "" }]) });
+  await expect(terimaBarang(data)).rejects.toThrow(
+    `/kasir/persediaan?tab=penerimaan&success=terima&trm=TRM-1&selisih=0&draft_done=${key}&draft_scope=cashier-stock-request%3Abranch-a`,
+  );
+  expect(state.receipt).toHaveBeenCalledWith(expect.anything(), {
+    requestId: "request-a", branchId: "branch-a", receivedBy: "user-a", rows: [{ id: "line-a", qty_diterima: 2, kondisi: "baik", notes: "" }],
+  });
+});
+
+it("keeps the draft unacknowledged when the atomic receipt fails", async () => {
+  state.receipt.mockResolvedValue({ ok: false, error: "stok kurang" });
+  await expect(terimaBarang(form({ request_id: "request-a" }))).rejects.toThrow(/error=stok/);
 });
 
 it.each<Record<string, string>>([{ request_key: "" }, { items: "[]" }, { to_warehouse_id: "" }])("rejects incomplete input before posting: %j", async values => {

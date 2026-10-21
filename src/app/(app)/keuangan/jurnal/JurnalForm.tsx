@@ -1,5 +1,6 @@
 "use client";
-import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
+import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
+import { SubmitButton } from "@/components/SubmitButton";
 import { draftRows } from "@/components/TransactionDraft";
 
 import { useMemo, useState } from "react";
@@ -41,7 +42,8 @@ export function JurnalForm({
   const totalDebit = lines.reduce((a, l) => a + (Number(l.debit) || 0), 0);
   const totalKredit = lines.reduce((a, l) => a + (Number(l.credit) || 0), 0);
   const selisih = Math.abs(totalDebit - totalKredit);
-  const isBalance = totalDebit > 0 && totalKredit > 0 && Math.round(totalDebit) === Math.round(totalKredit);
+  const isBalance = totalDebit > 0 && totalKredit > 0
+    && Math.round(totalDebit * 100) === Math.round(totalKredit * 100);
 
   const validLines = lines.filter(
     (l) => l.account_id && (Number(l.debit) > 0 || Number(l.credit) > 0)
@@ -66,8 +68,9 @@ export function JurnalForm({
   );
 
   return (
-    <PreservedForm action={jurnalManual}>
-      <LocalTransactionDraft userId={userId} scope="journal-create" state={{snapshot:{tanggal,deskripsi,branchId,lines},restore(value){if(typeof value.tanggal!=="string"||typeof value.deskripsi!=="string"||typeof value.branchId!=="string"||!draftRows(value.lines,emptyLine()))return false;setTanggal(value.tanggal);setDeskripsi(value.deskripsi);setBranchId(value.branchId);setLines(value.lines);return true;},reset(){setTanggal(today);setDeskripsi("");setBranchId("");setLines([emptyLine(),emptyLine()]);}}}/>
+    <CorrectionTransactionForm userId={userId} scope="journal-create" action={jurnalManual}
+      state={{snapshot:{tanggal,deskripsi,branchId,lines},restore(value){if(typeof value.tanggal!=="string"||typeof value.deskripsi!=="string"||typeof value.branchId!=="string"||!draftRows(value.lines,emptyLine()))return false;setTanggal(value.tanggal);setDeskripsi(value.deskripsi);setBranchId(value.branchId);setLines(value.lines);return true;},reset(){setTanggal(today);setDeskripsi("");setBranchId("");setLines([emptyLine(),emptyLine()]);}}}>
+      {({ ready }) => <>
       {/* Hidden fields */}
       <input type="hidden" name="tanggal" value={tanggal} />
       <input type="hidden" name="deskripsi" value={deskripsi} />
@@ -152,6 +155,7 @@ export function JurnalForm({
                     className="fi"
                     type="number"
                     min={0}
+                    step="0.01"
                     placeholder="0"
                     value={l.debit}
                     style={{ textAlign: "right", width: "100%" }}
@@ -165,6 +169,7 @@ export function JurnalForm({
                     className="fi"
                     type="number"
                     min={0}
+                    step="0.01"
                     placeholder="0"
                     value={l.credit}
                     style={{ textAlign: "right", width: "100%" }}
@@ -243,15 +248,16 @@ export function JurnalForm({
         </div>
       </div>
 
-      <button
-        type="submit"
+      <SubmitButton
         className="btn-acc"
-        disabled={!canSubmit}
-        style={{ opacity: canSubmit ? 1 : 0.45, cursor: canSubmit ? "pointer" : "not-allowed" }}
+        disabled={!canSubmit || !ready}
+        pendingText="Menyimpan jurnal…"
+        style={{ opacity: canSubmit && ready ? 1 : 0.45 }}
       >
         <i className="ti ti-device-floppy" style={{ marginRight: 6 }} />
         Simpan Jurnal
-      </button>
-    </PreservedForm>
+      </SubmitButton>
+      </>}
+    </CorrectionTransactionForm>
   );
 }

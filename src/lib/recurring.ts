@@ -147,6 +147,7 @@ export async function postRecurringCatchUp(supabase: AnyClient): Promise<{ nama:
       if (postingError?.code === "42501" && postingError.message?.startsWith("RECURRING_SCOPE:")) break;
       if (postingError?.code === "RCL01" && postingError.message?.startsWith("RECURRING_LIMIT:")) break;
       const journal = Array.isArray(result) ? result[0] : result;
+      if (!postingError && journal?.entry_id === null && journal.posted === false && journal.no_jurnal === "RESET_PERIOD_SKIPPED") continue;
       if (postingError || !journal?.entry_id) {
         throw new Error(`Jurnal berulang "${rj.nama}" (${periode}) gagal: ${postingError?.message ?? "hasil posting tidak diterima"}`);
       }

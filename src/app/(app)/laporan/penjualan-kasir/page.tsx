@@ -38,7 +38,7 @@ export default async function PenjualanKasirPage({
   const supabase = await createClient();
   const [{ data: sales }, { data: returs }, { data: profiles }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, cashier_id, total, discount, payment_plan, payments_finalized_at, branches(name)", { count: "exact" })
+      .select("id, cashier_id, total, discount, payment_plan, payments_finalized_at, voided_at, branches(name)", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
     completeReportQuery(supabase.from("sales_returns")
       .select("id, total, sales(cashier_id, branches(name))", { count: "exact" })

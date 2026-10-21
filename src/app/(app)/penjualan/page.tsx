@@ -25,7 +25,7 @@ async function semuaBaris<T>(ambil: (awal: number, akhir: number) => Promise<{ d
 }
 
 type SaleRow = SaleCompletion & {
-  id: string;
+  id: string; no_struk: string | null; void_reason: string | null;
   branch_id: string | null;
   total: number;
   created_at: string;
@@ -64,7 +64,7 @@ export default async function PenjualanPage({
   // Ambil seluruh halaman; batas bawaan database 1000 baris tidak boleh memotong laporan diam-diam.
   const [salesRead, saleItemsAll, invoicesAll, invoiceItemsAll] = await Promise.all([
     semuaBaris<SaleRow>((awal, akhir) => supabase.from("sales")
-      .select("id, branch_id, total, created_at, channel, payment_plan, payments_finalized_at, branches(code, name)")
+      .select("id, no_struk, void_reason, branch_id, total, created_at, channel, payment_plan, payments_finalized_at, voided_at, branches(code, name)")
       .order("id").range(awal, akhir) as unknown as Promise<{ data: SaleRow[] | null; error: { message: string } | null }>),
     semuaBaris<SaleItemRow>((awal, akhir) => supabase.from("sale_items")
       .select("sale_id, nama, qty, harga").order("id").range(awal, akhir) as unknown as Promise<{ data: SaleItemRow[] | null; error: { message: string } | null }>),
@@ -168,6 +168,9 @@ export default async function PenjualanPage({
 
   return (
     <>
+      {salesRead.some(s => s.voided_at) && <details className="crm-sec"><summary>Riwayat penjualan dibatalkan</summary>
+        {salesRead.filter(s => s.voided_at).map(s => <div key={s.id}><Link href={`/penjualan/${s.id}`}>{s.no_struk ?? "Penjualan"}</Link> · Dibatalkan · {s.void_reason}</div>)}
+      </details>}
       {/* ponytail: judul halaman tanpa back-link (ini root /penjualan) */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: "#141413" }}>Rekap Penjualan</div>

@@ -6,6 +6,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 
+import { SaleCancelForm } from "./SaleCancelForm";
+
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
@@ -16,7 +18,7 @@ const fmtDt = (iso: string) =>
   new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 type Sale = SalePaymentSource & {
-  id: string;
+  id: string; revision: number; channel: string | null; void_reason: string | null;
   no_struk: string | null;
   created_at: string;
   subtotal: number;
@@ -48,13 +50,16 @@ export default async function PenjualanDetailPage({
 
   const { data } = await supabase
     .from("sales")
-    .select("id, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
+    .select("id, revision, channel, void_reason, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
     .eq("id", id)
     .maybeSingle();
 
   const sale = data as unknown as Sale | null;
   if (!sale) notFound();
   const payments = salePaymentAllocations(sale);
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
+  const isOwner = profile?.role === "OWNER" && profile.is_active === true;
 
   const { data: returData } = await supabase
     .from("sales_returns")
@@ -74,14 +79,14 @@ export default async function PenjualanDetailPage({
           <span style={{ color: "var(--td)" }}>·</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>{sale.no_struk ?? "Penjualan"}</span>
         </div>
-        <Link href={`/penjualan/retur/baru?struk=${encodeURIComponent(sale.no_struk ?? "")}`} className="btn-def" style={{ textDecoration: "none" }}>
+        {!sale.voided_at && <Link href={`/penjualan/retur/baru?struk=${encodeURIComponent(sale.no_struk ?? "")}`} className="btn-def" style={{ textDecoration: "none" }}>
           <i className="ti ti-arrow-back-up" /> Buat retur
-        </Link>
+        </Link>}
       </div>
 
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Dokumen tersimpan.
+          <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan." : "Dokumen tersimpan."}
         </div>
       )}
       {error && (
@@ -90,6 +95,9 @@ export default async function PenjualanDetailPage({
         </div>
       )}
 
+      {sale.voided_at && <div role="status" className="p2ban">Dibatalkan pada {fmtDt(sale.voided_at)} · {sale.void_reason}
+        {isOwner && <Link href={`${sale.channel ? "/penjualan/online/baru" : "/kasir"}?replace_sale=${sale.id}`}>Siapkan transaksi pengganti</Link>}
+      </div>}
       <div className="crm-sec">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", paddingBottom: 12, borderBottom: ".5px solid var(--bd)", marginBottom: 14 }}>
           <div>
@@ -169,6 +177,10 @@ export default async function PenjualanDetailPage({
         </div>
       )}
 
+      {isOwner && user && !sale.voided_at && <details className="crm-sec">
+        <summary>Koreksi atau batalkan penjualan</summary>
+        <SaleCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />
+      </details>}
       <DokumenPanel modul="penjualan" refId={sale.id} kembali={`/penjualan/${sale.id}`} />
     </>
   );
