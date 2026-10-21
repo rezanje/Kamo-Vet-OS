@@ -1,6 +1,6 @@
 # Bounded transaction correction release
 
-Scope: retail/online sales, manual journals, and existing expense correction surfaces. This release reuses reviewed work from c52e96e and 6ecf18d without releasing unrelated purchase, inventory, banking or reset application changes. Production baseline: cb687ce.
+Scope: retail/online sales, manual journals, and existing expense correction surfaces. This release reuses reviewed work from c52e96e and 6ecf18d without releasing unrelated purchase, inventory, banking or reset application changes. Current production baseline: c45435d (PR64/65 notifications and receipt draft fixes retained).
 
 - Sales: OWNER can cancel or cancel and prepare a separately reviewed replacement. Original receipt and signed financial, exact FIFO stock, customer/staff reward reversals remain auditable. Active reports exclude voided sales; cancelled receipt history remains visible. Online receipt numbers now open the correction detail.
 - Manual journals: existing OWNER edit/void path retained. Creation now uses a single durable atomic request, consistent with correction forms.
@@ -18,7 +18,7 @@ Scope: retail/online sales, manual journals, and existing expense correction sur
 
 ## Release status
 
-Prepared and tested. Production installation and deployment are not yet confirmed. Browser connection for the KAMO administration profile is unresponsive; terminal account access belongs to different projects. Do not mark production complete until exact-project installation, deployment and authenticated acceptance are recorded.
+Prepared and tested; KAMO management access restored. Source branch incorporates current main without conflicts. Native sales/concurrency and finance SQL suites, plus all 133 focused application tests, passed again. Production preflight confirms 187 public tables, no new correction migrations installed, and empty sales/expense/journal history. Fresh backup 83bffdd7-d9d4-4ea5-bcc8-cab231e811e4 is persisted with a verified disk checksum; restore verification and installation are separate release gates. No new production correction code is claimed live yet.
 
 ## Boundaries
 
