@@ -36,7 +36,7 @@ async function correctExpense(formData: FormData, kind: "edit" | "void") {
   if (error) throw new Error(error.message || "Koreksi pengeluaran gagal. Isian tetap tersedia.");
   if (!data?.expense_id || !data?.journal_id) throw new Error("Koreksi dan jurnal belum terkonfirmasi lengkap.");
   const back = formData.get("kembali") === "/buku-besar/beban" ? "/buku-besar/beban" : "/pos/expense";
-  for (const path of ["/kasir/pengeluaran", "/pos/expense", "/buku-besar/beban", `/pos/expense/${id}`, `/buku-besar/beban/${id}`]) revalidatePath(path);
+  for (const path of ["/kasir/pengeluaran", "/klinik/pengeluaran", "/pos/expense", "/buku-besar/beban", `/pos/expense/${id}`, `/buku-besar/beban/${id}`]) revalidatePath(path);
   redirect(`${back}/${id}?success=${kind}${transactionDraftAck(formData)}`);
 }
 

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { StockError, consumeLayers, lapisanPindahan, porsiPenutupMinus, stockIn, transferStock } from "../inventory";
+import { describe, expect, it, vi } from "vitest";
+import { StockError, consumeLayers, lapisanPindahan, porsiPenutupMinus, stockIn, stockOut, transferStock } from "../inventory";
 
 // Supabase palsu seadanya: cukup untuk chain yang dipakai inventory.ts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -292,4 +292,13 @@ describe("stockIn saat stok minus", () => {
     expect(masuk).toHaveLength(1);
     expect(Number(masuk[0].qty_in)).toBe(7);
   });
+});
+
+it.each(["sale", "sale-group", "produksi", "opname", "penyesuaian", "klinik-edit", "retur-beli", "transfer-out"])("routes %s to the correct FIFO authority without changing output", async source => {
+ const rpc=vi.fn(async () => ({data:[{cost:"12.5",takes:[{id:"layer",qty:"1",unit_cost:"12.5",exp_date:"2030-01-01"}],shortfall:0,harga_beli:12.5}],error:null}));
+ const db={rpc,from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:{item_type:"Persediaan"},error:null})})})})};
+ await expect(stockOut(db as never,{warehouseId:"warehouse",itemId:"item",qty:1,source,ref:"ref",saleLineId:"line"})).resolves.toEqual({cost:12.5,takes:[{id:"layer",qty:1,unit_cost:12.5,exp_date:"2030-01-01"}],shortfall:0,hargaBeli:12.5});
+ expect(rpc).toHaveBeenCalledWith(source.startsWith("sale")?"sale_stock_out_fifo":"stock_out_fifo",expect.objectContaining({p_source:source,p_source_ref:"ref"}));
+ if(source.startsWith("sale")) expect(rpc).toHaveBeenCalledWith("sale_stock_out_fifo",expect.objectContaining({p_sale_line_id:"line"}));
+ else expect(rpc).toHaveBeenCalledWith("stock_out_fifo",expect.not.objectContaining({p_sale_line_id:expect.anything()}));
 });

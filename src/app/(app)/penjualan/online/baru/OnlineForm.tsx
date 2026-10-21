@@ -1,6 +1,7 @@
 "use client";
 
 // ponytail: baris item dinamis diserialisasi ke hidden JSON — pola sama dengan POForm.
+import type { SaleReplacement } from "@/lib/sale-replacement";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
@@ -24,18 +25,19 @@ const itemLabel = (it: Item) => `${it.code} — ${it.name}`;
 const custLabel = (c: Customer) => (c.phone ? `${c.name} (${c.phone})` : c.name);
 
 export function OnlineForm({
-  warehouses, userId, confirmedScope, confirmedKey,
+  warehouses, userId, confirmedScope, confirmedKey, replacement,
   items,
   customers,
 }: {
+  replacement?: SaleReplacement;
   confirmedScope?:string; confirmedKey?:string; userId?: string; warehouses: Warehouse[];
   items: Item[];
   customers: Customer[];
 }) {
   const {save,failure} = usePreservedAction(buatPenjualanOnline);
-  const [rows, setRows] = useState<Row[]>([{ ...blank }]);
-  const [channel, setChannel] = useState<string>("Shopee");
-  const [custText, setCustText] = useState("");
+  const [rows, setRows] = useState<Row[]>(replacement?.sale_items.map(row => ({ ...row, qty: Number(row.qty), harga: Number(row.harga), label: items.find(item => item.id === row.item_id) ? itemLabel(items.find(item => item.id === row.item_id)!) : row.nama })) ?? [{ ...blank }]);
+  const [channel, setChannel] = useState<string>(replacement?.channel ?? "Shopee");
+  const [custText, setCustText] = useState(replacement?.customer_id ? custLabel(customers.find(c => c.id === replacement.customer_id) ?? { id: "", name: "", phone: null }) : "");
 
   // 2000 item/pelanggan tiap render kalau dibangun ulang tiap keystroke — cukup saat items/customers berubah.
   const byLabel = useMemo(() => new Map(items.map((it) => [itemLabel(it), it])), [items]);
@@ -75,8 +77,9 @@ export function OnlineForm({
 
   return (
     <form action={save}>
+      {replacement && <div className="p2ban">Pengganti {replacement.no_struk}. Pilih gudang cabang sumber, lalu periksa barang, harga, dan pembayaran sebelum menyimpan.</div>}
       {failure && <div role="alert" className="p2ban">{failure}</div>}
-      <PostingRequestIdentity scope="online" userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} state={{snapshot:{rows,channel,custText},reset:()=>{setRows([{...blank}]);setChannel("Shopee");setCustText("");},restore:value=>{
+      <PostingRequestIdentity scope={replacement ? `online-replacement:${replacement.id}` : "online"} userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} state={{snapshot:{rows,channel,custText},reset:()=>{setRows([{...blank}]);setChannel("Shopee");setCustText("");},restore:value=>{
         if(!Array.isArray(value.rows)||value.rows.length>100||!value.rows.every(r=>r&&typeof r==="object"&&typeof r.item_id==="string"&&typeof r.nama==="string"&&typeof r.label==="string"&&typeof r.satuan==="string"&&Number.isFinite(r.qty)&&Number.isFinite(r.harga))||typeof value.channel!=="string"||typeof value.custText!=="string")return false;
         setRows(value.rows as Row[]);setChannel(value.channel);setCustText(value.custText);return true;
       }}} />
@@ -126,12 +129,12 @@ export function OnlineForm({
 
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Nama pembeli</label>
-            <input className="fi" name="buyer_name" placeholder="Nama pembeli di marketplace" />
+            <input className="fi" name="buyer_name" defaultValue={replacement?.buyer_name ?? ""} placeholder="Nama pembeli di marketplace" />
           </div>
 
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">No. order / referensi</label>
-            <input className="fi" name="external_ref" placeholder="Contoh: 250726ABCDEFG" />
+            <input className="fi" name="external_ref" defaultValue={replacement?.external_ref ?? ""} placeholder="Contoh: 250726ABCDEFG" />
           </div>
 
           {channel === "WA" && (

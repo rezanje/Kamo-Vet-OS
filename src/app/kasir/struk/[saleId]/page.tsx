@@ -21,7 +21,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
+    .select("id, no_struk, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
   const paymentRows = receiptPaymentRows(sale);
@@ -37,6 +37,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   return (
     <>
+      {sale.voided_at && <div role="status" className="p2ban">STRUK DIBATALKAN — hanya untuk riwayat</div>}
       <style>{`@media print {
         /* The Windows driver supplies the 58 mm roll size and page length. */
         @page { size: auto; margin: 0; }

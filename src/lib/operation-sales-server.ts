@@ -213,7 +213,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
 
   if (filter.channel !== "klinik" && filter.channel !== "reseller") {
     let query = supabase.from("sales")
-      .select("id,branch_id,customer_id,total,merchant_fee_total,channel,created_at,payment_plan,payments_finalized_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))")
+      .select("id,branch_id,customer_id,total,merchant_fee_total,channel,created_at,payment_plan,payments_finalized_at, voided_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))")
       .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end);
     query = applyChannel(query, filter.channel);
     const salesResult = await read(query);
@@ -357,11 +357,11 @@ export async function collectBranchBlock(scope: DashboardScope, filter: Dashboar
 export async function collectCustomerBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<CustomerBlock> {
   const { start, end } = dateBounds(filter);
   const currentResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at")
+    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at, voided_at")
     .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end));
   queryError(currentResult);
   const historyResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at")
+    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at, voided_at")
     .in("branch_id", scope.branchIds).lte("created_at", end));
   queryError(historyResult);
   const rows = [...(historyResult.data ?? []) as any[]].filter(isCompletedSale).map((row) => ({

@@ -25,6 +25,8 @@ REQUIRED_MIGRATIONS = (
     "20261015051000_fix_pos_expense_workflow.sql",
     "20261020112110_manual_journal_corrections.sql", "20261020112715_cash_entry_corrections.sql",
     "20261020130000_expense_backoffice_account.sql",
+    "20261017090000_role_capabilities.sql",
+    "20261020134639_atomic_manual_journal_create.sql",
 )
 
 
@@ -107,7 +109,7 @@ grant select on
   public.coa_accounts, public.profiles, public.branches, public.user_branches, public.cash_accounts,
   public.accounting_locks, public.cashier_shifts, public.payment_account_map to authenticated;
 """)
-    for suite in ("expense-workflow.sql", "manual-journal-corrections.sql", "cash-entry-corrections.sql"):
+    for suite in ("expense-workflow.sql", "manual-journal-corrections.sql", "cash-entry-corrections.sql", "manual-journal-create.sql"):
         run(*PSQL, "-d", DB, "-o", os.devnull, "-f", str(ROOT / "supabase/tests" / suite))
         print(f"PASS {suite}")
     print(f"feedback finance SQL acceptance passed ({len(REQUIRED_MIGRATIONS)} required migrations)")

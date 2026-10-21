@@ -36,7 +36,7 @@ select pg_temp.expect_error($q$select public.revise_manual_journal('null-action'
 select set_config('request.jwt.claim.sub','ee410000-0000-4000-8000-000000000002',true);
 select pg_temp.expect_error(format('select public.revise_manual_journal(%L,%L,0,%L,%L,%L,%L)', 'non-owner','ee430000-0000-4000-8000-000000000001','void','{}','[]','reason'),'Super Admin');
 select set_config('request.jwt.claim.sub','ee410000-0000-4000-8000-000000000003',true);
-select pg_temp.expect_error(format('select public.revise_manual_journal(%L,%L,0,%L,%L,%L,%L)', 'inactive-owner','ee430000-0000-4000-8000-000000000001','void','{}','[]','reason'),'Super Admin');
+select pg_temp.expect_error(format('select public.revise_manual_journal(%L,%L,0,%L,%L,%L,%L)', 'inactive-owner','ee430000-0000-4000-8000-000000000001','void','{}','[]','reason'),'Cabang jurnal tidak dapat diakses');
 select set_config('request.jwt.claim.sub','ee410000-0000-4000-8000-000000000001',true);
 insert into journal_results
 select 'edit',public.revise_manual_journal('edit-ok','ee430000-0000-4000-8000-000000000001',0,'edit',jsonb_build_object('deskripsi','Corrected'),jsonb_build_array(
@@ -50,7 +50,7 @@ select pg_temp.assert_true(public.revise_manual_journal('edit-ok','ee430000-0000
 reset role;
 update public.profiles set is_active=false where id='ee410000-0000-4000-8000-000000000001';
 set local role authenticated;
-select pg_temp.expect_error($q$select public.revise_manual_journal('edit-ok','ee430000-0000-4000-8000-000000000001',0,'edit','{"deskripsi":"Corrected"}','[]','Correction')$q$,'Super Admin');
+select pg_temp.expect_error($q$select public.revise_manual_journal('edit-ok','ee430000-0000-4000-8000-000000000001',0,'edit','{"deskripsi":"Corrected"}','[]','Correction')$q$,'Cabang jurnal tidak dapat diakses');
 reset role;
 alter table public.profiles disable trigger guard_profile_privileges;
 update public.profiles set is_active=true where id='ee410000-0000-4000-8000-000000000001';

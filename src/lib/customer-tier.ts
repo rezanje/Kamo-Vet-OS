@@ -19,7 +19,7 @@ export async function recomputeCustomerTier(supabase: SupabaseClient, customerId
   if (!customerId) return;
 
   const [{ data: sales }, { data: invs }, { data: cfg }] = await Promise.all([
-    supabase.from("sales").select("total, merchant_fee_total, payment_plan, payments_finalized_at").eq("customer_id", customerId),
+    supabase.from("sales").select("total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at").eq("customer_id", customerId),
     supabase
       .from("invoices")
       .select("total, visits!inner(customer_id)")

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { usePreservedAction } from "./LocalTransactionDraft";
-import { TransactionDraft, clearTransactionDraft, type DraftSnapshot } from "./TransactionDraft";
+import { TransactionDraft, clearTransactionDraft, transactionDraftName, type DraftSnapshot } from "./TransactionDraft";
 
 const ERROR = "__storage_error__";
 const storageFailures = new Set<string>();
@@ -21,7 +21,14 @@ function useDurableKey(userId: string, scope: string) {
   };
   const key = useSyncExternalStore((notify) => {
     try {
-      if (!sessionStorage.getItem(name)) sessionStorage.setItem(name, uuid());
+      if (!sessionStorage.getItem(name)) {
+        let previousKey = "";
+        try {
+          const draft = JSON.parse(sessionStorage.getItem(transactionDraftName(userId, "transaction", scope)) ?? "null");
+          if (draft?.version === 1 && typeof draft.requestKey === "string" && draft.requestKey.trim() && draft.requestKey.length <= 120) previousKey = draft.requestKey;
+        } catch { /* TransactionDraft reports unreadable saved input. */ }
+        sessionStorage.setItem(name, previousKey || uuid());
+      }
     } catch { storageFailures.add(name); /* getSnapshot reports the storage failure and keeps submit disabled. */ }
     queueMicrotask(notify);
     return () => {};

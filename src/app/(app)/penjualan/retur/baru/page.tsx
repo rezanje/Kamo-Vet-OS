@@ -42,7 +42,7 @@ export default async function ReturJualBaruPage({
     // refund retur jual keluar dari kas kasir, sedangkan online tidak punya shift kasir.
     const { data } = await supabase
       .from("sales")
-      .select("id, no_struk, subtotal, total, created_at, payment_plan, payments_finalized_at, customers(name), sale_items(id, item_id, nama, qty, harga, satuan, faktor, sale_item_group_components(component_item_id, component_name, item_type, qty_per_group, unit, sort_order))")
+      .select("id, no_struk, subtotal, total, created_at, payment_plan, payments_finalized_at, voided_at, customers(name), sale_items(id, item_id, nama, qty, harga, satuan, faktor, sale_item_group_components(component_item_id, component_name, item_type, qty_per_group, unit, sort_order))")
       .eq("no_struk", struk.trim())
       .is("channel", null)
       .maybeSingle();

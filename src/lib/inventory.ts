@@ -128,7 +128,7 @@ export async function stockIn(supabase: AnyClient, o: StockInOpts): Promise<void
 
 export type StockOutOpts = {
   warehouseId: string; itemId: string; qty: number;
-  source: string; ref?: string | null;
+  source: string; ref?: string | null; saleLineId?: string;
 };
 
 // Stok keluar: konsumsi layer FIFO, turunkan qty, kembalikan total cost (HPP riil).
@@ -143,7 +143,8 @@ export async function stockOut(
   // Jasa tidak mengurangi stok DAN tidak punya HPP persediaan — cost 0, bukan error.
   if (!(await punyaStok(supabase, o.itemId))) return { cost: 0, takes: [], shortfall: 0, hargaBeli: 0 };
 
-  const { data, error } = await supabase.rpc("stock_out_fifo", {
+  const { data, error } = await supabase.rpc(o.source === "sale" || o.source === "sale-group" ? "sale_stock_out_fifo" : "stock_out_fifo", {
+    ...((o.source === "sale" || o.source === "sale-group") && o.saleLineId ? { p_sale_line_id: o.saleLineId } : {}),
     p_warehouse_id: o.warehouseId,
     p_item_id: o.itemId,
     p_qty: o.qty,

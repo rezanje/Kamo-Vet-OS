@@ -24,7 +24,8 @@ export default async function KlinikPengeluaranPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+  const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).single();
+  const canManage = profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
   const shift = await getOpenShift(supabase as never, user.id, "klinik");
   if (!shift && profile?.role === "STAFF") redirect("/klinik/shift");
   const branchId = shift?.branch_id ?? "";
@@ -32,7 +33,7 @@ export default async function KlinikPengeluaranPage({
   // Daftar terfilter.
   let query = supabase
     .from("expenses")
-    .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, created_at, profiles(full_name), branches(name)")
+    .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, created_at, voided_at, profiles(full_name), branches(name)")
     .order("created_at", { ascending: false }).limit(100);
   if (branchId) query = query.eq("branch_id", branchId);
   if (from) query = query.gte("tanggal", from);
@@ -109,7 +110,10 @@ export default async function KlinikPengeluaranPage({
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                     <td style={{ fontSize: 11 }}>{fmtDate(r.tanggal)}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{fmtTime(r.created_at)}</div></td>
                     <td><span className={`bge ${KAT_BADGE[r.kategori] ?? "x"}`}>{r.kategori}</span></td>
-                    <td style={{ fontSize: 11.5 }}>{r.deskripsi ?? "—"}</td>
+                    <td style={{ fontSize: 11.5 }}>{r.deskripsi ?? "—"}
+                      {r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}
+                      {canManage && <div><Link href={`/buku-besar/beban/${r.id}`}>Detail / koreksi</Link></div>}
+                    </td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>
                     <td><span className={`bge ${r.metode_bayar === "Tunai" ? "g" : "b"}`}>{r.metode_bayar}</span></td>
                     <td style={{ fontSize: 11 }}>{one(r.profiles as Rel<{ full_name: string | null }>)?.full_name ?? "—"}</td>
