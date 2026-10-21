@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { barangKurang, nilaiFakturSelisih, pakaiHargaJual } from "@/lib/opname";
-import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
+import { stockInAtBuyPrice } from "@/lib/inventory";
+import { issueStockDocument } from "@/lib/stock-document-issue";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -314,9 +315,7 @@ export async function simpanHasil(formData: FormData) {
       });
       lebih += r.selisih * Number(itemMap.get(r.item_id)?.buy_price ?? 0);
     } else {
-      const { cost } = await stockOut(supabase, {
-        warehouseId: order.warehouse_id, itemId: r.item_id, qty: -r.selisih, source: "opname", ref: no_hasil,
-      });
+      const { cost } = await issueStockDocument(supabase, "opname", doc!.id, r.item_id);
       kurangCost += cost;
     }
   }

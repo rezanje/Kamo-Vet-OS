@@ -1,10 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { StockCorrectionPanel } from "../../koreksi-stok/StockCorrectionPanel";
 
 // Hasil opname yang sudah tersimpan. Dipakai modul Persediaan DAN layar kasir,
 // jadi isinya sengaja tanpa harga — kasir tidak perlu melihat modal barang.
 
 type ResultItem = {
+  item_id: string;
   qty_sistem: number;
   qty_fisik: number;
   selisih: number;
@@ -13,19 +15,22 @@ type ResultItem = {
 
 type Faktur = { no_faktur: string; total: number };
 
-export async function HasilView({ orderId }: { orderId: string }) {
+export async function HasilView({ orderId, allowCorrections = false }: { orderId: string; allowCorrections?: boolean }) {
   const supabase = await createClient();
   const { data: result } = await supabase
     .from("opname_results")
-    .select("no_hasil, tanggal, sales_invoices(no_faktur, total), opname_result_items(qty_sistem, qty_fisik, selisih, items(code, name, unit))")
+    .select("id, no_hasil, tanggal, sales_invoices(no_faktur, total), opname_result_items(item_id, qty_sistem, qty_fisik, selisih, items(code, name, unit))")
     .eq("order_id", orderId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  const { data: effective, error: effectiveError } = result ? await supabase.rpc("read_stock_document_effective", { p_kind: "opname", p_ids: [result.id] }) : { data: null, error: null };
+  const current = effective?.[result?.id ?? ""] as { revision: number; rows: { item_id: string; qty: number; selisih: number }[] } | undefined;
 
   // Selisih terbesar di atas — yang perlu ditindak kantor pusat itu barang yang
   // hilang paling banyak, bukan barang yang kebetulan huruf depannya A.
   const items = ((result?.opname_result_items ?? []) as unknown as ResultItem[])
+    .map(row => { const replacement = current?.rows.find(r => r.item_id === row.item_id);return replacement ? { ...row, qty_fisik: replacement.qty, selisih: replacement.selisih } : row; })
     .sort((a, b) =>
       Math.abs(Number(b.selisih)) - Math.abs(Number(a.selisih)) ||
       (a.items?.name ?? "").localeCompare(b.items?.name ?? ""));
@@ -35,12 +40,14 @@ export async function HasilView({ orderId }: { orderId: string }) {
   const faktur = Array.isArray(invRaw) ? invRaw[0] ?? null : invRaw ?? null;
 
   return (
-    <div className="crm-sec">
+    <><div className="crm-sec">
       <SecHeader
         num="02"
         title={`HASIL ${result?.no_hasil ?? ""}`}
         desc={`${items.length} barang dihitung, ${beda.length} barang selisih. Stok sudah disesuaikan.`}
       />
+      {effectiveError && <div className="p2ban" role="status">Hasil koreksi belum dapat diperiksa. Angka di bawah adalah dokumen asal; muat ulang sebelum menggunakannya.</div>}
+      {current && <div className="p2ban">Hasil efektif setelah koreksi revisi {current.revision}.</div>}
 
       {faktur && (
         <div className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309" }}>
@@ -84,5 +91,6 @@ export async function HasilView({ orderId }: { orderId: string }) {
         </table>
       </div>
     </div>
+    {allowCorrections && result?.id && <StockCorrectionPanel kind="opname" documentId={result.id} />}</>
   );
 }
