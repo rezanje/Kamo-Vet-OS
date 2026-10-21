@@ -1,0 +1,232 @@
+<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Preview panduan reset KAMO</title><style>
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ───────────────────────────────────────────────────────────────
+   VetOS app shell — ported from Dokumen/VetOS_UI_Prototype.html.
+   Plain CSS classes (not Tailwind) so the React shell matches the
+   approved mockup 1:1. Login page stays on Tailwind.
+   ─────────────────────────────────────────────────────────────── */
+/* Color tokens live on :root (not .shell) so non-dashboard routes that don't wrap
+   in .shell — /kasir/*, /mulai, /login — can resolve var(--sb) etc. too. Previously
+   scoped to .shell only, which left the kasir POS shell with transparent/invisible
+   chrome (bug, not a design choice). */
+:root {
+  --acc: #d97757; --sb: #16213e; --bg: #f0ede8; --sf: #fff; --sf1: #f7f5f1;
+  --bd: rgba(0,0,0,.1); --tx: #141413; --tm: #6b6b69; --td: #9ca3af;
+  --gr: #16a34a; --bl: #2563eb; --rd: #dc2626; --am: #d97706; --pu: #7c3aed;
+}
+.shell {
+  font-size: 13px; background: var(--bg); height: 100vh;
+  display: flex; overflow: hidden; width: 100%; color: var(--tx);
+}
+.sb { width: 185px; background: var(--sb); display: flex; flex-direction: column; height: 100vh; flex-shrink: 0; transition: width .18s ease; }
+.sb-logo { padding: 14px 14px 12px; border-bottom: .5px solid rgba(255,255,255,.07); display: flex; align-items: center; gap: 10px; }
+.sb-mark { width: 32px; height: 32px; background: var(--acc); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sb-mark i { color: #fff; font-size: 17px; }
+.sb-brand div:first-child { color: #fff; font-size: 13px; font-weight: 500; }
+.sb-brand div:last-child { color: rgba(255,255,255,.38); font-size: 10px; }
+.sb-branch { padding: 8px 11px; border-bottom: .5px solid rgba(255,255,255,.07); }
+.sb-branch select { width: 100%; background: rgba(255,255,255,.08); border: none; color: #fff; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer; outline: none; }
+.sb-nav { flex: 1; padding: 5px 0; overflow-y: auto; }
+.sbi { width: 100%; display: flex; align-items: center; gap: 9px; padding: 8px 13px; border: none; background: none; cursor: pointer; text-align: left; border-left: 2.5px solid transparent; transition: background .1s; text-decoration: none; }
+.sbi:hover { background: rgba(255,255,255,.05); }
+.sbi.on { background: rgba(217,119,87,.18); border-left-color: var(--acc); }
+.sbi i { font-size: 16px; color: rgba(255,255,255,.55); }
+.sbi.on i { color: var(--acc); }
+.sbi span { font-size: 11.5px; color: rgba(255,255,255,.62); }
+.sbi.on span { color: #fff; font-weight: 500; }
+.sb-user { padding: 10px 13px; border-top: .5px solid rgba(255,255,255,.07); display: flex; align-items: center; gap: 8px; }
+.sb-toggle { margin-left: auto; background: rgba(255,255,255,.08); border: 0; border-radius: 5px; color: rgba(255,255,255,.75); width: 22px; height: 22px; cursor: pointer; flex-shrink: 0; }
+.sb.collapsed { width: 58px; }
+.sb.collapsed .sb-logo { padding-left: 13px; padding-right: 13px; flex-wrap: wrap; justify-content: center; }
+.sb.collapsed .sb-brand, .sb.collapsed .sb-branch, .sb.collapsed .sbi span, .sb.collapsed .sb-user > div:nth-child(2), .sb.collapsed .sb-user form { display: none; }
+.sb.collapsed .sb-toggle { margin: 2px 0 0; }
+.sb.collapsed .sbi { justify-content: center; padding-left: 0; padding-right: 0; }
+.sb.collapsed .sbi i { margin: 0; }
+.sb.collapsed .sb-user { justify-content: center; padding-left: 0; padding-right: 0; }
+.av { width: 28px; height: 28px; border-radius: 50%; background: var(--acc); display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #fff; font-weight: 500; flex-shrink: 0; }
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar { height: 42px; background: #fff; border-bottom: .5px solid var(--bd); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.bc { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tm); }
+.ct { flex: 1; padding: 16px; overflow-y: auto; }
+
+/* Tab halaman ala Accurate — halaman yang dibuka nempel jadi tab. */
+.ptabs { display: flex; align-items: flex-end; gap: 2px; background: #e9edf3; border-bottom: .5px solid var(--bd); padding: 5px 10px 0; flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
+.ptabs::-webkit-scrollbar { display: none; }
+.ptab { display: inline-flex; align-items: center; gap: 6px; max-width: 190px; padding: 6px 10px; border-radius: 6px 6px 0 0; background: #dbe2ec; color: var(--tm); font-size: 11.5px; font-weight: 500; white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+.ptab:hover { background: #cfd8e5; }
+.ptab.on { background: #fff; color: var(--tx); font-weight: 600; cursor: default; box-shadow: 0 -1px 0 var(--acc) inset; }
+.ptab-l { overflow: hidden; text-overflow: ellipsis; color: inherit; text-decoration: none; }
+.ptab-x { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border: none; border-radius: 3px; background: none; color: inherit; opacity: .55; cursor: pointer; font-size: 12px; flex-shrink: 0; }
+.ptab-x:hover { opacity: 1; background: rgba(0,0,0,.1); }
+.tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px,1fr)); gap: 10px; margin-top: 13px; }
+.tile { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 13px 9px; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; position: relative; transition: border-color .1s; text-decoration: none; }
+.tile:hover { border-color: var(--acc); }
+.ticon { width: 38px; height: 38px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
+.ticon i { font-size: 19px; }
+.tlabel { font-size: 10.5px; color: var(--tx); text-align: center; line-height: 1.35; }
+.ph2 { position: absolute; top: 5px; right: 5px; background: #6b7280; color: #fff; font-size: 8px; font-weight: 600; padding: 2px 5px; border-radius: 3px; letter-spacing: .03em; }
+.nbdg { position: absolute; top: 5px; left: 5px; background: var(--acc); color: #fff; font-size: 8px; font-weight: 600; padding: 2px 5px; border-radius: 3px; }
+.kgrid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 14px; }
+.kcard { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 12px; }
+.klab { font-size: 10.5px; color: var(--tm); margin-bottom: 3px; }
+.kval { font-size: 17px; font-weight: 500; color: var(--tx); }
+.kdelta { font-size: 10px; margin-top: 2px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th { text-align: left; padding: 8px 10px; color: #fff; background: var(--sb); font-weight: 500; font-size: 10.5px; white-space: nowrap; }
+.tbl thead th:first-child { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+.tbl thead th:last-child { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+.tbl td { padding: 7px 10px; border-bottom: .5px solid var(--bd); }
+.tbl tr:last-child td { border-bottom: none; }
+.bge { display: inline-flex; padding: 2px 8px; border-radius: 20px; font-size: 9.5px; font-weight: 500; }
+.g { background: #e8f5ee; color: #15803d; } .o { background: #fdf0ea; color: #b55a35; }
+.b { background: #eff6ff; color: var(--posb); } .r { background: #fef2f2; color: #b91c1c; }
+.x { background: #f3f4f6; color: #6b7280; }
+.pu { background: #f5f3ff; color: #6d28d9; } .pk { background: #fdf2f8; color: #be185d; }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 72px; }
+.bar { flex: 1; border-radius: 2px 2px 0 0; }
+.p2ban { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 8px; padding: 9px 12px; font-size: 11px; color: #92400e; margin-bottom: 12px; display: flex; align-items: center; gap: 9px; }
+.fi { width: 100%; padding: 6px 9px; border: .5px solid var(--bd); border-radius: 6px; font-size: 12px; color: var(--tx); background: #fff; outline: none; }
+.fi:focus { border-color: var(--acc); }
+.fi[type="number"]::-webkit-outer-spin-button, .fi[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.fi[type="number"] { -moz-appearance: textfield; }
+.flab { font-size: 10.5px; color: var(--tm); margin-bottom: 3px; display: block; }
+.frow { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 8px; }
+.fg { margin-bottom: 8px; }
+.btn-acc { padding: 7px 13px; background: var(--sb); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; transition: background .12s; }
+.btn-acc:hover { background: #24365f; }
+.btn-def { padding: 7px 13px; border: .5px solid var(--bd); border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: var(--tm); }
+.back-btn { background: none; border: none; cursor: pointer; color: var(--tm); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+.pg-hd { font-size: 14px; font-weight: 500; color: var(--tx); margin-bottom: 2px; }
+.pg-sub { font-size: 11px; color: var(--tm); margin-bottom: 13px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.card { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 13px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.card-hd { font-size: 12px; font-weight: 500; color: var(--tx); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+.pos-wrap { display: grid; grid-template-columns: 1fr 215px; gap: 12px; }
+.pos-pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px,1fr)); gap: 7px; }
+.pos-p { background: #fff; border: .5px solid var(--bd); border-radius: 8px; padding: 9px; cursor: pointer; text-align: center; }
+.pos-p:hover { border-color: var(--acc); }
+.pos-pn { font-size: 10px; font-weight: 500; color: var(--tx); margin-top: 5px; line-height: 1.3; }
+.pos-pp { font-size: 9.5px; color: var(--tm); margin-top: 2px; }
+.cart { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 11px; display: flex; flex-direction: column; gap: 7px; }
+.ci { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: .5px solid var(--bd); }
+.pay-btn { width: 100%; padding: 9px; background: var(--sb); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; }
+.pay-btn:hover { background: #24365f; }
+.j-info { background: #fffbeb; border: .5px solid #fcd34d; border-radius: 7px; padding: 8px 11px; font-size: 11px; color: #92400e; margin-bottom: 11px; }
+.crm-sec { background: #fff; border: .5px solid var(--bd); border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+
+/* Mode chooser (/mulai) + POS kasir shell — Kamo Petshop blue theme (design-reference/petshop). */
+.mulai-tile { background: #fff; border-radius: 14px; padding: 26px 20px; display: flex; flex-direction: column; align-items: center; gap: 9px; cursor: pointer; transition: transform .12s, box-shadow .12s; box-shadow: 0 2px 10px rgba(0,0,0,.25); width: 240px; flex-shrink: 0; }
+.mulai-tile:hover { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+/* Biru tua tema Kamo (sama dengan badge nomor & sidebar) — dipakai POS petshop
+   maupun shell klinik supaya satu nada, bukan campur biru muda. */
+:root { --posb: #16213e; --posb-dk: #0e1729; }
+.pos-topbar { height: 56px; background: var(--posb); display: flex; align-items: center; justify-content: space-between; padding: 0 18px; color: #fff; flex-shrink: 0; }
+.pos-tab { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,.7); text-decoration: none; border: none; cursor: pointer; background: transparent; }
+.pos-tab.on { background: #fff; color: var(--posb); }
+.pos-tab:not(.on):hover { background: rgba(255,255,255,.12); }
+.pos-topbar summary::-webkit-details-marker { display: none; }
+
+/* Layar hero petshop biru (mulai/tutup shift) — mirrors design-reference/petshop/01-shift-start.png */
+.pshop-wrap { position: relative; overflow: hidden; min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 36px 8px; border-radius: 18px; background: linear-gradient(160deg, #eef2ff 0%, #f6f8ff 55%, #eef4ff 100%); }
+.pshop-deco { position: absolute; color: var(--posb); opacity: .07; pointer-events: none; z-index: 0; }
+.pshop-hero { text-align: center; position: relative; z-index: 1; }
+.pshop-welcome { font-size: 32px; font-weight: 800; color: var(--posb); line-height: 1.15; }
+.pshop-card { position: relative; z-index: 1; }
+.pshop-rp { display: flex; align-items: stretch; }
+.pshop-rp span { background: var(--sf1); border: .5px solid var(--bd); border-right: none; border-radius: 6px 0 0 6px; padding: 6px 10px; font-size: 12px; color: var(--tm); display: flex; align-items: center; }
+.pshop-rp input { border-radius: 0 6px 6px 0 !important; }
+
+/* Kasir cart / product table — mirrors design-reference/petshop/02-kasir-pos-main.png */
+.kpos-catTab { padding: 6px 3px; border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: 11.5px; color: var(--tm); font-weight: 500; }
+.kpos-catTab.on { color: var(--posb); border-bottom-color: var(--posb); }
+.kpos-workspace { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 780px) { .kpos-workspace { grid-template-columns: minmax(0, 1fr); } }
+.kpos-qtybtn { width: 20px; height: 20px; border-radius: 5px; border: .5px solid var(--bd); background: #fff; color: var(--tm); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; }
+.kpos-qtybtn:hover { background: var(--sf1); }
+.kpos-pagebtn { width: 26px; height: 26px; border-radius: 6px; border: .5px solid var(--bd); background: #fff; color: var(--tm); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; }
+.kpos-pagebtn.on { background: var(--posb); border-color: var(--posb); color: #fff; }
+.kpos-pagebtn:disabled { opacity: .4; cursor: not-allowed; }
+.kpos-pay { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 4px; border-radius: 8px; border: 1.5px solid var(--bd); background: #fff; color: var(--tm); font-size: 11px; cursor: pointer; }
+.kpos-pay.on { border-color: var(--posb); color: var(--posb); background: #eff4ff; font-weight: 600; }
+.kpos-radio { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--bd); flex-shrink: 0; }
+.kpos-pay.on .kpos-radio { border-color: var(--posb); background: var(--posb); box-shadow: inset 0 0 0 2.5px #fff; }
+.kpos-bayar { width: 100%; padding: 11px; background: var(--posb); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.kpos-bayar:hover:not(:disabled) { background: var(--posb-dk); }
+.kpos-bayar:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Dokumen rekam medis A4 (cetak) */
+.rm-tbl { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.rm-tbl th { border: .5px solid var(--bd); padding: 5px 7px; background: #eff4ff; color: var(--posb); font-weight: 700; text-align: left; }
+.rm-tbl td { border: .5px solid var(--bd); padding: 5px 7px; }
+@media print {
+  .rm-doc { border: none !important; max-width: 100% !important; padding: 0 !important; }
+}
+
+/* Skeleton loading (loading.tsx) — feedback instan saat navigasi */
+@keyframes sk-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.sk { background: linear-gradient(90deg, var(--sf1), #ececec, var(--sf1)); border-radius: 8px; animation: sk-pulse 1.1s ease-in-out infinite; }
+
+/* Spinner tombol submit (SubmitButton) — cegah double-klik saat proses */
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+.btn-spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: btn-spin .6s linear infinite; vertical-align: -2px; margin-right: 4px; }
+
+/* Layar sambutan staff klinik (StaffKlinikHome) */
+.skl-wrap { position: relative; overflow: hidden; min-height: 72vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 36px 8px; border-radius: 18px; background: linear-gradient(160deg, #eef4ff 0%, #f6faff 55%, #eaf6f0 100%); }
+.skl-deco { position: absolute; color: var(--posb); opacity: .06; pointer-events: none; z-index: 0; }
+.skl-hero-head { text-align: center; position: relative; z-index: 1; }
+.skl-welcome { font-size: 42px; font-weight: 800; color: var(--posb); line-height: 1.1; }
+
+/* Header biru staff klinik (KlinikTopbar) */
+.klinik-topbar { height: 60px; background: var(--posb); display: flex; align-items: center; justify-content: space-between; padding: 0 22px; color: #fff; flex-shrink: 0; }
+.kt-brand { display: flex; align-items: center; gap: 11px; }
+.kt-logo { width: 36px; height: 36px; border-radius: 9px; background: rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.kt-name { font-size: 15px; font-weight: 800; letter-spacing: .04em; line-height: 1.1; }
+.kt-sub { font-size: 10.5px; color: rgba(255,255,255,.8); }
+.kt-right { display: flex; align-items: center; gap: 10px; }
+.kt-divider { width: 1px; height: 22px; background: rgba(255,255,255,.28); }
+.kt-avatar { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.2); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.kt-user { font-size: 12.5px; font-weight: 600; }
+.skl-sub { font-size: 16px; color: var(--tm); margin-top: 8px; }
+.skl-hint { font-size: 12.5px; color: var(--td); margin-top: 10px; }
+.skl-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; width: 100%; max-width: 960px; }
+.skl-card { background: #fff; border: .5px solid var(--bd); border-radius: 16px; padding: 26px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05); transition: transform .12s, box-shadow .12s; }
+a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.09); }
+.skl-icon { width: 76px; height: 76px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+.skl-title { font-size: 16px; font-weight: 800; letter-spacing: .02em; }
+.skl-desc { font-size: 12.5px; color: var(--tm); line-height: 1.45; }
+.skl-list { list-style: none; padding: 0; margin: 0; width: 100%; text-align: left; }
+.skl-list li { font-size: 12.5px; color: var(--tm); padding: 4px 0; position: relative; padding-left: 14px; }
+.skl-list li::before { content: "•"; position: absolute; left: 2px; color: #7c3aed; }
+.skl-list li a { color: var(--tm); text-decoration: none; }
+.skl-list li a:hover { color: #7c3aed; }
+.skl-list li.skl-soon { cursor: pointer; }
+.skl-list li.skl-soon:hover { color: var(--tx); }
+.skl-selesai { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border: 1.5px solid var(--posb); border-radius: 10px; background: #fff; color: var(--posb); font-size: 13.5px; font-weight: 700; letter-spacing: .03em; text-decoration: none; }
+.skl-selesai:hover { background: var(--posb); color: #fff; }
+.kt-btn { width: 100%; padding: 11px; background: var(--posb); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.kt-btn:hover:not(:disabled) { background: var(--posb-dk); }
+.kt-btn:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 780px) { .skl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skl-welcome { font-size: 30px; } }
+
+/* Print: sembunyikan chrome aplikasi, cetak hanya konten (dipakai lembar resep) */
+@media print {
+  .sb, .topbar, .no-print { display: none !important; }
+  .shell, .main, .ct { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
+  .ct { padding: 0 !important; }
+  @page { margin: 16mm; }
+}
+
+*{box-sizing:border-box}body{margin:0;padding:20px;background:var(--bg)}main{max-width:900px;margin:auto}a{text-decoration:none}h1{font-size:20px}small{display:block;margin-bottom:16px;color:var(--tm)}</style><main><h1>Stok per Gudang</h1><small>Preview lokal • OWNER fiktif • tanpa koneksi database</small><section class="crm-sec" aria-labelledby="reset-maintenance-title" style="border-color:#fecaca;background:#fffafa"><h2 id="reset-maintenance-title" style="font-size:14px;font-weight:800;color:#991b1b;margin:0 0 8px">Reset simulasi total — seluruh cabang</h2><div style="font-size:12px;color:#7f1d1d;line-height:1.7"><p style="margin:0 0 10px">Reset lama bersifat destruktif: menghapus data di seluruh cabang dan seluruh gudang, termasuk master barang/SKU, stok, transaksi terkait dan jurnal terkait. Filter gudang di atas tidak membatasi reset. Tindakan ini tidak bisa dibatalkan tanpa pemulihan cadangan.</p><p style="margin:0 0 10px;font-weight:600">Reset dari aplikasi dinonaktifkan. Penolakan izin (403/42501) memerlukan tinjauan Owner dan pengelola sistem melalui maintenance yang disetujui. Jangan ulangi permintaan reset; perubahan akses memerlukan keputusan terpisah.</p><p style="margin:0 0 8px">Halaman ini hanya panduan dan tidak mengirim perintah reset. Untuk kebutuhan pembersihan data:</p><ol style="padding-left:20px;margin:0 0 10px"><li>Catat tujuan dan cakupan data, lalu tinjau daftar SKU, kartu stok dan riwayat penyesuaian secara baca saja.</li><li>Minta pengelola sistem memeriksa izin, dependensi data dan backup, serta membuktikan restore di lingkungan terisolasi.</li><li>Dapatkan persetujuan Owner atas cakupan, rencana pemulihan dan jadwal maintenance sebelum tindakan manual oleh pengelola sistem.</li></ol><p style="margin:0 0 12px">Jika percobaan sebelumnya terputus atau hasilnya belum diketahui, minta pemeriksaan log/audit secara baca saja terlebih dahulu.</p><nav aria-label="Tinjau data sebelum maintenance" style="display:flex;flex-wrap:wrap;gap:8px"><a class="btn-def" href="/pos/sku">Lihat master SKU</a><a class="btn-def" href="/pos/kartu-stok">Lihat kartu stok</a><a class="btn-def" href="/pos/penyesuaian">Lihat riwayat penyesuaian</a></nav></div></section></main></html>
