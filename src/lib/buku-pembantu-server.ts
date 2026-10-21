@@ -138,13 +138,13 @@ export async function mutasiHutang(supabase: SupabaseServer, sampai: string): Pr
     });
     for (const p of v.purchase_invoice_payments ?? []) {
       const jumlah = Number(p.amount) || 0;
-      if (jumlah <= 0) continue;
+      if (jumlah === 0) continue;
       const dariUM = Number(p.dari_uang_muka) || 0;
       out.push({
         tanggal: tgl(p.tanggal), pihakId, pihak, nomor: v.no_faktur,
-        jenis: dariUM >= jumlah ? "Uang muka" : "Pembayaran",
-        keterangan: dariUM > 0 ? "Dibayar (sebagian dari uang muka)" : "Pembayaran hutang",
-        naik: 0, turun: jumlah, href: "/pembelian/faktur",
+        jenis: jumlah > 0 && dariUM >= jumlah ? "Uang muka" : "Pembayaran",
+        keterangan: jumlah < 0 ? "Pembalik pembayaran hutang" : dariUM > 0 ? "Dibayar (sebagian dari uang muka)" : "Pembayaran hutang",
+        naik: Math.max(0, -jumlah), turun: Math.max(0, jumlah), href: `/pembelian/faktur/${v.id}`,
       });
     }
   }

@@ -5,8 +5,9 @@ import os, subprocess, time
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=f"vetos_po_acceptance_{os.getpid()}_{int(time.time())}"
-PSQL=["psql","-q","-h127.0.0.1","-p5432","-v","ON_ERROR_STOP=1"]
-ENV={**os.environ,"PGOPTIONS":"-c client_min_messages=warning"}
+PSQL=["psql","-X","-q","-h127.0.0.1","-p5432","-v","ON_ERROR_STOP=1"]
+ENV={key:value for key,value in os.environ.items() if not key.startswith('PG')}
+ENV['PGOPTIONS']='-c client_min_messages=warning'
 MIGRATIONS="""0001_core.sql 0002_rls.sql 0004_perf_security_fixes.sql 0005_klinik_visits.sql 0006_rekam_medis.sql 0007_crm_fields.sql 0008_klinik_pembayaran.sql 0010_pos_sales.sql 0013_stock.sql 0015_keuangan.sql 0021_pembelian.sql 0029_compounding.sql 0040_rekam_medis_fields.sql 0043_ar_ap_fixed_assets.sql 0053_returns.sql 0055_tutup_buku.sql 0056_faktur_pembelian.sql 0058_stock_layers_fifo.sql 0060_user_admin.sql 0063_satuan_berjenjang.sql 0064_penerimaan_qty.sql 0065_barang_jasa_master.sql 0066_master_data_kategori.sql 0068_kas_bank.sql 0074_kartu_stok.sql 0093_penerimaan_barang.sql 0094_uang_muka_pembelian.sql 0101_akses_grup.sql 0104_kadaluarsa.sql 0109_faktur_langsung.sql 0113_coa_header_detail.sql 0117_kadaluarsa_bertingkat.sql 20260924120000_purchase_invoice_po_units.sql 20260924121000_atomic_purchase_layer_reprice.sql 20260924122000_atomic_po_invoice_and_stock_out.sql 20260924123000_atomic_fixed_asset_purchase.sql 20261004120000_purchase_recovery.sql 20261020134110_po_lifecycle_completion.sql""".split()
 def run(*args,input=None):
  r=subprocess.run([*args],cwd=ROOT,env=ENV,input=input,text=True,check=False,capture_output=True)

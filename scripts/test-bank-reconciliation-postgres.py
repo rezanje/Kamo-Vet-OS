@@ -92,7 +92,7 @@ def concurrency(source):
  print('PASS real concurrent create/recovery/void retries and ledger-writer snapshot locking and permission revocation while waiting')
 
 def main():
- restore=load('restore_environment',ROOT/'scripts/verify-simulation-backup.py')
+ restore=load('payment_environment',ROOT/'scripts/test-purchase-payment-corrections-postgres.py')
  source=load('reconciliation_source',ROOT/'scripts/test-posted-sales-postgres.py')
  source.DB=f'vetos_bank_rec_{os.getpid()}_{time.time_ns()}';source.ENV=restore.ENV
  source.PSQL=['psql','-X','-q','-At',*restore.LOCAL,'-d',source.DB,'-v','ON_ERROR_STOP=1']

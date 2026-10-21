@@ -48,9 +48,10 @@ export default async function PODetailPage({
   const po = data as unknown as (PO & { branch_id: string }) | null;
   if (!po) notFound();
 
-  const [{ data: suppliers }, { data: warehouses }] = await Promise.all([
+  const [{ data: suppliers }, { data: warehouses }, { data: profile }] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name, branch_id").eq("branch_id", po.branch_id).eq("is_active", true).order("name"),
+    supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
   ]);
 
   const items = po.purchase_order_items ?? [];
@@ -132,7 +133,7 @@ export default async function PODetailPage({
         </div>
       </div>
 
-      {user && (po.status === "Draft" || po.status === "Dipesan") && (
+      {user && profile?.role === "OWNER" && profile.is_active && (po.status === "Draft" || po.status === "Dipesan") && (
         <div className="crm-sec">
           <SecHeader num="02" title="KOREKSI PO" desc="Hanya Super Admin yang dapat mengubah atau membatalkan PO sebelum ada transaksi turunan." />
           <POEditForm userId={user.id} poId={po.id} revision={po.revision} supplierId={po.supplier_id ?? ""} warehouseId={po.to_warehouse_id} tanggal={po.tanggal} rows={items} suppliers={(suppliers ?? []) as { id: string; nama: string }[]} warehouses={(warehouses ?? []) as { id: string; name: string }[]} />

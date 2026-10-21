@@ -1,5 +1,13 @@
 -- Fictional local fixtures only; run after the merchant-fee fixture and Owner setup.
 begin;
+create function pg_temp.rec_snapshot() returns jsonb language plpgsql as $$
+declare relation text; rows jsonb; snapshot jsonb:='{}';begin
+ foreach relation in array array['bank_reconciliations','bank_reconciliation_requests','bank_reconciliation_revisions','journal_entries','journal_lines'] loop
+  execute format('select coalesce(jsonb_agg(to_jsonb(r) order by to_jsonb(r)::text),''[]''::jsonb) from public.%I r',relation) into rows;
+  snapshot:=snapshot||jsonb_build_object(relation,rows);
+ end loop;
+ return snapshot;
+end$$;
 create function pg_temp.rec_assert(ok boolean,message text) returns void language plpgsql as $$begin if ok is distinct from true then raise exception 'Assertion: %',message;end if;end$$;
 create function pg_temp.rec_reject(statement text,message text) returns void language plpgsql as $$declare rejected boolean:=false;begin begin execute statement;exception when others then if position(message in sqlerrm)>0 then rejected:=true;else raise;end if;end;if not rejected then raise exception 'Expected rejection: %',message;end if;end$$;
 insert into coa_accounts(code,name,type,normal_balance,is_header) values('5501','Fictional bank fee','BEBAN','D',false),('4301','Fictional bank interest','PENDAPATAN','K',false) on conflict(code) do update set is_active=true,is_header=false;
@@ -27,11 +35,11 @@ create temp table rec_original as select e.id,to_jsonb(e) header,(select jsonb_a
 reset role;
 create function public.rec_fault() returns trigger language plpgsql as $$begin raise exception 'REC_FINAL_FAULT';end$$;
 create trigger rec_fault before insert on public.bank_reconciliation_requests for each row execute function public.rec_fault();
-create temp table rec_before as select kamo_maintenance.public_snapshot() snapshot;
+create temp table rec_before as select pg_temp.rec_snapshot() snapshot;
 set local role authenticated;
 select pg_temp.rec_reject($q$select public.mutate_bank_reconciliation('rec-fault','edit',(select(value->>'reconciliation_id')::uuid from rec_result),0,jsonb_set((select header from rec_input),'{biaya_adm}','30'),'Correct fee')$q$,'REC_FINAL_FAULT');
 reset role;
-select pg_temp.rec_assert((select snapshot=kamo_maintenance.public_snapshot() from rec_before),'final failure rolls back header, reversal, replacement, audit and request');
+select pg_temp.rec_assert((select snapshot=pg_temp.rec_snapshot() from rec_before),'final failure rolls back header, reversal, replacement, audit and request');
 drop trigger rec_fault on public.bank_reconciliation_requests;drop function public.rec_fault();
 update accounting_locks set closed_until=(now() at time zone 'Asia/Jakarta')::date;
 set local role authenticated;
