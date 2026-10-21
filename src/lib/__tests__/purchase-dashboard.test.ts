@@ -40,9 +40,15 @@ describe("purchase dashboard keeps received but unbilled liability", () => {
     expect(await purchase([invoice(4, 480, "2026-10-21"), invoice(4, 500)])).toEqual({ total: 500, lunas: 0, belumLunas: 500 });
   });
   it("applies a pre-invoice return once before and after the gross invoice", async () => {
-    const returns = [{ po_id: "po", total: 100 }];
+    const returns = [{ po_id: "po", total: 100, voided_at: null }];
     const expected = { total: 400, lunas: 100, belumLunas: 300 };
     expect(await purchase([], returns)).toEqual(expected);
     expect(await purchase([invoice(4, 400)], returns)).toEqual(expected);
+  });
+  it("counts the active return replacement once", async () => {
+    expect(await purchase([invoice(4, 400)], [
+      { po_id: "po", total: 100, voided_at: "2026-10-21" },
+      { po_id: "po", total: 60, voided_at: null },
+    ])).toEqual({ total: 400, lunas: 60, belumLunas: 340 });
   });
 });

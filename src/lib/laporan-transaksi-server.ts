@@ -35,7 +35,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
         .gte("created_at", mulai).lte("created_at", akhir)),
       // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
       // dan omzet struk itu harus terlihat sudah berkurang.
-      completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" })),
+      completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
       completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
     ]);
 

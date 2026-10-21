@@ -8,6 +8,7 @@ type Row = {
   tanggal: string;
   keterangan: string | null;
   total: number;
+  voided_at: string | null;
   sales: { id: string; no_struk: string | null; customers: { name: string } | null } | null;
   sales_return_items: { id: string }[] | null;
 };
@@ -26,7 +27,7 @@ export default async function ReturJualPage({
 
   const { data } = await supabase
     .from("sales_returns")
-    .select("id, no_retur, tanggal, keterangan, total, sales(id, no_struk, customers(name)), sales_return_items(id)")
+    .select("id, no_retur, tanggal, keterangan, total, voided_at, sales(id, no_struk, customers(name)), sales_return_items(id)")
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
@@ -79,7 +80,7 @@ export default async function ReturJualPage({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td style={{ fontWeight: 500, fontSize: 11.5 }}>{r.no_retur}</td>
+                  <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/penjualan/retur/${r.id}`}>{r.no_retur}</Link>{r.voided_at && " · Dibatalkan / diganti"}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtD(r.tanggal)}</td>
                   <td style={{ fontSize: 11.5 }}>
                     {/* Klik nomor struk → rincian penjualannya (dulu buntu di sini). */}
