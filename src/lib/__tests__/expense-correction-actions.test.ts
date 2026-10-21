@@ -4,6 +4,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: fixt
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.assign(Error(url), { digest: "NEXT_REDIRECT" }); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 import * as actions from "@/app/(app)/pos/expense/actions";
+import { revalidatePath } from "next/cache";
 const id = "ee400000-0000-4000-8000-000000000001";
 function form() {
   const data = new FormData();
@@ -21,6 +22,7 @@ it.each([["ubahExpense", "edit"], ["batalkanExpense", "void"]] as const)("%s use
   const [, payload] = fixture.rpc.mock.calls[0];
   expect(payload).not.toHaveProperty("branchId");
   expect(payload.p_expense).not.toHaveProperty("created_by");
+  expect(revalidatePath).toHaveBeenCalledWith("/klinik/pengeluaran");
 });
 
 it("preserves corrections when the accounting period or shift rejects them", async () => {

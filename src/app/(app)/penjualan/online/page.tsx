@@ -109,7 +109,7 @@ export default async function PenjualanOnlinePage({
                 const st = CHANNEL_STYLE[r.channel ?? ""] ?? { bg: "#f4f4f5", fg: "#3f3f46" };
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontWeight: 500, fontSize: 11.5 }}>{r.no_struk ?? "—"}</td>
+                    <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/penjualan/${r.id}`}>{r.no_struk ?? "Detail penjualan"}</Link></td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtD(r.created_at)}</td>
                     <td>
                       <span
