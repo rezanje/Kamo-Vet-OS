@@ -42,7 +42,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     supabase.from("invoice_payments").select("invoice_id, amount"),
     // Faktur penjualan reseller (rantai dokumen, migrasi 0098) — aliran pendapatan
     // ketiga di samping struk kasir dan tagihan klinik.
-    supabase.from("sales_invoices").select("id, total, tanggal").neq("status", "batal").gte("tanggal", awalTahun).lte("tanggal", today),
+    supabase.from("sales_invoices").select("id, total, tanggal, carried_paid").neq("status", "batal").gte("tanggal", awalTahun).lte("tanggal", today),
     supabase.from("sales_receipts").select("invoice_id, jumlah"),
     supabase.from("purchase_orders").select("id, purchase_order_items(id,item_id,qty,qty_terima,harga_beli,faktor)").eq("status", "Diterima"),
     // Pelunasan pembelian hidup di purchase_invoice_payments (lewat Faktur Pembelian).
@@ -113,9 +113,9 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     fjPaid.set(r.invoice_id, (fjPaid.get(r.invoice_id) ?? 0) + Number(r.jumlah));
   }
   let fjTotal = 0, fjBelum = 0;
-  for (const f of (fjRows.data ?? []) as { id: string; total: number }[]) {
+  for (const f of (fjRows.data ?? []) as { id: string; total: number; carried_paid: number }[]) {
     fjTotal += Number(f.total);
-    fjBelum += Math.max(0, Number(f.total) - (fjPaid.get(f.id) ?? 0));
+    fjBelum += Math.max(0, Number(f.total) - Number(f.carried_paid ?? 0) - (fjPaid.get(f.id) ?? 0));
   }
 
   const penjTotal = salesTotal + invTotal + fjTotal;

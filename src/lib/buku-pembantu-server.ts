@@ -17,17 +17,21 @@ export type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): Promise<Mutasi[]> {
   const batas = `${sampai}T23:59:59+07:00`;
 
-  const [{ data: invs }, { data: fjs }, { data: rcs }] = await Promise.all([
+  const [{ data: invs }, { data: fjs }, { data: rcs }, { data: credits, error: creditError }] = await Promise.all([
     supabase.from("invoices")
       .select("id, invoice_no, total, dp_amount, dp_date, paid_status, paid_at, created_at, visits(customer_id, customers(name)), invoice_payments(id, tanggal, amount, metode, transferred_from)")
       .is("voided_at", null).lte("created_at", batas),
     supabase.from("sales_invoices")
-      .select("id, no_faktur, tanggal, total, customer_id, customers(name)")
-      .neq("status", "batal").lte("tanggal", sampai),
+      .select("id, no_faktur, tanggal, total, status, voided_on, customer_id, customers(name)")
+      .lte("tanggal", sampai),
     supabase.from("sales_receipts")
       .select("invoice_id, no_terima, tanggal, jumlah, metode, sales_invoices(customer_id, customers(name))")
       .lte("tanggal", sampai),
+    supabase.from("wholesale_invoice_corrections")
+      .select("id,tanggal,customer_credit,sales_invoices!invoice_id(id,no_faktur,customer_id,customers(name))")
+      .lte("tanggal", sampai),
   ]);
+  if (creditError) throw new Error("Kredit pelanggan belum dapat diverifikasi: " + creditError.message);
 
   type InvRow = {
     id: string; invoice_no: string | null; total: number; dp_amount: number; dp_date: string | null;
@@ -85,14 +89,27 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
     }
   }
 
-  type FjRow = { id: string; no_faktur: string; tanggal: string; total: number; customer_id: string | null; customers: Rel<{ name: string }> };
+  type FjRow = { id: string; no_faktur: string; tanggal: string; total: number; status: string; voided_on: string | null; customer_id: string | null; customers: Rel<{ name: string }> };
   for (const f of (fjs ?? []) as unknown as FjRow[]) {
+    if (f.status === "batal" && !f.voided_on) continue;
     out.push({
       tanggal: tgl(f.tanggal), pihakId: f.customer_id ?? "—",
       pihak: one(f.customers)?.name ?? "(tanpa pelanggan)",
       nomor: f.no_faktur, jenis: "Faktur", keterangan: "Faktur penjualan reseller",
-      naik: Number(f.total) || 0, turun: 0, href: "/penjualan/faktur",
+      naik: Number(f.total) || 0, turun: 0, href: `/penjualan/faktur/${f.id}`,
     });
+    if (f.voided_on && f.voided_on <= sampai) out.push({
+      tanggal: f.voided_on, pihakId: f.customer_id ?? "—", pihak: one(f.customers)?.name ?? "(tanpa pelanggan)",
+      nomor: f.no_faktur, jenis: "Faktur", keterangan: "Pembalik pencatatan faktur grosir", naik: 0, turun: Number(f.total), href: `/penjualan/faktur/${f.id}`,
+    });
+  }
+  type CreditRow = { tanggal: string; customer_credit: number; sales_invoices: Rel<{ id: string; no_faktur: string; customer_id: string | null; customers: Rel<{ name: string }> }> };
+  for (const credit of (credits ?? []) as unknown as CreditRow[]) {
+    const invoice = one(credit.sales_invoices);
+    if (!invoice || Number(credit.customer_credit) <= 0) continue;
+    out.push({ tanggal: credit.tanggal, pihakId: invoice.customer_id ?? "—", pihak: one(invoice.customers)?.name ?? "(tanpa pelanggan)",
+      nomor: invoice.no_faktur, jenis: "Faktur", keterangan: "Reklasifikasi ke kredit pelanggan (2103)",
+      naik: Number(credit.customer_credit), turun: 0, href: `/penjualan/faktur/${invoice.id}` });
   }
 
   type RcRow = { invoice_id: string; no_terima: string; tanggal: string; jumlah: number; metode: string | null; sales_invoices: Rel<{ customer_id: string | null; customers: Rel<{ name: string }> }> };

@@ -1,106 +1,31 @@
 "use server";
 
-import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { assertRole } from "@/lib/master-guard";
-import { postJournal } from "@/lib/posting";
-import { kodeAkunBayar } from "@/lib/kas-akun";
-import { cekPeriode } from "@/lib/jurnal-guard";
-import { jurnalPenerimaan, sisaTagihan } from "@/lib/penjualan-dokumen";
-import { nextNoDokumen } from "@/lib/penjualan-server";
+import { createClient } from "@/lib/supabase/server";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { hariIniWIB } from "@/lib/tanggal";
 
-const BASE = "/penjualan/faktur";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
-const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
-
-/** Penerimaan Penjualan: pelunasan faktur, boleh memotong uang muka pelanggan. */
-export async function terimaPembayaranJual(formData: FormData) {
-  const supabase = await assertRole(BASE, "penerimaan penjualan", BOLEH);
-
-  const invoiceId = String(formData.get("invoice_id") ?? "").trim();
-  const jumlah = Number(formData.get("jumlah")) || 0;
-  const metode = String(formData.get("metode") ?? "Transfer");
-  const accountId = String(formData.get("account_id") ?? "").trim() || null;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
-  const catatan = String(formData.get("catatan") ?? "").trim() || null;
-  const advanceId = String(formData.get("advance_id") ?? "").trim() || null;
-
-  if (!invoiceId || jumlah <= 0) gagal("Nominal penerimaan tidak valid");
-
-  const { data: inv } = await supabase
-    .from("sales_invoices").select("id, no_faktur, total, status, customer_id, branch_id").eq("id", invoiceId).maybeSingle();
-  if (!inv) gagal("Faktur tidak ditemukan");
-  if (inv!.status === "batal") gagal("Faktur ini sudah dibatalkan");
-
-  const { data: pays } = await supabase.from("sales_receipts").select("jumlah").eq("invoice_id", invoiceId);
-  const sisa = sisaTagihan(Number(inv!.total), (pays ?? []) as { jumlah: number }[]);
-  if (sisa <= 0) gagal("Faktur ini sudah lunas");
-  if (jumlah > sisa) gagal(`Nominal melebihi sisa tagihan (maks Rp ${Math.round(sisa).toLocaleString("id-ID")})`);
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  // Uang muka dipotong lebih dulu — uangnya sudah masuk waktu DP, mencatatnya lagi
-  // sebagai kas masuk berarti uang yang sama masuk dua kali.
-  let dariUangMuka = 0;
-  type Advance = { id: string; jumlah: number; terpakai: number; customer_id: string | null; status: string };
-  let advance: Advance | null = null;
-
-  if (advanceId) {
-    const { data: um } = await supabase
-      .from("sales_advances").select("id, jumlah, terpakai, customer_id, status").eq("id", advanceId).maybeSingle();
-    if (!um) gagal("Uang muka tidak ditemukan");
-    if (um!.status !== "aktif") gagal("Uang muka itu sudah dibatalkan");
-    if (um!.customer_id && inv!.customer_id && um!.customer_id !== inv!.customer_id) {
-      gagal("Uang muka itu milik pelanggan lain");
-    }
-    advance = um as Advance;
-    dariUangMuka = Math.min(Number(um!.jumlah) - Number(um!.terpakai), jumlah);
-    if (dariUangMuka <= 0) gagal("Uang muka itu sudah habis terpakai");
+/** Receipt, advance usage, ledger and invoice status commit in one DB transaction. */
+export async function terimaPembayaranJual(form: FormData) {
+  const db = await createClient();
+  const invoiceId = String(form.get("invoice_id") ?? "").trim();
+  const key = String(form.get("draft_key") ?? "").trim();
+  const back = "/penjualan/faktur";
+  const { data, error } = form.get("tindakan") === "periksa"
+    ? await db.rpc("get_wholesale_operation", { p_invoice_id: invoiceId, p_kind: "receipt", p_request_key: key })
+    : await db.rpc("receive_wholesale_payment", {
+      p_request_key: key, p_invoice_id: invoiceId,
+      p_tanggal: String(form.get("tanggal") ?? "") || hariIniWIB(),
+      p_amount: Number(form.get("jumlah")), p_metode: String(form.get("metode") ?? "Transfer"),
+      p_account_id: String(form.get("account_id") ?? "").trim() || null,
+      p_advance_id: String(form.get("advance_id") ?? "").trim() || null,
+      p_catatan: String(form.get("catatan") ?? "").trim() || null,
+    });
+  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  if (!data?.receipt_id || !data?.journal_id || data.invoice_id !== invoiceId) {
+    throw new Error("Penerimaan belum terkonfirmasi lengkap. Periksa hasil terakhir sebelum mengirim ulang.");
   }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const no = await nextNoDokumen(supabase, "RC");
-
-  const { error } = await supabase.from("sales_receipts").insert({
-    no_terima: no, invoice_id: invoiceId, tanggal, jumlah, dari_uang_muka: dariUangMuka,
-    advance_id: advance?.id ?? null, metode, account_id: accountId, catatan, created_by: user?.id ?? null,
-  });
-  if (error) gagal(error.message);
-
-  if (advance) {
-    const { error: draftWriteError1 } = await supabase.from("sales_advances")
-      .update({ terpakai: Number(advance.terpakai) + dariUangMuka }).eq("id", advance.id).select("id").single();
-    if (draftWriteError1) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
-  }
-
-  const kasCode = await kodeAkunBayar(supabase, metode, inv!.branch_id, accountId);
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: dariUangMuka > 0
-      ? `Penerimaan ${no} atas faktur ${inv!.no_faktur} (pakai uang muka)`
-      : `Penerimaan ${no} atas faktur ${inv!.no_faktur}`,
-    source: "sales-receipt",
-    sourceRef: no,
-    branchId: inv!.branch_id,
-    lines: jurnalPenerimaan(kasCode, jumlah, dariUangMuka),
-  });
-  await assertDraftJournal(supabase, {
-    tanggal,
-    deskripsi: dariUangMuka > 0
-      ? `Penerimaan ${no} atas faktur ${inv!.no_faktur} (pakai uang muka)`
-      : `Penerimaan ${no} atas faktur ${inv!.no_faktur}`,
-    source: "sales-receipt",
-    sourceRef: no,
-    branchId: inv!.branch_id,
-    lines: jurnalPenerimaan(kasCode, jumlah, dariUangMuka),
-  });
-
-  if (jumlah >= sisa) {
-    const { error: draftWriteError2 } = await supabase.from("sales_invoices").update({ status: "lunas" }).eq("id", invoiceId).select("id").single();
-    if (draftWriteError2) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
-  }
-
-  redirect(`${BASE}?success=${encodeURIComponent(`Penerimaan ${no} tercatat.`)}${transactionDraftAck(formData)}`);
+  for (const path of [back, `/penjualan/faktur/${encodeURIComponent(invoiceId)}`, "/keuangan/piutang", "/keuangan/piutang/pembantu", "/penjualan/uang-muka", "/laporan/penjual", "/"]) revalidatePath(path);
+  redirect(`${back}?success=${encodeURIComponent(`Penerimaan ${data.document_no} tercatat.`)}${transactionDraftAck(form)}`);
 }
