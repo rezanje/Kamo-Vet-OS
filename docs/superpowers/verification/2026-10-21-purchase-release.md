@@ -9,6 +9,7 @@ Baseline: production main c66507c. Reuse the reviewed PO lifecycle and purchase-
 - Reconciliation creation/edit/cancellation and result recovery are atomic. Existing journals remain immutable; later reconciliations must be corrected first. All-branch capability is required to calculate a complete bank balance.
 - Existing sale corrections, transaction notifications and saved receipt/input recovery remain in this branch.
 - PO correction controls now appear only for an active OWNER; database checks remain authoritative.
+- PO correction history uses the existing branch-access helper even when the source branch is absent. Inactive/unassigned staff cannot read global correction records. The native regression failed before this one-line policy correction and passed afterward.
 
 ## Verification
 

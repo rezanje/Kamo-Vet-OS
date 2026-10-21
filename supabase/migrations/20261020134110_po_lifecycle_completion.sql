@@ -17,7 +17,7 @@ alter table public.purchase_order_revisions enable row level security;
 revoke all on public.purchase_order_revisions from public, anon, authenticated, service_role;
 grant select on public.purchase_order_revisions to authenticated;
 create policy purchase_order_revisions_read on public.purchase_order_revisions for select to authenticated
-  using (branch_id is null or public.user_can_access_branch(branch_id));
+  using (public.user_can_access_branch(branch_id));
 
 create table public.purchase_order_requests (
   actor_id uuid not null references public.profiles(id) on delete cascade,

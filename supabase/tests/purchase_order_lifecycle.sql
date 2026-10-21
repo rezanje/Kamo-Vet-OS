@@ -105,9 +105,11 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','a0000000-0000-4000-8000-000000000001',true);
 select create_purchase_order_atomic('po-deactivated','PO.ACC.',4,null,'a2000000-0000-4000-8000-000000000001','a1000000-0000-4000-8000-000000000001',current_date,'[{"nama":"PO item","item_id":"a3000000-0000-4000-8000-000000000001","qty":1,"harga_beli":100}]');
 reset role;
+update purchase_order_revisions set branch_id=null;
 update profiles set role='STAFF',is_active=false where id='a0000000-0000-4000-8000-000000000001';
 set local role authenticated;
 do $$declare failed boolean:=false;begin
+  if exists(select 1 from purchase_order_revisions) then raise exception 'inactive staff can read unassigned PO correction history'; end if;
   begin perform create_purchase_order_atomic('po-deactivated','PO.ACC.',4,null,'a2000000-0000-4000-8000-000000000001','a1000000-0000-4000-8000-000000000001',current_date,'[{"nama":"PO item","item_id":"a3000000-0000-4000-8000-000000000001","qty":1,"harga_beli":100}]'); exception when others then failed:=true; end;
   if not failed then raise exception 'deactivated owner recovered identical create'; end if;
 end$$;
