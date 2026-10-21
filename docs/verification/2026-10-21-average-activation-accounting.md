@@ -1,5 +1,7 @@
 # Average activation accounting reconciliation
 
+Draft PR: [#82](https://github.com/rezanje/Kamo-Vet-OS/pull/82). Tested implementation commit: `7c66e896aad97c0190e672f2f964d5f0f9e8010e`; subsequent publication-record changes are documentation only.
+
 ## Outcome and safe handling
 
 PR80's `activate_moving_average()` could enable average with physical remaining inventory160 and inventory GL0. It checked layers but never reconciled the accounting side. The original failure is reproduced by `average_activation_accounting.sql`: before the new migration, it raises `Expected activation denial: rekonsiliasi` because activation incorrectly succeeds.

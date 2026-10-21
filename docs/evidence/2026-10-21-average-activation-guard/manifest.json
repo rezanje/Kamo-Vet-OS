@@ -23,5 +23,7 @@
   "build": "passed using fictional loopback Supabase; existing unrelated warnings",
   "production_changes": "none",
   "prototype_published": false,
-  "release_combined_caveat": "Old posted_sale_cancellations fixture directly calls retur-beli; PR72 rejects it. Same failure reproduced without this patch after 221 migrations."
+  "release_combined_caveat": "Old posted_sale_cancellations fixture directly calls retur-beli; PR72 rejects it. Same failure reproduced without this patch after 221 migrations.",
+  "draft_pr": "https://github.com/rezanje/Kamo-Vet-OS/pull/82",
+  "tested_implementation_commit": "7c66e896aad97c0190e672f2f964d5f0f9e8010e"
 }
