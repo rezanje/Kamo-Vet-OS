@@ -1,5 +1,5 @@
 "use client";
-import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
+import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { draftRows } from "@/components/TransactionDraft";
 
 import { useMemo, useState } from "react";
@@ -44,8 +44,8 @@ export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: 
   );
 
   return (
-    <PreservedForm action={simpanSaldoAwal}>
-      <LocalTransactionDraft userId={userId} scope="opening-balance-create" state={{snapshot:{tanggal,baris},restore(value){if(typeof value.tanggal!=="string"||!draftRows(value.baris,{code:"",nilai:"",sisi:"D"})||!value.baris.every(b=>b.sisi==="D"||b.sisi==="K"))return false;setTanggal(value.tanggal);setBaris(value.baris as Baris[]);return true;},reset(){setTanggal(hariIniWIB());setBaris([{code:"",nilai:"",sisi:"D"}]);}}}/>
+    <CorrectionTransactionForm userId={userId} scope="opening-balance-create" action={simpanSaldoAwal} state={{snapshot:{tanggal,baris},restore(value){if(typeof value.tanggal!=="string"||!draftRows(value.baris,{code:"",nilai:"",sisi:"D"})||!value.baris.every(b=>b.sisi==="D"||b.sisi==="K"))return false;setTanggal(value.tanggal);setBaris(value.baris as Baris[]);return true;},reset(){setTanggal(hariIniWIB());setBaris([{code:"",nilai:"",sisi:"D"}]);}}}>
+      {({ ready }) => <>
       <input type="hidden" name="baris" value={serial} />
       <input type="hidden" name="tanggal" value={tanggal} />
 
@@ -115,11 +115,12 @@ export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: 
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <button type="submit" className="pay-btn" disabled={!bolehSimpan} style={{ opacity: bolehSimpan ? 1 : 0.5 }}>
+        <button type="submit" className="pay-btn" disabled={!bolehSimpan || !ready} style={{ opacity: bolehSimpan ? 1 : 0.5 }}>
           <i className="ti ti-device-floppy" /> Simpan Saldo Awal
         </button>
       </div>
-    </PreservedForm>
+      </>}
+    </CorrectionTransactionForm>
   );
 }
 

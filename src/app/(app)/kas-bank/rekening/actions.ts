@@ -2,10 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
-import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
-import { kodeAkunBerikutnya, AKUN_MODAL } from "@/lib/transfer-kas";
+import { cekPeriode } from "@/lib/jurnal-guard";
+import { kodeAkunBerikutnya } from "@/lib/transfer-kas";
 import { hariIniWIB } from "@/lib/tanggal";
-import { postJournal } from "@/lib/posting";
 
 const BACK = "/kas-bank/rekening";
 // Tipe ditulis di variabelnya (bukan cuma di arrow) supaya TypeScript memakai
@@ -20,11 +19,13 @@ export async function tambahRekening(formData: FormData) {
   const bankNama = String(formData.get("bank_nama") ?? "").trim().slice(0, 60) || null;
   const noRekening = String(formData.get("no_rekening") ?? "").trim().slice(0, 40) || null;
   const branchId = String(formData.get("branch_id") ?? "").trim() || null;
-  const saldoAwal = Number(formData.get("saldo_awal")) || 0;
+  const saldoAwal = Number(formData.get("saldo_awal") ?? 0);
 
   if (!nama) gagal("Nama rekening wajib diisi");
   if (jenis !== "Kas" && jenis !== "Bank") gagal("Jenis rekening harus Kas atau Bank");
-  if (!Number.isFinite(saldoAwal) || saldoAwal < 0) gagal("Saldo awal tidak boleh negatif");
+  if (!Number.isFinite(saldoAwal) || saldoAwal < 0 || saldoAwal > 1_000_000_000_000 || Number(saldoAwal.toFixed(2)) !== saldoAwal) {
+    gagal("Saldo awal harus angka rupiah dari 0 sampai 1 triliun, maksimal dua desimal");
+  }
 
   const tanggal = hariIniWIB();
 
@@ -57,23 +58,13 @@ export async function tambahRekening(formData: FormData) {
   }
 
   if (saldoAwal > 0) {
-    await postJournal(supabase, {
-      tanggal,
-      deskripsi: `Saldo awal rekening ${nama}`,
-      source: "cash-account-opening",
-      sourceRef: kode,
-      branchId,
-      lines: [
-        { code: kode!, debit: saldoAwal, credit: 0 },
-        { code: AKUN_MODAL, debit: 0, credit: saldoAwal },
-      ],
+    const { data, error } = await supabase.rpc("post_cash_account_opening_atomic", {
+      p_account_id: rek.id, p_amount: saldoAwal,
     });
-
-    // postJournal tidak pernah melempar — saldo awal tanpa jurnal = saldo hantu.
-    if (!(await jurnalTersimpan(supabase, "cash-account-opening", kode!))) {
-      await supabase.from("cash_accounts").delete().eq("id", rek!.id);
-      await supabase.from("coa_accounts").delete().eq("code", kode);
-      gagal("Jurnal saldo awal gagal tersimpan, rekening dibatalkan — coba lagi");
+    if (error || !data?.entry_id) {
+      // A network timeout may hide a committed posting. Keep the account mapping
+      // and its journal intact so the Owner can inspect/correct its opening.
+      gagal("Rekening tersimpan, saldo awal belum terkonfirmasi. Periksa buku mutasi sebelum mencoba koreksi saldo awal.");
     }
   }
 

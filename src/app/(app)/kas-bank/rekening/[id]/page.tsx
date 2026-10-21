@@ -23,9 +23,14 @@ const ASAL: Record<string, string> = {
   "kas-entry-void": "Pembatalan kas",
   transfer: "Transfer antar rekening",
   "transfer-void": "Pembatalan transfer",
+  "transfer-reversal": "Pembalik koreksi transfer",
   "purchase-pay": "Pembayaran pemasok",
   "sales-return": "Retur penjualan",
   "bank-rec": "Penyesuaian rekonsiliasi",
+  "cash-account-opening": "Saldo pembuka rekening",
+  "saldo-awal": "Saldo awal",
+  "cash-open-reversal": "Pembalik saldo pembuka moneter",
+  "cash-open-replacement": "Pengganti saldo pembuka moneter",
   asset: "Pembelian aset",
   payroll: "Penggajian",
   manual: "Jurnal manual",
@@ -40,6 +45,8 @@ export default async function MutasiRekeningPage({
   const { id } = await params;
   const { dari, sampai } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
 
   const { data: rek } = await supabase
     .from("cash_accounts").select("id, nama, jenis, coa_code, bank_nama, no_rekening").eq("id", id).maybeSingle();
@@ -72,6 +79,7 @@ export default async function MutasiRekeningPage({
         <Link href="/kas-bank/rekening" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Buku Mutasi Rekening</span>
+        {profile?.is_active && profile.role === "OWNER" && <Link href={`/kas-bank/rekening/${id}/saldo-awal`} className="back-btn">Koreksi saldo awal</Link>}
         <span style={{ marginLeft: "auto" }}><PrintButton /></span>
       </div>
 
