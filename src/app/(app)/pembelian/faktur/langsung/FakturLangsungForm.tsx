@@ -1,6 +1,7 @@
 "use client";
 
-import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
+import type { LampiranDraft } from "@/lib/dokumen";
 import { draftRows, draftString } from "@/components/TransactionDraft";
 import { useMemo, useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
@@ -17,22 +18,29 @@ type ItemOpsi = {
 };
 type Baris = { key: number; item_id: string; qty: number; harga: number; satuan: string; exp_date: string };
 
+export type DirectInvoiceInitial = {
+  id: string; supplier_id: string; warehouse_id: string; tanggal: string; jatuh_tempo: string;
+  no_faktur_pemasok: string | null; surat_jalan: string | null; keterangan: string | null;
+  purchase_invoice_items: { item_id: string; qty: number; harga: number; satuan: string; exp_date: string | null }[];
+  lampiran: LampiranDraft[];
+};
+
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export function FakturLangsungForm({
   userId,
-  suppliers, warehouses, items,
+  suppliers, warehouses, items, initial,
 }: {
   userId: string;
+  initial?: DirectInvoiceInitial;
   suppliers: { id: string; nama: string; terminHari: number }[];
   warehouses: { id: string; label: string }[];
   items: ItemOpsi[];
 }) {
-  const { save, failure } = usePreservedAction(buatFakturLangsung);
-  const [supplierId, setSupplierId] = useState("");
-  const [tanggal, setTanggal] = useState(hariIniWIB());
-  const [jatuhTempo, setJatuhTempo] = useState(geserHari(hariIniWIB(), 30));
-  const [baris, setBaris] = useState<Baris[]>([{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" }]);
+  const [supplierId, setSupplierId] = useState(initial?.supplier_id ?? "");
+  const [tanggal, setTanggal] = useState(initial?.tanggal ?? hariIniWIB());
+  const [jatuhTempo, setJatuhTempo] = useState(initial?.jatuh_tempo ?? geserHari(hariIniWIB(), 30));
+  const [baris, setBaris] = useState<Baris[]>(initial?.purchase_invoice_items.map((row, index) => ({ ...row, qty: Number(row.qty), harga: Number(row.harga), key: index + 1, exp_date: row.exp_date ?? "" })) ?? [{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" }]);
 
   const itemMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
@@ -79,12 +87,14 @@ export function FakturLangsungForm({
   }));
 
   return (
-    <form action={save}>
-      <LocalTransactionDraft userId={userId} scope="invoice-direct" state={{ snapshot: { baris, supplierId, tanggal, jatuhTempo }, restore: (value) => {
+    <CorrectionTransactionForm action={buatFakturLangsung} userId={userId} scope={`invoice-direct${initial ? `:${initial.id}` : ""}`} state={{ snapshot: { baris, supplierId, tanggal, jatuhTempo }, restore: (value) => {
         if (!draftRows(value.baris, { key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" })) return false; if (!draftString(value.supplierId) || !draftString(value.tanggal) || !draftString(value.jatuhTempo)) return false; setSupplierId(value.supplierId); setTanggal(value.tanggal); setJatuhTempo(value.jatuhTempo);
         setBaris(value.baris); return true;
-      }, reset: () => { setBaris([{ ...{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" } }]); setSupplierId(""); setTanggal(hariIniWIB()); setJatuhTempo(geserHari(hariIniWIB(), 30)); } }} />
-      {failure && <div role="alert" className="p2ban">{failure}</div>}
+      }, reset: () => { setBaris([{ ...{ key: 1, item_id: "", qty: 1, harga: 0, satuan: "", exp_date: "" } }]); setSupplierId(""); setTanggal(hariIniWIB()); setJatuhTempo(geserHari(hariIniWIB(), 30)); } }}>
+      {({ ready }) => <>
+      <input type="hidden" name="invoice_kind" value="invoice-direct" />
+      <input type="hidden" name="replaces_invoice_id" value={initial?.id ?? ""} />
+      <button type="submit" formNoValidate name="tindakan" value="periksa" disabled={!ready} className="btn-def">Periksa hasil terakhir</button>
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
       <div className="crm-sec">
@@ -104,21 +114,21 @@ export function FakturLangsungForm({
           </div>
           <div className="fg">
             <label className="flab">Gudang tujuan *</label>
-            <select className="fi" name="warehouse_id" required defaultValue="">
+            <select className="fi" name="warehouse_id" required defaultValue={initial?.warehouse_id ?? ""}>
               <option value="">— pilih gudang —</option>
               {warehouses.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
             </select>
           </div>
           <div className="fg">
             <label className="flab">No. faktur pemasok</label>
-            <input className="fi" name="no_faktur_pemasok" placeholder="Nomor di kertas fakturnya" />
+            <input className="fi" name="no_faktur_pemasok" defaultValue={initial?.no_faktur_pemasok ?? ""} placeholder="Nomor di kertas fakturnya" />
           </div>
           {/* Surat jalan (permintaan Bu Nisa, meeting 14 Agustus): pembelian lewat PO
               menyimpannya di dokumen penerimaan, pembelian langsung dulu tidak punya
               tempat sama sekali. */}
           <div className="fg">
             <label className="flab">No. surat jalan</label>
-            <input className="fi" name="surat_jalan" maxLength={60} placeholder="Nomor di surat jalannya" />
+            <input className="fi" name="surat_jalan" defaultValue={initial?.surat_jalan ?? ""} maxLength={60} placeholder="Nomor di surat jalannya" />
           </div>
           <div className="fg">
             <label className="flab">Tanggal faktur *</label>
@@ -132,11 +142,11 @@ export function FakturLangsungForm({
           </div>
           <div className="fg" style={{ gridColumn: "span 2" }}>
             <label className="flab">Keterangan</label>
-            <input className="fi" name="keterangan" placeholder="Opsional" />
+            <input className="fi" name="keterangan" defaultValue={initial?.keterangan ?? ""} placeholder="Opsional" />
           </div>
           <div className="fg" style={{ gridColumn: "span 2" }}>
             <label className="flab">Lampiran surat jalan / nota</label>
-            <LampiranPicker folder="pembelian" />
+            <LampiranPicker folder="pembelian" initialFiles={initial?.lampiran} />
           </div>
         </div>
       </div>
@@ -228,11 +238,12 @@ export function FakturLangsungForm({
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-          <SubmitButton className="btn-acc" disabled={payload.length === 0 || total <= 0}>
+          <SubmitButton className="btn-acc" disabled={!ready || payload.length === 0 || total <= 0}>
             <i className="ti ti-device-floppy" /> Simpan faktur &amp; terima barang
           </SubmitButton>
         </div>
       </div>
-    </form>
+      </>}
+    </CorrectionTransactionForm>
   );
 }

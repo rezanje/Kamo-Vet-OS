@@ -418,7 +418,7 @@ export async function collectPurchaseBlock(scope: DashboardScope, filter: Dashbo
   const orders = poResult.data ?? [];
   const poIds = orders.map((row: any) => row.id);
   const invoiceResult = await read(supabase.from("purchase_invoices")
-    .select("id,po_id,total,tanggal,supplier_id,suppliers(nama),purchase_invoice_items(item_id,qty,harga)")
+    .select("id,po_id,total,tanggal,supplier_id,suppliers(nama),purchase_invoice_items(item_id,qty,harga)").is("voided_at", null)
     .in("po_id", poIds).gte("tanggal", filter.from).lte("tanggal", filter.to));
   queryError(invoiceResult);
   const returnsResult = await read(supabase.from("purchase_returns")

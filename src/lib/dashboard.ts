@@ -1,6 +1,7 @@
 // Agregat dashboard keuangan (ala Accurate). Read-only, hitung di JS.
 import { getAccountBalances, nilaiSeksi } from "./ledger";
 import { kodeSemuaRekening } from "./kas-akun";
+import { sisaFakturablePerBaris, type ItemFakturPoTersimpan } from "./faktur-beli";
 import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,11 +44,11 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     // ketiga di samping struk kasir dan tagihan klinik.
     supabase.from("sales_invoices").select("id, total, tanggal").neq("status", "batal").gte("tanggal", awalTahun).lte("tanggal", today),
     supabase.from("sales_receipts").select("invoice_id, jumlah"),
-    supabase.from("purchase_orders").select("id, total, status, tanggal").eq("status", "Diterima"),
+    supabase.from("purchase_orders").select("id, purchase_order_items(id,item_id,qty,qty_terima,harga_beli,faktor)").eq("status", "Diterima"),
     // Pelunasan pembelian hidup di purchase_invoice_payments (lewat Faktur Pembelian).
     // Tabel po_payments sudah tidak ditulis layar mana pun — membacanya bikin dashboard
     // selalu melaporkan seluruh PO sebagai belum dibayar.
-    supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_payments(amount)"),
+    supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_items(po_item_id,item_id,qty,faktor), purchase_invoice_payments(amount)").is("voided_at", null),
     supabase.from("purchase_returns").select("po_id, total"),
     // baris jurnal kas/bank 7 hari terakhir untuk arus kas harian.
     supabase
@@ -121,21 +122,36 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   const belumLunas = invBelum + salesBelumLunas + fjBelum;
   const penjualan = { total: penjTotal, lunas: penjTotal - belumLunas, belumLunas };
 
-  // ── Pembelian (PO Diterima), lunas vs belum ──
-  // Dibayar per PO = pelunasan faktur pembelian + retur (retur mengurangi hutang pemasok).
-  const poPaid = new Map<string, number>();
-  const tambahPaid = (poId: string | null, nilai: number) => {
-    if (!poId) return;
-    poPaid.set(poId, (poPaid.get(poId) ?? 0) + nilai);
-  };
-  for (const f of (poFaktur.data ?? []) as { po_id: string | null; purchase_invoice_payments: { amount: number }[] | null }[]) {
-    tambahPaid(f.po_id, (f.purchase_invoice_payments ?? []).reduce((a, p) => a + Number(p.amount), 0));
-  }
-  for (const r of (poRetur.data ?? []) as { po_id: string | null; total: number }[]) tambahPaid(r.po_id, Number(r.total));
+  // Received goods remain a liability until billed; void invoices reopen that portion.
+  type PurchaseInvoice = { po_id: string | null; total: number; purchase_invoice_items: ItemFakturPoTersimpan[] | null; purchase_invoice_payments: { amount: number }[] | null };
+  const purchases = new Map<string, { total: number; paid: number }>();
+  const billed = new Map<string, ItemFakturPoTersimpan[]>();
   let pembTotal = 0, pembBelum = 0;
-  for (const po of (poRows.data ?? []) as { id: string; total: number }[]) {
-    pembTotal += Number(po.total);
-    pembBelum += Math.max(0, Number(po.total) - (poPaid.get(po.id) ?? 0));
+  for (const invoice of (poFaktur.data ?? []) as PurchaseInvoice[]) {
+    const total = Number(invoice.total);
+    const paid = (invoice.purchase_invoice_payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0);
+    if (!invoice.po_id) { pembTotal += total; pembBelum += Math.max(0, total - paid); continue; }
+    const current = purchases.get(invoice.po_id) ?? { total: 0, paid: 0 };
+    current.total += total; current.paid += paid;
+    purchases.set(invoice.po_id, current);
+    billed.set(invoice.po_id, [...(billed.get(invoice.po_id) ?? []), ...(invoice.purchase_invoice_items ?? [])]);
+  }
+  type ReceivedPo = { id: string; purchase_order_items: { id: string; item_id: string | null; qty: number; qty_terima: number | null; harga_beli: number; faktor: number }[] | null };
+  for (const po of (poRows.data ?? []) as ReceivedPo[]) {
+    const rows = po.purchase_order_items ?? [];
+    const remaining = sisaFakturablePerBaris(rows.map(row => ({ id: row.id, item_id: row.item_id, diterima: Number(row.qty_terima ?? row.qty), faktor: Number(row.faktor) })), billed.get(po.id) ?? []);
+    if (remaining.invalidLinkedLines || remaining.invalidPoItemIds.length || remaining.legacyAmbiguousItemIds.length) throw new Error("Sisa kewajiban PO perlu direkonsiliasi sebelum dashboard dapat dihitung.");
+    const current = purchases.get(po.id) ?? { total: 0, paid: 0 };
+    current.total += rows.reduce((sum, row) => sum + (remaining.sisaPerBaris[row.id] ?? 0) * Number(row.harga_beli), 0);
+    purchases.set(po.id, current);
+  }
+  for (const row of (poRetur.data ?? []) as { po_id: string; total: number }[]) {
+    const current = purchases.get(row.po_id);
+    if (current) current.paid += Number(row.total);
+  }
+  for (const purchase of purchases.values()) {
+    pembTotal += purchase.total;
+    pembBelum += Math.max(0, purchase.total - purchase.paid);
   }
   const pembelian = { total: pembTotal, lunas: pembTotal - pembBelum, belumLunas: pembBelum };
 

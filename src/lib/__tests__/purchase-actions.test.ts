@@ -56,7 +56,7 @@ describe("purchase server action boundaries",()=>{
  });
  it("recovers a committed invoice before re-reading now exhausted PO quantities",async()=>{
   state.rpc.mockResolvedValue({data:{invoice_id:"inv-1",no_faktur:"FB.FIC.00001"},error:null});
-  await expect(buatFaktur(form({po_id:"po-1",request_key:"invoice-key",tanggal:"2026-10-04",jatuh_tempo:"2026-11-04",items:'[{"po_item_id":"row-1","qty":2,"harga":100}]'}))).rejects.toThrow("REDIRECT:/pembelian/faktur?success=");
+  await expect(buatFaktur(form({po_id:"po-1",request_key:"invoice-key",tanggal:"2026-10-04",jatuh_tempo:"2026-11-04",items:'[{"po_item_id":"row-1","qty":2,"harga":100}]'}))).rejects.toThrow("REDIRECT:/pembelian/faktur/inv-1?success=");
   expect(state.rpc).toHaveBeenCalledWith("recover_purchase_operation",expect.objectContaining({p_kind:"invoice",p_request_key:"invoice-key",p_payload:expect.objectContaining({po_id:"po-1",items:[{po_item_id:"row-1",qty:2,harga:100}]})}));
   expect(state.from).not.toHaveBeenCalled();
  });

@@ -1,7 +1,8 @@
 "use client";
 
 import { draftRecord, draftNumber } from "@/components/TransactionDraft";
-import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
+import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
+import { SubmitButton } from "@/components/SubmitButton";
 
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
@@ -27,12 +28,14 @@ const plusDays = (iso: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-export function FakturForm({ options, userId }: { options: PoOption[]; userId: string }) {
+export type PoInvoiceInitial = { id: string; po_id: string; tanggal: string; jatuh_tempo: string; no_faktur_pemasok: string | null; keterangan: string | null; purchase_invoice_items: { po_item_id: string; qty: number; harga: number }[] };
+
+export function FakturForm({ options, userId, initial }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial }) {
   const today = hariIniWIB();
-  const [poId, setPoId] = useState("");
-  const [qty, setQty] = useState<Record<string, number>>({});
-  const [harga, setHarga] = useState<Record<string, number>>({});
-  const [tempo, setTempo] = useState(plusDays(today, 30));
+  const [poId, setPoId] = useState(initial?.po_id ?? "");
+  const [qty, setQty] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.qty)])));
+  const [harga, setHarga] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.harga)])));
+  const [tempo, setTempo] = useState(initial?.jatuh_tempo ?? plusDays(today, 30));
 
   const po = options.find((o) => o.id === poId);
 
@@ -55,11 +58,14 @@ export function FakturForm({ options, userId }: { options: PoOption[]; userId: s
   const total = payload.reduce((a, r) => a + r.qty * r.harga, 0);
 
   return (
-    <form action={buatFaktur}>
-      <PurchaseRequestKey scope="invoice" userId={userId} draft={{ snapshot: { poId, qty, harga, tempo }, restore(value) {
+    <CorrectionTransactionForm action={buatFaktur} scope={`invoice${initial ? `:${initial.id}` : ""}`} userId={userId} state={{ snapshot: { poId, qty, harga, tempo }, restore(value) {
         if (typeof value.poId !== "string" || typeof value.tempo !== "string" || !draftRecord(value.qty, draftNumber) || !draftRecord(value.harga, draftNumber)) return false;
         setPoId(value.poId); setQty(value.qty); setHarga(value.harga); setTempo(value.tempo); return true;
-      } }} />
+      } }}>
+      {({ ready }) => <>
+      <input type="hidden" name="invoice_kind" value="invoice" />
+      <input type="hidden" name="replaces_invoice_id" value={initial?.id ?? ""} />
+      <button type="submit" formNoValidate name="tindakan" value="periksa" disabled={!ready} className="btn-def">Periksa hasil terakhir</button>
       <input type="hidden" name="po_id" value={poId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
@@ -75,12 +81,12 @@ export function FakturForm({ options, userId }: { options: PoOption[]; userId: s
           </div>
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">No. faktur pemasok</label>
-            <input className="fi" name="no_faktur_pemasok" placeholder="Nomor di kertas faktur dari pemasok" />
+            <input className="fi" name="no_faktur_pemasok" defaultValue={initial?.no_faktur_pemasok ?? ""} placeholder="Nomor di kertas faktur dari pemasok" />
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <div className="fg" style={{ marginBottom: 10, flex: 1 }}>
               <label className="flab">Tanggal faktur *</label>
-              <input className="fi" type="date" name="tanggal" defaultValue={today} required />
+              <input className="fi" type="date" name="tanggal" defaultValue={initial?.tanggal ?? today} required />
             </div>
             <div className="fg" style={{ marginBottom: 10, flex: 1 }}>
               <label className="flab">Jatuh tempo *</label>
@@ -90,7 +96,7 @@ export function FakturForm({ options, userId }: { options: PoOption[]; userId: s
           </div>
           <div className="fg">
             <label className="flab">Keterangan</label>
-            <textarea className="fi" name="keterangan" rows={2} placeholder="Opsional..." style={{ resize: "vertical" }} />
+            <textarea className="fi" name="keterangan" defaultValue={initial?.keterangan ?? ""} rows={2} placeholder="Opsional..." style={{ resize: "vertical" }} />
           </div>
         </div>
 
@@ -140,10 +146,11 @@ export function FakturForm({ options, userId }: { options: PoOption[]; userId: s
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <button type="submit" className="btn-acc" disabled={!poId || payload.length === 0}>
+        <SubmitButton className="btn-acc" disabled={!ready || !poId || payload.length === 0}>
           <i className="ti ti-file-invoice" /> Simpan faktur
-        </button>
+        </SubmitButton>
       </div>
-    </form>
+      </>}
+    </CorrectionTransactionForm>
   );
 }

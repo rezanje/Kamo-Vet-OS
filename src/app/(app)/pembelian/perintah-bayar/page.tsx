@@ -43,7 +43,7 @@ export default async function PerintahBayarPage({
         .select("id, no_pp, tanggal, rencana_bayar, total, status, revision, catatan, suppliers(nama), payment_order_items(id, jumlah, purchase_invoices(id, no_faktur))")
         .order("created_at", { ascending: false }),
       supabase.from("suppliers").select("id, nama").order("nama"),
-      supabase.from("purchase_invoices").select("id, no_faktur, tanggal, jatuh_tempo, total, supplier_id, suppliers(nama)").order("jatuh_tempo"),
+      supabase.from("purchase_invoices").select("id, no_faktur, tanggal, jatuh_tempo, total, supplier_id, suppliers(nama)").is("voided_at", null).order("jatuh_tempo"),
       supabase.from("purchase_invoice_payments").select("invoice_id, amount"),
       supabase.from("payment_order_items").select("invoice_id, jumlah, payment_orders!inner(status)").in("payment_orders.status", ["draft", "disetujui"]),
       loadRekeningAktif(supabase),

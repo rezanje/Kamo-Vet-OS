@@ -32,7 +32,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const [{ data: invs }, { data: pos }, { data: rets }] = await Promise.all([
     supabase
       .from("purchase_invoices")
-      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
+      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)").is("voided_at", null)
       .order("jatuh_tempo").order("id"),
     supabase
       .from("purchase_orders")
@@ -104,7 +104,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   let invoiceLineReadFailed = false;
   {
     const { data: invItems, error: invoiceLineReadError } = await supabase
-      .from("purchase_invoices").select("po_id, purchase_invoice_items(po_item_id, item_id, qty, faktor)");
+      .from("purchase_invoices").select("po_id, purchase_invoice_items(po_item_id, item_id, qty, faktor)").is("voided_at", null);
     invoiceLineReadFailed = !!invoiceLineReadError;
     for (const d of (invItems ?? []) as unknown as {
       po_id: string | null;
