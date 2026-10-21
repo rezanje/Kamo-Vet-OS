@@ -97,7 +97,7 @@ def race_tests():
     print('Actor revoked in an earlier waiting transaction cannot complete correction.',flush=True)
 
 try:
-    subprocess.run(['docker','run','-d','--name',CONTAINER,'-e','POSTGRES_PASSWORD=fictional-return-only','postgres:16'],check=True,capture_output=True)
+    subprocess.run(['docker','run','-d','--network','none','--name',CONTAINER,'-e','POSTGRES_PASSWORD=fictional-return-only','postgres:16'],check=True,capture_output=True)
     for _ in range(150):
         logs=subprocess.run(['docker','logs',CONTAINER],capture_output=True,text=True)
         if 'PostgreSQL init process complete' in logs.stdout and subprocess.run(['docker','exec',CONTAINER,'pg_isready','-U','postgres'],capture_output=True).returncode==0:

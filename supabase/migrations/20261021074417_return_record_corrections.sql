@@ -74,9 +74,24 @@ revoke all on function public.return_record_basis(text,uuid) from public,anon,au
 -- Filter only return totals/quantities, preserving conservative source-cancellation
 -- dependency checks. Fail migration if the expected canonical statements changed.
 do $$declare f record;body text;needle text;begin
+ if to_regprocedure('public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric,text,uuid)') is null then
+  raise exception 'Canonical purchase invoice consumer is missing';
+ end if;
  for f in select p.oid::regprocedure signature,p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
  where n.nspname='public' and p.prokind='f' and p.proname in(
  'post_unit_return','pos_sale_post_refund','pay_purchase_invoice_atomic','pay_purchase_payment_order_atomic','mutate_purchase_payment_order','create_purchase_invoice_from_po','cancel_posted_sale','cancel_purchase_invoice') loop
+  -- Some deployed schemas retain the pre-recovery invoker overload. It is not
+  -- a canonical consumer and cannot INSERT invoices under any browser/service
+  -- role. Do not rewrite it or widen its ACL; unexpected write access fails closed.
+  if f.signature=to_regprocedure('public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric)') then
+   if (select prosecdef from pg_proc where oid=f.signature)
+    or has_table_privilege('authenticated','public.purchase_invoices','INSERT')
+    or has_table_privilege('anon','public.purchase_invoices','INSERT')
+    or has_table_privilege('service_role','public.purchase_invoices','INSERT') then
+    raise exception 'Retired invoice overload has unexpected write authority';
+   end if;
+   continue;
+  end if;
   select pg_get_functiondef(f.signature) into body;
   needle:=case f.proname
    when 'post_unit_return' then 'where rt.sale_id=sale.id'

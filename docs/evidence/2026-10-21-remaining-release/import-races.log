@@ -1,0 +1,7 @@
+Applied 217 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS: PR70 global opening wins; waiting bridge rejects stale evidence without stock effects.
+PASS: PR70 actor-before-journal interleaving has no deadlock and cannot double-post inventory.
+PASS: bridge wins; waiting PR70 global stock opening fully rolls back.
+PASS: actor revocation commits first; waiting bridge rechecks authorization and creates no stock effects.
+PASS: concurrent same-batch post and exact retry return one receipt/journal and one stock quantity.
+Removed owned PostgreSQL test container and volumes.

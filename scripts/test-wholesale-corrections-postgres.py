@@ -21,7 +21,7 @@ def sql(source):
     return result
 
 def main():
-    subprocess.run(['docker','run','-d','--name',CONTAINER,'-e','POSTGRES_HOST_AUTH_METHOD=trust','postgres:16'], check=True, capture_output=True)
+    subprocess.run(['docker','run','-d','--network','none','--name',CONTAINER,'-e','POSTGRES_HOST_AUTH_METHOD=trust','postgres:16'], check=True, capture_output=True)
     try:
         for _ in range(200):
             if subprocess.run(['docker','exec',CONTAINER,'pg_isready','-U','postgres'],capture_output=True).returncode == 0:

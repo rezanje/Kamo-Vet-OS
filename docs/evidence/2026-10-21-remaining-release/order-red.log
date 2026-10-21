@@ -1,0 +1,13 @@
+Applied 210 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Applied after deployed main: 20261021073000_wholesale_invoice_corrections.sql
+Applied after deployed main: 20261021073019_internal_transfer_corrections.sql
+Applied after deployed main: 20261021073519_monetary_opening_corrections.sql
+Applied after deployed main: 20261021074417_return_record_corrections.sql
+Applied after deployed main: 20261021074519_fixed_asset_purchase_corrections.sql
+Applied after deployed main: 20261021083000_stock_document_corrections.sql
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-remaining/scripts/test-remaining-production-order.py", line 34, in <module>
+    assert coverage == '0', 'New correction JSON provenance lacks deployed master reference guards: ' + coverage
+           ^^^^^^^^^^^^^^^
+AssertionError: New correction JSON provenance lacks deployed master reference guards: 35

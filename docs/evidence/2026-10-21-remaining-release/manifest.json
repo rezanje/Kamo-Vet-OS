@@ -1,0 +1,60 @@
+{
+  "base": "c320e5b73364a60aca3b580563db12e4a7d1550e",
+  "pr_heads": {
+    "68": "264fb237c978d2ec84cf09e65a9d7cbd0f241f61",
+    "69": "d40c22b923bb4b6141d38164081bdc4407c5ccea",
+    "70": "cc2a89e4d271b9b96ceaee14adab9ef84c2ea24c",
+    "71": "5dde2ef40a0928ba57ef521aae2468e3a2dd4cd3",
+    "72": "0eb82ad95445fb886405193537a3c092c49c9079",
+    "73": "5677efb4c407c5b7b624a3836694c71c6f4d5894",
+    "79": "8c85f53908242abbd55eee7786dfd840edad73b8"
+  },
+  "pending_migrations_in_order": [
+    {
+      "file": "supabase/migrations/20261021073000_wholesale_invoice_corrections.sql",
+      "sha256": "bc5737b98dc51d1c76864cc55c5bca9a8cd301ebc0be9648b8294fc87833275b"
+    },
+    {
+      "file": "supabase/migrations/20261021073019_internal_transfer_corrections.sql",
+      "sha256": "ddb461e49f573f74360c2360ef171a1d3ad83c1b54ab55fdcb6e05c45fa61c77"
+    },
+    {
+      "file": "supabase/migrations/20261021073519_monetary_opening_corrections.sql",
+      "sha256": "d1379d4f0e88fcf6a21c75e3bdddc00aae4dd9d7b47c4501fdfdcec5456d79fd"
+    },
+    {
+      "file": "supabase/migrations/20261021074417_return_record_corrections.sql",
+      "sha256": "bcb5cdbcc96acfde8a81a0e194be08f243f826bc2f5a35a767a8c5dadf87dcdc"
+    },
+    {
+      "file": "supabase/migrations/20261021074519_fixed_asset_purchase_corrections.sql",
+      "sha256": "15be5ffb785e3c16ca9827abd477fdbc5dcce585b3d87db9632e9253fe0a79fb"
+    },
+    {
+      "file": "supabase/migrations/20261021083000_stock_document_corrections.sql",
+      "sha256": "cebd7b3510392aeddc861d583e03441eacf4ae217d6b17c2b87dbb56e442ed24"
+    },
+    {
+      "file": "supabase/migrations/20261021183000_correction_master_reference_guards.sql",
+      "sha256": "c3467a3df77584b686ab82bfc817174be71548fea03fb6a8bc9f94f7e626e395"
+    }
+  ],
+  "retained_production_prs": [
+    74,
+    75,
+    76,
+    77,
+    78
+  ],
+  "excluded": [
+    "PR62",
+    "FIFO-to-average",
+    "historical PDRY repair",
+    "automatic business corrections"
+  ],
+  "application_tests": {
+    "passed": 2359,
+    "baseline_failed": 3
+  },
+  "stock_and_journal_mutations_at_migration_time": false
+}
