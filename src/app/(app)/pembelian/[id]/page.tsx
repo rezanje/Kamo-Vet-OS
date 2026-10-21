@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
+import { POEditForm, POCancelForm } from "./POCorrectionForm";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -12,7 +13,7 @@ function one<T>(r: Rel<T>): T | null {
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtTgl = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
-const BADGE: Record<string, string> = { Draft: "x", Dikirim: "b", Diterima: "g", Dibatalkan: "r" };
+const BADGE: Record<string, string> = { Draft: "x", Dikirim: "b", Dipesan: "b", Diterima: "g", Batal: "r" };
 
 type PO = {
   id: string;
@@ -20,11 +21,14 @@ type PO = {
   tanggal: string;
   status: string;
   total: number;
+  revision: number;
+  supplier_id: string | null;
+  to_warehouse_id: string;
   suppliers: Rel<{ nama: string }>;
   warehouses: Rel<{ name: string }>;
   branches: Rel<{ name: string }>;
   purchase_order_items: {
-    id: string; nama: string; qty: number; satuan: string | null;
+    id: string; item_id: string | null; nama: string; qty: number; satuan: string | null; faktor: number;
     qty_terima: number | null; harga_beli: number;
   }[] | null;
 };
@@ -38,15 +42,17 @@ export default async function PODetailPage({
   const { id } = await params;
   const { success, error } = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const { data } = await supabase
-    .from("purchase_orders")
-    .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, nama, qty, satuan, qty_terima, harga_beli)")
-    .eq("id", id)
-    .maybeSingle();
-
-  const po = data as unknown as PO | null;
+  const { data } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, harga_beli)").eq("id", id).maybeSingle();
+  const po = data as unknown as (PO & { branch_id: string }) | null;
   if (!po) notFound();
+
+  const [{ data: suppliers }, { data: warehouses }, { data: profile }] = await Promise.all([
+    supabase.from("suppliers").select("id, nama").order("nama"),
+    supabase.from("warehouses").select("id, name, branch_id").eq("branch_id", po.branch_id).eq("is_active", true).order("name"),
+    supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
+  ]);
 
   const items = po.purchase_order_items ?? [];
 
@@ -58,7 +64,7 @@ export default async function PODetailPage({
           <span style={{ color: "var(--td)" }}>·</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>{po.no_po ?? "Purchase Order"}</span>
         </div>
-        {po.status !== "Diterima" && po.status !== "Dibatalkan" && (
+        {po.status !== "Diterima" && po.status !== "Batal" && (
           <Link href={`/pembelian/${po.id}/terima`} className="btn-acc" style={{ textDecoration: "none" }}>
             <i className="ti ti-package-import" /> Terima barang
           </Link>
@@ -126,6 +132,16 @@ export default async function PODetailPage({
           </table>
         </div>
       </div>
+
+      {user && profile?.role === "OWNER" && profile.is_active && (po.status === "Draft" || po.status === "Dipesan") && (
+        <div className="crm-sec">
+          <SecHeader num="02" title="KOREKSI PO" desc="Hanya Super Admin yang dapat mengubah atau membatalkan PO sebelum ada transaksi turunan." />
+          <POEditForm userId={user.id} poId={po.id} revision={po.revision} supplierId={po.supplier_id ?? ""} warehouseId={po.to_warehouse_id} tanggal={po.tanggal} rows={items} suppliers={(suppliers ?? []) as { id: string; nama: string }[]} warehouses={(warehouses ?? []) as { id: string; name: string }[]} />
+          <div style={{ borderTop: ".5px solid var(--bd)", marginTop: 14, paddingTop: 12 }}>
+            <POCancelForm userId={user.id} poId={po.id} revision={po.revision} />
+          </div>
+        </div>
+      )}
 
       <DokumenPanel modul="pembelian" refId={po.id} kembali={`/pembelian/${po.id}`} />
     </>

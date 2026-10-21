@@ -1,8 +1,10 @@
 -- Fictional fixtures supplied by scripts/test-purchase-payment-postgres.py.
 begin;
+insert into suppliers(id,nama) values('fb100000-0000-4000-8000-000000000001','Fiction payment supplier');
 insert into purchase_invoices(id,no_faktur,po_id,tanggal,jatuh_tempo,total)
 values('fa000000-0000-4000-8000-000000000001','FB.PAYMENT.TEST','f6000000-0000-4000-8000-000000000010',current_date,current_date,220);
 insert into coa_accounts(code,name,type,normal_balance) values('1303','Advance','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+update purchase_invoices set supplier_id='fb100000-0000-4000-8000-000000000001' where id='fa000000-0000-4000-8000-000000000001';
 set role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
 select set_config('request.jwt.claims','{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
@@ -22,6 +24,7 @@ end $$;
 reset role;
 insert into purchase_advances(id,no_um,jumlah) values('fb000000-0000-4000-8000-000000000001','UM.PAYMENT.TEST',20);
 insert into purchase_advances(id,no_um,jumlah) values('fb000000-0000-4000-8000-000000000002','UM.FRACTION.TEST',1.4);
+update purchase_advances set supplier_id='fb100000-0000-4000-8000-000000000001' where id in('fb000000-0000-4000-8000-000000000001','fb000000-0000-4000-8000-000000000002');
 set role authenticated;
 do $$ begin
  begin perform pay_purchase_invoice_atomic('pay-fraction-advance','fa000000-0000-4000-8000-000000000001',current_date,2,'Transfer',null,null,'fb000000-0000-4000-8000-000000000002');raise exception 'Fractional advance mismatch accepted';exception when sqlstate '22023' then null;end;
@@ -53,6 +56,7 @@ do $$ declare r jsonb; begin
 end $$;
 reset role;
 insert into payment_orders(id,no_pp,status,total) values('fd000000-0000-4000-8000-000000000001','PP.PAYMENT.TEST','disetujui',5);
+update payment_orders set supplier_id='fb100000-0000-4000-8000-000000000001' where id='fd000000-0000-4000-8000-000000000001';
 insert into payment_order_items(order_id,invoice_id,jumlah) values('fd000000-0000-4000-8000-000000000001','fa000000-0000-4000-8000-000000000001',5);
 set role authenticated;
 do $$ declare r jsonb; again jsonb; begin

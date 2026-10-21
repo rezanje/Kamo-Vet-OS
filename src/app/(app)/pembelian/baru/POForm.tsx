@@ -2,7 +2,8 @@
 
 // ponytail: dynamic item rows serialized to hidden JSON, same pattern as PermintaanForm.
 
-import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { usePreservedAction } from "@/components/LocalTransactionDraft";
+import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import { draftRows } from "@/components/TransactionDraft";
 import Link from "next/link";
 import { useState } from "react";
@@ -72,7 +73,7 @@ export function POForm({
 
   return (
     <form action={save}>
-      <LocalTransactionDraft userId={userId} scope="po-create" state={{ snapshot: { rows }, restore: (value) => {
+      <PurchaseRequestKey userId={userId} scope="po-create" draft={{ snapshot: { rows }, restore: (value) => {
         if (!draftRows(value.rows, blank)) return false;
         setRows(value.rows); return true;
       }, reset: () => { setRows([{ ...blank }]); } }} />

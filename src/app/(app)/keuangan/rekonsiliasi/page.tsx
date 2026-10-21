@@ -1,43 +1,54 @@
+import { BankReconciliationRecovery } from "./BankReconciliationRecovery";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances } from "@/lib/ledger";
+import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { hariIniWIB } from "@/lib/tanggal";
 import { RekonForm, type RekeningRekon } from "./RekonForm";
 
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 const fmtDate = (s: string) => new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
-export default async function RekonsiliasiPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
-  const { success, error } = await searchParams;
+export default async function RekonsiliasiPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; page?: string }> }) {
+  const { success, error, page: pageText } = await searchParams;
+  const parsedPage = Number(pageText ?? "1");
+  const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 && parsedPage < 100000 ? parsedPage : 1;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
 
-  const [balances, { data: rekData }, { data: history }] = await Promise.all([
+  const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle() : { data: null };
+  const capabilities = await loadRoleCapabilities(supabase, profile?.role ?? "");
+  if (!profile?.is_active || !["OWNER","ADMIN","FINANCE"].includes(profile.role) || !capabilities.all_branches) return <div className="p2ban">Rekonsiliasi bank memerlukan akses keuangan seluruh cabang agar saldo buku lengkap.</div>;
+
+  const [balances, { data: rekData }, { data: history, error: historyError, count }] = await Promise.all([
     getAccountBalances(supabase as never),
     supabase.from("cash_accounts").select("id, nama, coa_code").eq("jenis", "Bank").eq("is_active", true).order("nama"),
     supabase
       .from("bank_reconciliations")
-      .select("id, tanggal, saldo_buku, saldo_bank, biaya_adm, bunga, selisih, created_at, cash_accounts(nama)")
+      .select("id, tanggal, saldo_buku, saldo_bank, biaya_adm, bunga, selisih, created_at, voided_at, cash_accounts(nama)", { count: "exact" })
       .order("created_at", { ascending: false })
-      .limit(10),
+      .order("id", { ascending: false })
+      .range((page-1)*50, page*50-1),
   ]);
 
+  if (historyError) throw new Error("Riwayat rekonsiliasi belum dapat dimuat.");
   const saldoPerKode = new Map(balances.map((b) => [b.code, b.saldo]));
   const rekening: RekeningRekon[] = ((rekData ?? []) as { id: string; nama: string; coa_code: string }[])
     .map((r) => ({ ...r, saldo: saldoPerKode.get(r.coa_code) ?? 0 }));
 
   type Riwayat = {
-    id: string; tanggal: string; saldo_buku: number; saldo_bank: number;
+    id: string; voided_at: string | null; tanggal: string; saldo_buku: number; saldo_bank: number;
     biaya_adm: number; bunga: number; selisih: number;
     cash_accounts: Rel<{ nama: string }>;
   };
 
   return (
     <>
+      <BankReconciliationRecovery userId={user?.id ?? ""}/>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/kas-bank" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -46,7 +57,7 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
 
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Rekonsiliasi tersimpan. Biaya admin / bunga sudah dijurnal ke buku.
+          <i className="ti ti-circle-check" /> Rekonsiliasi tersimpan beserta penyesuaiannya.
         </div>
       )}
       {error && (
@@ -70,8 +81,8 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
             <tbody>
               {((history ?? []) as unknown as Riwayat[]).map((h) => (
                 <tr key={h.id}>
-                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(h.tanggal)}</td>
-                  <td style={{ fontSize: 11 }}>{one(h.cash_accounts)?.nama ?? "Bank BCA"}</td>
+                  <td style={{ fontSize: 11, color: "var(--tm)" }}><Link href={`/keuangan/rekonsiliasi/${h.id}`}>{fmtDate(h.tanggal)}</Link>{h.voided_at && <span> · Dibatalkan</span>}</td>
+                  <td style={{ fontSize: 11 }}>{one(h.cash_accounts)?.nama ?? "Belum tertaut"}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(h.saldo_buku)}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(h.saldo_bank)}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(h.biaya_adm)}</td>
@@ -86,6 +97,11 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
               )}
             </tbody>
           </table>
+        </div>
+        <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
+          {page > 1 && <Link href={`?page=${page-1}`}>Sebelumnya</Link>}
+          <span>Halaman {page}</span>
+          {page*50 < (count ?? 0) && <Link href={`?page=${page+1}`}>Berikutnya</Link>}
         </div>
       </div>
     </>
