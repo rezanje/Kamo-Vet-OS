@@ -1,3 +1,6 @@
+import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
+import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
+import { masterView, visibleMasters, type LifecycleRow } from "@/lib/master-lifecycle";
 import Link from "next/link";
 import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { createClient } from "@/lib/supabase/server";
@@ -19,16 +22,17 @@ type EmployeeRow = {
   gaji_pokok: number;
   status: string;
   branch_id: string | null;
-};
+} & LifecycleRow;
 
 const STATUS_LIST = ["Aktif", "Nonaktif"];
 
 export default async function KaryawanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; cari?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; cari?: string; view?: string }>;
 }) {
-  const { error, success, cari } = await searchParams;
+  const { error, success, cari, view: viewRaw } = await searchParams;
+  const view = masterView(viewRaw);
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
@@ -43,7 +47,7 @@ export default async function KaryawanPage({
   const [{ data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
     supabase
       .from("employees")
-      .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branch_id")
+      .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branch_id, trashed_at, lifecycle_revision")
       // `cari` datang dari pencarian global di topbar.
       .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
       .order("nama"),
@@ -54,7 +58,7 @@ export default async function KaryawanPage({
       .order("effective_date"),
   ]);
   const rows = tampilkanKaryawan(
-    (rowsRaw ?? []) as unknown as EmployeeRow[],
+    visibleMasters((rowsRaw ?? []) as unknown as EmployeeRow[], view, row => row.status === "Aktif"),
     (branches ?? []) as { id: string; name: string }[],
     (assignmentsRaw ?? []) as { employee_id: string; branch_id: string; role: "PRIMARY" | "SECONDARY"; effective_date: string }[],
   );
@@ -83,9 +87,9 @@ export default async function KaryawanPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
-      {success === "1" && (
+      {success && success !== "assignment" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Data karyawan berhasil disimpan.
+          <i className="ti ti-circle-check" /> {success === "1" ? "Data karyawan berhasil disimpan." : success}
         </div>
       )}
       {success === "assignment" && (
@@ -102,7 +106,7 @@ export default async function KaryawanPage({
       </div>
 
       {/* 01 TAMBAH KARYAWAN */}
-      <div className="crm-sec">
+      {bolehKelola && <div className="crm-sec">
         <SecHeader num="01" title="TAMBAH KARYAWAN" desc="Tambahkan data karyawan baru ke master HRIS." />
         <form action={simpanKaryawan}>
           <div className="grid2">
@@ -159,19 +163,20 @@ export default async function KaryawanPage({
             </button>
           </div>
         </form>
-      </div>
+      </div>}
 
       {bolehKelola && (
         <div className="crm-sec">
           <SecHeader num="02" title="PENUGASAN LINTAS CABANG" desc="Satu dokter atau tenaga medis bisa dijadwalkan di beberapa cabang." />
           <PenugasanCabangForm
-            employees={((rowsRaw ?? []) as unknown as EmployeeRow[]).filter(row => row.status === "Aktif")}
+            employees={((rowsRaw ?? []) as unknown as EmployeeRow[]).filter(row => row.status === "Aktif" && !row.trashed_at)}
             branches={branches ?? []}
             today={hariIniWIB()}
           />
         </div>
       )}
 
+      <MasterLifecycleFilter entity="employees" view={view} />
       {/* 02 DAFTAR KARYAWAN */}
       <div className="crm-sec">
         <SecHeader num="03" title="DAFTAR KARYAWAN" desc="Seluruh karyawan diurutkan berdasarkan nama." />
@@ -212,12 +217,13 @@ export default async function KaryawanPage({
                     </td>
                     <td>
                       <span className={`bge ${r.status === "Aktif" ? "g" : "x"}`}>
-                        {r.status}
+                        {r.trashed_at ? "Sampah" : r.status}
                       </span>
                     </td>
                     {bolehKelola && <td style={{ whiteSpace: "nowrap" }}>
                       <Link className="btn-def" href={`/hris/karyawan/${r.id}`}>Profil</Link>{" "}
-                      <Link className="btn-def" href={`/hris/karyawan/${r.id}?edit=1`}><i className="ti ti-pencil" /> Edit</Link>
+                      {!r.trashed_at && <Link className="btn-def" href={`/hris/karyawan/${r.id}?edit=1`}><i className="ti ti-pencil" /> Edit</Link>}
+                      <MasterLifecycleActions entity="employees" id={r.id} name={r.nama} active={r.status === "Aktif"} trashed={Boolean(r.trashed_at)} revision={r.lifecycle_revision} />
                     </td>}
                   </tr>
                 );

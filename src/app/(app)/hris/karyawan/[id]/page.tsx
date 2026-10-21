@@ -20,7 +20,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const { edit, error, success } = await searchParams;
   const supabase = await createClient();
   const [empResult, detailResult, componentsResult, assignedResult, branchesResult] = await Promise.all([
-    supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, gaji_pokok, status, branch_id").eq("id", id).maybeSingle(),
+    supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, gaji_pokok, status, branch_id, trashed_at").eq("id", id).maybeSingle(),
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("nama"),
     supabase.from("employee_salary_components").select("id, component_id, nominal").eq("employee_id", id),
@@ -28,6 +28,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   ]);
   if (empResult.error) throw new Error("Profil karyawan gagal dimuat");
   const employee = empResult.data;
+  if (employee?.trashed_at) redirect("/hris/karyawan?view=trash");
   if (!employee) notFound();
   const detail = detailResult.data;
   const fields = detail?.fields && typeof detail.fields === "object" && !Array.isArray(detail.fields)
@@ -54,7 +55,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
             <label className="flab" htmlFor={key}>{label}</label>
             <input id={key} className="fi" name={key} type={type} defaultValue={employee[key] ?? ""} required={key === "nama" || key === "gaji_pokok"} min={type === "number" ? 0 : undefined} step={type === "number" ? "any" : undefined} />
           </div>)}
-          <div><label className="flab" htmlFor="status">Status</label><select id="status" className="fi" name="status" defaultValue={employee.status}><option>Aktif</option><option>Nonaktif</option></select></div>
+          <div><label className="flab">Status</label><input type="hidden" name="status" value={employee.status} />{employee.status}<p>Gunakan aksi di daftar karyawan untuk mengubah status dengan alasan. Status ini tidak mencabut akses login.</p></div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}><SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan Perubahan</SubmitButton><Link className="btn-def" href={`/hris/karyawan/${id}`}>Batal</Link></div>
       </form> : <dl className="grid2">

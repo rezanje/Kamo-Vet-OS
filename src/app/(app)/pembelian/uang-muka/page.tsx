@@ -36,7 +36,7 @@ export default async function UangMukaPage({
     supabase.from("purchase_advances")
       .select("id, no_um, tanggal, jumlah, terpakai, metode, catatan, status, suppliers(nama), purchase_orders(no_po)")
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("suppliers").select("id, nama").order("nama"),
+    supabase.from("suppliers").select("id, nama").eq("is_active", true).order("nama"),
     supabase.from("purchase_orders").select("id, no_po, supplier_id, status").in("status", ["Draft", "Dipesan"]).order("tanggal", { ascending: false }),
     loadRekeningAktif(supabase),
   ]);

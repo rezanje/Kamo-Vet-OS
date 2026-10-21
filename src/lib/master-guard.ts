@@ -18,7 +18,7 @@ async function roleSaya() {
 export async function assertRole(back: string, apa: string, boleh: string[]) {
   const { supabase, role } = await roleSaya();
   if (!boleh.includes(role)) {
-    redirect(`${back}?error=${encodeURIComponent(`Kamu tidak punya hak untuk mengubah ${apa}`)}`);
+    redirect(`${back}${back.includes("?") ? "&" : "?"}error=${encodeURIComponent(`Kamu tidak punya hak untuk mengubah ${apa}`)}`);
   }
   return supabase;
 }

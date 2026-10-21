@@ -18,7 +18,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
    update: (value: unknown) => { state.writes.push({ table, value }); return query; },
    delete: () => query,
    single: async () => ({ data: { id: "saved" }, error: null }),
-   maybeSingle: async () => ({ data: table === "profiles" ? { role: "OWNER" } : table === "units" ? { nama: "pcs" } : { id: "warehouse", branch_id: "branch" }, error: null }),
+   maybeSingle: async () => ({ data: table === "profiles" ? { role: "OWNER", is_active: true } : table === "units" ? { nama: "pcs" } : { id: "warehouse", branch_id: "branch" }, error: null }),
    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows(), error: null }).then(resolve),
   };
   return query;
