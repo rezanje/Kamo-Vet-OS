@@ -1,0 +1,15 @@
+# Average activation accounting guard
+
+Base: fresh main `9aafe37` (independent PR80 merged). Branch `codex/kamo-average-activation-guard`. The older prototype branch is preserved and will not be published or combined with this implementation.
+
+Confirmed root cause: `activate_moving_average()` validates physical layer quantities/prices but never checks the existing inventory GL. It can switch method while remaining inventory is160 and GL1301 is0. No counterpart or historical repair can safely be inferred from that discrepancy.
+
+Scope: add one private activation precondition and a guarded insertion into the existing activation RPC. Preserve its no-argument interface, existing costing/closing, idempotent already-active return, and all independent PR80 changes. No new costing engine, historical mutation, stock revaluation or production operation.
+
+- [x] Native failing regression: missing GL, wrong branch allocation despite equal global totals, unallocated GL, unbalanced/nonfinite/future inventory journals, orphan/mismatched layers, negative opening pools, permissions; verify every denial leaves stock/history/settings/events/GL unchanged.
+- [x] Implement activation-only reconciliation: finite, complete nonnegative remaining quantity/value from physical layers must match finite, balanced GL1301 per branch within1e-8 Rupiah (numeric division precision only). Negative opening pools have no audited signed layer basis and require separate reconciliation; ongoing known-cost negative-stock policy remains unchanged. Missing GL/PDRY fails closed without creating a journal or selecting a counterpart.
+- [x] Hold the existing exclusive inventory advisory lock; acquire needed relation/row locks with NOWAIT, recheck current actor/scope and read stable stock/GL before any activation write. Fail with a retryable lock conflict instead of creating an inventory/journal lock inversion. Test real waiting sessions in both orders, role revocation and concurrent retries.
+- [x] Update fictional existing activation fixtures to include their explicit balanced opening GL, retaining their behavioral assertions. Run average/correction/clinic/import and FIFO regressions in owned network-none PostgreSQL. Add one action/UI assertion for the actionable failure handling.
+- [ ] Record other confirmed/static requirement gaps separately. Fetch main/release status; do not modify PR68–73+79 branches. Test their migration combination where available; rebase only after the release changes are observable on main. Push only this narrow branch and create a draft PR. No production migration, activation, deployment or historical edits.
+
+Verification and separate review findings: `docs/verification/2026-10-21-average-activation-accounting.md`. A draft PR remains the publication target; release/activation are outside scope.

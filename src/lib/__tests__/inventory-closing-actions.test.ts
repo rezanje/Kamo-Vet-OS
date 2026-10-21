@@ -17,8 +17,8 @@ it.each(["2026-10", "2026-11", "2026-13", "", "2026-02-30"])("rejects invalid or
   await expect(closeInventoryMonth(form(month))).rejects.toThrow("?error=");
   expect(state.rpc).not.toHaveBeenCalled();
 });
-it("surfaces activation errors without announcing success", async () => {
-  state.rpc.mockResolvedValue({ data: null, error: { message: "Scope ditolak" } });
-  await expect(activateAverage()).rejects.toThrow("?error=Scope%20ditolak");
+it.each(["Scope ditolak", "Nilai persediaan belum cocok dengan GL 1301 per cabang; selesaikan rekonsiliasi", "Ada transaksi yang masih berjalan; muat ulang status lalu coba lagi"])("surfaces activation failure without announcing success: %s", async message => {
+  state.rpc.mockResolvedValue({ data: null, error: { message } });
+  await expect(activateAverage()).rejects.toThrow(`?error=${encodeURIComponent(message)}`);
   expect(state.revalidate).not.toHaveBeenCalled();
 });

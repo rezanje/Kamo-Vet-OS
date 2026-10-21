@@ -34,6 +34,7 @@ select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','ee000000-0000-4000-8000-000000000001',true);
 set local role authenticated;
 select receive_purchase_order('ee500000-0000-4000-8000-000000000001','average-receipt','TB.AVG.',5,current_date,null,null,jsonb_build_array(jsonb_build_object('id','ee600000-0000-4000-8000-000000000001','qty_terima',4,'qty_rusak',0,'batches',jsonb_build_array(jsonb_build_object('qty',1,'exp_date',current_date+365),jsonb_build_object('qty',3,'exp_date',current_date+730)))));
+select pg_temp.seed_average_opening_gl();
 select activate_moving_average();
 -- Recognized average value has already diverged from physical layer value:
 -- repricing adds only the invoice delta, never recomputes from all old layers.
