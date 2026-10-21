@@ -11,7 +11,7 @@
     "79": "8c85f53908242abbd55eee7786dfd840edad73b8"
   },
   "native_source_migrations": 216,
-  "native_chronological_combined_migrations": 222,
+  "native_chronological_combined_migrations": 223,
   "vitest": {
     "files": 283,
     "passed": 2301,
@@ -23,7 +23,8 @@
   "build": "passed using fictional loopback Supabase; existing unrelated warnings",
   "production_changes": "none",
   "prototype_published": false,
-  "release_combined_caveat": "Old posted_sale_cancellations fixture directly calls retur-beli; PR72 rejects it. Same failure reproduced without this patch after 221 migrations.",
+  "release_combined_caveat": "Resolved by the PR81 follow-up: all seven exact PR81 migrations pass both full replay orders; direct retur-beli fixture now asserts PR72 rejection and rollback. Earlier six-PR-head failure logs remain historical evidence.",
   "draft_pr": "https://github.com/rezanje/Kamo-Vet-OS/pull/82",
-  "tested_implementation_commit": "7c66e896aad97c0190e672f2f964d5f0f9e8010e"
+  "tested_implementation_commit": "7c66e896aad97c0190e672f2f964d5f0f9e8010e",
+  "latest_combined_evidence": "pr81-followup/manifest.json"
 }

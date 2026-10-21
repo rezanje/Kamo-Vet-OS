@@ -13,3 +13,11 @@ Scope: add one private activation precondition and a guarded insertion into the 
 - [x] Record other confirmed/static requirement gaps separately. Fetch main/release status; do not modify PR68–73+79 branches. Test their migration combination where available; rebase only after the release changes are observable on main. Push only this narrow branch and create a draft PR. No production migration, activation, deployment or historical edits.
 
 Verification and separate review findings: `docs/verification/2026-10-21-average-activation-accounting.md`. Draft PR: https://github.com/rezanje/Kamo-Vet-OS/pull/82 . Release/activation remain outside scope.
+
+## PR81 review follow-up
+
+- [x] Reproduce the missing opening-GL helper in PR81's actual combined runner.
+- [x] Load it for three average suites and the clinic suite; preserve exact stock/closing source checks and allow only PR82's reviewed activation guard insertion.
+- [x] Update the legacy direct-return fixture to assert PR72's rejection and rollback, preserving pre-PR72 FIFO coverage.
+- [x] Execute deployed-main-then-pending and clean chronological PR81+PR82 replays, including `20261021183000_correction_master_reference_guards.sql`; both pass.
+- [x] Record final combined activation races; publish only the test/fixture/documentation follow-up on the existing draft PR82.

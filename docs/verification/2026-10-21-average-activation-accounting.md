@@ -1,6 +1,6 @@
 # Average activation accounting reconciliation
 
-Draft PR: [#82](https://github.com/rezanje/Kamo-Vet-OS/pull/82). Tested implementation commit: `7c66e896aad97c0190e672f2f964d5f0f9e8010e`; subsequent publication-record changes are documentation only.
+Draft PR: [#82](https://github.com/rezanje/Kamo-Vet-OS/pull/82). Tested production implementation remains `7c66e896aad97c0190e672f2f964d5f0f9e8010e`. Initial publication record `a2be160` was documentation only; the PR81 follow-up changes tests and documentation only. Latest combined compatibility is green for all seven PR81 migrations; the earlier six-migration caveat below is historical and superseded by the follow-up section.
 
 ## Outcome and safe handling
 
@@ -56,3 +56,24 @@ Before any release/activation: resolve the source/GL discrepancy and approved hi
 ## Boundaries
 
 Draft code/test work only. No production migration, activation, deployment command, historical data edit, revaluation, reset, real transaction, secret/access change, merge or readiness promotion was performed. Publishing this branch may cause the repository's existing automatic preview integration; that is not financial/backend acceptance.
+
+## PR81 P2 follow-up — actual combined replay
+
+This section supersedes the earlier six-migration fixture compatibility caveat. Exact inspected PR81 head: `e23002326a8666bbaf1cb1545a04465944abb3ca`. All **seven** PR81 migrations are included, especially `20261021183000_correction_master_reference_guards.sql`; this is not a replay of the older six independent PR heads.
+
+The review issue was reproduced in the actual combined runner: `moving_average_inventory.sql` failed because `pg_temp.seed_average_opening_gl()` did not exist. The runner now loads `supabase/tests/fixtures/average_opening_gl.sql` before all three average suites and the clinic suite. A preceding source-preservation assertion also needed a precise PR82 composition contract: stock-in, stock-out and closing definitions must remain exactly unchanged; activation must equal its baseline plus **only** the reviewed accounting guard call. The assertion was retained and narrowed to that exact expected change, not disabled. The activation accounting fixture itself now runs in this combined matrix.
+
+The old posted-sale fixture now asserts SQLSTATE42501 with PR72's exact official-return-path error and verifies quantity, physical layers and movements are unchanged after the rejected direct `retur-beli` call. Before PR72 is installed, it still checks the original successful FIFO return cost. Production return guards were not weakened. The combined runner explicitly executes this fixture in addition to the existing official return/correction/date-window suites.
+
+Actual commands, run in an isolated detached worktree containing exact PR81 plus PR82 changes:
+
+```
+python3 scripts/test-remaining-production-order.py
+python3 scripts/test-remaining-production-order.py --clean-replay
+```
+
+Both exited0. The first applies215 deployed-main migrations, then all seven pending PR81 migrations and the PR82 guard in rollout order. The second applies all223 migrations chronologically. Both pass master-reference coverage, unexpected retired-overload authority rollback, correction/average boundaries, exact costing/activation source contracts, six real correction-versus-activation lock races, the activation fixture, correction/financial/FIFO suites, all four average suites, and official return correction/date-window fixtures. The PR82-only216-migration regression matrix plus five activation races also exited0 after the legacy fixture update. The five activation/GL/actor/receipt races were additionally rerun on the exact seven-migration PR81 combination (223 migrations) and passed.
+
+Evidence: `docs/evidence/2026-10-21-average-activation-guard/pr81-followup/`. No production SQL/application source changed in this follow-up; only test runner/fixture and evidence/documentation changed. Frontend/type/lint/build results above therefore remain those of the unchanged implementation, not a new frontend rerun.
+
+Because PR81 is not yet on main, its runner is included from exact PR81 head with the targeted compatibility changes; `runner-vs-pr81.diff` records the small upstream-relative patch. No other PR81 application, migration or test source was imported into PR82. When PR81 becomes observable on main, reconcile the same-file addition by preserving PR81's runner plus this helper/source-contract/fixture coverage patch. No rebase onto an unmerged release branch, branch modification, merge or production operation was performed here.
