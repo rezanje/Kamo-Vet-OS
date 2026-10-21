@@ -8,7 +8,10 @@ type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null { return Array.isArray(r) ? (r[0] ?? null) : r; }
 function many<T>(r: Rel<T>): T[] { return Array.isArray(r) ? r : r ? [r] : []; }
 
-export default async function KlinikPenerimaanPage() {
+export default async function KlinikPenerimaanPage({ searchParams }: {
+  searchParams: Promise<{ success?: string; error?: string; trm?: string; selisih?: string }>;
+}) {
+  const { success, error, trm, selisih } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -44,6 +47,14 @@ export default async function KlinikPenerimaanPage() {
         <Link href="/klinik" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
       </div>
       <StokTabs active="penerimaan" />
+
+      {success === "terima" && !error && <div role="status" className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+        <i className="ti ti-circle-check" /> Barang diterima ({trm ?? "TRM"}) &amp; stok diperbarui sesuai qty diterima.
+        {selisih && Number.isFinite(Number(selisih)) && Number(selisih) !== 0 && <span className="bge r" style={{ marginLeft: 8 }}>Selisih: {Number(selisih) > 0 ? "+" : ""}{selisih}</span>}
+      </div>}
+      {error && <div role="alert" className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+        <i className="ti ti-alert-circle" /> {error}
+      </div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 14 }}>
         <StatCard label="Perlu Diterima" value={String((pending ?? []).length)} color="#d97706" bg="#fffbeb" icon="ti-package-import" big />

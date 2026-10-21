@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 // Penerimaan barang klinik — aturannya sama persis dengan penerimaan petshop,
 // jadi dua-duanya memakai lib/terima-permintaan.
@@ -33,5 +34,5 @@ export async function terimaBarangKlinik(formData: FormData) {
   }
 
   revalidatePath("/klinik/penerimaan");
-  redirect(`/klinik/penerimaan?success=terima&trm=${hasil.receiptNumber}&selisih=${hasil.selisih}`);
+  redirect(`/klinik/penerimaan?success=terima&trm=${hasil.receiptNumber}&selisih=${hasil.selisih}${transactionDraftAck(formData)}`);
 }

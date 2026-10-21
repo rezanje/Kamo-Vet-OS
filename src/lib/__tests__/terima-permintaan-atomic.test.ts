@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { prosesTerimaPermintaan } from '../terima-permintaan';
 
+it.each([{}, {receipt_number: "", selisih: 0}, {receipt_number: "TRM-1"}, {receipt_number: "TRM-1", selisih: null}, {receipt_number: "TRM-1", selisih: ""}, {receipt_number: "TRM-1", selisih: "bad"}, {receipt_number: "TRM-1", selisih: false}, {receipt_number: "TRM-1", selisih: [1]}])('does not confirm an incomplete receipt response %j', async data => {
+  const result = await prosesTerimaPermintaan({rpc: vi.fn().mockResolvedValue({data, error: null})}, {requestId: 'r', branchId: 'b', receivedBy: 'actor', rows: [{id: 'line', item_id: null, qty_diterima: 1, kondisi: 'baik'}]});
+  expect(result.ok).toBe(false);
+});
+
+it.each([-2, "-2.5", 0])('accepts a confirmed signed receipt difference %j', async selisih => {
+  const result = await prosesTerimaPermintaan({rpc: vi.fn().mockResolvedValue({data: [{receipt_number: "TRM-1", selisih}], error: null})}, {requestId: 'r', branchId: 'b', receivedBy: 'actor', rows: [{id: 'line', item_id: null, qty_diterima: 1, kondisi: 'baik'}]});
+  expect(result).toEqual({ok: true, receiptNumber: "TRM-1", selisih: Number(selisih)});
+});
+
 describe('atomic request receipt', () => {
   it('submits all lines in one RPC and never writes individual stock/doc rows', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: [{ receipt_number: 'TRM-test', selisih: 0 }], error: null });
