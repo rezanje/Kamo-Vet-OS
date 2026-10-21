@@ -1,5 +1,5 @@
 {
-  "base": "c320e5b73364a60aca3b580563db12e4a7d1550e",
+  "base": "9aafe37d13913735dacbee60ffd2099b43853db9",
   "pr_heads": {
     "68": "264fb237c978d2ec84cf09e65a9d7cbd0f241f61",
     "69": "d40c22b923bb4b6141d38164081bdc4407c5ccea",
@@ -20,11 +20,11 @@
     },
     {
       "file": "supabase/migrations/20261021073519_monetary_opening_corrections.sql",
-      "sha256": "d1379d4f0e88fcf6a21c75e3bdddc00aae4dd9d7b47c4501fdfdcec5456d79fd"
+      "sha256": "0fff4f3960779feace2027ad78c5429cf0cf2e46b638d2cae25c77f9c6c6aa75"
     },
     {
       "file": "supabase/migrations/20261021074417_return_record_corrections.sql",
-      "sha256": "bcb5cdbcc96acfde8a81a0e194be08f243f826bc2f5a35a767a8c5dadf87dcdc"
+      "sha256": "c385df61c6dd568f713a8a4ff1e4e6577d5bdb2e1ab023ace0f988246b528641"
     },
     {
       "file": "supabase/migrations/20261021074519_fixed_asset_purchase_corrections.sql",
@@ -32,7 +32,7 @@
     },
     {
       "file": "supabase/migrations/20261021083000_stock_document_corrections.sql",
-      "sha256": "cebd7b3510392aeddc861d583e03441eacf4ae217d6b17c2b87dbb56e442ed24"
+      "sha256": "c14f942196eb95358db385ba37bc7baced07f97826990106e181dcf36549e5f6"
     },
     {
       "file": "supabase/migrations/20261021183000_correction_master_reference_guards.sql",
@@ -44,17 +44,31 @@
     75,
     76,
     77,
-    78
+    78,
+    80
   ],
   "excluded": [
     "PR62",
-    "FIFO-to-average",
+    "new costing implementation or activation",
     "historical PDRY repair",
     "automatic business corrections"
   ],
   "application_tests": {
-    "passed": 2359,
-    "baseline_failed": 3
+    "passed": 2401,
+    "failed": 0,
+    "files": 308,
+    "prior_baseline_failures": "Three failures from PR78 baseline are fixed by concurrent PR80."
   },
-  "stock_and_journal_mutations_at_migration_time": false
+  "stock_and_journal_mutations_at_migration_time": false,
+  "original_integration_base": "c320e5b73364a60aca3b580563db12e4a7d1550e",
+  "compatibility": {
+    "costing_setting": "FIFO still active in fresh production readback; no activation performed",
+    "core_preservation": "PR80 stock_in/out, activation and closing definitions byte-identical before/after pending migration application",
+    "future_average": "New FIFO stock/return corrections fail closed if average is active; monetary-only openings remain usable, inventory openings require import bridge",
+    "mode_lock": "Six independent waiting-session races verify shared costing-mode lock is acquired before source/stock/ledger locks",
+    "migration_orders": [
+      "215 deployed-main migrations then seven pending",
+      "222 migrations in chronological clean replay"
+    ]
+  }
 }

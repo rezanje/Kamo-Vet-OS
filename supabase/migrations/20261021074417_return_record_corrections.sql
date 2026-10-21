@@ -132,6 +132,8 @@ language plpgsql security definer set search_path='' as $$
 declare branch uuid;warehouse uuid;result jsonb;doc uuid;ref text;before_layers jsonb;before_moves uuid[];
  before_payments uuid[];snap jsonb;table_name text;items_table text;header_value jsonb;item_values jsonb;expense_values jsonb:='[]';item_ids uuid[];
 begin
+ -- Match PR80 activation/closing lock order before document and stock locks.
+ perform public.inventory_is_average();
  if p_kind is null or p_kind not in('sales','purchase') then raise exception 'Jenis retur tidak valid';end if;
  if p_kind='purchase' then
   select branch_id,to_warehouse_id into branch,warehouse from public.purchase_orders where id=p_source for update;
@@ -192,6 +194,8 @@ declare posting public.return_record_postings%rowtype;prior public.return_record
  t text;it text;d date:=(now() at time zone 'Asia/Jakarta')::date;closed date;audit uuid:=gen_random_uuid();
  j jsonb;m jsonb;l jsonb;take jsonb;current_value jsonb;reversal uuid;reversals uuid[]:='{}';row_input jsonb;row_original jsonb;unit_value record;warehouse uuid;refund jsonb;
 begin
+ -- Take the existing costing-mode shared lock before document/stock/ledger locks.
+ if public.inventory_is_average() then raise exception 'Koreksi historis FIFO tidak tersedia saat HPP average aktif. Rekonsiliasi melalui Finance diperlukan';end if;
  if p_kind is null or p_kind not in('sales','purchase') or p_return_id is null or p_expected_revision is null or p_expected_revision<0
   or length(btrim(coalesce(p_request_key,''))) not between 1 and 120 or length(btrim(coalesce(p_reason,''))) not between 3 and 1000
   or length(btrim(coalesce(p_physical_evidence,''))) not between 10 and 2000 or jsonb_typeof(p_items) is distinct from 'array' then raise exception 'Identitas, alasan dan bukti fisik retur wajib lengkap';end if;

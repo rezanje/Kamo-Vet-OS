@@ -5,10 +5,11 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-BASE = 'c320e5b73364a60aca3b580563db12e4a7d1550e'
+BASE = '9aafe37d13913735dacbee60ffd2099b43853db9'
 spec = importlib.util.spec_from_file_location('fixture', ROOT / 'scripts/test-accurate-inventory-accounting-postgres.py')
 harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
@@ -22,16 +23,17 @@ with tempfile.TemporaryDirectory(prefix='kamo-release-order-') as temporary:
     paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', BASE, 'supabase/migrations'], cwd=ROOT, text=True).splitlines()
     for path in paths:
         (directory / Path(path).name).write_bytes(subprocess.check_output(['git', 'show', BASE + ':' + path], cwd=ROOT))
-    harness.ROOT = baseline
+    harness.ROOT = ROOT if '--clean-replay' in sys.argv else baseline
     with harness.DisposablePostgres() as db:
         db.bootstrap()
+        costing_core = db.sql("select pg_get_functiondef('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'::regprocedure)||pg_get_functiondef('public.stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)'::regprocedure)||pg_get_functiondef('public.activate_moving_average()'::regprocedure)||pg_get_functiondef('public.close_inventory_month(date)'::regprocedure);")
         # Production retains this retired invoker overload, absent on a clean
         # repository replay. Its old write privileges are already revoked.
         db.sql("""create function public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric)
 returns table(invoice_id uuid,no_faktur varchar(30),no_jurnal varchar(24),total numeric)
 language plpgsql security invoker set search_path=public as $$begin raise exception 'Retired fixture overload';end$$;""")
         retired_hash = db.sql("select md5(pg_get_functiondef('public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric)'::regprocedure));")
-        pending = sorted(path for path in (ROOT / 'supabase/migrations').glob('*.sql') if not (directory / path.name).exists())
+        pending = [] if '--clean-replay' in sys.argv else sorted(path for path in (ROOT / 'supabase/migrations').glob('*.sql') if not (directory / path.name).exists())
         for path in pending:
             if path.name == '20261021074417_return_record_corrections.sql':
                 try:
@@ -75,6 +77,45 @@ do $$ declare message text;begin
 end $$;
 rollback;""")
         print('PASS newly created return-request JSON cannot reference a trashed master.', flush=True)
+        db.sql((ROOT / 'supabase/tests/remaining_average_composition.sql').read_text())
+        print('PASS future-average correction boundary.', flush=True)
+        assert costing_core == db.sql("select pg_get_functiondef('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'::regprocedure)||pg_get_functiondef('public.stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)'::regprocedure)||pg_get_functiondef('public.activate_moving_average()'::regprocedure)||pg_get_functiondef('public.close_inventory_month(date)'::regprocedure);"), 'Concurrent PR80 costing/activation/closing definitions changed'
+        print('PASS concurrent PR80 costing/activation/closing source preserved exactly.', flush=True)
+        # Actual independent sessions: the activation/closing exclusive lock must
+        # block correction entry before any stock/document row lock is acquired.
+        for index, statement in enumerate([
+            "select preview_stock_document_correction('adjustment',null,'[]')",
+            "select correct_stock_document('adjustment',null,'[]','Reason','lock-fixture','token')",
+            "select correct_return_record('sales',null,0,'lock-fixture','Reason','Fictional receipt evidence','[]')",
+            "select post_unit_return('sales',null,'lock-fixture','{}','[]')",
+            "select issue_stock_document_recorded('adjustment',null,null)",
+            "select create_opening_balance_atomic('lock-fixture',current_date,'[]')",
+        ]):
+            def launch(source):
+                process = subprocess.Popen(db.command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process.stdin.write(source)
+                process.stdin.close()
+                return process
+            def barrier(name, event):
+                for _ in range(300):
+                    if db.sql("select exists(select 1 from pg_stat_activity where application_name='" + name + "' and " + event + ");") == 't': return
+                    time.sleep(.01)
+                raise AssertionError('Missing real session barrier: ' + name)
+            holder_name = 'remaining_mode_holder_' + str(index)
+            waiter_name = 'remaining_mode_waiter_' + str(index)
+            holder = launch("set application_name='" + holder_name + "';begin;select pg_advisory_xact_lock(1962072401::bigint);select pg_sleep(20);rollback;")
+            barrier(holder_name, "wait_event='PgSleep'")
+            waiter = launch("set application_name='" + waiter_name + "';" + statement + ';')
+            barrier(waiter_name, "wait_event_type='Lock' and wait_event='advisory'")
+            assert db.sql("select not exists(select 1 from pg_locks l join pg_stat_activity a using(pid) where a.application_name='" + waiter_name + "' and relation in('public.stock'::regclass,'public.stock_layers'::regclass,'public.sales'::regclass,'public.purchase_orders'::regclass,'public.journal_entries'::regclass) and mode in('RowShareLock','RowExclusiveLock','ShareRowExclusiveLock')); ") == 't', 'Document lock acquired before costing-mode lock'
+            # Cancel only our disposable fixture sleeper, closing its transaction
+            # and releasing the barrier after the waiting session is proven.
+            assert db.sql("select pg_cancel_backend(pid) from pg_stat_activity where application_name='" + holder_name + "';") == 't'
+            holder.wait(timeout=10)
+            waiter.wait(timeout=10)
+            assert holder.returncode != 0 and waiter.returncode != 0, 'Fixture must cancel barrier and reject missing-document input'
+            holder.stdout.close();holder.stderr.close();waiter.stdout.close();waiter.stderr.close()
+        print('PASS six real-session correction/posting versus activation-lock order races.', flush=True)
         if '--coverage-only' not in sys.argv:
             names = ['internal_transfer_corrections.sql','stock_document_corrections.sql','monetary_opening_corrections.sql','monetary_opening_creation.sql','sales_safe_posting.sql','wholesale_corrections.sql','asset_purchase_correction.sql','accurate_inventory_accounting.sql','master_item_code_history.sql','pos_merchant_fees.sql','pos_split_payments.sql','online_return_unit_posting.sql']
             for index, name in enumerate(names):
@@ -92,6 +133,26 @@ rollback;""")
                 if result.returncode:
                     raise RuntimeError(name + ': ' + result.stderr[-5000:])
                 print('PASS production-order fixture ' + name, flush=True)
+            average_fixtures = [
+                ('pos_merchant_fees.sql', 'moving_average_inventory.sql'),
+                ('purchase_invoice_lifecycle.sql', 'average_purchase_corrections.sql'),
+                ('pos_merchant_fees.sql', 'average_sale_corrections.sql'),
+            ]
+            for index, (fixture_name, suite_name) in enumerate(average_fixtures):
+                database = 'average_fixture_' + str(index)
+                db.sql('create database ' + database + ' template postgres;')
+                fixture = (ROOT / 'supabase/tests' / fixture_name).read_text().split('set local role authenticated;')[0]
+                source = bootstrap.fixture_owner_updates(fixture + (ROOT / 'supabase/tests' / suite_name).read_text())
+                result = subprocess.run(db.command() + ['-d', database], input=source, text=True, capture_output=True)
+                if result.returncode: raise RuntimeError(suite_name + ': ' + result.stderr[-5000:])
+                print('PASS preserved PR80 suite ' + suite_name, flush=True)
+            db.sql('create database average_fixture_clinic template postgres;')
+            clinic = (ROOT / 'supabase/tests/clinic_invoice_post.sql').read_text().split('set local role authenticated;')[0]
+            order = (ROOT / 'supabase/tests/sales_safe_posting.sql').read_text().split('create function public.test_sales_reject_order_line()')[0].replace('begin;', '', 1)
+            source = bootstrap.fixture_owner_updates((clinic + order + (ROOT / 'supabase/tests/moving_average_clinic.sql').read_text()).replace('update public.profiles ', 'update profiles '))
+            result = subprocess.run(db.command() + ['-d', 'average_fixture_clinic'], input=source, text=True, capture_output=True)
+            if result.returncode: raise RuntimeError('moving_average_clinic.sql: ' + result.stderr[-5000:])
+            print('PASS preserved PR80 clinic/compound/order-delivery suite.', flush=True)
             db.sql('create database fixture_returns template postgres;')
             command = db.command() + ['-d', 'fixture_returns']
             setup = (ROOT / 'supabase/tests/online_return_unit_posting.sql').read_text().split('set local role authenticated;')[0] + 'commit;'

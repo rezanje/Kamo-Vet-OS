@@ -236,6 +236,10 @@ declare actor public.profiles%rowtype;prior public.opening_balance_create_reques
  row_data jsonb;account uuid;equity uuid;amount numeric;side text;v_code text;lines jsonb:='[]';
  total_d numeric:=0;total_c numeric:=0;modal numeric;closed date;entry uuid:=gen_random_uuid();number text;
 begin
+ -- Keep mode stable through the atomic opening; inventory needs the import bridge.
+ if public.inventory_is_average() and exists(select 1 from jsonb_array_elements(p_rows) r where btrim(r->>'code')='1301' and coalesce((r->>'nilai')::numeric,0)<>0) then
+  raise exception 'Saldo awal persediaan average harus melalui impor resmi';
+ end if;
  select * into actor from public.profiles where id=auth.uid() and is_active for share;
  if not found or actor.role not in('OWNER','ADMIN','FINANCE') or not public.has_role_capability('all_branches') then raise exception 'Akses saldo awal ditolak' using errcode='42501';end if;
  if actor.role<>'OWNER' and exists(select 1 from public.role_modules where role=actor.role)

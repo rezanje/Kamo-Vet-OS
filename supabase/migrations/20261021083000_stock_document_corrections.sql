@@ -104,6 +104,8 @@ language plpgsql security definer set search_path='' as $$
 declare doc jsonb;line jsonb;wh public.warehouses%rowtype;actor public.profiles%rowtype;
  wh_id uuid;ref text;source_kind text;qty numeric;issued record;move public.stock_moves%rowtype;
  proof public.stock_document_issue_proofs%rowtype;result jsonb;layers jsonb;begin
+ -- Match PR80 activation/closing lock order before document and stock locks.
+ perform public.inventory_is_average();
  if p_kind='adjustment' then
   select to_jsonb(d),warehouse_id,no_adj into doc,wh_id,ref from public.inventory_adjustments d where id=p_id for update;
   select to_jsonb(i) into line from public.inventory_adjustment_items i where adjustment_id=p_id and item_id=p_item_id for update;
@@ -175,6 +177,8 @@ declare state jsonb;canonical jsonb;rows jsonb;wh uuid;branch uuid;r record;m re
  proof public.stock_document_issue_proofs%rowtype;
  original_in numeric:=0;original_out numeric:=0;
 begin
+ -- Take the existing costing-mode shared lock before document/stock/ledger locks.
+ if public.inventory_is_average() then raise exception 'Koreksi historis FIFO tidak tersedia saat HPP average aktif. Rekonsiliasi melalui Finance diperlukan';end if;
  state:=public.stock_correction_source(p_kind,p_id);wh:=(state->>'warehouse_id')::uuid;rows:=state->'rows';
  select branch_id into branch from public.warehouses where id=wh;
  if p_rows is null or jsonb_typeof(p_rows)<>'array' or jsonb_array_length(p_rows)=0 or jsonb_array_length(p_rows)>10000 then raise exception 'Rincian koreksi tidak valid';end if;
@@ -303,6 +307,8 @@ declare state jsonb;payload jsonb;prior public.stock_document_correction_request
  correction_id uuid:=gen_random_uuid();r record;t record;j record;rev uuid;replacement uuid;reversals uuid[]:='{}';
  wh uuid;branch uuid;date date:=(now() at time zone 'Asia/Jakarta')::date;cost record;after_state jsonb;result jsonb;
 begin
+ -- Take the existing costing-mode shared lock before document/stock/ledger locks.
+ if public.inventory_is_average() then raise exception 'Koreksi historis FIFO tidak tersedia saat HPP average aktif. Rekonsiliasi melalui Finance diperlukan';end if;
  if auth.uid() is null then raise exception 'Hanya Super Admin aktif yang dapat mengoreksi stok' using errcode='42501';end if;
  if p_request_key is null or length(btrim(p_request_key))<1 or length(p_request_key)>120 or p_reason is null or length(btrim(p_reason))<3 or length(p_reason)>1000 then raise exception 'Identitas permintaan dan alasan koreksi wajib diisi';end if;
  perform pg_advisory_xact_lock(hashtextextended('vetos:stock-correction:'||auth.uid()::text||':'||p_request_key,0));
