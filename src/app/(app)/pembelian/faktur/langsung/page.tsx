@@ -2,18 +2,28 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { readCompleteList } from "@/lib/checked-list";
-import { FakturLangsungForm } from "./FakturLangsungForm";
+import { FakturLangsungForm, type DirectInvoiceInitial } from "./FakturLangsungForm";
 
 // Faktur Pembelian Langsung — beli barang tanpa PO, barang masuk di dokumen yang sama.
 
 export default async function FakturLangsungPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; replace_invoice?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, replace_invoice } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+
+  let initial: DirectInvoiceInitial | undefined;
+  if (replace_invoice) {
+    const [{ data: source, error: sourceError }, { data: attachments, error: attachmentError }] = await Promise.all([
+      supabase.from("purchase_invoices").select("id,supplier_id,warehouse_id,tanggal,jatuh_tempo,no_faktur_pemasok,surat_jalan,keterangan,purchase_invoice_items(item_id,qty,harga,satuan,exp_date)").eq("id", replace_invoice).is("po_id", null).not("voided_at", "is", null).maybeSingle(),
+      supabase.from("document_attachments").select("path,nama,mime,ukuran").eq("modul", "pembelian").eq("ref_id", replace_invoice),
+    ]);
+    if (sourceError || attachmentError || !source) return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca. Kembali ke riwayat faktur.</div>;
+    initial = { ...source, lampiran: attachments ?? [] } as DirectInvoiceInitial;
+  }
 
   const [{ data: suppliers }, { data: warehouses }, items] = await Promise.all([
     // Tabel pemasok tidak punya penanda aktif/nonaktif — jangan saring kolom yang
@@ -48,7 +58,7 @@ export default async function FakturLangsungPage({
         </div>
       )}
 
-      <FakturLangsungForm userId={user?.id ?? ""}
+      <FakturLangsungForm initial={initial} userId={user?.id ?? ""}
         suppliers={(suppliers ?? []).map((s) => ({
           id: s.id as string, nama: s.nama as string, terminHari: Number(s.termin_hari) || 0,
         }))}

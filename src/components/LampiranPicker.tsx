@@ -14,13 +14,15 @@ export function LampiranPicker({
   name = "lampiran",
   folder,
   wajib = false,
+  initialFiles = [],
 }: {
   name?: string;
   folder: string;
   wajib?: boolean;
+  initialFiles?: LampiranDraft[];
 }) {
   const anchor = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<LampiranDraft[]>([]);
+  const [files, setFiles] = useState<LampiranDraft[]>(initialFiles);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 

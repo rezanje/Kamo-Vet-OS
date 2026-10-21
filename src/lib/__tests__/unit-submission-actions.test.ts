@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ writes: [] as string[], inactive: false }));
+const state = vi.hoisted(() => ({ writes: [] as string[], inactive: false, rpc: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "PO.TEST" }) }));
@@ -11,6 +11,7 @@ vi.mock("@/lib/harga-cabang", () => ({
   applyHargaCabang: (units: unknown[]) => units,
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
+  rpc: state.rpc,
   auth: { getUser: async () => ({ data: { user: { id: "user" } } }) },
   from(table: string) {
     let activeOnly = false;
@@ -31,7 +32,7 @@ import { buatFakturLangsung } from "../../app/(app)/pembelian/faktur/langsung/ac
 import { checkoutSale } from "../../app/(app)/pos/transaksi/actions";
 import { checkoutKasir } from "../../app/kasir/checkout";
 function form(values: Record<string, string>) { const input = new FormData(); Object.entries(values).forEach(([key, value]) => input.set(key, value)); return input; }
-beforeEach(() => { state.writes.length = 0; state.inactive = false; });
+beforeEach(() => { state.writes.length = 0; state.inactive = false; state.rpc.mockReset(); state.rpc.mockResolvedValue({data:null,error:{message:"Satuan tidak terdaftar"}}); });
 it.each([false, true])("rejects invalid PO units/inactive masters before inserting the header (inactive=%s)", async inactive => {
   state.inactive = inactive;
   await expect(buatPO(form({ branch_id: "branch", to_warehouse_id: "warehouse", items: JSON.stringify([{ item_id: "a", nama: "Medicine", qty: 2, harga_beli: 1000, satuan: "removed-box" }]) }))).rejects.toThrow(/Satuan|barang/);
@@ -40,6 +41,7 @@ it.each([false, true])("rejects invalid PO units/inactive masters before inserti
 it.each(["direct", "pos", "cashier"])("rejects an explicitly removed unit before writing a %s transaction", async kind => {
   const row = { item_id: "a", nama: "Medicine", qty: 2, harga: 1000, satuan: "removed-box" };
   const action = kind === "direct" ? buatFakturLangsung : kind === "pos" ? checkoutSale : checkoutKasir;
-  await expect(action(form({ checkout_key: "unit-fixture", supplier_id: "supplier", warehouse_id: "warehouse", branchId: "branch", customerId: "customer", salespersonId: "seller", metode: "Tunai", items: JSON.stringify([row]), cart: JSON.stringify([row]) }))).rejects.toThrow(/Satuan/);
+  await expect(action(form({ draft_key: "unit-fixture", checkout_key: "unit-fixture", supplier_id: "supplier", warehouse_id: "warehouse", branchId: "branch", customerId: "customer", salespersonId: "seller", metode: "Tunai", items: JSON.stringify([row]), cart: JSON.stringify([row]) }))).rejects.toThrow(/Satuan/);
+  if (kind === "direct") expect(state.rpc).toHaveBeenCalledExactlyOnceWith("create_direct_purchase_invoice", expect.objectContaining({ p_request_key: "unit-fixture", p_payload: expect.objectContaining({ items: [expect.objectContaining({ satuan: "removed-box" })] }) }));
   expect(state.writes).toEqual([]);
 });

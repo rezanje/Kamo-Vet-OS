@@ -7,6 +7,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 type Row = {
   id: string;
   no_faktur: string;
+  voided_at: string | null;
   no_faktur_pemasok: string | null;
   surat_jalan: string | null;
   tanggal: string;
@@ -33,7 +34,7 @@ export default async function FakturBeliPage({
 
   const { data } = await supabase
     .from("purchase_invoices")
-    .select("id, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
+    .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
@@ -89,11 +90,11 @@ export default async function FakturBeliPage({
             <tbody>
               {rows.map((r) => {
                 const dibayar = (r.purchase_invoice_payments ?? []).reduce((a, p) => a + Number(p.amount), 0);
-                const sisa = Math.max(0, Number(r.total) - dibayar);
+                const sisa = r.voided_at ? 0 : Math.max(0, Number(r.total) - dibayar);
                 const telat = sisa > 0 && r.jatuh_tempo < today;
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/pembelian/faktur/${r.id}`}>{r.no_faktur}</Link></td>
+                    <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/pembelian/faktur/${r.id}`}>{r.no_faktur}</Link>{r.voided_at && <span> · Dibatalkan</span>}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>
                       {r.no_faktur_pemasok ?? "—"}
                       {r.surat_jalan && <div style={{ fontSize: 9.5, color: "var(--td)" }}>SJ {r.surat_jalan}</div>}

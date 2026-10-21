@@ -1,0 +1,42 @@
+// @vitest-environment jsdom
+import React, { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+const state = vi.hoisted(() => ({ save: vi.fn() }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
+vi.mock("@/app/(app)/pembelian/faktur/langsung/actions", () => ({ buatFakturLangsung: state.save }));
+vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn() }));
+import { FakturLangsungForm, type DirectInvoiceInitial } from "@/app/(app)/pembelian/faktur/langsung/FakturLangsungForm";
+let root: Root; let host: HTMLDivElement;
+const initial: DirectInvoiceInitial = { id: "original", supplier_id: "supplier", warehouse_id: "warehouse", tanggal: "2026-10-21", jatuh_tempo: "2026-11-21", no_faktur_pemasok: "SUP-1", surat_jalan: "SJ-1", keterangan: "Keep this note", purchase_invoice_items: [{ item_id: "item", qty: 2, harga: 111, satuan: "box", exp_date: "2027-01-01" }], lampiran: [{ path: "pembelian/receipt.pdf", nama: "Receipt", mime: "application/pdf", ukuran: 100 }] };
+const render = () => act(async () => root.render(<FakturLangsungForm userId="owner" initial={initial} suppliers={[{ id: "supplier", nama: "Fiction", terminHari: 30 }]} warehouses={[{ id: "warehouse", label: "Warehouse" }]} items={[{ id: "item", code: "ITEM", name: "Fiction item", hargaBeli: 111, trackExpiry: true, satuan: [{ unit: "box", factor: 10, buy_price: 111 }] }]} />));
+beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); vi.clearAllMocks(); sessionStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+it("prefills replacement rows, supplier, warehouse, dates, attachment and notes; identity outlives draft expiry", async () => {
+  await render();
+  const data = new FormData(host.querySelector("form")!);
+  expect(data.get("supplier_id")).toBe("supplier"); expect(data.get("warehouse_id")).toBe("warehouse");
+  expect(data.get("tanggal")).toBe("2026-10-21"); expect(data.get("keterangan")).toBe("Keep this note");
+  expect(JSON.parse(String(data.get("items")))).toEqual(initial.purchase_invoice_items);
+  expect(JSON.parse(String(data.get("lampiran")))).toEqual(initial.lampiran);
+  const key = String(data.get("draft_key"));
+  expect(key).toBeTruthy();
+  sessionStorage.setItem("vetos:transaction-draft:v1:owner:transaction:invoice-direct:original", JSON.stringify({ version: 1, savedAt: 1, requestKey: key, fields: {}, snapshot: {} }));
+  await act(async () => root.unmount()); root = createRoot(host); await render();
+  expect(new FormData(host.querySelector("form")!).get("draft_key")).toBe(key);
+  expect(host.querySelector<HTMLButtonElement>('button[value="periksa"]')!.closest("details")).toBeNull();
+});
+it("keeps native fields and controlled rows after transport failure", async () => {
+  state.save.mockRejectedValue(new Error("Connection interrupted"));
+  await render();
+  const note = host.querySelector<HTMLInputElement>('input[name="keterangan"]')!;
+  await act(async () => { note.value = "User revised note"; note.dispatchEvent(new Event("input", { bubbles: true })); });
+  const before = new FormData(host.querySelector("form")!);
+  expect(before.get("keterangan")).toBe("User revised note");
+  const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Simpan faktur"))!;
+  await act(async () => button.click());
+  expect(state.save).toHaveBeenCalledOnce();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Connection interrupted");
+  const after = new FormData(host.querySelector("form")!);
+  for (const name of ["supplier_id", "warehouse_id", "tanggal", "jatuh_tempo", "items", "lampiran", "keterangan", "surat_jalan", "no_faktur_pemasok", "draft_key"]) expect(after.get(name)).toBe(before.get(name));
+});

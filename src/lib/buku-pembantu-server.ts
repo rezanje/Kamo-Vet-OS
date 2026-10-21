@@ -114,7 +114,7 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
 export async function mutasiHutang(supabase: SupabaseServer, sampai: string): Promise<Mutasi[]> {
   const [{ data: invs }, { data: rets }] = await Promise.all([
     supabase.from("purchase_invoices")
-      .select("id, no_faktur, tanggal, total, supplier_id, suppliers(nama), purchase_invoice_payments(id, tanggal, amount, dari_uang_muka)")
+      .select("id, no_faktur, tanggal, total, voided_on, supplier_id, suppliers(nama), purchase_invoice_payments(id, tanggal, amount, dari_uang_muka)")
       .lte("tanggal", sampai),
     supabase.from("purchase_returns")
       .select("no_retur, tanggal, total, purchase_orders(supplier_id, suppliers(nama))")
@@ -122,7 +122,7 @@ export async function mutasiHutang(supabase: SupabaseServer, sampai: string): Pr
   ]);
 
   type PiRow = {
-    id: string; no_faktur: string; tanggal: string; total: number;
+    id: string; no_faktur: string; tanggal: string; total: number; voided_on: string | null;
     supplier_id: string | null; suppliers: Rel<{ nama: string }>;
     purchase_invoice_payments: { id: string; tanggal: string; amount: number; dari_uang_muka: number | null }[] | null;
   };
@@ -136,7 +136,13 @@ export async function mutasiHutang(supabase: SupabaseServer, sampai: string): Pr
       keterangan: "Faktur pembelian", naik: Number(v.total) || 0, turun: 0,
       href: "/pembelian/faktur",
     });
+    if (v.voided_on && v.voided_on <= sampai) out.push({
+      tanggal: v.voided_on, pihakId, pihak, nomor: v.no_faktur, jenis: "Faktur",
+      keterangan: "Pembalik faktur pembelian", naik: 0, turun: Number(v.total) || 0,
+      href: `/pembelian/faktur/${v.id}`,
+    });
     for (const p of v.purchase_invoice_payments ?? []) {
+      if (tgl(p.tanggal) > sampai) continue;
       const jumlah = Number(p.amount) || 0;
       if (jumlah === 0) continue;
       const dariUM = Number(p.dari_uang_muka) || 0;

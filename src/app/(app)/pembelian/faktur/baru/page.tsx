@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
-import { FakturForm, type PoOption } from "./FakturForm";
+import { FakturForm, type PoOption, type PoInvoiceInitial } from "./FakturForm";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
@@ -26,21 +26,30 @@ type InvoiceRow = {
 export default async function FakturBaruPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; replace_invoice?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, replace_invoice } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
 
-  const [{ data: pos, error: poError }, { data: invs, error: invoiceReadError }] = await Promise.all([
-    supabase
+  let initial: PoInvoiceInitial | undefined;
+  if (replace_invoice) {
+    const { data: source, error: sourceError } = await supabase.from("purchase_invoices").select("id,po_id,tanggal,jatuh_tempo,no_faktur_pemasok,keterangan,purchase_invoice_items(po_item_id,qty,harga)").eq("id", replace_invoice).not("po_id", "is", null).not("voided_at", "is", null).maybeSingle();
+    if (sourceError || !source) return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca. Kembali ke riwayat faktur.</div>;
+    initial = source as PoInvoiceInitial;
+  }
+
+  const poQuery = supabase
       .from("purchase_orders")
       .select("id, no_po, tanggal, suppliers(nama, termin_hari), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, nama, satuan, faktor, items(unit))")
       .eq("status", "Diterima")
       .order("created_at", { ascending: false })
-      .limit(100),
-    supabase.from("purchase_invoices").select("po_id, purchase_invoice_items(po_item_id, item_id, qty, faktor)"),
+      .limit(100);
+
+  const [{ data: pos, error: poError }, { data: invs, error: invoiceReadError }] = await Promise.all([
+    initial ? poQuery.eq("id", initial.po_id) : poQuery,
+    supabase.from("purchase_invoices").select("po_id, purchase_invoice_items(po_item_id, item_id, qty, faktor)").is("voided_at", null),
   ]);
 
   const loadError = poError
@@ -121,7 +130,7 @@ export default async function FakturBaruPage({
         </div>
       )}
 
-      <FakturForm options={options} userId={userId} />
+      <FakturForm initial={initial} options={options} userId={userId} />
     </>
   );
 }

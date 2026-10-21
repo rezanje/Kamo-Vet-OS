@@ -2,16 +2,18 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+const navigation = vi.hoisted(() => ({ params: new URLSearchParams() }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => navigation.params }));
 vi.mock("@/app/(app)/pembelian/faktur/actions",()=>({buatFaktur:vi.fn()}));
 vi.mock("@/app/(app)/pembelian/actions",()=>({recoverPurchaseSubmission:vi.fn(),terimaBarang:vi.fn()}));
 vi.mock("next/link",()=>({default:({children,...props}:React.AnchorHTMLAttributes<HTMLAnchorElement>)=><a {...props}>{children}</a>}));
 import { FakturForm } from "@/app/(app)/pembelian/faktur/baru/FakturForm";
 import { transactionDraftName } from "@/components/TransactionDraft";
-import { PurchaseRecoveryComplete } from "@/components/PurchaseRequestKey";
+import { TransactionDraftComplete } from "@/components/LocalTransactionDraft";
 import { TerimaForm } from "@/app/(app)/pembelian/[id]/terima/TerimaForm";
 const options=[{id:"po1",label:"PO 1",terminHari:30,warning:null,items:[{po_item_id:"line1",item_id:"item1",nama:"Obat",harga_po:100,sisa:10,satuan:"box",faktor:10,blockedReason:null}]}];
 let container:HTMLDivElement;let root:Root;
-beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});sessionStorage.clear();container=document.createElement("div");document.body.append(container);root=createRoot(container);});
+beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});sessionStorage.clear();navigation.params=new URLSearchParams();container=document.createElement("div");document.body.append(container);root=createRoot(container);});
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.restoreAllMocks();});
 async function invoice(userId="owner"){await act(async()=>root.render(<FakturForm userId={userId} options={options}/>));}
 async function remount(){await act(async()=>root.unmount());root=createRoot(container);}
@@ -24,13 +26,13 @@ it("restores the actual purchase invoice PO, quantities, prices and supplier hea
  await edit(container.querySelector('input[title="Qty faktur dalam box"]')!,"3");
  await edit(container.querySelector('input[title="Harga faktur per box"]')!,"250");
  expect(JSON.parse(container.querySelector<HTMLInputElement>('input[name="items"]')!.value)).toEqual([{po_item_id:"line1",qty:3,harga:250}]);
- const key=container.querySelector<HTMLInputElement>('input[name="request_key"]')!.value;
+ const key=container.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value;
  await remount();await invoice();
  expect(container.querySelector<HTMLSelectElement>("select")!.value).toBe("po1");
  expect(container.querySelector<HTMLInputElement>('input[name="no_faktur_pemasok"]')!.value).toBe("INV-SUP-77");
  expect(container.querySelector<HTMLInputElement>('input[title="Qty faktur dalam box"]')!.value).toBe("3");
  expect(JSON.parse(container.querySelector<HTMLInputElement>('input[name="items"]')!.value)).toEqual([{po_item_id:"line1",qty:3,harga:250}]);
- expect(container.querySelector<HTMLInputElement>('input[name="request_key"]')!.value).toBe(key);
+ expect(container.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value).toBe(key);
 });
 it("does not restore another account's purchase draft",async()=>{
  await invoice();await edit(container.querySelector("select")!,"po1");await edit(container.querySelector('input[name="no_faktur_pemasok"]')!,"PRIVATE");
@@ -54,15 +56,17 @@ it("restores receipt quantities, damage notes and multiple expiry batches",async
 
 it("clears only its acknowledged draft, retaining unrelated confirmations",async()=>{
  await invoice();await edit(container.querySelector('input[name="no_faktur_pemasok"]')!,"ACK-ME");
- const key=container.querySelector<HTMLInputElement>('input[name="request_key"]')!.value;const name=transactionDraftName("owner","purchase","invoice");
- await act(async()=>root.render(<><PurchaseRecoveryComplete userId="owner" scope="invoice" requestKey="unrelated"/><FakturForm userId="owner" options={options}/></>));
+ const key=container.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value;const name=transactionDraftName("owner","transaction","invoice");
+ navigation.params=new URLSearchParams({draft_scope:"invoice",draft_done:"unrelated"});
+ await act(async()=>root.render(<><TransactionDraftComplete userId="owner"/><FakturForm userId="owner" options={options}/></>));
  expect(sessionStorage.getItem(name)).not.toBeNull();
- await act(async()=>root.render(<><PurchaseRecoveryComplete userId="owner" scope="invoice" requestKey={key}/><FakturForm userId="owner" options={options}/></>));
+ navigation.params=new URLSearchParams({draft_scope:"invoice",draft_done:key});
+ await act(async()=>root.render(<><TransactionDraftComplete userId="owner"/><FakturForm userId="owner" options={options}/></>));
  expect(sessionStorage.getItem(name)).toBeNull();
 });
 it.each(["expired","malformed"])("opens safely and warns for a %s draft",async(mode)=>{
  await invoice();await edit(container.querySelector('input[name="no_faktur_pemasok"]')!,"OLD");
- const name=transactionDraftName("owner","purchase","invoice");const saved=JSON.parse(sessionStorage.getItem(name)!);
+ const name=transactionDraftName("owner","transaction","invoice");const saved=JSON.parse(sessionStorage.getItem(name)!);
  if(mode==="expired")saved.savedAt=Date.now()-13*60*60*1000;else saved.snapshot.qty={line1:"bad"};
  sessionStorage.setItem(name,JSON.stringify(saved));await remount();await invoice();
  expect(container.querySelector<HTMLInputElement>('input[name="no_faktur_pemasok"]')!.value).toBe("");expect(container.textContent).toContain("Draf lama tidak dapat dipulihkan");

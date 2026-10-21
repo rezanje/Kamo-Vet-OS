@@ -138,7 +138,7 @@ export async function tarikPajakMasa(masa: string): Promise<HasilPajak> {
     const s = one(r.suppliers);
     identitas.set(r.no_faktur, {
       nama: s?.nama ?? "(tanpa pemasok)", npwp: s?.npwp ?? null, alamat: s?.alamat ?? null,
-      dpp: Math.max(0, (Number(r.total) || 0)), noFakturPajak: r.no_faktur_pemasok,
+      dpp: Math.max(0, (Number(r.total) || 0) - (masukanPer.get(r.no_faktur)?.ppn ?? 0)), noFakturPajak: r.no_faktur_pemasok,
     });
   }
 
