@@ -1,0 +1,74 @@
+{
+  "base": "9aafe37d13913735dacbee60ffd2099b43853db9",
+  "pr_heads": {
+    "68": "264fb237c978d2ec84cf09e65a9d7cbd0f241f61",
+    "69": "d40c22b923bb4b6141d38164081bdc4407c5ccea",
+    "70": "cc2a89e4d271b9b96ceaee14adab9ef84c2ea24c",
+    "71": "5dde2ef40a0928ba57ef521aae2468e3a2dd4cd3",
+    "72": "0eb82ad95445fb886405193537a3c092c49c9079",
+    "73": "5677efb4c407c5b7b624a3836694c71c6f4d5894",
+    "79": "8c85f53908242abbd55eee7786dfd840edad73b8"
+  },
+  "pending_migrations_in_order": [
+    {
+      "file": "supabase/migrations/20261021073000_wholesale_invoice_corrections.sql",
+      "sha256": "bc5737b98dc51d1c76864cc55c5bca9a8cd301ebc0be9648b8294fc87833275b"
+    },
+    {
+      "file": "supabase/migrations/20261021073019_internal_transfer_corrections.sql",
+      "sha256": "ddb461e49f573f74360c2360ef171a1d3ad83c1b54ab55fdcb6e05c45fa61c77"
+    },
+    {
+      "file": "supabase/migrations/20261021073519_monetary_opening_corrections.sql",
+      "sha256": "0fff4f3960779feace2027ad78c5429cf0cf2e46b638d2cae25c77f9c6c6aa75"
+    },
+    {
+      "file": "supabase/migrations/20261021074417_return_record_corrections.sql",
+      "sha256": "c385df61c6dd568f713a8a4ff1e4e6577d5bdb2e1ab023ace0f988246b528641"
+    },
+    {
+      "file": "supabase/migrations/20261021074519_fixed_asset_purchase_corrections.sql",
+      "sha256": "15be5ffb785e3c16ca9827abd477fdbc5dcce585b3d87db9632e9253fe0a79fb"
+    },
+    {
+      "file": "supabase/migrations/20261021083000_stock_document_corrections.sql",
+      "sha256": "c14f942196eb95358db385ba37bc7baced07f97826990106e181dcf36549e5f6"
+    },
+    {
+      "file": "supabase/migrations/20261021183000_correction_master_reference_guards.sql",
+      "sha256": "c3467a3df77584b686ab82bfc817174be71548fea03fb6a8bc9f94f7e626e395"
+    }
+  ],
+  "retained_production_prs": [
+    74,
+    75,
+    76,
+    77,
+    78,
+    80
+  ],
+  "excluded": [
+    "PR62",
+    "new costing implementation or activation",
+    "historical PDRY repair",
+    "automatic business corrections"
+  ],
+  "application_tests": {
+    "passed": 2401,
+    "failed": 0,
+    "files": 308,
+    "prior_baseline_failures": "Three failures from PR78 baseline are fixed by concurrent PR80."
+  },
+  "stock_and_journal_mutations_at_migration_time": false,
+  "original_integration_base": "c320e5b73364a60aca3b580563db12e4a7d1550e",
+  "compatibility": {
+    "costing_setting": "FIFO still active in fresh production readback; no activation performed",
+    "core_preservation": "PR80 stock_in/out, activation and closing definitions byte-identical before/after pending migration application",
+    "future_average": "New FIFO stock/return corrections fail closed if average is active; monetary-only openings remain usable, inventory openings require import bridge",
+    "mode_lock": "Six independent waiting-session races verify shared costing-mode lock is acquired before source/stock/ledger locks",
+    "migration_orders": [
+      "215 deployed-main migrations then seven pending",
+      "222 migrations in chronological clean replay"
+    ]
+  }
+}

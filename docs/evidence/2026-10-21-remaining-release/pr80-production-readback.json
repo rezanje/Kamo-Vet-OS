@@ -1,0 +1,26 @@
+[
+  {
+    "metadata": {
+      "schema": "public",
+      "costing": {
+        "method": "fifo",
+        "activated_at": null,
+        "closed_through": null
+      },
+      "database": "postgres",
+      "pending_applied": [],
+      "concurrent_migrations": [
+        "20261021020000",
+        "20261021120000",
+        "20261021123100",
+        "20261021124000",
+        "20261021140000"
+      ],
+      "costing_function_hashes": {
+        "activate_moving_average()": "67845da486d23fc1606937add5f60a55",
+        "stock_out_fifo(uuid,uuid,numeric,text,text,date)": "2ce2068132b010281d7f291d5d7c5e2e",
+        "stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)": "36c7907f626fb2f9085d1020163116f4"
+      }
+    }
+  }
+]

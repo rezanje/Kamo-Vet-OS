@@ -1,0 +1,34 @@
+Applied 215 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Applied after deployed main: 20261021073000_wholesale_invoice_corrections.sql
+Applied after deployed main: 20261021073019_internal_transfer_corrections.sql
+Applied after deployed main: 20261021073519_monetary_opening_corrections.sql
+PASS unexpected retired-overload authority aborts and rolls back fixture migration.
+Applied after deployed main: 20261021074417_return_record_corrections.sql
+Applied after deployed main: 20261021074519_fixed_asset_purchase_corrections.sql
+Applied after deployed main: 20261021083000_stock_document_corrections.sql
+Applied after deployed main: 20261021183000_correction_master_reference_guards.sql
+PASS production-order master JSON guard coverage.
+PASS newly created return-request JSON cannot reference a trashed master.
+PASS future-average correction boundary.
+PASS concurrent PR80 costing/activation/closing source preserved exactly.
+PASS six real-session correction/posting versus activation-lock order races.
+PASS production-order fixture internal_transfer_corrections.sql
+PASS production-order fixture stock_document_corrections.sql
+PASS production-order fixture monetary_opening_corrections.sql
+PASS production-order fixture monetary_opening_creation.sql
+PASS production-order fixture sales_safe_posting.sql
+PASS production-order fixture wholesale_corrections.sql
+PASS production-order fixture asset_purchase_correction.sql
+PASS production-order fixture accurate_inventory_accounting.sql
+PASS production-order fixture master_item_code_history.sql
+PASS production-order fixture pos_merchant_fees.sql
+PASS production-order fixture pos_split_payments.sql
+PASS production-order fixture online_return_unit_posting.sql
+PASS preserved PR80 suite moving_average_inventory.sql
+PASS preserved PR80 suite average_purchase_corrections.sql
+PASS preserved PR80 suite average_sale_corrections.sql
+PASS preserved PR80 clinic/compound/order-delivery suite.
+PASS production-order fixture return_setup
+PASS production-order fixture return_record_corrections.sql
+PASS production-order fixture return_date_windows.sql
+Removed owned PostgreSQL test container and volumes.

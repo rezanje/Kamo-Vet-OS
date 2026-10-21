@@ -160,7 +160,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
   const { data: returData } = await completeReportQuery(supabase
     .from("sales_returns")
-    .select("id, sale_id, tanggal, sales_return_items(item_id, qty, harga)", { count: "exact" })
+    .select("id, sale_id, tanggal, sales_return_items(item_id, qty, harga)", { count: "exact" }).is("voided_at", null)
     .gte("tanggal", awal).lte("tanggal", akhir));
 
   for (const r of (returData ?? []) as ReturRow[]) {

@@ -20,7 +20,7 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 
 type Faktur = {
   id: string; no_faktur: string; tanggal: string; jatuh_tempo: string;
-  dpp: number; ppn: number; total: number; status: string; customer_id: string | null;
+  dpp: number; ppn: number; total: number; carried_paid: number; status: string; customer_id: string | null;
   kategori: string | null;
   catatan: string | null;
   customers: Rel<{ name: string }>;
@@ -48,7 +48,7 @@ export default async function FakturJualPage({
 
   const [{ data: invData }, { data: klinikData }, { data: umData }, rekening] = await Promise.all([
     supabase.from("sales_invoices")
-      .select("id, no_faktur, tanggal, jatuh_tempo, dpp, ppn, total, status, customer_id, kategori, catatan, customers(name), sales_orders(no_pesanan), sales_receipts(jumlah)")
+      .select("id, no_faktur, tanggal, jatuh_tempo, dpp, ppn, total, carried_paid, status, customer_id, kategori, catatan, customers(name), sales_orders(no_pesanan), sales_receipts(jumlah)")
       .order("jatuh_tempo"),
     supabase.from("invoices")
       .select("id, visit_id, invoice_no, created_at, total, dp_amount, paid_status, visits(pets(name), customers(name), branches(name)), invoice_payments(amount)")
@@ -57,6 +57,11 @@ export default async function FakturJualPage({
     loadRekeningAktif(supabase),
   ]);
 
+  const creditResult = await supabase.from("wholesale_invoice_corrections")
+    .select("id,tanggal,customer_credit,sales_invoices!invoice_id(id,no_faktur,customers(name))").gt("customer_credit", 0).order("tanggal");
+  if (creditResult.error) throw new Error("Kredit pelanggan belum dapat dibaca: " + creditResult.error.message);
+  type Credit = { id: string; tanggal: string; customer_credit: number; sales_invoices: Rel<{ id: string; no_faktur: string; customers: Rel<{ name: string }> }> };
+  const credits = (creditResult.data ?? []) as unknown as Credit[];
   const faktur = (invData ?? []) as unknown as Faktur[];
   const fakturKlinik = (klinikData ?? []) as unknown as FakturKlinik[];
 
@@ -71,7 +76,7 @@ export default async function FakturJualPage({
   }
 
   const rows = faktur.map((f) => {
-    const sisa = sisaTagihan(Number(f.total), (f.sales_receipts ?? []) as { jumlah: number }[]);
+    const sisa = f.status === "batal" ? 0 : sisaTagihan(Number(f.total) - Number(f.carried_paid ?? 0), (f.sales_receipts ?? []) as { jumlah: number }[]);
     return { f, sisa, hari: agingDays(f.jatuh_tempo, today), bucket: agingBucket(f.jatuh_tempo, today) };
   });
   const berjalan = rows.filter((r) => r.sisa > 0 && r.f.status !== "batal");
@@ -112,6 +117,12 @@ export default async function FakturJualPage({
         </div>
       </div>
 
+      {credits.length > 0 && <div className="crm-sec">
+        <SecHeader num="02" title="KREDIT PELANGGAN DARI KOREKSI GROSIR" desc="Kewajiban pelanggan pada akun 2103; perlu tinjauan keuangan untuk penyelesaian. Tidak ada refund/transfer otomatis." />
+        <table className="tbl"><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Faktur asal</th><th>Kredit</th></tr></thead><tbody>
+          {credits.map(c => { const f = one(c.sales_invoices); return <tr key={c.id}><td>{c.tanggal}</td><td>{one(f?.customers ?? null)?.name ?? "—"}</td><td><Link href={`/penjualan/faktur/${f?.id}`}>{f?.no_faktur}</Link></td><td>{rp(Number(c.customer_credit))}</td></tr>; })}
+        </tbody></table>
+      </div>}
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader
           num="02" title="FAKTUR PENJUALAN RESELLER"
@@ -138,7 +149,9 @@ export default async function FakturJualPage({
                 return (
                   <tr key={f.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
-                      {f.no_faktur}
+                      <Link href={`/penjualan/faktur/${f.id}`}>{f.no_faktur}</Link>
+                      {f.status === "batal" && <div className="bge x">Batal · riwayat disimpan</div>}
+                      {Number(f.carried_paid) > 0 && <div style={{ fontSize: 10 }}>Pembayaran terbawa {rp(Number(f.carried_paid))}</div>}
                       {f.kategori !== "selisih_stok" && (
                         <div style={{ marginTop: 4 }}>
                           <Link href={`/keuangan/buku-besar/hpp/${encodeURIComponent(f.no_faktur)}`} style={{ fontSize: 9.5, fontWeight: 500 }}>
@@ -162,19 +175,19 @@ export default async function FakturJualPage({
                     <td style={{ fontSize: 11 }}>{tgl(f.jatuh_tempo)}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(f.total))}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: sisa > 0 ? "#b45309" : "#15803d" }}>
-                      {sisa > 0 ? rp(sisa) : "lunas"}
+                      {f.status === "batal" ? "batal" : sisa > 0 ? rp(sisa) : "lunas"}
                     </td>
                     <td style={{ fontSize: 10.5 }}>
                       {sisa > 0
                         ? <span className={`bge ${bucket === "current" ? "g" : bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[bucket]}</span>
-                        : <span className="bge g">Lunas</span>}
+                        : <span className={`bge ${f.status === "batal" ? "x" : "g"}`}>{f.status === "batal" ? "Batal" : "Lunas"}</span>}
                     </td>
                     {boleh && (
                       <td>
-                        {sisa > 0 && f.status !== "batal" && (
+                        {(
                           <details>
                             <summary className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-block" }}>
-                              Terima
+                              {sisa > 0 && f.status !== "batal" ? "Terima / periksa" : "Periksa penerimaan"}
                             </summary>
                             <TransactionForm userId={user?.id ?? ""} scope={`sales-payment:${f.id}`} action={terimaPembayaranJual} style={{ display: "flex", gap: 6, alignItems: "flex-end", padding: "8px 0", flexWrap: "wrap" }}>
                               <input type="hidden" name="invoice_id" value={f.id} />
@@ -202,9 +215,8 @@ export default async function FakturJualPage({
                                 <label className="flab">Tanggal</label>
                                 <input className="fi" type="date" name="tanggal" defaultValue={today} style={{ width: 140 }} />
                               </div>
-                              <SubmitButton className="btn-acc" icon="ti-cash" pendingText="Menyimpan…" style={{ padding: "7px 12px", fontSize: 11 }}>
-                                Simpan
-                              </SubmitButton>
+                              {sisa > 0 && f.status !== "batal" && <SubmitButton className="btn-acc" name="tindakan" value="simpan" icon="ti-cash" pendingText="Menyimpan…" style={{ padding: "7px 12px", fontSize: 11 }}>Simpan</SubmitButton>}
+                              <button type="submit" className="btn-def" name="tindakan" value="periksa" formNoValidate>Periksa hasil terakhir</button>
                             </TransactionForm>
                           </details>
                         )}

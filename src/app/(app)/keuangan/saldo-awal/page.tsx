@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { bacaSaldoAwal, hapusSaldoAwal } from "./actions";
+import { bacaSaldoAwal } from "./actions";
 import { SaldoAwalForm } from "./SaldoAwalForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -32,11 +32,9 @@ export default async function SaldoAwalPage({
         <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #93c5fd", color: "#1d4ed8", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <span>
             <i className="ti ti-info-circle" /> Saldo awal sudah tersimpan: {sudahAda.no_jurnal} per {fmtDate(sudahAda.tanggal)}.
-            Menyimpan lagi akan menggantikan yang lama.
+            Riwayat tetap tersimpan. Koreksi saldo pembuka kas/bank tersedia melalui rekening terkait.
           </span>
-          <form action={hapusSaldoAwal}>
-            <button type="submit" className="back-btn" style={{ fontSize: 11 }}>Hapus</button>
-          </form>
+          <Link href="/kas-bank/rekening" className="back-btn">Buka rekening</Link>
         </div>
       )}
 
@@ -84,7 +82,8 @@ export default async function SaldoAwalPage({
           title="ISI SALDO AWAL"
           desc="Baris di bawah sudah terisi dari hitungan di atas. Tambahkan sendiri kas, piutang, dan utang yang sudah ada sebelum sistem dipakai."
         />
-        <SaldoAwalForm key={user?.id} userId={user?.id ?? ""} akun={akun} usulan={usulan} />
+        {!sudahAda && <SaldoAwalForm key={user?.id} userId={user?.id ?? ""} akun={akun} usulan={usulan} />}
+        {sudahAda && <p>Saldo awal sudah tercatat. Buka rekening kas/bank untuk preview dan koreksi saldo pembukanya.</p>}
       </div>
     </>
   );

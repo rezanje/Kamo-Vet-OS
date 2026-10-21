@@ -220,7 +220,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
     queryError(salesResult);
     const sales = ((salesResult.data ?? []) as SaleRow[]).filter(isCompletedSale);
     if (sales.length > 0) {
-      const returnResult = await read(supabase.from("sales_returns").select("sale_id,total").in("sale_id", sales.map((sale) => sale.id)).lte("tanggal", filter.to));
+      const returnResult = await read(supabase.from("sales_returns").select("sale_id,total").is("voided_at", null).in("sale_id", sales.map((sale) => sale.id)).lte("tanggal", filter.to));
       queryError(returnResult);
       returns = (returnResult.data ?? []) as { sale_id: string; total: number }[];
     }
@@ -387,7 +387,7 @@ export async function collectStockBlock(scope: DashboardScope, filter: Dashboard
   const warehouseIds = warehouses.map((row: any) => row.id);
   const [stockResult, moveResult, itemResult] = await Promise.all([
     read(supabase.from("stock").select("warehouse_id,item_id,qty").in("warehouse_id", warehouseIds).lte("updated_at", end)),
-    read(supabase.from("stock_moves").select("warehouse_id,item_id,qty,tanggal").in("warehouse_id", warehouseIds).gte("tanggal", start.slice(0, 10)).lte("tanggal", filter.to)),
+    read(supabase.from("return_record_effective_stock_moves").select("warehouse_id,item_id,qty,tanggal").in("warehouse_id", warehouseIds).gte("tanggal", start.slice(0, 10)).lte("tanggal", filter.to)),
     read(supabase.from("items").select("id,min_stock").eq("is_active", true)),
   ]);
   for (const result of [stockResult, moveResult, itemResult]) queryError(result);
@@ -422,7 +422,7 @@ export async function collectPurchaseBlock(scope: DashboardScope, filter: Dashbo
     .in("po_id", poIds).gte("tanggal", filter.from).lte("tanggal", filter.to));
   queryError(invoiceResult);
   const returnsResult = await read(supabase.from("purchase_returns")
-    .select("total,tanggal,po_id").in("po_id", poIds).gte("tanggal", filter.from).lte("tanggal", filter.to));
+    .select("total,tanggal,po_id").is("voided_at", null).in("po_id", poIds).gte("tanggal", filter.from).lte("tanggal", filter.to));
   queryError(returnsResult);
   const receivedByKey = new Map<string, number>();
   for (const invoice of (invoiceResult.data ?? []) as any[]) {

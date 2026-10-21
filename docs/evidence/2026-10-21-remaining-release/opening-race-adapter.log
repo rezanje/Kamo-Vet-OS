@@ -1,0 +1,6 @@
+Tool session14102 exit0; output transcribed from successful owned Docker adapter run:
+Applied217 repository migrations to isolated PostgreSQL16.
+monetary_opening_corrections.sql: PASS
+monetary_opening_creation.sql: PASS
+PASS real concurrent duplicate/recovery, competing revisions, ledger change, both reconciliation orderings, period closure and current account/actor authorization.
+Adapter imported DisposablePostgres, assigned Source.PSQL=db.command(), then invoked monetary-opening concurrency(Source()); no host createdb or external DB.

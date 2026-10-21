@@ -1,0 +1,12 @@
+Applied 210 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Applied after deployed main: 20261021073000_wholesale_invoice_corrections.sql
+Applied after deployed main: 20261021073019_internal_transfer_corrections.sql
+Applied after deployed main: 20261021073519_monetary_opening_corrections.sql
+PASS unexpected retired-overload authority aborts and rolls back fixture migration.
+Applied after deployed main: 20261021074417_return_record_corrections.sql
+Applied after deployed main: 20261021074519_fixed_asset_purchase_corrections.sql
+Applied after deployed main: 20261021083000_stock_document_corrections.sql
+Applied after deployed main: 20261021183000_correction_master_reference_guards.sql
+PASS production-order master JSON guard coverage.
+PASS newly created return-request JSON cannot reference a trashed master.
+Removed owned PostgreSQL test container and volumes.

@@ -6,7 +6,7 @@ import { assertRole } from "@/lib/master-guard";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { cekPeriode } from "@/lib/jurnal-guard";
-import { jurnalPelepasan, jurnalTambahNilai, nilaiBuku } from "@/lib/aset";
+import { jurnalPelepasan, nilaiBuku } from "@/lib/aset";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -69,35 +69,14 @@ export async function tambahNilaiAset(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) gagal(pesanPeriode);
 
-  const lama = Number(aset!.harga_perolehan);
-  const baru = lama + tambahan;
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data: change, error: changeError } = await supabase.from("asset_changes").insert({
-    asset_id: id, tanggal, jenis: "nilai", nilai_lama: lama, nilai_baru: baru,
-    keterangan, created_by: user?.id ?? null,
-  }).select("id").single();
-  if (changeError || !change) return gagal("Perubahan aset belum terkonfirmasi. Periksa aset sebelum menyimpan ulang.");
-  const { error: draftWriteError1 } = await supabase.from("fixed_assets").update({ harga_perolehan: baru }).eq("id", id).select("id").single();
-  if (draftWriteError1) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
-
+  const requestKey = String(formData.get("draft_key") ?? "");
+  if (!requestKey) gagal("Identitas penambahan nilai tidak tersedia. Muat ulang formulir.");
   const kasCode = await kodeAkunBayar(supabase, metode, aset!.branch_id, accountId);
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Penambahan nilai aset: ${aset!.nama}`,
-    source: "asset-change",
-    sourceRef: change.id,
-    branchId: aset!.branch_id,
-    lines: jurnalTambahNilai(tambahan, kasCode),
+  const { data, error } = await supabase.rpc("add_fixed_asset_value_atomic", {
+    p_asset_id: id, p_tanggal: tanggal, p_amount: tambahan, p_credit_code: kasCode,
+    p_reason: keterangan, p_request_key: requestKey,
   });
-  await assertDraftJournal(supabase, {
-    tanggal,
-    deskripsi: `Penambahan nilai aset: ${aset!.nama}`,
-    source: "asset-change",
-    sourceRef: change.id,
-    branchId: aset!.branch_id,
-    lines: jurnalTambahNilai(tambahan, kasCode),
-  });
+  if (error || !data?.change_id || !data.journal_id) gagal(error?.message ?? "Penambahan nilai belum terkonfirmasi. Periksa aset sebelum mengirim ulang.");
 
   redirect(`${back(id)}?success=${encodeURIComponent("Nilai aset bertambah — penyusutan berikutnya ikut menyesuaikan.")}${transactionDraftAck(formData)}`);
 }

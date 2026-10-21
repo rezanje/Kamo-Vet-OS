@@ -1,0 +1,7 @@
+Applied 222 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS production-order master JSON guard coverage.
+PASS newly created return-request JSON cannot reference a trashed master.
+PASS future-average correction boundary.
+PASS concurrent PR80 costing/activation/closing source preserved exactly.
+PASS six real-session correction/posting versus activation-lock order races.
+Removed owned PostgreSQL test container and volumes.

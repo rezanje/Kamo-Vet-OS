@@ -34,12 +34,21 @@ export default async function PenyesuaianPage({
     .order("created_at", { ascending: false })
     .limit(100);
   const rows = (data ?? []) as unknown as Row[];
+  const { data: effective, error: effectiveError } = rows.length ? await supabase.rpc("read_stock_document_effective", { p_kind: "adjustment", p_ids: rows.map(r => r.id) }) : { data: null, error: null };
+  for (const row of rows) {
+    const current = effective?.[row.id] as { rows: { value?: number }[] } | undefined;
+    if (current) {
+      row.nilai_masuk = current.rows.reduce((sum, r) => sum + Math.max(Number(r.value ?? 0), 0), 0);
+      row.nilai_keluar = current.rows.reduce((sum, r) => sum + Math.max(-Number(r.value ?? 0), 0), 0);
+    }
+  }
 
   const totalKeluar = rows.reduce((a, r) => a + Number(r.nilai_keluar), 0);
   const totalMasuk = rows.reduce((a, r) => a + Number(r.nilai_masuk), 0);
 
   return (
     <>
+      {effectiveError && <div className="p2ban" role="status">Koreksi belum dapat diperiksa. Ringkasan memakai nilai dokumen asal; muat ulang sebelum menggunakannya.</div>}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Link href="/pos" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>

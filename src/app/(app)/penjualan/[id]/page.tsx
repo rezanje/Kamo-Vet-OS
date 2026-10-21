@@ -34,7 +34,7 @@ type Sale = SalePaymentSource & {
 };
 
 type ReturRow = {
-  id: string; no_retur: string | null; tanggal: string; total: number;
+  id: string; no_retur: string | null; tanggal: string; total: number; voided_at: string | null;
   sales_return_items: { id: string; nama: string; qty: number }[] | null;
 };
 
@@ -63,7 +63,7 @@ export default async function PenjualanDetailPage({
 
   const { data: returData } = await supabase
     .from("sales_returns")
-    .select("id, no_retur, tanggal, total, sales_return_items(id, nama, qty)")
+    .select("id, no_retur, tanggal, total, voided_at, sales_return_items(id, nama, qty)")
     .eq("sale_id", id)
     .order("tanggal", { ascending: false });
   const returs = (returData ?? []) as unknown as ReturRow[];
@@ -165,7 +165,8 @@ export default async function PenjualanDetailPage({
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {returs.map((r) => (
               <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", border: ".5px solid var(--bd)", borderRadius: 6, fontSize: 11.5 }}>
-                <span style={{ fontWeight: 500 }}>{r.no_retur ?? "—"}</span>
+                <Link href={`/penjualan/retur/${r.id}`} style={{ fontWeight: 500 }}>{r.no_retur ?? "—"}</Link>
+                {r.voided_at && <span>Dibatalkan / diganti · nilai asal</span>}
                 <span style={{ color: "var(--tm)", fontSize: 11 }}>
                   {new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" })}
                 </span>

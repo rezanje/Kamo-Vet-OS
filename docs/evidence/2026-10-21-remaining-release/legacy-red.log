@@ -1,0 +1,13 @@
+Applied 210 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Applied after deployed main: 20261021073000_wholesale_invoice_corrections.sql
+Applied after deployed main: 20261021073019_internal_transfer_corrections.sql
+Applied after deployed main: 20261021073519_monetary_opening_corrections.sql
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-remaining/scripts/test-remaining-production-order.py", line 36, in <module>
+    db.sql('begin;\n' + path.read_text() + '\ncommit;')
+  File "/workspace/kamo-remaining/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  Canonical return consumer changed: create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric)
+CONTEXT:  PL/pgSQL function inline_code_block line 15 at RAISE
+

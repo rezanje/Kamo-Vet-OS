@@ -1,0 +1,55 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { ReturnCorrectionForm, type CorrectionReturnLine } from "./ReturnCorrectionForm";
+
+export async function ReturnRecordDetail({ kind, id, error, success }: {
+  kind: "sales" | "purchase"; id: string; error?: string; success?: string;
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
+  const db = await createClient();
+  const base = kind === "sales" ? "/penjualan/retur" : "/pembelian/retur";
+  const table = kind === "sales" ? "sales_returns" : "purchase_returns";
+  const itemTable = kind === "sales" ? "sales_return_items" : "purchase_return_items";
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) notFound();
+  const [document, items, profile, provenance, audit, parent] = await Promise.all([
+    db.from(table).select("*").eq("id", id).maybeSingle(),
+    db.from(itemTable).select("*").eq("return_id", id),
+    db.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle(),
+    db.from("return_record_postings").select("return_id,snapshot").eq("kind", kind).eq("return_id", id).maybeSingle(),
+    db.from("return_record_corrections").select("*").eq("kind", kind).eq("return_id", id).maybeSingle(),
+    db.from("return_record_corrections").select("return_id").eq("kind", kind).eq("replacement_id", id).maybeSingle(),
+  ]);
+  if ([document, items, profile, provenance, audit, parent].some(result => result.error)) throw new Error("Rincian retur dan audit belum dapat dimuat.");
+  const record = document.data;
+  if (!record) notFound();
+  const rows = (items.data ?? []) as CorrectionReturnLine[];
+  const owner = profile.data?.role === "OWNER" && profile.data.is_active;
+  const canCorrect = owner && !record.voided_at && provenance.data;
+  const journals = (provenance.data?.snapshot?.journals ?? []) as { id: string; no_jurnal: string }[];
+  return <>
+    <Link className="back-btn" href={base}>Kembali ke daftar retur</Link>
+    <h2>{record.no_retur}</h2>
+    {error && <div className="p2ban" role="alert">{error}</div>}
+    {success && <div className="p2ban" role="status">Koreksi tersimpan. Dokumen asal dan audit tetap tersedia.</div>}
+    <div className="crm-sec">
+      <p>{record.voided_at ? "Dibatalkan / diganti" : "Aktif"} · {record.tanggal} · Revisi {record.revision}</p>
+      <p>Nilai dokumen: Rp {Number(record.total).toLocaleString("id-ID")} · {record.keterangan}</p>
+      {parent.data && <p>Pengganti dari <Link href={`${base}/${parent.data.return_id}`}>dokumen asal</Link></p>}
+      {rows.map(row => <p key={row.id}>{row.nama} · {Number(row.selected_qty ?? row.qty ?? 0)} {row.satuan ?? "satuan dasar"}</p>)}
+      <p>Jurnal asal: {journals.length ? journals.map(j => j.no_jurnal).join(", ") : "Provenance lama belum tersedia"}</p>
+    </div>
+    {audit.data && <div className="crm-sec">
+      <h3>Audit koreksi</h3>
+      <p>{audit.data.created_at} · Pengguna {audit.data.created_by}</p>
+      <p>{audit.data.reason}</p><p>Bukti fisik: {audit.data.physical_evidence}</p>
+      <p>Jurnal pembalik: {(audit.data.reversal_journal_ids as string[]).join(", ")}</p>
+      {audit.data.replacement_id && <Link href={`${base}/${audit.data.replacement_id}`}>Lihat catatan pengganti</Link>}
+    </div>}
+    {owner && !record.voided_at && !provenance.data && <p role="alert">Retur lama belum memiliki tautan pasti ke stok, jurnal, dan refund. Koreksi otomatis diblokir; rekonsiliasi bukti sumber diperlukan.</p>}
+    {canCorrect && <div className="crm-sec"><h3>Koreksi catatan retur</h3>
+      <ReturnCorrectionForm key={`${user.id}:${id}:${record.revision}`} userId={user.id} kind={kind} id={id} revision={record.revision} rows={rows} />
+    </div>}
+  </>;
+}

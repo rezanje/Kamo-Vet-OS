@@ -1,0 +1,13 @@
+Applied 217 repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.
+PASS: asset correction SQL suite
+PASS: real lock wait / identical retry
+PASS: real lock wait / berubah
+PASS: real lock wait / penyusutan
+PASS: real lock wait / hitung ulang penyusutan
+PASS: real lock wait / Rekonsiliasi bank
+PASS: real lock wait / both operations serialize
+PASS: real lock wait / dilepas
+PASS: real lock wait / hitung ulang pelepasan
+PASS: real lock wait / identical retry
+PASS: real lock wait / OWNER aktif
+PASS: concurrency, stale depreciation, reconciliation and permission revocation

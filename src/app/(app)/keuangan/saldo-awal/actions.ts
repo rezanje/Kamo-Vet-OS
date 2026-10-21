@@ -5,14 +5,11 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAccountBalances } from "@/lib/ledger";
-import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
-import { formatNomor } from "@/lib/no-dokumen";
-import { cekPeriode } from "@/lib/jurnal-guard";
+import { assertRole } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 import { inventoryMethod, loadInventoryReport } from "@/lib/hpp-reports-server";
 import {
-  AKUN_MODAL_PEMILIK, jurnalSaldoAwal, nilaiPersediaan, selisihSaldoAwal,
-  type BarisSaldoAwal,
+  nilaiPersediaan, selisihSaldoAwal,
 } from "@/lib/saldo-awal";
 
 const BACK = "/keuangan/saldo-awal";
@@ -93,78 +90,27 @@ export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createCl
   };
 }
 
-/** Posting saldo awal: satu jurnal, selisihnya otomatis ke Modal Pemilik. */
+/** Initial entry only; monetary corrections have their own reviewed workflow. */
 export async function simpanSaldoAwal(formData: FormData) {
-  const supabase = await createClient();
-  const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
-
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) gagal("Tanggal saldo awal tidak valid.");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  let baris: BarisSaldoAwal[] = [];
-  try {
-    baris = JSON.parse(String(formData.get("baris") ?? "[]")) as BarisSaldoAwal[];
-  } catch {
-    baris = [];
-  }
-  baris = baris.filter((b) => b.code?.trim() && Number(b.nilai));
-  if (baris.length === 0) gagal("Isi minimal satu baris saldo awal.");
-
-  const { lines, modal } = jurnalSaldoAwal(baris);
-  if (lines.length === 0) gagal("Semua nilai nol — tidak ada yang perlu diposting.");
-
-  // Semua kode akun wajib ada, termasuk akun modalnya.
-  const codes = [...new Set(lines.map((l) => l.code))];
-  const { data: accounts } = await supabase.from("coa_accounts").select("id, code").in("code", codes);
-  const codeToId = new Map((accounts ?? []).map((a) => [a.code as string, a.id as string]));
-  for (const c of codes) if (!codeToId.has(c)) gagal(`Akun ${c} tidak ada di daftar akun.`);
-
-  // Saldo awal hanya boleh satu (dijaga juga unique index di DB). Yang lama dihapus
-  // supaya angkanya bisa dikoreksi sebelum go-live tanpa menumpuk jurnal ganda.
-  const { data: lama } = await supabase
-    .from("journal_entries").select("id").eq("source", "saldo-awal");
-  for (const l of lama ?? []) await supabase.from("journal_entries").delete().eq("id", l.id);
-
-  // Posting langsung (bukan postJournal best-effort) — saldo awal wajib ketahuan gagalnya.
-  const prefix = `${prefixJurnal(tanggal)}-`;
-  const no_jurnal = formatNomor(prefix, await nextSeqJurnal(supabase, tanggal), 4);
-
-  const { data: entry, error: entryErr } = await supabase
-    .from("journal_entries")
-    .insert({
-      no_jurnal, tanggal, deskripsi: `Saldo awal per ${tanggal}`,
-      source: "saldo-awal", source_ref: tanggal, branch_id: null,
-    })
-    .select("id").single();
-  if (entryErr || !entry) gagal(`Gagal menyimpan saldo awal: ${entryErr?.message ?? "tidak diketahui"}`);
-
-  const { error: lineErr } = await supabase.from("journal_lines").insert(
-    lines.map((l) => ({ entry_id: entry!.id, account_id: codeToId.get(l.code), debit: l.debit, credit: l.credit })),
-  );
-  if (lineErr) {
-    await supabase.from("journal_entries").delete().eq("id", entry!.id);
-    gagal(`Gagal menyimpan baris saldo awal: ${lineErr.message}`);
-  }
-
-  revalidatePath(BACK);
-  const arah = modal >= 0 ? "Modal Pemilik" : "defisit modal";
-  redirect(`${BACK}?success=${encodeURIComponent(
-    `Saldo awal per ${tanggal} tersimpan (${no_jurnal}) — selisih Rp ${Math.abs(modal).toLocaleString("id-ID")} masuk ${arah} (${AKUN_MODAL_PEMILIK}).`,
-  )}${transactionDraftAck(formData)}`);
+  const supabase = await assertRole(BACK, "saldo awal", ["OWNER", "ADMIN", "FINANCE"]);
+  const gagal = (message: string): never => redirect(`${BACK}?error=${encodeURIComponent(message)}`);
+  const key = String(formData.get("draft_key") ?? "").trim();
+  if (!key || key.length > 120) gagal("Identitas simpan belum tersedia. Muat ulang formulir.");
+  let rows: unknown;
+  try { rows = JSON.parse(String(formData.get("baris") ?? "[]")); }
+  catch { gagal("Baris saldo awal tidak valid."); }
+  if (!Array.isArray(rows) || !rows.length) gagal("Isi minimal satu baris saldo awal.");
+  const { data, error } = await supabase.rpc("create_opening_balance_atomic", {
+    p_request_key: key,
+    p_tanggal: String(formData.get("tanggal") ?? "").trim() || hariIniWIB(),
+    p_rows: rows,
+  });
+  if (error || !data?.entry_id) gagal(error?.message ?? "Saldo awal belum terkonfirmasi. Isian tetap tersedia.");
+  revalidatePath("/", "layout");
+  redirect(`${BACK}?success=${encodeURIComponent("Saldo awal tersimpan. Koreksi moneter tersedia melalui rekening kas/bank.")}${transactionDraftAck(formData)}`);
 }
 
-/** Hapus saldo awal (koreksi sebelum go-live). */
+/** Kept to reject stale clients invoking the former destructive action. */
 export async function hapusSaldoAwal() {
-  const supabase = await createClient();
-  const { data: lama } = await supabase.from("journal_entries").select("id, tanggal").eq("source", "saldo-awal");
-  for (const l of lama ?? []) {
-    const pesan = await cekPeriode(supabase, l.tanggal as string);
-    if (pesan) redirect(`${BACK}?error=${encodeURIComponent(pesan)}`);
-    await supabase.from("journal_entries").delete().eq("id", l.id);
-  }
-  revalidatePath(BACK);
-  redirect(`${BACK}?success=${encodeURIComponent("Saldo awal dihapus — silakan isi ulang.")}`);
+  redirect(`${BACK}?error=${encodeURIComponent("Riwayat saldo awal tidak boleh dihapus. Gunakan koreksi saldo awal pada rekening kas/bank.")}`);
 }

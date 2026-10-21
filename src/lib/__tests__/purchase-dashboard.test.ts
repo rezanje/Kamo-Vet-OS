@@ -15,7 +15,7 @@ async function purchase(rows: object[], returns: object[] = []) {
   const client = { from: (table: string) => {
     let data = tables[table] ?? [];
     const query = {
-      select: () => query, eq: () => query, neq: () => query, in: () => query, gte: () => query, lte: () => query,
+      select: () => query, order: () => query, range: async () => ({ data, count: data.length, error: null }), eq: () => query, neq: () => query, in: () => query, gte: () => query, lte: () => query,
       is: (column: string, value: unknown) => { data = data.filter(row => (row as Record<string, unknown>)[column] === value); return query; },
       then: (resolve: (result: { data: object[] }) => unknown) => Promise.resolve(resolve({ data })),
     };
@@ -40,9 +40,15 @@ describe("purchase dashboard keeps received but unbilled liability", () => {
     expect(await purchase([invoice(4, 480, "2026-10-21"), invoice(4, 500)])).toEqual({ total: 500, lunas: 0, belumLunas: 500 });
   });
   it("applies a pre-invoice return once before and after the gross invoice", async () => {
-    const returns = [{ po_id: "po", total: 100 }];
+    const returns = [{ po_id: "po", total: 100, voided_at: null }];
     const expected = { total: 400, lunas: 100, belumLunas: 300 };
     expect(await purchase([], returns)).toEqual(expected);
     expect(await purchase([invoice(4, 400)], returns)).toEqual(expected);
+  });
+  it("counts the active return replacement once", async () => {
+    expect(await purchase([invoice(4, 400)], [
+      { po_id: "po", total: 100, voided_at: "2026-10-21" },
+      { po_id: "po", total: 60, voided_at: null },
+    ])).toEqual({ total: 400, lunas: 60, belumLunas: 340 });
   });
 });
