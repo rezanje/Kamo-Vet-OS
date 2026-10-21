@@ -206,11 +206,12 @@ select pg_temp.assert_ok((select qty_left=3 from stock_layers where id='e8800000
 delete from sales where no_struk='VOID.CAPTURE';
 savepoint other_fifo_callers;
 do $$ declare src text;issued record;begin
- foreach src in array array['produksi','opname','penyesuaian','retur-beli','klinik-edit','terima-permintaan'] loop
+ foreach src in array array['produksi','opname','penyesuaian','retur-beli','klinik-edit'] loop
   select * into issued from stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,src,'OTHER.FIFO');
   if issued.cost<>12.345 or issued.shortfall<>0 or jsonb_array_length(issued.takes)<>1 then raise exception 'Shared FIFO caller changed: %',src;end if;
  end loop;
 end$$;
+select pg_temp.reject($q$select stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,'terima-permintaan','OTHER.FIFO')$q$,'request receipt must use its atomic posting RPC');
 select pg_temp.assert_ok(not exists(select 1 from stock_moves where source_ref='OTHER.FIFO' and (fifo_takes is not null or fifo_shortfall is not null)),'non-sale callers do not capture sale provenance');
 rollback to other_fifo_callers;
 -- Other stock-out callers preserve return shape and never capture sale provenance.

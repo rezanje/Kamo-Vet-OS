@@ -138,7 +138,7 @@ export function BarangMatrixTable({ rows, bolehKelola, bolehLihatHpp = false, st
               {selectedColumns.map((column) => (
                 <th key={column.key} style={{ width: columnWidth[column.key], minWidth: columnWidth[column.key] }}>{column.label}</th>
               ))}
-              {bolehLihatHpp && <th style={{ width: 180, minWidth: 180 }}>HPP rata-rata FIFO</th>}
+              {bolehLihatHpp && <th style={{ width: 180, minWidth: 180 }}>HPP rata-rata persediaan</th>}
               <th style={{ width: 120, minWidth: 120 }}>Tindakan</th>
               {bolehKelola && <th style={{ width: 130, minWidth: 130 }}>Aksi</th>}
             </tr>

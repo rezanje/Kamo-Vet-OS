@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { bolehBukaPath } from "./akses";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import { hariIniWIB } from "./tanggal";
-import { compoundSales, compoundSummary, validReportDate, valueInventory, type Numeric } from "./hpp-reports";
+import { compoundSales, compoundSummary, validReportDate, valueInventory, type Numeric, type InventoryMethod } from "./hpp-reports";
 
 export type ReportKind = "inventory" | "compound";
 export const REPORT_PATHS = { inventory: "/laporan/nilai-persediaan", compound: "/laporan/margin-racikan" } as const;
@@ -86,22 +86,31 @@ export function normalizeReportFilters(params: ReportParams): ReportFilters {
 }
 type Warehouse = { id: string; branch_id: string; code: string; name: string; type: string; is_active: boolean };
 type Item = { id: string; code: string; name: string; unit: string; is_active: boolean };
-type Stock = { warehouse_id: string; item_id: string; qty: Numeric };
+type Stock = { warehouse_id: string; item_id: string; qty: Numeric; average_cost?: Numeric };
 type Layer = { warehouse_id: string; item_id: string; qty_left: Numeric; unit_cost: Numeric };
 const matches = (q: string, values: string[]) => !q || values.some(value => value.toLocaleLowerCase("id-ID").includes(q.toLocaleLowerCase("id-ID")));
+
+export async function inventoryMethod(client: SupabaseClient): Promise<InventoryMethod> {
+  const { data, error } = await client.rpc("inventory_is_average");
+  if (error?.code === "PGRST202") return "fifo";
+  if (error) throw new Error(`Data laporan gagal dibaca: ${error.message}`);
+  if (typeof data !== "boolean") throw new Error("Data laporan gagal dibaca: metode HPP tidak tersedia");
+  return data ? "moving_average" : "fifo";
+}
 
 export async function loadInventoryReport(client: SupabaseClient, params: ReportParams, itemIds?: string[], path: string = REPORT_PATHS.inventory) {
   const filters = normalizeReportFilters(params);
   const scope = await reportScope(client, path, filters.cabang);
+  const method = await inventoryMethod(client);
   const warehouses = scope.branchIds.length ? await tableRows<Warehouse>(client, "warehouses", "id,branch_id,code,name,type,is_active", query => query.in("branch_id",scope.branchIds)) : [];
   if (filters.gudang && !warehouses.some(row => row.id === filters.gudang)) throw new ReportAccessError("Akses gudang ditolak", 403);
   const warehouseIds = warehouses.filter(row => !filters.gudang || row.id === filters.gudang).map(row => row.id);
   const [stock, layers] = warehouseIds.length ? await Promise.all([
-    tableRows<Stock>(client,"stock","id,warehouse_id,item_id,qty", query => itemIds ? query.in("warehouse_id",warehouseIds).in("item_id",itemIds) : query.in("warehouse_id",warehouseIds)),
+    tableRows<Stock>(client,"stock",`id,warehouse_id,item_id,qty${method === "moving_average" ? ",average_cost" : ""}`, query => itemIds ? query.in("warehouse_id",warehouseIds).in("item_id",itemIds) : query.in("warehouse_id",warehouseIds)),
     tableRows<Layer>(client,"stock_layers","id,warehouse_id,item_id,qty_left,unit_cost", query => itemIds ? query.in("warehouse_id",warehouseIds).gt("qty_left",0).in("item_id",itemIds) : query.in("warehouse_id",warehouseIds).gt("qty_left",0)),
   ]) : [[],[]] as [Stock[],Layer[]];
-  const values = valueInventory(stock.map(row => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qty: row.qty })),
-    layers.map(row => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qtyLeft: row.qty_left, unitCost: row.unit_cost })));
+  const values = valueInventory(stock.map(row => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qty: row.qty, averageCost: row.average_cost })),
+    layers.map(row => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qtyLeft: row.qty_left, unitCost: row.unit_cost })), method);
   const items = await byIds<Item>(client,"items","id,code,name,unit,is_active","id",values.map(row => row.itemId));
   const itemMap = new Map(items.map(row => [row.id,row]));
   const warehouseMap = new Map(warehouses.map(row => [row.id,row]));
@@ -115,9 +124,10 @@ export async function loadInventoryReport(client: SupabaseClient, params: Report
   }).filter(row => matches(filters.q,[row.code,row.name,row.warehouse,row.branch]) && (!filters.masalah || row.flags.length > 0))
     .sort((a,b) => a.branch.localeCompare(b.branch) || a.warehouse.localeCompare(b.warehouse) || a.name.localeCompare(b.name) || a.itemId.localeCompare(b.itemId));
   const incomplete = rows.filter(row => row.value === null).length;
+  const reconciliationCount = rows.filter(row => row.flags.length > 0).length;
   const pricedValue = rows.reduce((sum,row) => sum+row.pricedValue,0);
-  return { scope, filters, warehouses, rows, readAt: new Date().toISOString(),
-    summary: { count: rows.length, incomplete, pricedValue, value: incomplete ? null : pricedValue } };
+  return { scope, filters, method, warehouses, rows, readAt: new Date().toISOString(),
+    summary: { count: rows.length, incomplete, reconciliationCount, pricedValue, value: incomplete ? null : pricedValue } };
 }
 
 export async function loadSkuInventoryCosts(client: SupabaseClient, itemIds: string[]) {
@@ -125,8 +135,8 @@ export async function loadSkuInventoryCosts(client: SupabaseClient, itemIds: str
   return [...new Set(itemIds)].map(itemId => {
     const values = report.rows.filter(row => row.itemId === itemId);
     const flags = [...new Set(values.flatMap(row => row.flags))];
-    const qty = values.reduce((sum, row) => sum + row.layerQty, 0);
-    const value = values.reduce((sum, row) => sum + row.pricedValue, 0);
+    const qty = values.reduce((sum, row) => sum + (report.method === "moving_average" ? Math.max(row.stockQty ?? 0, 0) : row.layerQty), 0);
+    const value = values.reduce((sum, row) => sum + (report.method === "moving_average" && (row.stockQty ?? 0) < 0 ? 0 : row.pricedValue), 0);
     return { itemId, averageCost: flags.length === 0 && qty > 0 ? value / qty : null, flags };
   });
 }

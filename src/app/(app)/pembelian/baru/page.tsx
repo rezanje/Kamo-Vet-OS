@@ -1,10 +1,11 @@
+import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { POForm, type Item } from "./POForm";
 import { readCompleteList } from "@/lib/checked-list";
 
-type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number; buy_price: number };
+type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number; buy_price: number; item_type: string };
 
 // ponytail: create PO page — server component fetches suppliers, warehouses, branches.
 
@@ -22,10 +23,12 @@ export default async function BaruPOPage({
     supabase.from("warehouses").select("id, name").order("name"),
     supabase.from("branches").select("id, name").order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items")
-      .select("id, code, name, unit, sell_price, buy_price", { count: "exact" })
+      .select("id, code, name, unit, sell_price, buy_price, item_type", { count: "exact" })
       .eq("is_active", true).order("name").order("id").range(from, to),
       "Daftar barang PO", { maxRows: null }),
   ]);
+
+  const stock = await loadWarehouseStock(supabase, (warehouses ?? []).map(w => w.id));
 
   // Satuan berjenjang: PO bisa dibuat per box/sak, stok tetap masuk dalam satuan dasar.
   const unitMap = await loadItemUnits(supabase, (items ?? []).map((i) => i.id as string));
@@ -35,6 +38,7 @@ export default async function BaruPOPage({
     name: i.name as string,
     unit: i.unit as string,
     buy_price: Number(i.buy_price),
+    item_type: i.item_type,
     units: unitOptions(
       { unit: i.unit as string, sell_price: Number(i.sell_price), buy_price: Number(i.buy_price) },
       unitMap.get(i.id as string) ?? [],
@@ -62,6 +66,7 @@ export default async function BaruPOPage({
         warehouses={warehouses ?? []}
         branches={branches ?? []}
         items={katalog}
+        stock={stock}
       />
     </>
   );

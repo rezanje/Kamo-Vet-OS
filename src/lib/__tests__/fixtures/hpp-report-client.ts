@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 export type Row = Record<string, unknown>;
 export function clientFixture(options: { role?: string; active?: boolean; modules?: Row[]; tables?: Record<string, Row[]>; errorTable?: string; deniedBranch?: string; anonymous?: boolean;
+  averageMode?: boolean; methodError?: { code: string; message: string };
   serverCap?: number; missingCountTable?: string; beforeRead?: (table: string, occurrence: number, tables: Record<string, Row[]>) => void } = {}) {
   const records: { table: string; method: string; args: unknown[] }[] = [];
   const tables: Record<string, Row[]> = {
@@ -60,6 +61,7 @@ export function clientFixture(options: { role?: string; active?: boolean; module
       return query;
     },
     rpc: (name: string, args: { b: string; p_invoice_item_ids?: string[] }) => {
+      if (name === "inventory_is_average") return Promise.resolve({ data: options.averageMode ?? false, error: options.methodError ?? null });
       if (name === "user_can_access_branch") return Promise.resolve({ data: args.b !== options.deniedBranch, error: null });
       if (!(name in tables) && options.errorTable !== name) {
         const missing = { select: () => missing, order: () => missing, range: async () => ({ data: null, count: null, error: { code: "PGRST202", message: "missing function" } }) };

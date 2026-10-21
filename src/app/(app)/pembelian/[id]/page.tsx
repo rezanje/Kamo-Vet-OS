@@ -1,3 +1,4 @@
+import { loadUnitOptions } from "@/lib/satuan";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -27,6 +28,10 @@ type PO = {
   suppliers: Rel<{ nama: string }>;
   warehouses: Rel<{ name: string }>;
   branches: Rel<{ name: string }>;
+  goods_receipts?: { id: string }[] | null;
+  po_payments?: { id: string }[] | null;
+  purchase_returns?: { id: string }[] | null;
+  purchase_advances?: { id: string }[] | null;
   purchase_order_items: {
     id: string; item_id: string | null; nama: string; qty: number; satuan: string | null; faktor: number;
     qty_terima: number | null; harga_beli: number;
@@ -44,17 +49,24 @@ export default async function PODetailPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, harga_beli)").eq("id", id).maybeSingle();
+  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, harga_beli), goods_receipts(id), po_payments(id), purchase_returns(id), purchase_advances(id)").eq("id", id).maybeSingle();
   const po = data as unknown as (PO & { branch_id: string }) | null;
+  if (poError) throw new Error("PO dan transaksi terkait belum dapat dimuat. Coba muat ulang.");
   if (!po) notFound();
 
-  const [{ data: suppliers }, { data: warehouses }, { data: profile }] = await Promise.all([
+  const [{ data: suppliers }, { data: warehouses }, { data: profile }, { data: invoices, error: invoiceError }] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name, branch_id").eq("branch_id", po.branch_id).eq("is_active", true).order("name"),
     supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
+    supabase.from("purchase_invoices").select("id,no_faktur,voided_at").eq("po_id", id).order("tanggal", { ascending: false }),
   ]);
 
   const items = po.purchase_order_items ?? [];
+  const owner = !!user && profile?.role === "OWNER" && profile.is_active;
+  const hasChildren = items.some(item => Number(item.qty_terima) > 0) || (po.goods_receipts?.length ?? 0) > 0
+    || (po.po_payments?.length ?? 0) > 0 || (po.purchase_returns?.length ?? 0) > 0 || (po.purchase_advances?.length ?? 0) > 0 || (invoices?.length ?? 0) > 0;
+  const editable = owner && !invoiceError && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
+  const units = editable ? Object.fromEntries(await loadUnitOptions(supabase, items.flatMap(item => item.item_id ? [item.item_id] : []), { includeInactive: true })) : {};
 
   return (
     <>
@@ -64,11 +76,15 @@ export default async function PODetailPage({
           <span style={{ color: "var(--td)" }}>·</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>{po.no_po ?? "Purchase Order"}</span>
         </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {editable && <><a href="#edit-po" className="btn-def">Edit PO</a><a href="#cancel-po" className="btn-def" style={{ color: "#b91c1c" }}>Batalkan PO</a></>}
+        {owner && (hasChildren || po.status === "Diterima") && <a href="#purchase-correction" className="btn-def">Koreksi pembelian</a>}
         {po.status !== "Diterima" && po.status !== "Batal" && (
           <Link href={`/pembelian/${po.id}/terima`} className="btn-acc" style={{ textDecoration: "none" }}>
             <i className="ti ti-package-import" /> Terima barang
           </Link>
         )}
+        </div>
       </div>
 
       {success && (
@@ -133,15 +149,24 @@ export default async function PODetailPage({
         </div>
       </div>
 
-      {user && profile?.role === "OWNER" && profile.is_active && (po.status === "Draft" || po.status === "Dipesan") && (
-        <div className="crm-sec">
+      {editable && user && (
+        <div className="crm-sec" id="edit-po">
           <SecHeader num="02" title="KOREKSI PO" desc="Hanya Super Admin yang dapat mengubah atau membatalkan PO sebelum ada transaksi turunan." />
-          <POEditForm userId={user.id} poId={po.id} revision={po.revision} supplierId={po.supplier_id ?? ""} warehouseId={po.to_warehouse_id} tanggal={po.tanggal} rows={items} suppliers={(suppliers ?? []) as { id: string; nama: string }[]} warehouses={(warehouses ?? []) as { id: string; name: string }[]} />
-          <div style={{ borderTop: ".5px solid var(--bd)", marginTop: 14, paddingTop: 12 }}>
+          <POEditForm unitOptions={units} userId={user.id} poId={po.id} revision={po.revision} supplierId={po.supplier_id ?? ""} warehouseId={po.to_warehouse_id} tanggal={po.tanggal} rows={items} suppliers={(suppliers ?? []) as { id: string; nama: string }[]} warehouses={(warehouses ?? []) as { id: string; name: string }[]} />
+          <div id="cancel-po" style={{ borderTop: ".5px solid var(--bd)", marginTop: 14, paddingTop: 12 }}>
             <POCancelForm userId={user.id} poId={po.id} revision={po.revision} />
           </div>
         </div>
       )}
+
+      {(hasChildren || po.status === "Diterima" || invoiceError) && <div className="crm-sec" id="purchase-correction">
+        <SecHeader num="02" title="KOREKSI PEMBELIAN" desc="PO dengan transaksi turunan mempertahankan riwayat penerimaan, stok, dan pembukuan." />
+        <p style={{ fontSize: 11, color: "var(--tm)" }}>PO ini sudah memiliki transaksi turunan. Koreksi harga beli atau HPP melalui faktur pembelian. Untuk kesalahan jumlah atau satuan barang yang sudah diterima, periksa penerimaan dan stok bersama Super Admin sebelum membuat retur atau PO baru.</p>
+        {invoiceError ? <p role="alert" className="p2ban">Faktur terkait belum dapat dimuat. Muat ulang sebelum mengoreksi pembelian.</p> : (invoices ?? []).length > 0 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {(invoices ?? []).map(invoice => <Link key={invoice.id} className="btn-def" href={`/pembelian/faktur/${invoice.id}`}>{owner ? "Koreksi faktur" : "Lihat faktur"} {invoice.no_faktur}{invoice.voided_at ? " (dibatalkan)" : ""}</Link>)}
+        </div> : <><p style={{ fontSize: 11, color: "var(--tm)" }}>Belum ada faktur untuk PO ini.</p>{po.status === "Diterima" && <Link className="btn-def" href="/pembelian/faktur/baru">Buat faktur dari PO</Link>}</>}
+        {owner && <p style={{ fontSize: 11, color: "var(--tm)" }}>Di detail faktur, gunakan Batalkan faktur atau Batalkan &amp; siapkan pengganti. Pembayaran yang sudah ada harus dibalik terlebih dahulu.</p>}
+      </div>}
 
       <DokumenPanel modul="pembelian" refId={po.id} kembali={`/pembelian/${po.id}`} />
     </>

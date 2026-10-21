@@ -21,9 +21,9 @@ export async function downloadHppReport(client: SupabaseClient, kind: ReportKind
       csv = inventoryCsv(report);
       metadata = reportContext(report);
       filename = `nilai-persediaan-${hariIniWIB()}`;
-      title = "Nilai persediaan FIFO saat ini";
+      title = `Nilai persediaan ${report.method === "moving_average" ? "rata-rata bergerak" : "FIFO"} saat ini`;
       readAt = report.readAt;
-      context = "Nilai lengkap dan HPP rata-rata tersedia hanya jika seluruh qty ber-HPP dan saldo cocok. Subtotal lapisan ber-HPP dapat belum lengkap.";
+      context = report.method === "moving_average" ? "Nilai memakai qty stok dikali HPP rata-rata per barang dan gudang. Saldo negatif dengan HPP tersedia tetap bernilai negatif. Lapisan dipakai untuk rekonsiliasi fisik." : "Nilai lengkap dan HPP rata-rata tersedia hanya jika seluruh qty ber-HPP dan saldo cocok. Subtotal lapisan ber-HPP dapat belum lengkap.";
       tables = [{ name: "Persediaan", table: inventoryTable(report) }];
     } else {
       const report = await loadCompoundReport(client,params);

@@ -70,10 +70,11 @@ export function reportContext(report: InventoryReport | CompoundReport): (string
   const rows: (string | number)[][] = [["Dibaca WIB", reportWIB(report.readAt)],
     ["Cabang", report.scope.branches.find(branch => branch.id === f.cabang)?.name ?? (f.cabang || "Semua cabang")], ["Cari", f.q]];
   if ("warehouses" in report) {
+    if (report.method === "moving_average") rows.push(["Metode HPP", "Rata-rata bergerak"]);
     rows.push(["Gudang", report.warehouses.find(warehouse => warehouse.id === f.gudang)?.name ?? (f.gudang || "Semua gudang")],
       ["Cakupan", f.masalah ? "Perlu rekonsiliasi / HPP" : "Semua saldo"],
-      ["Barang / gudang", report.summary.count], ["Subtotal lapisan ber-HPP", report.summary.pricedValue],
-      ["Nilai persediaan lengkap", report.summary.value ?? "Belum lengkap"], ["Baris perlu rekonsiliasi / HPP", report.summary.incomplete]);
+      ["Barang / gudang", report.summary.count], [report.method === "moving_average" ? "Subtotal saldo ber-HPP" : "Subtotal lapisan ber-HPP", report.summary.pricedValue],
+      ["Nilai persediaan lengkap", report.summary.value ?? "Belum lengkap"], ["Baris perlu rekonsiliasi / HPP", report.summary.reconciliationCount]);
   } else {
     rows.push(["Dari tanggal WIB", f.dari], ["Sampai tanggal WIB", f.sampai],
       ["Dokter kunjungan", report.doctors.find(doctor => doctor.id === f.dokter)?.name ?? (f.dokter || "Semua dokter")],

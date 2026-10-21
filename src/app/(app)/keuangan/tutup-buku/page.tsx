@@ -45,6 +45,7 @@ export default async function TutupBukuPage({
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Tutup Buku & Kunci Periode</span>
+        <Link href="/keuangan/closing-hpp" className="btn-def" style={{ marginLeft: "auto" }}>Closing HPP bulanan</Link>
       </div>
 
       {success && (
