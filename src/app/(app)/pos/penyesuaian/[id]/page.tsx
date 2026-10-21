@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { ALASAN_WARNA } from "../alasan";
+import { StockCorrectionPanel } from "../../koreksi-stok/StockCorrectionPanel";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -10,7 +11,7 @@ function one<T>(r: Rel<T>): T | null {
 }
 
 type Baris = {
-  nama: string; qty_sistem: number; qty_baru: number; selisih: number; nilai: number;
+  item_id: string; nama: string; qty_sistem: number; qty_baru: number; selisih: number; nilai: number;
   items: Rel<{ code: string; unit: string | null }>;
 };
 type Doc = {
@@ -37,10 +38,20 @@ export default async function PenyesuaianDetailPage({
 
   const { data } = await supabase
     .from("inventory_adjustments")
-    .select("id, no_adj, tanggal, alasan, keterangan, nilai_masuk, nilai_keluar, warehouses(name, code), profiles:created_by(full_name), inventory_adjustment_items(nama, qty_sistem, qty_baru, selisih, nilai, items(code, unit))")
+    .select("id, no_adj, tanggal, alasan, keterangan, nilai_masuk, nilai_keluar, warehouses(name, code), profiles:created_by(full_name), inventory_adjustment_items(item_id, nama, qty_sistem, qty_baru, selisih, nilai, items(code, unit))")
     .eq("id", id).maybeSingle();
   if (!data) notFound();
   const doc = data as unknown as Doc;
+  const { data: effective, error: effectiveError } = await supabase.rpc("read_stock_document_effective", { p_kind: "adjustment", p_ids: [id] });
+  const current = effective?.[id] as { revision: number; rows: { item_id: string; qty: number; selisih: number; value?: number }[] } | undefined;
+  if (current) {
+    doc.inventory_adjustment_items = (doc.inventory_adjustment_items ?? []).map(row => {
+      const replacement = current.rows.find(r => r.item_id === row.item_id);
+      return replacement ? { ...row, qty_baru: replacement.qty, selisih: replacement.selisih, nilai: Math.abs(Number(replacement.value ?? row.nilai)) } : row;
+    });
+    doc.nilai_masuk = current.rows.reduce((sum, r) => sum + Math.max(Number(r.value ?? 0), 0), 0);
+    doc.nilai_keluar = current.rows.reduce((sum, r) => sum + Math.max(-Number(r.value ?? 0), 0), 0);
+  }
 
   const baris = (doc.inventory_adjustment_items ?? [])
     .slice()
@@ -63,6 +74,8 @@ export default async function PenyesuaianDetailPage({
           <i className="ti ti-circle-check" /> {success}
         </div>
       )}
+      {effectiveError && <div className="p2ban" role="status">Hasil koreksi belum dapat diperiksa. Angka di bawah adalah dokumen asal; muat ulang sebelum menggunakannya.</div>}
+      {current && <div className="p2ban">Menampilkan hasil koreksi revisi {current.revision}. Dokumen asal dan angka sebelumnya tersedia pada riwayat koreksi.</div>}
 
       <div className="crm-sec">
         <SecHeader num="01" title="PENYESUAIAN PERSEDIAAN" desc={doc.keterangan ?? "Tanpa keterangan tambahan."} />
@@ -131,6 +144,7 @@ export default async function PenyesuaianDetailPage({
           </table>
         </div>
       </div>
+      <StockCorrectionPanel kind="adjustment" documentId={id} />
     </>
   );
 }

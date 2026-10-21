@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
-import { stockInAtBuyPrice, stockOut } from "@/lib/inventory";
+import { stockInAtBuyPrice } from "@/lib/inventory";
+import { issueStockDocument } from "@/lib/stock-document-issue";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -108,6 +109,11 @@ export async function simpanPenyesuaian(formData: FormData) {
   let nilaiMasuk = 0;
   let nilaiKeluar = 0;
   for (const b of efektif) {
+    const { error: sourceError } = await supabase.from("inventory_adjustment_items").insert({
+      adjustment_id: doc!.id, item_id: b.item_id, nama: b.nama,
+      qty_sistem: b.qty_sistem, qty_baru: b.qty_baru, selisih: b.selisih, nilai: 0,
+    });
+    if (sourceError) throw new Error("Rincian penyesuaian belum terkonfirmasi. Periksa dokumen sebelum menyimpan ulang.");
     let nilai = 0;
     if (b.selisih > 0) {
       const { data: item } = await supabase.from("items").select("buy_price").eq("id", b.item_id).maybeSingle();
@@ -119,17 +125,13 @@ export async function simpanPenyesuaian(formData: FormData) {
     } else {
       // Nilai yang keluar = modal lapisan yang benar-benar terpakai, bukan harga
       // beli master yang bisa sudah basi.
-      const { cost } = await stockOut(supabase, {
-        warehouseId, itemId: b.item_id, qty: -b.selisih, source: "penyesuaian", ref: no,
-      });
+      const { cost } = await issueStockDocument(supabase, "adjustment", doc!.id, b.item_id);
       nilai = Math.round(cost);
       nilaiKeluar += nilai;
     }
 
-    const { error: detailError } = await supabase.from("inventory_adjustment_items").insert({
-      adjustment_id: doc!.id, item_id: b.item_id, nama: b.nama,
-      qty_sistem: b.qty_sistem, qty_baru: b.qty_baru, selisih: b.selisih, nilai,
-    });
+    const { error: detailError } = await supabase.from("inventory_adjustment_items").update({ nilai })
+      .eq("adjustment_id", doc!.id).eq("item_id", b.item_id);
     if(detailError) throw new Error("Rincian penyesuaian belum terkonfirmasi. Periksa dokumen sebelum menyimpan ulang.");
   }
 
