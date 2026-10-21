@@ -20,6 +20,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
 }) }));
 import { buatPermintaanKasir, terimaBarang } from "@/app/kasir/persediaan/actions";
+import { terimaBarangKlinik } from "@/app/(app)/klinik/penerimaan/actions";
 
 const key = "f1000000-0000-4000-8000-000000000001";
 function form(values: Record<string, string> = {}) {
@@ -66,6 +67,20 @@ it("posts cashier receipt through the atomic helper and acknowledges only a conf
 it("keeps the draft unacknowledged when the atomic receipt fails", async () => {
   state.receipt.mockResolvedValue({ ok: false, error: "stok kurang" });
   await expect(terimaBarang(form({ request_id: "request-a" }))).rejects.toThrow(/error=stok/);
+});
+
+it("clears only the confirmed clinic receipt draft after the shared stock posting", async () => {
+  const data = form({ request_id: "request-a", draft_scope: "cashier-stock-receipt:request-a", items: JSON.stringify([{ id: "line-a", qty_diterima: 2, kondisi: "baik", notes: "" }]) });
+  await expect(terimaBarangKlinik(data)).rejects.toThrow(`success=terima&trm=TRM-1&selisih=0&draft_done=${key}&draft_scope=cashier-stock-receipt%3Arequest-a`);
+  expect(state.receipt).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ branchId: "branch-a", requestId: "request-a", receivedBy: "user-a" }));
+});
+
+it("keeps a rejected clinic receipt draft unconfirmed", async () => {
+  state.receipt.mockResolvedValue({ ok: false, error: "stok kurang" });
+  let destination = "";
+  try { await terimaBarangKlinik(form({ request_id: "request-a" })); } catch (error) { destination = (error as Error).message; }
+  expect(destination).toContain("/klinik/penerimaan?error=");
+  expect(destination).not.toContain("draft_done"); expect(destination).not.toContain("success=");
 });
 
 it.each<Record<string, string>>([{ request_key: "" }, { items: "[]" }, { to_warehouse_id: "" }])("rejects incomplete input before posting: %j", async values => {
