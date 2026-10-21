@@ -45,23 +45,26 @@ export function LineChart({ points, labels, w = 460, h = 180, color = "#2563eb" 
   const pad = { t: 12, r: 10, b: 22, l: 44 };
   const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
   const max = Math.max(...points, 1);
+  const min = Math.min(...points, 0);
   const n = points.length;
   const x = (i: number) => pad.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw);
-  const y = (v: number) => pad.t + ih - (v / max) * ih;
+  const y = (v: number) => pad.t + ih - ((v - min) / (max - min)) * ih;
   const path = points.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
-  const area = `${path} L ${x(n - 1).toFixed(1)} ${pad.t + ih} L ${x(0).toFixed(1)} ${pad.t + ih} Z`;
+  const area = `${path} L ${x(n - 1).toFixed(1)} ${y(0)} L ${x(0).toFixed(1)} ${y(0)} Z`;
   const grid = [0, 0.5, 1];
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
       {grid.map((g) => {
-        const gy = pad.t + ih - g * ih;
+        const value = min + g * (max - min);
+        const gy = y(value);
         return (
           <g key={g}>
             <line x1={pad.l} y1={gy} x2={w - pad.r} y2={gy} stroke="var(--bd)" strokeWidth={0.5} />
-            <text x={pad.l - 6} y={gy + 3} textAnchor="end" style={{ fontSize: 8.5, fill: "var(--td)" }}>{rpShort(g * max)}</text>
+            <text x={pad.l - 6} y={gy + 3} textAnchor="end" style={{ fontSize: 8.5, fill: "var(--td)" }}>{rpShort(value)}</text>
           </g>
         );
       })}
+      {min < 0 && <line x1={pad.l} y1={y(0)} x2={w - pad.r} y2={y(0)} stroke="var(--tm)" strokeWidth={0.5} />}
       <path d={area} fill={color} opacity={0.08} />
       <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
       {points.map((v, i) => <circle key={i} cx={x(i)} cy={y(v)} r={2.5} fill={color} />)}

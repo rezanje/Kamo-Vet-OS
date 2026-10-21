@@ -120,7 +120,7 @@ export default async function Dashboard({
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-          <SummaryCard title="Penjualan (tahun ini)" icon="ti-receipt-2" total={d.penjualan.total} lunas={d.penjualan.lunas} belum={d.penjualan.belumLunas} lunasLabel="Lunas" belumLabel="Belum lunas" />
+          <SummaryCard title="Penjualan neto (tahun ini)" icon="ti-receipt-2" total={d.penjualan.total} lunas={d.penjualan.lunas} belum={d.penjualan.belumLunas} lunasLabel="Dibayar" belumLabel="Piutang aktif" settlementTotal={d.penjualan.lunas + d.penjualan.belumLunas} note="Penjualan mengikuti tanggal dokumen dan pembalik. Pelunasan grosir memakai faktur aktif, termasuk tagihan tahun sebelumnya." />
           <SummaryCard title="Pembelian (tahun ini)" icon="ti-truck-delivery" total={d.pembelian.total} lunas={d.pembelian.lunas} belum={d.pembelian.belumLunas} lunasLabel="Terbayar" belumLabel="Belum bayar" />
         </div>
       </div>
@@ -148,10 +148,10 @@ function LegendRow({ color, label, value }: { color: string; label: string; valu
   );
 }
 
-function SummaryCard({ title, icon, total, lunas, belum, lunasLabel, belumLabel }: {
-  title: string; icon: string; total: number; lunas: number; belum: number; lunasLabel: string; belumLabel: string;
+function SummaryCard({ title, icon, total, lunas, belum, lunasLabel, belumLabel, settlementTotal = total, note }: {
+  title: string; icon: string; total: number; lunas: number; belum: number; lunasLabel: string; belumLabel: string; settlementTotal?: number; note?: string;
 }) {
-  const pctLunas = total > 0 ? (lunas / total) * 100 : 0;
+  const pctLunas = settlementTotal > 0 ? Math.max(0, Math.min(100, (lunas / settlementTotal) * 100)) : 0;
   return (
     <div className="card" style={{ flex: 1 }}>
       <div className="card-hd"><i className={`ti ${icon}`} style={{ color: "var(--acc)" }} /> {title}</div>
@@ -164,6 +164,7 @@ function SummaryCard({ title, icon, total, lunas, belum, lunasLabel, belumLabel 
         <span style={{ color: "#15803d" }}>{lunasLabel}: {rp(lunas)}</span>
         <span style={{ color: "#b45309" }}>{belumLabel}: {rp(belum)}</span>
       </div>
+      {note && <p style={{ fontSize: 10, color: "var(--tm)", marginBottom: 0 }}>{note}</p>}
     </div>
   );
 }

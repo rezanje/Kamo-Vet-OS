@@ -232,10 +232,10 @@ export default async function DetailPesananPage({
               })}
               {faktur.map((f) => (
                 <tr key={f.id}>
-                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{f.no_faktur}</td>
+                  <td style={{ fontSize: 11.5, fontWeight: 600 }}><Link href={`/penjualan/faktur/${f.id}`}>{f.no_faktur}</Link></td>
                   <td style={{ fontSize: 11 }}>{tgl(f.tanggal)}</td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
-                    jatuh tempo {tgl(f.jatuh_tempo)} · {f.status === "lunas" ? "lunas" : "berjalan"}
+                    jatuh tempo {tgl(f.jatuh_tempo)} · {f.status === "batal" ? "batal — riwayat tetap disimpan" : f.status === "lunas" ? "lunas" : "berjalan"}
                   </td>
                   <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(Number(f.total))}</td>
                 </tr>

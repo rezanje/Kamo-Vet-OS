@@ -37,7 +37,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
       .order("created_at"),
     supabase
       .from("sales_invoices")
-      .select("id, no_faktur, tanggal, total, customers(name)")
+      .select("id, no_faktur, tanggal, total, carried_paid, customers(name)")
       .neq("status", "batal")
       .order("tanggal"),
     supabase.from("sales_receipts").select("invoice_id, jumlah"),
@@ -57,12 +57,12 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   }
 
   const barisReseller: Row[] = ((fjs ?? []) as unknown as {
-    id: string; no_faktur: string; tanggal: string; total: number;
+    id: string; no_faktur: string; tanggal: string; total: number; carried_paid: number;
     customers: { name: string } | { name: string }[] | null;
   }[])
     .map((f) => {
       const cust = Array.isArray(f.customers) ? f.customers[0] : f.customers;
-      const dibayar = fjPaid.get(f.id) ?? 0;
+      const dibayar = Number(f.carried_paid ?? 0) + (fjPaid.get(f.id) ?? 0);
       return {
         id: f.id, invoice_no: f.no_faktur, tanggal: f.tanggal,
         customer: cust?.name ?? "—",

@@ -35,12 +35,16 @@ export async function hitungPenggajian(formData: FormData) {
   if (rows.some((r) => r.status === "final")) gagal("Penggajian periode ini sudah disahkan — tidak bisa dihitung ulang");
 
   const penyesuaian = new Map(rows.map((r) => [r.employee_id, Number(r.penyesuaian)]));
+  // Fence reseller commission reads against a simultaneous B2B invoice correction.
+  const { data: wholesaleEpoch, error: epochError } = await supabase.rpc("get_wholesale_payroll_epoch", { p_periode: periode });
+  if (epochError || wholesaleEpoch === null) gagal(epochError?.message ?? "Sumber komisi belum dapat diverifikasi");
   const baris = await kumpulkanDataGaji(supabase, periode, penyesuaian);
   if (baris.length === 0) gagal("Tidak ada karyawan aktif");
 
   const { error } = await supabase.from("payrolls").upsert(
     baris.map((b) => ({
       periode,
+      wholesale_source_epoch: Number(wholesaleEpoch),
       employee_id: b.employeeId,
       gaji_pokok: b.rincian.gajiPokok,
       tunjangan: b.rincian.tunjangan,

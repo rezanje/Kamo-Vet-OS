@@ -1,0 +1,89 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { hariIniWIB } from "@/lib/tanggal";
+import { WholesaleCorrectionForm } from "./WholesaleCorrectionForm";
+
+const rp = (n: number) => `Rp ${Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
+type Receipt = { id: string; no_terima: string; tanggal: string; jumlah: number; dari_uang_muka: number; metode: string; journal_id: string | null };
+type Invoice = { id: string; no_faktur: string; total: number; carried_paid: number; replaces_invoice_id: string | null; sales_receipts: Receipt[] };
+
+export default async function WholesaleInvoicePage({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; success?: string }>;
+}) {
+  const { id } = await params;
+  const sp = await searchParams;
+  const db = await createClient();
+  const { data: { user } } = await db.auth.getUser();
+  const { data: invoice, error } = await db.from("sales_invoices")
+    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,customers(name)")
+    .eq("id", id).maybeSingle();
+  if (error) throw new Error("Rincian faktur belum dapat dibaca: " + error.message);
+  if (!invoice) notFound();
+  const [{ data: profile }, lines, orderInvoices, settings] = await Promise.all([
+    db.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
+    db.from("sales_invoice_items").select("id,nama,qty,harga,satuan,hpp").eq("invoice_id", id).order("id"),
+    db.from("sales_invoices").select("id,no_faktur,total,carried_paid,replaces_invoice_id,sales_receipts(id,no_terima,tanggal,jumlah,dari_uang_muka,metode,journal_id)").eq(invoice.order_id ? "order_id" : "id", invoice.order_id ?? id),
+    db.from("company_settings").select("ppn_rate").eq("id", true).maybeSingle(),
+  ]);
+  if (lines.error || orderInvoices.error || settings.error) throw new Error("Rincian/alokasi pembayaran belum dapat diverifikasi. Muat ulang halaman.");
+  const documents = (orderInvoices.data ?? []) as Invoice[];
+  const byId = new Map(documents.map(i => [i.id, i]));
+  const ancestors: Invoice[] = [];
+  const visited = new Set<string>();
+  let cursor = byId.get(id);
+  while (cursor && !visited.has(cursor.id)) {
+    ancestors.push(cursor); visited.add(cursor.id);
+    cursor = cursor.replaces_invoice_id ? byId.get(cursor.replaces_invoice_id) : undefined;
+  }
+  const ownPaid = (byId.get(id)?.sales_receipts ?? []).reduce((sum, r) => sum + Number(r.jumlah), 0);
+  const paid = Number(invoice.carried_paid) + ownPaid;
+  const successor = documents.find(i => i.replaces_invoice_id === id);
+  const corrections = ancestors.length ? await db.from("wholesale_invoice_corrections")
+    .select("id,invoice_id,replacement_id,reason,tanggal,customer_credit,paid_preserved,original_journal_id,reversal_journal_id,replacement_journal_id,credit_journal_id,created_at,created_by")
+    .in("invoice_id", [...visited]).order("created_at") : { data: [], error: null };
+  if (corrections.error) throw new Error("Riwayat koreksi belum dapat diverifikasi.");
+  const credits = (corrections.data ?? []).reduce((sum, c) => sum + Number(c.customer_credit), 0);
+  const customer = Array.isArray(invoice.customers) ? invoice.customers[0] : invoice.customers;
+  const today = hariIniWIB();
+  return <>
+    <Link className="back-btn" href="/penjualan/faktur">← Faktur & penerimaan</Link>
+    <div className="crm-sec">
+      <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
+      {sp.error && <div className="p2ban" role="alert">{sp.error}</div>}
+      {sp.success && <div className="p2ban" role="status">{sp.success}</div>}
+      <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal} · jatuh tempo {invoice.jatuh_tempo} · {invoice.status}</p>
+      <p>Total {rp(invoice.total)} · Pembayaran terbawa {rp(invoice.carried_paid)} · Penerimaan faktur ini {rp(ownPaid)} · Sisa piutang {rp(invoice.status === "batal" ? 0 : Math.max(0, Number(invoice.total) - paid))}</p>
+      {invoice.order_id && <p><Link href={`/penjualan/pesanan/${invoice.order_id}`}>Buka pesanan dan bukti pengiriman fisik</Link></p>}
+      {invoice.replaces_invoice_id && <p>Menggantikan <Link href={`/penjualan/faktur/${invoice.replaces_invoice_id}`}>{byId.get(invoice.replaces_invoice_id)?.no_faktur ?? invoice.replaces_invoice_id}</Link></p>}
+      {successor && <p>Diganti oleh <Link href={`/penjualan/faktur/${successor.id}`}>{successor.no_faktur}</Link></p>}
+      {invoice.voided_on && <p>Dibatalkan {invoice.voided_on}: {invoice.void_reason}. Pengiriman fisik dan dokumen asli tetap disimpan.</p>}
+      <table className="tbl"><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>HPP alokasi</th></tr></thead><tbody>
+        {(lines.data ?? []).map(i => <tr key={i.id}><td>{i.nama}</td><td>{Number(i.qty)} {i.satuan}</td><td>{rp(i.harga)}</td><td>{rp(i.hpp ?? 0)}</td></tr>)}
+      </tbody></table>
+    </div>
+    <div className="crm-sec">
+      <h2 style={{ fontSize: 14 }}>Riwayat pembayaran asli</h2>
+      <p>Pembayaran dari faktur terdahulu dibawa sebagai pelunasan pengganti. Angka di bawah adalah transaksi uang asli; tidak dijumlah ulang sebagai kas masuk.</p>
+      <table className="tbl"><thead><tr><th>Penerimaan</th><th>Faktur asal</th><th>Tanggal</th><th>Jumlah</th><th>Dari uang muka</th></tr></thead><tbody>
+        {ancestors.flatMap(i => (i.sales_receipts ?? []).map(r => <tr key={r.id}><td>{r.no_terima} · {r.metode}</td><td><Link href={`/penjualan/faktur/${i.id}`}>{i.no_faktur}</Link></td><td>{r.tanggal}</td><td>{rp(r.jumlah)}</td><td>{rp(r.dari_uang_muka)}</td></tr>))}
+      </tbody></table>
+      <p>Kredit pelanggan dari rangkaian ini: <strong>{rp(credits)}</strong>. Tercatat sebagai kewajiban pada akun 2103, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p>
+      {invoice.status === "batal" && !successor && <Link href="/penjualan/faktur">Buka daftar penerimaan dan kredit</Link>}
+    </div>
+    <div className="crm-sec">
+      <h2 style={{ fontSize: 14 }}>Audit koreksi</h2>
+      {(corrections.data ?? []).map(c => <div key={c.id} style={{ paddingBottom: 10 }}>
+        <div>{c.tanggal} · {c.reason} · oleh {c.created_by}</div>
+        <div>Pembayaran dipertahankan {rp(c.paid_preserved)} · kredit {rp(c.customer_credit)}</div>
+        <div style={{ fontSize: 11 }}>Jurnal asli {c.original_journal_id} · pembalik {c.reversal_journal_id}{c.replacement_journal_id ? ` · pengganti ${c.replacement_journal_id}` : ""}{c.credit_journal_id ? ` · kredit ${c.credit_journal_id}` : ""}</div>
+      </div>)}
+      {!corrections.data?.length && <p>Belum ada koreksi.</p>}
+    </div>
+    {profile?.is_active && profile.role === "OWNER" && invoice.order_id && invoice.status !== "batal" && <div className="crm-sec">
+      <h2 style={{ fontSize: 14 }}>Koreksi pencatatan grosir — OWNER</h2>
+      <WholesaleCorrectionForm userId={user?.id ?? ""} invoiceId={id} revision={Number(invoice.revision)} today={today} due={invoice.jatuh_tempo} note={invoice.catatan ?? ""} paid={paid} total={Number(invoice.total)}
+        taxRate={Number(invoice.ppn) > 0 ? Number(settings.data?.ppn_rate) || 11 : 0} items={(lines.data ?? []).map(i => ({ id: i.id, nama: i.nama, qty: Number(i.qty), harga: Number(i.harga), satuan: i.satuan }))} />
+    </div>}
+  </>;
+}
