@@ -1,14 +1,2 @@
-export const RESET_SIMULASI_TOTAL_PHRASE = "RESET SIMULASI TOTAL";
-
-type ResetSimulasiInput = {
-  role: string | null | undefined;
-  understoodImpact: boolean;
-  confirmation: string;
-};
-
-/** Guard tampilan. Database mengecek ulang agar tombol tidak bisa disiasati. */
-export function bolehResetSimulasi(input: ResetSimulasiInput): boolean {
-  return input.role === "OWNER"
-    && input.understoodImpact
-    && input.confirmation.trim() === RESET_SIMULASI_TOTAL_PHRASE;
-}
+export const RESET_SIMULASI_UNAVAILABLE_MESSAGE =
+  "Reset dari aplikasi dinonaktifkan. Penolakan izin (403/42501) memerlukan tinjauan Owner dan pengelola sistem melalui maintenance yang disetujui. Jangan ulangi permintaan reset; perubahan akses memerlukan keputusan terpisah.";
