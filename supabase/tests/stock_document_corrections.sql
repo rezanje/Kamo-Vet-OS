@@ -40,6 +40,7 @@ create function pg_temp.assert_true(ok boolean,msg text) returns void language p
 select set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000001',true);
 do $$declare doc uuid;plan jsonb;result jsonb;retry jsonb;rows jsonb:='[{"item_id":"ef400000-0000-4000-8000-000000000001","qty":3}]';before_doc jsonb;begin
  doc:=test_stock_source('adjustment','SUCCESS',5);
+ update stock_layers set exp_date=current_date+30 where source_ref='SUCCESS';
  select to_jsonb(d) into before_doc from inventory_adjustments d where id=doc;
  set local role authenticated;
  plan:=preview_stock_document_correction('adjustment',doc,rows);
@@ -52,6 +53,7 @@ do $$declare doc uuid;plan jsonb;result jsonb;retry jsonb;rows jsonb:='[{"item_i
  perform pg_temp.assert_true((select to_jsonb(d) from inventory_adjustments d where id=doc)=before_doc,'Original document changed');
  perform pg_temp.assert_true((select sum(qty*unit_cost) from stock_moves)=300,'Stock card value mismatch');
  perform pg_temp.assert_true((select sum(qty_left*unit_cost) from stock_layers)=300,'FIFO value mismatch');
+ perform pg_temp.assert_true((select exp_date from stock_layers where source='stock-correction')=current_date+30,'Incoming replacement lost source expiry');
  perform pg_temp.assert_true((select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1301')=300,'Inventory journal mismatch');
  begin perform correct_stock_document('adjustment',doc,rows,'Different reason','success-key',plan->>'token');raise exception 'expected key conflict';exception when others then if sqlerrm='expected key conflict' or sqlerrm not like '%Identitas%' then raise;end if;end;
  reset role;
@@ -150,6 +152,7 @@ select set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000001'
 do $$declare doc uuid;plan jsonb;result jsonb;rows jsonb;begin
  doc:=test_stock_source('adjustment','SIGN',5,10);
  update inventory_adjustments set created_at=now()-interval '1 day' where id=doc;
+ update stock_layers set exp_date=current_date+30 where source_ref='SIGN';
  rows:='[{"item_id":"ef400000-0000-4000-8000-000000000001","qty":8}]';
  set local role authenticated;
  plan:=preview_stock_document_correction('adjustment',doc,rows);
@@ -168,6 +171,7 @@ do $$declare doc uuid;plan jsonb;result jsonb;rows jsonb;begin
  plan:=preview_stock_document_correction('adjustment',doc,rows);
  perform correct_stock_document('adjustment',doc,rows,'Correct after zero-effect cancellation','after-zero',plan->>'token');
  if (select qty from stock where item_id='ef400000-0000-4000-8000-000000000001')<>11 then raise exception 'Correction after zero-effect replacement failed';end if;
+ if (select exp_date from stock_layers where source='stock-correction' and qty_left>0) is distinct from current_date+30 then raise exception 'Cancellation chain lost known source expiry';end if;
  if (get_stock_document_correction_result('adjustment',doc,'sign-negative')->>'correction_id') is distinct from result->>'correction_id' then raise exception 'Recovery did not preserve original result';end if;
  begin update inventory_adjustments set keterangan='tamper' where id=doc;raise exception 'source tamper accepted';exception when insufficient_privilege then null;end;
  begin delete from stock_moves where source='stock-correction';raise exception 'stock ledger delete accepted';exception when insufficient_privilege then null;end;

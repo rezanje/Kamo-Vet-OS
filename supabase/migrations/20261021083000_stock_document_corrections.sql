@@ -170,7 +170,7 @@ language plpgsql security definer set search_path='' as $$
 declare state jsonb;canonical jsonb;rows jsonb;wh uuid;branch uuid;r record;m record;l record;t record;
  moves jsonb;journals jsonb;layers jsonb;all_moves jsonb;virtual jsonb;lines jsonb:='[]';newrows jsonb:='[]';
  original numeric:=0;replacement numeric:=0;old_diff numeric;new_diff numeric;current_qty numeric;newqty numeric;
- cost numeric;needed numeric;take numeric;takes jsonb;restored numeric;buy numeric;value numeric;entry record;
+ cost numeric;needed numeric;take numeric;takes jsonb;restored numeric;buy numeric;value numeric;entry record;expiry date;
  count_rows integer;changed boolean:=false;result jsonb;inventory numeric:=0;contra numeric:=0;
  proof public.stock_document_issue_proofs%rowtype;
  original_in numeric:=0;original_out numeric:=0;
@@ -209,7 +209,7 @@ begin
  end loop;
  if exists(select 1 from public.journal_lines j join public.coa_accounts a on a.id=j.account_id where j.entry_id in(select id from public.journal_entries where source=state->>'source' and source_ref=state->>'ref') and
   (a.code not in('1301','5902') or j.debit<0 or j.credit<0 or j.debit::text in('NaN','Infinity','-Infinity') or j.credit::text in('NaN','Infinity','-Infinity'))) then raise exception 'Jurnal sumber memiliki dependensi keuangan lain. Rekonsiliasi diperlukan';end if;
- for r in select x.* from jsonb_to_recordset(rows)x(item_id uuid,name text,qty_sistem numeric,qty numeric,selisih numeric) order by item_id loop
+ for r in select x.* from jsonb_to_recordset(rows)x(item_id uuid,name text,qty_sistem numeric,qty numeric,selisih numeric,exp_date date) order by item_id loop
   select x.qty into newqty from jsonb_to_recordset(canonical)x(item_id uuid,qty numeric) where x.item_id=r.item_id;
   if newqty<>r.qty then changed:=true;end if;
   old_diff:=r.qty-r.qty_sistem;new_diff:=newqty-r.qty_sistem;
@@ -236,12 +236,12 @@ begin
   -- after-state. A zero-effect replacement has no own move/timestamp; falling
   -- back to the original date would mistake its prior reversals for dependencies.
   if (state->>'revision')::integer=0 and exists(select 1 from public.stock_moves other where other.warehouse_id=wh and other.item_id=r.item_id and other.created_at>coalesce(m.created_at,(state->'source_snapshot'->'document'->>'created_at')::timestamptz) and other.source_ref is distinct from state->>'ref') then raise exception 'Stok sudah terpakai, terjual, diretur atau dipindahkan. Rekonsiliasi dokumen lanjutan terlebih dahulu';end if;
-  virtual:='[]';
+  virtual:='[]';expiry:=r.exp_date;
   for l in select x.* from jsonb_to_recordset(layers)x(id uuid,item_id uuid,qty_in numeric,qty_left numeric,unit_cost numeric,source text,source_ref text,exp_date date,tanggal date,created_at timestamptz) where x.item_id=r.item_id order by exp_date nulls last,tanggal,created_at,id loop
    restored:=l.qty_left;
    if old_diff>0 and l.source=state->>'source' and l.source_ref=state->>'ref' then
     if l.qty_in<>old_diff or l.qty_left<>l.qty_in or l.unit_cost<>m.unit_cost then raise exception 'Lapisan sumber sudah terpakai atau nilai berubah. Rekonsiliasi diperlukan';end if;
-    restored:=0;
+    restored:=0;expiry:=l.exp_date;
    elsif old_diff<0 then
     if m.fifo_takes is null or m.fifo_shortfall is distinct from 0::numeric then raise exception 'Bukti FIFO stok keluar lama tidak lengkap. Rekonsiliasi sumber diperlukan; saldo tidak boleh dibalik dengan perkiraan';end if;
     select coalesce(sum(x.qty),0) into take from jsonb_to_recordset(m.fifo_takes)x(id uuid,qty numeric,unit_cost numeric) where x.id=l.id and x.unit_cost=l.unit_cost;
@@ -269,8 +269,8 @@ begin
   if buy is null or buy<0 or buy>1e12 or buy::text in('NaN','Infinity','-Infinity') then raise exception 'Harga modal barang tidak valid';end if;
   value:=case when new_diff>0 then new_diff*buy else -cost end;
   replacement:=replacement+round(value,2);
-  newrows:=newrows||jsonb_build_array(jsonb_build_object('item_id',r.item_id,'name',r.name,'qty_sistem',r.qty_sistem,'qty',newqty,'selisih',new_diff,'value',round(value,2)));
-  lines:=lines||jsonb_build_array(jsonb_build_object('item_id',r.item_id,'name',r.name,'old_qty',r.qty,'new_qty',newqty,'stock_before',current_qty,'stock_after',current_qty+newqty-r.qty,'delta',newqty-r.qty,'old_diff',old_diff,'new_diff',new_diff,'old_move',case when old_diff<>0 then to_jsonb(m) end,'restored_layers',virtual,'takes',takes,'unit_cost',buy,'value',round(value,2)));
+  newrows:=newrows||jsonb_build_array(jsonb_build_object('item_id',r.item_id,'name',r.name,'qty_sistem',r.qty_sistem,'qty',newqty,'selisih',new_diff,'value',round(value,2),'exp_date',expiry));
+  lines:=lines||jsonb_build_array(jsonb_build_object('item_id',r.item_id,'name',r.name,'old_qty',r.qty,'new_qty',newqty,'stock_before',current_qty,'stock_after',current_qty+newqty-r.qty,'delta',newqty-r.qty,'old_diff',old_diff,'new_diff',new_diff,'old_move',case when old_diff<>0 then to_jsonb(m) end,'restored_layers',virtual,'takes',takes,'unit_cost',buy,'exp_date',expiry,'value',round(value,2)));
  end loop;
  if not changed then raise exception 'Jumlah koreksi sama dengan hasil saat ini';end if;
  select coalesce(sum(j.debit-j.credit) filter(where a.code='1301'),0),coalesce(sum(j.debit-j.credit) filter(where a.code='5902'),0) into inventory,contra from public.journal_lines j join public.coa_accounts a on a.id=j.account_id where j.entry_id in(select id from public.journal_entries where source=state->>'source' and source_ref=state->>'ref');
@@ -316,13 +316,13 @@ begin
  plan:=public.stock_correction_plan(p_kind,p_id,p_rows);
  if p_preview_token is null or p_preview_token is distinct from plan->>'token' then raise exception 'Preview berubah atau kedaluwarsa. Periksa dampak koreksi lagi sebelum menyimpan';end if;
  wh:=(plan->>'warehouse_id')::uuid;branch:=(plan->>'branch_id')::uuid;
- for r in select x.* from jsonb_to_recordset(plan->'lines')x(item_id uuid,old_diff numeric,new_diff numeric,old_move jsonb,restored_layers jsonb,takes jsonb,unit_cost numeric) order by item_id loop
+ for r in select x.* from jsonb_to_recordset(plan->'lines')x(item_id uuid,old_diff numeric,new_diff numeric,old_move jsonb,restored_layers jsonb,takes jsonb,unit_cost numeric,exp_date date) order by item_id loop
   if r.old_diff<>0 then
    for t in select x.* from jsonb_to_recordset(r.restored_layers)x(id uuid,qty numeric) loop update public.stock_layers set qty_left=t.qty where id=t.id;end loop;
    update public.stock set qty=qty-r.old_diff,updated_at=now() where warehouse_id=wh and item_id=r.item_id;
    insert into public.stock_moves(tanggal,warehouse_id,item_id,qty,unit_cost,source,source_ref) values(date,wh,r.item_id,-r.old_diff,(r.old_move->>'unit_cost')::numeric,'stock-correct-reverse',correction_id::text);
   end if;
-  if r.new_diff>0 then perform public.stock_in_fifo(wh,r.item_id,r.new_diff,r.unit_cost,'stock-correction',correction_id::text,date);
+  if r.new_diff>0 then perform public.stock_in_fifo(wh,r.item_id,r.new_diff,r.unit_cost,'stock-correction',correction_id::text,date,r.exp_date);
   elsif r.new_diff<0 then
    select * into cost from public.stock_out_fifo(wh,r.item_id,-r.new_diff,'stock-correction',correction_id::text,date);
    if cost.shortfall<>0 or cost.takes is distinct from r.takes then raise exception 'FIFO berubah saat koreksi; seluruh perubahan dibatalkan';end if;

@@ -50,6 +50,8 @@ SQL assertions cover both source families, incoming/outgoing corrections, mixed-
 
 A final red/green SQL regression covers a correction after cancellation to a zero-effect replacement. Later revisions use the exact complete after-state comparison; they do not mistake earlier reversal movements for downstream activity by falling back to the original document timestamp.
 
+A separate red/green regression verifies that an incoming replacement retains its source lot's expiry date when present. Exact outgoing-lot restoration also preserves cost and expiry.
+
 Nine focused application tests, TypeScript, scoped ESLint and production build passed. Build retains unrelated existing warnings.
 
 Full suite: **2,203 passed, 3 failed; 264 passed files, 2 failed files**. The same three failures reproduced on an untouched archive of main d6d9c70 using the same dependency installation:
