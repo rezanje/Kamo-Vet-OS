@@ -45,9 +45,9 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
   const pageHref = (page: number) => `${path}?${query}&halaman=${page}`;
   const cards = inventory ? [
     { label: "Barang / gudang", nilai: String(inventory.summary.count) },
-    { label: "Subtotal lapisan ber-HPP", nilai: money(inventory.summary.pricedValue) },
+    { label: inventory.method === "moving_average" ? "Subtotal saldo ber-HPP" : "Subtotal lapisan ber-HPP", nilai: money(inventory.summary.pricedValue) },
     { label: "Nilai persediaan lengkap", nilai: money(inventory.summary.value) },
-    { label: "Baris perlu rekonsiliasi / HPP", nilai: String(inventory.summary.incomplete), warna: inventory.summary.incomplete ? "#b45309" : "#15803d" },
+    { label: "Baris perlu rekonsiliasi / HPP", nilai: String(inventory.summary.reconciliationCount), warna: inventory.summary.reconciliationCount ? "#b45309" : "#15803d" },
   ] : compound ? [
     { label: "Baris / jumlah racikan", nilai: `${compound.rows.length} / ${compound.summary.qty.toLocaleString("id-ID")}` },
     { label: "Penjualan setelah diskon item", nilai: money(compound.summary.revenue) },
@@ -58,8 +58,8 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
     { label: "Baris tanpa HPP", nilai: String(compound.summary.missingCost), warna: compound.summary.missingCost ? "#b45309" : "#15803d" },
   ] : [];
   return <LaporanPage icon={kind === "inventory" ? "ti-package" : "ti-flask"}
-    title={kind === "inventory" ? "NILAI PERSEDIAAN FIFO SAAT INI" : "HPP & MARGIN RACIKAN"}
-    desc={kind === "inventory" ? "Saldo satuan dasar dan nilai lapisan tersisa, termasuk barang atau gudang nonaktif." : "Racikan yang sudah ditagih pada invoice aktif, dengan HPP historis setiap baris."}
+    title={kind === "inventory" ? `NILAI PERSEDIAAN ${inventory?.method === "moving_average" ? "RATA-RATA BERGERAK" : "FIFO"} SAAT INI` : "HPP & MARGIN RACIKAN"}
+    desc={kind === "inventory" ? "Saldo satuan dasar dan nilai persediaan, termasuk barang atau gudang nonaktif." : "Racikan yang sudah ditagih pada invoice aktif, dengan HPP historis setiap baris."}
     unduhTampilan={false}
     filter={<>
       {kind === "compound" && <>
@@ -113,7 +113,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
       </div>
       <div style={{ fontSize: 11, color: "var(--td)", marginTop: 14, lineHeight: 1.7 }}>
         {inventory ? <>
-          Subtotal ber-HPP hanya menjumlahkan lapisan dengan harga pokok positif. Nilai lengkap dan HPP rata-rata ditampilkan setelah seluruh qty tercakup dan saldo stok cocok dengan lapisan.
+          {inventory.method === "moving_average" ? "Nilai persediaan memakai qty stok dikali HPP rata-rata bergerak per barang dan gudang. Stok negatif dengan HPP yang tersedia tetap menampilkan nilai negatif. Qty lapisan dipakai untuk rekonsiliasi fisik; harga lapisan tidak menentukan nilai rata-rata." : "Subtotal ber-HPP hanya menjumlahkan lapisan dengan harga pokok positif. Nilai lengkap dan HPP rata-rata ditampilkan setelah seluruh qty tercakup dan saldo stok cocok dengan lapisan."}
           Lapisan kadaluarsa tetap bernilai. Selisih dapat berasal dari histori stok atau perubahan selama pembacaan; laporan ini tidak memperbaiki saldo dan tidak merekonstruksi tanggal lampau.
         </> : compound ? <>
           Penjualan memakai tanggal invoice dan diskon per item, termasuk invoice belum lunas. Diskon tingkat invoice dan pajak belum dialokasikan, sehingga jumlah ini bisa berbeda dari total pembayaran.

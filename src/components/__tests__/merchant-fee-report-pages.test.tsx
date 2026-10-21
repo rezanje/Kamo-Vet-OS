@@ -7,6 +7,7 @@ vi.mock("next/navigation", () => ({ notFound: () => { throw Error("not found"); 
 vi.mock("@/components/UnduhLaporan", () => ({ UnduhLaporan: () => null }));
 vi.mock("@/components/dokumen/DokumenPanel", () => ({ DokumenPanel: () => null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
+  auth: { getUser: async () => ({ data: { user: null }, error: null }) },
   from(table: string) {
     let selected = "";
     const sale = { id: "sale", no_struk: "POS-fee", created_at: "2026-10-16T05:00:00Z", subtotal: 120000, discount: 20000,

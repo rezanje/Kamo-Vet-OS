@@ -6,7 +6,9 @@ import { usePreservedAction } from "@/components/LocalTransactionDraft";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import { draftRows } from "@/components/TransactionDraft";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { WarehouseStock } from "@/lib/warehouse-stock";
+import { WarehouseStockHint } from "@/components/WarehouseStockHint";
 import { SecHeader } from "@/components/SecHeader";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { buatPO } from "../actions";
@@ -15,7 +17,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 type Supplier = { id: string; nama: string };
 type Warehouse = { id: string; name: string };
 type Branch = { id: string; name: string };
-export type Item = { id: string; code: string; name: string; unit: string; buy_price: number; units: ItemUnit[] };
+export type Item = { id: string; code: string; name: string; unit: string; buy_price: number; item_type?: string; units: ItemUnit[] };
 type Row = { nama: string; qty: number; harga_beli: number; item_id?: string | null; satuan?: string; faktor?: number };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -28,14 +30,25 @@ export function POForm({
   warehouses,
   branches,
   items,
+  stock = [],
 }: {
   userId: string;
   suppliers: Supplier[];
   warehouses: Warehouse[];
   branches: Branch[];
   items: Item[];
+  stock?: WarehouseStock[];
 }) {
   const { save, failure } = usePreservedAction(buatPO);
+  const [warehouseId, setWarehouseId] = useState("");
+  const warehouseSelect = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    const select = warehouseSelect.current;
+    const restore = (event: Event) => setWarehouseId((event as CustomEvent<string>).detail);
+    select?.addEventListener("vetos:draft-restore", restore);
+    return () => select?.removeEventListener("vetos:draft-restore", restore);
+  }, []);
+  const stockByItem = new Map(stock.filter(s => s.warehouse_id === warehouseId).map(s => [s.item_id, Number(s.qty)]));
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
   const byLabel = new Map(items.map((it) => [itemLabel(it), it]));
 
@@ -73,10 +86,10 @@ export function POForm({
 
   return (
     <form action={save}>
-      <PurchaseRequestKey userId={userId} scope="po-create" draft={{ snapshot: { rows }, restore: (value) => {
+      <PurchaseRequestKey userId={userId} scope="po-create" draft={{ snapshot: { rows, warehouseId }, restore: (value) => {
         if (!draftRows(value.rows, blank)) return false;
-        setRows(value.rows); return true;
-      }, reset: () => { setRows([{ ...blank }]); } }} />
+        setRows(value.rows); if (typeof value.warehouseId === "string") setWarehouseId(value.warehouseId); return true;
+      }, reset: () => { setRows([{ ...blank }]); setWarehouseId(""); } }} />
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
       <datalist id="po-items">
@@ -104,7 +117,7 @@ export function POForm({
 
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Gudang tujuan *</label>
-            <select className="fi" name="to_warehouse_id" required>
+            <select className="fi" name="to_warehouse_id" required ref={warehouseSelect} data-draft-state value={warehouseId} onChange={e => setWarehouseId(e.target.value)}>
               <option value="">Pilih gudang</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}</option>
@@ -230,6 +243,9 @@ export function POForm({
                       <i className="ti ti-trash" />
                     </button>
                   </div>
+                  {r.item_id && (!byId.get(r.item_id)?.item_type || byId.get(r.item_id)?.item_type === "Persediaan") && (
+                    <WarehouseStockHint warehouseId={warehouseId} quantity={stockByItem.get(r.item_id) ?? 0} baseUnit={byId.get(r.item_id)?.unit ?? dasar ?? "pcs"} selectedUnit={opts.find(u => u.unit === r.satuan)} />
+                  )}
                   {faktor !== 1 && dasar && (
                     <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>
                       Stok masuk {(Number(r.qty) || 0) * faktor} {dasar} ({faktor} {dasar} per {r.satuan})

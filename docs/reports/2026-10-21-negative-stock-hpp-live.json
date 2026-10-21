@@ -1,0 +1,39 @@
+{
+  "project_ref": "koaglxcyjqfmgfzxszkj",
+  "migration_version": "20261021020000",
+  "migration_name": "negative_stock_hpp",
+  "verified_at_jakarta": "2026-10-21T17:17:59.813224+07:00",
+  "fifo": {
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "source_md5": "14195cfb96519375e24ab0c3655dab0b",
+    "anon_execute": false,
+    "service_execute": true,
+    "security_definer": false,
+    "authenticated_execute": true
+  },
+  "helper": {
+    "search_path": [
+      "search_path=\"\""
+    ],
+    "anon_execute": false,
+    "security_definer": true,
+    "authenticated_execute": true
+  },
+  "migration_history": [
+    {
+      "name": "negative_stock_hpp",
+      "version": "20261021020000",
+      "matches_source": true
+    }
+  ],
+  "live_smoke": {
+    "outcome": "full_quantity_cost_verified",
+    "tested_quantity": 20,
+    "reference_unit_cost": 15000,
+    "no_movement_persisted": true,
+    "stock_and_layers_unchanged": true
+  },
+  "historical_transactions_rewritten": false,
+  "frontend_deployment_required": false
+}

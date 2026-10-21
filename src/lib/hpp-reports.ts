@@ -1,5 +1,6 @@
 export type Numeric = number | string | null;
-export type Balance = { warehouseId: string; itemId: string; qty: Numeric };
+export type InventoryMethod = "fifo" | "moving_average";
+export type Balance = { warehouseId: string; itemId: string; qty: Numeric; averageCost?: Numeric };
 export type CostLayer = { warehouseId: string; itemId: string; qtyLeft: Numeric; unitCost: Numeric };
 export type InventoryValue = {
   warehouseId: string; itemId: string; stockQty: number | null; layerQty: number;
@@ -11,7 +12,7 @@ export type CompoundValue<T extends CompoundLine = CompoundLine> = T & { revenue
 const numeric = (value: Numeric): number | null => value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
 const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 
-export function valueInventory(balances: Balance[], layers: CostLayer[]): InventoryValue[] {
+export function valueInventory(balances: Balance[], layers: CostLayer[], method: InventoryMethod = "fifo"): InventoryValue[] {
   const groups = new Map<string, InventoryValue>();
   const group = (warehouseId: string, itemId: string) => {
     const key = `${warehouseId}:${itemId}`;
@@ -22,6 +23,10 @@ export function valueInventory(balances: Balance[], layers: CostLayer[]): Invent
   for (const balance of balances) {
     const row = group(balance.warehouseId, balance.itemId);
     row.stockQty = numeric(balance.qty);
+    if (method === "moving_average") {
+      const average = numeric(balance.averageCost ?? null);
+      row.averageCost = average !== null && average > 0 ? average : null;
+    }
     if (row.stockQty === null) row.flags.push("Qty stok tidak valid");
   }
   for (const layer of layers) {
@@ -43,11 +48,17 @@ export function valueInventory(balances: Balance[], layers: CostLayer[]): Invent
       if (row.difference !== 0) row.flags.push("Selisih stok/lapisan");
       if (row.stockQty < 0) row.flags.push("Stok negatif");
     }
-    if (row.unpricedQty > 0) row.flags.push("HPP lapisan belum tersedia");
-    if (row.flags.length === 0) {
+    if (method === "moving_average") {
+      const value = row.stockQty === 0 ? 0 : row.stockQty !== null && row.averageCost !== null ? row.stockQty * row.averageCost : null;
+      row.value = value !== null && Number.isFinite(value) ? value : null;
+      row.pricedValue = row.value ?? 0;
+      row.unpricedQty = row.value === null ? Math.abs(row.stockQty ?? 0) : 0;
+      if (row.value === null) row.flags.push("HPP rata-rata belum tersedia");
+    } else if (row.flags.length === 0 && row.unpricedQty === 0) {
       row.value = row.pricedValue;
       row.averageCost = row.layerQty > 0 ? row.value / row.layerQty : null;
     }
+    if (method === "fifo" && row.unpricedQty > 0) row.flags.push("HPP lapisan belum tersedia");
     row.flags = [...new Set(row.flags)];
     return row;
   });

@@ -351,7 +351,10 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     const unit = balanceUnit || masterUnit;
     const unitCostCell = row.getCell(columns.unitCost!).value;
     const hppMasihRumus = formulaTanpaNilai(unitCostCell);
-    const unitCost = numberValue(unitCostCell);
+    // A missing source price is unknown, not a source-declared zero value.
+    // Keep it invalid through resolution rather than inventing a zero opening.
+    const hppKosong = cellText(unitCostCell) === "";
+    const unitCost = hppKosong ? Number.NaN : numberValue(unitCostCell);
     const batchNo = columns.batchNo ? cellText(row.getCell(columns.batchNo).value) || null : null;
     const expDate = columns.expDate ? excelDate(row.getCell(columns.expDate).value) : null;
     const branchName = columns.branchName ? cellText(row.getCell(columns.branchName).value) || null : null;
@@ -365,6 +368,7 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     else if (!Number.isFinite(rawQty) || rawQty < 0) errors.push(`Baris ${rowNo}: Kuantitas harus angka nol atau lebih`);
     if (!unit) errors.push(`Baris ${rowNo}: Satuan wajib diisi`);
     if (hppMasihRumus) rumusHppTanpaNilai.push(rowNo);
+    else if (hppKosong) errors.push(`Baris ${rowNo}: HPP wajib diisi; isi 0 hanya jika nilai sumber memang nol`);
     else if (!Number.isFinite(unitCost) || unitCost < 0) errors.push(`Baris ${rowNo}: HPP harus angka nol atau lebih`);
     if (columns.expDate && row.getCell(columns.expDate).value != null && !expDate) {
       errors.push(`Baris ${rowNo}: Tanggal kedaluwarsa tidak valid`);

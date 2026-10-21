@@ -53,7 +53,7 @@ export function lapisanPindahan(
     perTanggal.set(kunci, cur);
   }
   // Qty tanpa lapisan (stok pra-FIFO) ikut pindah tanpa tanggal — nilainya
-  // memakai harga beli master, sama seperti perhitungan cost di stockOut.
+  // memakai HPP cadangan yang dipilih stockOut, sama seperti cost pengeluaran.
   if (shortfall > 0) {
     const cur = perTanggal.get("") ?? { qty: 0, nilai: 0, expDate: null };
     cur.qty += shortfall;
@@ -132,7 +132,8 @@ export type StockOutOpts = {
 };
 
 // Stok keluar: konsumsi layer FIFO, turunkan qty, kembalikan total cost (HPP riil).
-// Shortfall (layer tidak cukup) dihargai items.buy_price — tidak membuat layer negatif.
+// Shortfall memakai HPP layer/riwayat gudang terakhir, lalu harga beli master.
+// Penjualan tanpa referensi HPP ditolak oleh RPC; tidak membuat layer negatif.
 // `takes` & `shortfall` dikembalikan supaya pemanggil yang memindahkan barang bisa
 // membangun ulang lapisan (beserta kadaluarsanya) di gudang tujuan.
 export async function stockOut(

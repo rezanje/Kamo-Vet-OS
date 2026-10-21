@@ -46,8 +46,18 @@ it("restores asset category and overridden economic life together",async()=>{
 it("clears acknowledged controlled rows and keeps defaults on later remount",async()=>{
  const form=()=> <POForm userId="a" suppliers={[]} warehouses={[]} branches={[]} items={[]}/>;
  await act(async()=>root.render(form()));await edit(host.querySelector<HTMLInputElement>('input[type="number"]')!,"7");
- const key=host.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value;
- await act(async()=>window.dispatchEvent(new CustomEvent("vetos:transaction-confirmed",{detail:{scope:"po-create",key}})));
+ const key=host.querySelector<HTMLInputElement>('input[name="request_key"]')!.value;
+ await act(async()=>window.dispatchEvent(new CustomEvent("vetos:purchase-confirmed",{detail:{scope:"po-create",key}})));
  expect(host.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("1");
  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(form()));expect(host.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("1");
+});
+it("retains PO rows when a purchase acknowledgment belongs to another request", async()=>{
+ const form=()=> <POForm userId="a" suppliers={[]} warehouses={[]} branches={[]} items={[]}/>;
+ await act(async()=>root.render(form()));await edit(host.querySelector<HTMLInputElement>('input[type="number"]')!,"7");
+ const key=host.querySelector<HTMLInputElement>('input[name="request_key"]')!.value;
+ await act(async()=>window.dispatchEvent(new CustomEvent("vetos:purchase-confirmed",{detail:{scope:"po-create",key:`other-${key}`}})));
+ expect(host.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("7");
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(form()));
+ expect(host.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("7");
+ expect(host.querySelector<HTMLInputElement>('input[name="request_key"]')!.value).toBe(key);
 });

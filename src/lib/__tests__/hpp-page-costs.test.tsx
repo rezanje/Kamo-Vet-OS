@@ -15,10 +15,19 @@ import { HppReportPage } from "../../components/HppReportPage";
 const item = { trashed_at: null, lifecycle_revision: 0, id: "i", code: "SKU", name: "Obat", unit: "ml", item_type: "Persediaan", sell_price: 100, buy_price: 25, min_stock: 0, min_buy: 1, default_discount: 0, is_active: true };
 
 describe("financial cost UI boundary", () => {
+  it("labels moving average reports and shows known negative inventory value", async () => {
+    fixture.client = clientFixture({ averageMode: true, tables: { stock: [{ id: "s", warehouse_id: "w1", item_id: "i", qty: -2, average_cost: 80 }], stock_layers: [] } }).client;
+    const html = renderToStaticMarkup(await HppReportPage({ kind: "inventory", params: {} }));
+    expect(html).toContain("RATA-RATA BERGERAK");
+    expect(html).toContain("-160,00");
+    expect(html).toContain("rekonsiliasi fisik");
+    expect(html).toMatch(/Baris perlu rekonsiliasi \/ HPP[\s\S]*?color:#b45309[\s\S]*?>1</);
+    expect(html).not.toContain("NILAI PERSEDIAAN FIFO");
+  });
   it.each(["OWNER", "FINANCE"])("shows the actual FIFO average to active %s", async role => {
     fixture.client = clientFixture({ role, modules: [{ role: "FINANCE", module_id: "pos" }], tables: { items: [item] } }).client;
     const html = renderToStaticMarkup(await SkuPage({ searchParams: Promise.resolve({}) }));
-    expect(html).toContain("HPP rata-rata FIFO");
+    expect(html).toContain("HPP rata-rata persediaan");
     expect(html).toContain("Rp 50,00");
     expect(html).toContain('title="Lengkap"');
   });
@@ -26,7 +35,7 @@ describe("financial cost UI boundary", () => {
     const { client, records } = clientFixture({ role, tables: { items: [item] } });
     fixture.client = client;
     const html = renderToStaticMarkup(await SkuPage({ searchParams: Promise.resolve({}) }));
-    expect(html).not.toContain("HPP rata-rata FIFO");
+    expect(html).not.toContain("HPP rata-rata persediaan");
     expect(records.some(row => row.table === "stock_layers")).toBe(false);
   });
   it("renders ingredient view and links complete protected exports preserving scope", async () => {
