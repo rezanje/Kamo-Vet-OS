@@ -9,6 +9,7 @@ import { nextSeqJurnal, prefixJurnal } from "@/lib/posting";
 import { formatNomor } from "@/lib/no-dokumen";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
+import { inventoryMethod, loadInventoryReport } from "@/lib/hpp-reports-server";
 import {
   AKUN_MODAL_PEMILIK, jurnalSaldoAwal, nilaiPersediaan, selisihSaldoAwal,
   type BarisSaldoAwal,
@@ -27,16 +28,28 @@ export type RingkasSaldoAwal = {
   akun: { code: string; name: string; type: string; normal: string }[];
 };
 
+async function bacaNilaiPersediaan(supabase: Awaited<ReturnType<typeof createClient>>) {
+  if (await inventoryMethod(supabase) === "moving_average") {
+    const report = await loadInventoryReport(supabase, {}, undefined, BACK);
+    const value = report.summary.value;
+    if (value === null || !Number.isFinite(value)) throw new Error("Nilai persediaan belum tersedia lengkap. Rekonsiliasi HPP sebelum mengusulkan saldo awal.");
+    return { value, source: "Saldo stok × HPP rata-rata bergerak" };
+  }
+  const { data: layers, error } = await supabase.from("stock_layers").select("qty_left, unit_cost").gt("qty_left", 0);
+  if (error) throw new Error(`Nilai persediaan gagal dibaca: ${error.message}`);
+  return { value: nilaiPersediaan((layers ?? []) as { qty_left: number; unit_cost: number }[]), source: "Sisa lapisan stok × modalnya" };
+}
+
 /**
  * Hitung apa yang belum pernah masuk buku besar, dengan membandingkan kondisi NYATA
  * (stok fisik, daftar aset) terhadap saldo akunnya. Yang sudah benar akan berselisih 0
  * dan tidak muncul sebagai usulan.
  */
 export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createClient>>): Promise<RingkasSaldoAwal> {
-  const [balances, { data: layers }, { data: assets }, { data: deps }, { data: entry }, { data: coa }] =
+  const [balances, inventory, { data: assets }, { data: deps }, { data: entry }, { data: coa }] =
     await Promise.all([
       getAccountBalances(supabase as never),
-      supabase.from("stock_layers").select("qty_left, unit_cost").gt("qty_left", 0),
+      bacaNilaiPersediaan(supabase),
       supabase.from("fixed_assets").select("harga_perolehan").eq("is_active", true),
       supabase.from("asset_depreciations").select("amount"),
       supabase.from("journal_entries").select("no_jurnal, tanggal").eq("source", "saldo-awal").maybeSingle(),
@@ -45,7 +58,7 @@ export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createCl
 
   const saldo = (code: string) => balances.find((b) => b.code === code)?.saldo ?? 0;
 
-  const persediaanNyata = nilaiPersediaan((layers ?? []) as { qty_left: number; unit_cost: number }[]);
+  const persediaanNyata = inventory.value;
   const asetNyata = (assets ?? []).reduce((a, r) => a + Number(r.harga_perolehan), 0);
   const akumNyata = (deps ?? []).reduce((a, r) => a + Number(r.amount), 0);
 
@@ -54,7 +67,7 @@ export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createCl
       code: "1301", nama: "Persediaan Obat & Produk", sisi: "D",
       nyata: persediaanNyata, buku: saldo("1301"),
       selisih: selisihSaldoAwal(persediaanNyata, saldo("1301")),
-      sumber: "Sisa lapisan stok × modalnya",
+      sumber: inventory.source,
     },
     {
       code: "1501", nama: "Aset Tetap", sisi: "D",

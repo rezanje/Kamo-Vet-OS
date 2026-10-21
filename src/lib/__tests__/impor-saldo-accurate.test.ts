@@ -49,6 +49,28 @@ describe("duplicateStockKeys", () => {
 });
 
 describe("bacaWorkbookSaldoAwal", () => {
+  it.each([undefined, null, "", "   "])("menolak HPP sumber yang kosong (%j) untuk saldo positif", async (hpp) => {
+    for (const qtyHeader of ["Kuantitas", "Kuantitas Saldo Awal"]) {
+      const parsed = await bacaWorkbookSaldoAwal(await workbook([
+        ["Kode Barang", qtyHeader, "Satuan", "HPP"],
+        ["SKU-TANPA-HPP", 2, "PCS", hpp],
+      ]));
+
+      expect(parsed.errors).toEqual(["Baris 2: HPP wajib diisi; isi 0 hanya jika nilai sumber memang nol"]);
+      expect(parsed.rows[0].unitCost).not.toBe(0);
+    }
+  });
+
+  it.each([0, "0", "0,00"])("menerima HPP nol yang dinyatakan sumber (%j)", async (hpp) => {
+    const parsed = await bacaWorkbookSaldoAwal(await workbook([
+      ["Kode Barang", "Kuantitas Saldo Awal", "Satuan", "HPP"],
+      ["SKU-NILAI-NOL", 2, "PCS", hpp],
+    ]));
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows[0]).toMatchObject({ qty: 2, unitCost: 0 });
+  });
+
   it("melewati saldo nol sebelum HPP pembulatan negatif divalidasi", async () => {
     const parsed = await bacaWorkbookSaldoAwal(await workbook([
       ["Kode Barang", "Satuan", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan"],

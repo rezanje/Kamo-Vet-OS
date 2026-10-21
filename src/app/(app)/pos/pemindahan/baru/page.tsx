@@ -1,3 +1,4 @@
+import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
@@ -17,6 +18,8 @@ export default async function PemindahanBaruPage({
     loadKatalogPermintaan(supabase),
   ]);
 
+  const stock = await loadWarehouseStock(supabase, (whs ?? []).map(w => w.id));
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -33,7 +36,7 @@ export default async function PemindahanBaruPage({
         </div>
       )}
 
-      <PemindahanForm warehouses={whs ?? []} items={items} userId={user?.id ?? ""} />
+      <PemindahanForm warehouses={whs ?? []} items={items} stock={stock} userId={user?.id ?? ""} />
     </>
   );
 }

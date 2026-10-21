@@ -101,7 +101,8 @@ def bootstrap_database():
     sql('''create extension pgcrypto;
 do $$ begin create role anon; exception when duplicate_object then null;end $$;
 do $$ begin create role authenticated; exception when duplicate_object then null;end $$;
-do $$ begin create role service_role; exception when duplicate_object then null;end $$;
+-- Supabase service_role bypasses RLS; retain that behavior on reused local clusters.
+do $$ begin create role service_role bypassrls; exception when duplicate_object then alter role service_role bypassrls;end $$;
 create schema auth;create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
 create function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;

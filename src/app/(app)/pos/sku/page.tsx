@@ -148,8 +148,8 @@ export default async function BarangJasaPage({
         parentId={selectedTree?.induk.id ?? ""} childId={selectedSubcategory?.id ?? ""}
         jenis={jenis ?? ""} cari={cari ?? ""} />
 
-      {hppError && <div className="p2ban" style={{ color: "#b91c1c" }}>HPP FIFO belum bisa dibaca lengkap: {hppError}</div>}
-      {hppRows && <div className="p2ban">HPP rata-rata FIFO saat ini per satuan dasar, tertimbang atas seluruh gudang dan cabang yang diizinkan. <Link href="/laporan/nilai-persediaan">Rincian nilai persediaan</Link></div>}
+      {hppError && <div className="p2ban" style={{ color: "#b91c1c" }}>HPP persediaan belum bisa dibaca lengkap: {hppError}</div>}
+      {hppRows && <div className="p2ban">HPP rata-rata persediaan saat ini per satuan dasar, mengikuti metode penilaian aktif dan tertimbang atas saldo positif di gudang dan cabang yang diizinkan. <Link href="/laporan/nilai-persediaan">Rincian nilai persediaan</Link></div>}
       <BarangMatrixTable bolehLihatHpp={Boolean(hppRows)} rows={matrixRows} bolehKelola={bolehKelola} startNumber={pageInfo.from} />
       {(count ?? 0) > 0 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 10 }}>

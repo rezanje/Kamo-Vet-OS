@@ -2,7 +2,9 @@
 
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import type { ItemUnit } from "@/lib/satuan";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { WarehouseStock } from "@/lib/warehouse-stock";
+import { WarehouseStockHint } from "@/components/WarehouseStockHint";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { buatKirim } from "../actions";
@@ -15,9 +17,18 @@ type Row = { display: string; item_id: string; qty: number; satuan: string };
 const blank: Row = { display: "", item_id: "", qty: 1, satuan: "" };
 const label = (it: Item) => `${it.code} — ${it.name}`;
 
-export function PemindahanForm({ warehouses, items, userId }: { warehouses: Warehouse[]; items: Item[]; userId: string }) {
+export function PemindahanForm({ warehouses, items, userId, stock = [] }: { warehouses: Warehouse[]; items: Item[]; userId: string; stock?: WarehouseStock[] }) {
   const { save, failure } = usePreservedAction(buatKirim);
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  const [warehouseId, setWarehouseId] = useState("");
+  const warehouseSelect = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    const select = warehouseSelect.current;
+    const restore = (event: Event) => setWarehouseId((event as CustomEvent<string>).detail);
+    select?.addEventListener("vetos:draft-restore", restore);
+    return () => select?.removeEventListener("vetos:draft-restore", restore);
+  }, []);
+  const stockByItem = new Map(stock.filter(s => s.warehouse_id === warehouseId).map(s => [s.item_id, Number(s.qty)]));
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
 
   const byLabel = new Map(items.map((it) => [label(it), it]));
@@ -36,7 +47,7 @@ export function PemindahanForm({ warehouses, items, userId }: { warehouses: Ware
 
   return (
     <form action={save}>
-      <LocalTransactionDraft userId={userId} scope="pos:pemindahan:baru" state={{ snapshot: { rows, requestKey }, reset: () => { setRows([{ ...blank }]); setRequestKey(crypto.randomUUID()); }, restore: (value) => { const draft = value as { rows?: Row[]; requestKey?: string }; if (Array.isArray(draft.rows)) setRows(draft.rows); if (draft.requestKey) setRequestKey(draft.requestKey); return true; } }} />
+      <LocalTransactionDraft userId={userId} scope="pos:pemindahan:baru" state={{ snapshot: { rows, requestKey, warehouseId }, reset: () => { setWarehouseId(""); setRows([{ ...blank }]); setRequestKey(crypto.randomUUID()); }, restore: (value) => { const draft = value as { rows?: Row[]; requestKey?: string; warehouseId?: string }; if (Array.isArray(draft.rows)) setRows(draft.rows); if (draft.requestKey) setRequestKey(draft.requestKey); if (typeof draft.warehouseId === "string") setWarehouseId(draft.warehouseId); return true; } }} />
       <input type="hidden" name="request_key" value={requestKey} />
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
@@ -50,7 +61,7 @@ export function PemindahanForm({ warehouses, items, userId }: { warehouses: Ware
           <SecHeader num="01" title="DETAIL PENGIRIMAN" desc="Gudang asal, tujuan, dan tanggal kirim." />
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Gudang asal *</label>
-            <select className="fi" name="from_warehouse_id" required>
+            <select className="fi" name="from_warehouse_id" required ref={warehouseSelect} data-draft-state value={warehouseId} onChange={e => setWarehouseId(e.target.value)}>
               <option value="">Pilih gudang</option>
               {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
@@ -85,7 +96,7 @@ export function PemindahanForm({ warehouses, items, userId }: { warehouses: Ware
             {rows.map((r, i) => {
               const it = r.item_id ? byLabel.get(r.display) : undefined;
               return (
-                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <div key={i}><div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <input className="fi" list="pemindahan-items" placeholder="Kode / nama barang" value={r.display}
                     onChange={(e) => onDisplay(i, e.target.value)} style={{ flex: 1 }} />
                   <input className="fi" type="number" min={0} step="any" value={r.qty}
@@ -96,6 +107,8 @@ export function PemindahanForm({ warehouses, items, userId }: { warehouses: Ware
                     style={{ padding: "0 9px", color: "#b91c1c" }} title="Hapus">
                     <i className="ti ti-trash" />
                   </button>
+                </div>
+                  {it && <WarehouseStockHint warehouseId={warehouseId} quantity={stockByItem.get(it.id) ?? 0} baseUnit={it.unit} selectedUnit={it.units.find(u => u.unit === r.satuan)} />}
                 </div>
               );
             })}
