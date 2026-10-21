@@ -52,3 +52,25 @@ Application checks:
 - Used `sales_advances` evidence is hardened only to protect invoice receipt allocation; standalone advance creation/correction remains outside scope.
 - No generic shared stock/return helper was changed. Customer/supplier return correction remains owned by the separate return task.
 - Authenticated browser acceptance with a migrated isolated backend remains open. A build/PR preview alone does not establish database acceptance or production readiness.
+
+## Dashboard dated-sales follow-up (independent review P2)
+
+Root cause: the financial dashboard applied both `status != batal` and the current-year invoice-date filter before sales aggregation. This removed cancelled originals and prior-year sources whose reversal belongs in the current year. Trend history also used only active replacement invoices. Subtracting active AR from that incomplete sales total additionally conflated a dated sales flow with a current balance.
+
+The dashboard now reads paginated invoice and receipt evidence through its requested date, retaining prior-year and cancelled sources. It constructs `fjMovements: { tanggal: string; total: number }[]`: each original/replacement contributes `+total` on its invoice date, and a verified `voided_on` contributes `-total` on its reversal date. Legacy cancellations without a dated reversal are excluded rather than assigned an invented event date. Annual totals and the seven-day trend consume the same dated stream. The original100 on31December, reversed/replaced by80 on1January, therefore yields original-day+100, correction-day−20 and new-year sales−20.
+
+Settlement is independent: only invoices active as of the requested date contribute applied payments and AR; carried applications and that invoice's own receipts are counted once, capped at its amount. Old active invoices remain in current outstanding even if their sale predates the current year. Preserved receipts/customer-credit reclassification never create additional sales. `penjualan.lunas` is the applied amount on active documents, not dated net sales minus current AR. The sales card explains that distinction and bases its settlement bar on paid+outstanding. The line chart supports a signed axis/zero baseline so negative correction days stay visible.
+
+Verification:
+
+- Red: all9 new dashboard/chart regression cases failed on the pre-fix code.
+- Green:21 tests across the new dashboard/chart tests and existing purchase-dashboard/pending-sales-reader suites passed. Cases cover cross-day/year replacement, pre-correction historical date, cancellation without replacement, prior-year cancellation, part-paid carried plus new/future-dated payments, old active AR, repeated correction chains and legacy undated cancellations.
+- Full Vitest after this follow-up: **2,216 passed /3 identical baseline failures across270 files** (the two merchant-fee auth mocks and existing PO draft-key failure named above).
+- Typecheck, targeted lint and production build passed again. Independent delta review found no critical/important issue. No SQL/DB mutation path changed in this follow-up.
+
+Shared contract with return PR72:
+
+- This follow-up does not modify `buku-pembantu-server.ts` or add/filter any return query/aggregation. Existing return aggregation remains owned by PR72.
+- B2B `fjMovements` is a dated sales-flow stream; return sales/reversal movements should be combined once with the dated sales stream using their own event dates. Do not reapply B2B reversals, payments or customer-credit amounts as return sales movements. B2B active settlement remains a separate balance calculation.
+- `src/lib/dashboard.ts` and the purchase-dashboard query test harness are shared files. The harness change here only supports paginated invoice/receipt reads. `src/app/(app)/page.tsx` and `src/components/Charts.tsx` also change to explain separate balances and display negative movements.
+- Checked the current shared-file patch from PR72 head `7e33a1497c07627145914f8709061bc7975d155a` with `git apply --check`: clean application over this follow-up. In a separate disposable `/tmp` source snapshot, applied only PR72's dashboard/subledger and corresponding purchase test patches on top of this follow-up: **6 files /25 tests passed**, covering B2B dated sales, signed chart, purchase/return dashboard, purchase subledger, B2B subsidiary AR and existing completed-sale readers. No PR72 files were applied to this working branch. This proves the current shared-file regression combination, not future return changes or full cross-family database/customer acceptance.

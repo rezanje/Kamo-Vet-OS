@@ -1,4 +1,5 @@
 // Agregat dashboard keuangan (ala Accurate). Read-only, hitung di JS.
+import { completeReportQuery } from "./report-query";
 import { getAccountBalances, nilaiSeksi } from "./ledger";
 import { kodeSemuaRekening } from "./kas-akun";
 import { sisaFakturablePerBaris, type ItemFakturPoTersimpan } from "./faktur-beli";
@@ -40,10 +41,12 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at, voided_at"),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
     supabase.from("invoice_payments").select("invoice_id, amount"),
-    // Faktur penjualan reseller (rantai dokumen, migrasi 0098) — aliran pendapatan
-    // ketiga di samping struk kasir dan tagihan klinik.
-    supabase.from("sales_invoices").select("id, total, tanggal, carried_paid").neq("status", "batal").gte("tanggal", awalTahun).lte("tanggal", today),
-    supabase.from("sales_receipts").select("invoice_id, jumlah"),
+    // Retain prior-year/cancelled sources: their dated reversals may fall in
+    // this year or the seven-day trend. Current settlement is computed separately.
+    completeReportQuery(supabase.from("sales_invoices")
+      .select("id, total, tanggal, status, voided_on, carried_paid", { count: "exact" }).lte("tanggal", today)),
+    completeReportQuery(supabase.from("sales_receipts")
+      .select("id, invoice_id, tanggal, jumlah", { count: "exact" }).lte("tanggal", today)),
     supabase.from("purchase_orders").select("id, purchase_order_items(id,item_id,qty,qty_terima,harga_beli,faktor)").eq("status", "Diterima"),
     // Pelunasan pembelian hidup di purchase_invoice_payments (lewat Faktur Pembelian).
     // Tabel po_payments sudah tidak ditulis layar mana pun — membacanya bikin dashboard
@@ -112,15 +115,30 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   for (const r of (fjReceipts.data ?? []) as { invoice_id: string; jumlah: number }[]) {
     fjPaid.set(r.invoice_id, (fjPaid.get(r.invoice_id) ?? 0) + Number(r.jumlah));
   }
-  let fjTotal = 0, fjBelum = 0;
-  for (const f of (fjRows.data ?? []) as { id: string; total: number; carried_paid: number }[]) {
-    fjTotal += Number(f.total);
-    fjBelum += Math.max(0, Number(f.total) - Number(f.carried_paid ?? 0) - (fjPaid.get(f.id) ?? 0));
+  type ResellerInvoice = { id: string; total: number; tanggal: string; status: string; voided_on: string | null; carried_paid: number };
+  const fjMovements: { tanggal: string; total: number }[] = [];
+  let fjLunas = 0, fjBelum = 0;
+  for (const f of fjRows.data as ResellerInvoice[]) {
+    if (f.tanggal > today || (f.status === "batal" && !f.voided_on)) continue;
+    const total = Number(f.total);
+    fjMovements.push({ tanggal: f.tanggal, total });
+    const reversed = !!f.voided_on && f.voided_on <= today;
+    if (reversed) fjMovements.push({ tanggal: f.voided_on!, total: -total });
+    else {
+      // Carried applications replace the old invoice's receipts; they are not
+      // additional cash or sales. Only the active invoice contributes settlement.
+      const paid = Math.min(total, Number(f.carried_paid ?? 0) + (fjPaid.get(f.id) ?? 0));
+      fjLunas += paid;
+      fjBelum += Math.max(0, total - paid);
+    }
   }
-
+  const fjTotal = fjMovements.filter(m => m.tanggal >= awalTahun).reduce((sum, m) => sum + m.total, 0);
   const penjTotal = salesTotal + invTotal + fjTotal;
   const belumLunas = invBelum + salesBelumLunas + fjBelum;
-  const penjualan = { total: penjTotal, lunas: penjTotal - belumLunas, belumLunas };
+  // Dated net sales can be negative after a prior-year correction. It must not
+  // turn current applied payments negative by subtracting AR from that flow.
+  const lunas = salesTotal - salesBelumLunas + invTotal - invBelum + fjLunas;
+  const penjualan = { total: penjTotal, lunas, belumLunas };
 
   // Received goods remain a liability until billed; void invoices reopen that portion.
   type PurchaseInvoice = { po_id: string | null; total: number; purchase_invoice_items: ItemFakturPoTersimpan[] | null; purchase_invoice_payments: { amount: number }[] | null };
@@ -162,8 +180,8 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     const t = s.created_at.slice(0, 10);
     if (trenMap.has(t)) trenMap.set(t, trenMap.get(t)! + Number(s.total));
   }
-  for (const f of (fjRows.data ?? []) as { total: number; tanggal: string }[]) {
-    if (trenMap.has(f.tanggal)) trenMap.set(f.tanggal, trenMap.get(f.tanggal)! + Number(f.total));
+  for (const movement of fjMovements) {
+    if (trenMap.has(movement.tanggal)) trenMap.set(movement.tanggal, trenMap.get(movement.tanggal)! + movement.total);
   }
   const trenPenjualan = hari7.map((t) => ({ tanggal: t, total: trenMap.get(t)! }));
 
