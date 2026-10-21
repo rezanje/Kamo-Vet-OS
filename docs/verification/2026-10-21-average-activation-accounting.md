@@ -1,5 +1,7 @@
 # Average activation accounting reconciliation
 
+Latest post-PR81 status and release/activation distinction: `docs/verification/2026-10-21-average-guard-release-readiness.md`. Earlier pending-PR81 notes below are historical; the branch is now rebased onto main6289994.
+
 Draft PR: [#82](https://github.com/rezanje/Kamo-Vet-OS/pull/82). Tested production implementation remains `7c66e896aad97c0190e672f2f964d5f0f9e8010e`. Initial publication record `a2be160` was documentation only; the PR81 follow-up changes tests and documentation only. Latest combined compatibility is green for all seven PR81 migrations; the earlier six-migration caveat below is historical and superseded by the follow-up section.
 
 ## Outcome and safe handling

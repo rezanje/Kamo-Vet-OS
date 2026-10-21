@@ -1,0 +1,3 @@
+Applied 222 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS guard installs over stock160/GL0 without mode/data/history changes; later activation fails closed.
+Removed owned PostgreSQL test container and volumes.

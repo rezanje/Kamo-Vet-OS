@@ -57,6 +57,19 @@ set local role authenticated;
 select pg_temp.activation_denied('rekonsiliasi');
 reset role;
 rollback to wrong_allocation;
+-- Activation is global: a reconciled branch cannot opt in while another
+-- branch still has an unmatched opening value.
+select pg_temp.activation_gl(md5('ag-branch')::uuid,160,'ag-only-first-branch');
+set local role authenticated;
+select pg_temp.activation_denied('rekonsiliasi');
+-- An operational branch filter does not turn the global RPC into branch adoption.
+select set_config('request.headers',jsonb_build_object('x-kamo-operational-branch',md5('ag-branch')::uuid::text)::text,true);
+do $$begin
+ begin perform activate_moving_average();raise exception 'Branch filter bypassed global activation';exception when insufficient_privilege then null;end;
+end$$;
+select set_config('request.headers','{}',true);
+reset role;
+rollback to wrong_allocation;
 -- Correct global AND branch amounts, with balanced fictional source journals.
 select pg_temp.activation_gl(md5('ag-branch')::uuid,160,'ag-correct-b');
 select pg_temp.activation_gl(md5('ag-branch2')::uuid,120,'ag-correct-c');

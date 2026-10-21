@@ -21,3 +21,7 @@ Verification and separate review findings: `docs/verification/2026-10-21-average
 - [x] Update the legacy direct-return fixture to assert PR72's rejection and rollback, preserving pre-PR72 FIFO coverage.
 - [x] Execute deployed-main-then-pending and clean chronological PR81+PR82 replays, including `20261021183000_correction_master_reference_guards.sql`; both pass.
 - [x] Record final combined activation races; publish only the test/fixture/documentation follow-up on the existing draft PR82.
+
+## After PR81 merged
+
+Rebased onto main `6289994`, resolved the tested runner overlap, and updated its deployed baseline. Added explicit global-versus-branch activation tests and an owned-fixture proof that the guard installs without activating or repairing unreconciled inventory. Fresh tests and release/authorization status: `docs/verification/2026-10-21-average-guard-release-readiness.md`. Production guard source is unchanged.

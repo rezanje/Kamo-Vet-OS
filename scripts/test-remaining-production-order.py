@@ -9,7 +9,7 @@ import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-BASE = '9aafe37d13913735dacbee60ffd2099b43853db9'
+BASE = '6289994422ce32e795f6f27baba04b5db477210d'
 spec = importlib.util.spec_from_file_location('fixture', ROOT / 'scripts/test-accurate-inventory-accounting-postgres.py')
 harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
