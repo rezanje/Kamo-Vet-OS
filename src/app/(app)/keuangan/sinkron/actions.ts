@@ -122,8 +122,8 @@ export async function findDriftLain(supabase: Awaited<ReturnType<typeof createCl
     supabase.from("payrolls").select("periode, total").eq("status", "final"),
     supabase.from("cash_entries").select("no_bukti, tanggal, jumlah").is("voided_at", null),
     supabase.from("cash_transfers").select("no_transfer, tanggal, jumlah").is("voided_at", null),
-    supabase.from("sales_returns").select("no_retur, tanggal, total"),
-    supabase.from("purchase_returns").select("no_retur, tanggal, total"),
+    supabase.from("sales_returns").select("no_retur, tanggal, total").is("voided_at", null),
+    supabase.from("purchase_returns").select("no_retur, tanggal, total").is("voided_at", null),
   ]);
 
   const out: DriftLain[] = [];

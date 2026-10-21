@@ -134,7 +134,7 @@ export async function mutasiHutang(supabase: SupabaseServer, sampai: string): Pr
       .select("id, no_faktur, tanggal, total, voided_on, supplier_id, suppliers(nama), purchase_invoice_payments(id, tanggal, amount, dari_uang_muka)")
       .lte("tanggal", sampai),
     supabase.from("purchase_returns")
-      .select("no_retur, tanggal, total, purchase_orders(supplier_id, suppliers(nama))")
+      .select("no_retur, tanggal, total, purchase_orders(supplier_id, suppliers(nama))").is("voided_at", null)
       .lte("tanggal", sampai),
   ]);
 

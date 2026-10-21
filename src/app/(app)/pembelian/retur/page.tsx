@@ -8,6 +8,7 @@ type Row = {
   tanggal: string;
   keterangan: string | null;
   total: number;
+  voided_at: string | null;
   purchase_orders: { no_po: string | null; suppliers: { nama: string } | null } | null;
   purchase_return_items: { id: string }[] | null;
 };
@@ -26,7 +27,7 @@ export default async function ReturBeliPage({
 
   const { data } = await supabase
     .from("purchase_returns")
-    .select("id, no_retur, tanggal, keterangan, total, purchase_orders(no_po, suppliers(nama)), purchase_return_items(id)")
+    .select("id, no_retur, tanggal, keterangan, total, voided_at, purchase_orders(no_po, suppliers(nama)), purchase_return_items(id)")
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = (data ?? []) as unknown as Row[];
@@ -79,7 +80,7 @@ export default async function ReturBeliPage({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td style={{ fontWeight: 500, fontSize: 11.5 }}>{r.no_retur}</td>
+                  <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/pembelian/retur/${r.id}`}>{r.no_retur}</Link>{r.voided_at && " · Dibatalkan / diganti"}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtD(r.tanggal)}</td>
                   <td style={{ fontSize: 11.5 }}>{r.purchase_orders?.no_po ?? "—"}</td>
                   <td style={{ fontSize: 11.5 }}>{r.purchase_orders?.suppliers?.nama ?? "—"}</td>

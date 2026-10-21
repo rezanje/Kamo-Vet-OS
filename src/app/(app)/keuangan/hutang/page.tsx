@@ -38,7 +38,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
       .from("purchase_orders")
       .select("id, no_po, tanggal, total, suppliers(nama), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, faktor)")
       .eq("status", "Diterima"),
-    supabase.from("purchase_returns").select("po_id, total"),
+    supabase.from("purchase_returns").select("po_id, total").is("voided_at", null),
   ]);
 
   // retur pembelian per PO = pengurang hutang pemasok (dialokasikan ke faktur PO yang sama)

@@ -87,6 +87,7 @@ export default async function ReturKasirPage({
   const { data: returData } = await supabase
     .from("sales_returns")
     .select("id, no_retur, tanggal, total, keterangan, sales!inner(no_struk, branch_id), sales_return_items(id)")
+    .is("voided_at", null)
     .eq("sales.branch_id", shift.branch_id)
     .order("created_at", { ascending: false })
     .limit(30);

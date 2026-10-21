@@ -110,11 +110,11 @@ describe("operation sales server collector", () => {
     });
 
     expect(result.sales.status).toBe("ready");
-    for (const table of ["sales", "visits", "bookings", "purchase_orders", "stock_moves"]) {
+    for (const table of ["sales", "visits", "bookings", "purchase_orders", "return_record_effective_stock_moves"]) {
       const records = supabase.records.filter((record) => record.table === table);
       expect(records.length, table).toBeGreaterThan(0);
       const calls = records.flatMap((record) => record.calls);
-      const scopedId = table === "stock_moves" ? "w1" : "b1";
+      const scopedId = table === "return_record_effective_stock_moves" ? "w1" : "b1";
       expect(calls.some((call) => call.method === "in" && JSON.stringify(call.args).includes(scopedId)), table).toBe(true);
       expect(calls.some((call) => call.method === "gte" && JSON.stringify(call.args).includes("2026-08-01")), table).toBe(true);
       expect(calls.some((call) => call.method === "lte" && JSON.stringify(call.args).includes("2026-08-31")), table).toBe(true);

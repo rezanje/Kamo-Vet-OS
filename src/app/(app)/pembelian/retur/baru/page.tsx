@@ -29,7 +29,7 @@ export default async function ReturBeliBaruPage({
       .eq("status", "Diterima")
       .order("created_at", { ascending: false })
       .limit(100),
-    supabase.from("purchase_returns").select("po_id, purchase_return_items(source_line_id, item_id, qty)"),
+    supabase.from("purchase_returns").select("po_id, purchase_return_items(source_line_id, item_id, qty)").is("voided_at", null),
   ]);
 
   const unitMap = await loadUnitOptions(supabase, ((pos ?? []) as unknown as PoRow[]).flatMap(p => (p.purchase_order_items ?? []).map(r => r.item_id).filter((id): id is string => !!id)), {includeInactive:true});

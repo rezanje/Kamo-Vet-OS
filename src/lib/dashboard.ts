@@ -36,9 +36,13 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
 
   const kodeRekening = await kodeSemuaRekening(supabase);
 
-  const [balances, salesRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
+  const [balances, salesRows, salesReturnRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
     supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at, voided_at"),
+    // Return corrections restate the original open date. Include both YTD and
+    // the complete seven-day window, which can begin in the preceding year.
+    completeReportQuery(supabase.from("sales_returns").select("id,total,tanggal", { count: "exact" }).is("voided_at", null)
+      .gte("tanggal", awal7 < awalTahun ? awal7 : awalTahun).lte("tanggal", today)),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
     supabase.from("invoice_payments").select("invoice_id, amount"),
     // Retain prior-year/cancelled sources: their dated reversals may fall in
@@ -52,7 +56,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     // Tabel po_payments sudah tidak ditulis layar mana pun — membacanya bikin dashboard
     // selalu melaporkan seluruh PO sebagai belum dibayar.
     supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_items(po_item_id,item_id,qty,faktor), purchase_invoice_payments(amount)").is("voided_at", null),
-    supabase.from("purchase_returns").select("po_id, total"),
+    supabase.from("purchase_returns").select("po_id, total").is("voided_at", null),
     // baris jurnal kas/bank 7 hari terakhir untuk arus kas harian.
     supabase
       .from("journal_lines")
@@ -93,7 +97,10 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   // ── Penjualan (tahun ini): POS + Online + invoice klinik + faktur reseller, lunas vs belum ──
   const completedSales = ((salesRows.data ?? []) as (SaleCompletion & { total: number; created_at: string; marketplace_status: string | null })[]).filter(isCompletedSale);
   const salesRowsThisYear = completedSales.filter((s) => s.created_at >= awalTahun);
-  const salesTotal = salesRowsThisYear.reduce((a: number, s: { total: number }) => a + Number(s.total), 0);
+  if (salesReturnRows.error) throw new Error("Retur penjualan dashboard belum dapat diverifikasi.");
+  const customerReturns = (salesReturnRows.data ?? []) as { total: number; tanggal: string }[];
+  const salesTotal = salesRowsThisYear.reduce((a: number, s: { total: number }) => a + Number(s.total), 0)
+    - customerReturns.filter(row => row.tanggal >= awalTahun).reduce((sum, row) => sum + Number(row.total), 0);
 
   const paidMap = new Map<string, number>();
   for (const p of (invPays.data ?? []) as { invoice_id: string; amount: number }[]) paidMap.set(p.invoice_id, (paidMap.get(p.invoice_id) ?? 0) + Number(p.amount));
@@ -179,6 +186,9 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   for (const s of completedSales) {
     const t = s.created_at.slice(0, 10);
     if (trenMap.has(t)) trenMap.set(t, trenMap.get(t)! + Number(s.total));
+  }
+  for (const row of customerReturns) {
+    if (trenMap.has(row.tanggal)) trenMap.set(row.tanggal, trenMap.get(row.tanggal)! - Number(row.total));
   }
   for (const movement of fjMovements) {
     if (trenMap.has(movement.tanggal)) trenMap.set(movement.tanggal, trenMap.get(movement.tanggal)! + movement.total);
