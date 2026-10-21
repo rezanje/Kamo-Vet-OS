@@ -22,6 +22,7 @@ import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
 import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { roundPosMoney } from "@/lib/pos-money";
+import { KasirQuantityInput } from "./KasirQuantityInput";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -663,7 +664,8 @@ export function KasirClient({
                         <td>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
                             <button type="button" onClick={() => setQty(k, -1)} className="kpos-qtybtn"><i className="ti ti-minus" /></button>
-                            <span style={{ fontSize: 10.5, minWidth: 14, textAlign: "center" }}>{l.qty}</span>
+                            <KasirQuantityInput quantity={l.qty} label={`Jumlah ${l.nama}${l.satuan ? ` (${l.satuan})` : ""}`}
+                              onChange={qty => setCart(c => c.map(line => kunciBaris(line) === k ? { ...line, qty } : line))} />
                             <button type="button" onClick={() => setQty(k, 1)} className="kpos-qtybtn"><i className="ti ti-plus" /></button>
                           </div>
                           {(l.faktor ?? 1) > 1 && (
