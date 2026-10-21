@@ -1,0 +1,20 @@
+PASS 216 source migrations (auth/storage shims, fictional pre-0068 COA).
+PASS master_data_lifecycle.sql
+PASS master_item_code_history.sql
+PASS actual lock wait: trash wins / new FK rejected
+PASS actual lock wait: new FK wins / trash rejected
+PASS actual lock wait: trash wins / new text unit rejected
+PASS actual lock wait: new text unit wins / trash rejected
+PASS actual lock wait: competing same-version action
+PASS actual lock wait: trash wins / new JSON snapshot rejected
+PASS actual lock wait: uppercase JSON snapshot wins / trash rejected
+PASS actual lock wait: trash wins / new import source code rejected
+PASS actual lock wait: JSON code snapshot wins / trash rejected
+PASS actual lock wait: source code reference wins / rename rejected
+PASS actual lock wait: JSON code reference wins / rename rejected
+PASS actual lock wait: unused rename wins / waiting source-code writer rejects old identity
+PASS actual lock wait: unused rename wins / waiting JSON-code writer rejects old identity
+PASS code rename race provenance and unchanged referenced identities
+PASS actual lock wait: branch grant revoked during target lock wait
+PASS actual lock wait: actor revoked during target lock wait
+PASS race audit count and no partial side effects

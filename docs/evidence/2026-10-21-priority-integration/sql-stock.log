@@ -1,0 +1,12 @@
+All production migrations applied to disposable local PostgreSQL.
+Stock correction SQL assertions passed.
+Traceback (most recent call last):
+  File "/workspace/kamo-integration/scripts/test-stock-document-corrections-postgres.py", line 111, in <module>
+    main()
+  File "/workspace/kamo-integration/scripts/test-stock-document-corrections-postgres.py", line 106, in main
+    races()
+  File "/workspace/kamo-integration/scripts/test-stock-document-corrections-postgres.py", line 74, in races
+    wait("wait_event_type='Lock' and query like '%consumer-second-waiter%'")
+  File "/workspace/kamo-integration/scripts/test-stock-document-corrections-postgres.py", line 36, in wait
+    raise RuntimeError('Concurrency barrier not reached: ' + predicate)
+RuntimeError: Concurrency barrier not reached: wait_event_type='Lock' and query like '%consumer-second-waiter%'

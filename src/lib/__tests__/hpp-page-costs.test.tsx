@@ -6,11 +6,13 @@ import { clientFixture } from "./fixtures/hpp-report-client";
 const fixture = vi.hoisted(() => ({ client: null as SupabaseClient | null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => fixture.client }));
 vi.mock("next/link", () => ({ default: ({ children, href }: React.PropsWithChildren<{ href: string }>) => <a href={href}>{children}</a> }));
+vi.mock("@/components/MasterLifecycleFilter",()=>({MasterLifecycleFilter:()=>null}));
+vi.mock("@/components/MasterLifecycleActions",()=>({MasterLifecycleActions:()=>null}));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
 vi.mock("../../app/(app)/pos/sku/actions", () => ({ toggleBarang: async () => {} }));
 import SkuPage from "../../app/(app)/pos/sku/page";
 import { HppReportPage } from "../../components/HppReportPage";
-const item = { id: "i", code: "SKU", name: "Obat", unit: "ml", item_type: "Persediaan", sell_price: 100, buy_price: 25, min_stock: 0, min_buy: 1, default_discount: 0, is_active: true };
+const item = { trashed_at: null, lifecycle_revision: 0, id: "i", code: "SKU", name: "Obat", unit: "ml", item_type: "Persediaan", sell_price: 100, buy_price: 25, min_stock: 0, min_buy: 1, default_discount: 0, is_active: true };
 
 describe("financial cost UI boundary", () => {
   it.each(["OWNER", "FINANCE"])("shows the actual FIFO average to active %s", async role => {

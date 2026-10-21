@@ -4,11 +4,14 @@ import { useId, useMemo, useState } from "react";
 
 export type SearchableItem = { id: string; code: string; name: string };
 
-export function SearchableItemPicker({ items, value, onChange, placeholder = "Cari kode / nama barang", ariaLabel = "Barang" }: {
+export function SearchableItemPicker({ items, value, onChange, placeholder = "Cari kode / nama barang", ariaLabel = "Barang", selectedLabelFormat = "code-name", inputId }: {
   items: SearchableItem[]; value: string; onChange: (id: string) => void; placeholder?: string; ariaLabel?: string;
+  // Only the selected input label changes; results and search keep code + name.
+  selectedLabelFormat?: "code-name" | "name"; inputId?: string;
 }) {
   const selected = items.find((item) => item.id === value);
-  const selectedLabel = selected ? `${selected.code} · ${selected.name}` : "";
+  const itemLabel = (item: SearchableItem) => selectedLabelFormat === "name" ? item.name : `${item.code} · ${item.name}`;
+  const selectedLabel = selected ? itemLabel(selected) : "";
   const [queryOverride, setQueryOverride] = useState<{ value: string; text: string } | null>(null);
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
@@ -18,11 +21,11 @@ export function SearchableItemPicker({ items, value, onChange, placeholder = "Ca
     const search = query.trim().toLowerCase();
     return (search ? items.filter((item) => `${item.code} ${item.name}`.toLowerCase().includes(search)) : items).slice(0, 50);
   }, [items, query]);
-  const choose = (item: SearchableItem) => { onChange(item.id); setQueryOverride({ value: item.id, text: `${item.code} · ${item.name}` }); setOpen(false); };
+  const choose = (item: SearchableItem) => { onChange(item.id); setQueryOverride({ value: item.id, text: itemLabel(item) }); setOpen(false); };
 
   return (
     <div style={{ position: "relative" }}>
-      <input className="fi" value={query} placeholder={placeholder} aria-label={ariaLabel} role="combobox"
+      <input id={inputId} className="fi" value={query} placeholder={placeholder} aria-label={ariaLabel} role="combobox"
         aria-autocomplete="list" aria-expanded={open && hits.length > 0} aria-controls={listId}
         aria-activedescendant={open && hits[highlighted] ? `${listId}-option-${highlighted}` : undefined}
         onFocus={() => { setOpen(true); }}

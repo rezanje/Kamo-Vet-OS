@@ -9,6 +9,8 @@ const state = vi.hoisted(() => ({ categories: [
  { id: "cat", name: "MAKANAN KUCING", parent_id: "food", is_active: true },
 ] }));
 vi.mock("next/link", () => ({ default: ({children,...props}: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));
+vi.mock("@/components/MasterLifecycleFilter",()=>({MasterLifecycleFilter:()=>null}));
+vi.mock("@/components/MasterLifecycleActions",()=>({MasterLifecycleActions:()=>null}));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("@/lib/satuan", () => ({ loadItemUnits: async () => new Map() }));
 vi.mock("@/lib/hpp-reports-server", () => ({ loadSkuInventoryCosts: async () => [] }));
@@ -17,7 +19,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
  auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
  from(table: string) {
   const data = table === "item_categories" ? state.categories : table === "profiles" ? { role: "OWNER", is_active: false } : [];
-  const q = { select: () => q, order: () => q, eq: () => q, in: () => q, range: () => q,
+  const q = { select: () => q, order: () => q, is:()=>q,eq: () => q, in: () => q, range: () => q,
    maybeSingle: async () => ({ data }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, count: 0 }).then(resolve) };
   return q;
  },

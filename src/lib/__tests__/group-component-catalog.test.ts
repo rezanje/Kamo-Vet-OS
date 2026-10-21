@@ -33,7 +33,7 @@ beforeEach(()=>{
  fixture.failedPage=-1;fixture.truncatePage=-1;
  const items=Array.from({length:6001},(_,i)=>({id:`item-${String(i).padStart(4,"0")}`,code:`SKU-${i}`,name:i===6000?"Zebra late component":`Component ${String(i).padStart(4,"0")}`,
   unit:"pcs",sell_price:100,buy_price:50,item_type:i===6000?"Jasa":i===5999?"Non-Persediaan":"Persediaan",is_active:true}));
- fixture.tables={profiles:[{id:"owner",role:"OWNER"}],items:[...items,
+ fixture.tables={profiles:[{id:"owner",role:"OWNER",is_active:true}],items:[...items,
   {...items[0],id:"inactive",name:"Inactive Z item",is_active:false},
   {...items[0],id:"nested-group",name:"Nested Z group",item_type:"Grup"}],
   item_units:[{item_id:"item-5998",unit:"box",factor:10,sell_price:900,buy_price:400}],

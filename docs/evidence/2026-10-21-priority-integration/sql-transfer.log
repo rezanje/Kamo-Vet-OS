@@ -1,0 +1,3 @@
+All production migrations applied to disposable local PostgreSQL.
+PASS transfer permissions, immutable replacement, balances, journals, retry, rollback and downstream SQL suite.
+PASS real duplicate retry, competing correction, both reconciliation orders, close and revocation races.

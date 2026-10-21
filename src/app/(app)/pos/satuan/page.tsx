@@ -1,28 +1,32 @@
+import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
+import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
+import { masterView, visibleMasters, type LifecycleRow } from "@/lib/master-lifecycle";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
-import { simpanSatuan, toggleSatuan } from "./actions";
+import { simpanSatuan } from "./actions";
 
-type Unit = { id: string; nama: string; is_active: boolean };
+type Unit = { id: string; nama: string; is_active: boolean } & LifecycleRow;
 
 export default async function SatuanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; view?: string }>;
 }) {
-  const { error, success, edit } = await searchParams;
+  const { error, success, edit, view: viewRaw } = await searchParams;
+  const view = masterView(viewRaw);
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
   const [{ data }, { data: itemRows }, { data: unitRows }] = await Promise.all([
-    supabase.from("units").select("id, nama, is_active").order("nama"),
+    supabase.from("units").select("id, nama, is_active, trashed_at, lifecycle_revision").order("nama"),
     supabase.from("items").select("unit"),
     supabase.from("item_units").select("unit"),
   ]);
 
-  const units = (data ?? []) as Unit[];
+  const units = visibleMasters((data ?? []) as Unit[], view, row => row.is_active);
 
   // "Dipakai" = satuan dasar barang + satuan turunan; keduanya dihitung supaya
   // satuan yang kelihatan kosong benar-benar aman dinonaktifkan.
@@ -32,13 +36,13 @@ export default async function SatuanPage({
     if (k) pakai.set(k, (pakai.get(k) ?? 0) + 1);
   }
 
-  const editing = edit ? units.find((u) => u.id === edit) ?? null : null;
+  const editing = edit ? units.find((u) => u.id === edit && !u.trashed_at) ?? null : null;
 
   return (
     <MasterPage
       back="/pos" icon="ti-scale-outline" title="SATUAN BARANG"
       desc="Daftar satuan resmi — dipakai master Barang & Jasa"
-      error={error} success={success} successMsg="Satuan tersimpan."
+      error={error} success={success} successMsg={success === "1" ? "Satuan tersimpan." : success ?? ""}
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah satuan."
     >
@@ -61,6 +65,7 @@ export default async function SatuanPage({
         </form>
       )}
 
+      <MasterLifecycleFilter entity="units" view={view} />
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 520 }}>
@@ -77,18 +82,12 @@ export default async function SatuanPage({
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{u.nama}</td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pakai.get(u.nama) ?? 0} barang</td>
-                  <td><span className={`bge ${u.is_active ? "g" : "x"}`}>{u.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                  <td><span className={`bge ${u.is_active ? "g" : "x"}`}>{u.trashed_at ? "Sampah" : u.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehKelola && (
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <Link href={`/pos/satuan?edit=${u.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Ubah</Link>
-                        <form action={toggleSatuan}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <input type="hidden" name="aktif" value={u.is_active ? "1" : "0"} />
-                          <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">
-                            {u.is_active ? "Nonaktifkan" : "Aktifkan"}
-                          </SubmitButton>
-                        </form>
+                        {!u.trashed_at && <Link href={`/pos/satuan?edit=${u.id}&view=${view}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Edit</Link>}
+                        <MasterLifecycleActions entity="units" id={u.id} name={u.nama} active={u.is_active} trashed={Boolean(u.trashed_at)} revision={u.lifecycle_revision} />
                       </div>
                     </td>
                   )}

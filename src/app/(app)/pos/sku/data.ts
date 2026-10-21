@@ -13,8 +13,8 @@ export async function siapkanFormBarang() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") {
+  const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
+  if (!profile?.is_active || (profile.role !== "OWNER" && profile.role !== "ADMIN")) {
     redirect(`/pos/sku?error=${encodeURIComponent("Hanya OWNER/ADMIN yang boleh mengubah master barang")}`);
   }
 
@@ -26,7 +26,7 @@ export async function siapkanFormBarang() {
     supabase.from("item_categories").select("id, name, parent_id, is_active").order("name"),
     supabase.from("brands").select("id, name").eq("is_active", true).order("name"),
     supabase.from("units").select("id, nama").eq("is_active", true).order("nama"),
-    supabase.from("suppliers").select("id, nama").order("nama"),
+    supabase.from("suppliers").select("id, nama").eq("is_active", true).order("nama"),
     // Kandidat barang substitusi — jasa tidak punya stok, jadi tidak bisa jadi pengganti.
     completeReportQuery<{ id: string; code: string; name: string }>(
       supabase.from("items").select("id, code, name", { count: "exact" }).eq("is_active", true)
@@ -54,7 +54,7 @@ export async function siapkanFormBarang() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadBarang(supabase: any, id: string): Promise<BarangRow | null> {
-  const { data } = await supabase.from("items").select(BARANG_FIELDS).eq("id", id).maybeSingle();
+  const { data } = await supabase.from("items").select(`${BARANG_FIELDS}, brands(name), suppliers(nama)`).is("trashed_at", null).eq("id", id).maybeSingle();
   if (!data) return null;
   const [units, { data: tiers }, { data: groupComponents }] = await Promise.all([
     loadItemUnits(supabase, [id]),
@@ -65,6 +65,8 @@ export async function loadBarang(supabase: any, id: string): Promise<BarangRow |
   ]);
   return {
     ...(data as BarangRow),
+    brand_name: (Array.isArray(data.brands) ? data.brands[0] : data.brands)?.name ?? null,
+    supplier_name: (Array.isArray(data.suppliers) ? data.suppliers[0] : data.suppliers)?.nama ?? null,
     units: units.get(id) ?? [],
     tiers: ((tiers ?? []) as { min_qty: number; harga: number }[])
       .map((t) => ({ min_qty: Number(t.min_qty), harga: Number(t.harga) })),

@@ -12,12 +12,12 @@ export default async function VariantFamilyPage({ searchParams }: { searchParams
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const [{ data: profile }, { data: items }, { data: categories }, { data: families }] = await Promise.all([
-    supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+    supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle(),
     supabase.from("items").select("id,code,name").eq("is_active", true).neq("item_type", "Grup").order("code").limit(2000),
     supabase.from("item_categories").select("id,name").eq("is_active", true).order("name"),
     supabase.from("item_variant_families").select("id,name,category_id,item_variant_members(item_id,label,sort_order,items(code,name))").order("name"),
   ]);
-  const boleh = profile?.role === "OWNER" || profile?.role === "ADMIN";
+  const boleh = profile?.is_active === true && (profile.role === "OWNER" || profile.role === "ADMIN");
   return (
     <>
       <div style={{ marginBottom: 4 }}><Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang &amp; Jasa</Link></div>
