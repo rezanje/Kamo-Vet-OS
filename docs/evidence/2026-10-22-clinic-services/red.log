@@ -1,0 +1,162 @@
+
+> vetos@0.1.0 test
+> vitest run src/lib/__tests__/clinic-service-categories.test.ts src/lib/__tests__/clinic-compound-sku-pages.test.tsx
+
+
+ RUN  v4.1.9 /workspace/kamo-clinic-services-fix
+
+ ❯ src/lib/__tests__/clinic-service-categories.test.ts (4 tests | 2 failed) 84ms
+   × keeps an Accurate SVC in Jasa when its imported category is Konsultasi 79ms
+   × uses service type for categories that are absent, missing, or cyclic without matching names heuristically 2ms
+ ❯ src/lib/__tests__/clinic-compound-sku-pages.test.tsx (19 tests | 4 failed) 153ms
+     × exam prioritizes explicit clinic categories and falls back to service type 12ms
+     × inpatient prioritizes explicit clinic categories and falls back to service type 2ms
+     × exam exposes imported services without a literal Jasa ancestor and preserves pricing metadata 4ms
+     × inpatient exposes imported services without a literal Jasa ancestor and preserves pricing metadata 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/clinic-compound-sku-pages.test.tsx > clinic item categories > exam prioritizes explicit clinic categories and falls back to service type
+ FAIL  src/lib/__tests__/clinic-compound-sku-pages.test.tsx > clinic item categories > inpatient prioritizes explicit clinic categories and falls back to service type
+AssertionError: expected [ 'consult' ] to deeply equal [ 'consult', 'vaccine', 'lab' ]
+
+- Expected
++ Received
+
+  [
+    "consult",
+-   "vaccine",
+-   "lab",
+  ]
+
+ ❯ src/lib/__tests__/clinic-compound-sku-pages.test.tsx:153:30
+    151|     const props = formProps(await page());
+    152|     const ids = (key: string) => (props?.[key] as { id: string }[]).ma…
+    153|     expect(ids("jasaItems")).toEqual(["consult", "vaccine", "lab"]);
+       |                              ^
+    154|     expect(ids("tindakanItems")).toEqual(["steril", "scaling"]);
+    155|     expect(ids("items")).toEqual(["food", "group", "uncategorized"]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  src/lib/__tests__/clinic-compound-sku-pages.test.tsx > clinic item categories > exam exposes imported services without a literal Jasa ancestor and preserves pricing metadata
+ FAIL  src/lib/__tests__/clinic-compound-sku-pages.test.tsx > clinic item categories > inpatient exposes imported services without a literal Jasa ancestor and preserves pricing metadata
+AssertionError: expected [] to deeply equal [ 'imported-service', …(1) ]
+
+- Expected
++ Received
+
+- [
+-   "imported-service",
+-   "uncategorized-service",
+- ]
++ []
+
+ ❯ src/lib/__tests__/clinic-compound-sku-pages.test.tsx:179:30
+    177|     const props = formProps(await page());
+    178|     const ids = (key: string) => (props?.[key] as { id: string }[]).ma…
+    179|     expect(ids("jasaItems")).toEqual(["imported-service", "uncategoriz…
+       |                              ^
+    180|     expect(ids("tindakanItems")).toEqual(["action"]);
+    181|     expect(ids("items")).toEqual(["vaccine", "stock"]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  src/lib/__tests__/clinic-service-categories.test.ts > keeps an Accurate SVC in Jasa when its imported category is Konsultasi
+AssertionError: expected [] to deeply equal [ { code: 'FIX-SVC', …(20) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "brand_id": null,
+-     "buy_price": 0,
+-     "buy_unit": null,
+-     "category_id": "consult",
+-     "code": "FIX-SVC",
+-     "default_discount": 0,
+-     "id": "fiction-service",
+-     "is_active": true,
+-     "is_compound_material": false,
+-     "item_type": "Jasa",
+-     "min_buy": 0,
+-     "min_sell_qty": 0,
+-     "min_stock": 0,
+-     "name": "Konsultasi fiktif",
+-     "sell_price": 35000,
+-     "substitute_item_id": null,
+-     "supplier_id": null,
+-     "tindakan_kategori": "Konsultasi",
+-     "track_expiry": false,
+-     "unit": "JASA",
+-     "upc": null,
+-   },
+- ]
++ []
+
+ ❯ src/lib/__tests__/clinic-service-categories.test.ts:21:23
+     19|   const sku = { ...payload, id: "fiction-service", is_compound_materia…
+     20|   const groups = splitClinicItems([sku], [{ id: "consult", name: "KONS…
+     21|   expect(groups.jasa).toEqual([sku]);
+       |                       ^
+     22|   expect(groups.obat).toEqual([]);
+     23|   expect(groups.jasa[0]).toMatchObject({ item_type: "Jasa", sell_price…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  src/lib/__tests__/clinic-service-categories.test.ts > uses service type for categories that are absent, missing, or cyclic without matching names heuristically
+AssertionError: expected [] to deeply equal [ { id: 'none', …(3) }, …(3) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category_id": null,
+-     "id": "none",
+-     "is_compound_material": false,
+-     "item_type": "Jasa",
+-   },
+-   {
+-     "category_id": "missing",
+-     "id": "missing",
+-     "is_compound_material": false,
+-     "item_type": "Jasa",
+-   },
+-   {
+-     "category_id": "a",
+-     "id": "cycle",
+-     "is_compound_material": false,
+-     "item_type": "Jasa",
+-   },
+-   {
+-     "category_id": "other",
+-     "id": "named",
+-     "is_compound_material": false,
+-     "item_type": "Jasa",
+-   },
+- ]
++ []
+
+ ❯ src/lib/__tests__/clinic-service-categories.test.ts:29:62
+     27|   const skus = [item("none", null), item("missing", "missing"), item("…
+     28|   const categories = [{ id: "a", name: "A", parent_id: "b" }, { id: "b…
+     29|   expect(splitClinicItems(skus, categories, new Set()).jasa).toEqual(s…
+       |                                                              ^
+     30| });
+     31|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  6 failed | 17 passed (23)
+   Start at  09:56:04
+   Duration  928ms (transform 473ms, setup 0ms, import 987ms, tests 237ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

@@ -1,0 +1,52 @@
+
+> vetos@0.1.0 test
+> vitest run src/components/__tests__/accurate-import-continuation.test.tsx
+
+
+ RUN  v4.1.9 /workspace/kamo-import-fix
+
+ ❯ src/components/__tests__/accurate-import-continuation.test.tsx (6 tests | 2 failed) 323ms
+   × hands a prepared batch to accounting review instead of offering import preparation again 135ms
+   × does not repeat stock preparation through the old continuation after a batch was saved 51ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/accurate-import-continuation.test.tsx > hands a prepared batch to accounting review instead of offering import preparation again
+AssertionError: expected 'Impor Barang, Jasa & Saldo Stok AwalP…' to contain 'Master tersimpan'
+
+Expected: "Master tersimpan"
+Received: "Impor Barang, Jasa & Saldo Stok AwalPakai export Persediaan → Barang & Jasa → Ekspor ke Excel atau format Excel klien dengan kolom yang sama. Satu alur untuk master dan saldo stok dari file yang sama. Master tetap dicek dulu, lalu saldo dapat ditinjau sebelum diposting.Laporan stok awal & Neraca cabang Grup Accurate masuk sebagai nonaktif sampai rincian komponennya tersedia. Kalau file Barang & Jasa punya kolom Subkategori, kategori induk dan subkategori otomatis ikut terbentuk.Pilih fileCek perubahan3Import Sekali Format Barang & Jasa Format Kategori & Subkategori Pilih Barang & Jasa .xlsx Kategori Barang .xlsx (opsional) Cek perubahan Import Sekali fiction.xlsxTanggal posisi saldo awal *Wajib dipilih. Dipakai hanya bila Per Tanggal di file kosong; bila file berisi tanggal berbeda, impor akan diblokir. Pemeriksaan selesai. Tombol Import Sekali sudah aktif.Batch ini belum masuk stok atau buku besar. OWNER perlu meninjau jumlah, cabang, tanggal, dan akun lawan sebelum posting.Tinjau dan posting stok + jurnal Siap dilanjutkanMaster sudah dicek dan 0 saldo aman siap masuk. Tekan tombol ini untuk menyimpan semuanya. Lanjutkan Import Sekali"
+
+ ❯ src/components/__tests__/accurate-import-continuation.test.tsx:70:28
+     68|   await act(async () => button("Import Sekali")!.click());
+     69|   expect(reviewLinks().length).toBeGreaterThan(0);
+     70|   expect(host.textContent).toContain("Master tersimpan");
+       |                            ^
+     71|   expect(host.textContent).toContain("Stok dan jurnal belum diposting"…
+     72|   expect(button("Import Sekali")).toBeUndefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/accurate-import-continuation.test.tsx > does not repeat stock preparation through the old continuation after a batch was saved
+AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times
+ ❯ src/components/__tests__/accurate-import-continuation.test.tsx:83:44
+     81|   await check(); await act(async () => button("Import Sekali")!.click(…
+     82|   await act(async () => button("Lanjutkan Import Sekali")?.click());
+     83|   expect(actions.previewSaldoAwalAccurate).toHaveBeenCalledTimes(1);
+       |                                            ^
+     84| });
+     85|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed (6)
+   Start at  08:40:14
+   Duration  1.42s (transform 194ms, setup 0ms, import 462ms, tests 323ms, environment 388ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
