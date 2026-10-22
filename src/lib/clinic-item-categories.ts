@@ -8,8 +8,8 @@ export async function loadClinicItemCategories(client: any): Promise<ClinicItemC
     .select("id,name,parent_id", { count: "exact" }).order("id").range(from, to), "Kategori barang klinik");
 }
 
-/** Picker categories are independent of the stock/accounting item type. */
-export function splitClinicItems<T extends { id: string; category_id?: string | null; is_compound_material: boolean }>(
+/** Explicit clinic categories take precedence; imported services can use other category names. */
+export function splitClinicItems<T extends { id: string; category_id?: string | null; item_type?: string | null; is_compound_material: boolean }>(
   items: T[], categories: ClinicItemCategory[], compoundIds: Set<string>,
 ) {
   const byId = new Map(categories.map(category => [category.id, category]));
@@ -22,9 +22,10 @@ export function splitClinicItems<T extends { id: string; category_id?: string | 
       const name = category?.name.trim().toUpperCase();
       if (name === "JASA") return "Jasa";
       if (name === "TINDAKAN") return "Tindakan";
+      if (name === "OBAT") return "Obat";
       id = category?.parent_id;
     }
-    return "Obat";
+    return item.item_type === "Jasa" ? "Jasa" : "Obat";
   };
   const classified = items.map(item => ({ item, category: categoryOf(item) }));
   return {
