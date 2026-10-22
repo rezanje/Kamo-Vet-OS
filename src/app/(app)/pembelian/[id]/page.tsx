@@ -1,3 +1,4 @@
+import { DocumentBackLink, RelatedDocuments, type RelatedDocument } from "@/components/RelatedDocuments";
 import { loadUnitOptions } from "@/lib/satuan";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -28,10 +29,10 @@ type PO = {
   suppliers: Rel<{ nama: string }>;
   warehouses: Rel<{ name: string }>;
   branches: Rel<{ name: string }>;
-  goods_receipts?: { id: string }[] | null;
-  po_payments?: { id: string }[] | null;
-  purchase_returns?: { id: string }[] | null;
-  purchase_advances?: { id: string }[] | null;
+  goods_receipts?: { id: string; no_terima: string; tanggal: string }[] | null;
+  po_payments?: { id: string; tanggal: string; amount: number; metode: string }[] | null;
+  purchase_returns?: { id: string; no_retur: string; voided_at: string | null }[] | null;
+  purchase_advances?: { id: string; no_um: string; status: string }[] | null;
   purchase_order_items: {
     id: string; item_id: string | null; nama: string; qty: number; satuan: string | null; faktor: number;
     qty_terima: number | null; harga_beli: number;
@@ -42,14 +43,14 @@ export default async function PODetailPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; from?: string }>;
 }) {
   const { id } = await params;
-  const { success, error } = await searchParams;
+  const { success, error, from } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, harga_beli), goods_receipts(id), po_payments(id), purchase_returns(id), purchase_advances(id)").eq("id", id).maybeSingle();
+  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, harga_beli), goods_receipts(id,no_terima,tanggal), po_payments(id,tanggal,amount,metode), purchase_returns(id,no_retur,voided_at), purchase_advances(id,no_um,status)").eq("id", id).maybeSingle();
   const po = data as unknown as (PO & { branch_id: string }) | null;
   if (poError) throw new Error("PO dan transaksi terkait belum dapat dimuat. Coba muat ulang.");
   if (!po) notFound();
@@ -68,8 +69,17 @@ export default async function PODetailPage({
   const editable = owner && !invoiceError && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
   const units = editable ? Object.fromEntries(await loadUnitOptions(supabase, items.flatMap(item => item.item_id ? [item.item_id] : []), { includeInactive: true })) : {};
 
+  const related: RelatedDocument[] = [
+    ...(po.goods_receipts ?? []).map(r => ({ kind: 'goods-receipt' as const, id: r.id, label: `Penerimaan ${r.no_terima}`, status: 'Dokumen tersimpan' })),
+    ...(invoices ?? []).map(r => ({ kind: 'purchase-invoice' as const, id: r.id, label: `Faktur ${r.no_faktur}`, status: r.voided_at ? 'Dibatalkan' : 'Aktif' })),
+    ...(po.po_payments ?? []).map(p => ({kind:'legacy-purchase-payment' as const,id:p.id,parentId:po.id,label:`Pembayaran PO ${p.tanggal} · ${rp(p.amount)}`,status:'Dokumen lama; alokasi faktur tidak tersimpan'})),
+    ...(po.purchase_returns ?? []).map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),
+    ...(po.purchase_advances ?? []).map(r => ({ kind: 'purchase-advance' as const, id: r.id, label: `Uang muka ${r.no_um}`, status: r.status })),
+  ];
+
   return (
     <>
+      <DocumentBackLink from={from} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 11, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Link href="/pembelian" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
@@ -113,6 +123,8 @@ export default async function PODetailPage({
           <Info label="Total PO" value={rp(Number(po.total))} />
         </div>
       </div>
+
+      <RelatedDocuments documents={related} from={`/pembelian/${po.id}`} error={!!invoiceError} />
 
       <div className="crm-sec">
         <SecHeader num="01" title="DAFTAR ITEM" desc="Barang, satuan, jumlah dipesan & diterima." />
@@ -168,6 +180,7 @@ export default async function PODetailPage({
         {owner && <p style={{ fontSize: 11, color: "var(--tm)" }}>Di detail faktur, gunakan Batalkan faktur atau Batalkan &amp; siapkan pengganti. Pembayaran yang sudah ada harus dibalik terlebih dahulu.</p>}
       </div>}
 
+      {(po.po_payments?.length ?? 0) > 0 && <section className="crm-sec"><h2 style={{ fontSize: 14 }}>Pembayaran PO lama</h2><p>Alokasi ke faktur tidak tersimpan; pembayaran ini tidak dianggap pelunasan faktur tertentu.</p>{po.po_payments!.map(p => <article id={`legacy-payment-${p.id}`} key={p.id}><p>{p.tanggal} · {rp(p.amount)} · {p.metode}</p></article>)}</section>}
       <DokumenPanel modul="pembelian" refId={po.id} kembali={`/pembelian/${po.id}`} />
     </>
   );
