@@ -10,7 +10,7 @@ Meeting 22 October 2026, 61:00–65:58: general cross-module activity and per-tr
 | --- | --- |
 | Declared source-table implementation | Complete, subject to PR review |
 | Independent review | Complete, findings fixed and rechecked |
-| Commit / push / PR | See final handoff / PR record |
+| Commit / push / PR | Code commit `754338b3a2c549ed797bd563dd8374d0511338d6` pushed; [draft PR83](https://github.com/rezanje/Kamo-Vet-OS/pull/83) open against main |
 | Production deployment | Not performed |
 | Production migration | Not applied |
 | Local test migration | Applied to disposable PostgreSQL 16 only |

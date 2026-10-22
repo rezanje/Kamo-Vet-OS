@@ -27,7 +27,7 @@
 - [x] Write failing viewer/history tests (filter, pagination, error, no historic claim); implement general viewer, object links and per-object history entry points.
 - [x] Inventory tracked/untracked mutation paths and document deploy/rollback/UAT gates.
 - [x] Run full Vitest, typecheck, scoped lint, build, SQL regressions, diff checks and independent review; fix material findings.
-- [ ] Commit, push isolated branch, create reviewable PR. Report code/push/deploy/migration/UAT separately.
+- [x] Commit, push isolated branch, create reviewable PR. Report code/push/deploy/migration/UAT separately.
 
 ## Baseline
 - Full Vitest: 308 files, 2,401 tests passed on untouched main (32.15s). Existing act() warnings present.
@@ -37,4 +37,4 @@
 ## Handoff notes
 - Implementation and review complete for the declared 43-table slice; A01 overall stays open.
 - Verification: 2,417 app tests passed; SQL 13/14 pass with one independently reproduced baseline cancellation fixture/return-guard mismatch. See verification document; not all SQL is claimed green.
-- Commit/push/PR are recorded by final handoff; no production deployment, migration, permission/auth change or UAT was performed.
+- Code commit `754338b` pushed; draft PR83 https://github.com/rezanje/Kamo-Vet-OS/pull/83 created; no production deployment, migration, permission/auth change or UAT was performed.
