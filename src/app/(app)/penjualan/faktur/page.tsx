@@ -98,7 +98,10 @@ export default async function FakturJualPage({
             <tbody>
               {fakturKlinik.map((invoice) => {
                 const visit = one(invoice.visits);
-                const paid = Number(invoice.dp_amount) + (invoice.invoice_payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0);
+                // Initial single-method payment is recorded on the invoice itself;
+                // it does not create invoice_payments rows.
+                const paid = invoice.paid_status === "Lunas" ? Number(invoice.total)
+                  : Number(invoice.dp_amount) + (invoice.invoice_payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0);
                 const remaining = Math.max(0, Number(invoice.total) - paid);
                 return <tr key={invoice.id}>
                   <td style={{ fontWeight: 600 }}>{invoice.invoice_no}</td>

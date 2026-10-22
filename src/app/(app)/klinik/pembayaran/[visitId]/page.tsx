@@ -21,6 +21,7 @@ type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
+const unverifiedBilling = () => new Error("Tagihan belum dapat diverifikasi. Muat ulang sebelum memproses pembayaran.");
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 const STEPS = ["Pendaftaran", "Antrian", "Rekam Medis", "Pembayaran"];
@@ -49,12 +50,15 @@ export default async function PembayaranPage({
 
   // Rekam medis opsional: transaksi walk-in tanpa dokter (grooming, beli obat,
   // retail) masuk lewat "Simpan & pembayaran" di registrasi — langsung ke invoice.
-  const { data: mr } = await supabase
+  const { data: mr, error: mrError } = await supabase
     .from("medical_records").select("id, catatan_resep").eq("visit_id", visitId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
+  if (mrError) throw unverifiedBilling();
+
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
-  const { data: inpat } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
+  const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
+  if (inpatientError) throw unverifiedBilling();
   if (inpat?.consent_id) {
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
@@ -78,9 +82,10 @@ export default async function PembayaranPage({
   const belumDitagih = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
-  const { data: invoice } = await supabase
+  const { data: invoice, error: invoiceError } = await supabase
     .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+  if (invoiceError) throw unverifiedBilling();
   const [demoPolicy, demoStaffResult, demoSnapshotResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
@@ -88,12 +93,13 @@ export default async function PembayaranPage({
   ]);
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
-  const { data: invItems } = invoice
+  const { data: invItems, error: itemsError } = invoice
     ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
-    : { data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null }[] };
-  const { data: paymentRows } = invoice
+    : { error: null, data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null }[] };
+  const { data: paymentRows, error: paymentsError } = invoice
     ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
-    : { data: [] as { amount: number; transferred_from: string | null }[] };
+    : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
+  if (itemsError || paymentsError) throw unverifiedBilling();
   const hasPayments = (paymentRows ?? []).some((p) => !p.transferred_from);
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
@@ -114,9 +120,10 @@ export default async function PembayaranPage({
 
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
-  const { data: resep } = mr
+  const { data: resep, error: prescriptionError } = mr
     ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[] };
+    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[] };
+  if (prescriptionError) throw unverifiedBilling();
   // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
   // saat pasien menebus, dan modalnya tidak pernah tercatat.
   const resepRows = (resep ?? []).map((r) => ({
@@ -178,6 +185,7 @@ export default async function PembayaranPage({
   const tandai = <T extends { item_id: string | null }>(r: T) =>
     ({ ...r, terkunci: !!idJasaInap && r.item_id === idJasaInap && !!inpat });
 
+  const sourceVersion = createHash("sha256").update(JSON.stringify(sourceItems)).digest("hex");
   const initialObat = sourceItems.filter((r) => r.jenis !== "jasa").map(tandai);
   const initialJasa = sourceItems.filter((r) => r.jenis === "jasa").map(tandai);
 
@@ -242,23 +250,26 @@ export default async function PembayaranPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
-      {success === "bayar" && (
+      {!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Pembayaran berhasil. Cetak struk / invoice di bawah.
         </div>
       )}
-      {success === "edit" && (
+      {!invoice && <div className="p2ban" role="status">Draf tagihan kunjungan ini belum menjadi invoice tersimpan dan belum tercatat sebagai pembayaran atau penjualan.</div>}
+      {!error && success === "bayar" && invoice && invoice.paid_status !== "Lunas" && <div className="p2ban" role="status">Invoice tersimpan. Status {invoice.paid_status}; pembayaran belum lunas. Lanjutkan pelunasan melalui tagihan yang sama.</div>}
+      {invoice?.paid_status === "Lunas" && visit.status !== "Selesai" && <div className="p2ban" role="alert">Pembayaran sudah tercatat, tetapi status kunjungan belum selesai. Jangan menerima pembayaran ulang; periksa penyelesaian kunjungan.</div>}
+      {!error && success === "edit" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Invoice diperbarui — perubahan tercatat di riwayat audit.
         </div>
       )}
-      {success === "rombongan" && (
+      {!error && success === "rombongan" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {lunasParam ?? ""} tagihan diselesaikan sekaligus — cetak struk gabungan di panel bawah.
           {dilewati && <b style={{ marginLeft: 6, color: "#b45309" }}>Belum termasuk: {dilewati} — selesaikan satu per satu.</b>}
         </div>
       )}
-      {success === "reissue" && (
+      {!error && success === "reissue" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Invoice lama di-void, invoice baru diterbitkan (Belum Lunas).
         </div>
@@ -412,6 +423,7 @@ export default async function PembayaranPage({
           visitId={visit.id}
           requestKey={invoiceRequestKey}
           draftUserId={draftUser?.id ?? ""}
+          sourceVersion={sourceVersion}
           draftScope={`payment:${visit.id}:${invoice?.id ?? "new"}`}
           patient={patient}
           ppnRate={ppnRate}
@@ -512,6 +524,7 @@ export default async function PembayaranPage({
           visitId={visit.id}
           requestKey={invoiceRequestKey}
           draftUserId={draftUser?.id ?? ""}
+          sourceVersion={sourceVersion}
           draftScope={`payment:${visit.id}:new`}
           patient={patient}
           ppnRate={ppnRate}

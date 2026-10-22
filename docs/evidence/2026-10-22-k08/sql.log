@@ -1,0 +1,11 @@
+Applied 223 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+CONFIRMED existing fixture failure main222-function: protect_inpatient_care_staff unauthenticated setup
+CONFIRMED existing fixture failure candidate223-function: protect_inpatient_care_staff unauthenticated setup
+PASS migration/rollback roundtrip: exact definition/owner/security/ACL preserved
+PASS clinic_billing_consistency.sql
+PASS clinic_invoice_post.sql
+PASS clinic_billing_lifecycle.sql
+PASS inpatient_consent.sql
+PASS clinic_demo_financial_policy.sql
+Removed owned PostgreSQL test container and volumes.
+PASS all5 K08/native suites; owned container/volumes removed.
