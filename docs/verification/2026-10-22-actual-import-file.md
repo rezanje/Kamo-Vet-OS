@@ -49,3 +49,28 @@ See [actual before](../evidence/2026-10-22-actual-import-file/actual-empty-maste
 3. Finance/source owner must decide how fractional-cent source valuation is reconciled. Existing posting intentionally refuses to invent that decision. Further production blockers may also exist; production stock/GL/schema were not queried.
 
 The parent was asked to obtain the minimum type/date clarification. No raw workbook/private rows were published. No production import, transaction/journal write, data reset/deletion, credentials/permission change, merge or deployment was performed. A01/PR82/PR83 were not touched.
+
+## Follow-up: rounding recommendation and exact decisions
+
+This is an unimplemented proposal for Finance/source-owner approval. Existing `src/lib/pos-money.ts` uses decimal arithmetic and HALF_UP; the Accurate bridge separately requires the exact inventory basis to be cents and reconciles it against layers/moves. Do not relax those guards or round only the journal while leaving an unequal inventory basis.
+
+Using the original worksheet's decimal strings directly (100-digit arithmetic), independently verified with Python Decimal and decimal.js HALF_UP:
+
+| Candidate calculation | Aggregate difference in rupiah |
+| --- | --- |
+| Round the sum of original qty × unit cost once to two decimals, minus original unrounded sum | -0.002648502629865 |
+| Sum of rounded row values, minus original unrounded sum | +0.067351497370135 |
+| Sum of rounded row values, minus rounded batch total | +0.07 |
+| Round unit HPP first, multiply by qty and sum, minus rounded batch total | -0.23 |
+
+Maximum absolute single-row rounding residual is 0.0049989347970 rupiah. The existing parser's numeric-decimal total differs from original XML arithmetic by only -0.000000000203995 rupiah; floating-point conversion alone does not explain the precision refusal. These are aggregate diagnostics, not approved posting adjustments. No individual row or original total is published.
+
+Recommended decision candidate: use the authoritative Accurate inventory valuation at the agreed branch/warehouse/date as the control total. If Finance accepts a computed source target, prefer HALF_UP once on the sum of full-precision qty × HPP, rather than rounding each unit HPP. Preserve raw qty/HPP and explicitly review the residual. Any future implementation must represent approved posted valuation and its rounding reconciliation explicitly, retain source evidence and make stock/layer/move/GL totals reconcile under the revised audited contract. The current model cannot be fixed safely by changing only journal rounding; allocation/valuation representation needs separate design and tests before any guard changes. If the source report instead authorizes per-row rounded values, its +0.07 difference is a deliberate alternative decision.
+
+Source file versus existing metadata:
+
+- File has codes, names, categories, units, balance qty/cost and one source branch/warehouse pair. Type and date columns are blank.
+- Existing production `items` and `item_units` could supply type, active flag, base unit/conversions and expiry requirements by an exact unique code match. Production branches/warehouses could resolve the source destination. Those records were not accessible through an authenticated database connector in this session; no credentials were sought or guessed. Do not mistake the diagnostic fixture for production coverage.
+- For a confirmed stock-only import of already-known SKUs, preserve existing master attributes rather than filling all file types or rewriting blank master fields. Only unmatched/ambiguous/new SKUs need a supplied type. Current master-import validation remains strict; a stock-only route would need an explicit reviewed contract.
+
+Minimum missing decisions: (1) stock-only for existing SKUs versus master updates/new SKUs, and actual types only where no exact master match exists; (2) intended opening date; (3) authoritative source valuation and approved rounding scope/control total. Equity selection/reason and existing-stock/GL checks remain mandatory in the existing OWNER review. The status-only PR is useful to stop false success, but insufficient for the customer import.
