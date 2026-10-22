@@ -7,6 +7,7 @@ container, so a legacy suite that commits cannot pollute a different suite.
 """
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -41,7 +42,10 @@ def suite_source(test):
 
 
 DEFAULTS = [
-    'activity_audit.sql', 'master_data_lifecycle.sql', 'master_item_code_history.sql',
+    'activity_audit.sql', 'activity_audit_framework.sql',
+    'activity_audit_financial.sql', 'activity_audit_inventory.sql',
+    'activity_audit_people_settings.sql', 'activity_audit_remaining_modules.sql',
+    'master_data_lifecycle.sql', 'master_item_code_history.sql',
     'stock_document_corrections.sql', 'clinic_billing_lifecycle.sql',
     'manual-journal-corrections.sql', 'cash-entry-corrections.sql',
     'posted_sale_cancellations.sql', 'wholesale_corrections.sql',
@@ -51,6 +55,7 @@ DEFAULTS = [
 ]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('tests', nargs='*', default=DEFAULTS)
+parser.add_argument('--schema-output', type=Path, help='Write owned test database schema metadata only (no source row values)')
 args = parser.parse_args()
 tests = []
 for name in args.tests:
@@ -61,6 +66,20 @@ for name in args.tests:
 failures = []
 with fixture.DisposablePostgres() as database:
     database.bootstrap()
+    if args.schema_output:
+        destination = args.schema_output.resolve()
+        if not destination.is_relative_to(ROOT):
+            parser.error('Schema metadata output must stay inside this workspace')
+        metadata = database.sql("""select jsonb_object_agg(c.relname,jsonb_build_object(
+          'columns',(select jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'nullable',not a.attnotnull) order by a.attnum)
+            from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and not a.attisdropped),
+          'constraints',coalesce((select jsonb_agg(pg_get_constraintdef(k.oid) order by k.conname) from pg_constraint k where k.conrelid=c.oid),'[]'),
+          'policies',coalesce((select jsonb_agg(jsonb_build_object('name',p.policyname,'cmd',p.cmd,'qual',p.qual,'check',p.with_check) order by p.policyname)
+            from pg_policies p where p.schemaname='public' and p.tablename=c.relname),'[]')) order by c.relname)
+          from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r';""")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(json.loads(metadata), indent=2, sort_keys=True) + '\n')
+        print('Wrote schema metadata only: ' + str(destination.relative_to(ROOT)), flush=True)
     # Same accounting reference code as supabase/seed.sql, with fictional label.
     # The legacy manual-journal suite assumes it exists but does not seed it.
     database.sql("insert into coa_accounts(code,name,type,normal_balance) values('4101','Fictional A01 revenue prerequisite','PENDAPATAN','K') on conflict(code) do nothing;")
@@ -69,7 +88,8 @@ with fixture.DisposablePostgres() as database:
         name = 'a01_suite_' + str(index)
         database.sql('create database ' + name + ' template postgres;')
         try:
-            database.sql('\\connect ' + name + '\n' + suite_source(test))
+            # Fixture current_date must use the same business clock as source guards.
+            database.sql('\\connect ' + name + "\nset time zone 'Asia/Jakarta';\n" + suite_source(test))
             print('PASS ' + test.name, flush=True)
         except RuntimeError as error:
             failures.append(test.name)

@@ -1,7 +1,7 @@
 # A01 Activity Audit Implementation Plan
 
 **Goal:** A cross-module, append-only activity index and per-object history for explicitly registered business mutations, including deleted objects.
-**Baseline:** origin/main 6289994422ce32e795f6f27baba04b5db477210d; isolated branch codex/a01-activity-audit-20261022. PR82 average and new SO feedback excluded.
+**Baseline:** original main6289994, integrated latest origin/main102f3b0555305524611296e29d16affc12553eb7 without conflicts; isolated branch codex/a01-activity-audit-20261022. PR82 average and new SO feedback excluded.
 **Architecture:** PostgreSQL triggers write compact allowlisted snapshots in the source transaction. Existing domain correction audits and journals remain authoritative; the activity index links to object history and does not copy their payloads. No historical backfill. Server session actor/time; no browser-supplied actor or audit-write RPC.
 **Tech:** PostgreSQL 16, Supabase RLS, Next 15 server components, Vitest.
 **Spec:** Delegated A01 meeting 22 October, 61:00–65:58.
@@ -34,7 +34,13 @@
 - AGENTS.md/CLAUDE.md and engineering evidence read. Installed Next 15 package lacks node_modules/next/dist/docs; use existing patterns, installed types and production build.
 - Existing PostgreSQL disposable harness uses network-none containers, fictional data and auth/storage shims; it is not production parity or full Supabase reset.
 
-## Handoff notes
-- Implementation and review complete for the declared 43-table slice; A01 overall stays open.
-- Verification: 2,417 app tests passed; SQL 13/14 pass with one independently reproduced baseline cancellation fixture/return-guard mismatch. See verification document; not all SQL is claimed green.
-- Code commit `754338b` pushed; draft PR83 https://github.com/rezanje/Kamo-Vet-OS/pull/83 created; no production deployment, migration, permission/auth change or UAT was performed.
+## Expanded final candidate
+- [x] Replace the insufficient43-table slice with179 explicit business sources; classify all47 remaining technical/request/proof/domain-history tables in the226-table schema. Do not infer full command coverage from counts.
+- [x] Cover receipt/payment/advance/return sources; journal/asset children; pricing/category/unit; opname/production/shifts; CRM/clinical metadata; HRIS/company/settings/tax metadata.
+- [x] Natural/composite keys, recursive/cascade/tombstone associations, source-reader clamps, metadata privacy, old/new branch/module intersections; fix independently found payment-map branch and unknown-module denials.
+- [x] Expand catalog/menu/document links and indexed related-source/object query; test long composite IDs, pagination, failures and privacy.
+- [x] Preserve main102f3b0 released fixes; no PR86 candidate code imported. Final app2458tests/315files pass; all6 A01 SQL suites pass.
+- [x] Diagnose overnight UTC/Jakarta fixture mismatch and reproduce on pristine latest main. Configure fictional fixture sessions to Jakarta without changing product guards; complete SQL18pass/1baselinefailure.
+- [ ] Parent-coordinated authenticated shared-database UAT, deployment/migration, volume/concurrency and release approval. Keep A01 business checklist incomplete until accepted.
+
+See `docs/verification/2026-10-22-a01-activity-audit.md` and checked-in evidence for exact final results, exclusions, migration order and rollback. Independent security review completed with no outstanding important findings before main integration; integration did not conflict with audit code. PR83 remains the single delivery vehicle. No staging/production migration, deploy, merge or Sheet edit is performed here.

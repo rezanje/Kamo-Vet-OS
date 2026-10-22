@@ -33,7 +33,7 @@ do $$begin
  if (select count(*) from public.activity_log where entity='customers' and entity_id=md5('a01-customer')::uuid::text)<>2 then raise exception 'Expected create and update events'; end if;
  if exists(select 1 from public.activity_log where entity='customers' and (before_state::text||after_state::text||object_label) like '%PRIVATE%') then raise exception 'PII retained';end if;
  if not exists(select 1 from public.activity_log where entity='customers' and action='update' and changed_fields @> array['name','phone','tier'] and after_state->>'tier'='Silver') then raise exception 'Missing redacted field changes / safe values';end if;
- if exists(select 1 from public.activity_log where actor_id is distinct from md5('a01-owner')::uuid or actor_name<>'Audit Owner' or occurred_at is null) then raise exception 'Missing server attribution';end if;
+ if exists(select 1 from public.activity_log where entity='customers' and (actor_id is distinct from md5('a01-owner')::uuid or actor_name<>'Audit Owner' or occurred_at is null)) then raise exception 'Missing server attribution';end if;
 end$$;
 insert into items(id,code,name) values(md5('a01-item')::uuid,'A01-ITEM','PRIVATE ITEM NAME');
 update customers set tier='SECRET-TIER' where id=md5('a01-customer')::uuid;

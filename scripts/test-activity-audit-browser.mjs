@@ -22,11 +22,16 @@ const rows=Array.from({length:95},(_,i)=>{const n=95-i;const customer=n%5===0;re
  entity_ids:[customer?'customer-'+n:'order-'+Math.ceil(n/3)],row_entity:customer?'customers':'sales_orders',row_id:'row-'+n,
  object_label:customer?'customer-'+n:'SO-FIKTIF-'+n,module_id:customer?'crm':'penjualan',action:n%2===0?'delete':'update',
  changed_fields:['total','catatan'],before_state:{total:n*10},after_state:n%2===0?{}:{total:n*10+1}
- }});
+ }}).map(r=>{
+ if(r.id===94){r.row_entity='sales_receipts';r.row_id='receipt-94'}
+ if(r.id===93){Object.assign(r,{entity:'visits',entity_id:'visit-93',entity_ids:['visit-93'],row_entity:'medical_records',row_id:'medical-93',object_label:'visit-93',module_id:'klinik',changed_fields:['metadata'],before_state:{},after_state:{}})}
+ if(r.id===92){const composite=JSON.stringify({month_start:'2026-10-01',warehouse_id:'00000000-0000-4000-8000-000000000001',item_id:'00000000-0000-4000-8000-000000000002',costing_method:'MOVING_AVERAGE'});Object.assign(r,{entity:'inventory_month_values',entity_id:composite,entity_ids:[composite],row_entity:'inventory_month_values',row_id:composite,object_label:'Nilai persediaan fiktif',module_id:'pos',changed_fields:['metadata'],before_state:{},after_state:{}})}
+ r.object_refs=[{entity:r.entity,id:r.entity_id},{entity:r.row_entity,id:r.row_id}];r.object_entities=[r.entity,r.row_entity];return r;
+ });
 export async function createClient(){return {auth:{getUser:async()=>({data:{user:{id:'fictional-owner'}}})},from(table){
  let data=rows;let ascending=false;let limit=41;
  const q={select(){return q},maybeSingle(){return Promise.resolve({data:{role,is_active:true}})},
- eq(k,v){data=data.filter(r=>r[k]===v);return q},contains(k,v){data=data.filter(r=>v.every(x=>r[k].includes(x)));return q},
+ eq(k,v){data=data.filter(r=>r[k]===v);return q},contains(k,v){data=data.filter(r=>v.every(x=>r[k].some(y=>typeof x==='object'?JSON.stringify(x)===JSON.stringify(y):x===y)));return q},
  lt(k,v){data=data.filter(r=>r[k]<Number(v));return q},gt(k,v){data=data.filter(r=>r[k]>Number(v));return q},
  gte(k,v){data=data.filter(r=>Date.parse(r[k])>=Date.parse(v));return q},lte(k,v){data=data.filter(r=>Date.parse(r[k])<=Date.parse(v));return q},
  ilike(k,v){const term=v.slice(1,-1).replace(/\\\\([%_\\\\])/g,'$1').toLowerCase();data=data.filter(r=>r[k].toLowerCase().includes(term));return q},
@@ -83,19 +88,36 @@ try {
  await page.locator('tbody tr').first().locator('summary').click();
  assert((await page.locator('tbody tr').first().innerText()).includes('nilai disamarkan'));
  await page.screenshot({path:path.join(evidence,'activity-desktop-filtered.png'),fullPage:true});
- await page.locator('tbody tr').first().getByRole('link').click();
+ await page.locator('tbody tr').first().getByRole('link').first().click();
  assert(page.url().includes('entity=sales_orders')&&page.url().includes('object=order-'));
  assert((await page.locator('main').innerText()).includes('Riwayat Pesanan Penjualan'));
  await page.setViewportSize({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.screenshot({path:path.join(evidence,'activity-mobile-object.png'),fullPage:true});
+ await page.goto('/perusahaan/log-aktifitas?entity=sales_receipts');
+ assert.equal(await page.locator('tbody tr').count(),1);
+ assert((await page.locator('tbody').innerText()).includes('receipt-94'));
+ await page.getByRole('link',{name:'receipt-94',exact:true}).click();
+ assert(page.url().includes('entity=sales_receipts')&&page.url().includes('object=receipt-94'));
+ assert.equal(await page.locator('tbody tr').count(),1);
+ await page.goto('/perusahaan/log-aktifitas?entity=medical_records&object=medical-93');
+ assert((await page.locator('tbody').innerText()).includes('Aktivitas tercatat; rincian isi disamarkan.'));
+ assert.equal(await page.locator('tbody details').count(),0);
+ await page.goto('/perusahaan/log-aktifitas?entity=inventory_month_values');
+ const longIdentity=await page.locator('tbody tr').first().getByRole('link').last().innerText();
+ assert(longIdentity.length>120);
+ await page.locator('tbody tr').first().getByRole('link').last().click();
+ assert.equal(new URL(page.url()).searchParams.get('object'),longIdentity);
+ assert((await page.locator('tbody').innerText()).includes('Nilai persediaan fiktif'));
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await page.screenshot({path:path.join(evidence,'activity-mobile-composite.png'),fullPage:true});
  await page.goto('/perusahaan/log-aktifitas?failure=1');
  assert((await page.getByRole('alert').innerText()).includes('Riwayat belum dapat dimuat'));
  assert(!(await page.locator('main').innerText()).includes('internal fixture secret'));
  await page.goto('/perusahaan/log-aktifitas?reader=STAFF');
  assert((await page.getByRole('alert').innerText()).includes('OWNER/ADMIN aktif'));
  assert.deepEqual(errors,[]);
- console.log('PASS actual server-page Chromium: 40-row cursor pagination both directions, filter reset/preservation, retained deleted-object history, redaction, 390px no page overflow, failed-load and denied-role feedback. Fictional boundary only.');
+ console.log('PASS actual server-page Chromium: 40-row cursor pagination both directions, filter reset/preservation, retained deleted-object history, nested financial source lookup, metadata privacy, long composite identity, redaction, 390px no page overflow, failed-load and denied-role feedback. Fictional boundary only.');
 } finally {
  await browser?.close();
  if(server)await new Promise(resolve=>server.close(resolve));

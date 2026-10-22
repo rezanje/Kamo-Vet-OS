@@ -16,3 +16,6 @@ it('connects the company activity tile to the general viewer without replacing j
 it('hides navigation when existing role/module page access is absent',()=>{
  expect(renderToStaticMarkup(<ActivityNavigationProvider allowed={false}><ActivityHistoryLink entity="items" id="x"/></ActivityNavigationProvider>)).toBe('');
 });
+it('does not turn unknown sources or invalid object identities into general-viewer links',()=>{
+ for(const [entity,id] of [['activity_log','x'],['items','x'.repeat(4097)],['items','bad\u0000id']])expect(renderToStaticMarkup(<ActivityNavigationProvider allowed><ActivityHistoryLink entity={entity} id={id}/></ActivityNavigationProvider>)).toBe('');
+});
