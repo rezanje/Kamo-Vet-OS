@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { loadUnitOptions } from "@/lib/satuan";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -70,6 +71,7 @@ export default async function PODetailPage({
 
   return (
     <>
+      <ActivityHistoryLink entity="purchase_orders" id={id} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 11, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Link href="/pembelian" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>

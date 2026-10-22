@@ -1,0 +1,21 @@
+{
+  "baseline": "6289994422ce32e795f6f27baba04b5db477210d",
+  "branch": "codex/a01-activity-audit-20261022",
+  "scope": "43 explicitly registered tables; A01 overall remains open",
+  "vitest": {"command": "npm test -- --reporter=dot", "filesPassed": 311, "testsPassed": 2417, "failed": 0},
+  "typecheck": {"command": "npx tsc --noEmit", "status": "passed"},
+  "scopedEslint": {"status": "passed", "errors": 0, "warnings": 0},
+  "build": {"command": "npm run build", "configuration": "fictional loopback Supabase URL/key", "status": "passed", "existingWarnings": ["Supabase Edge runtime process.version", "webpack cache large strings"]},
+  "sql": {
+    "command": "python3 scripts/test-activity-audit-postgres.py",
+    "database": "owned network-none PostgreSQL 16 container; per-suite fresh database clones",
+    "sourceMigrationsApplied": 223,
+    "prerequisites": ["test auth/storage shims", "existing pre-0068 COA 1101/1102", "fictional COA 4101 from seed reference", "original native per-suite fixture recipes"],
+    "passed": ["activity_audit.sql", "master_data_lifecycle.sql", "master_item_code_history.sql", "stock_document_corrections.sql", "clinic_billing_lifecycle.sql", "manual-journal-corrections.sql", "cash-entry-corrections.sql", "wholesale_corrections.sql", "purchase_invoice_lifecycle.sql", "purchase_payment_corrections.sql", "asset_purchase_correction.sql", "bank_reconciliation_lifecycle.sql", "internal_transfer_corrections.sql"],
+    "failed": [{"suite": "posted_sale_cancellations.sql", "message": "Efek retur hanya melalui jalur koreksi catatan retur resmi", "location": "legacy OTHER.FIFO stock_out_fifo loop with protected sales-return alias", "baselineReproduced": true, "baselineMigrations": 222, "independentlyReproduced": true}],
+    "exitStatus": "nonzero due to documented baseline failure; no assertion skipped or guard weakened"
+  },
+  "browser": {"command": "node scripts/test-activity-audit-browser.mjs", "status": "passed", "boundary": "actual server page and browser with fictional query boundary, no real auth/API/database integration", "independentRerun": "passed", "viewports": [1280, 390], "cases": ["40-row cursor pagination both directions", "filter preservation/reset", "deleted-object history", "redacted values", "failed-load feedback", "denied-role feedback", "no document overflow", "zero rendering errors"]},
+  "independentReview": {"criticalOrImportantUnresolved": 0, "probes": ["official transfer header/account scopes", "retry no duplicate audit", "single-branch admin hidden source and log", "reparent both identities and branch intersection", "ordinary and legacy cascade scope retention", "audit-only references excluded while real business references retained", "inventory regeneration equivalence"]},
+  "notPerformed": ["production deployment", "production migration", "production data write", "existing permission/authentication changes", "merge", "Google Sheet edit", "business UAT", "full Supabase staging/browser/API round trip"]
+}

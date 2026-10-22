@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -47,6 +48,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const customer = Array.isArray(invoice.customers) ? invoice.customers[0] : invoice.customers;
   const today = hariIniWIB();
   return <>
+      <ActivityHistoryLink entity="sales_invoices" id={id} />
     <Link className="back-btn" href="/penjualan/faktur">← Faktur & penerimaan</Link>
     <div className="crm-sec">
       <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>

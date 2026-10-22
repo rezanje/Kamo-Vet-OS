@@ -1,0 +1,3053 @@
+{
+  "baseline": "6289994422ce32e795f6f27baba04b5db477210d",
+  "scope": "Literal Supabase mutation chains and RPC calls in non-test src TS/TSX. A registered table captures actual row writes, not every semantic command or all related tables. RPC targets require inspection of their SQL implementations. Dynamic/indirect mutation clients are not comprehensively resolved.",
+  "registeredTables": [
+    "bank_reconciliations",
+    "brands",
+    "cash_entries",
+    "cash_transfers",
+    "customers",
+    "expenses",
+    "fixed_assets",
+    "goods_receipt_items",
+    "goods_receipts",
+    "inventory_adjustment_items",
+    "inventory_adjustments",
+    "invoice_items",
+    "invoices",
+    "items",
+    "journal_entries",
+    "opname_orders",
+    "opname_result_items",
+    "opname_results",
+    "purchase_invoice_items",
+    "purchase_invoice_payments",
+    "purchase_invoices",
+    "purchase_order_items",
+    "purchase_orders",
+    "sale_items",
+    "sales",
+    "sales_deliveries",
+    "sales_delivery_items",
+    "sales_invoice_items",
+    "sales_invoices",
+    "sales_order_items",
+    "sales_orders",
+    "sales_quotation_items",
+    "sales_quotations",
+    "stock_receipt_items",
+    "stock_receipts",
+    "stock_request_items",
+    "stock_requests",
+    "stock_transfer_items",
+    "stock_transfers",
+    "supplier_categories",
+    "suppliers",
+    "units",
+    "visits"
+  ],
+  "summary": {
+    "calls": 428,
+    "direct": 289,
+    "rpc": 139,
+    "registeredDirect": 86
+  },
+  "calls": [
+    {
+      "file": "src/app/(app)/buku-besar/anggaran/actions.ts",
+      "line": 33,
+      "method": "upsert",
+      "target": "budgets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/buku-besar/anggaran/actions.ts",
+      "line": 48,
+      "method": "delete",
+      "target": "budgets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/buku-besar/anggaran/actions.ts",
+      "line": 74,
+      "method": "upsert",
+      "target": "budgets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/buku-besar/anggaran/actions.ts",
+      "line": 112,
+      "method": "insert",
+      "target": "budget_transfers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/buku-besar/anggaran/actions.ts",
+      "line": 126,
+      "method": "delete",
+      "target": "budget_transfers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/anabul/baru/actions.ts",
+      "line": 47,
+      "method": "insert",
+      "target": "pets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/anabul/transfer/actions.ts",
+      "line": 19,
+      "method": "rpc",
+      "target": "transfer_pet_ownership",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/crm/kategori-pelanggan/[id]/actions.ts",
+      "line": 44,
+      "method": "delete",
+      "target": "category_discounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/kategori-pelanggan/[id]/actions.ts",
+      "line": 47,
+      "method": "insert",
+      "target": "category_discounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/kategori-pelanggan/[id]/actions.ts",
+      "line": 61,
+      "method": "delete",
+      "target": "category_discounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/kategori-pelanggan/actions.ts",
+      "line": 27,
+      "method": "update",
+      "target": "customer_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/kategori-pelanggan/actions.ts",
+      "line": 28,
+      "method": "insert",
+      "target": "customer_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/kategori-pelanggan/actions.ts",
+      "line": 40,
+      "method": "update",
+      "target": "customer_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/pelanggan/actions.ts",
+      "line": 69,
+      "method": "update",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/crm/pelanggan/actions.ts",
+      "line": 96,
+      "method": "update",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/crm/pelanggan/baru/actions.ts",
+      "line": 48,
+      "method": "insert",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/crm/promo/actions.ts",
+      "line": 75,
+      "method": "insert",
+      "target": "promos",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/promo/actions.ts",
+      "line": 86,
+      "method": "insert",
+      "target": "promo_items",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/promo/actions.ts",
+      "line": 92,
+      "method": "delete",
+      "target": "promos",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/promo/actions.ts",
+      "line": 105,
+      "method": "update",
+      "target": "promos",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/status-ulasan/actions.ts",
+      "line": 26,
+      "method": "update",
+      "target": "customer_review_statuses",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/status-ulasan/actions.ts",
+      "line": 27,
+      "method": "insert",
+      "target": "customer_review_statuses",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/status-ulasan/actions.ts",
+      "line": 39,
+      "method": "update",
+      "target": "customer_review_statuses",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/voucher/actions.ts",
+      "line": 75,
+      "method": "update",
+      "target": "vouchers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/voucher/actions.ts",
+      "line": 76,
+      "method": "insert",
+      "target": "vouchers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/crm/voucher/actions.ts",
+      "line": 97,
+      "method": "update",
+      "target": "vouchers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/absensi/actions.ts",
+      "line": 23,
+      "method": "upsert",
+      "target": "attendance",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/cuti/actions.ts",
+      "line": 29,
+      "method": "insert",
+      "target": "leave_requests",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/cuti/actions.ts",
+      "line": 51,
+      "method": "update",
+      "target": "leave_requests",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/jadwal/actions.ts",
+      "line": 35,
+      "method": "delete",
+      "target": "employee_schedules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/jadwal/actions.ts",
+      "line": 42,
+      "method": "upsert",
+      "target": "employee_schedules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/karyawan/actions.ts",
+      "line": 34,
+      "method": "insert",
+      "target": "employees",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/karyawan/actions.ts",
+      "line": 56,
+      "method": "upsert",
+      "target": "employee_branch_assignments",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/karyawan/actions.ts",
+      "line": 77,
+      "method": "rpc",
+      "target": "assign_employee_secondary_branches",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/hris/karyawan/actions.ts",
+      "line": 99,
+      "method": "update",
+      "target": "employees",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/karyawan/impor/actions.ts",
+      "line": 37,
+      "method": "rpc",
+      "target": "import_employee_excel",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/hris/komponen-gaji/actions.ts",
+      "line": 24,
+      "method": "update",
+      "target": "salary_components",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/komponen-gaji/actions.ts",
+      "line": 25,
+      "method": "insert",
+      "target": "salary_components",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/komponen-gaji/actions.ts",
+      "line": 37,
+      "method": "update",
+      "target": "salary_components",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/komponen-gaji/actions.ts",
+      "line": 58,
+      "method": "upsert",
+      "target": "employee_salary_components",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/komponen-gaji/actions.ts",
+      "line": 75,
+      "method": "delete",
+      "target": "employee_salary_components",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/kpi/actions.ts",
+      "line": 28,
+      "method": "insert",
+      "target": "kpi_records",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/pengajuan/actions.ts",
+      "line": 34,
+      "method": "update",
+      "target": "[dynamic]",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/pengajuan/actions.ts",
+      "line": 88,
+      "method": "update",
+      "target": "cash_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/pengajuan/actions.ts",
+      "line": 116,
+      "method": "update",
+      "target": "cash_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/penggajian/actions.ts",
+      "line": 39,
+      "method": "rpc",
+      "target": "get_wholesale_payroll_epoch",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/hris/penggajian/actions.ts",
+      "line": 44,
+      "method": "upsert",
+      "target": "payrolls",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/penggajian/actions.ts",
+      "line": 97,
+      "method": "update",
+      "target": "payrolls",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/penggajian/actions.ts",
+      "line": 147,
+      "method": "upsert",
+      "target": "cash_advance_installments",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/penggajian/actions.ts",
+      "line": 158,
+      "method": "update",
+      "target": "cash_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/penggajian/actions.ts",
+      "line": 170,
+      "method": "update",
+      "target": "reimbursements",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/penggajian/actions.ts",
+      "line": 191,
+      "method": "update",
+      "target": "payrolls",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/shift/actions.ts",
+      "line": 31,
+      "method": "update",
+      "target": "work_shifts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/shift/actions.ts",
+      "line": 32,
+      "method": "insert",
+      "target": "work_shifts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/hris/shift/actions.ts",
+      "line": 45,
+      "method": "update",
+      "target": "work_shifts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/kas/actions.ts",
+      "line": 87,
+      "method": "insert",
+      "target": "cash_entries",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/kas-bank/kas/actions.ts",
+      "line": 100,
+      "method": "insert",
+      "target": "document_attachments",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/kas/actions.ts",
+      "line": 104,
+      "method": "delete",
+      "target": "cash_entries",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/kas-bank/kas/actions.ts",
+      "line": 120,
+      "method": "delete",
+      "target": "cash_entries",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/kas-bank/kas/actions.ts",
+      "line": 143,
+      "method": "rpc",
+      "target": "revise_cash_entry",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/kas/actions.ts",
+      "line": 157,
+      "method": "rpc",
+      "target": "revise_cash_entry",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/peta/actions.ts",
+      "line": 21,
+      "method": "delete",
+      "target": "payment_account_map",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/peta/actions.ts",
+      "line": 23,
+      "method": "insert",
+      "target": "payment_account_map",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/peta/actions.ts",
+      "line": 43,
+      "method": "delete",
+      "target": "payment_account_map",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/peta/actions.ts",
+      "line": 44,
+      "method": "insert",
+      "target": "payment_account_map",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/peta/actions.ts",
+      "line": 55,
+      "method": "delete",
+      "target": "payment_account_map",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/[id]/saldo-awal/actions.ts",
+      "line": 14,
+      "method": "rpc",
+      "target": "preview_monetary_opening",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/[id]/saldo-awal/actions.ts",
+      "line": 29,
+      "method": "rpc",
+      "target": "get_monetary_opening_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/[id]/saldo-awal/actions.ts",
+      "line": 35,
+      "method": "rpc",
+      "target": "correct_monetary_opening",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/actions.ts",
+      "line": 42,
+      "method": "insert",
+      "target": "coa_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/actions.ts",
+      "line": 47,
+      "method": "insert",
+      "target": "cash_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/actions.ts",
+      "line": 56,
+      "method": "delete",
+      "target": "coa_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/actions.ts",
+      "line": 61,
+      "method": "rpc",
+      "target": "post_cash_account_opening_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/rekening/actions.ts",
+      "line": 83,
+      "method": "update",
+      "target": "cash_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/kas-bank/transfer/actions.ts",
+      "line": 38,
+      "method": "rpc",
+      "target": "get_cash_transfer_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/transfer/actions.ts",
+      "line": 39,
+      "method": "rpc",
+      "target": "mutate_cash_transfer",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/kas-bank/transfer/actions.ts",
+      "line": 59,
+      "method": "rpc",
+      "target": "get_cash_transfer_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 42,
+      "method": "update",
+      "target": "fixed_assets",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 75,
+      "method": "rpc",
+      "target": "add_fixed_asset_value_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 101,
+      "method": "insert",
+      "target": "asset_changes",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 106,
+      "method": "update",
+      "target": "fixed_assets",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 140,
+      "method": "insert",
+      "target": "asset_disposals",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 166,
+      "method": "update",
+      "target": "fixed_assets",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 193,
+      "method": "insert",
+      "target": "asset_transfers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/actions.ts",
+      "line": 198,
+      "method": "update",
+      "target": "fixed_assets",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/correction-actions.ts",
+      "line": 20,
+      "method": "rpc",
+      "target": "preview_fixed_asset_correction",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/correction-actions.ts",
+      "line": 36,
+      "method": "rpc",
+      "target": "get_fixed_asset_correction_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/[id]/correction-actions.ts",
+      "line": 37,
+      "method": "rpc",
+      "target": "correct_fixed_asset_purchase",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/actions.ts",
+      "line": 53,
+      "method": "insert",
+      "target": "fixed_assets",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/keuangan/aset/actions.ts",
+      "line": 89,
+      "method": "rpc",
+      "target": "create_fixed_asset_purchase",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/closing-hpp/actions.ts",
+      "line": 18,
+      "method": "rpc",
+      "target": "activate_moving_average",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/closing-hpp/actions.ts",
+      "line": 28,
+      "method": "rpc",
+      "target": "close_inventory_month",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/coa/actions.ts",
+      "line": 58,
+      "method": "update",
+      "target": "coa_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/coa/actions.ts",
+      "line": 63,
+      "method": "update",
+      "target": "cash_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/coa/actions.ts",
+      "line": 74,
+      "method": "insert",
+      "target": "coa_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/coa/actions.ts",
+      "line": 106,
+      "method": "update",
+      "target": "coa_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/jurnal-berulang/actions.ts",
+      "line": 35,
+      "method": "insert",
+      "target": "recurring_journals",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/jurnal-berulang/actions.ts",
+      "line": 49,
+      "method": "update",
+      "target": "recurring_journals",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/jurnal/actions.ts",
+      "line": 31,
+      "method": "rpc",
+      "target": "revise_manual_journal",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/jurnal/actions.ts",
+      "line": 42,
+      "method": "rpc",
+      "target": "revise_manual_journal",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/jurnal/actions.ts",
+      "line": 61,
+      "method": "rpc",
+      "target": "create_manual_journal_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/kategori-aset-pajak/actions.ts",
+      "line": 27,
+      "method": "update",
+      "target": "tax_asset_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/kategori-aset-pajak/actions.ts",
+      "line": 28,
+      "method": "insert",
+      "target": "tax_asset_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/kategori-aset-pajak/actions.ts",
+      "line": 40,
+      "method": "update",
+      "target": "tax_asset_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/kategori-aset/actions.ts",
+      "line": 35,
+      "method": "update",
+      "target": "asset_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/kategori-aset/actions.ts",
+      "line": 36,
+      "method": "insert",
+      "target": "asset_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/kategori-aset/actions.ts",
+      "line": 48,
+      "method": "update",
+      "target": "asset_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/persediaan-awal/actions.ts",
+      "line": 23,
+      "method": "rpc",
+      "target": "preview_accurate_inventory_accounting",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/persediaan-awal/actions.ts",
+      "line": 40,
+      "method": "rpc",
+      "target": "post_accurate_inventory_accounting",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/piutang/actions.ts",
+      "line": 27,
+      "method": "rpc",
+      "target": "clinic_receive_invoice_payment",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/rekonsiliasi/actions.ts",
+      "line": 32,
+      "method": "rpc",
+      "target": "mutate_bank_reconciliation",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/rekonsiliasi/actions.ts",
+      "line": 50,
+      "method": "rpc",
+      "target": "get_bank_reconciliation_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/saldo-awal/actions.ts",
+      "line": 103,
+      "method": "rpc",
+      "target": "create_opening_balance_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/keuangan/tutup-buku/actions.ts",
+      "line": 29,
+      "method": "upsert",
+      "target": "accounting_locks",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/tutup-buku/actions.ts",
+      "line": 69,
+      "method": "insert",
+      "target": "journal_entries",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/keuangan/tutup-buku/actions.ts",
+      "line": 79,
+      "method": "insert",
+      "target": "journal_lines",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/keuangan/tutup-buku/actions.ts",
+      "line": 83,
+      "method": "delete",
+      "target": "journal_entries",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/keuangan/tutup-buku/actions.ts",
+      "line": 117,
+      "method": "upsert",
+      "target": "accounting_locks",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/antrian/actions.ts",
+      "line": 13,
+      "method": "rpc",
+      "target": "set_visit_service_state",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/antrian/actions.ts",
+      "line": 16,
+      "method": "update",
+      "target": "visits",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/antrian/actions.ts",
+      "line": 25,
+      "method": "rpc",
+      "target": "set_visit_service_state",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/antrian/actions.ts",
+      "line": 33,
+      "method": "rpc",
+      "target": "set_visit_service_state",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/antrian/actions.ts",
+      "line": 42,
+      "method": "rpc",
+      "target": "set_visit_service_state",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/antrian/actions.ts",
+      "line": 55,
+      "method": "delete",
+      "target": "visits",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/aturan-demo/actions.ts",
+      "line": 10,
+      "method": "rpc",
+      "target": "save_clinic_demo_policy",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/bahan-baku/actions.ts",
+      "line": 9,
+      "method": "update",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/bahan-baku/actions.ts",
+      "line": 40,
+      "method": "update",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/bahan-baku/actions.ts",
+      "line": 41,
+      "method": "update",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/bahan-baku/actions.ts",
+      "line": 47,
+      "method": "update",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/booking/actions.ts",
+      "line": 22,
+      "method": "update",
+      "target": "bookings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/booking/actions.ts",
+      "line": 59,
+      "method": "rpc",
+      "target": "mark_booking_no_show",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/consent/actions.ts",
+      "line": 55,
+      "method": "insert",
+      "target": "consents",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/consent/actions.ts",
+      "line": 94,
+      "method": "update",
+      "target": "consents",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/follow-up/actions.ts",
+      "line": 22,
+      "method": "update",
+      "target": "follow_ups",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/katalog-racikan/actions.ts",
+      "line": 18,
+      "method": "rpc",
+      "target": "publish_compound_formula",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/katalog-racikan/actions.ts",
+      "line": 34,
+      "method": "rpc",
+      "target": "set_compound_formula_active",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/katalog-racikan/actions.ts",
+      "line": 45,
+      "method": "rpc",
+      "target": "bind_compound_formula_sale_item",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/maintenance/actions.ts",
+      "line": 18,
+      "method": "insert",
+      "target": "medical_equipment",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/maintenance/actions.ts",
+      "line": 44,
+      "method": "insert",
+      "target": "medical_equipment_maintenance",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/maintenance/actions.ts",
+      "line": 56,
+      "method": "update",
+      "target": "medical_equipment",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 54,
+      "method": "rpc",
+      "target": "clinic_post_demo_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 56,
+      "method": "rpc",
+      "target": "clinic_post_split_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 57,
+      "method": "rpc",
+      "target": "clinic_post_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 93,
+      "method": "rpc",
+      "target": "clinic_inpatient_consent_valid",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 228,
+      "method": "rpc",
+      "target": "clinic_edit_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 288,
+      "method": "rpc",
+      "target": "set_visit_service_state",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 291,
+      "method": "update",
+      "target": "visits",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 470,
+      "method": "rpc",
+      "target": "set_visit_service_state",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/actions.ts",
+      "line": 517,
+      "method": "rpc",
+      "target": "clinic_void_reissue_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/page.tsx",
+      "line": 60,
+      "method": "rpc",
+      "target": "clinic_inpatient_consent_valid",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/page.tsx",
+      "line": 87,
+      "method": "rpc",
+      "target": "clinic_demo_care_staff",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pembayaran/[visitId]/page.tsx",
+      "line": 191,
+      "method": "rpc",
+      "target": "clinic_manual_invoice_units_supported",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/pengeluaran/actions.ts",
+      "line": 40,
+      "method": "insert",
+      "target": "expenses",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/permintaan/actions.ts",
+      "line": 37,
+      "method": "insert",
+      "target": "stock_requests",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/permintaan/actions.ts",
+      "line": 43,
+      "method": "insert",
+      "target": "stock_request_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/permintaan/baru/page.tsx",
+      "line": 22,
+      "method": "rpc",
+      "target": "operational_request_destinations",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/persetujuan/actions.ts",
+      "line": 24,
+      "method": "update",
+      "target": "consent_templates",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/persetujuan/actions.ts",
+      "line": 30,
+      "method": "insert",
+      "target": "consent_templates",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/persetujuan/actions.ts",
+      "line": 46,
+      "method": "update",
+      "target": "consent_templates",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/persetujuan/actions.ts",
+      "line": 78,
+      "method": "upsert",
+      "target": "consent_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/racik/actions.ts",
+      "line": 66,
+      "method": "rpc",
+      "target": "clinic_issue_master_compound",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/racik/actions.ts",
+      "line": 77,
+      "method": "rpc",
+      "target": "clinic_issue_official_compound",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/racik/actions.ts",
+      "line": 108,
+      "method": "rpc",
+      "target": "clinic_issue_compound",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/racik/actions.ts",
+      "line": 129,
+      "method": "update",
+      "target": "compounding_recipes",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/racik/actions.ts",
+      "line": 150,
+      "method": "update",
+      "target": "compounding_recipes",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/racik/actions.ts",
+      "line": 168,
+      "method": "rpc",
+      "target": "clinic_void_compound",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 28,
+      "method": "rpc",
+      "target": "clinic_admit_inpatient",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 71,
+      "method": "insert",
+      "target": "inpatient_daily_logs",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 178,
+      "method": "rpc",
+      "target": "clinic_save_inpatient_log_with_status",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 217,
+      "method": "rpc",
+      "target": "clinic_change_inpatient_condition",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 286,
+      "method": "rpc",
+      "target": "clinic_update_inpatient_log",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 325,
+      "method": "insert",
+      "target": "inpatient_medications",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 361,
+      "method": "insert",
+      "target": "inpatient_med_doses",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 381,
+      "method": "update",
+      "target": "inpatient_medications",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/rawat-inap/actions.ts",
+      "line": 396,
+      "method": "update",
+      "target": "inpatient_med_doses",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 80,
+      "method": "insert",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 124,
+      "method": "update",
+      "target": "pets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 129,
+      "method": "insert",
+      "target": "pets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 153,
+      "method": "insert",
+      "target": "visits",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 173,
+      "method": "rpc",
+      "target": "record_booking_visit",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 178,
+      "method": "delete",
+      "target": "visits",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 183,
+      "method": "rpc",
+      "target": "record_visit_check_in",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/registrasi/actions.ts",
+      "line": 185,
+      "method": "delete",
+      "target": "visits",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/klinik/rekam-medis/[visitId]/actions.ts",
+      "line": 160,
+      "method": "rpc",
+      "target": "clinic_save_initial_record",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rekam-medis/[visitId]/actions.ts",
+      "line": 197,
+      "method": "rpc",
+      "target": "create_visit_referral",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rekam-medis/impor/actions.ts",
+      "line": 268,
+      "method": "rpc",
+      "target": "import_legacy_medical_record_resolved",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/rekam-medis/impor/actions.ts",
+      "line": 331,
+      "method": "rpc",
+      "target": "import_legacy_medical_record_resolved",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/klinik/shift/actions.ts",
+      "line": 28,
+      "method": "insert",
+      "target": "cashier_shifts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/master-data/actions.ts",
+      "line": 13,
+      "method": "rpc",
+      "target": "change_master_data_lifecycle",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 64,
+      "method": "rpc",
+      "target": "create_purchase_order_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 85,
+      "method": "rpc",
+      "target": "revise_purchase_order",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 130,
+      "method": "update",
+      "target": "suppliers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 131,
+      "method": "insert",
+      "target": "suppliers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 172,
+      "method": "rpc",
+      "target": "revise_purchase_order",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 175,
+      "method": "rpc",
+      "target": "transition_purchase_order_status",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 212,
+      "method": "rpc",
+      "target": "receive_purchase_order",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 240,
+      "method": "rpc",
+      "target": "get_purchase_order_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/actions.ts",
+      "line": 245,
+      "method": "rpc",
+      "target": "get_purchase_operation_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/[id]/actions.ts",
+      "line": 16,
+      "method": "rpc",
+      "target": "get_purchase_payment_cancellation",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/[id]/actions.ts",
+      "line": 17,
+      "method": "rpc",
+      "target": "cancel_purchase_payment",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/[id]/actions.ts",
+      "line": 42,
+      "method": "rpc",
+      "target": "get_purchase_invoice_cancellation",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/[id]/actions.ts",
+      "line": 43,
+      "method": "rpc",
+      "target": "cancel_purchase_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/actions.ts",
+      "line": 38,
+      "method": "rpc",
+      "target": "recover_purchase_operation",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/actions.ts",
+      "line": 44,
+      "method": "rpc",
+      "target": "create_purchase_invoice_from_po",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/actions.ts",
+      "line": 60,
+      "method": "rpc",
+      "target": "get_purchase_operation_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/actions.ts",
+      "line": 83,
+      "method": "rpc",
+      "target": "recover_purchase_payment",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/actions.ts",
+      "line": 92,
+      "method": "rpc",
+      "target": "pay_purchase_invoice_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/faktur/langsung/actions.ts",
+      "line": 31,
+      "method": "rpc",
+      "target": "create_direct_purchase_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/kategori-pemasok/actions.ts",
+      "line": 18,
+      "method": "update",
+      "target": "supplier_categories",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pembelian/kategori-pemasok/actions.ts",
+      "line": 19,
+      "method": "insert",
+      "target": "supplier_categories",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pembelian/perintah-bayar/actions.ts",
+      "line": 25,
+      "method": "rpc",
+      "target": "mutate_purchase_payment_order",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/perintah-bayar/actions.ts",
+      "line": 52,
+      "method": "rpc",
+      "target": "pay_purchase_payment_order_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/retur/actions.ts",
+      "line": 18,
+      "method": "rpc",
+      "target": "post_unit_return",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pembelian/uang-muka/actions.ts",
+      "line": 56,
+      "method": "insert",
+      "target": "purchase_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pembelian/uang-muka/actions.ts",
+      "line": 130,
+      "method": "update",
+      "target": "purchase_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/akses-grup/actions.ts",
+      "line": 51,
+      "method": "delete",
+      "target": "role_modules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/akses-grup/actions.ts",
+      "line": 54,
+      "method": "insert",
+      "target": "role_modules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/akses-grup/actions.ts",
+      "line": 68,
+      "method": "delete",
+      "target": "role_modules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/akses-grup/actions.ts",
+      "line": 82,
+      "method": "upsert",
+      "target": "role_modules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/akses-grup/actions.ts",
+      "line": 94,
+      "method": "upsert",
+      "target": "role_capabilities",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/alert-operasional/actions.ts",
+      "line": 28,
+      "method": "rpc",
+      "target": "user_can_access_branch",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pengaturan/alert-operasional/actions.ts",
+      "line": 58,
+      "method": "update",
+      "target": "operational_alert_settings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/alert-operasional/actions.ts",
+      "line": 59,
+      "method": "insert",
+      "target": "operational_alert_settings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/cabang/actions.ts",
+      "line": 29,
+      "method": "update",
+      "target": "branches",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/gaji/actions.ts",
+      "line": 31,
+      "method": "update",
+      "target": "payroll_settings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/impor/actions.ts",
+      "line": 43,
+      "method": "insert",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pengaturan/impor/actions.ts",
+      "line": 58,
+      "method": "insert",
+      "target": "suppliers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pengaturan/impor/actions.ts",
+      "line": 89,
+      "method": "insert",
+      "target": "commission_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/impor/actions.ts",
+      "line": 102,
+      "method": "insert",
+      "target": "sales_targets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/impor/actions.ts",
+      "line": 116,
+      "method": "insert",
+      "target": "coa_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/impor/actions.ts",
+      "line": 133,
+      "method": "update",
+      "target": "coa_accounts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/operasional-klinik/actions.ts",
+      "line": 21,
+      "method": "insert",
+      "target": "branch_capacity_periods",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/pajak/actions.ts",
+      "line": 29,
+      "method": "update",
+      "target": "company_settings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/pengguna/actions.ts",
+      "line": 61,
+      "method": "rpc",
+      "target": "configure_employee_account",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pengaturan/pengguna/actions.ts",
+      "line": 80,
+      "method": "update",
+      "target": "profiles",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/pengguna/actions.ts",
+      "line": 92,
+      "method": "rpc",
+      "target": "link_employee_account",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pengaturan/penomoran/actions.ts",
+      "line": 48,
+      "method": "upsert",
+      "target": "document_numbering",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/penomoran/actions.ts",
+      "line": 63,
+      "method": "delete",
+      "target": "document_numbering",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/penyetuju/actions.ts",
+      "line": 44,
+      "method": "insert",
+      "target": "approval_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/penyetuju/actions.ts",
+      "line": 59,
+      "method": "update",
+      "target": "approval_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/penyetuju/actions.ts",
+      "line": 72,
+      "method": "delete",
+      "target": "approval_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/penyetuju/actions.ts",
+      "line": 107,
+      "method": "update",
+      "target": "approval_requests",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/tier/actions.ts",
+      "line": 27,
+      "method": "update",
+      "target": "tier_settings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/tier/actions.ts",
+      "line": 91,
+      "method": "insert",
+      "target": "point_ledger",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pengaturan/tier/actions.ts",
+      "line": 100,
+      "method": "update",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pengaturan/wa-engine/actions.ts",
+      "line": 21,
+      "method": "upsert",
+      "target": "wa_engine_settings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/[id]/actions.ts",
+      "line": 17,
+      "method": "rpc",
+      "target": "cancel_posted_sale",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/faktur/[id]/actions.ts",
+      "line": 15,
+      "method": "rpc",
+      "target": "get_wholesale_operation",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/faktur/[id]/actions.ts",
+      "line": 16,
+      "method": "rpc",
+      "target": "correct_wholesale_invoice",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/faktur/actions.ts",
+      "line": 16,
+      "method": "rpc",
+      "target": "get_wholesale_operation",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/faktur/actions.ts",
+      "line": 17,
+      "method": "rpc",
+      "target": "receive_wholesale_payment",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/komisi/actions.ts",
+      "line": 53,
+      "method": "update",
+      "target": "commission_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/komisi/actions.ts",
+      "line": 54,
+      "method": "insert",
+      "target": "commission_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/komisi/actions.ts",
+      "line": 66,
+      "method": "update",
+      "target": "commission_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/komisi/actions.ts",
+      "line": 75,
+      "method": "delete",
+      "target": "commission_rules",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/online/actions.ts",
+      "line": 36,
+      "method": "rpc",
+      "target": "post_online_order",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/online/actions.ts",
+      "line": 87,
+      "method": "update",
+      "target": "sales",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/online/actions.ts",
+      "line": 121,
+      "method": "rpc",
+      "target": "get_unit_posting_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/penawaran/actions.ts",
+      "line": 33,
+      "method": "insert",
+      "target": "sales_quotations",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/penawaran/actions.ts",
+      "line": 39,
+      "method": "insert",
+      "target": "sales_quotation_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/penawaran/actions.ts",
+      "line": 47,
+      "method": "delete",
+      "target": "sales_quotations",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/penawaran/actions.ts",
+      "line": 61,
+      "method": "update",
+      "target": "sales_quotations",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/penawaran/actions.ts",
+      "line": 71,
+      "method": "rpc",
+      "target": "sales_convert_quotation",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/pesanan/actions.ts",
+      "line": 34,
+      "method": "insert",
+      "target": "sales_orders",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/pesanan/actions.ts",
+      "line": 40,
+      "method": "insert",
+      "target": "sales_order_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/pesanan/actions.ts",
+      "line": 47,
+      "method": "delete",
+      "target": "sales_orders",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/penjualan/pesanan/actions.ts",
+      "line": 57,
+      "method": "rpc",
+      "target": "sales_cancel_order",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/pesanan/actions.ts",
+      "line": 98,
+      "method": "rpc",
+      "target": "[dynamic]",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/pesanan/actions.ts",
+      "line": 121,
+      "method": "rpc",
+      "target": "sales_get_posting_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/retur/actions.ts",
+      "line": 19,
+      "method": "rpc",
+      "target": "post_unit_return",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/retur/corrections.ts",
+      "line": 24,
+      "method": "rpc",
+      "target": "correct_return_record",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/penjualan/target/actions.ts",
+      "line": 26,
+      "method": "insert",
+      "target": "sales_targets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/target/actions.ts",
+      "line": 46,
+      "method": "delete",
+      "target": "sales_targets",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/uang-muka/actions.ts",
+      "line": 48,
+      "method": "insert",
+      "target": "sales_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/penjualan/uang-muka/actions.ts",
+      "line": 118,
+      "method": "update",
+      "target": "sales_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/perusahaan/cabang/actions.ts",
+      "line": 32,
+      "method": "upsert",
+      "target": "user_branches",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/perusahaan/cabang/actions.ts",
+      "line": 46,
+      "method": "delete",
+      "target": "user_branches",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/perusahaan/gudang/actions.ts",
+      "line": 36,
+      "method": "insert",
+      "target": "warehouses",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/expense/actions.ts",
+      "line": 28,
+      "method": "rpc",
+      "target": "revise_expense_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/expense/actions.ts",
+      "line": 50,
+      "method": "rpc",
+      "target": "get_expense_posting_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/harga/actions.ts",
+      "line": 54,
+      "method": "update",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/harga/actions.ts",
+      "line": 55,
+      "method": "update",
+      "target": "item_units",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/harga/actions.ts",
+      "line": 66,
+      "method": "upsert",
+      "target": "item_branch_prices",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/harga/actions.ts",
+      "line": 76,
+      "method": "delete",
+      "target": "item_branch_prices",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/kategori/actions.ts",
+      "line": 31,
+      "method": "update",
+      "target": "item_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/kategori/actions.ts",
+      "line": 32,
+      "method": "insert",
+      "target": "item_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/kategori/actions.ts",
+      "line": 45,
+      "method": "update",
+      "target": "item_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/kategori/actions.ts",
+      "line": 56,
+      "method": "rpc",
+      "target": "remove_item_category",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/koreksi-stok/StockCorrectionPanel.tsx",
+      "line": 11,
+      "method": "rpc",
+      "target": "get_stock_document_correction",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/koreksi-stok/actions.ts",
+      "line": 15,
+      "method": "rpc",
+      "target": "preview_stock_document_correction",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/koreksi-stok/actions.ts",
+      "line": 23,
+      "method": "rpc",
+      "target": "correct_stock_document",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/koreksi-stok/actions.ts",
+      "line": 32,
+      "method": "rpc",
+      "target": "get_stock_document_correction_result",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/merek/actions.ts",
+      "line": 20,
+      "method": "update",
+      "target": "brands",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/merek/actions.ts",
+      "line": 21,
+      "method": "insert",
+      "target": "brands",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/[id]/HasilView.tsx",
+      "line": 27,
+      "method": "rpc",
+      "target": "read_stock_document_effective",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 108,
+      "method": "rpc",
+      "target": "opname_daftar_hitung",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 118,
+      "method": "insert",
+      "target": "opname_orders",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 125,
+      "method": "insert",
+      "target": "opname_order_items",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 130,
+      "method": "delete",
+      "target": "opname_orders",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 158,
+      "method": "upsert",
+      "target": "opname_counts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 179,
+      "method": "delete",
+      "target": "opname_counts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 291,
+      "method": "insert",
+      "target": "opname_results",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 297,
+      "method": "insert",
+      "target": "opname_result_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 302,
+      "method": "delete",
+      "target": "opname_results",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 372,
+      "method": "insert",
+      "target": "sales_invoices",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 386,
+      "method": "insert",
+      "target": "sales_invoice_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 398,
+      "method": "update",
+      "target": "opname_results",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/opname/actions.ts",
+      "line": 427,
+      "method": "update",
+      "target": "opname_orders",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/pemindahan/actions.ts",
+      "line": 14,
+      "method": "rpc",
+      "target": "post_stock_transfer_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/penyesuaian/[id]/page.tsx",
+      "line": 45,
+      "method": "rpc",
+      "target": "read_stock_document_effective",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/penyesuaian/actions.ts",
+      "line": 100,
+      "method": "insert",
+      "target": "inventory_adjustments",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/penyesuaian/actions.ts",
+      "line": 112,
+      "method": "insert",
+      "target": "inventory_adjustment_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/penyesuaian/actions.ts",
+      "line": 133,
+      "method": "update",
+      "target": "inventory_adjustment_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/penyesuaian/actions.ts",
+      "line": 138,
+      "method": "update",
+      "target": "inventory_adjustments",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/penyesuaian/page.tsx",
+      "line": 37,
+      "method": "rpc",
+      "target": "read_stock_document_effective",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/permintaan/actions.ts",
+      "line": 36,
+      "method": "insert",
+      "target": "stock_requests",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/permintaan/actions.ts",
+      "line": 46,
+      "method": "insert",
+      "target": "stock_request_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/permintaan/actions.ts",
+      "line": 78,
+      "method": "rpc",
+      "target": "approve_stock_request_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/permintaan/actions.ts",
+      "line": 180,
+      "method": "update",
+      "target": "stock_requests",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/produksi/actions.ts",
+      "line": 80,
+      "method": "insert",
+      "target": "production_recipes",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/produksi/actions.ts",
+      "line": 86,
+      "method": "insert",
+      "target": "production_recipe_items",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/produksi/actions.ts",
+      "line": 91,
+      "method": "delete",
+      "target": "production_recipes",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/produksi/actions.ts",
+      "line": 146,
+      "method": "insert",
+      "target": "production_orders",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/produksi/actions.ts",
+      "line": 161,
+      "method": "insert",
+      "target": "production_order_items",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/produksi/actions.ts",
+      "line": 167,
+      "method": "update",
+      "target": "production_orders",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/produksi/actions.ts",
+      "line": 223,
+      "method": "update",
+      "target": "production_orders",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/quest/actions.ts",
+      "line": 33,
+      "method": "insert",
+      "target": "staff_quest_definitions",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/quest/actions.ts",
+      "line": 46,
+      "method": "update",
+      "target": "staff_quest_definitions",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/quest/actions.ts",
+      "line": 58,
+      "method": "insert",
+      "target": "staff_reward_catalog",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/quest/actions.ts",
+      "line": 67,
+      "method": "update",
+      "target": "staff_reward_catalog",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/quest/actions.ts",
+      "line": 76,
+      "method": "update",
+      "target": "staff_reward_redemptions",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/satuan/actions.ts",
+      "line": 19,
+      "method": "update",
+      "target": "units",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/satuan/actions.ts",
+      "line": 20,
+      "method": "insert",
+      "target": "units",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/shift/actions.ts",
+      "line": 18,
+      "method": "insert",
+      "target": "cashier_shifts",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 152,
+      "method": "update",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 153,
+      "method": "insert",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 166,
+      "method": "delete",
+      "target": "item_price_tiers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 168,
+      "method": "insert",
+      "target": "item_price_tiers",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 174,
+      "method": "delete",
+      "target": "item_units",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 176,
+      "method": "insert",
+      "target": "item_units",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 185,
+      "method": "rpc",
+      "target": "replace_item_group_components",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/sku/actions.ts",
+      "line": 195,
+      "method": "rpc",
+      "target": "change_master_data_lifecycle",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 106,
+      "method": "insert",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 226,
+      "method": "update",
+      "target": "import_runs",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 456,
+      "method": "insert",
+      "target": "import_runs",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 476,
+      "method": "insert",
+      "target": "import_run_rows",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 579,
+      "method": "update",
+      "target": "item_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 585,
+      "method": "insert",
+      "target": "item_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 599,
+      "method": "insert",
+      "target": "brands",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 612,
+      "method": "insert",
+      "target": "suppliers",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 623,
+      "method": "insert",
+      "target": "units",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 668,
+      "method": "upsert",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 675,
+      "method": "delete",
+      "target": "item_units",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 685,
+      "method": "insert",
+      "target": "item_units",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 737,
+      "method": "update",
+      "target": "import_run_rows",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 795,
+      "method": "update",
+      "target": "item_categories",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 881,
+      "method": "rpc",
+      "target": "delete_unused_item_category",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 890,
+      "method": "update",
+      "target": "import_runs",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 988,
+      "method": "rpc",
+      "target": "replace_item_group_components",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 993,
+      "method": "update",
+      "target": "items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 1112,
+      "method": "upsert",
+      "target": "initial_stock_scope_mappings",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 1156,
+      "method": "insert",
+      "target": "import_runs",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/impor/actions.ts",
+      "line": 1185,
+      "method": "insert",
+      "target": "import_run_rows",
+      "registered": false
+    },
+    {
+      "file": "src/app/(app)/pos/sku/varian/actions.ts",
+      "line": 36,
+      "method": "rpc",
+      "target": "replace_item_variant_family",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/stok-minimum/actions.ts",
+      "line": 82,
+      "method": "rpc",
+      "target": "create_purchase_order_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/transaksi/actions.ts",
+      "line": 159,
+      "method": "insert",
+      "target": "sales",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/transaksi/actions.ts",
+      "line": 193,
+      "method": "insert",
+      "target": "sale_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/transaksi/actions.ts",
+      "line": 206,
+      "method": "delete",
+      "target": "sales",
+      "registered": true
+    },
+    {
+      "file": "src/app/(app)/pos/transaksi/actions.ts",
+      "line": 211,
+      "method": "rpc",
+      "target": "finalize_pos_sale",
+      "registered": null
+    },
+    {
+      "file": "src/app/(app)/pos/transaksi/actions.ts",
+      "line": 214,
+      "method": "delete",
+      "target": "sales",
+      "registered": true
+    },
+    {
+      "file": "src/app/booking/actions.ts",
+      "line": 32,
+      "method": "insert",
+      "target": "bookings",
+      "registered": false
+    },
+    {
+      "file": "src/app/kasir/actions.ts",
+      "line": 37,
+      "method": "insert",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/app/kasir/actions.ts",
+      "line": 61,
+      "method": "insert",
+      "target": "cashier_shifts",
+      "registered": false
+    },
+    {
+      "file": "src/app/kasir/checkout.ts",
+      "line": 375,
+      "method": "insert",
+      "target": "sales",
+      "registered": true
+    },
+    {
+      "file": "src/app/kasir/checkout.ts",
+      "line": 425,
+      "method": "insert",
+      "target": "sale_items",
+      "registered": true
+    },
+    {
+      "file": "src/app/kasir/checkout.ts",
+      "line": 440,
+      "method": "insert",
+      "target": "sale_item_group_components",
+      "registered": false
+    },
+    {
+      "file": "src/app/kasir/checkout.ts",
+      "line": 453,
+      "method": "delete",
+      "target": "sales",
+      "registered": true
+    },
+    {
+      "file": "src/app/kasir/checkout.ts",
+      "line": 460,
+      "method": "rpc",
+      "target": "finalize_pos_sale",
+      "registered": null
+    },
+    {
+      "file": "src/app/kasir/checkout.ts",
+      "line": 463,
+      "method": "delete",
+      "target": "sales",
+      "registered": true
+    },
+    {
+      "file": "src/app/kasir/persediaan/actions.ts",
+      "line": 40,
+      "method": "rpc",
+      "target": "create_cashier_stock_request_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/app/kasir/persediaan/baru/page.tsx",
+      "line": 21,
+      "method": "rpc",
+      "target": "operational_request_destinations",
+      "registered": null
+    },
+    {
+      "file": "src/app/kasir/quest/actions.ts",
+      "line": 15,
+      "method": "rpc",
+      "target": "claim_staff_quest",
+      "registered": null
+    },
+    {
+      "file": "src/app/kasir/quest/actions.ts",
+      "line": 31,
+      "method": "rpc",
+      "target": "redeem_staff_reward",
+      "registered": null
+    },
+    {
+      "file": "src/app/me/actions.ts",
+      "line": 48,
+      "method": "upsert",
+      "target": "attendance",
+      "registered": false
+    },
+    {
+      "file": "src/app/me/actions.ts",
+      "line": 63,
+      "method": "update",
+      "target": "attendance",
+      "registered": false
+    },
+    {
+      "file": "src/app/me/actions.ts",
+      "line": 82,
+      "method": "insert",
+      "target": "leave_requests",
+      "registered": false
+    },
+    {
+      "file": "src/app/me/pengajuan.ts",
+      "line": 33,
+      "method": "insert",
+      "target": "overtime_requests",
+      "registered": false
+    },
+    {
+      "file": "src/app/me/pengajuan.ts",
+      "line": 67,
+      "method": "insert",
+      "target": "cash_advances",
+      "registered": false
+    },
+    {
+      "file": "src/app/me/pengajuan.ts",
+      "line": 85,
+      "method": "insert",
+      "target": "reimbursements",
+      "registered": false
+    },
+    {
+      "file": "src/components/PetPhotoUpload.tsx",
+      "line": 25,
+      "method": "update",
+      "target": "pets",
+      "registered": false
+    },
+    {
+      "file": "src/components/dokumen/actions.ts",
+      "line": 27,
+      "method": "insert",
+      "target": "document_attachments",
+      "registered": false
+    },
+    {
+      "file": "src/components/dokumen/actions.ts",
+      "line": 44,
+      "method": "delete",
+      "target": "document_attachments",
+      "registered": false
+    },
+    {
+      "file": "src/lib/akhir-bulan-server.ts",
+      "line": 59,
+      "method": "upsert",
+      "target": "accounting_locks",
+      "registered": false
+    },
+    {
+      "file": "src/lib/akhir-bulan-server.ts",
+      "line": 71,
+      "method": "insert",
+      "target": "month_end_runs",
+      "registered": false
+    },
+    {
+      "file": "src/lib/customer-tier.ts",
+      "line": 40,
+      "method": "update",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/lib/depreciation.ts",
+      "line": 83,
+      "method": "insert",
+      "target": "asset_depreciations",
+      "registered": false
+    },
+    {
+      "file": "src/lib/expense-save.ts",
+      "line": 17,
+      "method": "rpc",
+      "target": "post_expense_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/lib/hpp-reports-server.ts",
+      "line": 75,
+      "method": "rpc",
+      "target": "user_can_access_branch",
+      "registered": null
+    },
+    {
+      "file": "src/lib/hpp-reports-server.ts",
+      "line": 94,
+      "method": "rpc",
+      "target": "inventory_is_average",
+      "registered": null
+    },
+    {
+      "file": "src/lib/hpp-reports-server.ts",
+      "line": 153,
+      "method": "rpc",
+      "target": "report_compound_ingredients",
+      "registered": null
+    },
+    {
+      "file": "src/lib/inventory-closing.ts",
+      "line": 21,
+      "method": "rpc",
+      "target": "user_can_access_branch",
+      "registered": null
+    },
+    {
+      "file": "src/lib/inventory.ts",
+      "line": 116,
+      "method": "rpc",
+      "target": "stock_in_fifo",
+      "registered": null
+    },
+    {
+      "file": "src/lib/inventory.ts",
+      "line": 147,
+      "method": "rpc",
+      "target": "[dynamic]",
+      "registered": null
+    },
+    {
+      "file": "src/lib/loyalty-server.ts",
+      "line": 54,
+      "method": "insert",
+      "target": "point_ledger",
+      "registered": false
+    },
+    {
+      "file": "src/lib/loyalty-server.ts",
+      "line": 63,
+      "method": "update",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/lib/loyalty-server.ts",
+      "line": 98,
+      "method": "update",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/lib/operasional-klinik-server.ts",
+      "line": 34,
+      "method": "rpc",
+      "target": "user_can_access_branch",
+      "registered": null
+    },
+    {
+      "file": "src/lib/operation-sales-server.ts",
+      "line": 154,
+      "method": "rpc",
+      "target": "user_can_access_branch",
+      "registered": null
+    },
+    {
+      "file": "src/lib/persetujuan-server.ts",
+      "line": 61,
+      "method": "update",
+      "target": "approval_requests",
+      "registered": false
+    },
+    {
+      "file": "src/lib/persetujuan-server.ts",
+      "line": 71,
+      "method": "insert",
+      "target": "approval_requests",
+      "registered": false
+    },
+    {
+      "file": "src/lib/poin-klinik.ts",
+      "line": 75,
+      "method": "insert",
+      "target": "point_ledger",
+      "registered": false
+    },
+    {
+      "file": "src/lib/poin-klinik.ts",
+      "line": 81,
+      "method": "insert",
+      "target": "point_ledger",
+      "registered": false
+    },
+    {
+      "file": "src/lib/poin-klinik.ts",
+      "line": 85,
+      "method": "update",
+      "target": "customers",
+      "registered": true
+    },
+    {
+      "file": "src/lib/posting.ts",
+      "line": 82,
+      "method": "insert",
+      "target": "journal_entries",
+      "registered": true
+    },
+    {
+      "file": "src/lib/posting.ts",
+      "line": 106,
+      "method": "insert",
+      "target": "journal_lines",
+      "registered": false
+    },
+    {
+      "file": "src/lib/posting.ts",
+      "line": 109,
+      "method": "delete",
+      "target": "journal_entries",
+      "registered": true
+    },
+    {
+      "file": "src/lib/quest-hook.ts",
+      "line": 5,
+      "method": "rpc",
+      "target": "apply_sale_staff_effects",
+      "registered": null
+    },
+    {
+      "file": "src/lib/recurring.ts",
+      "line": 142,
+      "method": "rpc",
+      "target": "post_recurring_journal_period",
+      "registered": null
+    },
+    {
+      "file": "src/lib/stock-document-issue.ts",
+      "line": 5,
+      "method": "rpc",
+      "target": "issue_stock_document_recorded",
+      "registered": null
+    },
+    {
+      "file": "src/lib/terima-permintaan.ts",
+      "line": 34,
+      "method": "rpc",
+      "target": "receive_stock_request_atomic",
+      "registered": null
+    },
+    {
+      "file": "src/lib/tutup-shift.ts",
+      "line": 133,
+      "method": "update",
+      "target": "cashier_shifts",
+      "registered": false
+    },
+    {
+      "file": "src/lib/tutup-shift.ts",
+      "line": 163,
+      "method": "insert",
+      "target": "cash_advances",
+      "registered": false
+    },
+    {
+      "file": "src/lib/tutup-shift.ts",
+      "line": 188,
+      "method": "delete",
+      "target": "cash_advances",
+      "registered": false
+    },
+    {
+      "file": "src/lib/wa-engine.ts",
+      "line": 156,
+      "method": "insert",
+      "target": "whatsapp_message_log",
+      "registered": false
+    },
+    {
+      "file": "src/lib/wa-engine.ts",
+      "line": 165,
+      "method": "update",
+      "target": "whatsapp_message_log",
+      "registered": false
+    },
+    {
+      "file": "src/lib/wa-engine.ts",
+      "line": 169,
+      "method": "update",
+      "target": "whatsapp_message_log",
+      "registered": false
+    },
+    {
+      "file": "src/lib/wa-engine.ts",
+      "line": 190,
+      "method": "insert",
+      "target": "whatsapp_message_log",
+      "registered": false
+    },
+    {
+      "file": "src/lib/wa-engine.ts",
+      "line": 195,
+      "method": "update",
+      "target": "whatsapp_message_log",
+      "registered": false
+    }
+  ]
+}

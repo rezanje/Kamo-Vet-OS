@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
@@ -529,6 +530,7 @@ export default async function PembayaranPage({
         />
       )}
 
+      {invoice && <ActivityHistoryLink entity="invoices" id={invoice.id} />}
       {/* Riwayat perubahan invoice (audit log §7). */}
       {(editLog ?? []).length > 0 && (
         <div className="crm-sec" style={{ marginTop: 12 }}>
