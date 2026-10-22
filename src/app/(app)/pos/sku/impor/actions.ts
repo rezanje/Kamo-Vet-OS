@@ -511,6 +511,18 @@ function newMasters(items: AccurateItem[], master: MasterAccurate, categories: A
   };
 }
 
+function invalidMasterInput(parsed: Awaited<ReturnType<typeof bacaUploads>>["parsed"]): AccurateImportState | null {
+  if (parsed.rows.length) return null;
+  const rows = buatPreviewAccurate(parsed, []);
+  const reasons = [...new Set(parsed.rejected.map((row) => row.reason))].slice(0, 3);
+  return {
+    ...stateError(`Tidak ada barang/jasa yang siap diimpor. ${parsed.rejected.length} baris ditolak, ${parsed.skipped.length} dilewati. ${reasons.length ? reasons.join(" ") : "Isi baris master dan kolom wajib pada file, lalu jalankan Cek perubahan lagi."}`),
+    rows: ringkasPreviewAccurate(rows),
+    total_rows: rows.length,
+    summary: summarize(rows),
+  };
+}
+
 export async function previewImporAccurate(formData: FormData): Promise<AccurateImportState> {
   try {
     const supabase = await assertBolehKelola();
@@ -519,6 +531,8 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     const upload = await bacaUploads(files);
     let parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
+    const invalid = invalidMasterInput(parsed);
+    if (invalid) return invalid;
     const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
     const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
@@ -749,6 +763,8 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const upload = await bacaUploads(files);
     let parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
+    const invalid = invalidMasterInput(parsed);
+    if (invalid) return invalid;
     const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
     const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))

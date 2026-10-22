@@ -1,0 +1,6 @@
+Applied 222 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+accurate_inventory_source_precision.sql: passed.
+accurate_inventory_accounting.sql: passed.
+accurate_inventory_accounting_guards.sql: passed.
+accurate_inventory_accounting_review.sql: passed.
+Removed owned PostgreSQL test container and volumes.
