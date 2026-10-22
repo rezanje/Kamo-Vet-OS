@@ -1,0 +1,18 @@
+
+> vetos@0.1.0 test
+> vitest run src/components/__tests__/accurate-import-continuation.test.tsx src/components/__tests__/accurate-inventory-import-review-link.test.tsx src/components/__tests__/accurate-inventory-accounting-form.test.tsx src/lib/__tests__/accurate-inventory-import-routing.test.ts src/lib/__tests__/accurate-inventory-accounting-actions.test.ts
+
+
+ RUN  v4.1.9 /workspace/kamo-import-fix
+
+
+ Test Files  5 passed (5)
+      Tests  20 passed (20)
+   Start at  08:40:56
+   Duration  1.15s (transform 358ms, setup 0ms, import 936ms, tests 552ms, environment 995ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
