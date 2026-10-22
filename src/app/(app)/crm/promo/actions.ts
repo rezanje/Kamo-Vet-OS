@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import {transactionDraftAck} from "@/lib/transaction-draft-ack";
 import { createClient } from "@/lib/supabase/server";
 
 const BACK = "/crm/promo";
@@ -95,7 +96,7 @@ export async function createPromo(formData: FormData) {
   }
 
   revalidatePath(BACK);
-  redirect(`${BACK}?success=1`);
+  redirect(`${BACK}?success=1${transactionDraftAck(formData)}`);
 }
 
 export async function togglePromo(formData: FormData) {
