@@ -1,0 +1,31 @@
+{
+  "fictionalActionsOnly": true,
+  "checks": [
+    {
+      "width": 1280,
+      "calls": {
+        "masterPreview": 1,
+        "preflight": 1,
+        "masterConfirm": 1,
+        "stockPreview": 1
+      },
+      "exactReviewBatch": true,
+      "explicitReviewRequired": true,
+      "noOverflow": true,
+      "runtimeErrors": []
+    },
+    {
+      "width": 390,
+      "calls": {
+        "masterPreview": 1,
+        "preflight": 1,
+        "masterConfirm": 1,
+        "stockPreview": 1
+      },
+      "exactReviewBatch": true,
+      "explicitReviewRequired": true,
+      "noOverflow": true,
+      "runtimeErrors": []
+    }
+  ]
+}

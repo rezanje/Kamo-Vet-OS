@@ -91,12 +91,18 @@ export function AccurateImportForm({
     () => (state?.rows ?? []).filter((row) => showSame || row.status !== "Sama"),
     [showSame, state],
   );
+  // Preflight has no run_id; a saved preview must continue to accounting review.
+  const accountingReviewReady = Boolean(
+    !skipInitialStock && oneClickStockState?.ok
+    && oneClickStockState.phase === "preview" && oneClickStockState.run_id,
+  );
+  const accountingReviewHref = `/keuangan/persediaan-awal?run_id=${encodeURIComponent(oneClickStockState?.run_id ?? "")}`;
   const previewReady = Boolean(
     files.length === 1
     && (skipInitialStock || initialStockAsOf)
     && state?.ok
     && state.run_id
-    && (skipInitialStock || (oneClickStockState?.ok && oneClickStockState.phase === "preview")),
+    && (skipInitialStock || (oneClickStockState?.ok && oneClickStockState.phase === "preview" && !oneClickStockState.run_id)),
   );
   const importComplete = Boolean(oneClickStockState?.ok && oneClickStockState.phase === "done");
   const isBusy = pending || isChecking;
@@ -119,7 +125,7 @@ export function AccurateImportForm({
     stockCheckComplete: oneClickStockState !== null,
     stockReady: Boolean(oneClickStockState?.ok),
   });
-  const canCheck = files.length === 1 && !isBusy && !previewReady && !importComplete;
+  const canCheck = files.length === 1 && !isBusy && !previewReady && !accountingReviewReady && !importComplete;
   const canImportOnce = previewReady && !isBusy;
   const readyStockCount = oneClickStockState?.rows.filter((row) => row.status === "valid").length ?? 0;
   const shownPercentage = progress
@@ -296,8 +302,8 @@ export function AccurateImportForm({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7, marginTop: 12 }}>
         {[
           { number: 1, label: "Pilih file", active: files.length === 0, done: files.length === 1 },
-          { number: 2, label: "Cek perubahan", active: files.length === 1 && !previewReady && !importComplete, done: previewReady || importComplete },
-          { number: 3, label: "Import Sekali", active: previewReady || (isBusy && flowMode === "importing"), done: importComplete },
+          { number: 2, label: "Cek perubahan", active: files.length === 1 && !previewReady && !accountingReviewReady && !importComplete, done: previewReady || accountingReviewReady || importComplete },
+          { number: 3, label: accountingReviewReady ? "Tinjau stok + jurnal" : "Import Sekali", active: previewReady || accountingReviewReady || (isBusy && flowMode === "importing"), done: importComplete },
         ].map((step) => (
           <div key={step.number} style={{
             display: "flex", alignItems: "center", gap: 7, padding: "8px 9px", borderRadius: 8,
@@ -375,10 +381,12 @@ export function AccurateImportForm({
           onClick={() => { void cekPerubahanSekali(); }} style={{ background: canCheck ? "var(--posb)" : "#94a3b8", cursor: canCheck ? "pointer" : "not-allowed" }}>
           <i className={`ti ${isChecking ? "ti-loader-2" : "ti-eye"}`} style={isChecking ? { animation: "btn-spin .8s linear infinite" } : undefined} /> {isChecking ? "Memproses…" : "Cek perubahan"}
         </button>
-        <button type="button" className="btn-acc" disabled={!canImportOnce}
+        {accountingReviewReady ? <Link href={accountingReviewHref} className="btn-acc" style={{ background: "#15803d", justifyContent: "center", textDecoration: "none" }}>
+          <i className="ti ti-clipboard-check" /> Tinjau dan posting stok + jurnal
+        </Link> : <button type="button" className="btn-acc" disabled={!canImportOnce}
           onClick={importSekali} style={{ background: canImportOnce ? "#15803d" : "#94a3b8", cursor: canImportOnce ? "pointer" : "not-allowed" }}>
           <i className={`ti ${pending && flowMode === "importing" ? "ti-loader-2" : "ti-database-import"}`} style={pending && flowMode === "importing" ? { animation: "btn-spin .8s linear infinite" } : undefined} /> {pending && flowMode === "importing" ? "Mengimpor…" : "Import Sekali"}
-        </button>
+        </button>}
         {files.length > 0 && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {files[0].name}</span>}
         {categoryFile && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name} — dipakai bila file Barang &amp; Jasa tidak punya Subkategori.</span>}
       </div>
@@ -446,6 +454,15 @@ export function AccurateImportForm({
               setOneClickStatus("Isi tanggal saldo, lalu Cek perubahan untuk melanjutkan impor saldo awal.");
             }}>Impor saldo awal juga</button>
           </div>}
+        </div>
+      )}
+
+      {accountingReviewReady && !isBusy && (
+        <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
+          <div style={{ fontSize: 12, fontWeight: 900 }}>Master tersimpan, batch saldo siap ditinjau</div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>
+            Stok dan jurnal belum diposting. Lanjutkan melalui Tinjau dan posting stok + jurnal. OWNER perlu memeriksa batch, cabang, tanggal, nilai, dan akun ekuitas sebelum posting.
+          </div>
         </div>
       )}
 
