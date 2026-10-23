@@ -1,0 +1,1 @@
+Independent read-only reviewer /root/k08_review: no P1/P2. Explicit IDs preserve duplicate-name selection; quantities, units, legacy draft payloads, transfer request keys and warehouse stock hints remain intact. Loaders/actions/access unchanged. Independently ran 23 tests / 5 files. No edits, publication, merge or target actions.
