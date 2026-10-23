@@ -1,0 +1,26 @@
+
+ RUN  v4.1.9 /workspace/kamo-u03
+
+ ❯ src/components/__tests__/multiselect-item-names.test.tsx (1 test | 1 failed) 34ms
+   × shows product names and reference codes separately in both results and selected chips 33ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/multiselect-item-names.test.tsx > shows product names and reference codes separately in both results and selected chips
+TypeError: Cannot read properties of null (reading 'textContent')
+ ❯ src/components/__tests__/multiselect-item-names.test.tsx:3:536
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  07:52:09
+   Duration  633ms (transform 42ms, setup 0ms, import 80ms, tests 34ms, environment 327ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

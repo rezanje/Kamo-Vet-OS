@@ -11,6 +11,7 @@ import type { ItemUnit } from "@/lib/satuan";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { useState } from "react";
 import Link from "next/link";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bayarVisit } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -56,7 +57,12 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   // dikosongkan lagi — baris lama yang namanya diedit tidak boleh menyeret
   // item_id barang yang berbeda.
   const byLabel = new Map(master.map((it) => [labelMaster(it), it]));
-  const byName = new Map(master.map((it) => [it.name.toLowerCase(), it]));
+  const byName = new Map<string,MasterItem|null>();
+  for(const item of master){const key=item.name.trim().toLowerCase();byName.set(key,byName.has(key)?null:item);}
+  const chooseMaster = (i:number,id:string) => {
+    const item=master.find(row=>row.id===id);
+    if(item)set(i,{deskripsi:item.name,item_id:item.id,harga:item.harga,satuan:item.unit,prescription_item_id:null,recipe_id:null});
+  };
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v) ?? byName.get(v.trim().toLowerCase());
     set(i, it
@@ -75,9 +81,6 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
         </div>
         <button type="button" onClick={add} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }}><i className="ti ti-plus" /> Tambah</button>
       </div>
-      <datalist id={listId}>
-        {master.map((it) => <option key={it.id} value={labelMaster(it)} />)}
-      </datalist>
       {/* Tabel ikut menyempit di layar kecil sampai kolom Nama tidak terbaca —
           diberi lebar minimum lalu digeser mendatar, sama seperti tabel lain. */}
       <div style={{ overflowX: "auto" }}>
@@ -89,7 +92,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
               <td>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <input className="fi" list={listId} value={r.deskripsi} readOnly={!!r.recipe_id} placeholder="Ketik / pilih dari master" onChange={(e) => setNama(i, e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+                  <div style={{flex:1,minWidth:0}}><SearchableItemPicker items={master} value={r.item_id??""} textValue={r.deskripsi} onTextChange={text=>setNama(i,text)} onChange={id=>chooseMaster(i,id)} readOnly={!!r.recipe_id} inputId={`${listId}-${i}-name`} ariaLabel={`Nama ${title.toLowerCase()} baris ${i+1}`} placeholder="Ketik / pilih dari master"/></div>
                   {r.deskripsi.trim() && !r.item_id && !r.recipe_id && (
                     <i className="ti ti-alert-triangle" title="Bukan dari master — stok tidak akan berkurang" style={{ color: "#d97706", fontSize: 13, flexShrink: 0 }} />
                   )}

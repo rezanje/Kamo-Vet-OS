@@ -360,10 +360,16 @@ export default async function AntrianPage({
                             </Link>
                           )}
                           {v.status === "Pembayaran" && (
+                            <>
+                            <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
+                              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                              <i className="ti ti-stethoscope" /> Buka rekam medis
+                            </Link>
                             <Link href={`/klinik/pembayaran/${v.id}`} className="btn-acc"
                               style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
                               <i className="ti ti-cash" /> Bayar
                             </Link>
+                            </>
                           )}
                           {v.status === "Selesai" && (
                             <>

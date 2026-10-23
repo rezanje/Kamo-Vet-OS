@@ -1,0 +1,3 @@
+# U03 / U04 / U05 — remaining master and CRM controls
+
+Independent code batch on PR106 lineage; no retry of blocked main merge, no target migration. Reuse existing picker for named single-reference fields, preserve unavailable stored references, repeated variant IDs, group units/quantity and formula version snapshots. Separate codes in production output/stock headings. CRM discount rules and active catalog loads use checked pagination under existing scope, without changing discount precedence or write policies. Focused tests and one final build/type/lint/review. Report actual scope and remaining purchase-owned selectors, not global completion.

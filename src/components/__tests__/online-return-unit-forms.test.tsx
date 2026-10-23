@@ -12,7 +12,7 @@ const units=[{unit:'pcs',factor:1,sell_price:10,buy_price:5},{unit:'box',factor:
 async function mount(tree:React.ReactNode){Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});const c=document.createElement('div');document.body.append(c);const root=createRoot(c);await act(async()=>root.render(tree));return {c,dispose:async()=>{await act(async()=>root.unmount());c.remove();}};}
 it('online exposes the selected unit and submits its name',async()=>{
  const {c,dispose}=await mount(<OnlineForm warehouses={[]} customers={[]} items={[{id:'sku',code:'S',name:'SKU',sell_price:10,units}]}/>);
- try{const input=c.querySelector<HTMLInputElement>('input[list="onl-items"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'S — SKU');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ try{const input=c.querySelector<HTMLInputElement>('input[aria-label="Barang online 1"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'S — SKU');input.dispatchEvent(new Event('input',{bubbles:true}));});
  const select=c.querySelector<HTMLSelectElement>('select[title="Satuan"]');expect(select).not.toBeNull();
  await act(async()=>{select!.value='box';select!.dispatchEvent(new Event('change',{bubbles:true}));});
  expect(JSON.parse(c.querySelector<HTMLInputElement>('input[name="items"]')!.value)[0]).toMatchObject({satuan:'box',harga:120});
@@ -29,7 +29,7 @@ it.each(['sale','purchase'])('return %s uses exact source and divides base ceili
 it('online restores selected-unit cart after refresh and clears only confirmed request',async()=>{
  sessionStorage.clear();
  let mounted=await mount(<OnlineForm userId="actor" warehouses={[]} customers={[]} items={[{id:'sku',code:'S',name:'SKU',sell_price:10,units}]}/>);
- const input=mounted.c.querySelector<HTMLInputElement>('input[list="onl-items"]')!;
+ const input=mounted.c.querySelector<HTMLInputElement>('input[aria-label="Barang online 1"]')!;
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'S — SKU');input.dispatchEvent(new Event('input',{bubbles:true}));});
  const unit=mounted.c.querySelector<HTMLSelectElement>('select[title="Satuan"]')!;
  await act(async()=>{unit.value='box';unit.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -52,12 +52,12 @@ it('a same-mounted success rotates only its matching acknowledgement and resets 
  const render=(confirmedScope?:string,confirmedKey?:string)=><OnlineForm userId="same-actor" confirmedScope={confirmedScope} confirmedKey={confirmedKey} warehouses={[]} customers={[]} items={[{id:'sku',code:'S',name:'SKU',sell_price:10,units}]}/>;
  try{
   await act(async()=>root.render(render()));const key=c.querySelector<HTMLInputElement>('input[name="request_key"]')!.value;
-  const input=c.querySelector<HTMLInputElement>('input[list="onl-items"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'S — SKU');input.dispatchEvent(new Event('input',{bubbles:true}));});
+  const input=c.querySelector<HTMLInputElement>('input[aria-label="Barang online 1"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'S — SKU');input.dispatchEvent(new Event('input',{bubbles:true}));});
   await act(async()=>root.render(render('different',key)));expect(c.querySelector<HTMLInputElement>('input[name="request_key"]')!.value).toBe(key);
   await act(async()=>root.render(render('online',key)));
   expect(c.querySelector<HTMLInputElement>('input[name="request_key"]')!.value).not.toBe(key);
   expect(JSON.parse(c.querySelector<HTMLInputElement>('input[name="items"]')!.value)).toEqual([]);
-  await act(async()=>{const next=c.querySelector<HTMLInputElement>('input[list="onl-items"]')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(next,'S — SKU');next.dispatchEvent(new Event('input',{bubbles:true}));});
+  await act(async()=>{const next=c.querySelector<HTMLInputElement>('input[aria-label="Barang online 1"]')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(next,'S — SKU');next.dispatchEvent(new Event('input',{bubbles:true}));});
   expect(JSON.parse(c.querySelector<HTMLInputElement>('input[name="items"]')!.value)).toHaveLength(1);
  }finally{await act(async()=>root.unmount());c.remove();sessionStorage.clear();}
 });

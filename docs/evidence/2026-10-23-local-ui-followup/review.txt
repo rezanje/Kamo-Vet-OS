@@ -1,0 +1,5 @@
+Independent Sol reviewer /root/k08_review, read-only.
+Initial review: no introduced P1/P2, 31 selected tests / 5 files passed. Identified existing request child-pagination/approved quantity/unit gap.
+Followup after fixing that gap: no new P1/P2; authorized parent checked before child query, exact parent ID filter, checked pages; stored units, approved quantity and notes preserved; failures suppress form. Independent 11 receiving tests passed.
+No edits, target calls, or publication attempted by reviewer.
+Subsequent layout-only change: online grid becomes one column at narrow widths via auto-fit; verified by actual Chromium 1280/390 fixture with no page overflow.

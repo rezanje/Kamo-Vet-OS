@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
-const fixture = vi.hoisted(() => ({ all: false, authorized: true, fail: false, calls: [] as Array<[string, string, unknown]> }));
+const fixture = vi.hoisted(() => ({ all: false, authorized: true, fail: false, payment: false, calls: [] as Array<[string, string, unknown]> }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(fixture.all ? { "x-kamo-operational-branch": "all" } : {}) }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("@/lib/operational-branch", () => ({
@@ -13,19 +13,20 @@ vi.mock("@/lib/tanggal", async importOriginal => ({ ...await importOriginal<type
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "staff-a" } } }) },
   from(table: string) {
+    let selection = "";
     const q = {
-      select: () => q, order: () => q,
+      select: (columns: string) => { selection = columns; return q; }, order: () => q,
       eq: (key: string, value: unknown) => { if (table === "visits") fixture.calls.push(["eq", key, value]); return q; },
       in: (key: string, value: unknown) => { fixture.calls.push(["in", key, value]); return q; },
       neq: () => q,
       gte: (key: string, value: unknown) => { fixture.calls.push(["gte", key, value]); return q; },
       lt: (key: string, value: unknown) => { fixture.calls.push(["lt", key, value]); return q; },
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: table === "visits" && fixture.fail ? { message: "private DB detail" } : null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: fixture.payment && table === "visits" && selection.includes("status") ? [{id:"visit-payment",status:"Pembayaran",created_at:"2026-10-14T01:00:00Z",poli:"Umum",pets:null,customers:null,branches:null}] : [], error: table === "visits" && fixture.fail ? { message: "private DB detail" } : null }).then(resolve),
     }; return q;
   },
 }) }));
 import Page from "@/app/(app)/klinik/antrian/page";
-beforeEach(() => { fixture.calls = []; fixture.fail = false; fixture.all = false; fixture.authorized = true; });
+beforeEach(() => { fixture.calls = []; fixture.payment = false; fixture.fail = false; fixture.all = false; fixture.authorized = true; });
 async function render(params: Record<string, string> = {}) { return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(params) })); }
 it("reads each queue/counter under the same active branch and WIB date", async () => {
   const html = await render({ tanggal: "2026-10-14" });
@@ -67,4 +68,12 @@ it("rejects all-branch monitoring after permission is revoked", async () => {
   fixture.all = true; fixture.authorized = false;
   await expect(render()).rejects.toThrow("/mulai/cabang?mode=klinik");
   expect(fixture.calls).toHaveLength(0);
+});
+
+it("opens the existing medical record from a payment-stage queue row using its exact visit ID", async () => {
+  fixture.payment = true; const html = await render();
+  expect(html).toContain('href="/klinik/rekam-medis/visit-payment"');
+  expect(html).toContain('Buka rekam medis');
+  expect(html).toContain('href="/klinik/pembayaran/visit-payment"');
+  expect(html).not.toContain('name="status" value="Diperiksa"');
 });

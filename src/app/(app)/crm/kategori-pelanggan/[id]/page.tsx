@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { ItemReferenceField } from "@/components/ItemReferenceField";
+import { readCompleteList } from "@/lib/checked-list";
 import { MasterPage } from "@/components/MasterPage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
@@ -22,19 +24,23 @@ export default async function DiskonGolonganPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: golongan }, { data: aturanRaw }, { data: items }, { data: kategoriRaw }] = await Promise.all([
-    supabase.from("customer_categories").select("id, nama, diskon_persen, is_active").eq("id", id).maybeSingle(),
-    supabase.from("category_discounts").select("id, item_id, item_category_id, diskon_persen")
-      .eq("customer_category_id", id),
-    supabase.from("items").select("id, code, name").eq("is_active", true).order("name"),
-    supabase.from("item_categories").select("id, name, parent_id, is_active").order("name"),
-  ]);
-
-  if (!golongan) notFound();
+  const unavailable = <div role="alert" className="p2ban">Data diskon golongan belum dapat dimuat lengkap. Muat ulang sebelum mengubah aturan.</div>;
+  const {data:golongan,error:headerError}=await supabase.from("customer_categories").select("id, nama, diskon_persen, is_active").eq("id",id).maybeSingle();
+  if(headerError)return unavailable;
+  if(!golongan)notFound();
+  type Item = {id:string;code:string;name:string};
+  let aturanRaw:Aturan[],items:Item[],kategoriRaw:KategoriRow[];
+  try {
+    [aturanRaw,items,kategoriRaw]=await Promise.all([
+      readCompleteList<Aturan>((from,to)=>supabase.from("category_discounts").select("id, item_id, item_category_id, diskon_persen",{count:'exact'}).eq("customer_category_id",id).order("id").range(from,to),"Aturan diskon golongan",{maxRows:null}),
+      readCompleteList<Item>((from,to)=>supabase.from("items").select("id, code, name",{count:'exact'}).eq("is_active",true).order("name").order("id").range(from,to),"Barang diskon golongan",{maxRows:null}),
+      readCompleteList<KategoriRow>((from,to)=>supabase.from("item_categories").select("id, name, parent_id, is_active",{count:'exact'}).order("name").order("id").range(from,to),"Kategori diskon golongan",{maxRows:null}),
+    ]);
+  }catch{return unavailable;}
 
   const aturan = ((aturanRaw ?? []) as Aturan[]).map((a) => ({ ...a, diskon_persen: Number(a.diskon_persen) }));
   const kategoriOpts = flatOptions((kategoriRaw ?? []) as KategoriRow[]);
-  const namaItem = new Map((items ?? []).map((i) => [i.id, `${i.code} — ${i.name}`]));
+  const namaItem = new Map(items.map(i => [i.id, i]));
   const namaKategori = new Map(kategoriOpts.map((k) => [k.id, k.label]));
 
   const dasar = Number(golongan.diskon_persen);
@@ -58,19 +64,9 @@ export default async function DiskonGolonganPage({
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 260 }}>
               <label className="flab">Berlaku untuk *</label>
-              <select className="fi" name="sasaran" required defaultValue="">
-                <option value="">— pilih barang atau kategori —</option>
-                <optgroup label="Kategori barang">
-                  {kategoriOpts.map((k) => (
-                    <option key={`k-${k.id}`} value={`kategori:${k.id}`}>{k.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="Barang tertentu">
-                  {(items ?? []).map((i) => (
-                    <option key={`i-${i.id}`} value={`item:${i.id}`}>{i.code} — {i.name}</option>
-                  ))}
-                </optgroup>
-              </select>
+              <ItemReferenceField name="sasaran" required ariaLabel="Barang atau kategori pengecualian"
+                items={[...kategoriOpts.map(k => ({id:`kategori:${k.id}`,code:"",name:`Kategori: ${k.label}`})),
+                  ...items.map(item=>({...item,id:`item:${item.id}`}))]} />
             </div>
             <div style={{ width: 150 }}>
               <label className="flab">Diskon (%)</label>
@@ -100,7 +96,7 @@ export default async function DiskonGolonganPage({
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                   <td style={{ fontSize: 11.5, fontWeight: 500 }}>
                     {a.item_id
-                      ? namaItem.get(a.item_id) ?? "— barang terhapus —"
+                      ? <><span>{namaItem.get(a.item_id)?.name ?? "— barang terhapus —"}</span>{namaItem.get(a.item_id)?.code && <small data-item-code style={{display:'block',color:'var(--tm)'}}>Kode: {namaItem.get(a.item_id)!.code}</small>}</>
                       : namaKategori.get(a.item_category_id ?? "") ?? "— kategori terhapus —"}
                   </td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{a.item_id ? "Per barang" : "Per kategori"}</td>

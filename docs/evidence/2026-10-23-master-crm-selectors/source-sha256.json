@@ -1,0 +1,10 @@
+{
+  "src/components/ItemReferenceField.tsx": "3e0a89a5b1010718202ba0497da7d092d19f18508618c18202f40f7e19fa7f48",
+  "src/components/CompoundEditor.tsx": "2ef59267e949428d03aaa7d897d9f7e41f0beb378adb71e09bc7af3e73c304be",
+  "src/app/(app)/crm/kategori-pelanggan/[id]/page.tsx": "4f83d795485732725676140f078f86a34be64816610d040a2705638dfbb026e9",
+  "src/app/(app)/pos/sku/BarangForm.tsx": "06b093cb9cb5a3fe150b57e888d232295c4dd8e97a107d11b0c587e1569a75ee",
+  "src/app/(app)/pos/sku/varian/VariantFamilyForm.tsx": "fe673367388b0cbbf0ef2b1ed64d6c4630a5db71bc9845082fb93eb8c6d4e63d",
+  "src/app/(app)/pos/sku/varian/page.tsx": "1df61d66ce195bfec4d024197b8bd00167b3686eef7c772cf28f06c1dac4ce56",
+  "src/app/(app)/pos/produksi/page.tsx": "e696d383b63621d93c1c634c6dfe817d3a706709521135fc7e30e770a5e1e275",
+  "src/app/(app)/pos/kartu-stok/page.tsx": "51ac79ddc782c4a1ff61f8eb7964f3955d027c7be7f0a56d24b64ca16ed6ec42"
+}
