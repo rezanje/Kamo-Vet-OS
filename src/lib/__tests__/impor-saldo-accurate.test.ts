@@ -116,6 +116,8 @@ describe("bacaWorkbookSaldoAwal", () => {
       qty: 12,
       unit: "PCS",
       unitCost: 15_000,
+      sourceQty: "12",
+      sourceUnitCost: "15000",
       batchNo: null,
       expDate: null,
       branchName: null,
@@ -250,4 +252,12 @@ describe("resolveSaldoAwalRows", () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.status === "rejected")).toBe(true);
   });
+});
+
+it.each([
+ {unit:'PCS',units:[{unit:'BOX',factor:12},{unit:'box',factor:24}],source:'BoX'},
+ {unit:'PCS',units:[{unit:'pcs',factor:12}],source:'PCS'},
+])('rejects ambiguous normalized unit mappings before choosing a quantity (%j)',({unit,units,source})=>{
+ const rows=resolveSaldoAwalRows([{row:2,itemCode:'FICT',qty:1,unit:source,unitCost:1,batchNo:null,expDate:null,branchName:null,warehouseName:null,asOf:null}],new Map([['fict',{id:'i',code:'FICT',unit,itemType:'Persediaan',trackExpiry:false,units}]]),'w');
+ expect(rows[0].status).toBe('rejected');expect(rows[0].reason).toContain('ambigu');
 });

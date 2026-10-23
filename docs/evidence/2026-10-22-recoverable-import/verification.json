@@ -1,0 +1,29 @@
+{
+  "implementation_commit": "70081e61101ced8f0d54a8fd265647fa55411f91",
+  "full_suite": {
+    "files": 313,
+    "tests": 2433,
+    "exit_code": 0
+  },
+  "typecheck_exit_code": 0,
+  "scoped_lint_exit_code": 0,
+  "production_build_exit_code": 0,
+  "native_postgres": {
+    "version": 16,
+    "migrations": 223,
+    "passed": [
+      "accurate_inventory_preparation.sql",
+      "accurate_inventory_source_precision.sql",
+      "accurate_inventory_accounting.sql",
+      "accurate_inventory_accounting_guards.sql",
+      "accurate_inventory_accounting_review.sql"
+    ]
+  },
+  "review": {
+    "model": "Sol6.1 high",
+    "critical": 0,
+    "important_fixed_with_red_green_tests": 4,
+    "deferred_minor": 0
+  },
+  "live_actions": false
+}

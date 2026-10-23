@@ -1,0 +1,17 @@
+{
+  "assumptions": "All source SKUs explicitly seeded as active inventory, source base units, no expiry; fixture date2026-01-01. Not production metadata.",
+  "masterRejected": 485,
+  "masterNoWrites": true,
+  "strictNoWrites": true,
+  "preparedRows": 304,
+  "preparationRetrySameRun": true,
+  "recoveredExactRun": true,
+  "otherAccountRecoveryDenied": true,
+  "posted": true,
+  "postingRetrySameReceipt": true,
+  "quantityValueDebitCreditReconciled": true,
+  "journals": 1,
+  "sourceUnchanged": true,
+  "policy": "HALF_UP_BATCH_V1",
+  "residual": "-0.0026485026298650000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+}

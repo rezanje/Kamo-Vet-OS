@@ -1,0 +1,327 @@
+
+> vetos@0.1.0 build
+> next build
+
+   ▲ Next.js 15.5.25
+   - Experiments (use with caution):
+     · serverActions
+
+   Creating an optimized production build ...
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (102kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (250kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+ ⚠ Compiled with warnings in 2.6s
+
+../kamo-import-fix/node_modules/@supabase/supabase-js/dist/index.mjs
+A Node.js API is used (process.version at line: 27) which is not supported in the Edge Runtime.
+Learn more: https://nextjs.org/docs/api-reference/edge-runtime
+
+Import trace for requested module:
+../kamo-import-fix/node_modules/@supabase/supabase-js/dist/index.mjs
+../kamo-import-fix/node_modules/@supabase/ssr/dist/module/createBrowserClient.js
+../kamo-import-fix/node_modules/@supabase/ssr/dist/module/index.js
+./src/lib/supabase/middleware.ts
+
+ ✓ Compiled successfully in 67s
+   Linting and checking validity of types ...
+
+./src/app/(app)/klinik/antrian/[id]/page.tsx
+199:17  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/antrian/page.tsx
+45:11  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm.tsx
+302:30  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/racik/[recipeId]/page.tsx
+96:33  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/rawat-inap/[id]/catatan/CatatanForm.tsx
+190:32  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+281:21  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/rawat-inap/[id]/page.tsx
+195:17  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/rawat-inap/page.tsx
+27:14  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/registrasi/RegistrasiForm.tsx
+307:19  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/(app)/klinik/rekam-medis/[visitId]/dokumen/page.tsx
+105:31  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/PenunjangUpload.tsx
+42:23  Warning: '_drop' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/PetPhotoUpload.tsx
+40:13  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules
+   Collecting page data ...
+   Generating static pages (0/193) ...
+   Generating static pages (48/193) 
+   Generating static pages (96/193) 
+   Generating static pages (144/193) 
+ ✓ Generating static pages (193/193)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                          Size  First Load JS
+┌ ƒ /                                               271 B         107 kB
+├ ○ /_not-found                                     998 B         104 kB
+├ ƒ /api/cari                                       167 B         103 kB
+├ ƒ /api/cron/akhir-bulan                           167 B         103 kB
+├ ƒ /api/cron/wa-engine                             167 B         103 kB
+├ ƒ /api/impor/accurate/progres                     167 B         103 kB
+├ ƒ /api/version                                    167 B         103 kB
+├ ƒ /aset-tetap                                     723 B         111 kB
+├ ƒ /booking                                        481 B         103 kB
+├ ƒ /buku-besar                                     723 B         111 kB
+├ ƒ /buku-besar/anggaran                            548 B         107 kB
+├ ƒ /buku-besar/beban                               198 B         176 kB
+├ ƒ /buku-besar/beban/[id]                          888 B         177 kB
+├ ƒ /buku-besar/log                                 271 B         107 kB
+├ ƒ /buku-besar/monitor-anggaran                    271 B         107 kB
+├ ƒ /buku-besar/transfer-anggaran                   548 B         107 kB
+├ ƒ /crm                                            723 B         111 kB
+├ ƒ /crm/anabul/baru                                271 B         107 kB
+├ ƒ /crm/anabul/transfer                          1.43 kB         108 kB
+├ ƒ /crm/kategori-pelanggan                         523 B         107 kB
+├ ƒ /crm/kategori-pelanggan/[id]                    523 B         107 kB
+├ ƒ /crm/pelanggan                                7.53 kB         114 kB
+├ ƒ /crm/pelanggan/baru                             271 B         107 kB
+├ ƒ /crm/promo                                      271 B         107 kB
+├ ƒ /crm/status-ulasan                              523 B         107 kB
+├ ƒ /crm/voucher                                    548 B         107 kB
+├ ƒ /dokumen/[no]                                   271 B         107 kB
+├ ƒ /hris                                           723 B         111 kB
+├ ƒ /hris/absensi                                   271 B         107 kB
+├ ƒ /hris/cuti                                      271 B         107 kB
+├ ƒ /hris/jadwal                                  2.06 kB         108 kB
+├ ƒ /hris/karyawan                                3.52 kB         110 kB
+├ ƒ /hris/karyawan/[id]                             861 B         107 kB
+├ ƒ /hris/karyawan/impor                            548 B         107 kB
+├ ƒ /hris/komponen-gaji                             548 B         107 kB
+├ ƒ /hris/kpi                                       271 B         107 kB
+├ ƒ /hris/pengajuan                                 548 B         107 kB
+├ ƒ /hris/penggajian                              3.06 kB         109 kB
+├ ƒ /hris/penggajian/slip                           683 B         107 kB
+├ ƒ /hris/shift                                     548 B         107 kB
+├ ƒ /kas-bank                                       695 B         111 kB
+├ ƒ /kas-bank/kas-keluar                            140 B         177 kB
+├ ƒ /kas-bank/kas-masuk                             140 B         177 kB
+├ ƒ /kas-bank/peta                                  548 B         107 kB
+├ ƒ /kas-bank/rekening                              523 B         107 kB
+├ ƒ /kas-bank/rekening/[id]                         683 B         107 kB
+├ ƒ /kas-bank/rekening/[id]/saldo-awal            2.47 kB         112 kB
+├ ƒ /kas-bank/transfer                            3.19 kB         113 kB
+├ ƒ /kasir                                        11.3 kB         135 kB
+├ ƒ /kasir/mulai                                  3.02 kB         106 kB
+├ ƒ /kasir/opname                                   271 B         107 kB
+├ ƒ /kasir/opname/[id]                            7.83 kB         114 kB
+├ ƒ /kasir/opname/baru                            4.32 kB         111 kB
+├ ƒ /kasir/pengeluaran                              196 B         176 kB
+├ ƒ /kasir/persediaan                             2.21 kB         108 kB
+├ ƒ /kasir/persediaan/[id]                          271 B         107 kB
+├ ƒ /kasir/persediaan/baru                           7 kB         113 kB
+├ ƒ /kasir/persediaan/terima/[id]                   129 B         113 kB
+├ ƒ /kasir/quest                                  1.14 kB         107 kB
+├ ƒ /kasir/retur                                    134 B         126 kB
+├ ƒ /kasir/struk/[saleId]                         2.41 kB         109 kB
+├ ƒ /kasir/tutup                                  3.51 kB         110 kB
+├ ƒ /kasir/tutup/[shiftId]                          271 B         107 kB
+├ ƒ /keuangan                                       167 B         103 kB
+├ ƒ /keuangan/arus-kas                             2.7 kB         109 kB
+├ ƒ /keuangan/arus-kas/rincian                    2.71 kB         109 kB
+├ ƒ /keuangan/aset                                4.34 kB         111 kB
+├ ƒ /keuangan/aset/[id]                           2.47 kB         112 kB
+├ ƒ /keuangan/buku-besar                           2.7 kB         109 kB
+├ ƒ /keuangan/buku-besar/hpp/[nomor]              2.71 kB         109 kB
+├ ƒ /keuangan/closing-hpp                           912 B         107 kB
+├ ƒ /keuangan/coa                                   548 B         107 kB
+├ ƒ /keuangan/hutang                              1.71 kB         111 kB
+├ ƒ /keuangan/hutang/pembantu                      2.7 kB         109 kB
+├ ƒ /keuangan/jurnal                              3.69 kB         126 kB
+├ ƒ /keuangan/jurnal-berulang                     4.73 kB         111 kB
+├ ƒ /keuangan/kategori-aset                         523 B         107 kB
+├ ƒ /keuangan/kategori-aset-pajak                   548 B         107 kB
+├ ƒ /keuangan/laba-ditahan                         2.7 kB         109 kB
+├ ƒ /keuangan/laba-rugi                            2.7 kB         109 kB
+├ ƒ /keuangan/neraca                               2.7 kB         109 kB
+├ ƒ /keuangan/neraca-saldo                         2.7 kB         109 kB
+├ ƒ /keuangan/persediaan-awal                      2.8 kB         109 kB
+├ ƒ /keuangan/piutang                             2.85 kB         109 kB
+├ ƒ /keuangan/piutang/pembantu                     2.7 kB         109 kB
+├ ƒ /keuangan/ppn                                   271 B         107 kB
+├ ƒ /keuangan/rekonsiliasi                          187 B         113 kB
+├ ƒ /keuangan/rekonsiliasi/[id]                     188 B         113 kB
+├ ƒ /keuangan/saldo-awal                          2.28 kB         112 kB
+├ ƒ /keuangan/sinkron                               271 B         107 kB
+├ ƒ /keuangan/tutup-buku                            271 B         107 kB
+├ ƒ /klinik                                       1.52 kB         111 kB
+├ ƒ /klinik/antrian                               1.27 kB         172 kB
+├ ƒ /klinik/antrian/[id]                          2.33 kB         109 kB
+├ ƒ /klinik/aturan-demo                             548 B         107 kB
+├ ƒ /klinik/bahan-baku                            1.96 kB         108 kB
+├ ƒ /klinik/booking                                3.4 kB         110 kB
+├ ƒ /klinik/consent/[consentId]                     683 B         107 kB
+├ ƒ /klinik/follow-up                               644 B         107 kB
+├ ƒ /klinik/jadwal-dokter                           271 B         107 kB
+├ ƒ /klinik/katalog-racikan                       2.36 kB         109 kB
+├ ƒ /klinik/maintenance                           3.06 kB         109 kB
+├ ƒ /klinik/pembayaran/[visitId]                  14.6 kB         121 kB
+├ ƒ /klinik/pembayaran/[visitId]/invoice            399 B         107 kB
+├ ƒ /klinik/pembayaran/[visitId]/struk              399 B         107 kB
+├ ƒ /klinik/pembayaran/[visitId]/struk-rombongan    399 B         107 kB
+├ ƒ /klinik/penerimaan                              172 B         106 kB
+├ ƒ /klinik/penerimaan/terima/[id]                  129 B         113 kB
+├ ƒ /klinik/pengeluaran                            4.1 kB         110 kB
+├ ƒ /klinik/permintaan                              172 B         106 kB
+├ ƒ /klinik/permintaan/baru                       2.26 kB         112 kB
+├ ƒ /klinik/persetujuan                            2.2 kB         108 kB
+├ ƒ /klinik/racik                                   271 B         107 kB
+├ ƒ /klinik/racik/[recipeId]                      3.06 kB         109 kB
+├ ƒ /klinik/rawat-inap                              271 B         107 kB
+├ ƒ /klinik/rawat-inap/[id]                       3.03 kB         109 kB
+├ ƒ /klinik/rawat-inap/[id]/catatan               6.97 kB         183 kB
+├ ƒ /klinik/rawat-inap/[id]/catatan/[logId]       6.58 kB         113 kB
+├ ƒ /klinik/registrasi                            5.92 kB         180 kB
+├ ƒ /klinik/rekam-medis                             583 B         107 kB
+├ ƒ /klinik/rekam-medis/[visitId]                 10.8 kB         189 kB
+├ ƒ /klinik/rekam-medis/[visitId]/dokumen           683 B         107 kB
+├ ƒ /klinik/rekam-medis/[visitId]/resep             374 B         107 kB
+├ ƒ /klinik/rekam-medis/impor                     5.33 kB         373 kB
+├ ƒ /klinik/shift                                 3.06 kB         109 kB
+├ ƒ /klinik/shift/[shiftId]                         271 B         107 kB
+├ ƒ /laporan                                        707 B         111 kB
+├ ƒ /laporan/absensi                              2.71 kB         109 kB
+├ ƒ /laporan/akuisisi                             2.71 kB         109 kB
+├ ƒ /laporan/anamnesa                             2.71 kB         109 kB
+├ ƒ /laporan/gaji                                 2.71 kB         109 kB
+├ ƒ /laporan/jadwal-anabul                        2.71 kB         109 kB
+├ ƒ /laporan/kpi                                  2.71 kB         109 kB
+├ ƒ /laporan/margin-racikan                        2.7 kB         109 kB
+├ ƒ /laporan/margin-racikan/unduh                   167 B         103 kB
+├ ƒ /laporan/member                               2.71 kB         109 kB
+├ ƒ /laporan/nilai-persediaan                      2.7 kB         109 kB
+├ ƒ /laporan/nilai-persediaan/unduh                 167 B         103 kB
+├ ƒ /laporan/operasional-penjualan                 2.7 kB         109 kB
+├ ƒ /laporan/pelanggan-harian                     2.71 kB         109 kB
+├ ƒ /laporan/pelanggan-teratas                    2.71 kB         109 kB
+├ ƒ /laporan/pembelian                            2.71 kB         109 kB
+├ ƒ /laporan/penjual                              2.71 kB         109 kB
+├ ƒ /laporan/penjualan-barang                      2.7 kB         109 kB
+├ ƒ /laporan/penjualan-barang/unduh                 167 B         103 kB
+├ ƒ /laporan/penjualan-kasir                      2.71 kB         109 kB
+├ ƒ /laporan/penjualan-rinci                       2.7 kB         109 kB
+├ ƒ /laporan/promo                                2.71 kB         109 kB
+├ ƒ /laporan/rekap-klinik                         2.71 kB         109 kB
+├ ƒ /laporan/retensi                              2.71 kB         109 kB
+├ ƒ /laporan/transaksi-cabang                     2.71 kB         109 kB
+├ ƒ /login                                          481 B         103 kB
+├ ƒ /me                                           1.72 kB         108 kB
+├ ƒ /mulai                                          271 B         107 kB
+├ ƒ /mulai/cabang                                   548 B         107 kB
+├ ƒ /pajak                                          723 B         111 kB
+├ ƒ /pajak/faktur                                  2.7 kB         109 kB
+├ ƒ /pajak/faktur/unduh                             167 B         103 kB
+├ ƒ /pembelian                                    4.76 kB         115 kB
+├ ƒ /pembelian/[id]                               3.63 kB         178 kB
+├ ƒ /pembelian/[id]/terima                        5.97 kB         112 kB
+├ ƒ /pembelian/baru                               3.87 kB         114 kB
+├ ƒ /pembelian/faktur                             2.87 kB         109 kB
+├ ƒ /pembelian/faktur/[id]                        1.81 kB         111 kB
+├ ƒ /pembelian/faktur/baru                        3.23 kB         113 kB
+├ ƒ /pembelian/faktur/langsung                    5.94 kB         180 kB
+├ ƒ /pembelian/kategori-pemasok                   2.35 kB         109 kB
+├ ƒ /pembelian/penerimaan                           271 B         107 kB
+├ ƒ /pembelian/penerimaan/[id]                      683 B         107 kB
+├ ƒ /pembelian/perintah-bayar                       726 B         110 kB
+├ ƒ /pembelian/retur                                271 B         107 kB
+├ ƒ /pembelian/retur/[id]                         1.88 kB         111 kB
+├ ƒ /pembelian/retur/baru                         2.09 kB         112 kB
+├ ƒ /pembelian/uang-muka                          3.06 kB         109 kB
+├ ƒ /pengaturan                                     723 B         111 kB
+├ ƒ /pengaturan/akses-grup                          548 B         107 kB
+├ ƒ /pengaturan/alert-operasional                   548 B         107 kB
+├ ƒ /pengaturan/cabang                              271 B         107 kB
+├ ƒ /pengaturan/gaji                                548 B         107 kB
+├ ƒ /pengaturan/impor/[jenis]                     1.73 kB         108 kB
+├ ƒ /pengaturan/operasional-klinik                  548 B         107 kB
+├ ƒ /pengaturan/pajak                               271 B         107 kB
+├ ƒ /pengaturan/pengguna                            271 B         107 kB
+├ ƒ /pengaturan/penomoran                           271 B         107 kB
+├ ƒ /pengaturan/penyetuju                          2.7 kB         109 kB
+├ ƒ /pengaturan/tier                                271 B         107 kB
+├ ƒ /pengaturan/wa-engine                           548 B         107 kB
+├ ƒ /penjualan                                      708 B         111 kB
+├ ƒ /penjualan/[id]                               2.88 kB         177 kB
+├ ƒ /penjualan/faktur                             3.04 kB         109 kB
+├ ƒ /penjualan/faktur/[id]                        2.46 kB         125 kB
+├ ƒ /penjualan/komisi                               523 B         107 kB
+├ ƒ /penjualan/online                               271 B         107 kB
+├ ƒ /penjualan/online/baru                        3.19 kB         114 kB
+├ ƒ /penjualan/penawaran                            128 B         111 kB
+├ ƒ /penjualan/pengiriman                           271 B         107 kB
+├ ƒ /penjualan/pesanan                              128 B         111 kB
+├ ƒ /penjualan/pesanan/[id]                       3.14 kB         109 kB
+├ ƒ /penjualan/retur                                271 B         107 kB
+├ ƒ /penjualan/retur/[id]                         1.88 kB         111 kB
+├ ƒ /penjualan/retur/baru                           134 B         126 kB
+├ ƒ /penjualan/target                               523 B         107 kB
+├ ƒ /penjualan/uang-muka                          3.06 kB         109 kB
+├ ƒ /perusahaan                                     723 B         111 kB
+├ ƒ /perusahaan/cabang                              271 B         107 kB
+├ ƒ /perusahaan/gudang                              271 B         107 kB
+├ ƒ /pos                                            723 B         111 kB
+├ ƒ /pos/expense                                    198 B         176 kB
+├ ƒ /pos/expense/[id]                               888 B         177 kB
+├ ƒ /pos/expired                                    271 B         107 kB
+├ ƒ /pos/harga                                      523 B         107 kB
+├ ƒ /pos/kartu-stok                               1.78 kB         108 kB
+├ ƒ /pos/kategori                                   523 B         107 kB
+├ ƒ /pos/merek                                    2.34 kB         109 kB
+├ ƒ /pos/opname                                     271 B         107 kB
+├ ƒ /pos/opname/[id]                              2.76 kB         109 kB
+├ ƒ /pos/pemindahan                                 271 B         107 kB
+├ ƒ /pos/pemindahan/[id]                          4.62 kB         111 kB
+├ ƒ /pos/pemindahan/baru                          2.39 kB         112 kB
+├ ƒ /pos/penyesuaian                                271 B         107 kB
+├ ƒ /pos/penyesuaian/[id]                         2.76 kB         109 kB
+├ ƒ /pos/penyesuaian/baru                          4.2 kB         110 kB
+├ ƒ /pos/permintaan                                 271 B         107 kB
+├ ƒ /pos/permintaan/[id]                          2.85 kB         109 kB
+├ ƒ /pos/permintaan/baru                          2.12 kB         112 kB
+├ ƒ /pos/produksi                                 4.43 kB         111 kB
+├ ƒ /pos/quest                                      271 B         107 kB
+├ ƒ /pos/satuan                                   2.35 kB         109 kB
+├ ƒ /pos/shift                                    2.85 kB         109 kB
+├ ƒ /pos/shift/[id]                                 683 B         107 kB
+├ ƒ /pos/sku                                      5.38 kB         112 kB
+├ ƒ /pos/sku/[id]                                   128 B         113 kB
+├ ƒ /pos/sku/baru                                   127 B         113 kB
+├ ƒ /pos/sku/impor                                10.8 kB         371 kB
+├ ƒ /pos/sku/impor/template                         167 B         103 kB
+├ ƒ /pos/sku/varian                               1.28 kB         108 kB
+├ ƒ /pos/stok                                       172 B         106 kB
+├ ƒ /pos/stok-minimum                             3.06 kB         109 kB
+├ ƒ /pos/struk/[saleId]                           2.34 kB         109 kB
+└ ƒ /pos/transaksi                                4.72 kB         129 kB
++ First Load JS shared by all                      103 kB
+  ├ chunks/6210-6174ceafb82c65e9.js               46.6 kB
+  ├ chunks/8c19fe20-f2cd60c576fcebb3.js           54.2 kB
+  └ other shared chunks (total)                   1.98 kB
+
+
+ƒ Middleware                                      91.7 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
