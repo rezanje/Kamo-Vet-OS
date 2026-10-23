@@ -1,0 +1,89 @@
+
+ RUN  v4.1.9 /workspace/kamo-service-performers
+
+stderr | src/components/__tests__/backoffice-service-performers.test.tsx > restores legacy service draft rows with unique identity and leaves cashier selection unnecessary
+Encountered two children with the same key, `service::pcs`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx (4 tests | 4 failed) 226ms
+   × keeps repeated service lines independent while physical products still merge 121ms
+   × fills only empty service rows, preserves explicit overrides and restores exact rows after retry 44ms
+   × switches employee options with the branch and clears former branch attribution 29ms
+   × restores legacy service draft rows with unique identity and leaves cashier selection unnecessary 30ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/backoffice-service-performers.test.tsx > keeps repeated service lines independent while physical products still merge
+AssertionError: expected [ { item_id: 'service', …(6) }, …(1) ] to have a length of 3 but got 2
+
+- Expected
++ Received
+
+- 3
++ 2
+
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx:41:18
+     39|   await render(); await select(host.querySelector("select")!, "branch"…
+     40|   await add("Grooming"); await add("Grooming"); await add("Pakan"); aw…
+     41|   expect(cart()).toHaveLength(3);
+       |                  ^
+     42|   expect(new Set(cart().map((row: { row_key: string }) => row.row_key)…
+     43|   expect(cart().filter((row: { item_id: string }) => row.item_id === "…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/components/__tests__/backoffice-service-performers.test.tsx > fills only empty service rows, preserves explicit overrides and restores exact rows after retry
+AssertionError: expected  to have a length of 2 but got +0
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx:57:16
+     55|   await add("Grooming"); await add("Grooming"); await add("Pakan");
+     56|   const rows = host.querySelectorAll<HTMLElement>('[data-service-row]'…
+     57|   expect(rows).toHaveLength(2);
+       |                ^
+     58|   await select(rows[0].querySelectorAll("select")[1], "staff");
+     59|   const bulk = host.querySelector<HTMLElement>('[data-service-bulk]')!;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/components/__tests__/backoffice-service-performers.test.tsx > switches employee options with the branch and clears former branch attribution
+AssertionError: expected null not to be null
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx:77:19
+     75|   await render(); await select(host.querySelector("select")!, "branch"…
+     76|   const row = host.querySelector<HTMLElement>('[data-service-row]')!;
+     77|   expect(row).not.toBeNull(); await select(row.querySelectorAll("selec…
+       |                   ^
+     78|   await select(host.querySelector("select")!, "other");
+     79|   expect(cart()[0].service_performers).toEqual({ doctor_id: null, staf…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  src/components/__tests__/backoffice-service-performers.test.tsx > restores legacy service draft rows with unique identity and leaves cashier selection unnecessary
+AssertionError: expected 1 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx:87:79
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  14:19:21
+   Duration  933ms (transform 139ms, setup 0ms, import 210ms, tests 226ms, environment 301ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

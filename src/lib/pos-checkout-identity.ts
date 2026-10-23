@@ -27,6 +27,7 @@ export function posCheckoutIdentity(form: FormData, branchId: string): PosChecko
     item_id: line.item_id || null, qty: Number(line.qty),
     ...(!line.item_id ? { nama: line.nama, harga: Number(line.harga), target_species: line.target_species || "Universal" } : {}),
     satuan: line.satuan || null,
+    ...(line.service_performers?.doctor_id || line.service_performers?.staff_id ? { service_performers: { doctor_id: line.service_performers.doctor_id || null, staff_id: line.service_performers.staff_id || null } } : {}),
     item_discount_type: line.item_discount_type || null, item_discount_value: Number(line.item_discount_value || 0),
   })) : rawCart;
   const intent = canonical({ branchId, cart, customerId: text("customerId"), petId: text("petId"), salespersonId: text("salespersonId"),

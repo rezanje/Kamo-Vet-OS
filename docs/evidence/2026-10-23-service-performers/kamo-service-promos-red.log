@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /workspace/kamo-service-performers
+
+ ❯ src/lib/__tests__/service-line-promos.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/service-line-promos.test.ts [ src/lib/__tests__/service-line-promos.test.ts ]
+Error: Cannot find module '../service-line-promos' imported from /workspace/kamo-service-performers/src/lib/__tests__/service-line-promos.test.ts
+ ❯ src/lib/__tests__/service-line-promos.test.ts:2:1
+      1| import { expect,it } from "vitest";
+      2| import { aggregateServiceLines,serviceLinePromos } from "../service-li…
+       | ^
+      3| import type { PromoHitung } from "../promo-hitung";
+      4| const promo:PromoHitung={id:"p",name:"Existing",itemIds:["s"],minQty:2…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  14:27:28
+   Duration  233ms (transform 24ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

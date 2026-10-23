@@ -1,3 +1,4 @@
+import type { ServicePerformersInput } from "./service-performers";
 import { POS_PAYMENT_METHODS, type PosPaymentPart } from "./pos-payments";
 
 export const POS_DRAFT_KEY = "vetos:pos-transaksi:draft:v1";
@@ -36,6 +37,7 @@ export function kasirDraftKey(context?: string): string {
 }
 
 export type PosDraftLine = {
+  row_key?: string; item_type?: string; service_performers?: ServicePerformersInput | null;
   item_id: string;
   nama: string;
   qty: number;

@@ -12,7 +12,7 @@ import { loadUnitOptions } from "@/lib/satuan";
 import { stokEfektifGrup } from "@/lib/grup-barang";
 import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
 import { hariIniWIB } from "@/lib/tanggal";
-import { daftarPenjual } from "@/lib/penjual";
+import { loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
@@ -191,7 +191,7 @@ export default async function KasirPage({
     };
   });
 
-  const salespeople = await daftarPenjual(supabase, shift.branch_id);
+  const salespeople = await loadServiceStaff(supabase, shift.branch_id);
 
   type CustRaw = {
     id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
@@ -246,6 +246,7 @@ export default async function KasirPage({
       promoHitung={promoHitung}
       aturanDiskon={aturanPerGolongan}
       infoBarang={Object.fromEntries(infoBarang)}
+      cashierName={(await loggedInCashier(supabase, user.id, shift.branch_id)).name}
       salespeople={salespeople}
       error={error}
     />

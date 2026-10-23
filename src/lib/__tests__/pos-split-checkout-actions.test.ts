@@ -26,16 +26,17 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
   from(table: string) {
     let lookup = false;
+    let lineUpdate: Record<string, unknown> | null = null;
     let data: unknown = table === "items" ? [{ id: "item", nama: "Pakan", name: "Pakan", unit: "pcs", item_type: state.stock ? "Persediaan" : "Jasa", sell_price: 100000, min_sell_qty: 1, is_active: true }] : [];
     const single = () => ({ data: table === "sales" && lookup ? state.prior : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
       : table === "customers" ? { points: 0, total_spending: 0, category_id: null, customer_categories: null }
         : table === "warehouses" ? (state.stock ? { id: "warehouse" } : null) : { id: table === "sales" ? "sale" : "line" }, error: null });
     const query = {
-      select: (fields: string) => { lookup = fields.includes("checkout_fingerprint"); return query; }, eq: () => query, in: () => query, order: () => query, range: () => query, limit: () => query,
-      insert: (value: Record<string, unknown>) => { if (table === "sales") { state.headers.push(value); data = value; state.prior = { id: "sale", no_struk: "POS-SPLIT-TEST", checkout_fingerprint: value.checkout_fingerprint, payments_finalized_at: null }; } if (table === "sale_items") state.items.push(value); if (table === "point_ledger") state.pointsWrites++; return query; },
-      update: () => query, delete: () => { if (table === "sales") { state.removed = true; state.prior = null; } return query; },
+      select: (fields: string) => { lookup = fields.includes("checkout_fingerprint"); return query; }, eq: (key: string, value: unknown) => { if (table === "sale_items" && key === "id" && lineUpdate) state.items.filter(item => item.id === value).forEach(item => Object.assign(item, lineUpdate)); return query; }, in: () => query, order: () => query, range: () => query, limit: () => query,
+      insert: (value: Record<string, unknown>) => { if (table === "sales") { state.headers.push(value); data = value; state.prior = { id: "sale", no_struk: "POS-SPLIT-TEST", checkout_fingerprint: value.checkout_fingerprint, payments_finalized_at: null }; } if (table === "sale_items") state.items.push({ id: "line", ...value }); if (table === "point_ledger") state.pointsWrites++; return query; },
+      update: (value: Record<string, unknown>) => { lineUpdate = value; return query; }, delete: () => { if (table === "sales") { state.removed = true; state.prior = null; } return query; },
       single: async () => single(), maybeSingle: async () => single(),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, count: Array.isArray(data) ? data.length : 0, error: null }).then(resolve),
     };
     return query;
   },

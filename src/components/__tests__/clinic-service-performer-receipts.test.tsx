@@ -1,0 +1,32 @@
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {beforeEach,expect,it,vi} from 'vitest';
+const state=vi.hoisted(()=>({legacy:false}));
+vi.mock('next/link',()=>({default:({children,...props}:React.AnchorHTMLAttributes<HTMLAnchorElement>)=><a {...props}>{children}</a>}));
+vi.mock('next/navigation',()=>({notFound:()=>{throw Error('not found')}}));
+vi.mock('@/lib/rombongan-server',()=>({bacaRombongan:async()=>({tanggal:'2026-10-23',customerName:'Pemilik',baris:[{visitId:'visit',invoiceNo:'INV-1',hewan:'Milo',paidStatus:'Lunas',total:100,sisa:0}]})}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string){
+ const invoice={id:'invoice',invoice_no:'INV-1',subtotal:100,discount:0,tax:0,total:100,dp_amount:0,paid_status:'Lunas',metode_bayar:'Tunai',created_at:'2026-10-23T10:00:00Z',cashier_name:state.legacy?null:'Kasir Saat Transaksi'};
+ const rows=table==='invoice_items'?[{invoice_id:'invoice',deskripsi:'Jasa tersimpan',jenis:'jasa',qty:1,harga:100,service_performers:state.legacy?null:{version:1,doctor_id:'doctor',doctor_name:'Dokter Saat Transaksi',staff_id:'staff',staff_name:'Perawat Saat Transaksi'}}]:table==='invoices'?[invoice]:[];
+ const result={data:rows,error:null};
+ const q={select:()=>q,eq:()=>q,is:()=>q,in:()=>q,order:()=>q,maybeSingle:async()=>({data:table==='visits'?{id:'visit',poli:'Klinik',dokter:'PIC Kasus',pets:{name:'Milo',species:'Kucing'},customers:{name:'Pemilik'},branches:{name:'Cabang'}}:table==='invoices'?invoice:null,error:null}),then:(resolve:(value:unknown)=>void)=>Promise.resolve(result).then(resolve)};return q;
+}})}));
+import {HandoffPanel} from '@/app/(app)/klinik/rawat-inap/[id]/HandoffPanel';
+import Struk from '@/app/(app)/klinik/pembayaran/[visitId]/struk/page';
+import Invoice from '@/app/(app)/klinik/pembayaran/[visitId]/invoice/page';
+import GroupReceipt from '@/app/(app)/klinik/pembayaran/[visitId]/struk-rombongan/page';
+beforeEach(()=>{state.legacy=false});
+it.each([['struk',Struk],['invoice',Invoice],['rombongan',GroupReceipt]] as const)('%s prints only persisted role and cashier names',async(_name,Page)=>{
+ const html=renderToStaticMarkup(await Page({params:Promise.resolve({visitId:'visit'})}));
+ expect(html).toContain('Dokter Saat Transaksi');expect(html).toContain('Perawat Saat Transaksi');expect(html).toContain('Kasir Saat Transaksi');
+});
+it.each([['struk',Struk],['invoice',Invoice],['rombongan',GroupReceipt]] as const)('%s labels legacy attribution honestly without a PIC-as-cashier fallback',async(_name,Page)=>{
+ state.legacy=true;const html=renderToStaticMarkup(await Page({params:Promise.resolve({visitId:'visit'})}));
+ expect(html).toContain('data lama');expect(html).toContain('Kasir belum tercatat');
+ expect(html).not.toMatch(/Kasir.{0,100}PIC Kasus/);
+});
+
+it('inpatient handoff shows source prescription snapshots separately from the case doctor',()=>{
+ const html=renderToStaticMarkup(<HandoffPanel visitId="visit" admittedAt="2026-10-23T10:00:00Z" data={{doctor:'PIC Kasus',records:[],recipes:[],invoices:[],invoiceLines:[],prescriptions:[{id:'rx',medical_record_id:'record',nama_obat:'Jasa',qty:1,satuan:'jasa',jenis:'jasa',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-23T10:00:00Z',service_performers:{version:1,doctor_id:'doctor',doctor_name:'Dokter Pelaksana Sumber',staff_id:null}}]}}/>);
+ expect(html).toContain('Dokter Pelaksana Sumber');expect(html).toContain('PIC Kasus');
+});

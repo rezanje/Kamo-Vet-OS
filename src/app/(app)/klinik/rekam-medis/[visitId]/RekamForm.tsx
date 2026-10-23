@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
 import { simpanRekamMedis } from "./actions";
@@ -30,6 +32,7 @@ type CartRow = {
   ingredients?: RacikanIngredient[]; dosage_form?: string; aturan_pakai?: string;
   official_version_id?: string;
   sale_item_id?: string;
+  service_performers?: ServicePerformersInput | null;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -47,9 +50,10 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [] }: {
   visitId: string; petId: string; requestKey: string; draftUserId: string;
   service?: string | null;
+  serviceStaff?: ServiceStaff[];
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   racikanItems: ItemLite[];
@@ -66,6 +70,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);
+  const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
 
@@ -125,14 +130,15 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 
   const addObat = (it: ItemLite) => {
     setCart((c) => {
-      const ex = c.find((r) => r.item_id === it.id);
+      const ex = it.item_type === "Jasa" ? undefined : c.find((r) => r.item_id === it.id && r.jenis !== "jasa");
       if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
       const isService = it.item_type === "Jasa";
       const u = isService ? undefined : (it.units ?? [])[0];
       return [...c, {
-        key: it.id, item_id: it.id, nama_obat: it.name, qty: 1,
+        key: isService ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
         satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
         kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
+        service_performers: isService ? emptyServicePerformers() : null,
       }];
     });
   };
@@ -183,9 +189,9 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 <MiniKV k="Tgl Periksa" v={patient.tglPeriksa} />
                 <MiniKV k="Pemilik" v={patient.owner} />
                 {/* Dokter dipilih di sini, bukan cuma ditampilkan: dialah yang
-                    dicatat sebagai penanggung jawab kunjungan dan dapat insentif. */}
+                    dicatat sebagai penanggung jawab kunjungan; pelaksana jasa dipilih per baris. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter{isMedicalService(service) ? " *" : ""}</span>
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter PJ{isMedicalService(service) ? " *" : ""}</span>
                   <select className="fi" name="doctor_id" required={isMedicalService(service)} defaultValue={patient.dokterId ?? ""}
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
@@ -193,7 +199,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                   </select>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Pelaksana</span>
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>PIC kasus</span>
                   <select className="fi" name="provider_id" defaultValue={patient.providerId ?? ""}
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
@@ -335,6 +341,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                                 </select>
                               ) : <span>{r.satuan}</span>}
                             </div>
+                            {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (
@@ -368,6 +376,11 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 </div>
               )}
 
+              {cart.some(row => row.jenis === "jasa") && <div>
+                <ServicePerformersField label="Isi pelaksana jasa sekaligus" value={bulkPerformers} staff={serviceStaff} onChange={setBulkPerformers} />
+                <button type="button" className="btn-def" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
+                <p style={{fontSize:10}}>Baris yang sudah memiliki pelaksana tetap mengikuti pilihannya.</p>
+              </div>}
               <div style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
                 <Row k="Subtotal" v={rp(subtotal)} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
