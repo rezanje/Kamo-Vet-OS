@@ -1,0 +1,30 @@
+[
+  {
+    "width": 1280,
+    "capExactAndExcess": true,
+    "failedSubmitReloadSameKey": true,
+    "readOnlyRecovery": true,
+    "receivedDraftBlocked": true,
+    "accountIsolation": true,
+    "matchingAckOnlyRetires": true,
+    "loadFailureClosed": true,
+    "documentOverflow": false,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveTransactions": 0
+  },
+  {
+    "width": 390,
+    "capExactAndExcess": true,
+    "failedSubmitReloadSameKey": true,
+    "readOnlyRecovery": true,
+    "receivedDraftBlocked": true,
+    "accountIsolation": true,
+    "matchingAckOnlyRetires": true,
+    "loadFailureClosed": true,
+    "documentOverflow": false,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveTransactions": 0
+  }
+]
