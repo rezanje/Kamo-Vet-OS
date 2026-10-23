@@ -1,0 +1,11 @@
+// @vitest-environment jsdom
+import React,{act} from 'react';import {createRoot,type Root} from 'react-dom/client';import {it,expect,vi,beforeEach,afterEach} from 'vitest';
+vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams()}));
+import {PreservedForm} from '@/components/LocalTransactionDraft';import {PromoTargets} from '@/app/(app)/crm/promo/PromoTargets';
+const items=[{id:'a',code:'A',name:'Fiction A'},{id:'b',code:'B',name:'Fiction B'}],branches=[{id:'x',code:'X',name:'Fiction branch'}];
+let root:Root,host:HTMLDivElement;
+const render=async()=>{await act(async()=>root.render(<PreservedForm action={async()=>{throw new Error('fixture offline')}}><PromoTargets userId="fixture-owner" items={items} branches={branches}/><button>Save fixture</button></PreservedForm>));};
+async function choose(label:string,query:string){const input=host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,query);input.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>document.getElementById(input.getAttribute('aria-controls')!)?.querySelector<HTMLButtonElement>('[role=option]')!.click());}
+beforeEach(async()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});sessionStorage.clear();host=document.createElement('div');document.body.append(host);root=createRoot(host);await render();});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
+it('retains item IDs across branch toggles, failed save and scoped draft reload',async()=>{await choose('Cari barang promo','A');await choose('Cari cabang promo','X');const payload=()=>new FormData(host.querySelector('form')!);expect(payload().getAll('item_ids')).toEqual(['a']);expect(payload().getAll('branch_ids')).toEqual(['x']);await act(async()=>host.querySelector('form')!.requestSubmit());expect(host.textContent).toContain('belum terkonfirmasi');await act(async()=>window.dispatchEvent(new Event('pagehide')));await act(async()=>root.unmount());root=createRoot(host);await render();expect(payload().getAll('item_ids')).toEqual(['a']);expect(payload().getAll('branch_ids')).toEqual(['x']);});
