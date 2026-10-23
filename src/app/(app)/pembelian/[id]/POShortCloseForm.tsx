@@ -22,7 +22,7 @@ export function POShortCloseForm({ userId, poId, rows, alreadyClosed = false }: 
         <label className="flab" htmlFor="po-short-close-reason">Alasan tutup sisa *</label>
         <textarea id="po-short-close-reason" className="fi" name="reason" minLength={3} maxLength={1000} required value={reason} onChange={event => setReason(event.target.value)} />
         <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10 }}>
-          <input type="checkbox" name="confirmed" value="1" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
+          <input type="checkbox" name="confirmed" value="1" data-draft-ignore required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
           Saya memastikan sisa barang tidak akan dikirim lagi oleh pemasok.
         </label>
         <button type="submit" className="btn-acc" disabled={!ready || !confirmed} style={{ marginTop: 10 }}>Tutup sisa penerimaan</button>

@@ -1,0 +1,18 @@
+
+> vetos@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.9 /workspace/kamo-p07-final-partial
+
+
+ Test Files  336 passed (336)
+      Tests  2591 passed (2591)
+   Start at  02:56:27
+   Duration  60.41s (transform 14.22s, setup 0ms, import 39.60s, tests 42.27s, environment 35.61s)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

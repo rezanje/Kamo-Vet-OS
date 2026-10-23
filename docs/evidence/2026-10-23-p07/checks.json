@@ -7,8 +7,8 @@
     "targetApplied": false
   },
   "appTests": {
-    "files": 335,
-    "tests": 2588,
+    "files": 336,
+    "tests": 2591,
     "result": "PASS"
   },
   "focused": {
@@ -41,12 +41,27 @@
     "model": "gpt-6.1-sol",
     "effort": "high",
     "remainingP1P2": 0,
-    "minorDeferred": "Restored checkbox DOM may appear checked while controlled confirmation state remains false; submit stays disabled until user toggles off/on. Server confirmation is not bypassed."
+    "priorCandidate": "b1c1d3a7a4928ce78a1ef12a62c3f7afb09fe981",
+    "minorResolved": "P07 confirmation explicitly opts out of draft save/restore; old stored true ignored, fresh click required. Follow-up not independently re-reviewed."
   },
   "hostedUAT": "NOT RUN",
-  "browserInteraction": "NOT RUN; actual-page SSR tests only",
+  "browserInteraction": "Actual client mount/reload/click in jsdom tested; real browser/hosted UAT NOT RUN",
   "targetWrites": 0,
   "sourceBranchesModified": false,
   "PR94": "target migration218 confirmed by parent; code not in main at verification; do not replay its migration",
-  "release": "draft candidate; parent coordinates target rollout/main/deployment"
+  "release": "draft candidate; parent coordinates target rollout/main/deployment",
+  "confirmationFollowup": {
+    "red": "2 actual DOM/React mismatch failures observed",
+    "focused": {
+      "files": 6,
+      "tests": 30,
+      "result": "PASS"
+    },
+    "newTests": 3,
+    "typecheck": "PASS",
+    "scopedLint": "PASS",
+    "sqlRepeated": false,
+    "serverOrMigrationChanged": false,
+    "build": "PASS; existing unrelated image/unused-variable warnings"
+  }
 }

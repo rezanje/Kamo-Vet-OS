@@ -1,0 +1,58 @@
+
+ RUN  v4.1.9 /workspace/kamo-p07-final-partial
+
+ ❯ src/components/__tests__/purchase-short-close-draft.test.tsx (2 tests | 2 failed) 69ms
+   × restores a legacy checked draft as visibly unconfirmed and requires a fresh confirmation against current rows 46ms
+   × retains reason and retry identity across reload but never carries forward confirmation 22ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/purchase-short-close-draft.test.tsx > restores a legacy checked draft as visibly unconfirmed and requires a fresh confirmation against current rows
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/components/__tests__/purchase-short-close-draft.test.tsx:29:30
+     27|   await render(6);
+     28|   expect(host.querySelector<HTMLTextAreaElement>('textarea[name="reaso…
+     29|   expect(checkbox().checked).toBe(false);
+       |                              ^
+     30|   expect(closeButton().disabled).toBe(true);
+     31|   expect(new FormData(host.querySelector("form")!).get("confirmed")).t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/purchase-short-close-draft.test.tsx > retains reason and retry identity across reload but never carries forward confirmation
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/components/__tests__/purchase-short-close-draft.test.tsx:58:30
+     56|   expect(host.querySelector<HTMLTextAreaElement>('textarea[name="reaso…
+     57|   expect(new FormData(host.querySelector("form")!).get("requestKey")).…
+     58|   expect(checkbox().checked).toBe(false);
+       |                              ^
+     59|   expect(closeButton().disabled).toBe(true);
+     60|   await act(async () => checkbox().click());
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  02:55:21
+   Duration  652ms (transform 77ms, setup 0ms, import 130ms, tests 69ms, environment 285ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
