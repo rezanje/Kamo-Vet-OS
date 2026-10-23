@@ -1,0 +1,7 @@
+{
+  "supabase/migrations/20261023063921_po_branch_numbering.sql": "f95d668e9f3c310a3c0ec699a4980ac6a820b4db2bce3787555b7cc54b46623e",
+  "supabase/tests/po_branch_numbering.sql": "2e9964bd4b70e7e9c737b2627a36fac7dde7fbb8ce4a2e5919a9b84687a4feb0",
+  "scripts/test-po-branch-number-postgres.py": "2e9b436cba6910ac278defd300ad041a6b8784b3a2caba965a00dc049b623fdd",
+  "src/app/(app)/pengaturan/penomoran/page.tsx": "9d040811fa60fee74881fb84436d389f654bab023cdabdfef2bc5e6fa345de42",
+  "src/components/__tests__/po-numbering-help.test.tsx": "3ddd034dd6dc5a5f9b72ac577fcfd269bce4a6768b22ca78341510e5029443d1"
+}

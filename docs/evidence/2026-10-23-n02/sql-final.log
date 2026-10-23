@@ -1,0 +1,4 @@
+Applied 235 repository migrations to isolated PostgreSQL 17.6 with fictional auth/storage shims.
+PASS po_branch_numbering.sql
+PASS concurrent branch edit serializes authoritative code/one PO
+Removed owned PostgreSQL test container and volumes.
