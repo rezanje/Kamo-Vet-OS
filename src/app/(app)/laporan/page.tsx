@@ -2,6 +2,8 @@ import { ReportCatalog } from "@/components/ReportCatalog";
 import { buildReportCatalog } from "@/lib/report-catalog";
 import type { AturanTersimpan } from "@/lib/akses";
 import { createClient } from "@/lib/supabase/server";
+import { Suspense } from "react";
+import { ReportPresets } from "@/components/ReportPresets";
 
 export default async function Page() {
   const supabase = await createClient();
@@ -11,5 +13,8 @@ export default async function Page() {
   if(profileError||profile?.is_active!==true)return <p role="alert">Akun aktif untuk katalog laporan belum dapat diverifikasi.</p>;
   const {data:rules,error:rulesError}=await supabase.from("role_modules").select("role,module_id").eq("role",profile.role);
   if(rulesError||!Array.isArray(rules))return <p role="alert">Hak akses katalog laporan belum dapat diverifikasi. Muat ulang.</p>;
-  return <ReportCatalog entries={buildReportCatalog(profile.role,rules as AturanTersimpan)}/>;
+  return <>
+    <Suspense fallback={null}><ReportPresets title="Laporan" directory /></Suspense>
+    <ReportCatalog entries={buildReportCatalog(profile.role,rules as AturanTersimpan)}/>
+  </>;
 }

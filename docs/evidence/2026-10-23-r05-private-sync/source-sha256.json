@@ -1,0 +1,24 @@
+{
+  "base": "3dd3d52e903fc350de3600981065492847bd0529",
+  "main": "e46f45e97ae2500b3aaade5e8a9e50915f9fcca3",
+  "files": {
+    "scripts/test-report-presets-browser.mjs": "06cf760b85686b8241e74dde1801d17e06bb411375bd326d7413206a9d7a5981",
+    "src/app/(app)/laporan/preset-actions.ts": "80fe52dccb88817292a550dc0ad529af4970948a4ab0a0d65c80570c58b1191d",
+    "src/components/LaporanPage.tsx": "04e7e55ce41cc2ffe59cdcf891b4ebbb0de2a26792611b329f5d25c476fc2960",
+    "src/components/ReportColumns.tsx": "43eb0a64eb68c0fcf700101117068bb6ff903359685ca0d0eba2f62f9526e95a",
+    "src/components/ReportPresets.tsx": "0b33f96905b19a2a211eee2b2ec07744678ebe76c1aa9f0b6593e1ef24b74360",
+    "src/components/__tests__/report-columns.test.tsx": "1ea7351b230bcef988d6316b791ae28a777db98590e93949f8b10b6af0ea7ba1",
+    "src/components/__tests__/report-presets.test.tsx": "ed5a9c43e84bb1adcce7e0342b2c2ec9878a078be19916accf5a14b47724f1bf",
+    "src/lib/__tests__/private-report-presets-actions.test.ts": "2676717e258df3cdb4d19bf93380003d43be37720601c6bedeccb15cb752ccab",
+    "src/lib/__tests__/report-columns.test.ts": "afbacbb4f5e68f37070f28976998304da2ee58abd38add120d150fe3d1c8c85a",
+    "src/lib/__tests__/report-display-export.test.ts": "dec3921df3167a4ddb4ee8756f734c0c97f0dec2a7e4e3a05c479e1f0e80ade9",
+    "src/lib/__tests__/report-presets.test.ts": "99b22cc6b2931d38376af867639869189598c36d1692920722fb9dbe0c8b83a5",
+    "src/lib/report-columns.ts": "95f50334032c67efb21cbc53cc7bbf52a19af473fd953bc02a3a04b83428620a",
+    "src/lib/report-display-export.ts": "93ca6f2409fc85311d3b4488906d433cb6361851907be5f178dcb783191458c6",
+    "src/lib/report-presets.ts": "97687e67a495f77c459c2a0709db85f16a6623bf46cf32a566bc47cca8ba153f",
+    "supabase/migrations/20261023154500_private_report_presets.sql": "7b1719a16b7772cc6194328f19a6dac2fb0fbdc4b4bb5080fb2df1aa5bc293f3",
+    "supabase/tests/private_report_presets.sql": "10499b188d6e686cea82e4eba06295203cb279e0ee7e7433e34851cb4cbf7c8f"
+  },
+  "integrated_main": "9db3b267245c12f2dcd490c4de711321be4d3025",
+  "integration_commit": "f2c9fd9167971e68459dc935e94d7b7ad189f5a9"
+}

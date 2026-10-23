@@ -1,0 +1,31 @@
+
+ RUN  v4.1.9 /workspace/kamo-report-presets
+
+ ❯ src/lib/__tests__/report-presets.test.ts (5 tests | 1 failed) 10ms
+   × preserves canonical column selections but rejects repeated column parameters 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/report-presets.test.ts > preserves canonical column selections but rejects repeated column parameters
+AssertionError: expected [Function] to throw an error
+ ❯ src/lib/__tests__/report-presets.test.ts:32:85
+     30|  const columns=encodeURIComponent('{"t12345678-1":[2]}');
+     31|  expect(reportPresetHref('/laporan/promo',`periode=2026-11&kolom=${col…
+     32|  expect(()=>reportPresetHref('/laporan/promo',`kolom=${columns}&kolom=…
+       |                                                                                     ^
+     33| });
+     34|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  16:10:49
+   Duration  259ms (transform 44ms, setup 0ms, import 57ms, tests 10ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
