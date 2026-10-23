@@ -1,3 +1,6 @@
+import { HandoffPanel } from "./HandoffPanel";
+import { loadInpatientHandoff } from "@/lib/inpatient-handoff";
+import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { PapanPemantauan } from "./PapanPemantauan";
@@ -46,14 +49,17 @@ export default async function RawatInapDetailPage({
   const { error, success, wa } = await searchParams;
   const supabase = await createClient();
   const { data: { user: draftUser } } = await supabase.auth.getUser();
-  const draftUserId = draftUser?.id ?? "";
+  if (!draftUser) notFound();
+  const draftUserId = draftUser.id;
+  const allowedBranches = await allowedBranchIds(supabase,draftUser.id);
 
   const { data: rec } = await supabase
     .from("inpatient_records")
-    .select(`id, condition_status, treatment_plan, doctor_name, admitted_at, discharged_at, visit_id,
+    .select(`id, condition_status, treatment_plan, doctor_name, admitted_at, discharged_at, visit_id, branch_id,
       branches(name), visits(id, poli, keluhan, created_at, pets(name, species, breed, dob, weight, photo_url), customers(name, phone, address))`)
     .eq("id", id).maybeSingle();
-  if (!rec) notFound();
+  if (!rec || !canUseBranch(allowedBranches,String(rec.branch_id))) notFound();
+  const handoff = await loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id));
 
   const visit = one(rec.visits as Rel<{ id: string; poli: string; keluhan: string | null; created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null; dob: string | null; weight: number | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
@@ -278,11 +284,13 @@ export default async function RawatInapDetailPage({
         )}
       </div>
 
+      <HandoffPanel data={handoff} visitId={String(rec.visit_id)} admittedAt={String(rec.admitted_at)}/>
+
       <PapanPemantauan laporan={laporanPemantauan} />
 
       {/* Obat berprotokol dicatat terpisah dari laporan harian: satu protokol bisa
           berjalan beberapa hari dan diberikan beberapa kali sehari oleh orang berbeda. */}
-      <ObatKhusus recordId={id} aktif={active} />
+      <div id="obat-khusus"><ObatKhusus recordId={id} aktif={active} /></div>
 
       {/* Laporan rawat inap harian — tabel utama (gaya referensi) */}
       <div className="crm-sec">
