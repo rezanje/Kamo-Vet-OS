@@ -24,7 +24,7 @@ it('never acknowledges a response without its journal receipt',async()=>{
  fixture.rpc.mockResolvedValue({data:{advance_id:'advance',no_um:'UM.QA.00001'},error:null});
  await expect(bayarUangMuka(data())).rejects.toThrow('belum%20terkonfirmasi');expect(fixture.writes).toEqual([]);
 });
-it.each(['','NaN','Infinity','1.25'])('rejects invalid or fractional whole-rupiah input %s before posting',async amount=>{
+it.each(['','NaN','Infinity','1.001','1.00000000000000001','9999999999999.01'])('rejects invalid or sub-cent input %s before posting',async amount=>{
  const f=data();f.set('jumlah',amount);await expect(bayarUangMuka(f)).rejects.toThrow('error=');expect(fixture.rpc).not.toHaveBeenCalled();expect(fixture.writes).toEqual([]);
 });
 it('requires a retained request identity rather than generating a new retry key on the server',async()=>{const f=data();f.delete('draft_key');await expect(bayarUangMuka(f)).rejects.toThrow('error=');expect(fixture.writes).toEqual([])});
@@ -34,3 +34,7 @@ it('does not acknowledge or post when read-only recovery finds no receipt',async
 
 it('cancels only through the atomic full-refund RPC',async()=>{fixture.rpc.mockResolvedValue({data:{advance_id:'a',journal_id:'j',no_um:'UM.QA.1'},error:null});const f=data();f.set('id','a');await expect(batalkanUangMuka(f)).rejects.toThrow('draft_done=stable-key');expect(fixture.rpc).toHaveBeenCalledWith('cancel_purchase_advance_atomic',{p_advance_id:'a'});expect(fixture.writes).toEqual([])});
 it('does not acknowledge cancellation without the durable refund journal',async()=>{fixture.rpc.mockResolvedValue({data:{advance_id:'a'},error:null});const f=data();f.set('id','a');await expect(batalkanUangMuka(f)).rejects.toThrow('belum%20terkonfirmasi');expect(fixture.writes).toEqual([])});
+
+it.each(['200000.30','0.30','0.01'])('preserves an exact two-decimal advance %s in the atomic request',async amount=>{
+ fixture.rpc.mockResolvedValue({data:{advance_id:'advance',journal_id:'journal',no_um:'UM.QA.00001'},error:null});const f=data();f.set('jumlah',amount);await expect(bayarUangMuka(f)).rejects.toThrow('draft_done=stable-key');expect(fixture.rpc).toHaveBeenCalledWith('pay_purchase_advance_atomic',expect.objectContaining({p_jumlah:Number(amount)}));expect(fixture.writes).toEqual([]);
+});
