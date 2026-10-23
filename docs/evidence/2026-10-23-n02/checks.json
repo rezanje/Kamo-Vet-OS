@@ -1,0 +1,33 @@
+{
+  "item": "N02",
+  "base": "57e5e6a4747835d4c6e8beca34681e8a69b87f3b",
+  "appTests": {
+    "files": 341,
+    "tests": 2607,
+    "result": "PASS"
+  },
+  "focused": {
+    "files": 2,
+    "tests": 12,
+    "result": "PASS"
+  },
+  "typecheck": "PASS",
+  "scopedLint": "PASS",
+  "build": "PASS; existing warnings",
+  "sql": {
+    "engine": "PostgreSQL17.6",
+    "migrations": 235,
+    "acceptance": "PASS",
+    "concurrentBranchEditCreate": "PASS",
+    "nativePurchaseOrderLifecycle": "FAIL identically on main and candidate: authenticated SELECT private purchase_order_requests; later checks unverified"
+  },
+  "review": "No P1/P2; unsafe-nonblank-code test coverage minor deferred",
+  "migration": {
+    "name": "20261023063921_po_branch_numbering.sql",
+    "sha256": "21b5ce91a233178e818bcc42c55e58f5a9ec97476d31f7846ddb31a43c2edf10",
+    "targetApplied": false
+  },
+  "realBrowser": "NOT RUN; real page SSR test",
+  "targetBusinessWrites": false,
+  "fullUAT": "DEFERRED"
+}
