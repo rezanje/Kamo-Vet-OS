@@ -1,3 +1,5 @@
+import { opnameHasResult } from "@/lib/opname-result-presence";
+import { ListLoadFailure } from "@/components/ListPagination";
 import { OpnameCancellationPanel } from "@/components/OpnameCancellationPanel";
 import { opnameCancellationBlock, opnameWarehouseIds, type OpnameCancellation } from "@/lib/opname-cancellation";
 import Link from "next/link";
@@ -45,6 +47,10 @@ export default async function OpnameDetailPage({
   const { count } = await supabase
     .from("opname_order_items").select("*", { count: "exact", head: true }).eq("order_id", id);
   const jumlahLingkup = count ?? 0;
+
+  let partialResult = false;
+  try { partialResult = order!.status === "Terbuka" && await opnameHasResult(supabase, id); }
+  catch (loadError) { return <ListLoadFailure error={loadError} label="Hasil opname" />; }
 
   const blockedReason = order.status === "Terbuka" ? await opnameCancellationBlock(supabase,id) : null;
 
@@ -104,7 +110,10 @@ export default async function OpnameDetailPage({
 
       {/* Menghitung stok hanya dari layar kasir (keputusan meeting 14 Agustus) —
           satu pintu, supaya tidak ada dua cara menghitung barang yang sama. */}
-      {order.status === "Terbuka" ? (
+      {partialResult ? <>
+        <div className="p2ban" role="alert">Sudah ada hasil tersimpan tetapi perintah belum selesai. Stok dan jurnal mungkin belum lengkap. Periksa hasil asal bersama back office; jangan posting ulang.</div>
+        <HasilView orderId={order!.id} />
+      </> : order.status === "Terbuka" ? (
         <div className="crm-sec">
           <SecHeader num="02" title="HITUNGAN BELUM MASUK" desc="Perintah ini masih menunggu hitungan fisik." />
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>

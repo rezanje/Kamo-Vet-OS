@@ -75,13 +75,18 @@ export function HitungForm({
       setPesan(`Isi dulu hitungan ${r.name}.`);
       return;
     }
-    const qty = Math.max(0, Number(nilai) || 0);
+    const qty = Number(nilai);
+    if (!Number.isFinite(qty) || qty < 0) {
+      setPesan("Isi jumlah fisik yang valid, minimal nol.");
+      return;
+    }
     start(async () => {
       const res = await kunciBaris(orderId, r.item_id, qty);
-      if (!res.ok) { setPesan(res.pesan ?? "Gagal menyimpan."); return; }
-      setKunci((m) => ({ ...m, [r.item_id]: qty }));
+      if (!res.ok || res.qtyFisik === undefined) { setPesan(res.pesan ?? "Gagal menyimpan."); return; }
+      const confirmedQty = res.qtyFisik;
+      setKunci((m) => ({ ...m, [r.item_id]: confirmedQty }));
       setIsian((m) => { const next = { ...m }; delete next[r.item_id]; return next; });
-      setPesan(null);
+      setPesan(confirmedQty !== qty ? "Hitungan sebelumnya tetap tersimpan. Tekan Buka untuk mengubah, lalu hitung ulang." : null);
     });
   };
 
