@@ -8,6 +8,7 @@ type AnyClient = any;
 
 type RJ = {
   id: string; nama: string; day_of_month: number; last_posted: string | null;
+  is_source_schedule: boolean;
 };
 
 /** Empty preserves legacy unlimited schedules; PostgreSQL int bounds apply. */
@@ -128,12 +129,13 @@ function bulanSebelum(periode: string): string {
 
 export async function postRecurringCatchUp(supabase: AnyClient): Promise<{ nama: string; periode: string }[]> {
   const { data, error } = await supabase.from("recurring_journals")
-    .select("id, nama, day_of_month, last_posted").eq("is_active", true);
+    .select("id, nama, day_of_month, last_posted, is_source_schedule").eq("is_active", true);
   if (error) throw new Error(`Jurnal berulang tidak dapat diperiksa: ${error.message}`);
   const posted: { nama: string; periode: string }[] = [];
   const now = new Date();
 
   for (const rj of (data ?? []) as RJ[]) {
+    if (rj.is_source_schedule) continue;
     const periods = periodeTertinggal(rj.last_posted, now, rj.day_of_month);
     // When nothing is due, verify the last marker too: a historical empty header
     // must surface for review instead of being labelled a successful posting.
