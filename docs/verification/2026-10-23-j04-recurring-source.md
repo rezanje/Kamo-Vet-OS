@@ -2,7 +2,7 @@
 
 ## Result
 
-Candidate base: `02f52e7d5a4b8312d592dede5b662b4428610746` (`origin/main` at final pre-commit sync). Migration: `supabase/migrations/20261023073807_source_recurring_journals.sql`, SHA-256 `ae0ad2a27eaa9cc4f6723ce3af996641466e6cde0ef9193a63e0dfb51eb10667`.
+Candidate base: `02f52e7d5a4b8312d592dede5b662b4428610746` (`origin/main` at final pre-commit sync). Migration: `supabase/migrations/20261023091210_source_recurring_journals.sql`, SHA-256 `ae0ad2a27eaa9cc4f6723ce3af996641466e6cde0ef9193a63e0dfb51eb10667`. Supabase's migration API assigned target history version `20261023091210` when it applied this named migration; the local migration filename now matches that recorded version so later CLI pushes will not replay it.
 
 J04 adds a monthly schedule flow sourced from an existing, balanced, active `manual` or `manual-correction` journal. The user confirms the source snapshot, first month, posting day, and finite count or inclusive end month. The source month is excluded. A source schedule is manual-only, creates no journal at setup, and posts only its oldest due period. Replaying the same period returns its exact receipt. Existing recurring templates keep their automatic catch-up behavior.
 
@@ -19,16 +19,16 @@ Scope is monthly source schedules from valid manual journals. Weekly or other re
 - `npm run build` — passed; Next generated all 194 static pages and the new finance routes. Existing warnings include Supabase JS's `process.version` Edge Runtime import through the existing middleware and the lint warnings above.
 - Independent review found two app regressions and no critical SQL authorization/atomicity issue: the journal page linked legacy full-UUID references to a source-only route, and the recurring page read source receipts into the 10,000-row legacy history cap. The journal page now links only after verifying the source-schedule marker; the recurring list loads only current legacy template references in bounded database-filtered batches and excludes source UUIDs that could collide with abbreviated legacy refs. Ambiguous abbreviated legacy refs still reach the review warning. History without a current legacy template is not included in template progress.
 - Regression verification after those fixes — the journal and recurring-list test files pass 10/10 tests, including legacy/source link selection, 10,001 unrelated source receipts, and ambiguous legacy prefixes.
-- Target project migration and finance transactions — not run in this candidate pass. The new migration is `20261023073807_source_recurring_journals.sql` and must be reviewed against current target migration history/catalog before release. Full hosted workflow/UAT remains deferred.
+- Target project migration — applied exactly once through the Supabase Management API to project `koaglxcyjqfmgfzxszkj`, recorded as version `20261023091210` / name `20261023073807_source_recurring_journals`. Fresh read-only verification found 222 history rows, the new version latest, and zero J04 source schedules or receipts. Target PostgreSQL is 17.6. Catalog comparison confirmed both new source tables have RLS, no broad table-level writes, existing table ACL/RLS/constraints/policies/triggers/views/enums unchanged, and existing function ACLs unchanged; only the reviewed recurring guard patch altered the legacy posting body. Full hosted workflow/UAT and physical restore remain untested.
 - Supabase advisors — not run; `supabase --version` returned `supabase: command not found`. No CLI installation or workaround was attempted.
 
 ## Release order and rollback bounds
 
-The candidate application depends on the new migration. Apply only this reviewed migration after target-history/catalog parity, backup-age, and preview gates are confirmed; then deploy the matching application commit. No blanket migration replay is included.
+The candidate application depends on the new migration. The reviewed migration has been applied; merge/deploy only the matching application commit. No blanket migration replay is included.
 
 The schema change is additive, but proof rows are immutable and there is deliberately no destructive down migration. If rollback is required before a source schedule has been created, the previous app can be restored while keeping the additive schema. Once a source schedule exists, retain all source/receipt rows and use a forward fix; the old catch-up path rejects source-marker rows, so an old app version may surface a recurring-posting error until the compatible app is restored. Do not delete or rewrite proof data as rollback.
 
-The PostgreSQL fixtures use only fabricated accounts, journals, identities, and branches. No customer workbook, production journal, stock, or target database data was copied into the repository or modified.
+The PostgreSQL fixtures use only fabricated accounts, journals, identities, and branches. No customer workbook, production journal, or stock data was copied into the repository or modified. The target J04 tables were verified empty after schema application.
 
 ## References
 
