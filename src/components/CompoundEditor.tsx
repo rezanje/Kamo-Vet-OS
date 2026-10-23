@@ -41,11 +41,11 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
     {formula?<div style={{fontSize:11,padding:9,background:"#f4f0ff",borderRadius:8}}>
       <strong>{formula.name} · {formula.dosage_form}</strong>
       <div>{formula.ingredients.map(row=>`${row.name} ${row.quantity} ${row.unit}`).join(" · ")}</div>
-      <div>Aturan pakai: {formula.dosage_instruction??"Tidak ditetapkan"}</div>
+      <div>Petunjuk pemakaian: {formula.dosage_instruction??"Tidak ditetapkan"}</div>
     </div>:allowCustom?<>
       <div style={{display:"flex",gap:6}}><select className="fi" aria-label="Bentuk racikan" value={value.dosageForm} onChange={event=>onChange({...value,dosageForm:event.target.value})}>
         {["sirup","nebul","salep","puyer","kapsul","lainnya"].map(form=><option key={form}>{form}</option>)}
-      </select><input className="fi" aria-label="Aturan pakai racikan" placeholder="Aturan pakai (opsional)" value={value.instruction} onChange={event=>onChange({...value,instruction:event.target.value})} /></div>
+      </select><input className="fi" aria-label="Aturan pakai racikan" placeholder="Petunjuk pemakaian (opsional)" value={value.instruction} onChange={event=>onChange({...value,instruction:event.target.value})} /></div>
       <input className="fi" aria-label="Cari bahan racikan" placeholder="Cari bahan baku..." value={materialSearch} onChange={event=>{setMaterialSearch(event.target.value);setMaterialPage(1);}} />
       {materialTerm&&<div style={{maxHeight:160,overflowY:"auto",display:"grid",gap:4}}>
         {materialMatches.slice((currentMaterialPage-1)*40,currentMaterialPage*40).map(item=><button key={item.id} type="button" className="btn-def" aria-label={`Pilih bahan ${item.name}`} style={{textAlign:"left"}} onClick={()=>{
