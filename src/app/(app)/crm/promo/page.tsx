@@ -4,7 +4,7 @@ import { promoCategoryOptions, promoCategoryItem, promoCategorySummary, promoMat
 import type { KategoriRow } from "@/lib/kategori";
 import {readCompleteList} from "@/lib/checked-list";
 import {PreservedForm,TransactionDraftComplete} from "@/components/LocalTransactionDraft";
-import {PromoTargets} from "./PromoTargets";
+import {PromoFields} from "./PromoFields";
 import styles from "./PromoForm.module.css";
 import { SecHeader } from "@/components/SecHeader";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
@@ -46,6 +46,9 @@ export default async function PromoAdminPage({
   const supabase = await createClient();
   const today = hariIniWIB();
   const {data:{user}} = await supabase.auth.getUser();
+
+  const {data:me}=await supabase.from("profiles").select("role,is_active").eq("id",user?.id??"").maybeSingle();
+  const canEdit=!!user&&!!me?.is_active&&["OWNER","ADMIN"].includes(me.role);
 
   const [promos, branches, activeItems, promoItems, categoryRows] = await Promise.all([
     readCompleteList<PromoRow>((from,to)=>supabase.from("promos")
@@ -100,91 +103,12 @@ export default async function PromoAdminPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Promo baru dibuat.</div>}
+      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : "Promo baru dibuat."}</div>}
 
       <div className="crm-sec">
         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
         <TransactionDraftComplete userId={user?.id ?? ""}/><PreservedForm key={user?.id ?? ""} action={createPromo} className={styles.form}>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Nama promo *</label>
-            <input className="fi" name="name" required placeholder="mis. Diskon Lebaran Royal Canin" />
-          </div>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Teks saran untuk kasir *</label>
-            <input className="fi" name="suggest" required placeholder="mis. Beli 2 Royal Canin diskon 10% item kedua" />
-          </div>
-          <div>
-            <label className="flab">Tipe</label>
-            <select className="fi" name="promo_type" defaultValue="diskon_produk">
-              <option value="diskon_produk">Diskon Produk</option>
-              <option value="bundling">Bundling</option>
-              <option value="tebus_murah">Tebus Murah</option>
-            </select>
-          </div>
-          <div>
-            <label className="flab">Jenis diskon</label>
-            <select className="fi" name="discount_type" defaultValue="">
-              <option value="">—</option>
-              <option value="percent">Persen</option>
-              <option value="nominal">Nominal</option>
-            </select>
-          </div>
-          <div>
-            <label className="flab">Nilai diskon</label>
-            <input className="fi" name="discount_value" type="number" min={0} step="any" placeholder="0" />
-          </div>
-          <div>
-            <label className="flab">Min. subtotal</label>
-            <input className="fi" name="min_subtotal" type="number" min={0} step="any" placeholder="0" />
-          </div>
-
-          {/* ── Aturan qty ──────────────────────────────────────────────── */}
-          <div style={{ gridColumn: "1 / -1", borderTop: ".5px solid var(--bd)", paddingTop: 10, marginTop: 2 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700 }}><i className="ti ti-adjustments" /> Aturan jumlah beli</div>
-            <div style={{ fontSize: 9.5, color: "var(--td)" }}>
-              Kosongkan semua kalau promo berlaku berapa pun jumlah belinya.
-            </div>
-          </div>
-          <div>
-            <label className="flab">Min. qty</label>
-            <input className="fi" name="min_qty" type="number" min={1} step="any" placeholder="mis. 2" />
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Beli kurang dari ini, promo tidak jalan.</div>
-          </div>
-          <div>
-            <label className="flab">Maks. qty</label>
-            <input className="fi" name="max_qty" type="number" min={1} step="any" placeholder="tanpa batas" />
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Batas jumlah yang dapat potongan.</div>
-          </div>
-          <div style={{ gridColumn: "span 2" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginTop: 17 }}>
-              <input type="checkbox" name="kelipatan" value="1" /> Berlaku kelipatan
-            </label>
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              Dicentang: min 2, beli 5 → yang dapat potongan 4, sisa 1 harga normal.
-              Tidak dicentang: syarat terpenuhi, seluruh qty dapat.
-            </div>
-          </div>
-
-          <PromoTargets userId={user?.id ?? ""} items={items} branches={branches} categories={categories}/>
-
-          {/* ── Potong otomatis ─────────────────────────────────────────── */}
-          <div style={{ gridColumn: "1 / -1", background: "#f8fafc", border: ".5px solid var(--bd)", borderRadius: 7, padding: "9px 11px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700 }}>
-              <input type="checkbox" name="auto_apply" value="1" /> Potong otomatis di kasir
-            </label>
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              Dicentang: potongan langsung masuk keranjang, kasir tidak perlu mengetik apa pun —
-              butuh jenis & nilai diskon terisi. Tidak dicentang: promo cuma muncul sebagai pengingat di layar kasir.
-            </div>
-          </div>
-          <div>
-            <label className="flab">Berlaku dari</label>
-            <input className="fi" name="valid_from" type="date" defaultValue={today} />
-          </div>
-          <div>
-            <label className="flab">Berlaku s/d</label>
-            <input className="fi" name="valid_until" type="date" />
-          </div>
+          <PromoFields userId={user?.id ?? ""} items={items} branches={branches} categories={categories} today={today}/>
           <button type="submit" className="btn-acc" style={{ gridColumn: "1 / -1", justifyContent: "center" }}>
             <i className="ti ti-plus" /> Buat Promo
           </button>
@@ -238,6 +162,7 @@ export default async function PromoAdminPage({
                     <td style={{ fontSize: 11 }}>{p.valid_from ?? "—"} s/d {p.valid_until ?? "∞"}</td>
                     <td><span className={`bge ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span></td>
                     <td>
+                      {canEdit&&<Link className="back-btn" href={`/crm/promo/${p.id}/edit`}>Edit promo</Link>}
                       <form action={togglePromo}>
                         <input type="hidden" name="id" value={p.id} />
                         <input type="hidden" name="active" value={p.is_active ? "0" : "1"} />
