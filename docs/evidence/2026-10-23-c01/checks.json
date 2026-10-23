@@ -1,0 +1,54 @@
+{
+  "item_ids": [
+    "C01"
+  ],
+  "base_main": "c627fe7",
+  "migration": "20261023070134_promo_edit_atomic.sql",
+  "focused": {
+    "files": 9,
+    "tests": 66,
+    "exit": 0
+  },
+  "full_vitest": {
+    "files": 346,
+    "tests": 2653,
+    "exit": 0
+  },
+  "typecheck": {
+    "exit": 0,
+    "after_build": true
+  },
+  "scoped_lint": {
+    "exit": 0
+  },
+  "build": {
+    "exit": 0,
+    "existing_supabase_edge_warnings": true
+  },
+  "postgres": {
+    "owned": true,
+    "network": "none",
+    "migrations": 236,
+    "focused_suite": "promo_edit.sql",
+    "two_session_header_and_child_races": true,
+    "exit": 0
+  },
+  "browser": {
+    "widths": [
+      1280,
+      390
+    ],
+    "fixture_only": true,
+    "live_writes": 0,
+    "exit": 0
+  },
+  "independent_review": {
+    "findings_p1_p2": 0,
+    "files": 4,
+    "tests": 29
+  },
+  "target_migration_applied": false,
+  "merged": false,
+  "deployed": false,
+  "uat": false
+}

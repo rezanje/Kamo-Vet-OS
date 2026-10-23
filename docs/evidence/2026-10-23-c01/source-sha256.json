@@ -1,0 +1,14 @@
+{
+  "src/lib/promo-edit.ts": "0c5d420d4d1523910ccac28e1c016d6a45d2397aec8ed0c91b8cbeff2095254b",
+  "src/app/(app)/crm/promo/page.tsx": "f5688af838d5ec332cdacba18dce95a128aac08ca404ba41a7d63fda0365114e",
+  "src/app/(app)/crm/promo/actions.ts": "36fd7e594e582fe54acf8eb42742b80ce556e380673928a132a85d196e0b38ca",
+  "src/app/(app)/crm/promo/PromoTargets.tsx": "f30c015302baae3c430a638cdea9bff90644772512f3c6ef72e094e74410fa72",
+  "src/app/(app)/crm/promo/PromoFields.tsx": "c515f13eb4dc356b2e872ad7dfe40348e09d1fc85b303b5b437e916628dd77ba",
+  "src/app/(app)/crm/promo/PromoEditor.tsx": "b5ec5752c45cb6fa9952414865de2ef4a827250ded990eba407cfa64b5a03800",
+  "src/app/(app)/crm/promo/[id]/edit/page.tsx": "08a6fff7b983457737bdedb7675e4c6463bcb06126db35d43672b38c9def9469",
+  "src/components/SearchableMultiSelect.tsx": "72f306836a3d96ad1230c6e4a901a569634ca8ea363a833ba0ba1aafd1b2eeb9",
+  "supabase/migrations/20261023070134_promo_edit_atomic.sql": "0f22d58a9faa4bad2deabc8217be0bccb822ddc969b74da471761400ce2cb6b4",
+  "supabase/tests/promo_edit.sql": "3e82f00400590cc8092d33494917a16c9463b0d27f872b3384c1ff7f738c6633",
+  "scripts/test-promo-edit-postgres.py": "207e93e11441d5abeba00b2d2876f68cbee64555e2dc1ef112f3c3e2fee2731e",
+  "scripts/test-promo-edit-browser.mjs": "bf97628e86e150d065cde3fa9d1488d9f9c5891be2fbd2f3117656d62fff4f25"
+}

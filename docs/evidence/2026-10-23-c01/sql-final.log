@@ -1,0 +1,4 @@
+Applied 236 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS C01: atomic edit/rollback, role/actor, stale token, catalog targets, safe A01 and posted sale immutability
+PASS C01 two-session header/child races: stale editor rejected after parent lock
+Removed owned PostgreSQL test container and volumes.

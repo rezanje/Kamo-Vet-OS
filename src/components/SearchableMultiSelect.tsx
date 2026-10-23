@@ -2,7 +2,7 @@
 import {useEffect,useId,useMemo,useRef,useState} from "react";
 import type {SearchableItem} from "./SearchableItemPicker";
 
-export type MultiSelectItem = SearchableItem & { categoryId?: string | null; categoryLabel?: string };
+export type MultiSelectItem = SearchableItem & { categoryId?: string | null; categoryLabel?: string; selectable?: boolean };
 export type MultiSelectCategory = { id: string; label: string; includes: string[] };
 
 /** Repeated hidden IDs retain the existing checkbox submission contract. */
@@ -12,7 +12,7 @@ export function SearchableMultiSelect({name,label,options,categories,value,onCha
  const listId=useId(),input=useRef<HTMLInputElement>(null);
  const selected=new Set(value),byId=new Map(options.map(o=>[o.id,o]));
  const missing=[...selected].filter(id=>!byId.has(id));
- const hits=useMemo(()=>{const q=query.trim().toLowerCase();const group=category?categories?.find(c=>c.id===category):undefined;return options.filter(o=>(!category||!!group?.includes.includes(o.categoryId??""))&&`${o.code} ${o.name}`.toLowerCase().includes(q));},[options,query,category,categories]);
+ const hits=useMemo(()=>{const q=query.trim().toLowerCase();const group=category?categories?.find(c=>c.id===category):undefined;return options.filter(o=>o.selectable!==false&&(!category||!!group?.includes.includes(o.categoryId??""))&&`${o.code} ${o.name}`.toLowerCase().includes(q));},[options,query,category,categories]);
  const shown=hits.slice(0,limit);
  useEffect(()=>{input.current?.setCustomValidity(missing.length?"Ada pilihan yang tidak tersedia. Periksa dan lepaskan pilihan tersebut sebelum menyimpan.":"");},[missing.length]);
  const toggle=(id:string)=>{const next=new Set(value);if(next.has(id))next.delete(id);else next.add(id);onChange([...next]);};

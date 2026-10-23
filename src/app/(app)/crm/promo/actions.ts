@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import {transactionDraftAck} from "@/lib/transaction-draft-ack";
 import { createClient } from "@/lib/supabase/server";
 
+import {promoEditInput} from "@/lib/promo-edit";
+
 const BACK = "/crm/promo";
 
 // Konfigurasi promo dari pusat — khusus OWNER/ADMIN.
@@ -106,4 +108,16 @@ export async function togglePromo(formData: FormData) {
   await supabase.from("promos").update({ is_active: active }).eq("id", id);
   revalidatePath(BACK);
   redirect(BACK);
+}
+
+// Failure returns to the preserved client form; only confirmed success redirects.
+export async function editPromo(formData: FormData):Promise<{ok:false;message:string}> {
+  const supabase = await requireManager();
+  let input: ReturnType<typeof promoEditInput>;
+  try { input=promoEditInput(formData); }
+  catch(error) { return {ok:false,message:error instanceof Error?error.message:"Data promo tidak valid"}; }
+  const {error}=await supabase.rpc("edit_promo",{p_id:input.id,p_expected_version:input.version,p_values:input.values,p_item_ids:input.itemIds});
+  if(error)return {ok:false,message:error.code==="40001"?"Promo sudah berubah. Isian Anda tetap tersedia; buka ulang data terbaru sebelum mengedit lagi.":error.message};
+  revalidatePath(BACK);
+  redirect(`${BACK}?success=edit${transactionDraftAck(formData)}`);
 }
