@@ -1,3 +1,5 @@
+import { readCompleteList } from "@/lib/checked-list";
+import { ListLoadFailure } from "@/components/ListPagination";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { StockCorrectionPanel } from "../../koreksi-stok/StockCorrectionPanel";
@@ -6,6 +8,7 @@ import { StockCorrectionPanel } from "../../koreksi-stok/StockCorrectionPanel";
 // jadi isinya sengaja tanpa harga — kasir tidak perlu melihat modal barang.
 
 type ResultItem = {
+  id: string;
   item_id: string;
   qty_sistem: number;
   qty_fisik: number;
@@ -17,19 +20,31 @@ type Faktur = { no_faktur: string; total: number };
 
 export async function HasilView({ orderId, allowCorrections = false }: { orderId: string; allowCorrections?: boolean }) {
   const supabase = await createClient();
-  const { data: result } = await supabase
+  const { data: result, error: resultError } = await supabase
     .from("opname_results")
-    .select("id, no_hasil, tanggal, sales_invoices(no_faktur, total), opname_result_items(item_id, qty_sistem, qty_fisik, selisih, items(code, name, unit))")
+    .select("id, no_hasil, tanggal, sales_invoices(no_faktur, total)")
     .eq("order_id", orderId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (resultError || !result) return <div id="hasil"><ListLoadFailure error={resultError} label="Hasil stok opname" /></div>;
+  let sourceItems: ResultItem[];
+  try {
+    sourceItems = await readCompleteList<ResultItem>(async (from, to) => {
+      const response = await supabase.from("opname_result_items")
+        .select("id, item_id, qty_sistem, qty_fisik, selisih, items(code, name, unit)", { count: "exact" })
+        .eq("result_id", result.id).order("id").range(from, to);
+      return { ...response, data: response.data as unknown as ResultItem[] | null };
+    }, "Rincian hasil stok opname", { maxRows: null });
+  } catch (error) {
+    return <div id="hasil"><ListLoadFailure error={error} label="Rincian hasil stok opname" /></div>;
+  }
   const { data: effective, error: effectiveError } = result ? await supabase.rpc("read_stock_document_effective", { p_kind: "opname", p_ids: [result.id] }) : { data: null, error: null };
   const current = effective?.[result?.id ?? ""] as { revision: number; rows: { item_id: string; qty: number; selisih: number }[] } | undefined;
 
   // Selisih terbesar di atas — yang perlu ditindak kantor pusat itu barang yang
   // hilang paling banyak, bukan barang yang kebetulan huruf depannya A.
-  const items = ((result?.opname_result_items ?? []) as unknown as ResultItem[])
+  const items = sourceItems
     .map(row => { const replacement = current?.rows.find(r => r.item_id === row.item_id);return replacement ? { ...row, qty_fisik: replacement.qty, selisih: replacement.selisih } : row; })
     .sort((a, b) =>
       Math.abs(Number(b.selisih)) - Math.abs(Number(a.selisih)) ||
@@ -40,11 +55,11 @@ export async function HasilView({ orderId, allowCorrections = false }: { orderId
   const faktur = Array.isArray(invRaw) ? invRaw[0] ?? null : invRaw ?? null;
 
   return (
-    <><div className="crm-sec">
+    <><div id="hasil" className="crm-sec">
       <SecHeader
         num="02"
         title={`HASIL ${result?.no_hasil ?? ""}`}
-        desc={`${items.length} barang dihitung, ${beda.length} barang selisih. Stok sudah disesuaikan.`}
+        desc={`${items.length} barang dihitung, ${beda.length} barang selisih. Hasil tersimpan; pemeriksaan jurnal dilakukan terpisah.`}
       />
       {effectiveError && <div className="p2ban" role="status">Hasil koreksi belum dapat diperiksa. Angka di bawah adalah dokumen asal; muat ulang sebelum menggunakannya.</div>}
       {current && <div className="p2ban">Hasil efektif setelah koreksi revisi {current.revision}.</div>}
