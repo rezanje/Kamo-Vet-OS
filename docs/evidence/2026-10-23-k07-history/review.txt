@@ -1,0 +1,1 @@
+Independent /root/k08_review, Sol 6.1 high: no P1/P2 findings. Parent access precedes child reads, doses scoped to explicit medication IDs, incomplete reads suppress forms, canceled-dose evidence retained. Independently ran 24 tests / 4 files. No source edits or target calls.
