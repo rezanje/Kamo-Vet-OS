@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 type Row = Record<string, unknown>;
 const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Row[]>, failed: "", truncated: "", reads: [] as { table: string; orders: string[]; from?: number }[] }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
+  rpc: async (name:string) => { expect(name).toBe("read_production_atomic_sources"); return {data:{},error:null}; },
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   from(table: string) {
     let start = 0, end = 999, counted = false;
@@ -28,7 +29,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     return query;
   },
 }) }));
-vi.mock("@/app/(app)/pos/produksi/actions", () => ({ mulaiProduksi: vi.fn(), selesaikanProduksi: vi.fn(), simpanResep: vi.fn() }));
+vi.mock("@/app/(app)/pos/produksi/actions", () => ({ mulaiProduksiAdhoc: vi.fn(), mulaiProduksi: vi.fn(), selesaikanProduksi: vi.fn(), simpanResep: vi.fn() }));
 import Page from "@/app/(app)/pos/produksi/page";
 
 function elements(node: React.ReactNode): React.ReactElement<Record<string, unknown>>[] {
