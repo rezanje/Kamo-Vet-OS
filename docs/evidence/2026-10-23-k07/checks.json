@@ -1,0 +1,53 @@
+{
+  "item_ids": [
+    "K07"
+  ],
+  "scope": "Partial read-only consultation/RX/pharmacy/explicit billing-source handoff before inpatient daily notes",
+  "initial_base": "4a14ca914db85ac49ba32f04eabe774066d33815",
+  "final_base_main": "57e5e6a4747835d4c6e8beca34681e8a69b87f3b",
+  "focused": {
+    "tests": 36,
+    "files": 4,
+    "exit": 0
+  },
+  "full_vitest": {
+    "tests": 2612,
+    "files": 341,
+    "exit": 0
+  },
+  "build": {
+    "exit": 0,
+    "warnings": "Existing img/Supabase Edge/legacy warnings; no failing gate."
+  },
+  "typecheck": {
+    "exit": 0
+  },
+  "scoped_lint": {
+    "exit": 0,
+    "warnings": "Existing img at patient photo; no errors."
+  },
+  "browser": {
+    "viewports": [
+      1280,
+      390
+    ],
+    "source_routes_and_keyboard_details": true,
+    "document_overflow": false,
+    "runtime_errors": 0,
+    "external_requests": 0,
+    "live_writes": 0,
+    "exit": 0
+  },
+  "independent_review": "No P1/P2; six page tests independently passed.",
+  "migration_files": [],
+  "target_access": false,
+  "merged": false,
+  "deployed": false,
+  "uat": "Deferred; source/read-control regression and local fixture browser only.",
+  "blocked_full_scope": [
+    "Paid-duration business definition and invoice-period linkage",
+    "Per-prescription ordinary-drug handover/administration provenance absent",
+    "Historical immutable admission snapshot not reconstructed"
+  ],
+  "next_batch": "Check K05/U07 existing admission feedback; C01 promo editing next actionable CRM scope."
+}

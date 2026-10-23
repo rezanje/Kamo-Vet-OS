@@ -1,0 +1,74 @@
+[RED log excerpt: long Received SSR markup omitted; assertion messages and run summary retained.]
+
+ RUN  v4.1.9 /workspace/kamo-k07
+
+ ❯ src/components/__tests__/inpatient-handoff-page.test.tsx (4 tests | 4 failed) 56ms
+   × shows consultation, prescriptions and compound status before daily visit notes with explicit source links 38ms
+   × keeps paid invoice, void history and unlinked additions distinct without claiming administration or paid duration 7ms
+   × denies anonymous or cross-branch parents before loading additional clinical data 6ms
+   × shows an unavailable summary on child read errors instead of presenting empty or paid clinical history 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/inpatient-handoff-page.test.tsx > shows consultation, prescriptions and compound status before daily visit notes with explicit source links
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' to contain 'Ringkasan konsultasi dan resep'
+
+Expected: "Ringkasan konsultasi dan resep"
+
+ ❯ src/components/__tests__/inpatient-handoff-page.test.tsx:27:41
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/components/__tests__/inpatient-handoff-page.test.tsx > keeps paid invoice, void history and unlinked additions distinct without claiming administration or paid duration
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' to contain 'INV.PAID'
+
+Expected: "INV.PAID"
+
+ ❯ src/components/__tests__/inpatient-handoff-page.test.tsx:31:41
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/components/__tests__/inpatient-handoff-page.test.tsx > denies anonymous or cross-branch parents before loading additional clinical data
+AssertionError: promise resolved "'<div style="margin-bottom:4px"><a cla…'" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+"<div style=\"margin-bottom:4px\"><a class=\"back-btn\" href=\"/klinik/rawat-inap\"><i class=\"ti ti-arrow-left\"></i> Status Rawat Inap</a></div><div style=\"display:flex;align-items:center;gap:12px;margin-bottom:14px\"><div style=\"width:44px;height:44px;border-radius:11px;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0\"><i class=\"ti ti-bed\" style=\"font-size:22px;color:var(--posb)\"></i></div><div><div style=\"font-size:20px;font-weight:800;color:var(--sb);line-height:1.1\">LAPORAN RAWAT INAP</div><div style=\"font-size:11.5px;color:var(--tm)\">Jika pasien dirawat inap, dibuat laporan harian</div></div></div><div class=\"p2ban\" style=\"background:#fffbeb;border:.5px solid #fcd34d;color:#b45309;justify-content:space-between\"><span style=\"display:flex;align-items:center;gap:9px\"><i class=\"ti ti-alert-triangle\"></i> Tarif rawat inap belum ada di master jasa, jadi lama menginap belum bisa masuk tagihan sendiri. Buat satu jasa berkategori <b>Rawat Inap</b> (tarif per hari).</span><a class=\"btn-acc\" style=\"padding:4px 12px;font-size:11px;text-decoration:none\" href=\"/pos/sku/baru\">Buat tarif</a></div><div class=\"p2ban\" style=\"justify-content:space-between\"><span style=\"display:flex;align-items:center;gap:9px\"><i class=\"ti ti-file-alert\"></i> Belum ada form persetujuan yang ditandatangani untuk kunjungan ini.</span><a class=\"btn-acc\" style=\"padding:4px 12px;font-size:11px;text-decoration:none\" href=\"/klinik/rekam-medis/visit-a\">Buat Form Persetujuan</a></div><div class=\"card\" style=\"margin-bottom:14px;padding:20px\"><div style=\"display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start\"><div style=\"width:120px;height:120px;border-radius:12px;background:var(--sf1);border:.5px solid var(--bd);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0\"><i class=\"ti ti-paw\" style=\"font-size:48px;color:var(--td)\"></i></div><div style=\"flex:1;min-width:260px\"><div style=\"font-size:22px;font-weight:800;color:var(--sb);margin-bottom:10px\">Fictional pet <span style=\"font-weight:600;color:var(--tm);font-size:16px\">(—)</span></div><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">Pemilik</span><span style=\"color:var(--tx);font-weight:500\">: Fictional owner</span></div><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">Jenis</span><span style=\"color:var(--tx);font-weight:500\">: —</span></div><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">Usia</span><span style=\"color:var(--tx);font-weight:500\">: —</span></div><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">Berat</span><span style=\"color:var(--tx);font-weight:500\">: —</span></div></div><div style=\"flex:1;min-width:240px\"><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">Tanggal Masuk</span><span style=\"color:var(--tx);font-weight:500\">: 22/10/2026 17.00</span></div><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">No. Rekam Medis</span><span style=\"color:var(--tx);font-weight:500\">: R/2026/1022/VIS</span></div><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">Dokter PIC</span><span style=\"color:var(--tx);font-weight:500\">: Drh Inap</span></div><div style=\"display:grid;grid-template-columns:120px 1fr;gap:6px;padding:4px 0;font-size:12.5px\"><span style=\"color:var(--tm)\">Sudah menginap</span><span style=\"color:var(--tx);font-weight:500\">: 1 hari</span></div></div><div style=\"width:180px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:12px;padding:16px;text-align:center;flex-shrink:0\"><div style=\"font-size:11px;font-weight:700;color:var(--tm);letter-spacing:.05em;margin-bottom:10px\">KONDISI</div><div style=\"display:inline-block;border:1px solid #bbf7d0;background:#fff;border-radius:8px;padding:8px 20px;font-size:15px;font-weight:700;color:#15803d\">Stabil</div></div></div></div><div class=\"card\" style=\"margin-bottom:12px\"><div style=\"font-size:11px;font-weight:700;color:var(--sb);letter-spacing:.04em;margin-bottom:8px\"><i class=\"ti ti-heart-rate-monitor\"></i> UBAH KONDISI PASIEN</div><form style=\"display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end\" action=\"javascript:throw new Error(&#x27;React form unexpectedly submitted.&#x27;)\"><input type=\"hidden\" name=\"draft_key\" value=\"\"/><input type=\"hidden\" name=\"draft_scope\" value=\"inpatient-condition:inpat\"/><span></span><input type=\"hidden\" name=\"recordId\" value=\"inpat\"/><div><label class=\"flab\">Kondisi baru</label><div style=\"display:flex;gap:5px\"><label class=\"back-btn\" style=\"padding:6px 13px;border-radius:7px;border:.5px solid var(--bd);cursor:pointer;font-size:11px;background:var(--sb);color:#fff\"><input type=\"radio\" style=\"margin-right:5px\" name=\"new_status\" checked=\"\" value=\"stabil\"/>Stabil</label><label class=\"back-btn\" style=\"padding:6px 13px;border-radius:7px;border:.5px solid var(--bd);cursor:pointer;font-size:11px;background:#fff;color:var(--tm)\"><input type=\"radio\" style=\"margin-right:5px\" name=\"new_status\" value=\"kritis\"/>Kritis</label><label class=\"back-btn\" style=\"padding:6px 13px;border-radius:7px;border:.5px solid var(--bd);cursor:pointer;font-size:11px;background:#fff;color:var(--tm)\"><input type=\"radio\" style=\"margin-right:5px\" name=\"new_status\" value=\"sembuh\"/>Sembuh / Boleh Pulang</label><label class=\"back-btn\" style=\"padding:6px 13px;border-radius:7px;border:.5px solid var(--bd);cursor:pointer;font-size:11px;background:#fff;color:#b91c1c\"><input type=\"radio\" style=\"margin-right:5px\" name=\"new_status\" value=\"rip\"/>RIP (Meninggal)</label></div></div><div style=\"flex:1;min-width:200px\"><label class=\"flab\">Catatan perubahan</label><input class=\"fi\" placeholder=\"mis. respon terapi baik / henti jantung\" name=\"notes\"/></div><button type=\"submit\" class=\"btn-acc\"><i class=\"ti ti-check\"></i> Simpan Kondisi</button></form><div style=\"font-size:9.5px;color:var(--td);margin-top:7px\">Transisi ke RIP hanya oleh dokter (akun ini bukan dokter) · sembuh → lanjut pembayaran; RIP → invoice tetap terbit (tidak diblokir).</div></div><div>DAILY MONITORING</div><div>DOSE PROTOCOL</div><div class=\"crm-sec\"><div style=\"display:flex;align-items:center;justify-content:space-between;margin-bottom:12px\"><div style=\"display:flex;align-items:center;gap:8px\"><i class=\"ti ti-clipboard-list\" style=\"font-size:18px;color:var(--posb)\"></i><div style=\"font-size:13px;font-weight:800;color:var(--posb);letter-spacing:.02em\">LAPORAN RAWAT INAP HARIAN</div></div><a class=\"btn-acc\" style=\"text-decoration:none;background:var(--posb)\" href=\"/klinik/rawat-inap/inpat/catatan\"><i class=\"ti ti-plus\"></i> Tambah</a></div><div style=\"overflow-x:auto\"><table class=\"tbl\" style=\"min-width:720px\"><thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Dokter visit</th><th>Paramedis</th><th style=\"text-align:center\">Detail</th></tr></thead><tbody><tr><td colSpan=\"8\" style=\"text-align:center;color:var(--td);padding:18px 0;font-size:11px\">Belum ada catatan harian.</td></tr></tbody></table></div></div><div class=\"crm-sec\"><div style=\"font-size:11px;font-weight:700;color:var(--sb);letter-spacing:.04em;margin-bottom:8px\"><i class=\"ti ti-history\"></i> LOG PERUBAHAN STATUS</div><div style=\"overflow-x:auto\"><table class=\"tbl\" style=\"min-width:420px\"><thead><tr><th>Waktu</th><th>Dari</th><th>Ke</th><th>Oleh</th><th>Catatan</th></tr></thead><tbody><tr><td colSpan=\"5\" style=\"text-align:center;color:var(--td);padding:14px 0;font-size:11px\">Belum ada perubahan status.</td></tr></tbody></table></div></div><script>addEventListener(\"submit\",function(a){if(!a.defaultPrevented){var c=a.target,d=a.submitter,e=c.action,b=d;if(d){var f=d.getAttribute(\"formAction\");null!=f&&(e=f,b=null)}\"javascript:throw new Error('React form unexpectedly submitted.')\"===e&&(a.preventDefault(),b?(a=document.createElement(\"input\"),a.name=b.name,a.value=b.value,b.parentNode.insertBefore(a,b),b=new FormData(c),a.parentNode.removeChild(a)):b=new FormData(c),a=c.ownerDocument||c,(a.$$reactFormReplay=a.$$reactFormReplay||[]).push(c,d,b))}});</script>"
+
+ ❯ src/components/__tests__/inpatient-handoff-page.test.tsx:34:47
+     32| });
+     33| it('denies anonymous or cross-branch parents before loading additional…
+     34|  s.allowed=['branch-b'];await expect(render()).rejects.toThrow('NOT_FO…
+       |                                               ^
+     35|  s.allowed=['branch-a'];s.user=false;s.reads=[];await expect(render())…
+     36| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  src/components/__tests__/inpatient-handoff-page.test.tsx > shows an unavailable summary on child read errors instead of presenting empty or paid clinical history
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' to contain 'Ringkasan belum dapat dimuat lengkap'
+
+Expected: "Ringkasan belum dapat dimuat lengkap"
+
+ ❯ src/components/__tests__/inpatient-handoff-page.test.tsx:38:71
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  06:28:17
+   Duration  346ms (transform 116ms, setup 0ms, import 176ms, tests 56ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
