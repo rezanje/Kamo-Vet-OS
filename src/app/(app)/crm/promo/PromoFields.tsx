@@ -24,12 +24,13 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
             <select className="fi" name="discount_type" defaultValue={promo?.discount_type ?? ""}>
               <option value="">—</option>
               <option value="percent">Persen</option>
-              <option value="nominal">Nominal</option>
+              <option value="nominal">Nominal per satuan</option>
             </select>
           </div>
           <div>
             <label className="flab">Nilai diskon</label>
             <input className="fi" name="discount_value" defaultValue={promo?.discount_value ?? ""} type="number" min={0} step="any" placeholder="0" />
+            <div style={{fontSize:9.5,color:"var(--td)",marginTop:3}}>Nominal adalah potongan per satuan yang mendapat promo, bukan total potongan paket.</div>
           </div>
           <div>
             <label className="flab">Min. subtotal</label>
