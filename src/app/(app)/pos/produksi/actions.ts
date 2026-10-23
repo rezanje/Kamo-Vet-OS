@@ -107,15 +107,15 @@ function receiptData(data: unknown, kind: string, expectedDate?: string, expecte
 }
 function confirmed(form: FormData, kind: string, key: string, r: Receipt): never {
   revalidatePath(BASE);
-  const scope = kind === "start" ? "production-start" : `production-finish:${r.order_id}`;
+  const scope = kind === "start" ? form.get("production_mode")==="adhoc"?"production-start-adhoc":"production-start" : `production-finish:${r.order_id}`;
   const message = `${r.no_produksi} ${kind === "start" ? "bahan keluar dan WIP" : "barang jadi dan WIP"} terkonfirmasi.${r.already_posted ? " Hasil asal dibuka; tidak ada posting ulang." : ""}`;
   return redirect(`${BASE}?success=${encodeURIComponent(message)}&request_scope=${encodeURIComponent(scope)}&request_done=${encodeURIComponent(key)}${transactionDraftAck(form)}`);
 }
 async function postProduction(form: FormData, kind: "start" | "finish", input: Record<string, unknown>) {
   const key = requestKey(form); const db = await createClient(); let result;
-  try { result = await db.rpc("post_production_atomic", { p_kind: kind, p_request_key: key, p_input: input }); }
+  try { result = await db.rpc(kind==="start"&&input.mode==="adhoc"?"post_production_adhoc_atomic":"post_production_atomic", { p_kind: kind, p_request_key: key, p_input: input }); }
   catch { return fail("Posting produksi belum dapat dipastikan. Periksa hasil terakhir sebelum mencoba lagi."); }
-  if (result.error) fail(["P0001","42501"].includes(result.error.code) ? result.error.message : "Posting produksi belum dapat dipastikan. Periksa hasil terakhir sebelum mencoba lagi.");
+  if (result.error) fail(["P0001","42501","22023"].includes(result.error.code) ? result.error.message : "Posting produksi belum dapat dipastikan. Periksa hasil terakhir sebelum mencoba lagi.");
   return confirmed(form,kind,key,receiptData(result.data,kind,String(input[kind === "start" ? "tanggal" : "tanggal_selesai"]),kind === "finish" ? String(input.id) : undefined));
 }
 export async function mulaiProduksi(form: FormData) {
@@ -126,6 +126,20 @@ export async function mulaiProduksi(form: FormData) {
 export async function selesaikanProduksi(form: FormData) {
   const id = String(form.get("id") ?? ""); if (!UUID.test(id)) fail("Perintah produksi tidak valid.");
   return postProduction(form,"finish",{ id, qty_jadi: quantity(form.get("qty_jadi")), tanggal_selesai: String(form.get("tanggal_selesai") ?? "") || hariIniWIB() });
+}
+export async function mulaiProduksiAdhoc(form:FormData){
+  const id=(key:string)=>{const value=String(form.get(key)??'');if(!UUID.test(value))fail('Pilih barang, cabang dan gudang pekerjaan yang valid.');return value;};
+  const nama=String(form.get('nama')??'').trim();if(!nama||nama.length>120)fail('Nama pekerjaan wajib diisi, maksimal 120 karakter.');
+  let bahan:unknown;try{bahan=JSON.parse(String(form.get('bahan')??''));}catch{fail('Rincian bahan tidak valid.');}
+  if(!Array.isArray(bahan)||bahan.length===0||bahan.length>100)fail('Isi 1 sampai 100 baris bahan.');
+  const rows=bahan.map((raw:unknown)=>{if(!raw||typeof raw!=='object')fail('Rincian bahan tidak valid.');const r=raw as Record<string,unknown>;
+    if(!UUID.test(String(r.item_id??''))||!UUID.test(String(r.warehouse_id??'')))fail('Pilih barang dan gudang setiap bahan.');
+    const satuan=String(r.satuan??'');if(!satuan||satuan.length>40)fail('Pilih satuan setiap bahan.');
+    return {item_id:String(r.item_id),warehouse_id:String(r.warehouse_id),qty:quantity(String(r.qty??'')),satuan};});
+  const unit=String(form.get('output_unit')??'');if(!unit||unit.length>40)fail('Pilih satuan hasil pekerjaan.');
+  // Isolate ad-hoc request acknowledgements from recipe start forms.
+  form.set('production_mode','adhoc');
+  return postProduction(form,'start',{mode:'adhoc',nama,branch_id:id('branch_id'),warehouse_id:id('warehouse_id'),output_item_id:id('output_item_id'),output_qty:quantity(form.get('output_qty')),output_unit:unit,tanggal:String(form.get('tanggal')??'')||hariIniWIB(),catatan:String(form.get('catatan')??'').trim()||null,bahan:rows});
 }
 export async function recoverProductionPosting(form: FormData) {
   const kind = String(form.get("production_kind") ?? ""); const key = requestKey(form);

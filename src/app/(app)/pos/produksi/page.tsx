@@ -10,6 +10,8 @@ import { mulaiProduksi, selesaikanProduksi } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { kebutuhanBahan } from "@/lib/produksi";
+import { readCompleteList } from "@/lib/checked-list";
+import { ProductionAdhocForm } from "./ProductionAdhocForm";
 
 // Produksi own brand: resep → perintah (bahan keluar) → penyelesaian (barang jadi
 // masuk). Satu halaman karena ketiganya dipakai berurutan oleh orang yang sama;
@@ -21,6 +23,12 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? r[0] ?? null : r ??
 const rp = (n: number) => Number.isFinite(n) ? "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 8 }) : "Belum tersedia";
 const tgl = (d: string | null) =>
   d ? new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+type MaterialSource={nama:string;warehouse_name?:string;qty:number;unit?:string;cost?:number};
+function FrozenMaterials({materials,fallback}:{materials?:MaterialSource[];fallback?:string}){
+  if(!Array.isArray(materials))return null;
+  return <details><summary>Bahan keluar tersimpan</summary><ul>{materials.filter(m=>m&&typeof m.nama==='string'&&typeof m.qty==='number'&&Number.isFinite(m.qty)).map((m,i)=><li key={i}>{m.nama} · {m.qty.toLocaleString('id-ID',{maximumFractionDigits:12})} {typeof m.unit==='string'?m.unit:''} · {typeof m.warehouse_name==='string'?m.warehouse_name:fallback??'Gudang sumber'}{typeof m.cost==='number'&&Number.isFinite(m.cost)?` · ${rp(m.cost)}`:''}</li>)}</ul></details>;
+}
 
 type Resep = {
   id: string; nama: string; output_qty: number; is_active: boolean;
@@ -45,26 +53,27 @@ export default async function ProduksiPage({
   const { data: { user: draftUser } } = await supabase.auth.getUser();
   const draftUserId = draftUser?.id ?? "";
 
-  const [{ data: resepData }, { data: orderData }, { data: itemData }, { data: whData }] = await Promise.all([
-    supabase.from("production_recipes")
-      .select("id, nama, output_qty, is_active, items(code, name, unit), production_recipe_items(qty, items(name, unit))")
-      .eq("is_active", true).order("created_at", { ascending: false }),
+  const [resepData, { data: orderData }, itemData, whData, branchData] = await Promise.all([
+    readCompleteList<Resep>((from,to)=>supabase.from("production_recipes")
+      .select("id, nama, output_qty, is_active, items(code, name, unit), production_recipe_items(qty, items(name, unit))",{count:"exact"})
+      .eq("is_active", true).order("created_at", { ascending: false }).order("id").range(from,to),"Resep produksi",{maxRows:null}),
     supabase.from("production_orders")
       .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty, items(unit)), warehouses(name)")
       .order("created_at", { ascending: false }).limit(50),
-    supabase.from("items").select("id, code, name, unit")
-      .eq("is_active", true).eq("item_type", "Persediaan").order("name"),
-    supabase.from("warehouses").select("id, name").eq("is_active", true).order("name"),
+    readCompleteList<BarangPilihan>((from,to)=>supabase.from("items").select("id, code, name, unit",{count:"exact"})
+      .eq("is_active", true).eq("item_type", "Persediaan").order("name").order("id").range(from,to),"Barang produksi",{maxRows:null}),
+    readCompleteList<{id:string;name:string;branch_id:string}>((from,to)=>supabase.from("warehouses").select("id, name, branch_id",{count:"exact"}).eq("is_active", true).order("name").order("id").range(from,to),"Gudang produksi",{maxRows:null}),
+    readCompleteList<{id:string;name:string}>((from,to)=>supabase.from("branches").select("id, name",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),"Cabang produksi",{maxRows:null}),
   ]);
 
   const resep = (resepData ?? []) as unknown as Resep[];
   const perintah = (orderData ?? []) as unknown as Perintah[];
   const itemUnits = await loadItemUnits(supabase, (itemData ?? []).map((item: { id: string }) => item.id));
   const barang = ((itemData ?? []) as BarangPilihan[]).map(item => ({ ...item, units: unitOptions({ unit: item.unit, sell_price: 0 }, itemUnits.get(item.id) ?? []) }));
-  const gudang = (whData ?? []) as { id: string; name: string }[];
+  const gudang = whData;
   const berjalan = perintah.filter((p) => p.status === "berjalan");
   const sourceResult = await supabase.rpc("read_production_atomic_sources", { p_order_ids: perintah.map(p => p.id) });
-  type FrozenSource = {recipe_name:string;output_name:string;unit:string|null;planned_qty:number};
+  type FrozenSource = {recipe_name:string;output_name:string;unit:string|null;planned_qty:number;materials?:MaterialSource[]};
   const sourceMap = !sourceResult.error && sourceResult.data && typeof sourceResult.data === "object" && !Array.isArray(sourceResult.data) ? sourceResult.data as Record<string,FrozenSource> : {};
   const sourceFor = (id:string) => {
     const source = sourceMap[id];
@@ -108,7 +117,7 @@ export default async function ProduksiPage({
             <table className="tbl" style={{ minWidth: 820 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 150 }}>Nomor</th><th>Resep</th><th style={{ width: 120 }}>Gudang</th>
+                  <th style={{ width: 150 }}>Nomor</th><th>Resep / pekerjaan</th><th style={{ width: 120 }}>Gudang hasil</th>
                   <th style={{ width: 90, textAlign: "right" }}>Rencana jadi</th>
                   <th style={{ width: 130, textAlign: "right" }}>Modal bahan</th>
                   <th style={{ width: 260 }}>Selesaikan</th>
@@ -125,7 +134,9 @@ export default async function ProduksiPage({
                         <NoDok nomor={p.no_produksi} />
                         <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{tgl(p.tanggal)}</div>
                       </td>
-                      <td style={{ fontSize: 11.5 }}>{frozen?.recipe_name ?? "Sumber lama / belum terverifikasi"}{frozen && <div>{frozen.output_name}</div>} <span style={{ color: "var(--td)" }}>× {Number(p.batch)}</span></td>
+                      <td style={{ fontSize: 11.5 }}>{frozen?.recipe_name ?? "Sumber lama / belum terverifikasi"}{frozen && <div>{frozen.output_name}</div>} <span style={{ color: "var(--td)" }}>× {Number(p.batch)}</span>
+                        <FrozenMaterials materials={frozen?.materials} fallback={one(p.warehouses)?.name}/>
+                      </td>
                       <td style={{ fontSize: 11 }}>{one(p.warehouses)?.name ?? "—"}</td>
                       <td style={{ textAlign: "right", fontSize: 11.5 }}>{rencana.toLocaleString("id-ID")}</td>
                       <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(p.nilai_bahan))}</td>
@@ -157,7 +168,9 @@ export default async function ProduksiPage({
         )}
       </div>
 
-      {/* 02 — mulai produksi baru dari resep yang ada */}
+      <div className="crm-sec"><SecHeader num="02" title="PEKERJAAN AD HOC" desc="Bahan dan gudang dipilih per pekerjaan, tanpa menambah master resep."/><ProductionAdhocForm userId={draftUserId} barang={barang} gudang={gudang} cabang={branchData}/></div>
+
+      {/* Mulai produksi baru dari resep yang ada */}
       <div className="crm-sec">
         <SecHeader
           num="02"
@@ -268,7 +281,7 @@ export default async function ProduksiPage({
               {perintah.filter((p) => p.status === "selesai").map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontSize: 11, fontWeight: 600 }}><NoDok nomor={p.no_produksi} /></td>
-                  <td style={{ fontSize: 11.5 }}>{one(p.production_recipes)?.nama ?? "—"}</td>
+                  <td style={{ fontSize: 11.5 }}>{sourceFor(p.id)?.recipe_name??one(p.production_recipes)?.nama??"Sumber lama / belum terverifikasi"}<div>{sourceFor(p.id)?.output_name??''}</div><FrozenMaterials materials={sourceFor(p.id)?.materials} fallback={one(p.warehouses)?.name}/></td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>{Number(p.qty_jadi).toLocaleString("id-ID")}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(p.nilai_bahan))}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>

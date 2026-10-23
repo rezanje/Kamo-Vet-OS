@@ -69,6 +69,12 @@ def races(db):
   b=launch('i08-fail-retry',finish(oid,'finish-after-failure'));wait('i08-fail-retry','lock');ra,rb=result(a),result(b)
   if not ra[0] or rb[0] or 'Fictional concurrent journal failure' not in ra[2]:raise AssertionError('Rollback/queued completion failed '+str((ra,rb)))
   check_finished(oid);print('PASS failed completion rolls back before queued retry commits once',flush=True)
+  db.sql("drop trigger fictional_i08_fail on journal_lines;insert into warehouses(id,branch_id,code,name,type) values(md5('i08-ad-race-wh')::uuid,md5('i08-branch')::uuid,'I08AD','Fictional ad hoc race source','RETAIL');select stock_in_fifo(md5('i08-ad-race-wh')::uuid,md5('i08-material')::uuid,10,3.125,'fixture','I08-AD-RACE',current_date-1,null);")
+  adhoc="select post_production_adhoc_atomic('start','adhoc-concurrent',jsonb_build_object('mode','adhoc','nama','Fictional concurrent job','branch_id',md5('i08-branch')::uuid,'warehouse_id',md5('i08-wh')::uuid,'output_item_id',md5('i08-output')::uuid,'output_qty',3,'output_unit','PCS','tanggal',current_date-1,'bahan',jsonb_build_array(jsonb_build_object('item_id',md5('i08-material')::uuid,'warehouse_id',md5('i08-wh')::uuid,'qty',1.5,'satuan','PCS'),jsonb_build_object('item_id',md5('i08-material')::uuid,'warehouse_id',md5('i08-ad-race-wh')::uuid,'qty',1.5,'satuan','PCS'))))"
+  a=launch('i08-ad-first',adhoc+';select pg_sleep(1)');wait('i08-ad-first','sleep');b=launch('i08-ad-second',adhoc);wait('i08-ad-second','lock');ra,rb=result(a),result(b)
+  if ra[0] or rb[0] or not receipt(rb[1])['already_posted']:raise AssertionError('Concurrent ad hoc start failed '+str((ra,rb)))
+  oid=receipt(ra[1])['order_id'];db.sql(AUTH+finish(oid,'adhoc-race-finish'));check_finished(oid)
+  print('PASS concurrent multi-warehouse ad hoc start and exact finish once',flush=True)
  finally:
   for process in active:
    if process.poll() is None:process.kill();process.wait()
@@ -78,4 +84,6 @@ if __name__=='__main__':
   db.bootstrap()
   db.sql((ROOT/'supabase/tests/production_atomic.sql').read_text())
   print('PASS production_atomic.sql',flush=True)
-  races(db)
+  db.sql((ROOT/'supabase/tests/production_adhoc.sql').read_text())
+  print('PASS production_adhoc.sql',flush=True)
+  if '--sql-only' not in sys.argv:races(db)
