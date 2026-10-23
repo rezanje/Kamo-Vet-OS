@@ -150,12 +150,17 @@ export async function kunciBaris(orderId: string, itemId: string, qtyFisik: numb
   if (!order) return { ok: false, pesan: "Kamu tidak berhak menghitung stok gudang ini." };
   if (order.status !== "Terbuka") return { ok: false, pesan: order.status === "Batal" ? "Opname sudah dibatalkan." : "Hitungan ini sudah selesai." };
 
-  const qty = Math.max(0, Number(qtyFisik) || 0);
+  if (!Number.isFinite(qtyFisik) || qtyFisik < 0) return { ok: false, pesan: "Isi jumlah fisik yang valid, minimal nol." };
+  const qty = qtyFisik;
   const { data: { user } } = await supabase.auth.getUser();
-  const { data: stok } = await supabase
+  const { data: stok, error: stockError } = await supabase
     .from("stock").select("qty")
     .eq("warehouse_id", order.warehouse_id).eq("item_id", itemId).maybeSingle();
 
+  if (stockError || (stok && !Number.isFinite(Number(stok.qty)))) return { ok: false, pesan: "Stok sistem belum dapat dipastikan. Muat ulang sebelum mengunci." };
+
+  // Retry after a lost response must not overwrite the first lock snapshot.
+  // Changing a confirmed count requires the existing explicit Buka action.
   const { error } = await supabase.from("opname_counts").upsert({
     order_id: orderId,
     item_id: itemId,
@@ -163,11 +168,16 @@ export async function kunciBaris(orderId: string, itemId: string, qtyFisik: numb
     qty_sistem: Number(stok?.qty ?? 0),
     locked_by: user?.id ?? null,
     locked_at: new Date().toISOString(),
-  }, { onConflict: "order_id,item_id" });
+  }, { onConflict: "order_id,item_id", ignoreDuplicates: true });
   if (error) return { ok: false, pesan: "Gagal menyimpan hitungan barang ini." };
 
+  const { data: confirmed, error: confirmationError } = await supabase.from("opname_counts")
+    .select("qty_fisik").eq("order_id", orderId).eq("item_id", itemId).maybeSingle();
+  if (confirmationError || !confirmed || !Number.isFinite(Number(confirmed.qty_fisik)) || Number(confirmed.qty_fisik) < 0) {
+    return { ok: false, pesan: "Kunci belum dapat dipastikan. Muat ulang; jangan anggap hitungan sudah tersimpan." };
+  }
   revalidatePath(`/kasir/opname/${orderId}`);
-  return { ok: true };
+  return { ok: true, qtyFisik: Number(confirmed.qty_fisik) };
 }
 
 /** Buka kunci: hitungan barang itu dibuang, petugas menghitung ulang. */
