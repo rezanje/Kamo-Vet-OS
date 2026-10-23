@@ -5,6 +5,8 @@ insert into stock(warehouse_id,item_id,qty) values('e3300000-0000-4000-8000-0000
 insert into stock_layers(id,warehouse_id,item_id,qty_in,qty_left,unit_cost,source,exp_date) values
 ('e8800000-0000-4000-8000-000000000001','e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',3,3,123.45,'manual','2030-01-01'),
 ('e8800000-0000-4000-8000-000000000002','e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',7,7,234.56,'manual','2031-01-01');
+-- Current unit-history guard requires the fixture's box conversion before its first checkout.
+insert into item_units(item_id,unit,factor,sell_price,buy_price) values('e5500000-0000-4000-8000-000000000002','box',2,666.66,246.90);
 create function pg_temp.cancel(ref text,key text default null) returns jsonb language sql as $$select cancel_posted_sale((select id from sales where no_struk=ref),0,coalesce(key,'cancel:'||ref),'Salah input barang')$$;
 create function pg_temp.stock_sale(ref text) returns uuid language plpgsql as $$declare doc uuid;issued record;begin
  doc:=pg_temp.fee_sale(ref);
@@ -222,7 +224,7 @@ end$$;
 select pg_temp.assert_ok((select fifo_takes is null and fifo_shortfall is null from stock_moves where source_ref='VOID.TRANSFER'),'non-sale provenance untouched');
 -- Online cancellation uses original warehouse and exact marketplace/WA accounts.
 reset role;
-insert into item_units(item_id,unit,factor,sell_price,buy_price) values('e5500000-0000-4000-8000-000000000002','box',2,666.66,246.90);
+update item_units set sell_price=666.66,buy_price=246.90 where item_id='e5500000-0000-4000-8000-000000000002' and unit='box';
 insert into warehouses(id,branch_id,code,name,type) values('e3300000-0000-4000-8000-000000000003','e2200000-0000-4000-8000-000000000001','VOIDONLINE','Online warehouse','ONLINE');
 set local role authenticated;
 select stock_in_fifo('e3300000-0000-4000-8000-000000000003','e5500000-0000-4000-8000-000000000002',10,123.45,'manual','VOID.ONLINE.SEED');

@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isCompletedSale, saleMerchandiseTotal } from "./sale-payment-reporting";
 
 export type TierThresholds = { bronze_min: number; silver_min: number; gold_min: number; platinum_min: number };
 
@@ -12,30 +11,16 @@ export function computeTier(combined: number, t: TierThresholds): string {
   return "New";
 }
 
-// Hitung ulang total_spending (petshop sales + klinik invoices LUNAS) lalu set tier.
-// Dipanggil server-side setelah tiap transaksi selesai / void. Absolut (bukan incremental)
-// biar gak drift — sumber kebenaran selalu tabel sales + invoices.
-export async function recomputeCustomerTier(supabase: SupabaseClient, customerId: string): Promise<void> {
-  if (!customerId) return;
-
-  const [{ data: sales }, { data: invs }, { data: cfg }] = await Promise.all([
-    supabase.from("sales").select("total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at").eq("customer_id", customerId),
-    supabase
-      .from("invoices")
-      .select("total, visits!inner(customer_id)")
-      .eq("visits.customer_id", customerId)
-      .eq("paid_status", "Lunas")
-      .is("voided_at", null),
-    supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min").eq("id", 1).maybeSingle(),
-  ]);
-
-  const petshop = (sales ?? []).filter(isCompletedSale).reduce((a, s) => a + saleMerchandiseTotal(s), 0);
-  const klinik = (invs ?? []).reduce((a, i) => a + Number(i.total || 0), 0);
-  const combined = petshop + klinik;
-
-  const thresholds: TierThresholds = cfg
-    ? { bronze_min: Number(cfg.bronze_min), silver_min: Number(cfg.silver_min), gold_min: Number(cfg.gold_min), platinum_min: Number(cfg.platinum_min) }
-    : { bronze_min: 1_000_000, silver_min: 5_000_000, gold_min: 15_000_000, platinum_min: 50_000_000 };
-
-  await supabase.from("customers").update({ total_spending: combined, tier: computeTier(combined, thresholds) }).eq("id", customerId);
+// Derived global customer statistics must be recomputed behind the source-data
+// authorization boundary: session queries may contain only one operational branch.
+// Best effort after financial commit; never strand checkout/receipt recovery when
+// this secondary update fails. Callers may display a warning on false.
+export async function recomputeCustomerTier(supabase: SupabaseClient, customerId: string): Promise<boolean> {
+  if (!customerId) return true;
+  try {
+    const {data,error}=await supabase.rpc("refresh_customer_spending",{p_customer:customerId});
+    return !error && data === true;
+  } catch {
+    return false;
+  }
 }
