@@ -1,3 +1,5 @@
+import { OpnameCancellationPanel } from "@/components/OpnameCancellationPanel";
+import { opnameCancellationBlock, type OpnameCancellation } from "@/lib/opname-cancellation";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -7,7 +9,7 @@ import { HasilView } from "@/app/(app)/pos/opname/[id]/HasilView";
 import { DaftarHitung } from "./DaftarHitung";
 import { gudangCabang } from "../gudang";
 
-type Order = {
+type Order = OpnameCancellation & {
   id: string;
   no_opname: string;
   tanggal_mulai: string;
@@ -40,7 +42,7 @@ export default async function OpnameKasirDetailPage({
 
   const { data: orderRaw } = await supabase
     .from("opname_orders")
-    .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, warehouse_id")
+    .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason, warehouse_id")
     .eq("id", id).maybeSingle();
   const order = orderRaw as unknown as Order | null;
 
@@ -52,6 +54,8 @@ export default async function OpnameKasirDetailPage({
   const { count } = await supabase
     .from("opname_order_items").select("*", { count: "exact", head: true }).eq("order_id", id);
   const jumlahLingkup = count ?? 0;
+
+  const blockedReason = order!.status === "Terbuka" ? await opnameCancellationBlock(supabase,id) : null;
 
   return (
     <>
@@ -105,11 +109,13 @@ export default async function OpnameKasirDetailPage({
         </div>
       </div>
 
+      <OpnameCancellationPanel order={order!} blockedReason={blockedReason} cashier={true}/>
+
       {order!.status === "Terbuka" ? (
         <DaftarHitung orderId={order!.id} warehouseId={order!.warehouse_id} />
-      ) : (
+      ) : order!.status === "Selesai" ? (
         <HasilView orderId={order!.id} />
-      )}
+      ) : null}
     </>
   );
 }

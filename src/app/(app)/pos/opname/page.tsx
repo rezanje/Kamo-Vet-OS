@@ -1,3 +1,4 @@
+import { opnameWarehouseIds } from "@/lib/opname-cancellation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -26,12 +27,15 @@ export default async function OpnamePage({
   const { success, error, status } = await searchParams;
   const supabase = await createClient();
 
+  const {data:{user}} = await supabase.auth.getUser();
+  const warehouses = user ? await opnameWarehouseIds(supabase,user.id) : [];
   let q = supabase
     .from("opname_orders")
     .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, warehouses(name), opname_results(no_hasil), opname_order_items(item_id)")
-    .order("created_at", { ascending: false })
+    .in("warehouse_id",warehouses).order("created_at", { ascending: false })
     .limit(200);
-  if (status) q = q.eq("status", status);
+  if (["Terbuka","Selesai","Batal"].includes(status ?? "")) q = q.eq("status", status);
+  else if (status !== "semua") q = q.neq("status","Batal");
   const { data } = await q;
   const rows = (data ?? []) as unknown as Row[];
 
@@ -60,12 +64,12 @@ export default async function OpnamePage({
         <SecHeader
           num="01"
           title="PERINTAH STOK OPNAME"
-          desc="Riwayat hitung stok seluruh cabang. Menghitungnya dikerjakan dari layar kasir; halaman ini untuk memantau hasil & selisihnya."
+          desc="Riwayat hitung stok cabang yang dapat kamu akses. Menghitungnya dikerjakan dari layar kasir; halaman ini untuk memantau hasil & selisihnya."
         />
 
         <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           <select className="fi" name="status" defaultValue={status ?? ""} style={{ width: 160 }}>
-            <option value="">Status: Semua</option>
+            <option value="">Aktif &amp; selesai</option><option value="semua">Semua riwayat</option><option value="Batal">Batal</option>
             <option value="Terbuka">Terbuka</option>
             <option value="Selesai">Selesai</option>
           </select>

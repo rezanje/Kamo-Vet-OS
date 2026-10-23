@@ -1,0 +1,14 @@
+{
+  "scripts/test-opname-cancel-postgres.py": "acaad6357a1a6de809afdb6d683b244106e6d7abe083643944b2dd5340db9785",
+  "src/app/(app)/pos/opname/[id]/page.tsx": "0f785904e9c0eedfd45d45a481079b5f48798e6a494d37c2a1b9058bef402ed2",
+  "src/app/(app)/pos/opname/actions.ts": "c5b5fc8492be44b10111fc5863e827dbab01e5cf9173ef5b94e191ced6afa3d6",
+  "src/app/(app)/pos/opname/page.tsx": "de3f571377b768f7e8674addcd8d9639a61bda8ce118e4f002760be016cbd04f",
+  "src/app/kasir/opname/[id]/page.tsx": "c7a67614c6d2ad2ef7a06c8500d435fe0b186765d9f1d057b1e16269f28da2fd",
+  "src/app/kasir/opname/page.tsx": "4d673b646a092d4e6fc8388897f0949d6b3af1bd18b772b23bd10e2628e94162",
+  "src/components/OpnameCancellationPanel.tsx": "49ec66b956727980d7451518fcb10213106b1279d923531e29d7f937fdf73d14",
+  "src/components/__tests__/opname-cancel-ui.test.tsx": "7b050d04e2f10c85b4dc7e71ed86156a2f878d5b0312ec32c647b168194f0daa",
+  "src/lib/__tests__/opname-cancel-action.test.ts": "0bbabee64f120b589df6b73ab066b7cfff40cbecb26cf8781cc4da11c3e38943",
+  "src/lib/opname-cancellation.ts": "da232243dd456268e1931b71fade631adbcf58be9f4ed25cb9ddb6c51e0e9f19",
+  "supabase/migrations/20261023021400_opname_draft_cancellation.sql": "5dcbf9ebf8086e8ac374518c0d89e65a5c463524822afa7af94185ac546a3ff4",
+  "supabase/tests/opname_draft_cancel.sql": "98f0d21f535f20e75c65b732fcec106402bab72c15d7e270739506b09c830ac4"
+}

@@ -1,0 +1,12 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const s=vi.hoisted(()=>({calls:[] as unknown[],paths:[] as string[],error:null as null|{code:string;message:string}}));
+vi.mock('next/navigation',()=>({redirect:(url:string)=>{throw Error(decodeURIComponent(url))}}));
+vi.mock('next/cache',()=>({revalidatePath:(p:string)=>s.paths.push(p)}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:async(name:string,params:unknown)=>{s.calls.push({name,params});return {error:s.error}}})}));
+import {batalPerintah} from '@/app/(app)/pos/opname/actions';
+const form=()=>{const f=new FormData();f.set('order_id','draft');f.set('reason',' Abandoned fictional plan ');f.set('actor_id','spoof');return f};
+beforeEach(()=>{s.calls=[];s.paths=[];s.error=null});
+it('uses one guarded RPC with no client actor and refreshes both existing menus',async()=>{await expect(batalPerintah(form())).rejects.toThrow('riwayat tetap tersimpan');expect(s.calls).toEqual([{name:'cancel_opname_draft',params:{p_order_id:'draft',p_reason:'Abandoned fictional plan'}}]);expect(s.paths).toEqual(['/pos/opname','/kasir/opname','/pos/opname/draft','/kasir/opname/draft'])});
+it('retains cashier back navigation and reports partial-posting rejection without success',async()=>{const f=form();f.set('kembali','kasir');s.error={code:'P0001',message:'OPNAME_NOT_DRAFT: Sudah ada hitungan terkunci'};await expect(batalPerintah(f)).rejects.toThrow('/kasir/opname/draft?error=Sudah ada hitungan terkunci');expect(s.paths).toEqual([])});
+it('rejects missing reason before a mutation',async()=>{const f=form();f.set('reason',' ');await expect(batalPerintah(f)).rejects.toThrow('isi alasan');expect(s.calls).toEqual([])});
+it('does not turn uncertain transport into confirmed cancellation or leak internal errors',async()=>{s.error={code:'XX000',message:'PRIVATE internal detail'};await expect(batalPerintah(form())).rejects.toThrow('Pembatalan belum dapat dipastikan');expect(s.paths).toEqual([])});

@@ -1,0 +1,14 @@
+
+ RUN  v4.1.9 /workspace/kamo-i06
+
+
+ Test Files  334 passed (334)
+      Tests  2586 passed (2586)
+   Start at  02:29:23
+   Duration  57.33s (transform 14.79s, setup 0ms, import 37.97s, tests 38.73s, environment 31.06s)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

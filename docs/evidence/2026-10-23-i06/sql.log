@@ -1,0 +1,4 @@
+Applied 233 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS opname_draft_cancel.sql: permissions, locked/posted/effect rejection, immutable cancel and audit
+PASS two-session races: count wins -> cancel rejected; cancel wins -> stock effect rejected
+Removed owned PostgreSQL test container and volumes.
