@@ -1,3 +1,5 @@
+import {RefundSourcePanel} from "@/components/returns/RefundSourcePanel";
+import {recoverReturJual} from "@/app/(app)/penjualan/retur/actions";
 import Link from "next/link";
 import { PostingRequestIdentity } from "@/components/PostingRequestIdentity";
 import { redirect } from "next/navigation";
@@ -140,18 +142,18 @@ export default async function ReturKasirPage({
       {sale && rows.length === 0 && <form>
         <input type="hidden" name="source_ref" value={sale.no_struk ?? ""} />
         <input type="hidden" name="dari" value="kasir" />
-        <PostingRequestIdentity scope={`sales-return:${sale.id}`} userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done} />
+        <PostingRequestIdentity recoverAction={recoverReturJual} scope={`sales-return:${sale.id}`} userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done} />
       </form>}
 
       {sale && rows.length > 0 && (
-        <ReturJualForm
+        <RefundSourcePanel saleId={sale.id}><ReturJualForm
           userId={user.id} confirmedScope={request_scope} confirmedKey={request_done}
           saleId={sale.id}
           info={`${sale.no_struk} — ${sale.customers?.name ?? "Umum"}`}
           rows={rows}
           dari="kasir"
           lockBranchId={shift.branch_id}
-        />
+        /></RefundSourcePanel>
       )}
 
       <div className="card" style={{ padding: 16 }}>

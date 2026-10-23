@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { TileGrid } from "@/components/ModuleHome";
 import { getAccountBalances } from "@/lib/ledger";
@@ -47,6 +48,7 @@ export default async function KasBankPage() {
         </div>
       )}
 
+      <p><Link className="btn-def" href="/kas-bank/refund">Antrean refund transfer</Link></p>
       <TileGrid moduleId="kas-bank" />
     </>
   );

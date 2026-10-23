@@ -24,6 +24,7 @@ export async function buatReturJual(form:FormData) {
    destination:method==='Transfer'?{bank:String(form.get('refund_bank')??'').trim(),account:String(form.get('refund_account')??'').trim(),name:String(form.get('refund_name')??'').trim()}:null};
   try{response=await db.rpc('post_sales_return_with_payout',{p_source:source,p_request_key:key,p_header:header,p_items:items});}catch{fail('Respons refund belum terkonfirmasi. Periksa hasil terakhir sebelum mencoba lagi.');}
  }
+ if(!response)return fail('Hasil refund belum terkonfirmasi. Periksa daftar sebelum mencoba lagi.');
  const {data,error}=response;
  if(error)fail(['P0001','42501','22023'].includes(error.code)?error.message:'Respons refund belum terkonfirmasi. Periksa hasil terakhir.');
  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

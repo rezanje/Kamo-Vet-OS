@@ -23,6 +23,12 @@ select finalize_pos_sale((select id from sales where no_struk='J03.REQUEST'));
 insert into j03_results select 'pending',post_sales_return_with_payout(id,'j03-request',pg_temp.j03_header('Transfer'),pg_temp.j03_items(no_struk,2)) from sales where no_struk='J03.REQUEST';
 select pg_temp.assert_ok((select result->>'status'='pending' from j03_results where name='pending'),'transfer request stays pending');
 select pg_temp.assert_ok((select count(*)=1 from sales_returns) and (select count(*)=1 from expenses),'pending request does not post return or payout');
+select pg_temp.reject($q$select claim_sales_refund_request((select (result->>'refund_request_id')::uuid from j03_results where name='pending'))$q$,'cashier cannot claim finance queue');
+select pg_temp.reject($q$select get_sales_refund_requests(null,true)$q$,'cashier cannot read office destinations');
+create temp table j03_known_source as select id from sales where no_struk='J03.REQUEST';
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
+select pg_temp.reject($q$select post_sales_return_with_payout((select id from j03_known_source),'j03-wrong-branch',pg_temp.j03_header('Transfer'),pg_temp.j03_items('J03.REQUEST'))$q$,'other branch cashier cannot submit refund');
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
 reset role;
 update profiles set role='OWNER' where id='e1100000-0000-4000-8000-000000000002';
 set local role authenticated;
@@ -31,6 +37,25 @@ insert into j03_results select 'processing',claim_sales_refund_request((result->
 select pg_temp.assert_ok((select result->>'status'='diproses' from j03_results where name='processing'),'finance claim reserves return');
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
 select pg_temp.reject($q$select post_unit_return('sales',(select id from sales where no_struk='J03.REQUEST'),'reservation-cash',jsonb_build_object('tanggal',current_date,'dari','kasir'),pg_temp.j03_items('J03.REQUEST'))$q$,'claimed refund blocks conflicting old return path');
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
+-- Wrong account and a journal failure must preserve the processing reservation,
+-- with no return, expense, allocation or completion metadata committed.
+select pg_temp.reject($q$select complete_sales_refund_request((select (result->>'refund_request_id')::uuid from j03_results where name='pending'),current_date,'e6600000-0000-4000-8000-000000000001','FICT-CASH-AS-BANK')$q$,'transfer cannot use cash account');
+reset role;
+create function pg_temp.j03_fail_journal() returns trigger language plpgsql as $$begin if current_setting('test.j03_fail',true)='yes' then raise exception 'Fictional J03 journal failure';end if;return new;end$$;
+create trigger fictional_j03_journal_fail before insert on journal_lines for each row execute function pg_temp.j03_fail_journal();
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
+set local test.j03_fail='yes';
+do $$begin
+ begin perform complete_sales_refund_request((select (result->>'refund_request_id')::uuid from j03_results where name='pending'),current_date,'e6600000-0000-4000-8000-000000000003','FICT-FAIL');raise exception 'Expected journal failure';
+ exception when others then if sqlerrm<>'Fictional J03 journal failure' then raise;end if;end;
+end$$;
+reset role;
+select pg_temp.assert_ok((select count(*)=1 from sales_returns) and (select count(*)=1 from expenses) and (select completion_payload is null and return_id is null and status='diproses' from sales_refund_requests where request_key='j03-request'),'no partial return/expense or completion after failure');
+drop trigger fictional_j03_journal_fail on journal_lines;
+set local test.j03_fail='no';
+set local role authenticated;
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
 insert into j03_results select 'complete',complete_sales_refund_request((result->>'refund_request_id')::uuid,current_date,'e6600000-0000-4000-8000-000000000003','FICT-TRANSFER-1') from j03_results where name='pending';
 insert into j03_results select 'complete-retry',complete_sales_refund_request((result->>'refund_request_id')::uuid,current_date,'e6600000-0000-4000-8000-000000000003','FICT-TRANSFER-1') from j03_results where name='pending';
