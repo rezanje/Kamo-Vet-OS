@@ -1,3 +1,5 @@
+import { opnameHasResult } from "@/lib/opname-result-presence";
+import { ListLoadFailure } from "@/components/ListPagination";
 import { OpnameCancellationPanel } from "@/components/OpnameCancellationPanel";
 import { opnameCancellationBlock, type OpnameCancellation } from "@/lib/opname-cancellation";
 import Link from "next/link";
@@ -55,6 +57,10 @@ export default async function OpnameKasirDetailPage({
     .from("opname_order_items").select("*", { count: "exact", head: true }).eq("order_id", id);
   const jumlahLingkup = count ?? 0;
 
+  let partialResult = false;
+  try { partialResult = order!.status === "Terbuka" && await opnameHasResult(supabase, id); }
+  catch (loadError) { return <ListLoadFailure error={loadError} label="Hasil opname" />; }
+
   const blockedReason = order!.status === "Terbuka" ? await opnameCancellationBlock(supabase,id) : null;
 
   return (
@@ -111,7 +117,10 @@ export default async function OpnameKasirDetailPage({
 
       <OpnameCancellationPanel order={order!} blockedReason={blockedReason} cashier={true}/>
 
-      {order!.status === "Terbuka" ? (
+      {partialResult ? <>
+        <div className="p2ban" role="alert">Sudah ada hasil tersimpan tetapi perintah belum selesai. Stok dan jurnal mungkin belum lengkap. Periksa hasil asal bersama back office; jangan posting ulang.</div>
+        <HasilView orderId={order!.id} />
+      </> : order!.status === "Terbuka" ? (
         <DaftarHitung orderId={order!.id} warehouseId={order!.warehouse_id} />
       ) : order!.status === "Selesai" ? (
         <HasilView orderId={order!.id} />
