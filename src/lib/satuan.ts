@@ -165,3 +165,11 @@ export function parseUnitDrafts(raw: unknown, baseUnit: string): { rows: UnitDra
   }
   return { rows, error: null };
 }
+
+/** Save base and alternate units together; the DB fences sold definitions on all paths. */
+export async function replaceItemUnitConfiguration(supabase: AnyClient, itemId: string, baseUnit: string, rows: UnitDraft[]): Promise<void> {
+  const { error } = await supabase.rpc("replace_item_unit_configuration", {
+    p_item_id: itemId, p_base_unit: baseUnit, p_units: rows,
+  });
+  if (error) throw new Error(error.message);
+}

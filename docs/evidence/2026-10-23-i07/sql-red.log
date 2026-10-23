@@ -1,0 +1,14 @@
+Applied 223 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-i07/scripts/test-sold-sku-units-postgres.py", line 13, in <module>
+    db.sql(prefix+(ROOT/'supabase/tests/sold_sku_units.sql').read_text())
+  File "/workspace/kamo-i07/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  Expected rejection: sold conversion24 must not become28
+CONTEXT:  PL/pgSQL function pg_temp_3.reject(text,text) line 3 at RAISE
+
+e1100000-0000-4000-8000-000000000001
+{"role":"authenticated"}
+30dc5303-b890-4b09-b1a5-3e003ca23063
+{"sale_id": "30dc5303-b890-4b09-b1a5-3e003ca23063", "finalized": true, "journal_id": "9445e26e-c8d1-494c-9bab-1ba54b344beb"}

@@ -1,0 +1,6 @@
+Typecheck ran concurrently with Next build, which removed/regenerated .next/types.
+error TS6053: File '/workspace/kamo-i07/.next/types/app/(app)/aset-tetap/page.ts' not found.
+  The file is in the program because:
+    Matched by include pattern '.next/types/**/*.ts' in '/workspace/kamo-i07/tsconfig.json'
+error TS6053: File '/workspace/kamo-i07/.next/types/app/(app)/buku-besar/anggaran/page.ts' not found.
+Repeated missing generated-type diagnostics omitted; no source edit was needed. Rerun serialized after build.

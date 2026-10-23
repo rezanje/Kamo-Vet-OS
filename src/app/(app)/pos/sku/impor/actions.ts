@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { bacaCsv, periksaBaris, type BarisSalah, type MasterImpor } from "@/lib/impor-barang";
+import { replaceItemUnitConfiguration } from "@/lib/satuan";
 import { pesanSimpanGagal } from "@/lib/barang";
 import {
   bacaWorkbookKategoriAccurate,
@@ -680,7 +681,8 @@ async function saveAccurateBatch(
   const payloads = items.map((item) => {
     const existing = existingByCode.get(item.code.trim().toLowerCase());
     const payload = buatPayloadItemAccurate(item, referenceFor(master, item));
-    return existing ? { ...payload, id: existing.id } : payload;
+    // Existing base/conversion changes belong to the atomic unit RPC below.
+    return existing ? { ...payload, id: existing.id, unit: existing.unit } : payload;
   });
   const saved = await supabase.from("items").upsert(payloads, { onConflict: "id" }).select("id, code");
   if (saved.error) throw new Error(pesanSimpanGagal(saved.error.message));
@@ -689,18 +691,9 @@ async function saveAccurateBatch(
   const itemIds = items.map((item) => idByCode.get(item.code.toLowerCase()));
   if (itemIds.some((id) => !id)) throw new Error("Sebagian barang tidak menerima identitas penyimpanan");
 
-  const { error: deleteError } = await supabase.from("item_units").delete().in("item_id", itemIds);
-  if (deleteError) throw new Error(pesanSimpanGagal(deleteError.message));
-  const unitRows = items.flatMap((item, index) => item.item_type === "Jasa" ? [] : item.units.map((unit) => ({
-    item_id: itemIds[index],
-    unit: unit.unit,
-    factor: unit.factor,
-    sell_price: unit.sell_price,
-    buy_price: unit.buy_price,
-  })));
-  if (unitRows.length) {
-    const { error: unitError } = await supabase.from("item_units").insert(unitRows);
-    if (unitError) throw new Error(pesanSimpanGagal(unitError.message));
+  for (const [index, item] of items.entries()) {
+    await replaceItemUnitConfiguration(supabase, itemIds[index]!, item.unit,
+      item.item_type === "Jasa" ? [] : item.units);
   }
 }
 
