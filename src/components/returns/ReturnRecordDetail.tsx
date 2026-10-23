@@ -38,6 +38,7 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
       <p>{record.voided_at ? "Dibatalkan / diganti" : "Aktif"} · {record.tanggal} · Revisi {record.revision}</p>
       <p>Nilai dokumen: Rp {Number(record.total).toLocaleString("id-ID")} · {record.keterangan}</p>
       {kind === "purchase" && record.po_id && <p><DocumentLink kind="purchase-order" id={record.po_id} from={`${base}/${id}`}>Pesanan pembelian asal</DocumentLink></p>}
+      {kind === "sales" && record.sale_id && <p><Link href={`/penjualan/${record.sale_id}`}>Penjualan asal</Link></p>}
       {parent.data && <p>Pengganti dari <Link href={`${base}/${parent.data.return_id}`}>dokumen asal</Link></p>}
       {rows.map(row => <p key={row.id}>{row.nama} · {Number(row.selected_qty ?? row.qty ?? 0)} {row.satuan ?? "satuan dasar"}</p>)}
       <p>Jurnal asal: {journals.length ? journals.map(j => j.no_jurnal).join(", ") : "Provenance lama belum tersedia"}</p>
