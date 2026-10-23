@@ -1,3 +1,5 @@
+import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
@@ -67,19 +69,20 @@ export default async function RekamMedisPage({
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
+  const serviceStaff = recorded ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
   const dokterOpsi = recorded ? [] : await daftarDokter(supabase, { branchId: visit.branch_id });
   const providerOpsi = recorded ? [] : performersForService(await daftarDokter(supabase,{branchId:visit.branch_id}),visit.poli);
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
-  let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
+  let record: { diagnosis: string | null; therapy: string | null; anamnesis: string | null } | null = null;
   let mrId: string | null = null;
   let mrLoadFailed = false;
-  let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
+  let resep: { nama_obat: string; qty: number; aturan_pakai: string | null; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
     const { data: mr, error: mrError } = await supabase
       .from("medical_records")
-      .select("id, diagnosis, anamnesis")
+      .select("id, diagnosis, therapy, anamnesis")
       .eq("visit_id", visitId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -90,7 +93,7 @@ export default async function RekamMedisPage({
     if (mr) {
       const { data: pi } = await supabase
         .from("prescription_items")
-        .select("nama_obat, qty, aturan_pakai")
+        .select("nama_obat, qty, aturan_pakai, jenis, service_performers")
         .eq("medical_record_id", mr.id)
         .order("created_at");
       resep = pi ?? [];
@@ -145,10 +148,10 @@ export default async function RekamMedisPage({
   const bolehManual = await bolehRacikKhusus();
   if (!recorded) {
     const masterRows = await readCompleteList<{
-      id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean;
+      id: string; code: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean;
       item_type: string; tindakan_kategori: string | null; category_id: string | null;
     }>((from, to) => supabase
-      .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
+      .from("items").select("id, code, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
       .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
     const categories = await loadClinicItemCategories(supabase);
     const compoundRows = await loadClinicCompoundSkus(supabase, categories);
@@ -362,6 +365,7 @@ export default async function RekamMedisPage({
               <div className="card-hd"><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</div>
               <ReadField label="Anamnesis / catatan klinis" value={record?.anamnesis} />
               <ReadField label="Diagnosa" value={record?.diagnosis} />
+              <ReadField label="Terapi / tindakan" value={record?.therapy} />
             </div>
             <div className="card">
               <div className="card-hd" style={{ justifyContent: "space-between" }}>
@@ -383,7 +387,7 @@ export default async function RekamMedisPage({
                   <tbody>
                     {resep.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontWeight: 500 }}>{r.nama_obat}</td>
+                        <td style={{ fontWeight: 500 }}>{r.nama_obat}{r.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>}</td>
                         <td style={{ textAlign: "center" }}>{r.qty}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.aturan_pakai ?? "—"}</td>
                       </tr>
@@ -484,6 +488,7 @@ export default async function RekamMedisPage({
           requestKey={randomUUID()}
           draftUserId={user?.id ?? ""}
           petId={visit.pet_id}
+          serviceStaff={serviceStaff}
           dokterOpsi={dokterOpsi}
           currentWeight={pet?.weight ?? null}
           items={obatItems}

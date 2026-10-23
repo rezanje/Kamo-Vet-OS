@@ -1,0 +1,6 @@
+Independent reviewer: existing Sol 6.1 reviewer /root/k08_review. No source edits, builds, target calls or SQL execution by reviewer.
+Reviewed actor/branch/privacy/source integrity, POS pre-stock validation, legacy checkout fingerprints, clinical correction/reissue snapshot inheritance and exact document links. Reproduced findings were fixed and covered by focused tests.
+Final targeted review: no outstanding P1/P2 in creation replay fix. Legacy NULL invoices keep old ungrouped pricing and omit version hash key; version1 retains new grouped pricing; sealed salesperson retained and explicit changes rejected. Counted SQL header capture/reissue copy/immutable guard reviewed without backfill or ACL expansion.
+Independent final tests: 37 passed / 3 files (clinic-service-performer-payment, clinic-service-line-pricing, clinic-payment-action). These overlap root batch; do not add them as unique tests.
+SQL execution is separately evidenced by executor-owned isolated PostgreSQL16 runner, all238 repository migrations and4 suites PASS; no target database accessed.
+S04 two-person ordinary payout is deliberately pending the user business rule. No invented split/global double-payout. Finalized historical slips unchanged.

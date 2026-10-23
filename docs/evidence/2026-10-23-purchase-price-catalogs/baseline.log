@@ -1,0 +1,14 @@
+
+ RUN  v4.1.9 /workspace/kamo-cashier-catalogs
+
+
+ Test Files  8 passed (8)
+      Tests  54 passed (54)
+   Start at  13:22:38
+   Duration  1.39s (transform 692ms, setup 0ms, import 1.20s, tests 661ms, environment 1.02s)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

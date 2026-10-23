@@ -35,9 +35,9 @@ const props={visitId:"visit",requestKey:"request",patient:{photo:null,name:"Fict
   bekal:{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:"2026-10-05",customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1},
   salespeople:[{id:"groomer",nama:"Fiction Groomer",jabatan:"Groomer"}],initialSalespersonId:"groomer"};
 describe("clinic salesperson form",()=>{
-  it("offers eligible staff on a new invoice",()=>{
-    const html=renderToStaticMarkup(React.createElement(PembayaranForm,props));
-    expect(html).toContain('name="salesperson_id"');expect(html).toContain('value="groomer" selected=""');
+  it("shows the authenticated cashier on a new invoice",()=>{
+    const html=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,cashierName:"Kasir Login"}));
+    expect(html).not.toContain('name="salesperson_id"');expect(html).toContain("Kasir Login");
   });
   it("enables new medicine unit choices only after the database capability is available",()=>{
     const unitProps={...props,initialObat:[row],masterObat:master};

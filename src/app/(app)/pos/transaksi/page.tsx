@@ -2,12 +2,13 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { PosClient, type Item, type Cust } from "./PosClient";
-import { daftarPenjual } from "@/lib/penjual";
+import { loadServiceStaff } from "@/lib/service-performers-server";
+import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
 import { readCompleteList } from "@/lib/checked-list";
 
-type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number; target_species: string };
+type CatalogItem = { id: string; code: string; name: string; item_type: string; unit: string; sell_price: number; target_species: string };
 
 export default async function TransaksiPage({
   searchParams,
@@ -17,11 +18,12 @@ export default async function TransaksiPage({
   const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey } = await searchParams;
   const supabase = await createClient();
 
-  const [items, { data: customers }, { data: branches }, salespeople] = await Promise.all([
-    readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, unit, sell_price, target_species", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang POS", { maxRows: null }),
+  const { data: { user } } = await supabase.auth.getUser();
+  const [items, { data: customers }, { data: branches }, allowedBranches] = await Promise.all([
+    readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, item_type, unit, sell_price, target_species", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang POS", { maxRows: null }),
     supabase.from("customers").select("id, name, phone, points, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), pets(id, name, species)").order("name"),
     supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
-    daftarPenjual(supabase, ""),
+    user ? allowedBranchIds(supabase, user.id) : [],
   ]);
 
   // Satuan berjenjang: kasir pilih pcs/box saat menambah ke keranjang.
@@ -30,6 +32,7 @@ export default async function TransaksiPage({
     id: i.id as string,
     code: i.code as string,
     name: i.name as string,
+    item_type: i.item_type,
     sell_price: Number(i.sell_price),
     target_species: i.target_species as string,
     units: unitOptions({ unit: i.unit as string, sell_price: Number(i.sell_price) }, unitMap.get(i.id as string) ?? []),
@@ -60,13 +63,14 @@ export default async function TransaksiPage({
   });
 
   const categoryIds = [...new Set(pelanggan.flatMap(customer => customer.golonganId ? [customer.golonganId] : []))];
-  const [promoEntries, discountEntries, itemInfo] = await Promise.all([
+  const [promoEntries, discountEntries, itemInfo, serviceStaffEntries] = await Promise.all([
     Promise.all((branches ?? []).map(async branch => [branch.id, await loadPromoAktif(supabase, branch.id)] as const)),
     Promise.all(categoryIds.map(async categoryId => [categoryId, await loadAturanDiskon(supabase, categoryId)] as const)),
     loadInfoBarang(supabase, katalog.map(item => item.id)),
+    Promise.all((branches ?? []).filter(branch => canUseBranch(allowedBranches, branch.id))
+      .map(async branch => [branch.id, await loadServiceStaff(supabase, branch.id)] as const)),
   ]);
 
-  const { data: { user } } = await supabase.auth.getUser();
   const { data: openShift } = await supabase
     .from("cashier_shifts").select("id").eq("opened_by", user?.id ?? "").eq("status", "open")
     .eq("shift_type", "petshop").maybeSingle();
@@ -104,7 +108,7 @@ export default async function TransaksiPage({
         items={katalog}
         customers={pelanggan}
         branches={branches ?? []}
-        salespeople={salespeople}
+        serviceStaffByBranch={Object.fromEntries(serviceStaffEntries)}
         hargaPerCabang={hargaPerCabang}
         promoPerCabang={Object.fromEntries(promoEntries)}
         aturanDiskon={Object.fromEntries(discountEntries)}

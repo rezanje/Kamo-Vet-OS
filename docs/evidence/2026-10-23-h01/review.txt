@@ -1,0 +1,7 @@
+Independent reviewer: /root/k08_review (existing Sol6.1 reviewer).
+Initial review: two P2 findings. Form used defaultValue without a key, so dirty A values could survive a query change to hidden ID B. Failure redirects dropped edit/employee context and could turn a retry into creation.
+Three focused assertions reproduced these failures before correction; see review-red.log.
+Final reviewer result (23 October 2026):
+Both P2 findings are resolved. Switching component/create targets resets dirty fields with the target ID; validation and database failures retain the edit target and employee context.
+No remaining P1/P2 findings. Independent verification: 18 tests passed across named-employee-allowances, named-allowance-edit-state and item-name-print-contract.
+No edits, publication, merge, or target actions.

@@ -1,0 +1,17 @@
+Independent reviewer /root/k08_review: No P1/P2 findings.
+Branch prices stay scoped and preserve zero; pagination retains search/branch links and saves only submitted rows.
+Checked stock/reference reads suppress partial context.
+PO selection preserves legacy drafts, retry keys, quantities, units, and prices.
+Independent verification: 35 tests passed across 6 files.
+Actions, RPCs, schema, and access rules are unchanged.
+No edits, publication, merge, or target actions.
+
+Implementer checks:
+Existing baseline: 54 tests / 8 files passed.
+Final focused tests: 89 tests / 14 files passed, exit 0.
+Scoped ESLint: exit 0.
+npm run build: exit 0, existing warnings retained.
+Separate post-build npx tsc --noEmit: exit 0.
+git diff --check: exit 0.
+No transaction action, shared server helper, import, SQL or security source edits.
+No full user simulations, target data writes, migration or main merge.

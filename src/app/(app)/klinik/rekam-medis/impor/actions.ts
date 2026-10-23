@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { readCompleteList } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import {
   bacaWorkbooksRekamMedis,
   bolehKonfirmasiImporRekamMedis,
   jalankanTerbatasImporRekamMedis,
   klarifikasiIdentitasRekamMedis,
+  identitasPersisRekamMedis,
   pilahRiwayatTersimpan,
   type RekamMedisIdentityClarification,
   type RekamMedisImporHeld,
@@ -81,28 +83,23 @@ async function baca(formData: FormData) {
   }))));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadAllImportIdentityRows(supabase: any, table: "customers" | "pets", columns: string) {
-  const rows: Record<string, unknown>[] = [];
-  for (let from = 0; ; from += 1_000) {
-    const { data, error } = await supabase.from(table).select(columns).range(from, from + 999);
-    if (error) throw new Error(error.message);
-    rows.push(...((data ?? []) as Record<string, unknown>[]));
-    if ((data ?? []).length < 1_000) return rows;
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadIdentityClarifications(supabase: any, rows: RekamMedisImporRow[]) {
+async function loadIdentityPlan(supabase: Awaited<ReturnType<typeof createClient>>, rows: RekamMedisImporRow[]) {
+  if (!rows.length) return { clarifications: [], mappings: new Map<string, { customer_id: string; pet_id: string | null }>() };
+  const load = (table: "customers" | "pets", columns: string) => readCompleteList<{ id: string; [field: string]: unknown }>(async (from, to) => {
+    const response = await supabase.from(table).select(columns, { count: "exact" }).order("id").range(from, to);
+    return { ...response, data: response.data as unknown as { id: string; [field: string]: unknown }[] | null };
+  }, "Identitas riwayat medis", { maxRows: null });
   const [ownerRows, petRows] = await Promise.all([
-    loadAllImportIdentityRows(supabase, "customers", "id,name,phone"),
-    loadAllImportIdentityRows(supabase, "pets", "id,customer_id,name"),
+    load("customers", "id,name,phone"), load("pets", "id,customer_id,name"),
   ]);
-  return klarifikasiIdentitasRekamMedis(
-    rows,
-    ownerRows.map((owner) => ({ id: String(owner.id), name: String(owner.name ?? ""), phone: owner.phone ? String(owner.phone) : null })),
-    petRows.map((pet) => ({ id: String(pet.id), customer_id: String(pet.customer_id), name: String(pet.name ?? "") })),
-  );
+  const owners = ownerRows.map(owner => ({ id: owner.id, name: String(owner.name ?? ""), phone: owner.phone ? String(owner.phone) : null }));
+  const pets = petRows.map(pet => ({ id: pet.id, customer_id: String(pet.customer_id), name: String(pet.name ?? "") }));
+  const mappings = new Map<string, { customer_id: string; pet_id: string | null }>();
+  for (const row of rows) {
+    const identity = identitasPersisRekamMedis(row, owners, pets);
+    if (identity) mappings.set(row.source_key, identity);
+  }
+  return { clarifications: klarifikasiIdentitasRekamMedis(rows, owners, pets), mappings };
 }
 
 export type RekamMedisIdentityDecision = { source_key: string; decision: "skip" | { customer_id: string; pet_id: string | null } };
@@ -150,17 +147,6 @@ function resolveIdentityDecisions(clarifications: RekamMedisIdentityClarificatio
   return { mappings, skipped };
 }
 
-function resolveBatchIdentityDecisions(rows: RekamMedisImporRow[], decisions: RekamMedisIdentityDecision[]) {
-  const validSourceKeys = new Set(rows.map((row) => row.source_key));
-  const mappings = new Map<string, Exclude<RekamMedisIdentityDecision["decision"], "skip">>();
-  const skipped = new Set<string>();
-  for (const item of decisions) {
-    if (!validSourceKeys.has(item.source_key)) continue;
-    if (item.decision === "skip") skipped.add(item.source_key);
-    else mappings.set(item.source_key, item.decision);
-  }
-  return { mappings, skipped };
-}
 
 async function validasiMappingBatch(supabase: Awaited<ReturnType<typeof createClient>>, mappings: Map<string, { customer_id: string; pet_id: string | null }>) {
   const pilihan = [...mappings.values()];
@@ -179,6 +165,28 @@ async function validasiMappingBatch(supabase: Awaited<ReturnType<typeof createCl
     if (!customersFound.has(item.customer_id)) throw new Error("Pemilik yang dipilih sudah tidak tersedia. Cek data lagi.");
     if (item.pet_id && petsFound.get(item.pet_id) !== item.customer_id) throw new Error("Anabul yang dipilih tidak cocok dengan pemilik. Cek data lagi.");
   }
+}
+
+async function prepareMedicalDelta(supabase: Awaited<ReturnType<typeof createClient>>, rows: RekamMedisImporRow[], decisions: RekamMedisIdentityDecision[]) {
+  const sourceKeys = new Set(rows.map(row => row.source_key));
+  const skipped = new Set(decisions.filter(item => item.decision === "skip" && sourceKeys.has(item.source_key)).map(item => item.source_key));
+  const selected = rows.filter(row => !skipped.has(row.source_key));
+  const existingKeys: string[] = [];
+  // Bound each URL while also checking complete reads of stored source identities.
+  for (let index = 0; index < selected.length; index += 50) {
+    const keys = selected.slice(index, index + 50).map(row => row.source_key);
+    const existing = await readCompleteList<{ id: string; legacy_source_key: string | null }>((from, to) => supabase
+      .from("visits").select("id,legacy_source_key", { count: "exact" })
+      .in("legacy_source_key", keys).order("id").range(from, to), "Riwayat medis tersimpan", { maxRows: null });
+    existingKeys.push(...existing.flatMap(row => row.legacy_source_key ? [row.legacy_source_key] : []));
+  }
+  const { baru, sudah_ada } = pilahRiwayatTersimpan(selected, existingKeys);
+  const { clarifications, mappings } = await loadIdentityPlan(supabase, baru);
+  const resolved = resolveIdentityDecisions(clarifications, decisions);
+  resolved.skipped = skipped;
+  for (const [source, identity] of mappings) resolved.mappings.set(source, identity);
+  await validasiMappingBatch(supabase, resolved.mappings);
+  return { baru, sudah_ada, resolved, clarifications };
 }
 
 function cleanText(value: unknown, max: number): string | null {
@@ -228,7 +236,7 @@ export async function previewImporRekamMedis(formData: FormData): Promise<RekamM
     await assertBolehImpor();
     const result = await baca(formData);
     const supabase = await createClient();
-    const clarifications = await loadIdentityClarifications(supabase, result.rows);
+    const { clarifications } = await loadIdentityPlan(supabase, result.rows);
     return {
       ok: result.rows.length > 0,
       phase: "preview",
@@ -248,19 +256,8 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
     const supabase = await assertBolehImpor();
     if (String(formData.get("approved") ?? "") !== "true") throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
     const result = await baca(formData);
-    const clarifications = await loadIdentityClarifications(supabase, result.rows);
-    const decisions = resolveIdentityDecisions(clarifications, identityDecisions(formData));
-    const rowsToImport = result.rows.filter((row) => !decisions.skipped.has(row.source_key));
-    if (!bolehKonfirmasiImporRekamMedis(rowsToImport.length, true)) throw new Error("Tidak ada riwayat yang aman untuk diimpor.");
-
-    const { data: existing, error: existingError } = await supabase
-      .from("visits").select("legacy_source_key")
-      .in("legacy_source_key", rowsToImport.map((row) => row.source_key));
-    if (existingError) throw new Error(existingError.message);
-    const { baru, sudah_ada } = pilahRiwayatTersimpan(
-      rowsToImport,
-      (existing ?? []).flatMap((row) => row.legacy_source_key ? [row.legacy_source_key] : []),
-    );
+    if (!bolehKonfirmasiImporRekamMedis(result.rows.length, true)) throw new Error("Tidak ada riwayat yang aman untuk diimpor.");
+    const { baru, sudah_ada, resolved: decisions, clarifications } = await prepareMedicalDelta(supabase, result.rows, identityDecisions(formData));
 
     const importClient = supabase as unknown as ImportRpcClient;
     await jalankanTerbatasImporRekamMedis(baru, BERSAMAAN_SIMPAN, async (row) => {
@@ -309,21 +306,7 @@ export async function simpanBatchImporRekamMedis(
     if (!approved) throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
     const rows = validasiRows(input);
     const decisions = parseIdentityDecisions(decisionsInput);
-    const resolved = resolveBatchIdentityDecisions(rows, decisions);
-    await validasiMappingBatch(supabase, resolved.mappings);
-    const rowsToImport = rows.filter((row) => !resolved.skipped.has(row.source_key));
-    if (!rowsToImport.length) {
-      return { ok: true, message: "Tidak ada riwayat baru di batch ini.", tersimpan: 0, sudah_ada: 0, dilewati: resolved.skipped.size };
-    }
-
-    const { data: existing, error: existingError } = await supabase
-      .from("visits").select("legacy_source_key")
-      .in("legacy_source_key", rowsToImport.map((row) => row.source_key));
-    if (existingError) throw new Error(existingError.message);
-    const { baru, sudah_ada } = pilahRiwayatTersimpan(
-      rowsToImport,
-      (existing ?? []).flatMap((row) => row.legacy_source_key ? [row.legacy_source_key] : []),
-    );
+    const { baru, sudah_ada, resolved } = await prepareMedicalDelta(supabase, rows, decisions);
 
     const importClient = supabase as unknown as ImportRpcClient;
     await jalankanTerbatasImporRekamMedis(baru, BERSAMAAN_SIMPAN, async (row) => {

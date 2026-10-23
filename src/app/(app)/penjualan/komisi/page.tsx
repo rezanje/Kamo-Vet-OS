@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ServiceAttributionTable } from "@/components/ServiceAttributionTable";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -6,6 +7,9 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { komisiPeriode } from "@/lib/komisi-data";
 import { hapusAturanKomisi, simpanAturanKomisi, toggleAturanKomisi } from "./actions";
+import { readCompleteList } from "@/lib/checked-list";
+import { ListLoadFailure } from "@/components/ListPagination";
+import { ItemReferenceField } from "@/components/ItemReferenceField";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const periodeSekarang = () => new Date().toISOString().slice(0, 7);
@@ -34,23 +38,22 @@ export default async function KomisiPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: aturanData }, { data: empData }, { data: cabData }, { data: katData }, { data: itemData }, hitungan] =
-    await Promise.all([
-      supabase.from("commission_rules")
-        .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active")
-        .order("nama"),
-      supabase.from("employees").select("id, nama, jabatan").eq("status", "Aktif").order("nama"),
-      supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("item_categories").select("id, name, parent_id").order("name"),
-      supabase.from("items").select("id, name").eq("is_active", true).order("name"),
+  let loaded;
+  try { loaded = await Promise.all([
+      readCompleteList<Aturan>((from, to) => supabase.from("commission_rules")
+        .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active", { count: "exact" })
+        .order("nama").order("id").range(from, to), "Aturan komisi", { maxRows: null }),
+      readCompleteList<{ id: string; nama: string; jabatan: string | null }>((from, to) => supabase.from("employees")
+        .select("id, nama, jabatan", { count: "exact" }).eq("status", "Aktif").order("nama").order("id").range(from, to), "Karyawan komisi", { maxRows: null }),
+      readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("branches")
+        .select("id, name", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Cabang komisi", { maxRows: null }),
+      readCompleteList<{ id: string; name: string; parent_id: string | null }>((from, to) => supabase.from("item_categories")
+        .select("id, name, parent_id", { count: "exact" }).order("name").order("id").range(from, to), "Kategori komisi", { maxRows: null }),
+      readCompleteList<{ id: string; code: string | null; name: string }>((from, to) => supabase.from("items")
+        .select("id, code, name", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Produk komisi", { maxRows: null }),
       komisiPeriode(supabase, periode),
-    ]);
-
-  const aturan = (aturanData ?? []) as Aturan[];
-  const karyawan = (empData ?? []) as { id: string; nama: string; jabatan: string | null }[];
-  const cabang = (cabData ?? []) as { id: string; name: string }[];
-  const kategori = (katData ?? []) as { id: string; name: string; parent_id: string | null }[];
-  const barang = (itemData ?? []) as { id: string; name: string }[];
+    ]); } catch (loadError) { return <ListLoadFailure error={loadError} label="Referensi komisi" />; }
+  const [aturan, karyawan, cabang, kategori, barang, hitungan] = loaded;
 
   const namaEmp = new Map(karyawan.map((k) => [k.id, k.nama]));
   const namaCab = new Map(cabang.map((c) => [c.id, c.name]));
@@ -165,10 +168,8 @@ export default async function KomisiPage({
               </div>
               <div>
                 <label className="flab">Khusus produk</label>
-                <select className="fi" name="item_id" defaultValue="">
-                  <option value="">— semua produk —</option>
-                  {barang.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </select>
+                <ItemReferenceField name="item_id" ariaLabel="Produk aturan komisi" items={barang.map(item => ({ ...item, code: item.code ?? "" }))} />
+                <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4 }}>Kosongkan untuk semua produk.</div>
               </div>
             </div>
 
@@ -332,6 +333,7 @@ export default async function KomisiPage({
           </table>
         </div>
       </div>
+      <ServiceAttributionTable rows={hitungan.baris ?? []} />
     </MasterPage>
   );
 }

@@ -24,7 +24,7 @@ export function AdvanceForm({userId,suppliers,orders,advances,rekening}:{userId:
    if(!valuationValid)issue="Batas DP PO tidak dapat diverifikasi. Muat ulang dan periksa sumber.";
    else if(!['Draft','Dipesan'].includes(po.status))issue="PO sudah diterima atau tidak aktif; DP baru ditolak.";
    else if(po.supplier_id&&po.supplier_id!==supplierId)issue="Pemasok harus sesuai PO yang dipilih.";
-   else if(remaining.lt(1))issue="Sisa batas DP PO sudah habis untuk pembayaran rupiah bulat.";
+   else if(remaining.lt('0.01'))issue="Sisa batas DP PO sudah habis untuk pembayaran dengan 2 angka desimal.";
   }else if(poId)issue="PO draf tidak tersedia. Pilih PO yang valid; tautan tidak dilepas otomatis.";
  }catch{issue="Batas DP PO tidak dapat diverifikasi. Muat ulang dan periksa sumber.";}
  useEffect(()=>{nominal.current?.setCustomValidity(issue)},[issue]);
@@ -50,7 +50,7 @@ export function AdvanceForm({userId,suppliers,orders,advances,rekening}:{userId:
   {issue&&<p role="alert">{issue}</p>}
   {!poId&&<p style={{fontSize:11,color:"var(--tm)"}}>DP belum terkait PO mengikuti alur pemasok yang sudah ada; tidak dihitung sebagai sisa batas PO tertentu.</p>}
   <div className="frow" style={{flexWrap:"wrap"}}>
-   <div><label className="flab" htmlFor="advance-amount">Nominal (Rp) *</label><input ref={nominal} id="advance-amount" className="fi" name="jumlah" type="number" min={1} step={1} max={po&&valuationValid?remaining.floor().toString():undefined} required/><div style={{fontSize:10}}>Gunakan rupiah bulat agar nominal DP sama dengan jurnal.</div></div>
+   <div><label className="flab" htmlFor="advance-amount">Nominal (Rp) *</label><input ref={nominal} id="advance-amount" className="fi" name="jumlah" type="number" min="0.01" step="0.01" max={po&&valuationValid?remaining.toDecimalPlaces(2,Decimal.ROUND_DOWN).toString():undefined} required/><div style={{fontSize:10}}>Maksimal 2 angka desimal; nominal DP dan jurnal disimpan tanpa pembulatan.</div></div>
    <div><label className="flab" htmlFor="advance-method">Metode</label><select id="advance-method" className="fi" name="metode" defaultValue="Transfer">{METODE_BAYAR.map(method=><option key={method}>{method}</option>)}</select></div>
    <PilihRekening rekening={rekening} label="Dibayar dari" width={170}/>
    <div><label className="flab" htmlFor="advance-note">Catatan</label><input id="advance-note" className="fi" name="catatan" placeholder="opsional"/></div>

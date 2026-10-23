@@ -1,0 +1,17 @@
+
+ RUN  v4.1.9 /workspace/kamo-purchase-price-catalogs
+
+ ❯ src/components/__tests__/po-item-name-display.test.tsx (2 tests | 2 failed) 101ms
+   × chooses a duplicate-name SKU by explicit code/ID, with separate visible name, same quantity/unit/factor and draft key 65ms
+   × renders a recognized legacy draft label as a name without rewriting its stored snapshot or retry identity 35ms
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  13:36:28
+   Duration  787ms (transform 110ms, setup 0ms, import 176ms, tests 101ms, environment 335ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

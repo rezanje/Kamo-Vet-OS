@@ -8,7 +8,7 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-export default async function ResepPage({ params }: { params: Promise<{ visitId: string }> }) {
+export default async function ResepPage({ params, searchParams }: { params: Promise<{ visitId: string }>; searchParams?: Promise<{ record?: string }> }) {
   const { visitId } = await params;
   const supabase = await createClient();
 
@@ -23,13 +23,14 @@ export default async function ResepPage({ params }: { params: Promise<{ visitId:
   const cust = one(visit.customers);
   const branch = one(visit.branches);
 
-  const { data: mr } = await supabase
+  const requestedRecord = (await searchParams)?.record;
+  let recordQuery = supabase
     .from("medical_records")
     .select("id, diagnosis")
-    .eq("visit_id", visitId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq("visit_id", visitId);
+  if (requestedRecord) recordQuery = recordQuery.eq("id", requestedRecord);
+  const { data: mr, error: recordError } = await recordQuery.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (recordError || (requestedRecord && !mr)) notFound();
   const { data: resep } = mr
     ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai").eq("medical_record_id", mr.id).order("created_at")
     : { data: [] as { nama_obat: string; qty: number; satuan: string | null; aturan_pakai: string | null }[] };

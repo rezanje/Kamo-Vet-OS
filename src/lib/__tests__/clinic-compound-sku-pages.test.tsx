@@ -1,3 +1,4 @@
+vi.mock("@/lib/service-performers-server",()=>({loadServiceStaff:async()=>[],loggedInCashier:async()=>({employeeId:null,name:"Kasir Login"})}));
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,9 +7,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   from(table: string) {
     const filters: ((row: Record<string, unknown>) => boolean)[] = [];
-    let from = 0; let to = 999; let counted = false;
+    let from = 0; let to = 999; let counted = false; let fields = "";
     const q = {
-      select(_fields: string, opts?: { count: string }) { counted = opts?.count === "exact"; return q; },
+      select(selectedFields: string, opts?: { count: string }) { fields = selectedFields; counted = opts?.count === "exact"; return q; },
       eq(k: string, v: unknown) { filters.push(r => r[k] === v); return q; },
       neq(k: string, v: unknown) { filters.push(r => r[k] !== v); return q; },
       in(k: string, values: unknown[]) { filters.push(r => values.includes(r[k])); return q; },
@@ -26,7 +27,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       single: async () => ({ data: (fixture.tables[table] ?? [])[0] ?? null, error: null }),
       then(resolve: (v: unknown) => void) {
         const rows = (fixture.tables[table] ?? []).filter(r => filters.every(f => f(r)));
-        return Promise.resolve({ data: fixture.failed === table ? null : rows.slice(from, to + 1), count: counted ? rows.length : null, error: fixture.failed === table ? { message: "secret detail" } : null }).then(resolve);
+        const data = rows.slice(from, to + 1).map(row => table === "items"
+          ? Object.fromEntries(fields.split(",").map(field => [field.trim(), row[field.trim()]])) : row);
+        return Promise.resolve({ data: fixture.failed === table ? null : data, count: counted ? rows.length : null, error: fixture.failed === table ? { message: "secret detail" } : null }).then(resolve);
       },
     };
     return q;
@@ -71,6 +74,14 @@ beforeEach(() => {
 const exam = () => ExamPage({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) });
 const inpatient = () => InpatientPage({ params: Promise.resolve({ id: "inpatient" }) });
 describe("compound master SKUs reach clinic POS", () => {
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s supplies separate code and name for every clinical picker", async (_name, page) => {
+    fixture.tables.items.forEach(row => { row.code = `CODE-${row.id}`; });
+    const props = formProps(await page());
+    expect(props?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "ordinary-549", name: "A ordinary 549", code: "CODE-ordinary-549" })]));
+    expect(props?.jasaItems).toEqual([expect.objectContaining({ id: "service", name: "Jasa", code: "CODE-service" })]);
+    expect(props?.bahanItems).toEqual([expect.objectContaining({ id: "material", name: "Bahan", code: "CODE-material" })]);
+    expect(props?.racikanItems).toEqual([expect.objectContaining({ id: "racik", name: "Obat Racik Sirup Flu", code: "CODE-racik" })]);
+  });
   it("does not reopen the editable initial form for a recorded visit", async () => {
     fixture.tables.visits[0].status = "Pembayaran";
     expect(formProps(await exam())).toBeUndefined();

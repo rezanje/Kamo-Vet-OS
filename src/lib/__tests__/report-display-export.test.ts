@@ -23,3 +23,15 @@ it("exports the applied defaults even after a filter is edited without submittin
   root.querySelector("select")!.selectedIndex = 0;
   expect(displayFilters(root)).toEqual([["Dari", "2026-10-01"], ["Cabang", "Klinik A"]]);
 });
+
+it("exports unrelated hidden cells and omits only explicitly selected-out report columns", () => {
+  const table = document.createElement("table");
+  table.innerHTML = '<tr><th>Nama</th><th>Qty</th><th data-report-column-hidden="true" hidden style="display:none">Rahasia</th></tr><tr><td hidden>Obat</td><td style="display:none">2</td><td data-report-column-hidden="true" hidden>internal</td></tr>';
+  expect(displayTable(table)).toEqual([["Nama", "Qty"], ["Obat", "2"]]);
+});
+
+it("keeps the serialized column setting out of human-readable exported filters", () => {
+  const root = document.createElement("div");
+  root.innerHTML = '<form><input name="bulan" value="2026-10"><input type="hidden" name="kolom" data-report-columns-input value="{&quot;t12345678-1&quot;:[1]}"></form>';
+  expect(displayFilters(root)).toEqual([["bulan", "2026-10"]]);
+});

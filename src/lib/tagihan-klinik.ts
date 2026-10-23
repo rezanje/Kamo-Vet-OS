@@ -1,3 +1,5 @@
+import { aggregateServiceLines } from "./service-line-promos";
+import type { ServicePerformersSnapshot } from "./service-performers";
 // Perakitan baris tagihan klinik dari resep dokter — dipakai layar pembayaran
 // (untuk memperlihatkan perkiraan sebelum ditagih) DAN aksi bayar rombongan
 // (untuk membuat invoicenya).
@@ -22,6 +24,7 @@ export type BarisTagihan = {
   satuan: string | null; prescription_item_id: string; recipe_id: string | null;
   /** Diskon per baris dalam persen (0–100). Meeting 14 Agustus. */
   diskon_persen?: number;
+  service_performers?: ServicePerformersSnapshot | null;
 };
 
 /**
@@ -60,10 +63,10 @@ export async function barisTagihanVisit(
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const { data: resep } = mr
     ? await supabase.from("prescription_items")
-        .select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[] };
+        .select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
 
-  const rows = ((resep ?? []) as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[])
+  const rows = ((resep ?? []) as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[])
     .map((r) => ({
       deskripsi: String(r.nama_obat ?? "").trim(),
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
@@ -76,6 +79,7 @@ export async function barisTagihanVisit(
       satuan: r.satuan ?? null,
       prescription_item_id: r.id,
       recipe_id: r.compound_recipe_id ?? null,
+      ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers:r.service_performers} : {}),
     })).filter((l) => l.deskripsi);
 
   return rows.length ? rows : [{
@@ -132,7 +136,7 @@ export async function perkiraanTagihan(
 // pemakaiannya di rombongan: satu voucher untuk satu kedatangan, potongannya
 // dibagi proporsional ke nota tiap hewan (kesepakatan 2026-08-12).
 
-export type BarisPotongan = { item_id: string | null; qty: number; harga: number };
+export type BarisPotongan = { item_id: string | null; qty: number; harga: number; jenis?: string; satuan?: string | null };
 
 export type Potongan = {
   promo: number;
@@ -162,6 +166,8 @@ export async function hitungPotonganKlinik(
     customerId: string | null;
     rows: BarisPotongan[];
     voucherCode?: string | null;
+    /** False only when replaying a committed invoice without a pricing version. */
+    groupServices?: boolean;
   },
 ): Promise<Potongan> {
   const rows = opts.rows.filter((l) => Number(l.qty) > 0);
@@ -172,9 +178,12 @@ export async function hitungPotonganKlinik(
 
   // Promo otomatis: dari master, per baris, pakai mesin yang sama dengan petshop.
   const promoAktif = opts.branchId ? await loadPromoAktif(supabase, opts.branchId) : [];
-  const potonganPromo = hitungPromoKeranjang(promoAktif, rows.map((l) => ({
-    item_id: l.item_id ?? "", qty: Number(l.qty), harga: Number(l.harga),
-  })));
+  const pricingSource = rows.map(line => ({
+    item_id:line.item_id ?? "", qty:Number(line.qty), harga:Number(line.harga), satuan:line.satuan,
+    item_type:line.jenis === "jasa" && line.item_id ? "Jasa" : "Persediaan",
+  }));
+  const pricingRows = opts.groupServices === false ? pricingSource : aggregateServiceLines(pricingSource);
+  const potonganPromo = hitungPromoKeranjang(promoAktif, pricingRows);
   const promo = potonganPromo.reduce((a, p) => a + Number(p.potongan), 0);
 
   const afterPromo = Math.max(0, subtotal - promo);
@@ -197,7 +206,7 @@ export async function hitungPotonganKlinik(
         loadInfoBarang(supabase, rows.map((l) => l.item_id).filter((x): x is string => !!x)),
       ]);
       golongan = diskonGolonganKeranjang(
-        rows.map((l) => ({ item_id: l.item_id ?? "", qty: Number(l.qty), harga: Number(l.harga) })),
+        pricingRows,
         aturan, Number(kat.diskon_persen), infoBarang,
       );
     }

@@ -1,0 +1,63 @@
+
+ RUN  v4.1.9 /workspace/kamo-report-presets
+
+ ❯ src/components/__tests__/report-presets.test.tsx (8 tests | 5 failed) 141ms
+   × does not claim persistence or delete the displayed preference when server calls fail 12ms
+   × uses server persistence even when legacy browser storage is corrupt, preserving navigation defaults 15ms
+   × reloads the same server configuration with an empty browser store and keeps kolom on month changes 14ms
+   × retries an uncertain response with the same ID and preserves another browser configuration 9ms
+   × offers explicit copying of legacy local configurations without silently uploading or deleting them 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/report-presets.test.tsx > does not claim persistence or delete the displayed preference when server calls fail
+AssertionError: the given combination of arguments (undefined and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ ❯ src/components/__tests__/report-presets.test.tsx:30:58
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  src/components/__tests__/report-presets.test.tsx > uses server persistence even when legacy browser storage is corrupt, preserving navigation defaults
+TypeError: Cannot read properties of undefined (reading 'some')
+ ❯ src/components/__tests__/report-presets.test.tsx:36:149
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  src/components/__tests__/report-presets.test.tsx > reloads the same server configuration with an empty browser store and keeps kolom on month changes
+AssertionError: expected 'Dokter ADokter BKonfigurasi laporan t…' to contain 'Bulanan'
+
+Expected: "Bulanan"
+Received: "Dokter ADokter BKonfigurasi laporan tersimpanPribadi untuk akun ini di browser ini. Filter yang telah ditampilkan disimpan; data laporan dan izin akses tetap mengikuti laporan asal.Simpan konfigurasiBelum ada konfigurasi tersimpan."
+
+ ❯ src/components/__tests__/report-presets.test.tsx:47:27
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  src/components/__tests__/report-presets.test.tsx > retries an uncertain response with the same ID and preserves another browser configuration
+TypeError: Cannot read properties of undefined (reading 'id')
+ ❯ src/components/__tests__/report-presets.test.tsx:50:286
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  src/components/__tests__/report-presets.test.tsx > offers explicit copying of legacy local configurations without silently uploading or deleting them
+AssertionError: expected undefined to be defined
+ ❯ click src/components/__tests__/report-presets.test.tsx:16:138
+
+ ❯ src/components/__tests__/report-presets.test.tsx:53:323
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 3 passed (8)
+   Start at  16:07:49
+   Duration  814ms (transform 104ms, setup 0ms, import 166ms, tests 141ms, environment 332ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

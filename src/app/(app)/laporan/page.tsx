@@ -1,16 +1,20 @@
-import { ModuleHome } from "@/components/ModuleHome";
-import Link from "next/link";
+import { ReportCatalog } from "@/components/ReportCatalog";
+import { buildReportCatalog } from "@/lib/report-catalog";
+import type { AturanTersimpan } from "@/lib/akses";
 import { createClient } from "@/lib/supabase/server";
+import { Suspense } from "react";
+import { ReportPresets } from "@/components/ReportPresets";
 
 export default async function Page() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle() : { data: null };
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if(authError||!user)return <p role="alert">Sesi katalog laporan belum dapat diverifikasi. Masuk ulang.</p>;
+  const {data:profile,error:profileError}=await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle();
+  if(profileError||profile?.is_active!==true)return <p role="alert">Akun aktif untuk katalog laporan belum dapat diverifikasi.</p>;
+  const {data:rules,error:rulesError}=await supabase.from("role_modules").select("role,module_id").eq("role",profile.role);
+  if(rulesError||!Array.isArray(rules))return <p role="alert">Hak akses katalog laporan belum dapat diverifikasi. Muat ulang.</p>;
   return <>
-    {profile?.is_active === true && ["OWNER","FINANCE"].includes(profile?.role ?? "") && <div className="crm-sec" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-      <Link className="btn-def" href="/laporan/nilai-persediaan"><i className="ti ti-package" /> Nilai Persediaan FIFO</Link>
-      <Link className="btn-def" href="/laporan/margin-racikan"><i className="ti ti-flask" /> HPP & Margin Racikan</Link>
-    </div>}
-    <ModuleHome moduleId="laporan" />
+    <Suspense fallback={null}><ReportPresets title="Laporan" directory /></Suspense>
+    <ReportCatalog entries={buildReportCatalog(profile.role,rules as AturanTersimpan)}/>
   </>;
 }

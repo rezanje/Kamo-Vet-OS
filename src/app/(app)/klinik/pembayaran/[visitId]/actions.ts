@@ -3,6 +3,7 @@ import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-p
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { resolveClinicSalesperson } from "@/lib/clinic-payment";
+import type { ServicePerformersInput } from "@/lib/service-performers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -16,7 +17,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
-import { parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
+import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
@@ -26,12 +27,14 @@ type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
   satuan?: string | null; prescription_item_id?: string | null; recipe_id?: string | null;
   diskon_persen?: number;
+  source_invoice_item_id?: string | null;
+  service_performers?: ServicePerformersInput | null;
 };
 
 const uncertainPayment = "Hasil pembayaran belum dapat dipastikan. Periksa invoice yang sudah tersimpan sebelum mencoba lagi dengan permintaan yang sama; jangan menerima pembayaran ulang.";
 const todayIso = () => hariIniWIB();
 
-function barisUntukPosting(rows: Line[]): ClinicInvoiceLineInput[] {
+function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceLineInput[] {
   return rows.map((row) => ({
     description: row.deskripsi,
     qty: row.qty,
@@ -40,8 +43,10 @@ function barisUntukPosting(rows: Line[]): ClinicInvoiceLineInput[] {
     item_id: row.item_id ?? null,
     unit: row.satuan ?? null,
     prescription_item_id: row.prescription_item_id ?? null,
+    ...(inheritInvoice && row.source_invoice_item_id ? {source_invoice_item_id:row.source_invoice_item_id} : {}),
     recipe_id: row.recipe_id ?? null,
     discount_percent: row.diskon_persen ?? 0,
+    ...(row.service_performers != null ? {service_performers:row.service_performers} : {}),
   }));
 }
 
@@ -107,6 +112,21 @@ export async function bayarVisit(formData: FormData) {
     }
   }
 
+  // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
+  const { data: activeInvoice, error: activeInvoiceError } = await supabase
+    .from("invoices")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending, service_pricing_version, salesperson_id")
+    .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+
+  if (activeInvoiceError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat diverifikasi. Muat ulang tanpa membuat pembayaran baru.")}`);
+
+  // A lost create response must replay its sealed request/hash instead of
+  // becoming a correction. Different creation keys keep the normal edit path.
+  const submittedRequestKey = String(formData.get("requestKey") ?? "").trim();
+  const isCreationReplay = !!activeInvoice && activeInvoice.request_key === submittedRequestKey;
+  const existing = isCreationReplay ? null : activeInvoice;
+  const groupedServicePricing = !isCreationReplay || activeInvoice?.service_pricing_version === 1;
+
   let items: Line[] = [];
   try {
     items = JSON.parse(String(formData.get("items") ?? "[]"));
@@ -128,7 +148,9 @@ export async function bayarVisit(formData: FormData) {
       item_id: l.item_id ?? null,
       satuan: l.satuan ?? null,
       prescription_item_id: l.prescription_item_id ?? null,
+      ...(existing && l.source_invoice_item_id ? {source_invoice_item_id:l.source_invoice_item_id} : {}),
       recipe_id: l.recipe_id ?? null,
+      ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:clinicServicePerformerInput(l.jenis, l.service_performers)} : {}),
     }));
 
   if (rows.length === 0) {
@@ -142,19 +164,6 @@ export async function bayarVisit(formData: FormData) {
 
   const { data: v } = await supabase.from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
 
-  // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
-  const { data: activeInvoice, error: activeInvoiceError } = await supabase
-    .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending")
-    .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
-
-  if (activeInvoiceError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat diverifikasi. Muat ulang tanpa membuat pembayaran baru.")}`);
-
-  // A lost create response must replay its sealed request/hash instead of
-  // becoming a correction. Different creation keys keep the normal edit path.
-  const submittedRequestKey = String(formData.get("requestKey") ?? "").trim();
-  const isCreationReplay = !!activeInvoice && activeInvoice.request_key === submittedRequestKey;
-  const existing = isCreationReplay ? null : activeInvoice;
   const rawSplit = formData.get("split_payments");
   let split: ReturnType<typeof parseSplitPaymentDraft> | undefined;
   if (rawSplit !== null) {
@@ -173,8 +182,8 @@ export async function bayarVisit(formData: FormData) {
   const potongan = existing ? { total: 0, tolakVoucher: null } : await hitungPotonganKlinik(supabase, {
     branchId: v?.branch_id ?? null, customerId: v?.customer_id ?? null,
     // Promo & voucher menghitung dari harga yang SUDAH kena diskon baris.
-    rows: rows.map((l) => ({ item_id: l.item_id ?? null, qty: l.qty, harga: hargaNetto(l) })),
-    voucherCode,
+    rows: rows.map((l) => ({ item_id: l.item_id ?? null, qty: l.qty, harga: hargaNetto(l), jenis:l.jenis, satuan:l.satuan })),
+    voucherCode, groupServices:groupedServicePricing,
   });
   if (potongan.tolakVoucher) redirect(`${back}?error=${encodeURIComponent(potongan.tolakVoucher)}`);
 
@@ -233,7 +242,7 @@ export async function bayarVisit(formData: FormData) {
       p_request_key: requestKey,
       p_invoice: { subtotal, discount, tax, total, dp_amount: dpAmount,
         paid_status: paidStatus, metode_bayar: metode, voucher_code: voucherCode, reason },
-      p_lines: barisUntukPosting(rows),
+      p_lines: barisUntukPosting(rows, true),
     });
     if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
     if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);
@@ -244,14 +253,13 @@ export async function bayarVisit(formData: FormData) {
   // ---- jalur CREATE (invoice pertama utk visit ini) ----
   const requestKey = String(formData.get("requestKey") ?? "").trim();
   if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
-  let salespersonId: string | null = null;
-  try {
-    salespersonId = await resolveClinicSalesperson(supabase, v?.branch_id ?? null,
-      v?.doctor_id ?? null, v?.service_provider_id ?? null,
-      formData.has("salesperson_id") ? String(formData.get("salesperson_id") ?? "") : undefined);
-  } catch (error) {
-    redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Penjual tidak valid.")}`);
+  // A replay must retain its sealed attribution even if that employee has since left.
+  const storedSalesperson = activeInvoice?.salesperson_id ?? null;
+  if (isCreationReplay && formData.has("salesperson_id") && (String(formData.get("salesperson_id") ?? "").trim() || null) !== storedSalesperson) {
+    redirect(`${back}?error=${encodeURIComponent("Permintaan transaksi berbeda dari invoice tersimpan. Muat ulang dan periksa invoice yang sama.")}`);
   }
+  const salespersonId = isCreationReplay ? storedSalesperson
+    : await resolveClinicSalesperson(supabase, v?.branch_id ?? null, v?.doctor_id ?? null, v?.service_provider_id ?? null);
   const demoPolicyId = String(formData.get("demo_policy_id") ?? "").trim();
   let demoCustomerFee = 0;
   let demo: {policyId: string;employees: string[]} | undefined;
@@ -279,6 +287,7 @@ export async function bayarVisit(formData: FormData) {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
+      ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows),
   }, payments, demo);
@@ -406,7 +415,8 @@ export async function bayarRombongan(formData: FormData) {
     const rows = await barisTagihanVisit(supabase, b.visitId, String(v.poli ?? "Poli Umum"));
     const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
     const potonganPet = await hitungPotonganKlinik(supabase, {
-      branchId: v.branch_id ?? null, customerId: v.customer_id ?? null, rows,
+      branchId: v.branch_id ?? null, customerId: v.customer_id ?? null,
+      rows:rows.map(line=>({item_id:line.item_id,qty:line.qty,harga:hargaNetto(line),jenis:line.jenis,satuan:line.satuan})),
     });
     const salespersonId = await resolveClinicSalesperson(supabase, v.branch_id ?? null, v.doctor_id ?? null, v.service_provider_id ?? null);
     siap.push({ b, salespersonId, rows, subtotal, potonganNonVoucher: potonganPet.total });
@@ -462,6 +472,7 @@ export async function bayarRombongan(formData: FormData) {
         tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: 0, dp_date: null,
         paid_status: "Lunas", metode_bayar: metode, shift_id: klinikShift.id,
         voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null, salesperson_id: salespersonId,
+        service_pricing_version:1,
       },
       p_lines: barisUntukPosting(rows),
     });

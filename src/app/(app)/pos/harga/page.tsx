@@ -3,52 +3,64 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
-import { loadItemUnits, unitOptions } from "@/lib/satuan";
-import { loadHargaCabang } from "@/lib/harga-cabang";
+import { unitOptions, type ItemUnit } from "@/lib/satuan";
+import { readCompleteList, readListPage } from "@/lib/checked-list";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
 import { simpanHargaJual } from "./actions";
 
-// Daftar barang sengaja dibatasi + ada pencarian: satu cabang bisa punya ribuan
-// SKU, dan form harga yang memuat semuanya bikin halaman berat & rawan salah simpan.
-const LIMIT = 150;
-
 type ItemRow = { id: string; code: string; name: string; unit: string; sell_price: number };
+type PriceRow = { id: string; item_id: string; unit: string; branch_id: string; sell_price?: number };
 
 export default async function HargaJualPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cabang?: string; q?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ cabang?: string; q?: string; hal?: string; error?: string; success?: string }>;
 }) {
-  const { cabang = "", q = "", error, success } = await searchParams;
+  const { cabang = "", q = "", hal, error, success } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const { data: branchRows } = await supabase
-    .from("branches").select("id, code, name").eq("is_active", true).order("code");
-  const branches = (branchRows ?? []) as { id: string; code: string; name: string }[];
-  const branchId = branches.some((b) => b.id === cabang) ? cabang : "";
-
-  let itemQ = supabase
-    .from("items").select("id, code, name, unit, sell_price")
-    .eq("is_active", true).order("name").limit(LIMIT);
-  if (q.trim()) itemQ = itemQ.or(`name.ilike.%${q.trim()}%,code.ilike.%${q.trim()}%`);
-  const { data: itemRows } = await itemQ;
-  const items = (itemRows ?? []) as ItemRow[];
-  const ids = items.map((i) => i.id);
-
-  const [unitMap, hargaMap] = await Promise.all([
-    loadItemUnits(supabase, ids),
-    loadHargaCabang(supabase, branchId || null, ids),
-  ]);
-
-  // Berapa cabang yang harganya beda — supaya kelihatan barang mana yang sudah
-  // "dikecualikan" tanpa harus buka satu per satu cabang.
-  const { data: overrideRows } = ids.length
-    ? await supabase.from("item_branch_prices").select("item_id, unit, branch_id").in("item_id", ids)
-    : { data: [] };
+  let loaded;
+  try {
+    const branches = await readCompleteList<{ id: string; code: string; name: string }>((from, to) => supabase
+      .from("branches").select("id, code, name", { count: "exact" }).eq("is_active", true)
+      .order("code").order("id").range(from, to), "Cabang harga", { maxRows: null });
+    const branchId = branches.some(branch => branch.id === cabang) ? cabang : "";
+    const page = await readListPage<ItemRow>((from, to) => {
+      let query = supabase.from("items").select("id, code, name, unit, sell_price", { count: "exact" }).eq("is_active", true);
+      if (q.trim()) query = query.or(`name.ilike.%${q.trim()}%,code.ilike.%${q.trim()}%`);
+      return query.order("name").order("id").range(from, to);
+    }, "Daftar harga barang", hal);
+    const ids = page.rows.map(item => item.id);
+    const [unitRows, overrideRows] = ids.length ? await Promise.all([
+      readCompleteList<ItemUnit & { id: string; item_id: string }>((from, to) => supabase.from("item_units")
+        .select("id,item_id,unit,factor,sell_price,buy_price", { count: "exact" }).in("item_id", ids)
+        .order("id").range(from, to), "Satuan harga barang", { maxRows: null }),
+      readCompleteList<PriceRow>((from, to) => {
+        // Base view only needs override counts; selected-branch prices stay scoped.
+        if (branchId) return supabase.from("item_branch_prices")
+          .select("id,item_id,unit,branch_id,sell_price", { count: "exact" }).in("item_id", ids).eq("branch_id", branchId)
+          .order("id").range(from, to);
+        return supabase.from("item_branch_prices")
+          .select("id,item_id,unit,branch_id", { count: "exact" }).in("item_id", ids)
+          .order("id").range(from, to);
+      }, "Pengecualian harga cabang", { maxRows: null }),
+    ]) : [[], []];
+    loaded = { branches, branchId, ...page, unitRows, overrideRows };
+  } catch (loadError) { return <ListLoadFailure error={loadError} label="Daftar harga" />; }
+  const { branches, branchId, rows: items, count, pageInfo, unitRows, overrideRows } = loaded;
+  const unitMap = new Map<string, ItemUnit[]>();
+  for (const row of unitRows) {
+    const list = unitMap.get(row.item_id) ?? [];
+    list.push({ unit: row.unit, factor: Number(row.factor), sell_price: Number(row.sell_price), buy_price: Number(row.buy_price) });
+    unitMap.set(row.item_id, list);
+  }
+  const hargaMap = new Map<string, number>();
   const jumlahOverride = new Map<string, number>();
-  for (const r of (overrideRows ?? []) as { item_id: string; unit: string }[]) {
+  for (const r of overrideRows) {
     const k = `${r.item_id}|${r.unit}`;
     jumlahOverride.set(k, (jumlahOverride.get(k) ?? 0) + 1);
+    if (branchId && r.branch_id === branchId) hargaMap.set(k, Number(r.sell_price));
   }
 
   const baris = items.flatMap((it) =>
@@ -103,7 +115,7 @@ export default async function HargaJualPage({
           </div>
           {bolehKelola && baris.length > 0 && (
             <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
-              Simpan harga
+              Simpan harga halaman ini
             </SubmitButton>
           )}
         </div>
@@ -164,11 +176,7 @@ export default async function HargaJualPage({
           </table>
         </div>
 
-        {items.length >= LIMIT && (
-          <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
-            Menampilkan {LIMIT} barang pertama — pakai kolom cari untuk mempersempit.
-          </div>
-        )}
+        <ListPagination path="/pos/harga" query={{ cabang: branchId, q }} total={count} pageInfo={pageInfo} />
 
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
           Harga beli & HPP tidak diatur di sini: HPP tetap dihitung rata-rata dari pembelian yang benar-benar masuk.

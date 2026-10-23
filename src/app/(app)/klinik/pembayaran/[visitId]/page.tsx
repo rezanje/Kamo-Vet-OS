@@ -1,8 +1,9 @@
+import { loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
+import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
-import { daftarPenjual } from "@/lib/penjual";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -84,7 +85,7 @@ export default async function PembayaranPage({
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice, error: invoiceError } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id")
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id, cashier_name, service_pricing_version")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (invoiceError) throw unverifiedBilling();
   const [demoPolicy, demoStaffResult, demoSnapshotResult] = await Promise.all([
@@ -95,8 +96,8 @@ export default async function PembayaranPage({
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
   const { data: invItems, error: itemsError } = invoice
-    ? await supabase.from("invoice_items").select("deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan").eq("invoice_id", invoice.id).order("created_at")
-    : { error: null, data: [] as { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null }[] };
+    ? await supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers").eq("invoice_id", invoice.id).order("created_at")
+    : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
   const { data: paymentRows, error: paymentsError } = invoice
     ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
     : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
@@ -122,8 +123,8 @@ export default async function PembayaranPage({
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
   const { data: resep, error: prescriptionError } = mr
-    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id").eq("medical_record_id", mr.id).order("created_at")
-    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null }[] };
+    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).order("created_at")
+    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
   if (prescriptionError) throw unverifiedBilling();
   // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
   // saat pasien menebus, dan modalnya tidak pernah tercatat.
@@ -131,6 +132,7 @@ export default async function PembayaranPage({
     deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0,
     jenis: r.jenis ?? "obat", item_id: r.item_id ?? null, satuan: r.satuan ?? null,
     prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
+    ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers:r.service_performers} : {}),
   }));
 
   // §6.3: tindakan berisiko wajib punya consent bertanda tangan sebelum boleh ditagih.
@@ -172,7 +174,9 @@ export default async function PembayaranPage({
         deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga),
         jenis: l.jenis ?? "obat", item_id: l.item_id ?? null, satuan: l.satuan ?? null,
         prescription_item_id: l.prescription_item_id ?? null, recipe_id: l.compound_recipe_id ?? null,
+        ...(l.id ? {source_invoice_item_id:l.id} : {}),
         diskon_persen: Number(l.diskon_persen) || 0,
+        ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:l.service_performers} : {}),
       }))
     : prefill;
   // Baris rawat inap jumlah harinya dihitung sistem saat pasien pulang, jadi
@@ -194,12 +198,11 @@ export default async function PembayaranPage({
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
   // terjual tapi persediaan tidak pernah berkurang.
   const { obat: masterObat, jasa: masterJasa, all: master } = await loadClinicPaymentMaster(supabase, visit.branch_id ?? null);
-  const salespeople = visit.branch_id ? await daftarPenjual(supabase, visit.branch_id) : [];
+  const serviceStaff = invoice ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
+  const cashier = invoice ? {name:invoice.cashier_name ?? "Kasir belum tercatat"} : draftUser ? await loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null) : {name:"Akun kasir"};
   // Older databases retain their base-unit-only invoice posting contract.
   const unitCapability = await supabase.rpc("clinic_manual_invoice_units_supported");
   const manualUnitsEnabled = !unitCapability.error && unitCapability.data === true;
-  const eligibleIds = new Set(salespeople.map(person => person.id));
-  const defaultSalespersonId = [visit.doctor_id, visit.service_provider_id].find(id => id && eligibleIds.has(id)) ?? "";
   const { data: invoiceSalesperson } = invoice?.salesperson_id
     ? await supabase.from("employees").select("nama").eq("id",invoice.salesperson_id).maybeSingle()
     : { data: null };
@@ -320,7 +323,8 @@ export default async function PembayaranPage({
             <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}`} />
             <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
             <Field label="Poli" value={visit.poli} />
-            <Field label="Penjual" value={sealedSalespersonName} />
+            <Field label="Penjual historis" value={sealedSalespersonName} />
+            <Field label="Kasir" value={invoice.cashier_name ?? "Kasir belum tercatat"} />
             {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
           </div>
         </div>
@@ -441,6 +445,7 @@ export default async function PembayaranPage({
           initialDpDate={invoice.dp_date}
           initialMetode={invoice.metode_bayar ?? "Tunai"}
           sealedSalespersonName={sealedSalespersonName}
+          cashierName={cashier.name}
           editMode
         />
       ) : invoice ? (
@@ -486,7 +491,7 @@ export default async function PembayaranPage({
               <tbody>
                 {(invItems ?? []).map((l, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{l.deskripsi}</td>
+                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div>}</td>
                     <td style={{ textAlign: "center" }}>{l.qty}</td>
                     <td style={{ textAlign: "right" }}>{rp(l.harga)}</td>
                     <td style={{ textAlign: "center" }}>{Number(l.diskon_persen) > 0 ? `${Number(l.diskon_persen)}%` : "—"}</td>
@@ -537,8 +542,8 @@ export default async function PembayaranPage({
           bekal={bekal}
           demoPolicy={demoPolicy}
           demoStaff={demoStaffResult.data ?? []}
-          salespeople={salespeople}
-          initialSalespersonId={defaultSalespersonId}
+          serviceStaff={serviceStaff}
+          cashierName={cashier.name}
           catatanResep={mr?.catatan_resep ?? null}
         />
       )}
