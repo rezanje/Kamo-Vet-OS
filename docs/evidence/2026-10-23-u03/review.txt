@@ -1,0 +1,2 @@
+Independent reviewer /root/k08_review (Sol 6.1 high): no unresolved P1/P2.
+Final U03 picker/catalog/ID/duplicate/free-text/sealed-recipe review:26tests/5files passed. Separate multiselect markup review:6tests/3files passed. Responsive request layout and merged C01 selectable restrictions followup:18tests/5files passed. No source edits or target calls. Earlier stale fixture expectations (pagination500 and portal queries) were corrected before final gates.
