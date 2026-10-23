@@ -289,3 +289,62 @@ insert into public.activity_log_sources(entity,module_id,label_key,value_keys,sc
  ('sales_refund_payouts','kas-bank',null,'{}','refs',array['return_id'],array['branch_id'],'[]',true,'{}');
 create trigger a01_activity_change after insert or update on public.sales_refund_requests for each row execute function public.capture_activity_log();
 create trigger a01_activity_change after insert or update on public.sales_refund_payouts for each row execute function public.capture_activity_log();
+
+-- Clinical eligibility is read-only. Actual posting must re-read under the
+-- existing visit -> invoice lock order; a browser hash is never authority.
+create function public.clinic_refund_source_core(p_invoice uuid) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+declare i public.invoices%rowtype;branch uuid;customer uuid;reason text;lines jsonb;payments jsonb;journals jsonb;
+ v_snapshot jsonb;line_total numeric;cash_received numeric;paid numeric;paid_count int;initial_count int;payment_count int;r record;
+begin
+ if auth.uid()is null or auth.role()is distinct from 'authenticated'or not exists(select 1 from public.profiles where id=auth.uid()and is_active)then raise exception 'Akses sumber refund klinik ditolak'using errcode='42501';end if;
+ select * into i from public.invoices where id=p_invoice;
+ if not found then raise exception 'Invoice tidak dapat diakses'using errcode='42501';end if;
+ select v.branch_id,v.customer_id into branch,customer from public.visits v where v.id=i.visit_id;
+ if branch is null or not public.user_can_access_branch(branch)then raise exception 'Invoice tidak dapat diakses'using errcode='42501';end if;
+ if i.voided_at is not null or i.correction_pending or i.request_key is null then reason:='Invoice tidak aktif atau bukti penyimpanannya belum lengkap';
+ elsif i.paid_status<>'Lunas'then reason:='Invoice belum lunas';
+ elsif i.reissued_from is not null or exists(select 1 from public.clinic_invoice_operations o where o.invoice_id=i.id or o.result_invoice_id=i.id)then reason:='Invoice sudah dikoreksi atau terbit ulang; rekonsiliasi pembayaran asal diperlukan';
+ elsif exists(select 1 from public.clinic_demo_invoice_snapshots where invoice_id=i.id)then reason:='Invoice memiliki biaya admin atau insentif tersimpan; gunakan rekonsiliasi refund yang mencakup keduanya';
+ elsif i.total<=0 or i.subtotal<=0 or i.total::text in('NaN','Infinity','-Infinity')or i.subtotal::text in('NaN','Infinity','-Infinity')or i.total<>round(i.total,2)or i.total<>i.subtotal-i.discount+i.tax then reason:='Nilai invoice tidak konsisten';
+ end if;
+ if reason is not null then return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason',reason);end if;
+ select coalesce(jsonb_agg(to_jsonb(x)order by x.id),'[]'),round(sum(x.qty*x.harga*(1-coalesce(x.diskon_persen,0)/100)),2)
+ into lines,line_total from public.invoice_items x where x.invoice_id=i.id;
+ if jsonb_array_length(lines)=0 or line_total is distinct from i.subtotal or exists(select 1 from public.invoice_items x where x.invoice_id=i.id and(x.qty<=0 or x.harga<0 or x.harga::text in('NaN','Infinity','-Infinity')or coalesce(x.diskon_persen,0)not between 0 and 100 or x.compound_recipe_id is not null or(x.jenis='obat'and(x.item_id is null or x.faktor is null or x.faktor<=0 or x.hpp is null or x.hpp<0))))then
+  return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason','Rincian invoice atau sumber racikan/obat memerlukan rekonsiliasi');end if;
+ select coalesce(jsonb_agg(to_jsonb(p)order by p.id),'[]'),coalesce(sum(p.amount),0),count(*)
+ into payments,paid,paid_count from public.invoice_payments p where p.invoice_id=i.id;
+ if exists(select 1 from public.invoice_payments p where p.invoice_id=i.id and(p.transferred_from is not null or p.amount<=0 or p.amount<>round(p.amount,2)or p.kas_code is null))then
+  return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason','Bukti pelunasan atau saldo pindahan perlu rekonsiliasi');end if;
+ select count(*)into initial_count from public.journal_entries where source='klinik'and source_ref=i.invoice_no and voided_at is null;
+ select count(*)into payment_count from public.journal_entries where source='klinik-ar'and source_ref=i.invoice_no and voided_at is null;
+ select coalesce(sum(l.debit-l.credit),0)into cash_received from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id
+ where j.source='klinik'and j.source_ref=i.invoice_no and j.voided_at is null and exists(select 1 from public.cash_accounts ca where ca.coa_code=a.code);
+ paid:=paid+cash_received;
+ if initial_count<>1 or payment_count<>paid_count or paid<>i.total or exists(
+  select 1 from public.journal_entries j left join public.journal_lines l on l.entry_id=j.id where j.source in('klinik','klinik-ar')and j.source_ref=i.invoice_no and j.voided_at is null group by j.id having count(l.id)<2 or sum(l.debit-l.credit)<>0)
+  or (select coalesce(sum(l.credit-l.debit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='4201')<>i.subtotal
+  or (select coalesce(sum(l.debit-l.credit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='4102')<>i.discount
+  or (select coalesce(sum(l.credit-l.debit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='2201')<>i.tax
+  or (select coalesce(sum(l.credit-l.debit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik-ar'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='1201')<>paid-cash_received then
+  return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason','Pembayaran atau jurnal sumber belum direkonsiliasi');end if;
+ for r in select item_id,sum(qty*faktor)base_qty,sum(hpp)cost from public.invoice_items where invoice_id=i.id and jenis='obat'group by item_id loop
+  if (select -sum(qty)from public.stock_moves where source='klinik'and source_ref=i.invoice_no and item_id=r.item_id)is distinct from r.base_qty
+   or (select round(-sum(qty*unit_cost),2)from public.stock_moves where source='klinik'and source_ref=i.invoice_no and item_id=r.item_id)is distinct from r.cost
+   or (select count(distinct warehouse_id)from public.stock_moves where source='klinik'and source_ref=i.invoice_no and item_id=r.item_id)<>1 then
+   reason:='Bukti pengeluaran stok obat tidak cocok dengan invoice';exit;end if;
+ end loop;
+ if reason is not null then return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason',reason);end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',j.id,'source',j.source,'lines',(select jsonb_agg(to_jsonb(l)order by l.id)from public.journal_lines l where l.entry_id=j.id))order by j.id),'[]')into journals
+ from public.journal_entries j where j.source in('klinik','klinik-ar','klinik-hpp')and j.source_ref=i.invoice_no and j.voided_at is null;
+ v_snapshot:=jsonb_build_object('invoice',to_jsonb(i),'lines',lines,'payments',payments,'journals',journals,'branch_id',branch,'customer_id',customer);
+ return jsonb_build_object('invoice_id',i.id,'visit_id',i.visit_id,'branch_id',branch,'invoice_no',i.invoice_no,'eligible',true,'total',i.total,'paid_total',paid,'source_hash',md5(v_snapshot::text),
+ 'lines',(select jsonb_agg(jsonb_build_object('id',x.id,'item_id',x.item_id,'name',x.deskripsi,'kind',x.jenis,'qty',x.qty,'unit',x.satuan,'factor',x.faktor,'price',x.harga,'discount_percent',x.diskon_persen)order by x.id)from public.invoice_items x where x.invoice_id=i.id),'internal_snapshot',v_snapshot);
+end$$;
+revoke all on function public.clinic_refund_source_core(uuid)from public,anon,authenticated,service_role;
+create function public.preview_clinic_refund_source(p_invoice uuid)returns jsonb language sql stable security definer set search_path=''as $$
+ select public.clinic_refund_source_core(p_invoice)-'internal_snapshot'
+$$;
+revoke all on function public.preview_clinic_refund_source(uuid)from public,anon,service_role;
+grant execute on function public.preview_clinic_refund_source(uuid)to authenticated;
