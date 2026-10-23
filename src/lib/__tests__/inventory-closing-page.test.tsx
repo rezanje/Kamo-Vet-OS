@@ -24,3 +24,18 @@ it("surfaces a snapshot read error without rendering mutation forms", async () =
   expect(html).toContain("belum bisa dibaca lengkap");
   expect(html).not.toContain("Aktifkan rata-rata bergerak");
 });
+
+it('shows branch subtotals from the selected historical snapshot and preserves filters in paging', async () => {
+ const values = Array.from({length: 101},(_,index) => ({close_id:'c1',warehouse_id:'w1',item_id:'i'+index,qty:1,average_cost:2,value:2}));
+ fixture.client = clientFixture({ tables: {
+  warehouses:[{id:'w1',branch_id:'b1',name:'Historis'}],
+  inventory_month_closes:[{id:'c1',period:'2026-09-01',closed_through:'2026-09-30',closed_at:'2026-10-01T00:00:00Z'}],
+  inventory_month_values:values,
+  items:values.map(v => ({id:v.item_id,code:v.item_id,name:'Obat lama',unit:'ml'})),
+ }}).client;
+ const html = renderToStaticMarkup(await ClosingPage({searchParams:Promise.resolve({snapshot:'c1',cabang:['b1']})}));
+ expect(html).toContain('RINGKASAN PER CABANG'); expect(html).toContain('Rp 202,00');
+ expect(html).toContain('name="cabang" value="b1"');
+ expect(html).toContain('snapshot=c1&amp;cabang=b1&amp;halaman=2');
+ expect(html).toContain('tanggal lain');
+});
