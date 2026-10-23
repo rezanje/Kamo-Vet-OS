@@ -2,7 +2,7 @@
 // open their exact stored row within the invoice instead of inventing one.
 export type DocumentKind = 'purchase-return' | 'legacy-purchase-payment' | 'purchase-order' | 'goods-receipt' | 'purchase-invoice' | 'purchase-payment' | 'purchase-advance' | 'payment-order' | 'sales-invoice' | 'sales-receipt' | 'sales-advance';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const RETURN_PATH = /^\/(?:pembelian\/(?:faktur\/|penerimaan\/)?|penjualan\/faktur\/)([0-9a-f-]+)(?:#(?:payment|receipt|legacy-payment)-([0-9a-f-]+))?$/i;
+const RETURN_PATH = /^\/(?:pembelian\/(?:faktur\/|penerimaan\/|retur\/)?|penjualan\/(?:faktur\/|retur\/)?)([0-9a-f-]+)(?:#(?:payment|receipt|legacy-payment)-([0-9a-f-]+))?$/i;
 export function documentBackHref(input: unknown): string | null {
   if (typeof input !== 'string' || input.trim() !== input) return null;
   const match = input.match(RETURN_PATH);
