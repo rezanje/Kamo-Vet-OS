@@ -37,9 +37,9 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   ]);
 
   const masterRows = await readCompleteList<{
-    id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string; category_id: string | null; tindakan_kategori: string | null;
+    id: string; code: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string; category_id: string | null; tindakan_kategori: string | null;
   }>((from, to) => supabase
-    .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, category_id, tindakan_kategori", { count: "exact" })
+    .from("items").select("id, code, name, unit, sell_price, is_compound_material, item_type, category_id, tindakan_kategori", { count: "exact" })
     .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
   const categories = await loadClinicItemCategories(supabase);
   const compoundRows = await loadClinicCompoundSkus(supabase, categories);
