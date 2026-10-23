@@ -1,3 +1,4 @@
+import {PosDecimal} from "@/lib/pos-money";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DocumentBackLink, RelatedDocuments, type RelatedDocument } from "@/components/RelatedDocuments";
 import { loadUnitOptions } from "@/lib/satuan";
@@ -6,6 +7,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
+import {POPriceCorrectionForm} from "./POPriceCorrectionForm";
 import { POShortCloseForm } from "./POShortCloseForm";
 import type { ReceiptClosure } from "@/lib/purchase-short-close";
 import { POEditForm, POCancelForm } from "./POCorrectionForm";
@@ -35,7 +37,7 @@ type PO = {
   goods_receipts?: { id: string; no_terima: string; tanggal: string }[] | null;
   po_payments?: { id: string; tanggal: string; amount: number; metode: string }[] | null;
   purchase_returns?: { id: string; no_retur: string; voided_at: string | null }[] | null;
-  purchase_advances?: { id: string; no_um: string; status: string }[] | null;
+  purchase_advances?: { id: string; no_um: string; status: string; jumlah: number; terpakai: number }[] | null;
   purchase_order_items: {
     id: string; item_id: string | null; nama: string; qty: number; satuan: string | null; faktor: number;
     qty_terima: number | null; qty_rusak?: number | null; harga_beli: number;
@@ -53,7 +55,7 @@ export default async function PODetailPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, qty_rusak, harga_beli), goods_receipts(id,no_terima,tanggal), po_payments(id,tanggal,amount,metode), purchase_returns(id,no_retur,voided_at), purchase_advances(id,no_um,status)").eq("id", id).maybeSingle();
+  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, qty_rusak, harga_beli), goods_receipts(id,no_terima,tanggal), po_payments(id,tanggal,amount,metode), purchase_returns(id,no_retur,voided_at), purchase_advances(id,no_um,status,jumlah,terpakai)").eq("id", id).maybeSingle();
   const po = data as unknown as (PO & { branch_id: string }) | null;
   if (poError) throw new Error("PO dan transaksi terkait belum dapat dimuat. Coba muat ulang.");
   if (!po) notFound();
@@ -73,6 +75,8 @@ export default async function PODetailPage({
   const hasChildren = items.some(item => Number(item.qty_terima) > 0) || (po.goods_receipts?.length ?? 0) > 0
     || (po.po_payments?.length ?? 0) > 0 || (po.purchase_returns?.length ?? 0) > 0 || (po.purchase_advances?.length ?? 0) > 0 || (invoices?.length ?? 0) > 0;
   const editable = owner && !invoiceError && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
+  const priceEditable=owner&&!invoiceError&&!closureError&&!closure&&!editable&&!!po.purchase_advances?.length&&items.length>0&&items.length<=1000&&(po.status==='Draft'||po.status==='Dipesan')&&!items.some(row=>Number(row.qty_terima??0)!==0||Number(row.qty_rusak??0)!==0)&&!po.goods_receipts?.length&&!po.po_payments?.length&&!po.purchase_returns?.length&&!invoices?.length;
+  const activeAdvances=(po.purchase_advances??[]).filter(a=>a.status==='aktif').reduce((sum,a)=>sum.plus(Number(a.jumlah)),new PosDecimal(0)).toNumber();
   const units = editable ? Object.fromEntries(await loadUnitOptions(supabase, items.flatMap(item => item.item_id ? [item.item_id] : []), { includeInactive: true })) : {};
 
   const related: RelatedDocument[] = [
@@ -94,8 +98,9 @@ export default async function PODetailPage({
           <span style={{ fontSize: 13, fontWeight: 500 }}>{po.no_po ?? "Purchase Order"}</span>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {priceEditable && <a href="#edit-po-prices" className="btn-def">Koreksi harga PO</a>}
         {editable && <><a href="#edit-po" className="btn-def">Edit PO</a><a href="#cancel-po" className="btn-def" style={{ color: "#b91c1c" }}>Batalkan PO</a></>}
-        {owner && (hasChildren || po.status === "Diterima") && <a href="#purchase-correction" className="btn-def">Koreksi pembelian</a>}
+        {owner && ((hasChildren && !priceEditable) || po.status === "Diterima") && <a href="#purchase-correction" className="btn-def">Koreksi pembelian</a>}
         {po.status !== "Diterima" && po.status !== "Batal" && (
           <Link href={`/pembelian/${po.id}/terima`} className="btn-acc" style={{ textDecoration: "none" }}>
             <i className="ti ti-package-import" /> Terima barang
@@ -179,6 +184,11 @@ export default async function PODetailPage({
         </>}
       </section>}
 
+      {priceEditable&&user&&<section className="crm-sec" id="edit-po-prices">
+        <SecHeader num="02" title="KOREKSI HARGA PO" desc="Koreksi harga sebelum penerimaan atau faktur, dengan DP tetap tersimpan."/>
+        <POPriceCorrectionForm userId={user.id} poId={po.id} revision={po.revision} rows={items} originalTotal={Number(po.total)} activeAdvances={activeAdvances}/>
+      </section>}
+
       {editable && user && (
         <div className="crm-sec" id="edit-po">
           <SecHeader num="02" title="KOREKSI PO" desc="Hanya Super Admin yang dapat mengubah atau membatalkan PO sebelum ada transaksi turunan." />
@@ -189,7 +199,7 @@ export default async function PODetailPage({
         </div>
       )}
 
-      {(hasChildren || po.status === "Diterima" || invoiceError) && <div className="crm-sec" id="purchase-correction">
+      {((hasChildren && !priceEditable) || po.status === "Diterima" || invoiceError) && <div className="crm-sec" id="purchase-correction">
         <SecHeader num="02" title="KOREKSI PEMBELIAN" desc="PO dengan transaksi turunan mempertahankan riwayat penerimaan, stok, dan pembukuan." />
         <p style={{ fontSize: 11, color: "var(--tm)" }}>PO ini sudah memiliki transaksi turunan. Koreksi harga beli atau HPP melalui faktur pembelian. Untuk kesalahan jumlah atau satuan barang yang sudah diterima, periksa penerimaan dan stok bersama Super Admin sebelum membuat retur atau PO baru.</p>
         {invoiceError ? <p role="alert" className="p2ban">Faktur terkait belum dapat dimuat. Muat ulang sebelum mengoreksi pembelian.</p> : (invoices ?? []).length > 0 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
