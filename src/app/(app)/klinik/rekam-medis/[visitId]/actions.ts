@@ -59,6 +59,7 @@ export async function simpanRekamMedis(formData: FormData) {
   const gejala_klinis = String(formData.get("gejala_klinis") ?? "") || null;
   const hasil_penunjang = String(formData.get("hasil_penunjang") ?? "") || null;
   const diagnosis = String(formData.get("diagnosis") ?? "") || null;
+  const therapy = String(formData.get("therapy") ?? "").trim() || null;
   // Ringkasan teks tetap diisi utk dokumen rekam medis cetak (kolom lama).
   const followUps = parseFollowUps(formData.get("follow_ups"));
   const follow_up = followUps.length
@@ -161,7 +162,7 @@ export async function simpanRekamMedis(formData: FormData) {
     p_visit_id: visitId,
     p_pet_id: petId,
     p_record: {
-      diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang,
+      diagnosis, ...(therapy ? { therapy } : {}), anamnesis, suhu, berat, gejala_klinis, hasil_penunjang,
       follow_up, catatan_resep, penunjang_urls: penunjangUrls,
     },
     p_followups: followUps,

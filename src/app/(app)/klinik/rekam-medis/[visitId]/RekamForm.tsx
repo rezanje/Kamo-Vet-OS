@@ -237,6 +237,9 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
           <ExamField icon="ti-stethoscope" color="var(--posb)" label="Diagnosa">
             <textarea className="fi" name="diagnosis" rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />
           </ExamField>
+          <ExamField icon="ti-clipboard-text" color="var(--posb)" label="Terapi / tindakan">
+            <textarea className="fi" name="therapy" aria-label="Terapi / tindakan" rows={3} maxLength={4000} placeholder="Catatan terapi / tindakan (opsional)" style={{ resize: "vertical" }} />
+          </ExamField>
         </div>
 
         {/* ================= KANAN: POS obat & jasa ================= */}

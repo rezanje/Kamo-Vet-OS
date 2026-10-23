@@ -67,8 +67,11 @@ export default async function RacikDetailPage({
 
   return (
     <>
-      <div style={{ marginBottom: 4 }}>
+      <div style={{ marginBottom: 4, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <Link href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</Link>
+        {visit && mr && <Link href={`/klinik/rekam-medis/${visit.id}/resep?record=${encodeURIComponent(mr.id)}`} className="btn-def" style={{ textDecoration: "none" }}>
+          <i className="ti ti-printer" /> Cetak resep kunjungan
+        </Link>}
       </div>
 
       {/* Judul besar (referensi) */}
@@ -128,7 +131,7 @@ export default async function RacikDetailPage({
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
-              <tr><th style={{ width: 30 }}>No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Aturan Pakai</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Petunjuk Racik</th></tr>
+              <tr><th style={{ width: 30 }}>No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Petunjuk pemakaian</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Petunjuk Racik</th></tr>
             </thead>
             <tbody>
               {recipes.map((rc, ri) => {

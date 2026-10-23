@@ -86,3 +86,12 @@ it.each(["exam", "inpatient"])("%s searches only finished compounds and designat
   await search("Cari bahan racikan", "Makanan");
   expect(host.querySelector('button[aria-label="Pilih bahan Makanan kucing"]')).toBeNull();
 });
+
+it('places optional therapy below diagnosis and restores the note without adding billable items',async()=>{
+  await render('exam');
+  const note=host.querySelector<HTMLTextAreaElement>('textarea[name="therapy"]');expect(note).not.toBeNull();expect(note!.required).toBe(false);
+  const fields=[...host.querySelectorAll('textarea')];expect(fields.indexOf(note!)).toBe(fields.findIndex(field=>field.name==='diagnosis')+1);
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(note,'Terapi fiktif\nObservasi');note!.dispatchEvent(new Event('input',{bubbles:true}));});
+  await act(async()=>root.unmount());root=createRoot(host);await render('exam');
+  expect(host.querySelector<HTMLTextAreaElement>('[name=therapy]')!.value).toBe('Terapi fiktif\nObservasi');expect(cart()).toEqual([]);
+});

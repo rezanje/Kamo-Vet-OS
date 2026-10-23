@@ -71,7 +71,7 @@ export default async function RekamMedisPage({
   const providerOpsi = recorded ? [] : performersForService(await daftarDokter(supabase,{branchId:visit.branch_id}),visit.poli);
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
-  let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
+  let record: { diagnosis: string | null; therapy: string | null; anamnesis: string | null } | null = null;
   let mrId: string | null = null;
   let mrLoadFailed = false;
   let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
@@ -79,7 +79,7 @@ export default async function RekamMedisPage({
   if (recorded) {
     const { data: mr, error: mrError } = await supabase
       .from("medical_records")
-      .select("id, diagnosis, anamnesis")
+      .select("id, diagnosis, therapy, anamnesis")
       .eq("visit_id", visitId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -362,6 +362,7 @@ export default async function RekamMedisPage({
               <div className="card-hd"><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</div>
               <ReadField label="Anamnesis / catatan klinis" value={record?.anamnesis} />
               <ReadField label="Diagnosa" value={record?.diagnosis} />
+              <ReadField label="Terapi / tindakan" value={record?.therapy} />
             </div>
             <div className="card">
               <div className="card-hd" style={{ justifyContent: "space-between" }}>
