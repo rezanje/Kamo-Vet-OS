@@ -3,12 +3,13 @@
 // Item dipilih dari master SKU (sama pola dgn POForm), bukan diketik bebas:
 // tanpa item_id stok tidak bisa dipotong/ditambah saat barang diterima.
 
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import { draftRows } from "@/components/TransactionDraft";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { pickUnit } from "@/lib/satuan";
-import { cariKatalogPermintaan, type KatalogItem } from "@/lib/permintaan";
+import { type KatalogItem } from "@/lib/permintaan";
 import { buatPermintaan } from "../actions";
 
 type Branch = { id: string; name: string };
@@ -36,7 +37,7 @@ export function PermintaanForm({
     set(i, {
       item_id: id,
       satuan: it?.units[0]?.unit ?? "",
-      cari: it ? `${it.code ? `${it.code} — ` : ""}${it.name}` : "",
+      cari: it?.name ?? "",
     });
   };
 
@@ -52,8 +53,8 @@ export function PermintaanForm({
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
 
-      <div className="grid2">
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
+      <div className="grid2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))" }}>
+        <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
           <SecHeader num="01" title="DETAIL PERMINTAAN" desc="Cabang peminta & gudang tujuan." />
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Dari cabang *</label>
@@ -76,7 +77,7 @@ export function PermintaanForm({
           </div>
         </div>
 
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
+        <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
           <SecHeader num="02" title="DAFTAR BARANG" desc="Pilih barang dari master SKU, jumlah & satuannya."
             action={
               <button type="button" onClick={add} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
@@ -88,25 +89,15 @@ export function PermintaanForm({
             {rows.map((r, i) => {
               const it = byId.get(r.item_id);
               const opts = it?.units ?? [];
-              const visibleItems = cariKatalogPermintaan(items, r.cari, r.item_id);
               const faktor = it ? pickUnit(opts, r.satuan).factor : 1;
               const dasar = opts[0]?.unit;
               return (
                 <div key={i}>
-                  <input
-                    className="fi"
-                    value={r.cari}
-                    placeholder="Ketik kode atau nama barang…"
-                    onChange={(event) => set(i, { cari: event.target.value, item_id: "", satuan: "" })}
-                    style={{ marginBottom: 5 }}
-                  />
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <select className="fi" value={r.item_id} onChange={(e) => setItem(i, e.target.value)} style={{ flex: 2 }}>
-                      <option value="">{r.cari ? "Pilih hasil pencarian…" : "Pilih barang…"}</option>
-                      {visibleItems.map((m) => (
-                        <option key={m.id} value={m.id}>{m.code ? `${m.code} — ` : ""}{m.name}</option>
-                      ))}
-                    </select>
+                  <div style={{ marginBottom: 5 }}><SearchableItemPicker items={items} value={r.item_id}
+                    ariaLabel={`Barang permintaan POS ${i + 1}`}
+                    textValue={it && r.cari === `${it.code ? `${it.code} — ` : ""}${it.name}` ? it.name : r.cari}
+                    onTextChange={text => set(i, { cari: text, item_id: "", satuan: "" })} onChange={id => setItem(i, id)} /></div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                     <input className="fi" type="number" min={0} step="any" value={r.qty_diminta}
                       onChange={(e) => set(i, { qty_diminta: Number(e.target.value) })}
                       style={{ width: 70 }} title="Qty diminta" />
