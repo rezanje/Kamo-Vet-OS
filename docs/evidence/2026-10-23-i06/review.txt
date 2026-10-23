@@ -1,0 +1,5 @@
+Independent read-only review by /root/k08_review (Sol 6.1 high).
+Final saved-diff conclusion: no remaining P1/P2.
+Corrected findings: helper privilege boundary; partial OPR identity/link retention; narrow FIFO qty_left exemption prevents parent/stock lock inversion.
+First invoice linking and pre-effect compensation allowed. Invoker proof fence retained.
+Reviewer did not edit or access target; author ran final PostgreSQL/full/build/type/lint gates separately.

@@ -1,0 +1,14 @@
+Applied 233 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-i06/scripts/test-opname-cancel-postgres.py", line 13, in <module>
+    db.sql(prefix+(ROOT/'supabase/tests/opname_draft_cancel.sql').read_text())
+  File "/workspace/kamo-i06/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  permission denied for function opname_draft_block_reason
+CONTEXT:  PL/pgSQL function public.guard_opname_cancellation() line 22 at assignment
+SQL statement "update opname_orders set no_opname='OPO.I06.RENAMED' where id=md5('i06-locked')::uuid"
+PL/pgSQL function inline_code_block line 2 at SQL statement
+
+e1100000-0000-4000-8000-000000000001
+{"role":"authenticated"}

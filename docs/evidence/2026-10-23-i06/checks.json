@@ -1,0 +1,37 @@
+{
+  "base_main": "4a14ca914db85ac49ba32f04eabe774066d33815",
+  "branch": "codex/i06-cancel-opname-draft-20261023",
+  "scope": "I06 genuine draft cancellation only",
+  "focused": {
+    "files": 3,
+    "tests": 18,
+    "exit": 0
+  },
+  "full_vitest": {
+    "files": 334,
+    "tests": 2586,
+    "exit": 0
+  },
+  "postgres": {
+    "repository_migrations_applied_locally": 233,
+    "sql_fixture": "opname_draft_cancel.sql",
+    "two_session_races": 2,
+    "exit": 0,
+    "target_access": false
+  },
+  "typecheck": {
+    "exit": 0
+  },
+  "scoped_lint": {
+    "exit": 0
+  },
+  "build": {
+    "exit": 0,
+    "warnings": "Existing Supabase Edge Node API and existing img warnings; no failing build gate."
+  },
+  "independent_review": "No remaining P1/P2 after three corrections.",
+  "migration": "20261023021400_opname_draft_cancellation.sql",
+  "deployed": false,
+  "target_migration_applied": false,
+  "uat": "Pending; SSR/action and isolated SQL fixtures only."
+}

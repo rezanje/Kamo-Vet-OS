@@ -1,0 +1,103 @@
+-- Prefix is the existing POS fictional fixture, supplied by owned runner.
+update profiles set role='OWNER' where id='e1100000-0000-4000-8000-000000000001';
+insert into opname_orders(id,no_opname,warehouse_id,penanggung_jawab,status)
+select md5('i06-'||name)::uuid,'OPO.I06.'||upper(name),'e3300000-0000-4000-8000-000000000001','Fictional counter',case when name='posted' then 'Selesai'::opname_status else 'Terbuka'::opname_status end
+from unnest(array['draft','locked','result','posted','effect','layer','journal','partial','cashier','rollback']) name;
+insert into opname_order_items(order_id,item_id) values(md5('i06-draft')::uuid,'e5500000-0000-4000-8000-000000000001');
+insert into opname_counts(order_id,item_id,qty_fisik,qty_sistem) values(md5('i06-locked')::uuid,'e5500000-0000-4000-8000-000000000001',1,1);
+insert into opname_results(order_id,no_hasil) values(md5('i06-result')::uuid,'OPR.I06.RESULT');
+insert into stock_moves(warehouse_id,item_id,tanggal,qty,unit_cost,source,source_ref) values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',current_date,1,1,'opname','OPO.I06.EFFECT');
+insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source,source_ref) values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',current_date,1,1,1,'opname','OPO.I06.LAYER');
+insert into journal_entries(no_jurnal,tanggal,deskripsi,source,source_ref,branch_id) values('I06.JOURNAL',current_date,'Fictional persisted effect','opname','OPO.I06.JOURNAL','e2200000-0000-4000-8000-000000000001');
+insert into opname_results(order_id,no_hasil) values(md5('i06-partial')::uuid,'OPR.I06.PARTIAL');
+insert into stock_moves(warehouse_id,item_id,tanggal,qty,unit_cost,source,source_ref) values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',current_date,1,1,'opname','OPR.I06.PARTIAL');
+update stock_layers set qty_left=qty_left-0.25 where source_ref='OPO.I06.LAYER';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"role":"authenticated"}',true);
+select pg_temp.reject($q$delete from opname_orders where id=md5('i06-draft')::uuid$q$,'application deletion must retain draft history');
+select pg_temp.reject($q$select cancel_opname_draft(md5('i06-draft')::uuid,' ')$q$,'reason is required');
+do $$declare name text;failed boolean;begin
+ foreach name in array array['locked','result','posted','effect','layer','journal','partial'] loop
+  failed:=false;
+  begin perform cancel_opname_draft(md5('i06-'||name)::uuid,'Fictional cancelled plan');
+  exception when raise_exception then if sqlerrm not like 'OPNAME_NOT_DRAFT:%' then raise;end if;failed:=true;end;
+  if not failed then raise exception 'Protected opname accepted cancellation: %',name;end if;
+ end loop;
+end$$;
+do $$declare denied boolean:=false;begin
+ begin update opname_orders set no_opname='OPO.I06.RENAMED' where id=md5('i06-locked')::uuid;
+ exception when raise_exception then if sqlerrm not like 'Identitas opname%' then raise;end if;denied:=true;end;
+ if not denied then raise exception 'Locked identity changed';end if;
+end$$;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
+select pg_temp.reject($q$select cancel_opname_draft(md5('i06-draft')::uuid,'Foreign branch spoof')$q$,'foreign branch denied');
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select set_config('kamo.opname_cancel',md5('i06-draft')::uuid::text,true);
+select pg_temp.reject($q$update opname_orders set status='Batal' where id=md5('i06-draft')::uuid$q$,'direct status spoof denied');
+do $$declare n bigint;financial jsonb;begin
+ select count(*) into n from activity_log where row_entity='opname_orders' and row_id=md5('i06-draft')::uuid::text;
+ financial:=jsonb_build_array((select count(*) from stock_moves),(select count(*) from stock_layers),(select count(*) from journal_entries),(select count(*) from sales_invoices));
+ perform cancel_opname_draft(md5('i06-draft')::uuid,'Fictional abandoned count');
+ perform cancel_opname_draft(md5('i06-draft')::uuid,'Retry must not replace reason');
+ if not exists(select 1 from opname_orders where id=md5('i06-draft')::uuid and status::text='Batal' and cancelled_by=auth.uid() and cancelled_at is not null and cancel_reason='Fictional abandoned count') then raise exception 'Cancellation actor/time/reason not retained';end if;
+ if (select count(*) from activity_log where row_entity='opname_orders' and row_id=md5('i06-draft')::uuid::text)<>n+1 then raise exception 'Cancellation retry duplicated audit';end if;
+ if not exists(select 1 from activity_log where row_entity='opname_orders' and row_id=md5('i06-draft')::uuid::text and actor_id=auth.uid() and after_state->>'status'='Batal') then raise exception 'Cancellation audit actor/status missing';end if;
+ if financial<>jsonb_build_array((select count(*) from stock_moves),(select count(*) from stock_layers),(select count(*) from journal_entries),(select count(*) from sales_invoices)) then raise exception 'Cancellation changed inventory/finance';end if;
+ if not exists(select 1 from opname_order_items where order_id=md5('i06-draft')::uuid) then raise exception 'Scope history deleted';end if;
+end$$;
+select pg_temp.reject($q$update opname_orders set status='Terbuka' where id=md5('i06-draft')::uuid$q$,'cancelled order cannot reopen');
+select pg_temp.reject($q$update opname_orders set cancel_reason='Changed' where id=md5('i06-draft')::uuid$q$,'cancel evidence immutable');
+select pg_temp.reject($q$insert into opname_counts(order_id,item_id) values(md5('i06-draft')::uuid,'e5500000-0000-4000-8000-000000000001')$q$,'stale count blocked');
+select pg_temp.reject($q$insert into opname_results(order_id,no_hasil) values(md5('i06-draft')::uuid,'OPR.I06.LATE')$q$,'stale posting blocked');
+select pg_temp.reject($q$insert into opname_order_items(order_id,item_id) values(md5('i06-draft')::uuid,'e5500000-0000-4000-8000-000000000002')$q$,'cancelled scope edits blocked');
+select pg_temp.reject($q$delete from opname_results where no_hasil='OPR.I06.PARTIAL'$q$,'partial result link retained');
+select pg_temp.reject($q$update opname_results set no_hasil='OPR.I06.RENAMED' where no_hasil='OPR.I06.PARTIAL'$q$,'partial result reference retained');
+select pg_temp.reject($q$update opname_results set order_id=md5('i06-result')::uuid where no_hasil='OPR.I06.PARTIAL'$q$,'partial result cannot reparent');
+select pg_temp.reject($q$insert into stock_moves(warehouse_id,item_id,tanggal,qty,unit_cost,source,source_ref) values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',current_date,1,1,'opname','OPO.I06.DRAFT')$q$,'cancelled source cannot receive stock effects');
+select pg_temp.reject($q$insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source,source_ref) values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',current_date,1,1,1,'opname','OPO.I06.DRAFT')$q$,'cancelled source cannot receive layers');
+select pg_temp.reject($q$insert into journal_entries(no_jurnal,tanggal,deskripsi,source,source_ref,branch_id) values('I06.LATE',current_date,'Fictional rejected effect','opname','OPO.I06.DRAFT','e2200000-0000-4000-8000-000000000001')$q$,'cancelled source cannot receive journals');
+select pg_temp.reject($q$insert into stock_moves(warehouse_id,item_id,tanggal,qty,unit_cost,source,source_ref) values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',current_date,1,1,'opname','OPR.I06.UNKNOWN')$q$,'new orphan effects denied');
+-- Existing cashier fallback, disabled actor and no module/no shift all tested locally.
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+update profiles set role='STAFF' where id='e1100000-0000-4000-8000-000000000001';
+delete from role_modules where role='STAFF' and module_id='pos';
+insert into role_modules(role,module_id) values('STAFF','crm') on conflict do nothing;
+update profiles set is_active=false where id='e1100000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select pg_temp.reject($q$select cancel_opname_draft(md5('i06-cashier')::uuid,'Disabled actor')$q$,'inactive actor denied');
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+update profiles set is_active=true where id='e1100000-0000-4000-8000-000000000001';
+update cashier_shifts set status='closed' where id='e4400000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select pg_temp.reject($q$select cancel_opname_draft(md5('i06-cashier')::uuid,'No authorized module or shift')$q$,'no module or shift denied');
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+update cashier_shifts set status='open' where id='e4400000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select cancel_opname_draft(md5('i06-cashier')::uuid,'Own open petshop shift');
+select pg_temp.assert_ok((select status::text='Batal' from opname_orders where id=md5('i06-cashier')::uuid),'existing cashier shift fallback allowed');
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+update profiles set role='OWNER' where id='e1100000-0000-4000-8000-000000000001';
+create function pg_temp.fail_i06_audit() returns trigger language plpgsql as $$begin
+ if new.row_entity='opname_orders' and new.row_id=md5('i06-rollback')::uuid::text then raise exception 'Fictional audit persistence failure';end if;
+ return new;
+end$$;
+create trigger fictional_audit_failure before insert on activity_log for each row execute function pg_temp.fail_i06_audit();
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select pg_temp.reject($q$select cancel_opname_draft(md5('i06-rollback')::uuid,'Must roll back with audit')$q$,'audit failure rejects cancellation atomically');
+select pg_temp.assert_ok((select status::text='Terbuka' and cancelled_at is null and cancel_reason is null from opname_orders where id=md5('i06-rollback')::uuid),'failed audit rolled back source proof');
+reset role;
+select set_config('request.jwt.claim.sub','',true);
+drop trigger fictional_audit_failure on activity_log;
+set local role anon;
+select pg_temp.reject($q$select cancel_opname_draft(md5('i06-rollback')::uuid,'Anonymous attempt')$q$,'anonymous execute denied');
+rollback;

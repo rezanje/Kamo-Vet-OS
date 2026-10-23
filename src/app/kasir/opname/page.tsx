@@ -22,9 +22,9 @@ const fmtD = (d: string) =>
 export default async function OpnameKasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; status?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, status } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -39,6 +39,7 @@ export default async function OpnameKasirPage({
         .from("opname_orders")
         .select("id, no_opname, tanggal_mulai, penanggung_jawab, status, opname_order_items(item_id)")
         .eq("warehouse_id", wh.id)
+        .in("status",status === "Batal" ? ["Batal"] : ["Terbuka","Selesai"])
         .order("created_at", { ascending: false })
         .limit(50)
     : { data: [] };
@@ -78,6 +79,7 @@ export default async function OpnameKasirPage({
         </div>
       )}
 
+      <div style={{marginBottom:10,display:"flex",gap:12,flexWrap:"wrap"}}><Link href="/kasir/opname">Aktif &amp; selesai</Link><Link href="/kasir/opname?status=Batal">Riwayat pembatalan</Link></div>
       <div className="crm-sec">
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 620 }}>

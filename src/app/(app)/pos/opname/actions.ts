@@ -127,7 +127,8 @@ export async function buatPerintah(formData: FormData) {
     if (lErr) {
       // Perintah tanpa lingkupnya berbahaya: layar hitung akan menampilkan SELURUH
       // gudang, padahal petugas cuma disuruh menghitung satu rak.
-      await supabase.from("opname_orders").delete().eq("id", doc!.id);
+      const { error: cancelError } = await supabase.rpc("cancel_opname_draft", { p_order_id: doc!.id, p_reason: "Pembuatan lingkup opname gagal; draf tidak dilanjutkan" });
+      if (cancelError) fail(`Lingkup gagal dan pembatalan ${no_opname} belum terkonfirmasi. Jangan lanjutkan hitungan; periksa perintah asal dengan admin.`);
       fail("Gagal menyimpan lingkup barang opname.");
     }
   }
@@ -147,7 +148,7 @@ export async function kunciBaris(orderId: string, itemId: string, qtyFisik: numb
   const supabase = await createClient();
   const order = await orderTerjangkau(supabase, orderId);
   if (!order) return { ok: false, pesan: "Kamu tidak berhak menghitung stok gudang ini." };
-  if (order.status === "Selesai") return { ok: false, pesan: "Hitungan ini sudah selesai." };
+  if (order.status !== "Terbuka") return { ok: false, pesan: order.status === "Batal" ? "Opname sudah dibatalkan." : "Hitungan ini sudah selesai." };
 
   const qty = Math.max(0, Number(qtyFisik) || 0);
   const { data: { user } } = await supabase.auth.getUser();
@@ -174,7 +175,7 @@ export async function bukaKunci(orderId: string, itemId: string) {
   const supabase = await createClient();
   const order = await orderTerjangkau(supabase, orderId);
   if (!order) return { ok: false, pesan: "Kamu tidak berhak menghitung stok gudang ini." };
-  if (order.status === "Selesai") return { ok: false, pesan: "Hitungan ini sudah selesai." };
+  if (order.status !== "Terbuka") return { ok: false, pesan: order.status === "Batal" ? "Opname sudah dibatalkan." : "Hitungan ini sudah selesai." };
 
   const { error } = await supabase.from("opname_counts")
     .delete().eq("order_id", orderId).eq("item_id", itemId);
@@ -237,7 +238,7 @@ export async function simpanHasil(formData: FormData) {
     id: string; no_opname: string; status: string; warehouse_id: string;
     warehouses: { branch_id: string; type: string; branches: { type: string } | null } | null;
   };
-  if (order.status === "Selesai") fail("Perintah ini sudah selesai diopname.");
+  if (order.status !== "Terbuka") fail(order.status === "Batal" ? "Perintah opname sudah dibatalkan." : "Perintah ini sudah selesai diopname.");
   if (!(await bolehGudang(supabase, order.warehouse_id))) fail("Kamu tidak berhak menghitung stok gudang ini.");
 
   // Lingkup ditegakkan di server juga: barang di luar perintah opname parsial tidak
@@ -433,4 +434,23 @@ export async function simpanHasil(formData: FormData) {
     ? `Hasil ${no_hasil} tersimpan. Selisih kurang ditagihkan lewat faktur ${noFaktur}.`
     : `Hasil ${no_hasil} tersimpan, stok disesuaikan.`;
   redirect(`${basis}/${order_id}?success=` + encodeURIComponent(pesan) + transactionDraftAck(formData));
+}
+
+/** One guarded server transaction; no delete, reversal, stock or journal mutation. */
+export async function batalPerintah(formData: FormData) {
+  const basis = basisKembali(formData);
+  const id = String(formData.get("order_id") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const back = id ? `${basis}/${encodeURIComponent(id)}` : basis;
+  if (!id || reason.length < 3 || reason.length > 500) redirect(`${back}?error=${encodeURIComponent("Pilih perintah dan isi alasan pembatalan antara 3 dan 500 karakter.")}`);
+  const supabase = await createClient();
+  const result = await supabase.rpc("cancel_opname_draft", { p_order_id: id, p_reason: reason });
+  if (result.error) {
+    const message = result.error.code === "P0001" || result.error.code === "42501"
+      ? result.error.message.replace(/^OPNAME_NOT_DRAFT:\s*/, "")
+      : "Pembatalan belum dapat dipastikan. Muat ulang dan periksa status perintah sebelum mencoba lagi.";
+    redirect(`${back}?error=${encodeURIComponent(message)}`);
+  }
+  for (const path of ["/pos/opname", "/kasir/opname", `/pos/opname/${id}`, `/kasir/opname/${id}`]) revalidatePath(path);
+  redirect(`${back}?success=${encodeURIComponent("Perintah opname dibatalkan; riwayat tetap tersimpan.")}`);
 }
