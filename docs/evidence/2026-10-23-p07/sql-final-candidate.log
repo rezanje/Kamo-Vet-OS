@@ -1,0 +1,9 @@
+Applied 233 repository migrations to isolated PostgreSQL 17.6 with fictional auth/storage shims.
+PASS purchase_short_close.sql
+PASS purchase_short_close_guards.sql
+PASS regression purchase_advance_atomic.sql
+PASS regression purchase_invoice_lifecycle.sql
+PASS concurrency close-first
+PASS concurrency receipt-first
+PASS concurrency identical-retry
+Removed owned PostgreSQL test container and volumes.

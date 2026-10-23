@@ -6,6 +6,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
+import { POShortCloseForm } from "./POShortCloseForm";
+import type { ReceiptClosure } from "@/lib/purchase-short-close";
 import { POEditForm, POCancelForm } from "./POCorrectionForm";
 
 type Rel<T> = T | T[] | null;
@@ -36,7 +38,7 @@ type PO = {
   purchase_advances?: { id: string; no_um: string; status: string }[] | null;
   purchase_order_items: {
     id: string; item_id: string | null; nama: string; qty: number; satuan: string | null; faktor: number;
-    qty_terima: number | null; harga_beli: number;
+    qty_terima: number | null; qty_rusak?: number | null; harga_beli: number;
   }[] | null;
 };
 
@@ -51,19 +53,22 @@ export default async function PODetailPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, harga_beli), goods_receipts(id,no_terima,tanggal), po_payments(id,tanggal,amount,metode), purchase_returns(id,no_retur,voided_at), purchase_advances(id,no_um,status)").eq("id", id).maybeSingle();
+  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, qty_rusak, harga_beli), goods_receipts(id,no_terima,tanggal), po_payments(id,tanggal,amount,metode), purchase_returns(id,no_retur,voided_at), purchase_advances(id,no_um,status)").eq("id", id).maybeSingle();
   const po = data as unknown as (PO & { branch_id: string }) | null;
   if (poError) throw new Error("PO dan transaksi terkait belum dapat dimuat. Coba muat ulang.");
   if (!po) notFound();
 
-  const [{ data: suppliers }, { data: warehouses }, { data: profile }, { data: invoices, error: invoiceError }] = await Promise.all([
+  const [{ data: suppliers }, { data: warehouses }, { data: profile }, { data: invoices, error: invoiceError }, { data: closureData, error: closureError }] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name, branch_id").eq("branch_id", po.branch_id).eq("is_active", true).order("name"),
     supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
     supabase.from("purchase_invoices").select("id,no_faktur,voided_at").eq("po_id", id).order("tanggal", { ascending: false }),
+    supabase.from("purchase_order_receipt_closures").select("po_id,actor_id,actor_name,closed_at,reason,lines").eq("po_id", id).maybeSingle(),
   ]);
 
   const items = po.purchase_order_items ?? [];
+  const closure = one(closureData as unknown as Rel<ReceiptClosure>);
+  const partial = items.some(row => Number(row.qty_terima ?? 0) > 0) && items.some(row => Number(row.qty_terima ?? 0) < Number(row.qty));
   const owner = !!user && profile?.role === "OWNER" && profile.is_active;
   const hasChildren = items.some(item => Number(item.qty_terima) > 0) || (po.goods_receipts?.length ?? 0) > 0
     || (po.po_payments?.length ?? 0) > 0 || (po.purchase_returns?.length ?? 0) > 0 || (po.purchase_advances?.length ?? 0) > 0 || (invoices?.length ?? 0) > 0;
@@ -162,6 +167,17 @@ export default async function PODetailPage({
           </table>
         </div>
       </div>
+
+      {(closure || closureError || (owner && partial && po.status !== "Diterima" && po.status !== "Batal")) && <section className="crm-sec" id="short-close">
+        <SecHeader num="02" title={closure ? "Selesai parsial — sisa ditutup" : "TUTUP SISA PENERIMAAN"} desc="Bedakan barang yang masih ditunggu dari sisa yang dipastikan tidak akan dikirim." />
+        {closureError ? <p role="alert" className="p2ban">Bukti tutup sisa belum dapat dimuat. Muat ulang sebelum menutup sisa penerimaan.</p> : <>
+          {closure ? <>
+            <p>{closure.reason}</p><p>Ditutup oleh {closure.actor_name} · {new Date(closure.closed_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</p>
+            <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Barang</th><th>Dipesan</th><th>Diterima</th><th>Sisa ditutup</th></tr></thead><tbody>{closure.lines.map(row => <tr key={row.id}><td>{items.find(item => item.id === row.id)?.nama ?? row.id} ({row.satuan ?? "unit"})</td><td>{Number(row.ordered_qty)}</td><td>{Number(row.received_qty)}</td><td>{Number(row.closed_qty)}</td></tr>)}</tbody></table></div>
+          </> : <p>Penerimaan masih sebagian. Jika pemasok masih akan mengirim sisanya, lanjutkan Terima barang dan biarkan PO tetap terbuka.</p>}
+          {owner && user && <POShortCloseForm userId={user.id} poId={po.id} rows={items} alreadyClosed={!!closure} />}
+        </>}
+      </section>}
 
       {editable && user && (
         <div className="crm-sec" id="edit-po">

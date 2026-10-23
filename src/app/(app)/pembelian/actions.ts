@@ -256,3 +256,27 @@ export async function recoverPurchaseSubmission(formData: FormData) {
   if (kind === "invoice") redirect(`/pembelian/faktur?success=${encodeURIComponent(`Faktur ${data.no_faktur} sudah tersimpan.`)}&${confirmed}`);
   redirect(`/keuangan/aset?success=pembelian&${confirmed}`);
 }
+
+// Final partial receipt is an explicit immutable business action, not a PO edit.
+export async function closeRemainingPO(formData: FormData) {
+  const supabase = await createClient();
+  const poId = String(formData.get("po_id") ?? "");
+  const requestKey = String(formData.get("draft_key") ?? "");
+  const fail = (message: string): never => { throw new Error(message); };
+  if (!poId || !requestKey) fail("Identitas tutup sisa belum siap. Muat ulang formulir.");
+  let response;
+  if (formData.get("tindakan") === "periksa") {
+    response = await supabase.rpc("get_purchase_order_short_close", { p_po_id: poId, p_request_key: requestKey });
+  } else {
+    const reason = String(formData.get("reason") ?? "").trim();
+    let expected: unknown;
+    try { expected = JSON.parse(String(formData.get("expected_rows") ?? "null")); } catch { fail("Rincian PO tidak dapat dibaca. Muat ulang."); }
+    if (formData.get("confirmed") !== "1" || reason.length < 3 || reason.length > 1000 || !Array.isArray(expected) || !expected.length) fail("Periksa alasan, sisa barang, dan konfirmasi bahwa sisa tidak akan dikirim.");
+    response = await supabase.rpc("close_purchase_order_remainder", { p_po_id: poId, p_request_key: requestKey, p_expected_rows: expected, p_reason: reason, p_confirmed: true });
+  }
+  if (response.error) fail(response.error.message);
+  const proof = response.data;
+  if (!proof || proof.po_id !== poId || !proof.closed_at || !Array.isArray(proof.lines) || !proof.lines.length) fail("Hasil tutup sisa belum terkonfirmasi. Periksa hasil terakhir sebelum mengulang.");
+  for (const path of ["/pembelian", `/pembelian/${poId}`, `/pembelian/${poId}/terima`, "/pembelian/faktur/baru", "/pembelian/uang-muka", "/"]) revalidatePath(path);
+  redirect(`/pembelian/${poId}?success=${encodeURIComponent("Sisa penerimaan ditutup. Faktur hanya untuk jumlah diterima yang belum difakturkan.")}${transactionDraftAck(formData)}`);
+}
