@@ -35,8 +35,8 @@ describe("periodeTertinggal", () => {
 const ID = "abc00000-0000-4000-8000-000000000001";
 const OTHER = "abc00000-0000-4000-8000-000000000002";
 
-function database(lastPosted = "2026-06") {
-  const schedule = { id: ID, nama: "Sewa fiktif", day_of_month: 1, last_posted: lastPosted };
+function database(lastPosted = "2026-06", sourceSchedule = false) {
+  const schedule = { id: ID, nama: "Sewa fiktif", day_of_month: 1, last_posted: lastPosted, is_source_schedule: sourceSchedule };
   const rpc = vi.fn(async () => ({ data: [{ entry_id: "journal", no_jurnal: "JRN-202607-0001", posted: true }], error: null }));
   const query = (table: string) => {
     const result = { data: table === "recurring_journals" ? [schedule] : [], error: null };
@@ -109,6 +109,13 @@ describe("atomic recurring catch-up", () => {
     db.rpc.mockResolvedValue({ data: null, error: { code: "RCL01", message: "RECURRING_LIMIT: jumlah pengulangan selesai." } } as never);
     expect(await postRecurringCatchUp(db)).toEqual([]);
     expect(db.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("never sends a source-backed schedule through the legacy page-view catch-up", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-08-03T03:00:00Z"));
+    const db = database("2026-06", true);
+    expect(await postRecurringCatchUp(db)).toEqual([]);
+    expect(db.rpc).not.toHaveBeenCalled();
   });
 
   it("uses the WIB due day even while the server is still on yesterday", () => {
