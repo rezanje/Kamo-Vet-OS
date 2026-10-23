@@ -109,3 +109,34 @@ it("retains master-only completion without preparing or claiming an inventory ba
   expect(actions.previewSaldoAwalAccurate).not.toHaveBeenCalled();
   expect(reviewLinks()).toHaveLength(0);
 });
+
+function deferred<T>() { let resolve!: (v:T)=>void; const promise=new Promise<T>(r=>{resolve=r;});return {promise,resolve}; }
+it.each(["file","date"])("ignores a late master preview after %s changes",async input=>{
+ const pending=deferred<AccurateImportState>();actions.previewImporAccurate.mockReturnValue(pending.promise);
+ await chooseFile();await setDate("2026-01-01");
+ await act(async()=>{button("Cek perubahan")!.click();});
+ if(input==="file")await chooseFile();else await setDate("2026-01-02");
+ await act(async()=>pending.resolve(master));
+ expect(host.textContent).not.toContain('Master fiktif siap');
+ expect(button("Import Sekali")?.disabled).toBe(true);
+ expect(actions.preflightSaldoAwalSekali).not.toHaveBeenCalled();
+});
+it("does not start preparation from a late master confirmation after date changes",async()=>{
+ await check();const pending=deferred<AccurateImportState>();actions.konfirmasiImporAccurate.mockReturnValue(pending.promise);
+ await act(async()=>button("Import Sekali")!.click());await setDate("2026-01-02");
+ await act(async()=>pending.resolve({...master,phase:'done'}));
+ expect(actions.previewSaldoAwalAccurate).not.toHaveBeenCalled();expect(reviewLinks()).toHaveLength(0);
+});
+it('ignores a progress body that finishes parsing after a new file starts checking',async()=>{
+ const body=deferred<unknown>();const confirm=deferred<AccurateImportState>();
+ vi.mocked(fetch).mockResolvedValue({ok:true,json:()=>body.promise} as Response);
+ await check();actions.konfirmasiImporAccurate.mockReturnValue(confirm.promise);
+ await act(async()=>button('Import Sekali')!.click());await chooseFile();
+ await act(async()=>confirm.resolve({...master,phase:'done'}));
+ const next=deferred<AccurateImportState>();actions.previewImporAccurate.mockReturnValue(next.promise);
+ await act(async()=>button('Cek perubahan')!.click());
+ expect(host.textContent).toContain('Sedang diproses');
+ await act(async()=>body.resolve({phase:'mengimpor',percentage:100,completed:100,total:100}));
+ expect(host.textContent).toContain('Sedang diproses');expect(host.textContent).not.toContain('70%');
+ await act(async()=>next.resolve(master));
+});

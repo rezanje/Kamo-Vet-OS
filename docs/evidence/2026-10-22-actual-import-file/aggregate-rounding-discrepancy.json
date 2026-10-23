@@ -1,0 +1,16 @@
+{
+  "positive_rows": 304,
+  "fractional_cent_rows": 253,
+  "cost_cell_types": {
+    "numeric": 304
+  },
+  "rounding": "HALF_UP 2 decimal currency; exact XML decimals at 100-digit arithmetic",
+  "rounded_batch_minus_raw": "-0.002648502629865",
+  "sum_rounded_lines_minus_raw": "0.067351497370135",
+  "sum_rounded_lines_minus_rounded_batch": "0.07",
+  "sum_rounded_unit_prices_minus_rounded_batch": "-0.230",
+  "max_abs_line_residual": "0.0049989347970",
+  "parser_number_decimal_sum_minus_raw_xml": "-2.03995E-10",
+  "parser_payload_rounded_total_minus_raw": "-0.00264850242587",
+  "all_rows_within_0_000001_of_cent": false
+}

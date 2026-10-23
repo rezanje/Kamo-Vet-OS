@@ -1,0 +1,30 @@
+
+ RUN  v4.1.9 /workspace/kamo-k08
+
+ ❯ src/components/__tests__/clinic-billing-source-draft.test.tsx (7 tests | 1 failed) 354ms
+   × describes transport failure as uncertain and retains retry key and draft 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-billing-source-draft.test.tsx > describes transport failure as uncertain and retains retry key and draft
+AssertionError: expected 'SubmitBelum tersimpan. Isian tetap te…' to contain 'Hasil pembayaran belum dapat dipastik…'
+
+Expected: "Hasil pembayaran belum dapat dipastikan"
+Received: "SubmitBelum tersimpan. Isian tetap tersedia; periksa koneksi lalu coba simpan lagi."
+
+ ❯ src/components/__tests__/clinic-billing-source-draft.test.tsx:48:139
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 6 passed (7)
+   Start at  23:07:01
+   Duration  1.08s (transform 177ms, setup 0ms, import 262ms, tests 354ms, environment 287ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

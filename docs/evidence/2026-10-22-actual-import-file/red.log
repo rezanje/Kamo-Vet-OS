@@ -1,0 +1,84 @@
+
+> vetos@0.1.0 test
+> vitest run src/lib/__tests__/accurate-invalid-master-actions.test.ts
+
+
+ RUN  v4.1.9 /workspace/kamo-import-file-fix
+
+ ❯ src/lib/__tests__/accurate-invalid-master-actions.test.ts (4 tests | 4 failed) 121ms
+   × blocks a preview when every source master row is rejected (null) 80ms
+   × blocks a preview when every source master row is rejected (UNSUPPORTED) 13ms
+   × rejects confirmation of a legacy preview with no valid master rows before any writes 14ms
+   × rejects an empty template without creating an empty audit batch 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/accurate-invalid-master-actions.test.ts > blocks a preview when every source master row is rejected (null)
+ FAIL  src/lib/__tests__/accurate-invalid-master-actions.test.ts > blocks a preview when every source master row is rejected (UNSUPPORTED)
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/lib/__tests__/accurate-invalid-master-actions.test.ts:45:21
+     43| it.each([null, "UNSUPPORTED"])("blocks a preview when every source mas…
+     44|   const result = await previewImporAccurate(await invalidFile(type));
+     45|   expect(result.ok).toBe(false);
+       |                     ^
+     46|   expect(result.phase).toBe("preview");
+     47|   expect(result.run_id).toBeNull();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/lib/__tests__/accurate-invalid-master-actions.test.ts > rejects confirmation of a legacy preview with no valid master rows before any writes
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/lib/__tests__/accurate-invalid-master-actions.test.ts:56:21
+     54| it("rejects confirmation of a legacy preview with no valid master rows…
+     55|   const result = await konfirmasiImporAccurate(await invalidFile());
+     56|   expect(result.ok).toBe(false);
+       |                     ^
+     57|   expect(result.phase).toBe("preview");
+     58|   expect(result.summary.Ditolak).toBe(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/lib/__tests__/accurate-invalid-master-actions.test.ts > rejects an empty template without creating an empty audit batch
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/lib/__tests__/accurate-invalid-master-actions.test.ts:69:21
+     67|   const form = new FormData(); form.set("files", new File([Buffer.from…
+     68|   const result = await previewImporAccurate(form);
+     69|   expect(result.ok).toBe(false);
+       |                     ^
+     70|   expect(result.run_id).toBeNull();
+     71|   expect(result.message).toContain("Tidak ada barang/jasa yang siap");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  11:13:56
+   Duration  721ms (transform 199ms, setup 0ms, import 408ms, tests 121ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

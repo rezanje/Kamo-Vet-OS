@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -100,7 +101,7 @@ export default async function KlinikPenerimaanPage({ searchParams }: {
               {receiptRows.map((r, i) => (
                 <tr key={r.id}>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.receipt_number}</td>
+                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.receipt_number}<div><ActivityHistoryLink entity="stock_receipts" id={r.id} /></div></td>
                   <td style={{ fontSize: 11.5, color: "var(--posb)" }}>{one(r.stock_requests as Rel<{ no_request: string }>)?.no_request ?? "—"}</td>
                   <td style={{ fontSize: 11 }}>{fmt(r.received_at)}</td>
                   <td style={{ fontSize: 11.5 }}>{many(r.stock_receipt_items as Rel<{ id: string }>).length} Item</td>

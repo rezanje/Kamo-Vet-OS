@@ -1,0 +1,146 @@
+Pristine baseline commit: 102f3b0555305524611296e29d16affc12553eb7
+Applied 222 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+UTC vs Jakarta current_date differ: True
+EXPECTED BASELINE FAILURE posted_sale_cancellations.sql: ERROR:  Efek retur hanya melalui jalur koreksi catatan retur resmi
+CONTEXT:  PL/pgSQL function public.return_record_protected_effect() line 7 at RAISE
+SQL statement "insert into public.stock_moves(
+    tanggal, warehouse_id, item_id, qty, unit_cost, source, source_ref, fifo_takes, fifo_shortfall
+  ) values (
+    coalesce(p_tanggal, current_date), p_warehouse_id, p_item_id, -p_qty,
+    v_cost / p_qty, p_source, p_source_ref,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_takes end,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_shortfall end
+  )"
+PL/pgSQL function stock_out_fifo(uuid,uuid,numeric,text,text,date) line 124 at SQL statement
+SQL statement "select *             from stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,src,'OTHER.FIFO')"
+PL/pgSQL function inline_code_block line 3 at SQL statement
+
+
+
+
+
+
+
+
+e1100000-0000-4000-8000-000000000001
+{"role":"authenticated"}
+90146761-9c13-4b72-b1d1-9176d6bdff42
+79e70a0f-17e6-4744-a717-b5d942c221d2
+{"sale_id": "90146761-9c13-4b72-b1d1-9176d6bdff42", "finalized": true, "journal_id": "29c7ead8-f565-42de-b1b0-3c3c6f4a0488"}
+
+{"voided": true, "sale_id": "90146761-9c13-4b72-b1d1-9176d6bdff42", "audit_id": "6811d7ee-18f9-4bc3-bb58-eb96a69fa1cc", "revision": 1}
+{"voided": true, "sale_id": "90146761-9c13-4b72-b1d1-9176d6bdff42", "audit_id": "6811d7ee-18f9-4bc3-bb58-eb96a69fa1cc", "revision": 1}
+
+
+
+
+
+
+
+
+ad0cbb7a-fcc7-415a-a934-23aa19817f8b
+
+{"voided": true, "sale_id": "ad0cbb7a-fcc7-415a-a934-23aa19817f8b", "audit_id": "6a83cd3c-9688-4fd8-863d-9cf24ef4d96a", "revision": 1}
+
+
+
+
+c6646f2b-313a-4773-a198-698fc40d00bd
+ec65dbec-144c-4445-9e53-50c2edc9f880
+{"sale_id": "c6646f2b-313a-4773-a198-698fc40d00bd", "finalized": true, "journal_id": "c559a8d2-df8f-4a2b-83d1-0a873068b4c6"}
+
+
+13007304-56c9-4aa4-af8c-eeca4bbeef0e
+71afb811-0e5d-4967-927e-a231a4640268
+{"sale_id": "13007304-56c9-4aa4-af8c-eeca4bbeef0e", "finalized": true, "journal_id": "f08c3552-77f4-4546-baf8-8e50705aba4b"}
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+{"x-kamo-operational-branch":"e2200000-0000-4000-8000-000000000002"}
+
+{}
+8eac3a54-b8f0-4e3e-a745-389370d18c35
+70d82120-dea7-4fe7-8128-02c4dbea51c4
+{"sale_id": "8eac3a54-b8f0-4e3e-a745-389370d18c35", "finalized": true, "journal_id": "7cc0c528-757d-40e1-b3ef-d4401df0fa3b"}
+{"document_id": "a7cdd5af-5b4f-43c2-ae85-048fbcda5971", "document_no": "RJ.2026.10.00001"}
+
+d9a26484-6c5a-4963-8722-8dc4412ee140
+8aec0d9c-6424-484a-962e-121be324075d
+{"sale_id": "d9a26484-6c5a-4963-8722-8dc4412ee140", "finalized": true, "journal_id": "792bb13f-5d90-4fb5-9490-34164df6a7a5"}
+{"voided": true, "sale_id": "d9a26484-6c5a-4963-8722-8dc4412ee140", "audit_id": "a4cdc69a-478a-4e1c-ae47-007a4a2399a3", "revision": 1}
+
+
+e9e1e4ba-b7fc-4365-9807-a759cbc5b946
+
+
+{"voided": true, "sale_id": "e9e1e4ba-b7fc-4365-9807-a759cbc5b946", "audit_id": "b519a80a-00ed-4c45-bc79-6a8bc95f3985", "revision": 1}
+{"voided": true, "sale_id": "e9e1e4ba-b7fc-4365-9807-a759cbc5b946", "audit_id": "b519a80a-00ed-4c45-bc79-6a8bc95f3985", "revision": 1}
+
+
+
+6177d513-d87c-49b6-857c-3c3ce7f0080b
+
+
+585027bb-88f4-4f84-89f7-cb64e33f1f3b
+
+
+0c7418a4-fb10-451f-8681-4e2741da1654
+
+
+
+bc03d2bd-e5df-41f6-b29f-d449b525937e
+
+
+
+(123.45,"[{""id"": ""e8800000-0000-4000-8000-000000000001"", ""qty"": 1, ""exp_date"": ""2030-01-01"", ""unit_cost"": 123.45}]",0,123.45)
+
+b33605f0-50c2-4423-bfde-80057789d2e9
+{"sale_id": "c5f2d1a3-ac99-44c9-a407-baae67d271d9", "finalized": true, "journal_id": "23455009-44e3-495f-afa4-4f3874338c87"}
+
+{"voided": true, "sale_id": "c5f2d1a3-ac99-44c9-a407-baae67d271d9", "audit_id": "d4bd8e7d-e4f9-42f3-a055-058110f63aa6", "revision": 1}
+{"voided": true, "sale_id": "c5f2d1a3-ac99-44c9-a407-baae67d271d9", "audit_id": "d4bd8e7d-e4f9-42f3-a055-058110f63aa6", "revision": 1}
+
+
+6f20a810-56cb-48eb-baa8-d8f78f91f020
+
+
+
+
+{"voided": true, "sale_id": "6f20a810-56cb-48eb-baa8-d8f78f91f020", "audit_id": "c856a9c5-5de4-4396-b05d-cb0bc85d04ad", "revision": 1}
+
+
+2faab700-d7ab-4749-9a0c-434ea427da19
+EXPECTED BASELINE FAILURE clinical_occupation_selection.sql: ERROR:  Perubahan status wajib melalui aksi master dengan alasan dan versi
+CONTEXT:  PL/pgSQL function public.guard_master_data_lifecycle() line 15 at RAISE
+SQL statement "update public.employees set status='Nonaktif' where id='ed100000-0000-4000-8000-000000000003'"
+PL/pgSQL function inline_code_block line 25 at SQL statement
+EXPECTED BASELINE FAILURE purchase_invoice_lifecycle.sql: ERROR:  Expected rejection: Tanggal
+CONTEXT:  PL/pgSQL function pg_temp_4.expect_error(text,text) line 3 at RAISE
+SQL statement "SELECT pg_temp.expect_error('select create_direct_purchase_invoice(''future'',pg_temp.direct_payload()||jsonb_build_object(''tanggal'',current_date+1))','Tanggal')"
+PL/pgSQL function inline_code_block line 27 at PERFORM
+authenticated
+ee000000-0000-4000-8000-000000000001
+{"no_po": "PO.INV.FIC", "total": 400, "complete": true, "no_jurnal": "JRN-202610-0001", "no_terima": "TB.INV.00001", "receipt_id": "2573e8c1-f94c-40bd-bcb3-b337c445d414"}
+EXPECTED BASELINE FAILURE asset_purchase_correction.sql: ERROR:  Expected rejection: select correct_fixed_asset_purchase('894646b7-0ad9-4b33-8143-79e08bed1498',1,current_date+1,9000000,'Wrong date','future')
+CONTEXT:  PL/pgSQL function pg_temp_4.expect_error(text,text) line 7 at RAISE
+ac000000-0000-4000-8000-000000000001
+authenticated
+
+
+
+
+
+{"asset_id": "894646b7-0ad9-4b33-8143-79e08bed1498", "revision": 2, "correction_id": "e195d541-ed07-48c8-9663-a4219b1669cd", "reversal_journal_id": "9e29cf74-67dd-4e6f-9950-fa7670d978fd", "replacement_journal_id": "683b4546-d9cc-40df-9e46-60c4832b8eb5"}
+PASS pristine baseline with Jakarta fixture clock: purchase_invoice_lifecycle.sql
+PASS pristine baseline with Jakarta fixture clock: asset_purchase_correction.sql
+Removed owned PostgreSQL test container and volumes.
+Confirmed baseline fixture failures and business-clock preparation; expected failures are not green business regressions.

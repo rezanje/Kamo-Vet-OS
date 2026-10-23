@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'clinic-payment-draft-'));
 const source = path.resolve('src');
+const evidence=path.resolve('docs/evidence/2026-10-22-k08');await fs.mkdir(evidence,{recursive:true});
 await fs.writeFile(path.join(root,'index.html'),'<div id="root"></div><script type="module" src="/main.tsx"></script>');
 await fs.writeFile(path.join(root,'main.tsx'),`
 import React from 'react'; import {createRoot} from 'react-dom/client';
@@ -20,20 +21,25 @@ const props={draftUserId:new URLSearchParams(location.search).get('user')||'user
  initialJasa:[{deskripsi:'Fiction inpatient',qty:4,harga:1000,item_id:'inpatient',satuan:'hari',terkunci:true}],masterObat:master,masterJasa:[],manualUnitsEnabled:true,
  bekal:{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-05',customerId:null,categoryId:null,poinSaldo:100,rupiahPerPoin:1},catatanResep:null,
  salespeople:[{id:'doctor',nama:'Fiction Doctor',jabatan:'Doctor'},{id:'staff',nama:'Fiction Groomer',jabatan:'Groomer'}],initialSalespersonId:'doctor'};
+if(location.pathname==='/care'){
+ props.visitId='new-care';props.initialObat=[];props.initialJasa=[{deskripsi:'Base care',qty:1,harga:305000,item_id:'base-care',prescription_item_id:'source-base'}];
+ if(new URLSearchParams(location.search).get('source')==='400')props.initialJasa.push({deskripsi:'Added inpatient care',qty:1,harga:95000,item_id:'added-care',prescription_item_id:'source-added',terkunci:true});
+}
+props.sourceVersion=JSON.stringify([props.initialObat,props.initialJasa]);
 const appRoot=createRoot(document.getElementById('root'));
-window.__renderPayment=patch=>{Object.assign(props,patch);appRoot.render(<PembayaranForm key={props.draftUserId+':'+props.visitId+':'+(props.draftScope||'new')+':'+props.requestKey} {...props}/>);};
+window.__renderPayment=patch=>{Object.assign(props,patch);props.sourceVersion=JSON.stringify([props.initialObat,props.initialJasa]);appRoot.render(<PembayaranForm key={props.draftUserId+':'+props.visitId+':'+(props.draftScope||'new')+':'+props.requestKey} {...props}/>);};
 window.__renderPayment({});
 `);
 const server=await createServer({root,logLevel:'error',oxc:{jsx:{runtime:'automatic'},tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}},server:{host:'127.0.0.1',port:3163,strictPort:true,fs:{allow:[root,source,path.resolve('node_modules'),'/opt/codex']}},optimizeDeps:{include:['react','react-dom','react-dom/client']},resolve:{dedupe:['react','react-dom'],alias:[{find:'@',replacement:source},{find:'react-dom',replacement:require.resolve('react-dom').replace(/\/index\.js$/,'')},{find:'react',replacement:require.resolve('react').replace(/\/index\.js$/,'')}]},plugins:[{
  name:'payment-fixtures',enforce:'pre',resolveId(id,importer){
   if(id==='next/link')return '\0fixture-link';if(id==='next/navigation')return '\0fixture-navigation';
-  if(id==='@/lib/tagihan-klinik')return '\0fixture-tagihan';
+  if(id==='@/lib/tagihan-klinik'||id.endsWith('/lib/tagihan-klinik'))return '\0fixture-tagihan';
   if(id.endsWith('actions')&&importer?.endsWith('PembayaranForm.tsx'))return '\0fixture-actions';
  },load(id){
   if(id==='\0fixture-link')return 'import React from "react";export default function Link({children,href,...props}){return React.createElement("a",{href,...props},children)}';
   if(id==='\0fixture-navigation')return 'export const useRouter=()=>({push:href=>location.assign(href)});';
   if(id==='\0fixture-tagihan')return 'export const hargaNetto=r=>r.harga*(1-(r.diskon_persen||0)/100);export const nilaiBaris=r=>r.qty*hargaNetto(r);';
-  if(id==='\0fixture-actions')return 'export const bayarVisit=async(data)=>{window.__submitted=Object.fromEntries(data);if(window.__saveMode==="network")throw Error("Network unavailable");if(window.__saveMode==="success")return {saved:true,href:"/saved"};location.assign(location.pathname+"?error=failed");await new Promise(()=>{});};';
+  if(id==='\0fixture-actions')return 'export const bayarVisit=async(data)=>{window.__submitted=Object.fromEntries(data);if(window.__saveMode==="network")throw Error("Network unavailable");if(window.__saveMode==="success")return {saved:true,href:"/saved"};const u=new URL(location.href);u.searchParams.set("error",window.__saveMode==="stock"?"stock-short":"failed");location.assign(u.pathname+u.search);await new Promise(()=>{});};';
  }
 }]});
 await server.listen();
@@ -70,7 +76,7 @@ try{
  await Promise.all([page.waitForURL('**?error=failed'),page.getByRole('button',{name:'Simpan',exact:true}).click()]);
  await page.locator('[name=requestKey]').waitFor({state:'attached'});await page.getByText('Draf dipulihkan.',{exact:false}).waitFor();assert.deepEqual(await values(),original,'server validation redirect preserves draft');
  await page.evaluate(()=>{window.__saveMode='network'});await page.getByRole('button',{name:'Simpan',exact:true}).click();
- await page.getByRole('alert').filter({hasText:'Belum tersimpan'}).waitFor();assert.deepEqual(await values(),original,'network failure must not reset payment');
+ await page.getByRole('alert').filter({hasText:'Hasil pembayaran belum dapat dipastikan'}).waitFor();assert.deepEqual(await values(),original,'network failure must not reset payment');
  await page.evaluate(()=>window.__renderPayment({draftUserId:'user-b',visitId:'visit-b',requestKey:crypto.randomUUID()}));
  await page.waitForTimeout(100);assert.equal(await page.locator('[name=salesperson_id]').inputValue(),'doctor','mounted identity change resets staff');
  assert.equal(JSON.parse(await page.locator('[name=items]').inputValue())[0].qty,1,'mounted identity change must not retain prior visit rows');
@@ -81,8 +87,9 @@ try{
  // Fresh server data remounts the form; discard resets to those authoritative rows.
  await page.evaluate(()=>window.__renderPayment({requestKey:crypto.randomUUID(),initialJasa:[{deskripsi:'Fiction inpatient',qty:7,harga:1000,item_id:'inpatient',satuan:'hari',terkunci:true}]}));
  await page.getByText('Draf dipulihkan.',{exact:false}).waitFor();
- assert.equal(JSON.parse(await page.locator('[name=items]').inputValue())[2].qty,7,'restored locked qty follows refreshed server data');
- await page.getByRole('button',{name:'Buang draf',exact:true}).click();
+ assert.equal(JSON.parse(await page.locator('[name=items]').inputValue())[2].qty,4,'uncertain retry payload must not change silently when source changes');
+ assert.equal(await page.getByRole('button',{name:'Simpan',exact:true}).isDisabled(),true);
+ await page.getByRole('button',{name:'Muat tagihan terbaru',exact:true}).click();
  const discarded=await values();assert.equal(discarded.items[0].qty,1);assert.equal(discarded.items[0].satuan,'PCS');assert.equal(discarded.items[2].qty,7,'discard restores current server rows');
  await page.evaluate(()=>{window.__saveMode='success'});await Promise.all([page.waitForURL('**/saved'),page.getByRole('button',{name:'Simpan',exact:true}).click()]);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('vetos:clinic-draft:v1:user-a:payment:visit:new')),null,'only acknowledged success clears draft');
@@ -100,12 +107,41 @@ try{
  assert.deepEqual(JSON.parse(await page.locator('[name=split_payments]').inputValue()),parts,'split parts survive reload');
  assert.equal(await page.locator('[name=requestKey]').inputValue(),mixedKey,'mixed request key survives reload');
  await page.addStyleTag({content:(await fs.readFile(path.join(source,'app/globals.css'),'utf8')).split('/* Color tokens live')[1].replace(/^.*?\*\//s,'')+'\n*{box-sizing:border-box}body{font-family:system-ui;background:#f0ede8;padding:24px;margin:0}'});
- await page.screenshot({path:'/tmp/vetos-split-payment-demo.png',fullPage:true});
+ await page.screenshot({path:path.join(evidence,'split-payment-desktop.png'),fullPage:true});
  // A draft from before this change still recovers its original payment/rows.
  await page.evaluate(()=>{const key='vetos:clinic-draft:v1:user-a:payment:visit:new';const draft=JSON.parse(sessionStorage.getItem(key));delete draft.snapshot.mixed;delete draft.snapshot.splitPayments;sessionStorage.setItem(key,JSON.stringify(draft));});
  await page.reload();await page.getByText('Draf dipulihkan.',{exact:false}).waitFor();
  assert.equal(await page.getByLabel('Bayar dengan beberapa metode').isChecked(),false,'legacy drafts remain single method');
  assert.equal(await page.locator('[name=requestKey]').inputValue(),mixedKey,'legacy draft retains request key');
+ // The old paid415 invoice is a different document (reader test); this is a
+ // new305 draft whose clinical source gains95 of inpatient/service charges.
+ await page.goto('/care?source=305');await page.locator('[name=requestKey]').waitFor({state:'attached'});
+ await page.getByText('Jumlah Bayar',{exact:true}).locator('..').locator('input').fill('1000');
+ const careKey=await page.locator('[name=requestKey]').inputValue();
+ await page.goto('/care?source=400');await page.getByRole('button',{name:'Muat tagihan terbaru',exact:true}).waitFor();
+ assert.equal(await page.locator('[name=requestKey]').inputValue(),careKey);
+ let careRows=JSON.parse(await page.locator('[name=items]').inputValue());assert.equal(careRows.reduce((sum,r)=>sum+r.qty*r.harga,0),305000);
+ assert.equal(await page.getByRole('button',{name:'Simpan',exact:true}).isDisabled(),true);
+ await page.addStyleTag({content:(await fs.readFile(path.join(source,'app/globals.css'),'utf8')).split('/* Color tokens live')[1].replace(/^.*?\*\//s,'')+'\n*{box-sizing:border-box}body{font-family:system-ui;background:#f0ede8;padding:20px;margin:0}'});
+ await page.screenshot({path:path.join(evidence,'stale-source-review.png'),fullPage:true});
+ await page.reload();await page.getByRole('button',{name:'Muat tagihan terbaru',exact:true}).waitFor();assert.equal(await page.locator('[name=requestKey]').inputValue(),careKey,'reload must not bless a stale source plan');
+ await page.getByRole('button',{name:'Muat tagihan terbaru',exact:true}).click();
+ const refreshedKey=await page.locator('[name=requestKey]').inputValue();assert.notEqual(refreshedKey,careKey);
+ careRows=JSON.parse(await page.locator('[name=items]').inputValue());assert.equal(careRows.reduce((sum,r)=>sum+r.qty*r.harga,0),400000);
+ await page.getByText('Jumlah Bayar',{exact:true}).locator('..').locator('input').fill('400000');
+ assert((await page.locator('form').innerText()).includes('PRATINJAU PEMBAYARAN'));assert((await page.locator('form').innerText()).includes('setelah penyimpanan berhasil'));
+ await page.addStyleTag({content:(await fs.readFile(path.join(source,'app/globals.css'),'utf8')).split('/* Color tokens live')[1].replace(/^.*?\*\//s,'')+'\n*{box-sizing:border-box}body{font-family:system-ui;background:#f0ede8;padding:20px;margin:0}'});
+ await page.screenshot({path:path.join(evidence,'reviewed-source-400-desktop.png'),fullPage:true});
+ await page.evaluate(()=>window.__saveMode='stock');
+ await Promise.all([page.waitForURL('**error=stock-short'),page.getByRole('button',{name:'Bayar & Selesai',exact:true}).click()]);
+ await page.getByText('Draf dipulihkan.',{exact:false}).waitFor();assert.equal(await page.locator('[name=requestKey]').inputValue(),refreshedKey);
+ assert.equal(JSON.parse(await page.locator('[name=items]').inputValue()).reduce((sum,r)=>sum+r.qty*r.harga,0),400000);
+ await page.evaluate(()=>window.__saveMode='network');await page.getByRole('button',{name:'Bayar & Selesai',exact:true}).click();await page.getByRole('alert').filter({hasText:'Hasil pembayaran belum dapat dipastikan'}).waitFor();assert.equal(await page.locator('[name=requestKey]').inputValue(),refreshedKey);
+ await page.setViewportSize({width:390,height:844});
+ await page.addStyleTag({content:(await fs.readFile(path.join(source,'app/globals.css'),'utf8')).split('/* Color tokens live')[1].replace(/^.*?\*\//s,'')+'\n*{box-sizing:border-box}body{font-family:system-ui;background:#f0ede8;padding:16px;margin:0}'});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:path.join(evidence,'payment-unconfirmed-mobile.png'),fullPage:true});
+ await page.evaluate(()=>window.__saveMode='success');await Promise.all([page.waitForURL('**/saved'),page.getByRole('button',{name:'Bayar & Selesai',exact:true}).click()]);
+ assert.equal(await page.evaluate(()=>sessionStorage.getItem('vetos:clinic-draft:v1:user-a:payment:new-care:new')),null);
  assert.equal(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({passed:true,reload:true,serverFailure:true,networkFailure:true,stableRequestKey:true,accountIsolation:true,refsUnitsAmountsStaff:true,acknowledgedSuccessCleanup:true,mixedPayment:true,mixedDraftRecovery:true,legacyDraftRecovery:true,productionMutations:false}));
+ console.log(JSON.stringify({passed:true,reload:true,serverFailure:true,networkFailure:true,stableRequestKey:true,accountIsolation:true,refsUnitsAmountsStaff:true,acknowledgedSuccessCleanup:true,mixedPayment:true,mixedDraftRecovery:true,legacyDraftRecovery:true,clinicalSource305to400Review:true,lockedRetryPayloadPreserved:true,stockFailureDraftRetained:true,uncertainPaymentHonesty:true,mobile390:true,productionMutations:false}));
 }finally{await context.close();await browser.close();await server.close();await fs.rm(root,{recursive:true,force:true});}

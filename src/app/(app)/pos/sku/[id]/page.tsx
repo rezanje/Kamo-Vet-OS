@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BarangForm } from "../BarangForm";
@@ -18,6 +19,7 @@ export default async function BarangDetailPage({
 
   return (
     <>
+      <ActivityHistoryLink entity="items" id={id} />
       <div style={{ marginBottom: 4 }}>
         <Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang & Jasa</Link>
       </div>

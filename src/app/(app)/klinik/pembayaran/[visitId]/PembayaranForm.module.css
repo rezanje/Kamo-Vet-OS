@@ -1,0 +1,11 @@
+.layout {
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+}
+.layout > div {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
