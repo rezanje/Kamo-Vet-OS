@@ -1,20 +1,19 @@
 {
-  "baseSha": "102f3b0555305524611296e29d16affc12553eb7",
   "fullTests": {
-    "files": 311,
-    "tests": 2416,
+    "files": 332,
+    "tests": 2578,
     "exitCode": 0
   },
   "focused": {
-    "files": 4,
-    "tests": 42,
+    "files": 5,
+    "tests": 46,
     "exitCode": 0
   },
   "typecheckExitCode": 0,
   "scopedLintExitCode": 0,
   "buildExitCode": 0,
   "sql": {
-    "migrations": 223,
+    "migrations": 232,
     "exitCode": 0,
     "checks": [
       "sold units and RPC",
@@ -33,5 +32,12 @@
   "merged": false,
   "productionDeployed": false,
   "uat": "pending",
-  "sheetEdited": false
+  "sheetEdited": false,
+  "initialBaseSha": "102f3b0555305524611296e29d16affc12553eb7",
+  "baseSha": "09afc5bf14127338bab98921450c3e66acfd2485",
+  "mainMergeCommit": "8163701",
+  "typecheckIntegratedExitCode": 0,
+  "buildIntegratedExitCode": 0,
+  "scopedLintIntegratedExitCode": 0,
+  "typecheckRetryReason": "Next build concurrently regenerated .next/types; serialized typecheck passes without source changes"
 }
