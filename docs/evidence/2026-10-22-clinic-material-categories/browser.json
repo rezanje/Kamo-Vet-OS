@@ -1,0 +1,28 @@
+[
+  {
+    "width": 1280,
+    "hierarchyStatusesAndHistory": true,
+    "eligibleAnesthesiaBeyond1000": true,
+    "completeCategoryPages": true,
+    "keyboardAndFilteredBulk": true,
+    "failedFlagRollback": true,
+    "parentSwitchAndEmptyError": true,
+    "documentOverflow": false,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveMasterWrites": 0
+  },
+  {
+    "width": 390,
+    "hierarchyStatusesAndHistory": true,
+    "eligibleAnesthesiaBeyond1000": true,
+    "completeCategoryPages": true,
+    "keyboardAndFilteredBulk": true,
+    "failedFlagRollback": true,
+    "parentSwitchAndEmptyError": true,
+    "documentOverflow": false,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveMasterWrites": 0
+  }
+]
