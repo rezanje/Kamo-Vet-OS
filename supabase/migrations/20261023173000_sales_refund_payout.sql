@@ -43,6 +43,12 @@ declare s public.sales%rowtype;r record;l public.sale_items%rowtype;u record;use
 begin
  select * into s from public.sales where id=p_sale and channel is null and voided_at is null for update;
  if not found or (s.payment_plan is not null and s.payments_finalized_at is null) or s.total<=0 or s.subtotal<=0 then raise exception 'Sumber penjualan tidak final atau tidak dapat diretur';end if;
+ -- No point reversal rule is inferred. This new payout path must not silently
+ -- retain earned/redeemed loyalty on a refunded source. Existing paths unchanged.
+ if coalesce(s.poin_earned,0)<>0 or coalesce(s.poin_digunakan,0)<>0
+ or exists(select 1 from public.point_ledger where ref=s.no_struk)then
+  raise exception 'Transaksi berpoin memerlukan rekonsiliasi pembalikan poin. Refund baru belum diposting';
+ end if;
  if jsonb_typeof(p_items) is distinct from 'array' or jsonb_array_length(p_items) not between 1 and 100 then raise exception 'Isi 1 sampai 100 baris retur';end if;
  if (select count(*) from jsonb_array_elements(p_items))<>(select count(distinct x->>'source_line_id') from jsonb_array_elements(p_items)x) then raise exception 'Baris sumber dobel atau kosong';end if;
  ratio:=case when s.payment_plan is not null then s.total/s.subtotal else least(1,greatest(0,s.total/s.subtotal)) end;
@@ -95,6 +101,7 @@ begin
  if method='Tunai' then
   header:=header||jsonb_build_object('refund_payout',jsonb_build_object('method','Tunai','quoted_total',quote->'total'));
   result:=public.post_unit_return('sales',p_source,'j03-cash:'||md5(p_request_key),header,quote->'items')||jsonb_build_object('status','selesai','refund_request_id',rid);
+  perform public.refresh_customer_spending(customer_id)from public.sales where id=p_source and customer_id is not null;
  else result:=jsonb_build_object('refund_request_id',rid,'status','pending','quoted_total',quote->'total','source_ref',s.no_struk);end if;
  insert into public.sales_refund_requests(id,sale_id,branch_id,requested_by,request_key,payload,quoted_total,status,return_id,receipt)
  values(rid,p_source,s.branch_id,auth.uid(),p_request_key,payload||jsonb_build_object('submitted',payload,'items',quote->'items'),(quote->>'total')::numeric,case when method='Tunai' then 'selesai' else 'pending' end,(result->>'document_id')::uuid,result);
@@ -134,6 +141,7 @@ declare r public.sales_refund_requests%rowtype;sale uuid;v_completion jsonb;quot
  update public.sales_refund_requests set completion_payload=v_completion where id=r.id;
  header:=(r.payload->'header')||jsonb_build_object('tanggal',p_date,'dari','office','refund_payout',jsonb_build_object('method','Transfer','quoted_total',r.quoted_total,'refund_request_id',r.id,'account_id',p_account,'reference',btrim(p_reference)));
  result:=public.post_unit_return('sales',r.sale_id,'j03-transfer:'||r.id,header,r.payload->'items')||jsonb_build_object('status','selesai','refund_request_id',r.id);
+ perform public.refresh_customer_spending(customer_id)from public.sales where id=r.sale_id and customer_id is not null;
  update public.sales_refund_requests set status='selesai',return_id=(result->>'document_id')::uuid,receipt=result,updated_at=now() where id=r.id;
  return result;
 end$$;
@@ -295,7 +303,7 @@ create trigger a01_activity_change after insert or update on public.sales_refund
 create function public.clinic_refund_source_core(p_invoice uuid) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
 declare i public.invoices%rowtype;branch uuid;customer uuid;reason text;lines jsonb;payments jsonb;journals jsonb;
- v_snapshot jsonb;line_total numeric;cash_received numeric;paid numeric;paid_count int;initial_count int;payment_count int;r record;
+ v_snapshot jsonb;line_total numeric;cash_received numeric;paid numeric;paid_count int;initial_count int;payment_count int;hpp_total numeric;hpp_count int;r record;
 begin
  if auth.uid()is null or auth.role()is distinct from 'authenticated'or not exists(select 1 from public.profiles where id=auth.uid()and is_active)then raise exception 'Akses sumber refund klinik ditolak'using errcode='42501';end if;
  select * into i from public.invoices where id=p_invoice;
@@ -311,7 +319,7 @@ begin
  if reason is not null then return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason',reason);end if;
  select coalesce(jsonb_agg(to_jsonb(x)order by x.id),'[]'),round(sum(x.qty*x.harga*(1-coalesce(x.diskon_persen,0)/100)),2)
  into lines,line_total from public.invoice_items x where x.invoice_id=i.id;
- if jsonb_array_length(lines)=0 or line_total is distinct from i.subtotal or exists(select 1 from public.invoice_items x where x.invoice_id=i.id and(x.qty<=0 or x.harga<0 or x.harga::text in('NaN','Infinity','-Infinity')or coalesce(x.diskon_persen,0)not between 0 and 100 or x.compound_recipe_id is not null or(x.jenis='obat'and(x.item_id is null or x.faktor is null or x.faktor<=0 or x.hpp is null or x.hpp<0))))then
+ if jsonb_array_length(lines)=0 or line_total is distinct from i.subtotal or exists(select 1 from public.invoice_items x where x.invoice_id=i.id and(x.qty<=0 or x.harga<0 or x.harga::text in('NaN','Infinity','-Infinity')or coalesce(x.diskon_persen,0)not between 0 and 100 or x.compound_recipe_id is not null or(x.jenis='obat'and(x.item_id is null or x.faktor is null or x.faktor<=0 or x.faktor::text in('NaN','Infinity','-Infinity')or x.hpp is null or x.hpp<0 or x.hpp::text in('NaN','Infinity','-Infinity')))))then
   return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason','Rincian invoice atau sumber racikan/obat memerlukan rekonsiliasi');end if;
  select coalesce(jsonb_agg(to_jsonb(p)order by p.id),'[]'),coalesce(sum(p.amount),0),count(*)
  into payments,paid,paid_count from public.invoice_payments p where p.invoice_id=i.id;
@@ -329,6 +337,15 @@ begin
   or (select coalesce(sum(l.credit-l.debit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='2201')<>i.tax
   or (select coalesce(sum(l.credit-l.debit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik-ar'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='1201')<>paid-cash_received then
   return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason','Pembayaran atau jurnal sumber belum direkonsiliasi');end if;
+ select round(coalesce(sum(hpp),0),2)into hpp_total from public.invoice_items where invoice_id=i.id;
+ select count(*)into hpp_count from public.journal_entries where source='klinik-hpp'and source_ref=i.invoice_no and voided_at is null;
+ if hpp_total::text in('NaN','Infinity','-Infinity')or hpp_total<0
+ or hpp_count<>(case when hpp_total>0 then 1 else 0 end)
+ or exists(select 1 from public.journal_entries j where j.source in('klinik','klinik-ar','klinik-hpp')and j.source_ref=i.invoice_no and j.voided_at is null and j.branch_id is distinct from branch)
+ or (select coalesce(sum(l.debit-l.credit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik-hpp'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='5101')is distinct from hpp_total
+ or (select coalesce(sum(l.credit-l.debit),0)from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id where j.source='klinik-hpp'and j.source_ref=i.invoice_no and j.voided_at is null and a.code='1301')is distinct from hpp_total
+ or exists(select 1 from public.journal_entries j left join public.journal_lines l on l.entry_id=j.id where j.source='klinik-hpp'and j.source_ref=i.invoice_no and j.voided_at is null group by j.id having count(l.id)<2 or sum(l.debit-l.credit)<>0)then
+  return jsonb_build_object('invoice_id',i.id,'eligible',false,'reason','Bukti jurnal HPP atau cabang sumber klinik belum direkonsiliasi');end if;
  for r in select item_id,sum(qty*faktor)base_qty,sum(hpp)cost from public.invoice_items where invoice_id=i.id and jenis='obat'group by item_id loop
   if (select -sum(qty)from public.stock_moves where source='klinik'and source_ref=i.invoice_no and item_id=r.item_id)is distinct from r.base_qty
    or (select round(-sum(qty*unit_cost),2)from public.stock_moves where source='klinik'and source_ref=i.invoice_no and item_id=r.item_id)is distinct from r.cost

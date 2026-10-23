@@ -63,3 +63,6 @@ if __name__=='__main__':
    seed="set local role authenticated;"+CASHIER+"select pg_temp.fee_sale('J03.RACE','[{\"method\":\"Tunai\",\"amount\":100000}]',0,100000,100000,'Tunai');select pg_temp.lines((select id from sales where no_struk='J03.RACE'));select finalize_pos_sale((select id from sales where no_struk='J03.RACE'));select pg_temp.fee_sale('J03.FAILRACE','[{\"method\":\"Tunai\",\"amount\":100000}]',0,100000,100000,'Tunai');select pg_temp.lines((select id from sales where no_struk='J03.FAILRACE'));select finalize_pos_sale((select id from sales where no_struk='J03.FAILRACE'));commit;"
    db.sql(fees.split('set local role authenticated;')[0]+fixture.replace('rollback;',seed));race_checks(db)
   print('PASS refund_payout.sql',flush=True)
+  if '--clinic-source'in sys.argv:
+   prelude=(ROOT/'supabase/tests/clinic_invoice_post.sql').read_text().split('set local role authenticated;')[0]
+   db.sql(prelude+(ROOT/'supabase/tests/clinic_refund_source.sql').read_text());print('PASS clinic_refund_source.sql',flush=True)

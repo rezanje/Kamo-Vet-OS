@@ -62,4 +62,52 @@ insert into j03_results select 'complete-retry',complete_sales_refund_request((r
 select pg_temp.assert_ok((select result->>'status'='selesai' from j03_results where name='complete'),'transfer completion confirmed');
 select pg_temp.assert_ok(pg_temp.return_balance('J03.REQUEST','1113')=-100000 and pg_temp.return_balance('J03.REQUEST','1111')=0,'selected bank, not original cash');
 select pg_temp.assert_ok((select count(*)=2 from sales_returns) and (select sum(jumlah)=150000 from expenses),'transfer retry no duplicate money');
+
+-- No partial/full point policy has been approved. The new explicit payout must
+-- reject these sources without money, request or point writes.
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+insert into customers(id,name,phone)values('e9900000-0000-4000-8000-000000000007','Fictional loyalty source','J03-POINT-FIXTURE');
+insert into sales(branch_id,customer_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint,poin_earned)
+values('e2200000-0000-4000-8000-000000000001','e9900000-0000-4000-8000-000000000007','J03.POINT.SOURCE',100000,100000,'Tunai',100000,'e1100000-0000-4000-8000-000000000001','e4400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":100000}]','j03-point-source',repeat('a',64),10);
+select pg_temp.lines((select id from sales where no_struk='J03.POINT.SOURCE'));
+select finalize_pos_sale((select id from sales where no_struk='J03.POINT.SOURCE'));
+do $test$declare method text;quantity numeric;begin
+ foreach method in array array['Tunai','Transfer']loop
+  foreach quantity in array array[1::numeric,2::numeric]loop
+   begin
+    perform post_sales_return_with_payout((select id from sales where no_struk='J03.POINT.SOURCE'),'j03-point-'||method||quantity,pg_temp.j03_header(method),pg_temp.j03_items('J03.POINT.SOURCE',quantity));
+    raise exception 'Expected source rejection before payout';
+   exception when raise_exception then if sqlerrm not ilike '%poin%'then raise;end if;end;
+  end loop;
+ end loop;
+ perform pg_temp.assert_ok((select points=10 from customers where id='e9900000-0000-4000-8000-000000000007'),'source point balance unchanged');
+ perform pg_temp.assert_ok(not exists(select 1 from sales_returns where sale_id=(select id from sales where no_struk='J03.POINT.SOURCE')),'point source has zero refund/request writes');
+end $test$;
+
+reset role;
+select pg_temp.assert_ok(not exists(select 1 from sales_refund_requests where sale_id=(select id from sales where no_struk='J03.POINT.SOURCE')),'private request proof confirms zero writes');
+set local role authenticated;
+-- A point-free sale may share a customer with other loyalty purchases. Refresh
+-- spending atomically while leaving the existing point balance alone.
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+insert into sales(branch_id,customer_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint)
+values('e2200000-0000-4000-8000-000000000001','e9900000-0000-4000-8000-000000000007','J03.NOPOINT.CUSTOMER',100000,100000,'Tunai',100000,'e1100000-0000-4000-8000-000000000001','e4400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":100000}]','j03-nopoint-source',repeat('b',64));
+select pg_temp.lines((select id from sales where no_struk='J03.NOPOINT.CUSTOMER'));
+select finalize_pos_sale((select id from sales where no_struk='J03.NOPOINT.CUSTOMER'));
+select refresh_customer_spending('e9900000-0000-4000-8000-000000000007');
+select post_sales_return_with_payout((select id from sales where no_struk='J03.NOPOINT.CUSTOMER'),'j03-customer-refund',pg_temp.j03_header('Tunai'),pg_temp.j03_items('J03.NOPOINT.CUSTOMER',1));
+select pg_temp.assert_ok((select total_spending=150000 and points=10 from customers where id='e9900000-0000-4000-8000-000000000007'),'atomic payout refreshes source customer spending without changing points');
+
+insert into sales(branch_id,customer_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint)
+values('e2200000-0000-4000-8000-000000000001','e9900000-0000-4000-8000-000000000007','J03.NOPOINT.TRANSFER',100000,100000,'Tunai',100000,'e1100000-0000-4000-8000-000000000001','e4400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":100000}]','j03-nopoint-transfer',repeat('c',64));
+select pg_temp.lines((select id from sales where no_struk='J03.NOPOINT.TRANSFER'));
+select finalize_pos_sale((select id from sales where no_struk='J03.NOPOINT.TRANSFER'));
+select refresh_customer_spending('e9900000-0000-4000-8000-000000000007');
+insert into j03_results select 'customer-transfer',post_sales_return_with_payout(id,'j03-customer-transfer',pg_temp.j03_header('Transfer'),pg_temp.j03_items(no_struk,2))from sales where no_struk='J03.NOPOINT.TRANSFER';
+select pg_temp.assert_ok((select total_spending=250000 and points=10 from customers where id='e9900000-0000-4000-8000-000000000007'),'pending transfer has no spending or point effect');
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
+select claim_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='customer-transfer'));
+select complete_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='customer-transfer'),(now()at time zone'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-CUSTOMER-TRANSFER');
+select complete_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='customer-transfer'),(now()at time zone'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-CUSTOMER-TRANSFER');
+select pg_temp.assert_ok((select total_spending=150000 and points=10 from customers where id='e9900000-0000-4000-8000-000000000007'),'finance completion and retry reconcile spending without changing points');
 rollback;

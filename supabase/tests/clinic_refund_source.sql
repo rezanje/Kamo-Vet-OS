@@ -35,4 +35,15 @@ do $$declare preview jsonb;begin
  if preview->>'eligible'<>'false'or preview->>'reason'not ilike '%stok%'then raise exception 'Missing stock provenance must not be guessed';end if;
 end$$;
 rollback to savepoint missing_original_stock;
+
+savepoint missing_original_hpp_journal;
+reset role;
+delete from journal_lines where entry_id in(select id from journal_entries where source='klinik-hpp'and source_ref=(select invoice_no from invoices where id=(select id from j03_clinic_invoice)));
+set local role authenticated;
+select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000001',true);
+do $$declare preview jsonb;begin
+ preview:=preview_clinic_refund_source((select id from j03_clinic_invoice));
+ if preview->>'eligible'<>'false'or preview->>'reason'not ilike '%HPP%'then raise exception 'Missing original HPP journal offered as verified source';end if;
+end$$;
+rollback to savepoint missing_original_hpp_journal;
 rollback;
