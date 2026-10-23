@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /workspace/kamo-purchase-price-catalogs
+
+ ❯ src/components/__tests__/price-catalog-pagination.test.tsx (8 tests | 8 failed) 216ms
+   × provides bounded checked price pages instead of an unreachable first150 cap 46ms
+   × reaches late products with existing units and preserves branch/search in back and next links 43ms
+   × counts every permitted override and preserves an explicit zero branch price 21ms
+   × shows retry context without a writable partial table on branches failure 25ms
+   × shows retry context without a writable partial table on items failure 25ms
+   × shows retry context without a writable partial table on item_units failure 2ms
+   × shows retry context without a writable partial table on item_branch_prices failure 23ms
+   × distinguishes empty/invalid pages and retains readonly price controls 30ms
+ ❯ src/components/__tests__/commission-reference-catalog.test.tsx (6 tests | 5 failed) 296ms
+   × offers every active exact product target with separate code and complete existing branch/category/employee references 88ms
+   × does not offer commission setup against partial or failed items 84ms
+   × does not offer commission setup against partial or failed item_categories 45ms
+   × does not offer commission setup against partial or failed employees 44ms
+   × does not offer commission setup against partial or failed branches 30ms
+
+ Test Files  2 failed (2)
+      Tests  13 failed | 1 passed (14)
+   Start at  13:26:27
+   Duration  680ms (transform 209ms, setup 0ms, import 346ms, tests 512ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
