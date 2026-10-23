@@ -1,0 +1,55 @@
+{
+  "item_ids": [
+    "U03",
+    "U04",
+    "U05"
+  ],
+  "scope": "Shared item-name presentation and clinical selector/catalog subset",
+  "global_items_complete": false,
+  "base_main": "9a43263",
+  "normal_main_merge": true,
+  "focused": {
+    "files": 9,
+    "tests": 37,
+    "exit": 0
+  },
+  "cashier_regression": {
+    "files": 1,
+    "tests": 4,
+    "exit": 0
+  },
+  "full_vitest": {
+    "files": 349,
+    "tests": 2664,
+    "exit": 0
+  },
+  "typecheck": {
+    "exit": 0,
+    "after_build": true
+  },
+  "scoped_lint": {
+    "exit": 0,
+    "existing_img_warning": 1
+  },
+  "build": {
+    "exit": 0,
+    "existing_warnings": true
+  },
+  "browser": {
+    "widths": [
+      1280,
+      390
+    ],
+    "fixture_only": true,
+    "exit": 0,
+    "live_writes": 0
+  },
+  "independent_review": {
+    "p1_p2": 0
+  },
+  "migrations": [],
+  "target_write": false,
+  "merged": false,
+  "deployed": false,
+  "uat": false
+}

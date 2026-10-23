@@ -1,0 +1,28 @@
+[
+  {
+    "width": 1280,
+    "portalNotClippedByTable": true,
+    "separateNameAndCode": true,
+    "explicitDuplicateNameId": true,
+    "ambiguousTextNotAssociated": true,
+    "codeSearchBeyond1000": true,
+    "moreThan50Options": true,
+    "restoredRequestIdAndUnit": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveWrites": 0
+  },
+  {
+    "width": 390,
+    "portalNotClippedByTable": true,
+    "separateNameAndCode": true,
+    "explicitDuplicateNameId": true,
+    "ambiguousTextNotAssociated": true,
+    "codeSearchBeyond1000": true,
+    "moreThan50Options": true,
+    "restoredRequestIdAndUnit": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveWrites": 0
+  }
+]
