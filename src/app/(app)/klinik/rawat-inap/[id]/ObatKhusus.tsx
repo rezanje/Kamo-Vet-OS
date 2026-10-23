@@ -1,4 +1,5 @@
 import { TransactionForm } from "@/components/LocalTransactionDraft";
+import {loadInpatientMedicationHistory} from "@/lib/inpatient-medication-history";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -27,32 +28,10 @@ export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif:
   const draftUserId = draftUser?.id ?? "";
   const hariIni = hariIniWIB();
 
-  const { data: obatRows } = await supabase
-    .from("inpatient_medications")
-    .select("id, nama_obat, dosis, rute, frekuensi_per_hari, durasi_hari, mulai_tanggal, dihentikan_at, catatan")
-    .eq("inpatient_record_id", recordId)
-    .order("created_at", { ascending: false });
-
-  type ObatRow = {
-    id: string; nama_obat: string; dosis: string | null; rute: string | null;
-    frekuensi_per_hari: number; durasi_hari: number; mulai_tanggal: string;
-    dihentikan_at: string | null; catatan: string | null;
-  };
-  const daftar = (obatRows ?? []) as ObatRow[];
-
-  const { data: doseRows } = daftar.length
-    ? await supabase
-        .from("inpatient_med_doses")
-        .select("id, medication_id, diberikan_at, nama_pemberi, catatan, dibatalkan_at")
-        .in("medication_id", daftar.map((o) => o.id))
-        .order("diberikan_at", { ascending: false })
-    : { data: [] };
-
-  type DoseRow = {
-    id: string; medication_id: string; diberikan_at: string;
-    nama_pemberi: string | null; catatan: string | null; dibatalkan_at: string | null;
-  };
-  const semuaDosis: Pemberian[] = ((doseRows ?? []) as DoseRow[]).map((d) => ({
+  const history=await loadInpatientMedicationHistory(supabase,recordId);
+  if(!history)return <section className="crm-sec"><h2 style={{fontSize:13}}>OBAT KHUSUS</h2><p role="alert">Riwayat protokol dan pemberian obat belum dapat dimuat lengkap. Muat ulang sebelum menambah atau mencatat pemberian obat; daftar kosong dan progres belum dapat dipastikan.</p></section>;
+  const daftar=history.medications;
+  const semuaDosis: Pemberian[] = history.doses.map((d) => ({
     id: d.id, medicationId: d.medication_id, diberikanAt: d.diberikan_at,
     namaPemberi: d.nama_pemberi, catatan: d.catatan, dibatalkanAt: d.dibatalkan_at,
   }));

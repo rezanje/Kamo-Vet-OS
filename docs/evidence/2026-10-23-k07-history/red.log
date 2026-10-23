@@ -1,0 +1,30 @@
+
+ RUN  v4.1.9 /workspace/kamo-k07-history
+
+ ❯ src/components/__tests__/inpatient-medication-read-errors.test.tsx (1 test | 1 failed) 21ms
+   × does not claim empty medication history or offer new administration forms after a failed source read 20ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/inpatient-medication-read-errors.test.tsx > does not claim empty medication history or offer new administration forms after a failed source read
+AssertionError: expected '<div class="crm-sec"><div style="disp…' to contain 'role="alert"'
+
+Expected: "role="alert""
+Received: "<div class="crm-sec"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><i class="ti ti-vaccine" style="font-size:18px;color:#7c3aed"></i><div style="font-size:13px;font-weight:800;color:#7c3aed;letter-spacing:.02em">OBAT KHUSUS</div><span style="font-size:10px;color:var(--td)">protokol obat &amp; jejak siapa yang memberikan</span></div><div style="font-size:11px;color:var(--td);margin-bottom:12px">Belum ada obat berprotokol. Tambahkan di bawah — misalnya Ampi Sulbactam, 4× sehari, 3 hari.</div><div style="display:grid;gap:10px;margin-bottom:14px"></div><form style="border-top:.5px solid var(--bd);padding-top:12px" action="javascript:throw new Error(&#x27;React form unexpectedly submitted.&#x27;)"><input type="hidden" name="draft_key" value=""/><input type="hidden" name="draft_scope" value="inpatient-medication:allowed"/><span></span><input type="hidden" name="recordId" value="allowed"/><div style="font-size:10.5px;font-weight:700;color:var(--tm);letter-spacing:.05em;margin-bottom:7px">TAMBAH OBAT BERPROTOKOL</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 190px"><label class="flab">Nama obat *</label><input class="fi" required="" maxLength="120" placeholder="mis. Ampi Sulbactam" name="nama_obat"/></div><div style="width:110px"><label class="flab">Dosis</label><input class="fi" maxLength="60" placeholder="mis. 1 ml" name="dosis"/></div><div style="width:96px"><label class="flab">Rute</label><select class="fi" name="rute"><option value="" selected="">—</option><option value="IV">IV</option><option value="IM">IM</option><option value="SC">SC</option><option value="Oral">Oral</option><option value="Topikal">Topikal</option></select></div><div style="width:104px"><label class="flab">Kali / hari *</label><input class="fi" type="number" min="1" max="12" required="" name="frekuensi_per_hari" value="2"/></div><div style="width:96px"><label class="flab">Berapa hari *</label><input class="fi" type="number" min="1" max="60" required="" name="durasi_hari" value="3"/></div><div style="width:140px"><label class="flab">Mulai</label><input class="fi" type="date" name="mulai_tanggal" value="2026-10-23"/></div><div style="flex:1 1 180px"><label class="flab">Catatan</label><input class="fi" placeholder="mis. sesuai protokol 3 hari" name="catatan"/></div><button type="submit" class="btn-acc" style="background:#7c3aed"><i class="ti ti-vaccine"></i> Tambah obat</button></div></form></div><script>addEventListener("submit",function(a){if(!a.defaultPrevented){var c=a.target,d=a.submitter,e=c.action,b=d;if(d){var f=d.getAttribute("formAction");null!=f&&(e=f,b=null)}"javascript:throw new Error('React form unexpectedly submitted.')"===e&&(a.preventDefault(),b?(a=document.createElement("input"),a.name=b.name,a.value=b.value,b.parentNode.insertBefore(a,b),b=new FormData(c),a.parentNode.removeChild(a)):b=new FormData(c),a=c.ownerDocument||c,(a.$$reactFormReplay=a.$$reactFormReplay||[]).push(c,d,b))}});</script>"
+
+ ❯ src/components/__tests__/inpatient-medication-read-errors.test.tsx:5:213
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  07:55:57
+   Duration  433ms (transform 146ms, setup 0ms, import 226ms, tests 21ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
