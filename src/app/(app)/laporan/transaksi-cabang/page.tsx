@@ -1,14 +1,16 @@
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
+import Link from "next/link";
+import { formatPosMoney } from "@/lib/pos-money";
 import { tarikTransaksi } from "@/lib/laporan-transaksi-server";
-import { perCabang, perKanal, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
+import { perCabang, perHari, perKanal, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
 
 // Menjawab tiga laporan dasar sekaligus (permintaan Kamo Group 24 Agu 2026):
 // jumlah transaksi per cabang, rata-rata transaksi per pelanggan, dan
 // rata-rata item per struk. Ketiganya berasal dari kumpulan angka yang sama,
 // jadi disajikan dalam satu tabel supaya tidak bisa saling bertentangan.
 
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const rp = formatPosMoney;
 const angka = (n: number, desimal = 1) =>
   n.toLocaleString("id-ID", { minimumFractionDigits: desimal, maximumFractionDigits: desimal });
 
@@ -19,21 +21,27 @@ const KANAL: Kanal[] = ["POS", "Online", "Klinik"];
 export default async function TransaksiCabangPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; cabang_id?: string }>;
 }) {
   const sp = await searchParams;
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const kanal = (sp.kanal || "") as Kanal | "";
+  if (kanal && !KANAL.includes(kanal)) throw new Error("Pintu transaksi tidak valid. Pilih POS, Online, Klinik, atau semua.");
+  const cabangId = sp.cabang_id || "";
 
-  const { trx: semua, terpotong } = await tarikTransaksi(dari, sampai);
-  const trx: Trx[] = kanal ? semua.filter((t) => t.kanal === kanal) : semua;
+  const { trx: semua, cabangList, terpotong } = await tarikTransaksi(dari, sampai);
+  const cabangOptions = new Map(cabangList.map(b => [b.id, b.name]));
+  for (const t of semua) if (t.cabangId) cabangOptions.set(t.cabangId,t.cabang);
+  const unavailable = !!cabangId && !cabangOptions.has(cabangId);
+  const trx: Trx[] = semua.filter(t => (!kanal || t.kanal===kanal) && (!cabangId || t.cabangId===cabangId));
+  const hari = perHari(trx);
 
   const baris = perCabang(trx);
   const total = rekap(trx);
   const perCabangKanal = new Map<string, Record<Kanal, number>>();
   for (const b of baris) {
-    perCabangKanal.set(b.cabang, perKanal(trx.filter((t) => t.cabang === b.cabang)));
+    perCabangKanal.set(b.cabangId ?? b.cabang, perKanal(trx.filter((t) => b.cabangId ? t.cabangId === b.cabangId : !t.cabangId && t.cabang === b.cabang)));
   }
 
   return (
@@ -49,6 +57,14 @@ export default async function TransaksiCabangPage({
           <div>
             <label className="flab">Sampai tanggal</label>
             <input className="fi" type="date" name="sampai" defaultValue={sampai} />
+          </div>
+          <div style={{ minWidth: 170 }}>
+            <label className="flab" htmlFor="report-branch">Cabang</label>
+            <select id="report-branch" className="fi" name="cabang_id" defaultValue={cabangId}>
+              <option value="">Semua cabang</option>
+              {unavailable && <option value={cabangId}>Cabang tidak tersedia</option>}
+              {[...cabangOptions].map(([id,name]) => <option key={id} value={id}>{name} · {id.slice(0,8)}</option>)}
+            </select>
           </div>
           <div style={{ minWidth: 170 }}>
             <label className="flab">Pintu transaksi</label>
@@ -73,6 +89,7 @@ export default async function TransaksiCabangPage({
       }
     >
       <div className="crm-sec" style={{ marginBottom: 0 }}>
+        {unavailable && <p role="alert">Cabang yang dipilih tidak tersedia pada cakupan akses/data ini. Pilih cabang yang tersedia; laporan tidak diperluas otomatis.</p>}
         {terpotong && (
           <div style={{ fontSize: 11, color: "#b45309", marginBottom: 8 }}>
             <i className="ti ti-alert-triangle" /> Rentang tanggalnya terlalu lebar — sebagian
@@ -80,7 +97,7 @@ export default async function TransaksiCabangPage({
           </div>
         )}
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 980 }}>
+          <table className="tbl" aria-label="Transaksi per cabang" style={{ minWidth: 980 }}>
             <thead>
               <tr>
                 <th style={{ width: 40 }}>#</th>
@@ -97,11 +114,11 @@ export default async function TransaksiCabangPage({
             </thead>
             <tbody>
               {baris.map((b, i) => {
-                const k = perCabangKanal.get(b.cabang) ?? { POS: 0, Online: 0, Klinik: 0 };
+                const k = perCabangKanal.get(b.cabangId ?? b.cabang) ?? { POS: 0, Online: 0, Klinik: 0 };
                 return (
-                  <tr key={b.cabang}>
+                  <tr key={b.cabangId ?? b.cabang}>
                     <td style={{ fontSize: 11, fontWeight: i < 3 ? 800 : 400, color: i < 3 ? "#b45309" : "var(--tm)" }}>{i + 1}</td>
-                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{b.cabang}</td>
+                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{b.cabangId ? <Link href={`?${new URLSearchParams({dari,sampai,cabang_id:b.cabangId,...(kanal?{kanal}:{})})}`}>{b.cabang} · {b.cabangId.slice(0,8)}</Link> : b.cabang}</td>
                     <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{b.trx}x</td>
                     <td style={{ textAlign: "center", fontSize: 10.5, color: "var(--tm)" }}>
                       {k.POS} / {k.Online} / {k.Klinik}
@@ -141,9 +158,23 @@ export default async function TransaksiCabangPage({
             )}
           </table>
         </div>
+        <h2 style={{fontSize:14,marginTop:20}}>Omzet per hari</h2>
+        <p style={{fontSize:11,color:"var(--tm)"}}>Klik tanggal untuk membuka struk dan invoice pada hari WIB serta cabang/pintu transaksi yang dipilih.</p>
+        <div style={{overflowX:"auto"}}>
+          <table className="tbl" aria-label="Omzet per hari" style={{minWidth:540}}>
+            <thead><tr><th>Tanggal WIB</th><th>Transaksi</th><th>POS / Online / Klinik</th><th style={{textAlign:"right"}}>Omzet</th></tr></thead>
+            <tbody>{hari.map(h => {const k=perKanal(trx.filter(t=>t.tanggal===h.tanggal));return <tr key={h.tanggal}>
+              <td><Link href={`/laporan/penjualan-rinci?${new URLSearchParams({dari:h.tanggal,sampai:h.tanggal,...(cabangId?{cabang_id:cabangId}:{}),...(kanal?{kanal}:{})})}`}>{h.tanggal}</Link></td>
+              <td>{h.trx}x</td><td>{k.POS} / {k.Online} / {k.Klinik}</td><td style={{textAlign:"right"}}>{rp(h.omzet)}</td>
+            </tr>})}{!hari.length&&<TabelKosong kolom={4} pesan="Belum ada transaksi pada filter ini."/>}</tbody>
+            {!!hari.length&&<tfoot><tr><th>TOTAL</th><th>{total.trx}x</th><th/><th style={{textAlign:"right"}}>{rp(total.omzet)}</th></tr></tfoot>}
+          </table>
+        </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
           Transaksi menggabungkan tiga pintu: kasir petshop (POS), pesanan online, dan tagihan klinik.
           Omzet sudah dikurangi retur penjualan, dan tagihan klinik yang dibatalkan tidak ikut dihitung.<br />
+          Nilai memakai total dokumen setelah diskon, termasuk pajak/biaya yang sudah ada pada dokumen; bukan laporan nilai sebelum pajak atau arus kas.<br />
+          Dasar tanggal adalah tanggal dokumen penjualan menurut WIB. Retur mengikuti struk asal, termasuk retur yang dicatat setelah hari penjualan; laporan ini bukan arus kas/refund per hari.<br />
           &quot;Pelanggan dilayani&quot; = pelanggan berkartu yang berbeda, ditambah tiap struk pembeli umum
           yang identitasnya tidak dicatat. &quot;Rata-rata kunjungan&quot; hanya dihitung dari pelanggan
           berkartu — struk umum tidak bisa dilacak orangnya, kalau ikut dihitung angkanya selalu 1x

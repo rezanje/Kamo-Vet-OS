@@ -1,3 +1,4 @@
+import { servicePerformerNames } from "@/lib/service-performers";
 import Link from 'next/link';
 import type { InpatientHandoff, HandoffInvoice } from '@/lib/inpatient-handoff';
 const RECIPE_STATUS:Record<string,string>={pending:'Menunggu diracik',ready:'Siap diserahkan',handed_over:'Diserahkan oleh farmasi',void:'Racikan dibatalkan'};
@@ -27,7 +28,7 @@ export function HandoffPanel({data,visitId,admittedAt}:{data:InpatientHandoff|nu
   </article>)}
   {!data.records.length&&<p>Belum ada rekam medis tersimpan untuk kunjungan ini.</p>}
   <h3 style={{fontSize:13}}>Obat dan tindakan dalam resep</h3>
-  <div style={{overflowX:'auto'}}><table className="tbl" style={{minWidth:620}}><thead><tr><th>Obat / tindakan</th><th>Jumlah &amp; aturan pakai</th><th>Tautan tagihan</th></tr></thead><tbody>{data.prescriptions.map(row=><tr key={row.id}><td>{row.nama_obat}<div style={{fontSize:11,color:'var(--tm)'}}>{row.jenis} · {recorded(row.created_at,admittedAt)}</div></td><td>{row.qty} {row.satuan??''}<div style={{whiteSpace:'pre-wrap'}}>{row.aturan_pakai||'Aturan pakai belum tercatat'}</div></td><td>{billing(row.id,row.compound_recipe_id)}</td></tr>)}{!data.prescriptions.length&&<tr><td colSpan={3}>Belum ada obat/tindakan dalam resep tersimpan.</td></tr>}</tbody></table></div>
+  <div style={{overflowX:'auto'}}><table className="tbl" style={{minWidth:620}}><thead><tr><th>Obat / tindakan</th><th>Jumlah &amp; aturan pakai</th><th>Tautan tagihan</th></tr></thead><tbody>{data.prescriptions.map(row=><tr key={row.id}><td>{row.nama_obat}{row.jenis === "jasa" && <div style={{fontSize:11}}>{servicePerformerNames(row.service_performers).join(" · ")}</div>}<div style={{fontSize:11,color:'var(--tm)'}}>{row.jenis} · {recorded(row.created_at,admittedAt)}</div></td><td>{row.qty} {row.satuan??''}<div style={{whiteSpace:'pre-wrap'}}>{row.aturan_pakai||'Aturan pakai belum tercatat'}</div></td><td>{billing(row.id,row.compound_recipe_id)}</td></tr>)}{!data.prescriptions.length&&<tr><td colSpan={3}>Belum ada obat/tindakan dalam resep tersimpan.</td></tr>}</tbody></table></div>
   <h3 style={{fontSize:13}}>Racikan dan status farmasi</h3>
   {data.recipes.map(row=><article key={row.id} style={{border:'1px solid var(--bd)',borderRadius:7,padding:10,marginTop:8}}><Link className="back-btn" href={`/klinik/racik/${encodeURIComponent(row.id)}`}>{row.recipe_name} · Buka racikan</Link><p>{row.total_volume} · {row.dosage_form} · {RECIPE_STATUS[row.status]??'Status belum dikenali'}</p><p style={{whiteSpace:'pre-wrap'}}>Aturan pakai: {row.dosage_instruction||'Belum tercatat'}</p><p style={{fontSize:11}}>{recorded(row.created_at,admittedAt)}</p>{billing(null,row.id)}</article>)}
   {!data.recipes.length&&<p>Belum ada racikan tersimpan untuk kunjungan ini.</p>}

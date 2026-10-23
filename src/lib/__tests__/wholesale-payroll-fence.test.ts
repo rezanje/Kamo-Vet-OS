@@ -24,3 +24,8 @@ it("stops before commission calculation when the source revision cannot be read"
   await expect(hitungPenggajian(form())).rejects.toThrow("error=unavailable");
   expect(fixture.calculate).not.toHaveBeenCalled(); expect(fixture.upsert).not.toHaveBeenCalled();
 });
+it("explains unresolved service attribution before any payroll write",async()=>{
+ fixture.calculate.mockRejectedValue(Error("SERVICE_ATTRIBUTION_PENDING: Periksa atribusi jasa di Komisi Penjual"));
+ await expect(hitungPenggajian(form())).rejects.toThrow("error=Periksa%20atribusi%20jasa%20di%20Komisi%20Penjual");
+ expect(fixture.upsert).not.toHaveBeenCalled();
+});

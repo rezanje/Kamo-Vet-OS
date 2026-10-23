@@ -9,6 +9,7 @@ export function displayTable(table: HTMLTableElement): string[][] {
     const cells: string[] = [];
     let x = 0;
     [...row.cells].forEach(cell => {
+      if (cell.getAttribute("data-report-column-hidden") === "true") return;
       while (occupied.has(`${y}:${x}`)) cells[x++] = occupied.get(`${y}:${x - 1}`)!;
       const value = text(cell);
       for (let dy = 0; dy < cell.rowSpan; dy++) for (let dx = 0; dx < cell.colSpan; dx++) {
@@ -44,7 +45,7 @@ export function displaySections(root: HTMLElement): DisplaySection[] {
 /** Use submitted defaults, including report defaults, rather than unsaved filter edits. */
 export function displayFilters(root: ParentNode): string[][] {
   return [...root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("form input[name],form select[name]")]
-    .filter(input => !(input instanceof HTMLInputElement) || !["submit", "button"].includes(input.type))
+    .filter(input => !input.hasAttribute("data-report-columns-input") && (!(input instanceof HTMLInputElement) || !["submit", "button"].includes(input.type)))
     .map(input => {
       const label = input.parentElement?.querySelector("label")?.textContent?.trim() || input.name;
       const value = input instanceof HTMLSelectElement

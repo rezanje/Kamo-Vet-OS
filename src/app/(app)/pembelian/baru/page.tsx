@@ -1,4 +1,4 @@
-import { loadWarehouseStock } from "@/lib/warehouse-stock";
+import { loadWarehouseStock, type WarehouseStock } from "@/lib/warehouse-stock";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
@@ -18,17 +18,23 @@ export default async function BaruPOPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const [{ data: suppliers }, { data: warehouses }, { data: branches }, items] = await Promise.all([
-    supabase.from("suppliers").select("id, nama").eq("is_active", true).order("nama"),
-    supabase.from("warehouses").select("id, name").order("name"),
-    supabase.from("branches").select("id, name").order("name"),
+  const [suppliers, warehouses, branches, items] = await Promise.all([
+    readCompleteList<{ id: string; nama: string }>((from, to) => supabase.from("suppliers")
+      .select("id, nama", { count: "exact" }).eq("is_active", true).order("nama").order("id").range(from, to), "Pemasok PO", { maxRows: null }),
+    readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("warehouses")
+      .select("id, name", { count: "exact" }).order("name").order("id").range(from, to), "Gudang PO", { maxRows: null }),
+    readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("branches")
+      .select("id, name", { count: "exact" }).order("name").order("id").range(from, to), "Cabang PO", { maxRows: null }),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items")
       .select("id, code, name, unit, sell_price, buy_price, item_type", { count: "exact" })
       .eq("is_active", true).order("name").order("id").range(from, to),
       "Daftar barang PO", { maxRows: null }),
   ]);
 
-  const stock = await loadWarehouseStock(supabase, (warehouses ?? []).map(w => w.id));
+  const stock: WarehouseStock[] = [];
+  for (let start = 0; start < warehouses.length; start += 200) {
+    stock.push(...await loadWarehouseStock(supabase, warehouses.slice(start, start + 200).map(w => w.id)));
+  }
 
   // Satuan berjenjang: PO bisa dibuat per box/sak, stok tetap masuk dalam satuan dasar.
   const unitMap = await loadItemUnits(supabase, (items ?? []).map((i) => i.id as string));

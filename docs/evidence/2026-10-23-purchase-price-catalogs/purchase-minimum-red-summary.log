@@ -1,0 +1,28 @@
+
+ RUN  v4.1.9 /workspace/kamo-purchase-price-catalogs
+
+ ❯ src/components/__tests__/purchase-reference-catalogs.test.tsx (7 tests | 7 failed) 43ms
+   × PO loads all reference choices while preserving existing active/eligibility filters 18ms
+   × direct invoice loads all reference choices while preserving existing active/eligibility filters 8ms
+   × PO rejects failed/truncated () => __vi_import_1__.default({ searchParams: Promise.resolve({}) }) reference context 7ms
+   × PO rejects failed/truncated () => __vi_import_1__.default({ searchParams: Promise.resolve({}) }) reference context 2ms
+   × PO rejects failed/truncated () => __vi_import_1__.default({ searchParams: Promise.resolve({}) }) reference context 2ms
+   × direct rejects failed/truncated () => __vi_import_2__.default({ searchParams: Promise.resolve({}) }) reference context 2ms
+   × direct rejects failed/truncated () => __vi_import_2__.default({ searchParams: Promise.resolve({}) }) reference context 2ms
+ ❯ src/components/__tests__/minimum-stock-catalog.test.tsx (6 tests | 5 failed) 595ms
+   × includes late eligible products and warehouses, retains purchase-unit suggestions, and scopes selected stock 259ms
+   × blocks a partial or unreadable warehouses context before suggesting POs 84ms
+   × blocks a partial or unreadable items context before suggesting POs 74ms
+   × blocks a partial or unreadable stock context before suggesting POs 71ms
+   × blocks a partial or unreadable item_units context before suggesting POs 6ms
+
+ Test Files  2 failed (2)
+      Tests  12 failed | 1 passed (13)
+   Start at  13:33:44
+   Duration  998ms (transform 193ms, setup 0ms, import 325ms, tests 638ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

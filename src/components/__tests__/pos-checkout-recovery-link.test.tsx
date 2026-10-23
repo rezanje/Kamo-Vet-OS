@@ -8,6 +8,7 @@ vi.mock("@/app/kasir/KasirClient", () => ({ KasirClient: () => <div>Editable cas
 vi.mock("@/app/(app)/pos/transaksi/PosClient", () => ({ PosClient: () => <div>Editable backoffice</div> }));
 vi.mock("@/lib/shift", () => ({ getOpenShift: async () => ({ id: "shift", branch_id: "branch", branchName: "Cabang" }) }));
 vi.mock("@/lib/penjual", () => ({ daftarPenjual: async () => [] }));
+vi.mock("@/lib/service-performers-server", () => ({ loadServiceStaff: async () => [], loggedInCashier: async () => ({employeeId:null,name:"Fictional cashier"}) }));
 vi.mock("@/lib/kasir-catalog", () => ({ loadKasirItems: async () => [], loadKasirCatalogDetails: async () => ({ stock: [], prices: [], tiers: [], discounts: [] }), loadKasirGroupComponents: async () => [] }));
 vi.mock("@/lib/satuan", () => ({ loadUnitOptions: async () => new Map(), loadItemUnits: async () => new Map(), unitOptions: () => [] }));
 vi.mock("@/lib/promo-hitung", () => ({ loadPromoAktif: async () => [] }));

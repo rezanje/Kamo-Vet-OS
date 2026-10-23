@@ -1,0 +1,15 @@
+Independent reviewer /root/k08_review:
+No P1/P2 findings.
+Checked pagination and exact version batches preserve existing RLS, active/inactive visibility, and unpublished-formula behavior.
+Missing or partial versions fail closed; the existing composite foreign key prevents cross-formula version binding.
+Clinical code fields retain their nullable type.
+Independent verification: 29 tests passed across 4 files.
+No edits, publication, merge, or target actions.
+
+Final command results observed by implementer:
+Focused Vitest: exit 0, 36 tests / 5 files.
+Scoped ESLint: exit 0.
+npm run build: exit 0, existing Supabase Edge-runtime warnings retained.
+Separate post-build npx tsc --noEmit: exit 0.
+git diff --check: exit 0.
+No full suite or workflow simulations rerun for this bounded source-read change.

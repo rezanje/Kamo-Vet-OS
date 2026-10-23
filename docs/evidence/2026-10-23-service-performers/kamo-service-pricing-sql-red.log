@@ -1,0 +1,15 @@
+Applied 238 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS service_line_performers: roles/branch/actor/snapshots/immutability/rollback
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-service-performers/scripts/test-service-performers-postgres.py", line 17, in <module>
+    database.sql(clinic + (ROOT / 'supabase/tests/clinic_service_performers.sql').read_text())
+  File "/workspace/kamo-service-performers/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  column "service_pricing_version" does not exist
+LINE 1: SELECT pg_temp.assert_ok((select service_pricing_version=1 f...
+                                         ^
+QUERY:  SELECT pg_temp.assert_ok((select service_pricing_version=1 from invoices where id=inv),'new pricing version persisted for exact replay')
+CONTEXT:  PL/pgSQL function inline_code_block line 10 at PERFORM
+d1000000-0000-4000-8000-000000000001
+authenticated

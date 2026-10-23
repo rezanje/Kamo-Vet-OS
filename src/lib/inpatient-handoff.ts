@@ -1,8 +1,9 @@
+import type { ServicePerformersSnapshot } from "./service-performers";
 import type { createClient } from './supabase/server';
 import { readCompleteList } from './checked-list';
 type Db=Awaited<ReturnType<typeof createClient>>;
 export type HandoffRecord={id:string;visit_id:string;created_at:string;anamnesis:string|null;diagnosis:string|null;catatan_resep:string|null};
-export type HandoffPrescription={id:string;medical_record_id:string;nama_obat:string;qty:number;satuan:string|null;jenis:string;aturan_pakai:string|null;compound_recipe_id:string|null;created_at:string};
+export type HandoffPrescription={service_performers?:ServicePerformersSnapshot|null;id:string;medical_record_id:string;nama_obat:string;qty:number;satuan:string|null;jenis:string;aturan_pakai:string|null;compound_recipe_id:string|null;created_at:string};
 export type HandoffRecipe={id:string;medical_record_id:string;recipe_name:string;total_volume:string;dosage_form:string;dosage_instruction:string;status:string;created_at:string};
 export type HandoffInvoice={id:string;invoice_no:string|null;paid_status:string;voided_at:string|null;created_at:string};
 export type HandoffInvoiceLine={id:string;invoice_id:string;prescription_item_id:string|null;compound_recipe_id:string|null;qty:number};
@@ -22,7 +23,7 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
   for(let offset=0;offset<records.length;offset+=200){
    const ids=records.slice(offset,offset+200).map(row=>row.id);
    const [rx,compounds]=await Promise.all([
-    readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
+    readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
     readCompleteList<HandoffRecipe>((from,to)=>db.from('compounding_recipes').select('id,medical_record_id,recipe_name,total_volume,dosage_form,dosage_instruction,status,created_at',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Racikan handoff',{maxRows:null}),
    ]);prescriptions.push(...rx);recipes.push(...compounds);
   }

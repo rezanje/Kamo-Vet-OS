@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
-import { hitungPromoKeranjang, type PromoHitung } from "@/lib/promo-hitung";
+import { type PromoHitung } from "@/lib/promo-hitung";
 import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
@@ -22,6 +22,9 @@ import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
 import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { roundPosMoney } from "@/lib/pos-money";
+import { serviceLinePromos, aggregateServiceLines } from "@/lib/service-line-promos";
+import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput } from "@/lib/service-performers";
 import { KasirQuantityInput } from "./KasirQuantityInput";
 
 export type GroupComponentRow = {
@@ -61,6 +64,7 @@ export type PromoRow = Promo & {
   auto_apply?: boolean;
 };
 type CartLine = {
+  row_key?: string; item_type?: ItemType; service_performers?: ServicePerformersInput | null;
   item_id: string; nama: string; qty: number; harga: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
   minJual?: number;
@@ -79,7 +83,7 @@ type CartLine = {
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 
 // Kunci baris keranjang: barang + satuan.
-const kunciBaris = (l: { item_id: string; satuan?: string }) => `${l.item_id}|${l.satuan ?? ""}`;
+const kunciBaris = (l: { item_id: string; satuan?: string; row_key?: string }) => l.row_key || `${l.item_id}|${l.satuan ?? ""}`;
 
 const TIER_BADGE: Record<string, { bg: string; color: string }> = {
   New: { bg: "#f1f5f9", color: "#475569" },
@@ -91,14 +95,14 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 
 export function KasirClient({
   branchName, items, customers, vouchers, hariIni, draftContext, shiftId, promos = [], promoHitung = [],
-  aturanDiskon = {}, infoBarang = {}, salespeople = [], error, replacementDraft, replacementId,
+  aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
-  salespeople?: PilihanPenjual[];
+  salespeople?: PilihanPenjual[]; cashierName?: string;
   error?: string;
 }) {
   const [q, setQ] = useState("");
@@ -108,7 +112,8 @@ export function KasirClient({
   const [cartRaw, setCart] = useState<CartLine[]>([]);
   const [custQ, setCustQ] = useState("");
   const [cust, setCust] = useState<CustRow | null>(null);
-  const [salespersonId, setSalespersonId] = useState("");
+  const [legacySalespersonId, setLegacySalespersonId] = useState("");
+  const [bulkPerformers, setBulkPerformers] = useState<ServicePerformersInput>(emptyServicePerformers);
   const [diskon, setDiskon] = useState(0);
   const [diskonPct, setDiskonPct] = useState(false);
   const [poin, setPoin] = useState(0);
@@ -141,13 +146,13 @@ export function KasirClient({
       const customer = customers.find((c) => c.id === draft.customerId) ?? null;
       setCust(customer);
       setCustQ(customer?.name ?? "");
-      setSalespersonId(salespeople.some((p) => p.id === draft.salespersonId) ? draft.salespersonId : "");
       setMetode(draft.metode);
       setMerchantFeePercent(draft.merchantFeePercent ?? 0);
       setSplit(draft.split ?? draft.metode === "Split");
       if (draft.payments?.length) setPayments(draft.payments);
       setDiskon(draft.diskon);
       setDiskonPct(draft.diskonPct);
+      setLegacySalespersonId(draft.salespersonId);
       setPoin(draft.poin);
       setVoucher(draft.voucher);
       setBayar(draft.bayar);
@@ -158,6 +163,8 @@ export function KasirClient({
         return [{
           ...line,
           nama: item.name,
+          item_type: item.itemType,
+          ...(item.itemType === "Jasa" ? { row_key: String(line.row_key || crypto.randomUUID()), service_performers: line.service_performers as ServicePerformersInput ?? emptyServicePerformers() } : { service_performers: null }),
           harga: unit?.sell_price ?? item.harga,
           hargaNormal: unit?.sell_price ?? item.harga,
           minJual: Math.max(1, Number(item.minJual) || 0),
@@ -182,11 +189,11 @@ export function KasirClient({
       return;
     }
     const draft: KasirDraft = {
-      version: 1, savedAt: Date.now(), checkoutKey, customerId: cust?.id ?? "", salespersonId,
+      version: 1, savedAt: Date.now(), checkoutKey, customerId: cust?.id ?? "", salespersonId: legacySalespersonId,
       metode, split, payments, ...(merchantFeePercent ? { merchantFeePercent } : {}), diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
     };
     window.sessionStorage.setItem(draftKey, JSON.stringify(draft));
-  }, [cartRaw, cust?.id, salespersonId, metode, split, payments, merchantFeePercent, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
+  }, [cartRaw, cust?.id, legacySalespersonId, metode, split, payments, merchantFeePercent, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -238,6 +245,8 @@ export function KasirClient({
       // di keranjang kalau menjual per dus.
       const dasar = it.satuan?.[0];
       const baris: CartLine = {
+        item_type: it.itemType,
+        ...(it.itemType === "Jasa" ? { row_key: crypto.randomUUID(), service_performers: emptyServicePerformers() } : {}),
         item_id: it.id, nama: it.name, qty: 0, harga: dasar?.sell_price ?? it.harga,
         hargaNormal: dasar?.sell_price ?? it.harga,
         minJual: Math.max(1, Number(it.minJual) || 0),
@@ -287,21 +296,21 @@ export function KasirClient({
     if (!l.tiers?.length) return l;
     const faktor = Number(l.faktor) || 1;
     const normal = Number(l.hargaNormal ?? l.harga) || 0;
-    const perDasar = hargaTingkat(l.qty * faktor, l.tiers, normal / faktor);
+    const perDasar = hargaTingkat((l.item_type === "Jasa" ? cartRaw.filter(row => row.item_id === l.item_id && row.satuan === l.satuan).reduce((sum,row) => sum + row.qty,0) : l.qty) * faktor, l.tiers, normal / faktor);
     const hargaTier = Math.round(perDasar * faktor);
     return hargaTier < Math.round(normal) ? { ...l, harga: hargaTier } : l;
   }), [cartRaw]);
 
   // Promo otomatis (migrasi 0079): dihitung ulang tiap isi keranjang berubah.
   // Angka di sini cuma untuk DITAMPILKAN — server menghitung ulang saat bayar.
-  const potonganPromo = useMemo(() => hitungPromoKeranjang(promoHitung, cart), [promoHitung, cart]);
+  const potonganPromo = useMemo(() => serviceLinePromos(promoHitung, cart), [promoHitung, cart]);
   const promoPerItem = useMemo(
-    () => new Map(potonganPromo.map((p) => [p.item_id, p])),
+    () => new Map(potonganPromo.map((p) => [p.lineIndex, p])),
     [potonganPromo],
   );
   // Baris keranjang + potongan promonya, dipakai semua perhitungan di bawah.
   const cartHitung = useMemo(
-    () => cart.map((l) => ({ ...l, promo_discount: promoPerItem.get(l.item_id)?.potongan ?? 0 })),
+    () => cart.map((l,index) => ({ ...l, promo_discount: promoPerItem.get(index)?.potongan ?? 0 })),
     [cart, promoPerItem],
   );
 
@@ -341,7 +350,7 @@ export function KasirClient({
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = useMemo(
     () => diskonGolonganKeranjang(
-      cart, cust?.golonganId ? (aturanDiskon[cust.golonganId] ?? []) : [],
+      aggregateServiceLines(cart), cust?.golonganId ? (aturanDiskon[cust.golonganId] ?? []) : [],
       cust?.diskonPersen ?? 0, infoMap,
     ),
     [cart, cust, aturanDiskon, infoMap],
@@ -376,7 +385,7 @@ export function KasirClient({
   // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
-  const canPay = cart.length > 0 && (split || !!metode) && !!salespersonId && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0;
+  const canPay = cart.length > 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
@@ -582,12 +591,12 @@ export function KasirClient({
         <form action={checkoutKasir} className="card">
           {shiftId && <input type="hidden" name="operationalShiftId" value={shiftId} />}
           <input type="hidden" name="checkout_key" value={checkoutKey} />
+          <input type="hidden" name="salespersonId" value={legacySalespersonId} />
           <input type="hidden" name="checkout_poin_requested" value={poin} />
           <input type="hidden" name="checkout_diskon_requested" value={diskon} />
           <input type="hidden" name="checkout_diskon_pct" value={diskonPct ? "1" : "0"} />
           <input type="hidden" name="replacementSaleId" value={replacementId ?? ""} />
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
-          <input type="hidden" name="salespersonId" value={salespersonId} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />
           <input type="hidden" name="diskon" value={diskonVal} />
           <input type="hidden" name="poinDigunakan" value={poinUsed} />
@@ -626,6 +635,7 @@ export function KasirClient({
                         <td style={{ fontSize: 10, color: "var(--tm)" }}>{i + 1}</td>
                         <td style={{ fontSize: 10.5 }}>
                           {l.nama}
+                          {l.item_type === "Jasa" && <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers} staff={salespeople} onChange={next => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, service_performers: next } : row))} />}
                           <div style={{ fontSize: 9, color: "var(--td)" }}>
                             {rp(l.harga)}{l.satuan ? ` / ${l.satuan}` : ""}
                           </div>
@@ -691,15 +701,12 @@ export function KasirClient({
           </div>
 
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
-            <div style={{ marginBottom: 8 }}>
-              <label className="flab">Tenaga penjual / pelaksana *</label>
-              <select className="fi" value={salespersonId} onChange={(e) => setSalespersonId(e.target.value)} required>
-                <option value="">Pilih nama</option>
-                {salespeople.map((person) => (
-                  <option key={person.id} value={person.id}>{person.nama}{person.jabatan ? ` — ${person.jabatan}` : ""}</option>
-                ))}
-              </select>
-            </div>
+            <p style={{ fontSize: 11 }}>Kasir: {cashierName} (akun login). Pelaksana jasa dipilih pada setiap baris.</p>
+            {cart.some(line => line.item_type === "Jasa") && <div>
+              <ServicePerformersField label="Isi pelaksana baris kosong" value={bulkPerformers} staff={salespeople} onChange={setBulkPerformers} />
+              <button className="btn-def" type="button" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
+              <p style={{ fontSize: 10 }}>Hanya baris kosong diisi. Pilihan per baris tetap. Jasa baru belum ditetapkan; pilih per baris atau isi lagi.</p>
+            </div>}
             {/* Peringatan, bukan larangan (permintaan Pak Andri, meeting 14 Agustus). */}
             {peringatan.stokKurang.length > 0 && (
               <div style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>

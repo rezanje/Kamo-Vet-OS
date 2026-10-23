@@ -11,6 +11,13 @@
 export type SumberJual = "kasir" | "klinik" | "reseller";
 
 export type BarisJual = {
+  /** Recorded service evidence stays one revenue row even when two people worked. */
+  servicePerformers?: import("./service-performers").ServicePerformersSnapshot;
+  sourceLineId?: string;
+  sourceDocumentId?: string;
+  sourceDocumentNumber?: string;
+  sourceDocumentHref?: string;
+  commissionPending?: boolean;
   /** Posted DEMO allocation replaces legacy commission while retaining target revenue. */
   fixedCommission?: boolean;
   tanggal: string;              // YYYY-MM-DD

@@ -2,9 +2,11 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
-import { loadItemUnits, unitOptions } from "@/lib/satuan";
+import { unitOptions, type ItemUnit } from "@/lib/satuan";
 import { hitungUsulan, perluDipesan, kelompokPemasok, type BarangReorder } from "@/lib/reorder";
 import { buatPOdariUsulan } from "./actions";
+import { readCompleteList } from "@/lib/checked-list";
+import { ListLoadFailure } from "@/components/ListPagination";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -29,30 +31,43 @@ export default async function StokMinimumPage({
   const { data: { user: draftUser } } = await supabase.auth.getUser();
   const draftUserId = draftUser?.id ?? "";
 
-  const [{ data: whRows }, { data: itemRows }] = await Promise.all([
-    supabase.from("warehouses").select("id, code, name").eq("is_active", true).order("code"),
-    supabase
-      .from("items")
-      .select("id, code, name, unit, min_stock, buy_price, buy_unit, min_buy, supplier_id, suppliers(nama)")
-      .eq("item_type", "Persediaan").eq("is_active", true).gt("min_stock", 0).order("name"),
-  ]);
-  const gudangs = (whRows ?? []) as { id: string; code: string; name: string }[];
-  const items = (itemRows ?? []) as unknown as ItemRow[];
-  const gudangId = gudangs.some((w) => w.id === gudang) ? gudang : "";
-
-  // Stok dibanding batas minimum. Tanpa filter gudang = stok seluruh gudang
-  // digabung; kalau gudang dipilih, batas minimum berlaku untuk gudang itu saja.
-  const ids = items.map((i) => i.id);
-  let stokQ = supabase.from("stock").select("item_id, qty");
-  if (ids.length) stokQ = stokQ.in("item_id", ids);
-  if (gudangId) stokQ = stokQ.eq("warehouse_id", gudangId);
-  const { data: stokRows } = ids.length ? await stokQ : { data: [] };
-  const stok = new Map<string, number>();
-  for (const s of (stokRows ?? []) as { item_id: string; qty: number }[]) {
-    stok.set(s.item_id, (stok.get(s.item_id) ?? 0) + Number(s.qty));
-  }
-
-  const unitMap = await loadItemUnits(supabase, ids);
+  let loaded;
+  try {
+    const [gudangs, items] = await Promise.all([
+      readCompleteList<{ id: string; code: string; name: string }>((from, to) => supabase.from("warehouses")
+        .select("id, code, name", { count: "exact" }).eq("is_active", true).order("code").order("id").range(from, to), "Gudang stok minimum", { maxRows: null }),
+      readCompleteList<ItemRow>((from, to) => supabase.from("items")
+        .select("id, code, name, unit, min_stock, buy_price, buy_unit, min_buy, supplier_id, suppliers(nama)", { count: "exact" })
+        .eq("item_type", "Persediaan").eq("is_active", true).gt("min_stock", 0)
+        .order("name").order("id").range(from, to), "Barang stok minimum", { maxRows: null }),
+    ]);
+    const gudangId = gudangs.some(w => w.id === gudang) ? gudang : "";
+    const ids = items.map(item => item.id);
+    const stok = new Map<string, number>();
+    const unitMap = new Map<string, ItemUnit[]>();
+    for (let start = 0; start < ids.length; start += 200) {
+      const batch = ids.slice(start, start + 200);
+      const [stockRows, unitRows] = await Promise.all([
+        readCompleteList<{ id: string; item_id: string; qty: number }>((from, to) => {
+          let query = supabase.from("stock").select("id, item_id, qty", { count: "exact" }).in("item_id", batch);
+          // Same existing scope: selected warehouse, otherwise all permitted stock.
+          if (gudangId) query = query.eq("warehouse_id", gudangId);
+          return query.order("id").range(from, to);
+        }, "Stok untuk usulan", { maxRows: null }),
+        readCompleteList<ItemUnit & { id: string; item_id: string }>((from, to) => supabase.from("item_units")
+          .select("id,item_id,unit,factor,sell_price,buy_price", { count: "exact" }).in("item_id", batch)
+          .order("id").range(from, to), "Satuan untuk usulan", { maxRows: null }),
+      ]);
+      for (const row of stockRows) stok.set(row.item_id, (stok.get(row.item_id) ?? 0) + Number(row.qty));
+      for (const row of unitRows) {
+        const list = unitMap.get(row.item_id) ?? [];
+        list.push({ unit: row.unit, factor: Number(row.factor), sell_price: Number(row.sell_price), buy_price: Number(row.buy_price) });
+        unitMap.set(row.item_id, list);
+      }
+    }
+    loaded = { gudangs, items, gudangId, stok, unitMap };
+  } catch (loadError) { return <ListLoadFailure error={loadError} label="Usulan stok minimum" />; }
+  const { gudangs, items, gudangId, stok, unitMap } = loaded;
 
   const invalidBuyUnits: string[] = [];
   const menipis: BarangReorder[] = items

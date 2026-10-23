@@ -1,3 +1,4 @@
+import { loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -31,15 +32,16 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   const visit = one(rec.visits as Rel<{ created_at: string; branch_id: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
+  const serviceStaff = await loadServiceStaff(supabase, visit?.branch_id ?? null);
   const [doctors,paramedics]=await Promise.all([
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'doctor'}),
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'paramedic'}),
   ]);
 
   const masterRows = await readCompleteList<{
-    id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string; category_id: string | null; tindakan_kategori: string | null;
+    id: string; code: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string; category_id: string | null; tindakan_kategori: string | null;
   }>((from, to) => supabase
-    .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, category_id, tindakan_kategori", { count: "exact" })
+    .from("items").select("id, code, name, unit, sell_price, is_compound_material, item_type, category_id, tindakan_kategori", { count: "exact" })
     .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
   const categories = await loadClinicItemCategories(supabase);
   const compoundRows = await loadClinicCompoundSkus(supabase, categories);
@@ -92,6 +94,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
 
       <CatatanForm
         key={`${user?.id ?? ""}:${id}`}
+        serviceStaff={serviceStaff}
         recordId={id}
         requestKey={crypto.randomUUID()}
         draftUserId={user?.id ?? ""}

@@ -1,0 +1,6 @@
+Applied 238 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS service_line_performers: roles/branch/actor/snapshots/immutability/rollback
+PASS clinic_service_performers: atomicity/retry/actor/exact-source correction/reissue
+PASS existing regression: clinic_billing_lifecycle.sql
+PASS existing regression: pos_split_payments.sql
+Removed owned PostgreSQL test container and volumes.

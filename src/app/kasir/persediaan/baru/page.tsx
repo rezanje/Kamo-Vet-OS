@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { PersediaanBaruForm } from "./PersediaanBaruForm";
+import { ListLoadError, readCompleteList } from "@/lib/checked-list";
 
 export default async function BaruPermintaanKasirPage({
   searchParams,
@@ -24,12 +25,15 @@ export default async function BaruPermintaanKasirPage({
   const katalog = await loadKatalogPermintaan(supabase);
 
   // stok toko: gudang retail pertama cabang shift.
-  const { data: wh } = await supabase
+  const { data: wh, error: warehouseError } = await supabase
     .from("warehouses").select("id").eq("branch_id", shift.branch_id).eq("is_active", true).order("type").limit(1).maybeSingle();
+  if (warehouseError) throw new ListLoadError("Gudang permintaan belum dapat dimuat. Coba muat ulang.");
   const stockMap: Record<string, number> = {};
   if (wh) {
-    const { data: st } = await supabase.from("stock").select("item_id, qty").eq("warehouse_id", wh.id);
-    for (const s of st ?? []) stockMap[s.item_id as string] = Number(s.qty);
+    const st = await readCompleteList<{ id: string; item_id: string; qty: number }>((from, to) => supabase.from("stock")
+      .select("id, item_id, qty", { count: "exact" }).eq("warehouse_id", wh.id)
+      .order("id").range(from, to), "Stok gudang permintaan", { maxRows: null });
+    for (const s of st) stockMap[s.item_id] = (stockMap[s.item_id] ?? 0) + Number(s.qty);
   }
 
   const items = katalog.map((i) => ({ ...i, stok: stockMap[i.id] ?? 0 }));

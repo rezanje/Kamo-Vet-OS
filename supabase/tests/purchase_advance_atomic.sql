@@ -63,7 +63,7 @@ reset role;
 set local request.jwt.claim.sub='d6000000-0000-4000-8000-000000000001';
 set local role authenticated;
 do $$declare amount numeric;failed boolean;begin
- foreach amount in array array[0::numeric,-1,1.25,'NaN'::numeric,'Infinity'::numeric]loop
+ foreach amount in array array[0::numeric,-1,1.001,'NaN'::numeric,'Infinity'::numeric]loop
   failed:=false;begin perform pay_purchase_advance_atomic('bad-'||amount,'UM.QA.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000003',current_date,amount,'Transfer','d6700000-0000-4000-8000-000000000001',null);exception when sqlstate '22023' then failed:=true;end;
   if not failed then raise exception 'invalid money accepted: %',amount;end if;
  end loop;

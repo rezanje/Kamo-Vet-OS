@@ -1,0 +1,367 @@
+
+ RUN  v4.1.9 /workspace/kamo-clinical-followup
+
+ ❯ src/lib/__tests__/clinic-form-save-results.test.ts (16 tests | 2 failed) 37ms
+   × persists optional therapy text in the existing atomic initial-record payload 6ms
+   × keeps absent therapy nullable for legacy clients 1ms
+ ❯ src/components/__tests__/clinical-instruction-print.test.tsx (4 tests | 3 failed) 52ms
+   × separates patient usage from preparation and offers exact stored prescription printing at the top 42ms
+   × prints the exact medical record from the linked visit rather than the most recent record 4ms
+   × does not print unrelated prescriptions when the requested record is unavailable 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinical-instruction-print.test.tsx > separates patient usage from preparation and offers exact stored prescription printing at the top
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' to contain 'Petunjuk pemakaian'
+
+- Expected
++ Received
+
+- Petunjuk pemakaian
++ <div style="margin-bottom:4px"><a class="back-btn" href="/klinik/racik"><i class="ti ti-arrow-left"></i> Racik Obat</a></div><div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><div style="width:44px;height:44px;border-radius:11px;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-flask" style="font-size:22px;color:var(--posb)"></i></div><div style="flex:1"><div style="font-size:20px;font-weight:800;color:var(--sb);line-height:1.1">RACIK OBAT</div><div style="font-size:11.5px;color:var(--tm)">Petunjuk racik obat dari resep dokter</div></div><span class="bge o">Menunggu diracik</span></div><div class="card" style="margin-bottom:14px;padding:20px"><div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start"><div style="display:flex;gap:16px;min-width:300px;flex:1"><div style="width:96px;height:96px;border-radius:12px;background:var(--sf1);border:.5px solid var(--bd);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><i class="ti ti-paw" style="font-size:40px;color:var(--td)"></i></div><div><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:19px;font-weight:800;color:var(--sb)">—</span><span class="bge b">—</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Pemilik</span><span style="color:var(--tx);font-weight:500">: —</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">No. RM</span><span style="color:var(--tx);font-weight:500">: RM/2026/1023/VIS</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">No. HP</span><span style="color:var(--tx);font-weight:500">: —</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Jenis / Ras</span><span style="color:var(--tx);font-weight:500">: —</span></div></div></div><div style="min-width:220px"><div style="font-size:10px;color:var(--tm)">Dokter Penanggung Jawab</div><div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:12px">—</div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Tanggal Resep</span><span style="color:var(--tx);font-weight:500">: 23/10/2026</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">No. Resep</span><span style="color:var(--tx);font-weight:500">: R/2026/1023/REC</span></div></div><div style="background:#eff6ff;border:.5px solid #bfdbfe;border-radius:10px;padding:14px;max-width:360px;flex:1;min-width:240px"><div style="font-size:10.5px;font-weight:700;color:var(--posb);margin-bottom:6px"><i class="ti ti-clipboard-text"></i> CATATAN RESEP</div><div style="font-size:11.5px;color:var(--tm);line-height:1.5">—</div></div></div></div><div class="crm-sec"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><i class="ti ti-mortar" style="font-size:18px;color:var(--posb)"></i><div style="font-size:13px;font-weight:800;color:var(--posb);letter-spacing:.02em">DAFTAR OBAT RACIKAN</div></div><div style="overflow-x:auto"><table class="tbl" style="min-width:820px"><thead><tr><th style="width:30px">No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Aturan Pakai</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Petunjuk Racik</th></tr></thead><tbody><tr><td style="vertical-align:top;font-size:11px;color:var(--tm)">1</td><td style="font-weight:600;vertical-align:top">Racikan fiktif</td><td style="vertical-align:top"></td><td style="font-size:11.5px;vertical-align:top;white-space:pre-line">Minum 2 kali sehari</td><td style="font-size:11.5px;vertical-align:top"><span style="font-size:10.5px;color:var(--td);font-style:italic">belum diisi</span></td><td style="font-size:11.5px;vertical-align:top;text-transform:capitalize"><span style="font-size:10.5px;color:var(--td);font-style:italic">belum diisi</span></td><td style="vertical-align:top"><ol style="margin:0;padding-left:16px"><li style="font-size:11px;padding:1px 0">Campur perlahan</li></ol></td></tr></tbody></table></div><form style="border:.5px solid #bfdbfe;background:#f8fbff;border-radius:10px;padding:14px;margin-top:14px" action="javascript:throw new Error(&#x27;React form unexpectedly submitted.&#x27;)"><input type="hidden" name="draft_key" value=""/><input type="hidden" name="draft_scope" value="clinic-racik-instructions:recipe"/><span></span><input type="hidden" name="recipeId" value="recipe"/><div style="font-size:11px;font-weight:700;color:var(--posb);margin-bottom:3px"><i class="ti ti-pencil"></i> ISI PETUNJUK RACIK — Racikan fiktif</div><div style="font-size:10.5px;color:var(--tm);margin-bottom:10px">Diisi apoteker/PCA sebelum obat diracik. Kolom ini yang tampil di tabel atas.</div><div class="frow"><div><label class="flab">Jumlah racikan (hasil jadi)</label><input class="fi" placeholder="mis. 60 ml / 10 kapsul" name="total_volume" value=""/></div><div><label class="flab">Bentuk sediaan</label><input class="fi" disabled="" style="background:var(--sf1);text-transform:capitalize" value="—"/></div></div><div class="fg"><label class="flab">Petunjuk racik — satu langkah per baris</label><textarea class="fi" name="compounding_steps" rows="4" placeholder="Haluskan CTM 4 mg, larutkan dengan sedikit air matang
++ Tambahkan Mix Sirup, aduk rata
++ Kocok hingga homogen, masukkan ke botol sirup" style="resize:vertical"></textarea></div><button type="submit" class="btn-acc"><i class="ti ti-device-floppy"></i> Simpan Petunjuk Racik</button></form><div style="background:#fffbeb;border:.5px solid #fde68a;border-radius:10px;padding:14px;margin-top:14px"><div style="font-size:11px;font-weight:700;color:#d97706;margin-bottom:3px"><i class="ti ti-alert-triangle"></i> PERHATIAN</div><div style="font-size:11px;color:#92400e">Pastikan semua bahan sesuai resep dan dalam kondisi baik sebelum diracik.</div></div></div><div class="grid2" style="margin-top:12px"><div class="crm-sec" style="margin-bottom:0"><div style="font-size:12.5px;font-weight:800;color:var(--posb);letter-spacing:.02em;margin-bottom:10px">INFORMASI RESEP</div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Tanggal Periksa</span><span style="color:var(--tx);font-weight:500">: 23/10/2026, 07.00</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Poli</span><span style="color:var(--tx);font-weight:500">: —</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Keluhan</span><span style="color:var(--tx);font-weight:500">: —</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Diagnosa</span><span style="color:var(--tx);font-weight:500">: —</span></div></div><div class="crm-sec" style="margin-bottom:0"><div style="font-size:12.5px;font-weight:800;color:var(--posb);letter-spacing:.02em;margin-bottom:10px">INFORMASI PEMILIK</div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Nama</span><span style="color:var(--tx);font-weight:500">: —</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">No. HP</span><span style="color:var(--tx);font-weight:500">: —</span></div><div style="display:grid;grid-template-columns:110px 1fr;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--tm)">Alamat</span><span style="color:var(--tx);font-weight:500">: —</span></div></div></div><div style="display:flex;gap:8px;margin-top:16px;justify-content:center"><form action="javascript:throw new Error(&#x27;React form unexpectedly submitted.&#x27;)"><input type="hidden" name="recipeId" value="recipe"/><button type="submit" class="pay-btn" style="background:#16a34a;min-width:260px;padding:12px 22px;font-size:13.5px"><i class="ti ti-circle-check"></i> Obat Siap Diserahkan</button></form><form action="javascript:throw new Error(&#x27;React form unexpectedly submitted.&#x27;)"><input type="hidden" name="recipeId" value="recipe"/><input type="hidden" name="visitId" value="visit"/><button type="submit" class="btn-def" style="color:#b91c1c;border-color:#fca5a5;padding:12px 18px"><i class="ti ti-x"></i> Void (resep berubah)</button></form></div><script>addEventListener("submit",function(a){if(!a.defaultPrevented){var c=a.target,d=a.submitter,e=c.action,b=d;if(d){var f=d.getAttribute("formAction");null!=f&&(e=f,b=null)}"javascript:throw new Error('React form unexpectedly submitted.')"===e&&(a.preventDefault(),b?(a=document.createElement("input"),a.name=b.name,a.value=b.value,b.parentNode.insertBefore(a,b),b=new FormData(c),a.parentNode.removeChild(a)):b=new FormData(c),a=c.ownerDocument||c,(a.$$reactFormReplay=a.$$reactFormReplay||[]).push(c,d,b))}});</script>
+
+ ❯ src/components/__tests__/clinical-instruction-print.test.tsx:10:256
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  src/components/__tests__/clinical-instruction-print.test.tsx > prints the exact medical record from the linked visit rather than the most recent record
+AssertionError: expected { visit_id: 'visit' } to deeply equal { visit_id: 'visit', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "id": "original-record",
+    "visit_id": "visit",
+  }
+
+ ❯ src/components/__tests__/clinical-instruction-print.test.tsx:11:293
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  src/components/__tests__/clinical-instruction-print.test.tsx > does not print unrelated prescriptions when the requested record is unavailable
+AssertionError: promise resolved "{ …(10) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ <React.Fragment>
++   <div
++     className="no-print"
++     style={
++       {
++         "alignItems": "center",
++         "display": "flex",
++         "justifyContent": "space-between",
++         "marginBottom": 14,
++       }
++     }
++   >
++     <ForwardRef(LinkComponent)
++       className="back-btn"
++       href="/klinik/rekam-medis/visit"
++     >
++       <i
++         className="ti ti-arrow-left"
++       />
++        Kembali ke rekam medis
++     </ForwardRef(LinkComponent)>
++     <div
++       style={
++         {
++           "display": "flex",
++           "gap": 8,
++         }
++       }
++     >
++       <PrintButton />
++       <ForwardRef(LinkComponent)
++         className="btn-acc"
++         href="/klinik/pembayaran/visit"
++       >
++         <i
++           className="ti ti-credit-card"
++         />
++          Lanjut ke Pembayaran
++       </ForwardRef(LinkComponent)>
++     </div>
++   </div>
++   <div
++     style={
++       {
++         "background": "#fff",
++         "border": ".5px solid var(--bd)",
++         "borderRadius": 10,
++         "color": "#141413",
++         "fontSize": 12.5,
++         "margin": "0 auto",
++         "maxWidth": 560,
++         "padding": "26px 30px",
++       }
++     }
++   >
++     <div
++       style={
++         {
++           "alignItems": "flex-start",
++           "borderBottom": "2px solid #16213e",
++           "display": "flex",
++           "justifyContent": "space-between",
++           "marginBottom": 16,
++           "paddingBottom": 12,
++         }
++       }
++     >
++       <div>
++         <div
++           style={
++             {
++               "fontSize": 18,
++               "fontWeight": 900,
++             }
++           }
++         >
++           KAMO
++           <i
++             className="ti ti-paw"
++             style={
++               {
++                 "fontSize": 15,
++                 "verticalAlign": -1,
++               }
++             }
++           />
++            PET CARE
++         </div>
++         <div
++           style={
++             {
++               "color": "var(--tm)",
++               "fontSize": 10.5,
++               "marginTop": 2,
++             }
++           }
++         >
++           Klinik Hewan
++         </div>
++       </div>
++       <div
++         style={
++           {
++             "color": "var(--tm)",
++             "fontSize": 10.5,
++             "textAlign": "right",
++           }
++         }
++       >
++         <div
++           style={
++             {
++               "color": "#141413",
++               "fontSize": 13,
++               "fontWeight": 700,
++             }
++           }
++         >
++           RESEP
++         </div>
++         <div
++           style={
++             {
++               "marginTop": 2,
++             }
++           }
++         >
++           23 Oktober 2026
++         </div>
++       </div>
++     </div>
++     <div
++       style={
++         {
++           "display": "grid",
++           "gap": "5px 20px",
++           "gridTemplateColumns": "1fr 1fr",
++           "marginBottom": 18,
++         }
++       }
++     >
++       <Row
++         label="Pasien"
++         value="— (-)"
++       />
++       <Row
++         label="Berat"
++         value="—"
++       />
++       <Row
++         label="Pemilik"
++         value="—"
++       />
++       <Row
++         label="Poli"
++         value="Umum"
++       />
++     </div>
++     <div
++       style={
++         {
++           "display": "flex",
++           "gap": 12,
++         }
++       }
++     >
++       <div
++         style={
++           {
++             "color": "#16213e",
++             "fontSize": 30,
++             "fontStyle": "italic",
++             "fontWeight": 700,
++             "lineHeight": 1,
++           }
++         }
++       >
++         R/
++       </div>
++       <div
++         style={
++           {
++             "flex": 1,
++           }
++         }
++       >
++         <div
++           style={
++             {
++               "color": "var(--td)",
++             }
++           }
++         >
++           Tidak ada resep.
++         </div>
++       </div>
++     </div>
++     <div
++       style={
++         {
++           "display": "flex",
++           "justifyContent": "flex-end",
++           "marginTop": 36,
++         }
++       }
++     >
++       <div
++         style={
++           {
++             "fontSize": 11.5,
++             "textAlign": "center",
++           }
++         }
++       >
++         <div
++           style={
++             {
++               "color": "var(--tm)",
++             }
++           }
++         >
++           Dokter Penanggung Jawab
++         </div>
++         <div
++           style={
++             {
++               "height": 42,
++             }
++           }
++         />
++         <div
++           style={
++             {
++               "borderTop": ".5px solid #141413",
++               "fontWeight": 600,
++               "minWidth": 150,
++               "paddingTop": 3,
++             }
+            }
++         >
++           drh. ____________
++         </div>
++       </div>
++     </div>
++   </div>
++ </React.Fragment>
+
+ ❯ src/components/__tests__/clinical-instruction-print.test.tsx:12:240
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  src/lib/__tests__/clinic-form-save-results.test.ts > persists optional therapy text in the existing atomic initial-record payload
+AssertionError: expected { diagnosis: null, …(8) } to match object { therapy: 'Terapi fiktif\nObservasi' }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "therapy": "Terapi fiktif
+- Observasi",
++   "anamnesis": null,
++   "berat": null,
++   "catatan_resep": null,
++   "diagnosis": null,
++   "follow_up": null,
++   "gejala_klinis": null,
++   "hasil_penunjang": null,
++   "penunjang_urls": [],
++   "suhu": null,
+  }
+
+ ❯ src/lib/__tests__/clinic-form-save-results.test.ts:68:307
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  src/lib/__tests__/clinic-form-save-results.test.ts > keeps absent therapy nullable for legacy clients
+AssertionError: expected { diagnosis: null, …(8) } to match object { therapy: null }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "therapy": null,
++   "anamnesis": null,
++   "berat": null,
++   "catatan_resep": null,
++   "diagnosis": null,
++   "follow_up": null,
++   "gejala_klinis": null,
++   "hasil_penunjang": null,
++   "penunjang_urls": [],
++   "suhu": null,
+  }
+
+ ❯ src/lib/__tests__/clinic-form-save-results.test.ts:69:216
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  5 failed | 15 passed (20)
+   Start at  12:14:25
+   Duration  423ms (transform 266ms, setup 0ms, import 379ms, tests 89ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

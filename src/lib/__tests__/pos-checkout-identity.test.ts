@@ -33,6 +33,18 @@ it("requires a persistent, bounded checkout key", () => {
   expect(() => posCheckoutIdentity(input, "branch")).toThrow(/Identitas/);
 });
 
+it("binds checkout recovery to the exact service row and performers, ignoring untrusted snapshot names", () => {
+  const value = form();
+  const row = {item_id:"service",qty:1,satuan:"pcs",row_key:"row-a",service_performers:{doctor_id:"doctor",staff_id:"groomer",doctor_name:"untrusted"}};
+  value.set("cart",JSON.stringify([row])); const before=posCheckoutIdentity(value,"branch");
+  value.set("cart",JSON.stringify([{...row,service_performers:{...row.service_performers,staff_id:"other"}}]));
+  expect(posCheckoutIdentity(value,"branch").fingerprint).not.toBe(before.fingerprint);
+  value.set("cart",JSON.stringify([{...row,row_key:"row-b"}]));
+  expect(posCheckoutIdentity(value,"branch").fingerprint).toBe(before.fingerprint);
+  value.set("cart",JSON.stringify([{...row,service_performers:{...row.service_performers,doctor_name:"different current label"}}]));
+  expect(posCheckoutIdentity(value,"branch")).toEqual(before);
+});
+
 it("preserves raw points and percentage-discount intent when committed balances/catalog totals refresh", () => {
   const before = form(); before.set("checkout_poin_requested", "100"); before.set("poinDigunakan", "100");
   before.set("checkout_diskon_requested", "10"); before.set("checkout_diskon_pct", "1"); before.set("diskon", "10000");

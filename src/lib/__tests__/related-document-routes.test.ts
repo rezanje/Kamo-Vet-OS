@@ -27,3 +27,10 @@ it('rejects absent, malformed and injected route identities',()=>{
  for(const bad of ['', '../baru','x?secret=1','not-an-id'])expect(relatedDocumentHref('goods-receipt',bad)).toBeNull();
  expect(documentAnchor('payment',id)).toBe('payment-'+id);
 });
+it('preserves return-to-retur context when opening its exact purchase order', () => {
+ const from='/pembelian/retur/'+id;
+ const href=relatedDocumentHref('purchase-order',parent,undefined,from)!;
+ expect(new URL(href,'http://localhost').searchParams.get('from')).toBe(from);
+ expect(documentBackHref(from)).toBe(from);
+ expect(documentBackHref(from+'?next=//untrusted.invalid')).toBeNull();
+});

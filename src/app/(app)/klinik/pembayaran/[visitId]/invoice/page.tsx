@@ -1,3 +1,4 @@
+import { servicePerformerNames } from "@/lib/service-performers";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,12 +24,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
 
   const { data: invoice } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, created_at")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, created_at, cashier_name")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!invoice) notFound();
 
   const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen").eq("invoice_id", invoice.id).order("created_at");
+    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, service_performers").eq("invoice_id", invoice.id).order("created_at");
   const { data: payments } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
 
@@ -83,7 +84,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
           <div style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>
             <div>Pasien: <b style={{ color: "#141413" }}>{pet?.name ?? "-"}</b> ({pet?.species ?? "-"}{pet?.breed ? " / " + pet.breed : ""})</div>
             <div>Poli: {visit.poli}</div>
-            <div>Dokter: {visit.dokter ?? "-"}</div>
+            <div>Dokter PJ: {visit.dokter ?? "-"}</div>
+            <div>Kasir: {invoice.cashier_name ?? "Kasir belum tercatat"}</div>
           </div>
         </div>
 
@@ -102,7 +104,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
             {(items ?? []).map((it, i) => (
               <tr key={i}>
                 <td style={{ color: "var(--td)" }}>{i + 1}</td>
-                <td style={{ fontWeight: 500 }}>{it.deskripsi}</td>
+                <td style={{ fontWeight: 500 }}>{it.deskripsi}{it.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}</td>
                 <td style={{ textAlign: "center" }}>{it.qty}</td>
                 <td style={{ textAlign: "right" }}>{rp(it.harga)}</td>
                 <td style={{ textAlign: "center" }}>{Number(it.diskon_persen) > 0 ? `${Number(it.diskon_persen)}%` : "—"}</td>

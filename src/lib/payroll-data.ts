@@ -7,6 +7,7 @@ import { hitungGaji, type HariJadwal, type InputGaji, type RincianGaji } from ".
 import { getAturanGaji } from "./payroll-aturan";
 import { komisiPeriode } from "./komisi-data";
 import { rentangTanggal } from "./tanggal";
+import { assertServiceAttributionReady } from "./commission-readiness";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -39,6 +40,7 @@ export async function kumpulkanDataGaji(
     supabase.from("employees").select("id, nama, jabatan, gaji_pokok").eq("status", "Aktif").order("nama"),
     komisiPeriode(supabase, periode),
   ]);
+  assertServiceAttributionReady(komisi.baris ?? []);
   const komisiPer = new Map(komisi.hasil.map((h) => [h.employeeId, h.komisi]));
   const karyawan = (empData ?? []) as { id: string; nama: string; jabatan: string | null; gaji_pokok: number }[];
   if (karyawan.length === 0) return [];

@@ -1,0 +1,14 @@
+{
+  "src/app/(app)/pembelian/baru/POForm.tsx": "b0ea8e6c581fa409df765909db9c95aa79c91921336e989fcabe985738b44e5d",
+  "src/app/(app)/pembelian/baru/page.tsx": "e242723f8d60c4893864d52bec890b6e619b394ab8cbeaca8b4e55e69213fcfe",
+  "src/app/(app)/pembelian/faktur/langsung/page.tsx": "98a342fe0cc5cd6a9ae56f9a399df2847e1bbb207aadc2f6df434d976cdd254f",
+  "src/app/(app)/penjualan/komisi/page.tsx": "fe2a8e7a95a1e521159da0e1ebd73a42dd389df53556490784fa455219f7d38c",
+  "src/app/(app)/pos/harga/page.tsx": "1b47c837cb71f8489e4136c92e87853f619330a11996712411c9b179270b661c",
+  "src/app/(app)/pos/stok-minimum/page.tsx": "409ccd001ec387d46f18c18108772a1f2144ecc97279ba7ea6c860efaaa41e5b",
+  "src/components/__tests__/commission-reference-catalog.test.tsx": "a73294995465c609d87ee4ab56985c3f1e1c58c4fa14f8b4113904df89e92341",
+  "src/components/__tests__/minimum-stock-catalog.test.tsx": "90738f6a6becc93b3443546a5799150b12a04c18ac2dc3ed47e5143f3fa9331c",
+  "src/components/__tests__/po-item-name-display.test.tsx": "51c7ad81f0f6a5ae51a4af4e9dfc50c4b9e90ed6dcba84e7cc197a0725fe5aff",
+  "src/components/__tests__/price-catalog-pagination.test.tsx": "f6423d0a92d33db6dcc1c5ab0d0dc5b24aa33c9f624054c4ae1d71b5b35b1a82",
+  "src/components/__tests__/purchase-reference-catalogs.test.tsx": "852108d61d40fcc589f74e5b1434e476d1ea3c704d18615c61b7b07ac74a6260",
+  "src/components/__tests__/warehouse-stock-forms.test.tsx": "1cbe6daab19aa16228c587d3dfbfcc3551558f14994e6ff92c06ce2b7bd83b89"
+}
