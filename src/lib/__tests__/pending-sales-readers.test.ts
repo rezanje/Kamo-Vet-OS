@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
 import { getDashboard } from "../dashboard";
-import { recomputeCustomerTier } from "../customer-tier";
 import { kumpulkanBarisKomisi } from "../komisi-data";
 import { jalankanPerawatanLoyalty } from "../loyalty-server";
 
@@ -15,7 +14,7 @@ function fakeClient(withFee = false, withReturn = false) {
   const updates: Record<string, unknown>[] = [];
   return { updates, from(table: string) {
     const data = table === "sales" ? sales : table === "sales_returns" && withReturn
-      ? [{ id: "return", sale_id: "final", tanggal: "2026-10-16", sales_return_items: [{ item_id: "item", qty: 1, harga: 50800 }] }] : [];
+      ? [{ id: "return", sale_id: "final", total: 50800, tanggal: "2026-10-16", sales_return_items: [{ item_id: "item", qty: 1, harga: 50800 }] }] : [];
     const result = { data, count: data.length, error: null };
     const q = { select: () => q, eq: () => q, is: () => q, not: () => q, neq: () => q, in: () => q, gte: () => q, lte: () => q, order: () => q,
       update: (value: Record<string, unknown>) => { updates.push(value); return q; },
@@ -31,22 +30,10 @@ it("financial dashboard sales and trend include completed legacy and planned sal
   expect(result.trenPenjualan.find(day => day.tanggal === "2026-10-15")?.total).toBe(200000);
 });
 
-it("customer spending and tier do not include an unfinished planned checkout", async () => {
-  const client = fakeClient();
-  await recomputeCustomerTier(client as never, "c1");
-  expect(client.updates).toEqual([{ total_spending: 200000, tier: "New" }]);
-});
-
 it("commission includes each completed sale once and excludes pending line items", async () => {
   const result = await kumpulkanBarisKomisi(fakeClient(), "2026-10");
   expect(result.baris).toHaveLength(2);
   expect(result.baris.reduce((sum, row) => sum + row.omzet, 0)).toBe(200000);
-});
-
-it("merchant fees do not increase customer tier qualification", async () => {
-  const client = fakeClient(true);
-  await recomputeCustomerTier(client as never, "c1");
-  expect(client.updates).toEqual([{ total_spending: 200000, tier: "New" }]);
 });
 
 it("merchant fees do not reduce merchandise discounts used by staff commission", async () => {

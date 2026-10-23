@@ -2,6 +2,7 @@
 import {revalidatePath} from "next/cache";
 import {redirect} from "next/navigation";
 import {createClient} from "@/lib/supabase/server";
+import {recomputeCustomerTier} from "@/lib/customer-tier";
 import {hariIniWIB} from "@/lib/tanggal";
 
 export async function buatReturJual(form:FormData) {
@@ -31,9 +32,20 @@ export async function buatReturJual(form:FormData) {
  if(!data||!uuid.test(data.refund_request_id)||!['pending','diproses','selesai'].includes(data.status)
   ||(data.status==='selesai'&&(!uuid.test(data.document_id)||typeof data.document_no!=='string'||!data.document_no.trim()))
   ||(data.status!=='selesai'&&(typeof data.quoted_total!=='number'||!Number.isFinite(data.quoted_total)||data.quoted_total<=0)))fail('Hasil refund belum terkonfirmasi. Periksa daftar sebelum mencoba lagi.');
+ let spendingWarning="";
+ if(data.status==='selesai')try{
+  const result=await db.from("sales_returns").select("sale_id,sales(customer_id)").eq("id",data.document_id).maybeSingle();
+  const origin=Array.isArray(result.data?.sales)?result.data.sales[0]:result.data?.sales;
+  if(result.error||!result.data||result.data.sale_id!==source||!origin)throw Error("Sumber pelanggan belum terbaca");
+  if(origin.customer_id && !await recomputeCustomerTier(db,origin.customer_id))throw Error("Nilai pelanggan belum diperbarui");
+ }catch{
+  // The atomic return already committed. A derived-customer failure must not
+  // be presented as a failed return or lose the receipt/draft acknowledgement.
+  spendingWarning=" Namun nilai belanja pelanggan belum diperbarui. Muat ulang profil dan periksa sumber; jangan membuat retur ulang.";
+ }
  revalidatePath('/','layout');
  const scope="sales-return:"+source;
  const message=data.status==='selesai'?`Retur ${data.document_no} dan payout terkonfirmasi.`:`Permintaan refund ${data.status==='pending'?'diterima':'sedang diproses finance'}; retur, stok dan jurnal belum diposting. Jangan membuat permintaan pengganti untuk transaksi yang sama.`;
- redirect(`${back}?${query}&success=${encodeURIComponent(message)}&request_scope=${encodeURIComponent(scope)}&request_done=${encodeURIComponent(key)}`);
+ redirect(`${back}?${query}&success=${encodeURIComponent(message+spendingWarning)}&request_scope=${encodeURIComponent(scope)}&request_done=${encodeURIComponent(key)}`);
 }
 export async function recoverReturJual(form:FormData){form.set('tindakan','periksa');return buatReturJual(form);}
