@@ -176,6 +176,19 @@ export function isPlaceholderOwnerName(value: string | null | undefined) {
   return /(?:^|[-_\s])drive[-_\s]?download(?:[-_\s]|$)/i.test(clean(value));
 }
 
+/** Carry the same unique identity recognized in preview into the import RPC. */
+export function identitasPersisRekamMedis(
+  row: RekamMedisImporRow,
+  owners: RekamMedisExistingOwner[],
+  pets: RekamMedisExistingPet[],
+): { customer_id: string; pet_id: string | null } | null {
+  const exact = owners.filter(owner => key(owner.name) === key(row.owner_name) && phoneKey(owner.phone) === phoneKey(row.phone));
+  if (exact.length !== 1) return null;
+  const matchingPets = pets.filter(pet => pet.customer_id === exact[0].id && key(pet.name) === key(row.patient_name));
+  if (matchingPets.length > 1) return null;
+  return { customer_id: exact[0].id, pet_id: matchingPets[0]?.id ?? null };
+}
+
 export function klarifikasiIdentitasRekamMedis(
   rows: RekamMedisImporRow[],
   owners: RekamMedisExistingOwner[],
@@ -184,21 +197,20 @@ export function klarifikasiIdentitasRekamMedis(
   return rows.flatMap((row) => {
     const ownerName = key(row.owner_name);
     const ownerPhone = phoneKey(row.phone);
-    const exact = owners.filter((owner) => key(owner.name) === ownerName && phoneKey(owner.phone) === ownerPhone);
-    if (exact.length === 1) return [];
+    if (identitasPersisRekamMedis(row, owners, pets)) return [];
 
     const possible = owners.filter((owner) => key(owner.name) === ownerName || phoneKey(owner.phone) === ownerPhone);
     if (!possible.length) return [];
     const patient = key(row.patient_name);
-    const candidates = possible.map((owner) => {
-      const pet = pets.find((item) => item.customer_id === owner.id && key(item.name) === patient) ?? null;
-      return {
+    const candidates = possible.flatMap((owner) => {
+      const matchingPets = pets.filter(item => item.customer_id === owner.id && key(item.name) === patient);
+      return (matchingPets.length ? matchingPets : [null]).map(pet => ({
         customer_id: owner.id,
         customer_name: owner.name,
         customer_phone: owner.phone,
         pet_id: pet?.id ?? null,
         pet_name: pet?.name ?? null,
-      };
+      }));
     });
     return [{
       source_key: row.source_key,
