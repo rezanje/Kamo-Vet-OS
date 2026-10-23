@@ -1,0 +1,114 @@
+
+> vetos@0.1.0 test
+> vitest run --reporter=dot
+
+
+ RUN  v4.1.9 /workspace/kamo-n01
+
+·······································································································································································································································································································································································stderr | src/components/__tests__/monetary-opening-form.test.tsx > requires preview and invalidates it when the amount or reason changes
+The current testing environment is not configured to support act(...)
+
+···stderr | src/components/__tests__/monetary-opening-form.test.tsx > requires preview and invalidates it when the amount or reason changes
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > requires preview and invalidates it when the amount or reason changes
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > requires preview and invalidates it when the amount or reason changes
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > requires preview and invalidates it when the amount or reason changes
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > requires preview and invalidates it when the amount or reason changes
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > requires preview and invalidates it when the amount or reason changes
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > ignores a preview response that arrives after the inputs changed
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > ignores a preview response that arrives after the inputs changed
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > ignores a preview response that arrives after the inputs changed
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > ignores a preview response that arrives after the inputs changed
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > ignores a preview response that arrives after the inputs changed
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > ignores a preview response that arrives after the inputs changed
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > shows dependency failures and keeps the entered reason/amount
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > shows dependency failures and keeps the entered reason/amount
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > shows dependency failures and keeps the entered reason/amount
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > shows dependency failures and keeps the entered reason/amount
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > shows dependency failures and keeps the entered reason/amount
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | src/components/__tests__/monetary-opening-form.test.tsx > shows dependency failures and keeps the entered reason/amount
+The current testing environment is not configured to support act(...)
+
+···················································································································································································································································································································································································································································································································································································································································································································································································································································································································································stderr | src/lib/__tests__/posting.test.ts > postJournal guards > tidak pernah melempar error (best-effort)
+[postJournal] accounting error (ignored): Error: db down
+    at Object.from (/workspace/kamo-n01/src/lib/__tests__/posting.test.ts:89:37)
+    at postJournal (/workspace/kamo-n01/src/lib/posting.ts:51:8)
+    at /workspace/kamo-n01/src/lib/__tests__/posting.test.ts:90:18
+    at file:///workspace/kamo-a01/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///workspace/kamo-a01/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///workspace/kamo-a01/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///workspace/kamo-a01/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///workspace/kamo-a01/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+
+······································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································································
+
+ Test Files  312 passed (312)
+      Tests  2435 passed (2435)
+   Start at  20:10:05
+   Duration  34.32s (transform 8.09s, setup 0ms, import 20.62s, tests 24.66s, environment 17.69s)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

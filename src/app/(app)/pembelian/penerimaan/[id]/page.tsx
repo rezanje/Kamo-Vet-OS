@@ -1,3 +1,4 @@
+import { DocumentBackLink, RelatedDocuments, type RelatedDocument } from "@/components/RelatedDocuments";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -15,19 +16,26 @@ type Baris = {
   harga: number; catatan: string | null;
 };
 
-export default async function DetailPenerimaanPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function DetailPenerimaanPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ from?: string }> }) {
   const { id } = await params;
+  const sp = await searchParams;
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("goods_receipts")
-    .select("id, no_terima, tanggal, surat_jalan, catatan, purchase_orders(no_po, branches(name), warehouses(name), suppliers(nama)), profiles(full_name), goods_receipt_items(id, nama, satuan, qty_pesan, qty_sisa_sebelum, qty_terima, qty_rusak, harga, catatan)")
+    .select("id, po_id, no_terima, tanggal, surat_jalan, catatan, purchase_orders(id,no_po,status, branches(name), warehouses(name), suppliers(nama)), profiles(full_name), goods_receipt_items(id, nama, satuan, qty_pesan, qty_sisa_sebelum, qty_terima, qty_rusak, harga, catatan)")
     .eq("id", id)
     .maybeSingle();
 
+  if (error) throw new Error("Penerimaan belum dapat dimuat. Coba muat ulang.");
   if (!data) notFound();
 
-  const po = one(data.purchase_orders as Rel<{ no_po: string | null; branches: Rel<{ name: string }>; warehouses: Rel<{ name: string }>; suppliers: Rel<{ nama: string }> }>);
+  const po = one(data.purchase_orders as Rel<{ id: string; no_po: string | null; status: string; branches: Rel<{ name: string }>; warehouses: Rel<{ name: string }>; suppliers: Rel<{ nama: string }> }>);
+  const invoices = po && data.po_id ? await supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('po_id',data.po_id).order('tanggal') : {data: [],error: null};
+  const related: RelatedDocument[] = [
+    ...(po ? [{kind:'purchase-order' as const,id:po.id,label:`PO ${po.no_po ?? 'tanpa nomor'}`,status:po.status}] : []),
+    ...(invoices.data ?? []).map(i => ({kind:'purchase-invoice' as const,id:i.id,label:`Faktur ${i.no_faktur}`,status:i.voided_at?'Dibatalkan':'Aktif'})),
+  ];
   const baris = (data.goods_receipt_items ?? []) as Baris[];
   const penerima = one(data.profiles as Rel<{ full_name: string | null }>)?.full_name ?? "—";
 
@@ -36,6 +44,8 @@ export default async function DetailPenerimaanPage({ params }: { params: Promise
 
   return (
     <>
+      <DocumentBackLink from={sp?.from} />
+      <RelatedDocuments documents={related} from={`/pembelian/penerimaan/${id}`} error={!!invoices.error} note={po ? "Faktur pada PO yang sama. Alokasi faktur per penerimaan tidak tersimpan." : "PO terkait tidak tersedia atau tidak dapat diakses. Hubungan faktur tidak ditebak dari nomor dokumen."} />
       <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/pembelian/penerimaan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>

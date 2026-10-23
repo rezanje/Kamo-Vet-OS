@@ -1,4 +1,6 @@
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
+import { DocumentBackLink } from "@/components/RelatedDocuments";
+import { documentAnchor } from "@/lib/related-document-routes";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -26,7 +28,7 @@ type UM = {
 export default async function UangMukaJualPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; from?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
@@ -57,6 +59,7 @@ export default async function UangMukaJualPage({
       bolehKelola={boleh}
       readOnlyNote="Hanya OWNER/ADMIN/FINANCE yang bisa mencatat uang muka."
     >
+      <DocumentBackLink from={sp.from} />
       <div className="crm-sec">
         <SecHeader
           num="01" title="TERIMA UANG MUKA"
@@ -133,7 +136,7 @@ export default async function UangMukaJualPage({
               {daftar.map((u) => {
                 const sisa = Number(u.jumlah) - Number(u.terpakai);
                 return (
-                  <tr key={u.id}>
+                  <tr id={documentAnchor("advance",u.id)} style={{scrollMarginTop:90}} key={u.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                       {u.no_um}
                       <div><ActivityHistoryLink entity="sales_advances" id={u.id} /></div>

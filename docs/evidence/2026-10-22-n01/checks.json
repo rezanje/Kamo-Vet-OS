@@ -1,0 +1,126 @@
+{
+  "baseline": "102f3b0555305524611296e29d16affc12553eb7",
+  "branch": "codex/n01-document-navigation-20261022",
+  "worktree": "/workspace/kamo-n01",
+  "frozenA01": {
+    "pr": 83,
+    "sha": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+    "unchanged": true
+  },
+  "scope": "Existing purchase document links and wholesale invoice split payment/provenance navigation. See verification source-to-destination matrix; not universal N01 coverage.",
+  "touchedCode": [
+    "scripts/test-related-documents-browser.mjs",
+    "src/app/(app)/pembelian/[id]/page.tsx",
+    "src/app/(app)/pembelian/faktur/[id]/page.tsx",
+    "src/app/(app)/pembelian/penerimaan/[id]/page.tsx",
+    "src/app/(app)/pembelian/perintah-bayar/page.tsx",
+    "src/app/(app)/pembelian/uang-muka/page.tsx",
+    "src/app/(app)/penjualan/faktur/[id]/page.tsx",
+    "src/app/(app)/penjualan/uang-muka/page.tsx",
+    "src/components/RelatedDocuments.tsx",
+    "src/components/__tests__/related-documents-navigation.test.tsx",
+    "src/lib/__tests__/related-document-routes.test.ts",
+    "src/lib/related-document-routes.ts"
+  ],
+  "codeSha256": {
+    "scripts/test-related-documents-browser.mjs": "28c59a0dbf41b0f0262f2892cc6ff189fb4906362273e0581029a491ae4b8070",
+    "src/app/(app)/pembelian/[id]/page.tsx": "fe74ca618b4c7b0aeb2f1cb1215a8a93d0b25837aed56f6a0395d8c2e5e610de",
+    "src/app/(app)/pembelian/faktur/[id]/page.tsx": "927defc73ee94652eccfe26a1c566963ae524cef249cc2b4aa2c652e34869190",
+    "src/app/(app)/pembelian/penerimaan/[id]/page.tsx": "20bb95a0dc5b2c2d8f349b770db1c6c80328d3bfb5af5cd9625069a0baef1830",
+    "src/app/(app)/pembelian/perintah-bayar/page.tsx": "b8e470b83cb37b5a4525fec6b054c550867440d87a899248cada42cde801bd0a",
+    "src/app/(app)/pembelian/uang-muka/page.tsx": "217a52796ac4438fd2c0f5f86c33e9470e1414bc6ff2b4aabcc9117bdbb18d4a",
+    "src/app/(app)/penjualan/faktur/[id]/page.tsx": "768ebf3f1f30f5d0a51292e9ccbe9cf3cbf32940bbdd0efdc6d4318aba4bf899",
+    "src/app/(app)/penjualan/uang-muka/page.tsx": "f50cbb3cd43226818fb41719b456221ce78e8e513732124304448c8b4fd58d81",
+    "src/components/RelatedDocuments.tsx": "20d6d2ef265c850bce5096cde9f1ac22989095ed23ad1df8b8da26417f51cb86",
+    "src/components/__tests__/related-documents-navigation.test.tsx": "ac1dc64ae43292c5bb050029daadd2efe508d4ac11ffac95eb68778c2dfcb9ad",
+    "src/lib/__tests__/related-document-routes.test.ts": "d75c17fca4955ed5b482d5e10d4d0d0276155264a8d1ff4b7870981518cc4dc6",
+    "src/lib/related-document-routes.ts": "b87cb02563d7dd190e170839b5ff36424f03836de2e439ec2c714ae9ebeb3731"
+  },
+  "validation": {
+    "fullVitest": {
+      "filesPassed": 312,
+      "testsPassed": 2435,
+      "failed": 0,
+      "exitCode": 0,
+      "log": "full-tests.log"
+    },
+    "focused": {
+      "filesPassed": 3,
+      "testsPassed": 23,
+      "exitCode": 0,
+      "log": "focused.log"
+    },
+    "typecheck": {
+      "exitCode": 0,
+      "log": "typecheck.log"
+    },
+    "scopedLint": {
+      "exitCode": 0,
+      "log": "lint.log",
+      "browserScriptFinalLint": "passed after mobile-click addition"
+    },
+    "build": {
+      "exitCode": 0,
+      "log": "build.log",
+      "configuration": "fictional loopback Supabase URL/key",
+      "existingWarnings": "Repository-wide lint and Supabase Edge-runtime warnings retained"
+    },
+    "browser": {
+      "exitCode": 0,
+      "log": "browser.log",
+      "boundary": "Actual seven server pages; fictional query client and action guards; loopback Chromium only, not real auth/PostgREST/database integration",
+      "viewports": [
+        1280,
+        390
+      ],
+      "cases": [
+        "multiple receipts",
+        "receipt-to-PO grouped invoice",
+        "all three purchase payment rows",
+        "reversal/replacement anchors",
+        "exact DP/order rows and contextual return",
+        "both split sales receipts and allocated DP",
+        "mobile navigation",
+        "unavailable-source number suppression",
+        "no document-wide mobile overflow"
+      ]
+    },
+    "testFirst": {
+      "initial": "missing route helper and six navigation test failures on main",
+      "logs": [
+        "red.log",
+        "legacy-red.log"
+      ]
+    },
+    "diffCheck": "passed"
+  },
+  "noChanges": [
+    "schema",
+    "migrations",
+    "RPCs",
+    "financial actions/state/calculations",
+    "authentication/permissions",
+    "CRM U01/U05 components",
+    "N02 numbering",
+    "PR83 source branch",
+    "PR86 import candidate"
+  ],
+  "notPerformed": [
+    "merge",
+    "manual deploy",
+    "target database access/migration/writes",
+    "credentials generation",
+    "real authenticated target parity/UAT",
+    "Google Sheet edit"
+  ],
+  "gaps": [
+    "No receipt-to-invoice allocation exists; only explicit shared-PO grouping",
+    "Unlinked legacy DP/payment history is not inferred",
+    "Existing backend row limits remain",
+    "No new standalone payment/order detail model; exact existing row anchors used",
+    "POS/clinic and generalized cross-module/journal/delivery navigation not included"
+  ],
+  "rollback": "Normal previous application redeploy; no database migration or rollback for N01",
+  "review": "Self-review of actual diff and access/query boundaries; no worker agent launched and no independent-worker review claimed",
+  "logNormalization": "Terminal carriage returns/trailing whitespace normalized; command outcomes/messages retained"
+}
