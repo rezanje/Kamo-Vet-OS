@@ -1,0 +1,37 @@
+{
+  "baseSha": "102f3b0555305524611296e29d16affc12553eb7",
+  "fullTests": {
+    "files": 311,
+    "tests": 2416,
+    "exitCode": 0
+  },
+  "focused": {
+    "files": 4,
+    "tests": 42,
+    "exitCode": 0
+  },
+  "typecheckExitCode": 0,
+  "scopedLintExitCode": 0,
+  "buildExitCode": 0,
+  "sql": {
+    "migrations": 223,
+    "exitCode": 0,
+    "checks": [
+      "sold units and RPC",
+      "native clinic + definition fence",
+      "native wholesale + definition fence",
+      "native POS finalization",
+      "two-session first-sale edit fence"
+    ]
+  },
+  "review": {
+    "modelRequested": "gpt-6.1-sol",
+    "effortRequested": "high",
+    "remainingP1P2": 0
+  },
+  "targetMigrationApplied": false,
+  "merged": false,
+  "productionDeployed": false,
+  "uat": "pending",
+  "sheetEdited": false
+}

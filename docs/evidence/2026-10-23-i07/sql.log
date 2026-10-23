@@ -1,0 +1,7 @@
+Applied 223 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS sold_sku_units.sql
+PASS native clinic_invoice_post.sql plus sold conversion fence
+PASS native sales_safe_posting.sql plus sold conversion fence
+PASS native POS split/finalization regressions
+PASS first-sale finalization vs24-to28 edit: waited, then denied; factor24 preserved
+Removed owned PostgreSQL test container and volumes.

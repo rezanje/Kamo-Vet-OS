@@ -1,0 +1,46 @@
+# I07 — sold SKU conversion history
+
+Base main `102f3b0555305524611296e29d16affc12553eb7`; isolated branch `codex/i07-sold-sku-unit-guard-20261023`. PR83/88/90 are unchanged. PR92 integration/release is owned by another executor; no main merge or target migration is performed here.
+
+## Diagnosis and bounded design
+
+The24→28 change is a conversion-definition edit, not a price change. Transaction lines already snapshot their selected unit/factor, but no database guard prevents changing `items.unit`, changing `item_units.factor`, renaming/deleting alternate units or moving those rows to another SKU after sale. Returns and later unit resolution use the master too; retaining historical line snapshots alone is insufficient.
+
+Manual SKU edit deletes all alternate-unit rows and recreates them, ignoring delete errors. Accurate master import similarly deletes/reinserts the batch; insert-only CSV does not update existing SKU definitions. Price administration changes only prices and needs to remain usable. Existing used-unit-name and SKU-code guards protect different identities and do not close this gap.
+
+The chosen bounded fix fences sold conversion definitions in database triggers and replaces base/alternate units atomically through an active OWNER/ADMIN invoker RPC. Retained rows update in place. Existing unit labels/factors, the base unit, deletion and reparenting are protected; price changes remain allowed. Adding a distinct new alternate unit does not rewrite an existing definition and remains possible. To change the same packaging from24 to28, the message directs the user to create a new SKU.
+
+The scope intentionally does not freeze a SKU solely because it was bought, stocked or transferred. Modern pending POS lines are not completed sales. Legacy POS rows without modern checkout markers count as historical sale evidence; published clinic and wholesale invoice lines count even when unpaid, cancelled or reissued. No history is deleted or reconstructed.
+
+## Changes and paths
+
+- `supabase/migrations/20261023013902_sold_sku_unit_history_guard.sql`: private sale-history helper covers posted/legacy POS SKU lines and group-component lines, clinic invoice lines, and wholesale invoice lines. Definition triggers acquire the parent item lock and read history with the trigger owner's visibility, preventing branch-filtered false negatives without exposing document IDs/numbers or broadening reader access.
+- `replace_item_unit_configuration(uuid,text,jsonb)` checks authenticated active OWNER/ADMIN, retains invoker RLS, locks the SKU, validates the unit payload, updates base/deletes omitted alternatives/upserts retained alternatives in one transaction. The old conversion map survives a rejected factor/deletion change, including its previous prices. No existing table grant, role/module/branch policy, stock check or journal writer is changed.
+- `src/app/(app)/pos/sku/actions.ts`: existing-item conversion validation/save happens before unrelated master writes; new-item conversion save follows initial creation. All delete/reinsert unit writes are removed. Other SKU metadata/tiers/group operations remain their existing separate requests.
+- `src/app/(app)/pos/sku/impor/actions.ts`: existing metadata upsert retains its previous base until the unit RPC atomically applies the requested base/map. Each changed SKU uses the same guarded RPC instead of destructive batch unit replacement. Existing import progress, row rejection/audit, cleanup and per-row retry behavior are retained. This adds one unit RPC per changed SKU; no large-import throughput claim is made.
+- `src/lib/satuan.ts`: shared RPC wrapper used by both edit/import. Price-only writes in `/pos/harga`, group/variant component import, and CSV creation remain their existing paths; database definition guards also cover direct updates/upserts/deletes.
+
+Independent review found an additional first-sale race: POS pending lines are written in earlier HTTP requests, but `finalize_pos_sale` did not hold the parent item lock when setting its finalization marker. A factor change could overlap completion. The new NULL→nonNULL finalization trigger locks sorted SKU and group-component parents FOR SHARE and validates the pending line unit/factor after acquiring those locks. Conversion updates use the conflicting parent lock. If finalization wins, the edit waits then sees sale history and rejects. If an unsold conversion edit wins, finalization rejects stale unit factors and rolls back its financial transaction. It introduces no price/stock-availability policy.
+
+## Executed verification
+
+- RED manual/import action tests:3 expected failures before the client routing fix;22 existing tests passed. [Action RED](../evidence/2026-10-23-i07/action-red.log).
+- Actual posted POS24→28 update succeeded before the database guard, producing the expected rejection-test failure. [Definition RED](../evidence/2026-10-23-i07/sql-red.log).
+- Corrected pending-sale fixture with explicit fictional HPP0 finalized stale24 against master28 before the finalization guard, producing `Pending sold24 finalized against changed master28`. [Pending RED](../evidence/2026-10-23-i07/pending-red.log). An earlier fixture omitted HPP and was rejected by the pre-existing cost check; that was corrected without weakening the check.
+- Focused manual SKU/import/reorder/unit tests:42 tests /4 files pass. [Focused](../evidence/2026-10-23-i07/focused.log).
+- Owned network-none PostgreSQL16:223 repository migrations, focused I07 definitions/RPC tests, original clinic invoice and wholesale posting suites plus source-specific definition-fence assertions, original POS split/finalization regressions all pass. Tests cover factor24→28, base unit, alternate rename/delete/reparent, price-only replay, rejected-map rollback, preserved historical factor, pending/unsold stocked inventory, active admin boundary and first-sale concurrency. [SQL](../evidence/2026-10-23-i07/sql.log).
+- One targeted two-session lock check executes actual POS finalization, pauses before its commit and concurrently edits24→28. The edit waits, then rejects, retaining24. No broad new simulation campaign, shared/target database or live business writes.
+- Full existing application suite:2416 tests pass. Typecheck and scoped lint pass. Build outcome/counts are recorded in [checks](../evidence/2026-10-23-i07/checks.json), [build](../evidence/2026-10-23-i07/build.log), [full suite](../evidence/2026-10-23-i07/full-tests.log), [types](../evidence/2026-10-23-i07/typecheck.log), [lint](../evidence/2026-10-23-i07/lint.log).
+- Independent read-only Sol6.1 high review identified the POS race; revised production code has no remaining P1/P2. Independent25 focused tests passed. Final corrected SQL GREEN was confirmed by implementer after that review. No browser/large-data campaign is claimed; user asked for focused path tests and basic checks.
+
+The source-history helper is private/revoked from application roles; new RPC has explicit active-admin checks and uses existing RLS. No secrets, clinical payload or new personal data are recorded. Supabase changelog and [official trigger documentation](https://supabase.com/docs/guides/database/postgres/triggers) were checked. Next15.5.25 checkout lacks the `node_modules/next/dist/docs` directory referred to by AGENTS; existing APIs, typecheck/build were used. CLI2.75 created the migration via discovered `migration new`; current advisor service is unavailable in the owned plain PostgreSQL harness, and no target advisor/migration is implied.
+
+## Release, rollback and remaining boundaries
+
+Parent coordinates integration after PR92 stabilizes. Rebase/merge its resulting main normally and resolve/verify overlapping import changes before release; no force push. Review/apply the migration to the approved target before enabling this application build; the new unit RPC is required. Keep the migration while rolling application forward; reverting the app alone restores the old destructive unit writer, which is safely blocked on sold definitions but makes price-only saves fail. Prefer a reviewed forward fix if release issues arise.
+
+If full rollback is approved, pause unit edit/import writes, coordinate app rollback and [reverse DDL](../rollback/2026-10-23-i07-sold-units.sql), and verify parity. Reverse DDL removes this new protection and must never be used to force a sold conversion change. It deletes no master, transaction, stock, financial or audit records. Reverse DDL is supplied for review, not executed on a target or advertised as a tested recovery drill.
+
+Existing Accurate metadata upsert and reference creation remain best-effort separate writes: a rejected unit-map row can already have updated unrelated metadata. The unit/base map itself remains atomic and unchanged on rejection. Existing legacy history whose SKU links were already missing cannot be inferred from names/document numbers. Pending payloads with stale factors need review/rebuild; this candidate does not invent a new cancellation/reversal workflow. Bought/transferred-only inventory policy stays unchanged. I06 draft-opname cancellation is separate.
+
+Status: implemented/tested candidate; push/PR/exact preview result reported separately. No main merge, target migration, production deployment, UAT or Sheet checklist completion is claimed.

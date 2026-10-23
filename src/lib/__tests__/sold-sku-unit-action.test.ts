@@ -1,0 +1,9 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const s=vi.hoisted(()=>({blocked:true,writes:[] as string[],calls:[] as {name:string;params:unknown}[]}));
+vi.mock('next/navigation',()=>({redirect:(url:string)=>{throw Error(decodeURIComponent(url))}}));
+vi.mock('@/lib/master-guard',()=>({assertMasterAdmin:async()=>({rpc:async(name:string,params:unknown)=>{s.calls.push({name,params});return {error:name==='replace_item_unit_configuration'&&s.blocked?{message:'Konversi SKU sudah memiliki penjualan; buat SKU baru'}:null}},from(table:string){const q={select:()=>q,eq:()=>q,ilike:()=>q,insert:()=>{s.writes.push(table);return q},update:()=>{s.writes.push(table);return q},delete:()=>{s.writes.push(table);return q},maybeSingle:async()=>({data:table==='units'?{nama:'pcs'}:{id:'item'},error:null}),then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:[],error:null}).then(resolve)};return q}})}));
+import {simpanBarang} from '@/app/(app)/pos/sku/actions';
+const form=()=>{const f=new FormData();for(const [k,v] of Object.entries({id:'item',name:'Fictional SKU',code:'I07',category_id:'cat',item_type:'Persediaan',unit:'pcs',units:JSON.stringify([{unit:'box',factor:28,sell_price:28000,buy_price:14000}])}))f.set(k,v);return f};
+beforeEach(()=>{s.blocked=true;s.writes=[];s.calls=[]});
+it('rejects a sold conversion before other master changes and explains new SKU',async()=>{await expect(simpanBarang(form())).rejects.toThrow('buat SKU baru');expect(s.writes).toEqual([])});
+it('routes successful edits through the atomic base/unit configuration without destructive replacement',async()=>{s.blocked=false;await expect(simpanBarang(form())).rejects.toThrow('success=1');expect(s.calls).toContainEqual({name:'replace_item_unit_configuration',params:{p_item_id:'item',p_base_unit:'pcs',p_units:[{unit:'box',factor:28,sell_price:28000,buy_price:14000}]}});expect(s.writes).not.toContain('item_units')});
