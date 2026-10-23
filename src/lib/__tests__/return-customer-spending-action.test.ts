@@ -1,0 +1,13 @@
+import{beforeEach,expect,it,vi}from'vitest';
+const s=vi.hoisted(()=>({rpc:vi.fn(),source:vi.fn(),recompute:vi.fn()}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:s.rpc,from:()=>{const q={select:()=>q,eq:()=>q,maybeSingle:s.source};return q;}})}));
+vi.mock('@/lib/customer-tier',()=>({recomputeCustomerTier:s.recompute}));vi.mock('next/cache',()=>({revalidatePath:vi.fn()}));vi.mock('next/navigation',()=>({redirect:(url:string)=>{throw Error(decodeURIComponent(url));}}));
+import{buatReturJual}from'@/app/(app)/penjualan/retur/actions';
+const f=()=>{const data=new FormData();data.set('sale_id','untrusted-source');data.set('request_key','same-key');data.set('source_ref','STR.FICTION');data.set('items','[]');return data;};
+beforeEach(()=>{s.rpc.mockReset();s.source.mockReset();s.recompute.mockReset();s.rpc.mockResolvedValue({data:{document_id:'10000000-0000-4000-8000-000000000001',document_no:'RJ.FICTION'},error:null});s.source.mockResolvedValue({data:{sale_id:'untrusted-source',sales:{customer_id:'source-customer'}},error:null});s.recompute.mockResolvedValue(true);});
+it('refreshes only the returned document source customer before acknowledging the stable receipt',async()=>{await expect(buatReturJual(f())).rejects.toThrow(/request_done=same-key/);expect(s.recompute).toHaveBeenCalledWith(expect.anything(),'source-customer');});
+it('preserves successful return acknowledgement when derived stats fail, with explicit warning to avoid duplicate return',async()=>{s.recompute.mockRejectedValue(Error('source unavailable'));const message=await buatReturJual(f()).then(()=>'',e=>e.message);expect(message).toMatch(/request_done=same-key/);expect(message).toMatch(/nilai belanja.*belum diperbarui/);});
+it('does not mutate customer totals for an unconfirmed receipt',async()=>{s.rpc.mockResolvedValue({data:{document_no:'fake'},error:null});await expect(buatReturJual(f())).rejects.toThrow(/belum terkonfirmasi/);expect(s.recompute).not.toHaveBeenCalled();});
+it('does not claim customer totals updated when authoritative source read fails',async()=>{s.source.mockResolvedValue({data:null,error:{message:'private'}});await expect(buatReturJual(f())).rejects.toThrow(/nilai belanja.*belum diperbarui/);expect(s.recompute).not.toHaveBeenCalled();});
+
+it("retains durable receipt and warns when authoritative recompute returns failure",async()=>{s.recompute.mockResolvedValue(false);const message=await buatReturJual(f()).then(()=>'',e=>e.message);expect(message).toMatch(/request_done=same-key/);expect(message).toMatch(/nilai belanja.*belum diperbarui/);expect(s.rpc).toHaveBeenCalledTimes(1);});
