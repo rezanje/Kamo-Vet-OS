@@ -19,9 +19,10 @@ it("searches code and name across the complete catalog", async () => {
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={(id) => { selected = id; }} />));
   const input = host.querySelector<HTMLInputElement>("input")!;
   await act(async () => { input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "SKU-1204"); input.dispatchEvent(new Event("input", { bubbles: true })); });
-  expect(host.textContent).toContain("SKU-1204 · Produk 1204");
-  expect(host.textContent).not.toContain("SKU-4 · Produk 4");
-  await act(async () => (host.querySelector<HTMLButtonElement>('button[role="option"]')!).click());
+  expect(document.querySelector("[role=option]")!.textContent).toContain("Produk 1204");
+  expect(document.querySelector("[role=option]")!.textContent).toContain("Kode: SKU-1204");
+  expect(document.querySelector("[role=listbox]")!.textContent).not.toContain("Kode: SKU-4");
+  await act(async () => (document.querySelector<HTMLButtonElement>('button[role="option"]')!).click());
   expect(selected).toBe("item-1204");
 });
 
@@ -30,10 +31,10 @@ it("syncs restored and cleared values, and selects with keyboard without submitt
   const onChange = (id: string) => { selected = id; };
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={onChange} />));
   const input = host.querySelector<HTMLInputElement>("input")!;
-  expect(input.value).toBe("SKU-1204 · Produk 1204");
+  expect(input.value).toBe("Produk 1204");
   selected = "item-1001";
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={onChange} />));
-  expect(host.querySelector<HTMLInputElement>("input")!.value).toBe("SKU-1001 · Produk 1001");
+  expect(host.querySelector<HTMLInputElement>("input")!.value).toBe("Produk 1001");
   selected = "";
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={onChange} />));
   const restoredInput = host.querySelector<HTMLInputElement>("input")!;
@@ -47,4 +48,17 @@ it("syncs restored and cleared values, and selects with keyboard without submitt
   selected = "";
   await act(async () => root.render(<SearchableItemPicker items={items} value={selected} onChange={onChange} />));
   expect(host.querySelector<HTMLInputElement>("input")!.value).toBe("");
+});
+
+it('shows selected name and code separately instead of prefixing the name field',async()=>{
+ await act(async()=>root.render(<SearchableItemPicker items={items} value="item-1204" onChange={()=>{}}/>));
+ expect(host.querySelector('input')!.value).toBe('Produk 1204');
+ expect(host.querySelector('[data-item-code]')!.textContent).toBe('Kode: SKU-1204');
+});
+it('exposes additional results beyond the first fifty without requiring a new search',async()=>{
+ await act(async()=>root.render(<SearchableItemPicker items={items} value="" onChange={()=>{}}/>));
+ await act(async()=>host.querySelector('input')!.focus());
+ const more=[...document.querySelectorAll('button')].find(b=>b.textContent?.includes('Tampilkan lebih banyak'));
+ expect(more).toBeDefined();await act(async()=>more!.click());
+ expect(document.querySelectorAll('[role=option]')).toHaveLength(100);
 });

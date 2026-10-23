@@ -36,7 +36,7 @@ export function SearchableMultiSelect({name,label,options,categories,value,onCha
   </div>
   <div aria-live="polite" style={{marginTop:4,color:"var(--tm)"}}>{selected.size} dipilih · {hits.length} hasil pencarian</div>
   {selected.size>0&&<div aria-label={`Pilihan ${label}`} style={{display:"flex",flexWrap:"wrap",gap:4,maxHeight:100,overflowY:"auto",marginTop:6}}>
-   {[...selected].map(id=>{const o=byId.get(id);const text=o?`${o.code} · ${o.name}`:`Pilihan tidak tersedia (${id.slice(0,8)})`;return <button key={id} type="button" className="btn-def" aria-label={`Lepas ${text}`} onClick={()=>toggle(id)} style={{maxWidth:"100%",whiteSpace:"normal",overflowWrap:"anywhere",textAlign:"left",fontSize:11}}>{text} ×</button>;})}
+   {[...selected].map(id=>{const o=byId.get(id);const text=o?`${o.code} · ${o.name}`:`Pilihan tidak tersedia (${id.slice(0,8)})`;return <button key={id} type="button" className="btn-def" aria-label={`Lepas ${text}`} onClick={()=>toggle(id)} style={{maxWidth:"100%",whiteSpace:"normal",overflowWrap:"anywhere",textAlign:"left",fontSize:11}}><span>{o?.name??text}</span>{o?.code&&<small data-item-code style={{display:"block",color:"var(--tm)"}}>Kode: {o.code}</small>} ×</button>;})}
   </div>}
   {missing.length>0&&<p role="alert">{missing.length} pilihan tidak tersedia. Lepaskan secara eksplisit atau periksa daftar; pilihan tidak dihapus otomatis.</p>}
   {open&&<div style={{border:"1px solid var(--bd)",borderRadius:6,padding:6,marginTop:5,minWidth:0}}>
@@ -45,7 +45,7 @@ export function SearchableMultiSelect({name,label,options,categories,value,onCha
     <button type="button" className="btn-def" disabled={!hits.length} onMouseDown={e=>e.preventDefault()} onClick={()=>all(false)}>Lepas semua hasil ({hits.length})</button>
    </div>
    <div id={listId} role="listbox" aria-label={`Hasil ${label}`} aria-multiselectable="true" style={{maxHeight:220,overflowY:"auto",minWidth:0}}>
-    {shown.map((o,i)=><button key={o.id} id={`${listId}-${i}`} type="button" role="option" aria-selected={selected.has(o.id)} tabIndex={-1} onMouseDown={e=>e.preventDefault()} onClick={()=>toggle(o.id)} style={{display:"block",width:"100%",textAlign:"left",whiteSpace:"normal",overflowWrap:"anywhere",padding:7,border:0,background:i===highlight?"#eff6ff":"transparent",fontSize:12}}>{selected.has(o.id)?"✓ ":""}{o.code} · {o.name}{o.categoryLabel&&<span style={{display:"block",fontSize:11,color:"var(--tm)"}}>{o.categoryLabel}</span>}</button>)}
+    {shown.map((o,i)=><button key={o.id} id={`${listId}-${i}`} type="button" role="option" aria-selected={selected.has(o.id)} tabIndex={-1} onMouseDown={e=>e.preventDefault()} onClick={()=>toggle(o.id)} style={{display:"block",width:"100%",textAlign:"left",whiteSpace:"normal",overflowWrap:"anywhere",padding:7,border:0,background:i===highlight?"#eff6ff":"transparent",fontSize:12}}>{selected.has(o.id)?"✓ ":""}<span data-item-name>{o.name}</span>{o.code&&<small data-item-code style={{display:"block",color:"var(--tm)"}}>Kode: {o.code}</small>}{o.categoryLabel&&<span style={{display:"block",fontSize:11,color:"var(--tm)"}}>{o.categoryLabel}</span>}</button>)}
     {!hits.length&&<p>Tidak ada hasil.</p>}
    </div>
    {shown.length<hits.length&&<button type="button" className="btn-def" onClick={()=>setLimit(n=>n+50)}>Tampilkan lebih banyak ({shown.length}/{hits.length})</button>}

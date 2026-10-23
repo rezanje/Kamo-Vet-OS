@@ -56,8 +56,8 @@ it("searches names after row 1000, distinguishes duplicates by code and selects 
   await render();
   expect(fixture.ranges).toEqual([[0, 999], [1000, 1999]]);
   await type("zEbRa TuNa");
-  const options = host.querySelectorAll('[role="option"]');
-  expect(Array.from(options, o => o.textContent)).toEqual(["SKU-1203 · Zebra Tuna", "SKU-1204 · Zebra Tuna"]);
+  const options = document.querySelectorAll('[role="option"]');
+  expect(Array.from(options, o => o.textContent)).toEqual(["Zebra TunaKode: SKU-1203", "Zebra TunaKode: SKU-1204"]);
   await key("ArrowDown"); await key("ArrowDown");
   expect((await key("Enter")).defaultPrevented).toBe(true);
   expect(itemId()).toBe("item-1204");
@@ -81,7 +81,7 @@ it("keeps only item ID and warehouse/date filters in GET and clears name/code/ID
 it("syncs a new selection and restores the server query after navigation", async () => {
   await render({ item: "item-1204" });
   await type("Pakan 12");
-  await act(async () => host.querySelector<HTMLButtonElement>('[role="option"]')!.click());
+  await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(itemId()).toBe("item-12"); expect(codeInput().value).toBe("SKU-12"); expect(nameInput().value).toBe("Pakan 12");
   await render({ item: "item-1001" });
   expect(itemId()).toBe("item-1001"); expect(codeInput().value).toBe("SKU-1001"); expect(nameInput().value).toBe("Pakan 1001");
