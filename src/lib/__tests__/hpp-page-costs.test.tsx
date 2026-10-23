@@ -56,3 +56,13 @@ describe("financial cost UI boundary", () => {
     expect(html).toContain("invoic");
   });
 });
+
+it('renders stored compound parent recipe material and exact invoice source links',async()=>{
+ fixture.client=clientFixture({tables:{
+  invoice_items:[{id:'line',compound_recipe_id:'recipe',qty:1,harga:200,diskon_persen:0,hpp:50,deskripsi:'Compound',invoices:{id:'invoice',visit_id:'visit',invoice_no:'INV',created_at:'2026-10-04T05:00:00Z',paid_status:'Lunas',voided_at:null,visits:{branch_id:'b1',dokter:'Doctor',doctor_id:'doctor'}}}],
+  clinic_compound_sales:[{request_key:'binding',recipe_id:'recipe',visit_id:'visit',sale_item_id:'parent',sale_name:'Stored parent',sale_unit:'racikan'}],
+  compounding_ingredients:[{id:'ingredient',recipe_id:'recipe',item_id:'material',ingredient_name:'Material',quantity:1,unit:'ml'}],
+ }}).client;
+ const html=renderToStaticMarkup(await HppReportPage({kind:'compound',params:{cabang:'b1',dari:'2026-10-04',sampai:'2026-10-04',rincian:'bahan'}}));
+ for(const href of ['/pos/sku/parent','/klinik/racik/recipe','/pos/sku/material','/klinik/pembayaran/visit/invoice?invoice_id=invoice'])expect(html.includes(`href="${href}"`)).toBe(true);
+});
