@@ -4,6 +4,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { UnduhLaporan } from "./UnduhLaporan";
+import { Suspense } from "react";
+import { ReportPresets } from "./ReportPresets";
+import { reportFilterDefaults } from "@/lib/report-filter-defaults";
 
 export function LaporanPage({
   icon, title, desc, filter, ringkasan, children, unduhTampilan = true,
@@ -33,10 +36,11 @@ export function LaporanPage({
         </div>
       </div>
 
+      <Suspense fallback={null}><ReportPresets title={title} appliedDefaults={reportFilterDefaults(filter)} /></Suspense>
       {unduhTampilan && <UnduhLaporan judul={title} />}
 
       {filter && (
-        <form className="crm-sec" style={{ marginBottom: 12 }}>
+        <form data-report-filters className="crm-sec" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>{filter}</div>
         </form>
       )}
