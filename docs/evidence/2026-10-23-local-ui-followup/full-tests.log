@@ -1,0 +1,18 @@
+
+> vetos@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.9 /workspace/kamo-local-ui-followup
+
+
+ Test Files  352 passed (352)
+      Tests  2688 passed (2688)
+   Start at  08:26:16
+   Duration  51.67s (transform 12.24s, setup 0ms, import 32.63s, tests 36.32s, environment 30.17s)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
