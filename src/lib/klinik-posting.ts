@@ -94,7 +94,7 @@ export function toClinicCompoundRecipeInput(input: {
   };
 }
 
-export function parseClinicPostingError(error: { code?: string; message: string } | null): string {
+export function parseClinicPostingError(error: { code?: string; message: string } | null, uncertainFallback?: string): string {
   if (error?.code === "P0001") {
     if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
     const detailMessages: Record<string, string> = {
@@ -132,7 +132,7 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];
     if (match && match[2] && detailMessages[match[1]]) return `${detailMessages[match[1]]}: ${match[2]}`;
   }
-  return "Transaksi belum tersimpan. Periksa apakah invoice sudah dibuat lalu coba lagi.";
+  return uncertainFallback ?? "Transaksi belum tersimpan. Periksa apakah invoice sudah dibuat lalu coba lagi.";
 }
 
 export function parseClinicRecordError(error: { code?: string; message: string } | null): string {

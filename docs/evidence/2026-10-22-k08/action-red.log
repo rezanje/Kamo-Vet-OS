@@ -1,0 +1,92 @@
+
+ RUN  v4.1.9 /workspace/kamo-k08
+
+ ❯ src/lib/__tests__/clinic-payment-action.test.ts (20 tests | 5 failed) 43ms
+     × does not create or edit when active invoice lookup is unknown 6ms
+     × distinguishes a confirmed committed invoice from a failed read-back 2ms
+     × does not mislabel committed payment as unsaved if visit checkout fails 1ms
+     × repairs checkout only after reading the exact paid invoice, without another posting or receipt 1ms
+     × rejects checkout repair for unpaid/unknown invoices without changing state 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/clinic-payment-action.test.ts > K08 confirmed posting boundaries > does not create or edit when active invoice lookup is unknown
+AssertionError: promise resolved "{ saved: true, …(1) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "href": "/klinik/pembayaran/visit?success=bayar",
++   "saved": true,
+  }
+
+ ❯ src/lib/__tests__/clinic-payment-action.test.ts:106:62
+    104|  });
+    105|  it("does not create or edit when active invoice lookup is unknown",as…
+    106|   state.activeReadError=true;await expect(bayarVisit(form())).rejects.…
+       |                                                              ^
+    107|  });
+    108|  it("distinguishes a confirmed committed invoice from a failed read-ba…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  src/lib/__tests__/clinic-payment-action.test.ts > K08 confirmed posting boundaries > distinguishes a confirmed committed invoice from a failed read-back
+AssertionError: expected [Function] to throw error including 'Invoice%20sudah%20tersimpan' but got 'REDIRECT:/klinik/pembayaran/visit?err…'
+
+Expected: "Invoice%20sudah%20tersimpan"
+Received: "REDIRECT:/klinik/pembayaran/visit?error=Transaksi%20belum%20tersimpan.%20Periksa%20apakah%20invoice%20sudah%20dibuat%20lalu%20coba%20lagi."
+
+ ❯ src/lib/__tests__/clinic-payment-action.test.ts:109:60
+    107|  });
+    108|  it("distinguishes a confirmed committed invoice from a failed read-ba…
+    109|   state.postReadError=true;await expect(bayarVisit(form())).rejects.to…
+       |                                                            ^
+    110|  });
+    111|  it("does not mislabel committed payment as unsaved if visit checkout …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  src/lib/__tests__/clinic-payment-action.test.ts > K08 confirmed posting boundaries > does not mislabel committed payment as unsaved if visit checkout fails
+AssertionError: expected [Function] to throw error including 'Invoice%20sudah%20tersimpan' but got 'REDIRECT:/klinik/pembayaran/visit?err…'
+
+Expected: "Invoice%20sudah%20tersimpan"
+Received: "REDIRECT:/klinik/pembayaran/visit?error=Checkout%20response%20not%20confirmed"
+
+ ❯ src/lib/__tests__/clinic-payment-action.test.ts:112:101
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  src/lib/__tests__/clinic-payment-action.test.ts > K08 confirmed posting boundaries > repairs checkout only after reading the exact paid invoice, without another posting or receipt
+TypeError: selesaikanKunjungan is not a function
+ ❯ src/lib/__tests__/clinic-payment-action.test.ts:119:146
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  src/lib/__tests__/clinic-payment-action.test.ts > K08 confirmed posting boundaries > rejects checkout repair for unpaid/unknown invoices without changing state
+TypeError: selesaikanKunjungan is not a function
+ ❯ src/lib/__tests__/clinic-payment-action.test.ts:122:102
+    120|  });
+    121|  it("rejects checkout repair for unpaid/unknown invoices without chang…
+    122|   const data=new FormData();data.set("visitId","visit");data.set("invo…
+       |                                                                                                      ^
+    123|  });
+    124| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 15 passed (20)
+   Start at  23:02:00
+   Duration  402ms (transform 137ms, setup 0ms, import 171ms, tests 43ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
