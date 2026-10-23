@@ -1,0 +1,43 @@
+-- Fictional isolated P07 fixture; every business effect rolls back.
+begin;
+insert into auth.users(id)values(md5('p07-owner')::uuid),(md5('p07-staff')::uuid);
+update profiles set role='OWNER',is_active=true where id=md5('p07-owner')::uuid;
+insert into branches(id,code,name,type)values(md5('p07-branch')::uuid,'P07-A','Fiction P07 branch','PETSHOP'),(md5('p07-other')::uuid,'P07-B','Fiction P07 other','PETSHOP');
+insert into warehouses(id,branch_id,code,name,type)values(md5('p07-wh')::uuid,md5('p07-branch')::uuid,'P07-W','Fiction P07 warehouse','RETAIL');
+insert into suppliers(id,nama)values(md5('p07-supplier')::uuid,'Fiction P07 supplier');
+insert into items(id,code,name,unit,item_type)values(md5('p07-item')::uuid,'P07-I','Fiction P07 item','pcs','Persediaan');
+insert into coa_accounts(code,name,type,normal_balance)values('1196','Fiction P07 bank','ASET','D')on conflict(code)do nothing;
+insert into coa_accounts(code,name,type,normal_balance)values('1301','Fiction inventory','ASET','D'),('2101','Fiction payables','LIABILITAS','K'),('2102','Fiction GRNI','LIABILITAS','K')on conflict(code)do nothing;
+update coa_accounts set is_active=true,is_header=false where code in('1196','1301','2101','2102');
+insert into cash_accounts(id,nama,jenis,coa_code,branch_id)values(md5('p07-bank')::uuid,'Fiction P07 bank','Bank','1196',md5('p07-branch')::uuid);
+insert into purchase_orders(id,no_po,branch_id,to_warehouse_id,supplier_id,status,total)values(md5('p07-po')::uuid,'PO.P07',md5('p07-branch')::uuid,md5('p07-wh')::uuid,md5('p07-supplier')::uuid,'Dipesan',1000);
+insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor)values(md5('p07-line')::uuid,md5('p07-po')::uuid,md5('p07-item')::uuid,'Fiction P07 item',10,100,'pcs',1);
+set local role authenticated;set local request.jwt.claim.role='authenticated';
+select set_config('request.jwt.claim.sub',md5('p07-owner')::uuid::text,true);
+select pay_purchase_advance_atomic('p07-dp','UM.P07.',5,md5('p07-supplier')::uuid,md5('p07-po')::uuid,current_date,200,'Transfer',md5('p07-bank')::uuid,null);
+select receive_purchase_order(md5('p07-po')::uuid,'p07-receipt','TB.P07.',5,current_date,null,null,jsonb_build_array(jsonb_build_object('id',md5('p07-line')::uuid,'qty_terima',5)));
+-- fixture-end: runner also reuses this genuine partial receipt for race tests.
+do $$declare blocked boolean:=false;proof jsonb;retry jsonb;expected jsonb;before_state jsonb;after_state jsonb;invoice record;begin
+ if(select status from purchase_orders where id=md5('p07-po')::uuid)<>'Dipesan'then raise exception 'Temporary partial receipt was incorrectly finalized';end if;
+ begin perform create_purchase_invoice_from_po(md5('p07-po')::uuid,'FB.P07.',5,null,current_date,current_date+30,null,jsonb_build_array(jsonb_build_object('po_item_id',md5('p07-line')::uuid,'qty',5,'harga',100)),'[]','[]',0,'p07-before-close');exception when others then if sqlerrm not like '%Diterima%'then raise;end if;blocked:=true;end;
+ if not blocked then raise exception 'Unconfirmed partial receipt was invoiceable';end if;
+ select jsonb_build_object('receipts',(select count(*)from goods_receipts),'stock',(select sum(qty)from stock),'layers',(select sum(qty_in*unit_cost)from stock_layers),'journals',(select count(*)from journal_entries),'advances',(select jsonb_agg(to_jsonb(a))from purchase_advances a),'ordered',(select qty from purchase_order_items where id=md5('p07-line')::uuid),'total',(select total from purchase_orders where id=md5('p07-po')::uuid))into before_state;
+ expected:=jsonb_build_array(jsonb_build_object('id',md5('p07-line')::uuid,'qty',10,'qty_terima',5,'qty_rusak',0,'satuan','pcs','faktor',1));
+ proof:=close_purchase_order_remainder(md5('p07-po')::uuid,'p07-close',expected,'Supplier confirms remaining quantity unavailable',true);
+ retry:=close_purchase_order_remainder(md5('p07-po')::uuid,'p07-close',expected,'Supplier confirms remaining quantity unavailable',true);
+ if proof is distinct from retry or proof->>'po_id'<>md5('p07-po')::uuid::text or proof#>>'{lines,0,closed_qty}'<>'5'then raise exception 'Missing exact retry/closed remainder proof';end if;
+ if(select status from purchase_orders where id=md5('p07-po')::uuid)<>'Diterima'then raise exception 'Explicit final partial receipt is missing from invoice status selector';end if;
+ select jsonb_build_object('receipts',(select count(*)from goods_receipts),'stock',(select sum(qty)from stock),'layers',(select sum(qty_in*unit_cost)from stock_layers),'journals',(select count(*)from journal_entries),'advances',(select jsonb_agg(to_jsonb(a))from purchase_advances a),'ordered',(select qty from purchase_order_items where id=md5('p07-line')::uuid),'total',(select total from purchase_orders where id=md5('p07-po')::uuid))into after_state;
+ if before_state is distinct from after_state then raise exception 'Short-close changed received/stock/value/journal/advance/ordered/POtotal';end if;
+ if not exists(select 1 from purchase_order_receipt_closures where po_id=md5('p07-po')::uuid and actor_id=auth.uid()and reason='Supplier confirms remaining quantity unavailable')then raise exception 'Immutable actor/reason proof missing';end if;
+ if(select count(*)from activity_log l where l.row_entity='purchase_orders'and row_id=md5('p07-po')::uuid::text and action='update'and l.after_state->>'status'='Diterima'and actor_id=auth.uid())<>1 then raise exception 'Closure audit duplicated/missing';end if;
+ select * into invoice from create_purchase_invoice_from_po(md5('p07-po')::uuid,'FB.P07.',5,null,current_date,current_date+30,null,jsonb_build_array(jsonb_build_object('po_item_id',md5('p07-line')::uuid,'qty',5,'harga',100)),'[]','[]',0,'p07-final-invoice');
+ if invoice.total<>500 or(select sum(qty)from purchase_invoice_items where invoice_id=invoice.invoice_id)<>5 then raise exception 'Invoice did not bill only five accepted units';end if;
+ blocked:=false;begin perform create_purchase_invoice_from_po(md5('p07-po')::uuid,'FB.P07.',5,null,current_date,current_date+30,null,jsonb_build_array(jsonb_build_object('po_item_id',md5('p07-line')::uuid,'qty',1,'harga',100)),'[]','[]',0,'p07-excess-invoice');exception when others then blocked:=true;end;
+ if not blocked then raise exception 'Closed/unreceived or already invoiced quantity was billed';end if;
+ blocked:=false;begin perform receive_purchase_order(md5('p07-po')::uuid,'p07-late-receipt','TB.P07.',5,current_date,null,null,jsonb_build_array(jsonb_build_object('id',md5('p07-line')::uuid,'qty_terima',1)));exception when others then blocked:=true;end;
+ if not blocked then raise exception 'Final short-close accepted another receipt';end if;
+ blocked:=false;begin perform pay_purchase_advance_atomic('p07-late-dp','UM.P07.',5,md5('p07-supplier')::uuid,md5('p07-po')::uuid,current_date,1,'Transfer',md5('p07-bank')::uuid,null);exception when others then blocked:=true;end;
+ if not blocked then raise exception 'PR92 completed-PO advance guard bypassed';end if;
+end$$;
+rollback;

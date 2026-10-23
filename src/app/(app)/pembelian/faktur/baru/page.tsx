@@ -10,6 +10,7 @@ type PoRow = {
   id: string;
   no_po: string | null;
   tanggal: string;
+  purchase_order_receipt_closures?: Rel<{ po_id: string }>;
   suppliers: { nama: string; termin_hari: number | null } | null;
   purchase_order_items: {
     id: string; item_id: string | null; qty: number; qty_terima: number | null;
@@ -42,7 +43,7 @@ export default async function FakturBaruPage({
 
   const poQuery = supabase
       .from("purchase_orders")
-      .select("id, no_po, tanggal, suppliers(nama, termin_hari), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, nama, satuan, faktor, items(unit))")
+      .select("id, no_po, tanggal, purchase_order_receipt_closures(po_id), suppliers(nama, termin_hari), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, nama, satuan, faktor, items(unit))")
       .eq("status", "Diterima")
       .order("created_at", { ascending: false })
       .limit(100);
@@ -85,7 +86,7 @@ export default async function FakturBaruPage({
     ];
     return {
       id: p.id,
-      label: `${p.no_po ?? p.id.slice(0, 8)} — ${p.suppliers?.nama ?? "Tanpa pemasok"} (${p.tanggal})`,
+      label: `${p.no_po ?? p.id.slice(0, 8)} — ${p.suppliers?.nama ?? "Tanpa pemasok"} (${p.tanggal})${one(p.purchase_order_receipt_closures ?? null) ? " — Selesai parsial" : ""}`,
       terminHari: Number(p.suppliers?.termin_hari ?? 30),
       warning: warningParts.join(" ") || null,
       items: (p.purchase_order_items ?? []).flatMap((r) => {

@@ -99,7 +99,7 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
 }
 export function eligible(control: Element): control is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
   return (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)
-    && !!control.name && !(control instanceof HTMLInputElement && (["file", "password", "submit", "button"].includes(control.type) || (control.type === "hidden" && !control.hasAttribute("data-draft-state"))));
+    && !!control.name && !control.hasAttribute("data-draft-ignore") && !(control instanceof HTMLInputElement && (["file", "password", "submit", "button"].includes(control.type) || (control.type === "hidden" && !control.hasAttribute("data-draft-state"))));
 }
 
 /** Bound row count and validate every persisted property before restoring controlled rows. */
