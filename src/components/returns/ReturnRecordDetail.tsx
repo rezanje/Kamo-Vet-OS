@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DocumentLink } from "@/components/RelatedDocuments";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ReturnCorrectionForm, type CorrectionReturnLine } from "./ReturnCorrectionForm";
@@ -36,6 +37,7 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
     <div className="crm-sec">
       <p>{record.voided_at ? "Dibatalkan / diganti" : "Aktif"} · {record.tanggal} · Revisi {record.revision}</p>
       <p>Nilai dokumen: Rp {Number(record.total).toLocaleString("id-ID")} · {record.keterangan}</p>
+      {kind === "purchase" && record.po_id && <p><DocumentLink kind="purchase-order" id={record.po_id} from={`${base}/${id}`}>Pesanan pembelian asal</DocumentLink></p>}
       {parent.data && <p>Pengganti dari <Link href={`${base}/${parent.data.return_id}`}>dokumen asal</Link></p>}
       {rows.map(row => <p key={row.id}>{row.nama} · {Number(row.selected_qty ?? row.qty ?? 0)} {row.satuan ?? "satuan dasar"}</p>)}
       <p>Jurnal asal: {journals.length ? journals.map(j => j.no_jurnal).join(", ") : "Provenance lama belum tersedia"}</p>
