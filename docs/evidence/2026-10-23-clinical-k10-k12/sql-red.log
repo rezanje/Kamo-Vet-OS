@@ -1,0 +1,15 @@
+Applied 237 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-clinical-followup/scripts/test-clinic-therapy-postgres.py", line 27, in <module>
+    database.sql((ROOT / 'supabase/tests/clinic_therapy_note.sql').read_text())
+  File "/workspace/kamo-clinical-followup/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  column "therapy" does not exist
+LINE 1: (select therapy from public.medical_records where id=first_i...
+                ^
+QUERY:  (select therapy from public.medical_records where id=first_id) is distinct from E'Terapi fiktif\nObservasi'
+CONTEXT:  PL/pgSQL function inline_code_block line 7 at IF
+authenticated
+ca000000-0000-4000-8000-000000000002
+

@@ -1,0 +1,31 @@
+
+ RUN  v4.1.9 /workspace/kamo-clinical-followup
+
+ ❯ src/components/__tests__/clinic-pos-categories.test.tsx (7 tests | 1 failed) 417ms
+   × places optional therapy below diagnosis and restores the note without adding billable items 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-pos-categories.test.tsx > places optional therapy below diagnosis and restores the note without adding billable items
+AssertionError: expected null not to be null
+ ❯ src/components/__tests__/clinic-pos-categories.test.tsx:92:99
+     90| it('places optional therapy below diagnosis and restores the note with…
+     91|   await render('exam');
+     92|   const note=host.querySelector<HTMLTextAreaElement>('textarea[name="t…
+       |                                                                                                   ^
+     93|   const fields=[...host.querySelectorAll('textarea')];expect(fields.in…
+     94|   await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElem…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 6 passed (7)
+   Start at  12:15:34
+   Duration  1.25s (transform 226ms, setup 0ms, import 325ms, tests 417ms, environment 307ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

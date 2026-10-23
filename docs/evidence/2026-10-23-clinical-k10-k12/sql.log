@@ -1,0 +1,4 @@
+Applied 237 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS pre-deployment record replays after candidate migration without changed hash.
+PASS therapy persistence, legacy null, retry/hash, rollback, posted guard, access and migration security.
+Removed owned PostgreSQL test container and volumes.
