@@ -18,5 +18,7 @@
     "src/lib/report-presets.ts": "97687e67a495f77c459c2a0709db85f16a6623bf46cf32a566bc47cca8ba153f",
     "supabase/migrations/20261023154500_private_report_presets.sql": "7b1719a16b7772cc6194328f19a6dac2fb0fbdc4b4bb5080fb2df1aa5bc293f3",
     "supabase/tests/private_report_presets.sql": "10499b188d6e686cea82e4eba06295203cb279e0ee7e7433e34851cb4cbf7c8f"
-  }
+  },
+  "integrated_main": "9db3b267245c12f2dcd490c4de711321be4d3025",
+  "integration_commit": "f2c9fd9167971e68459dc935e94d7b7ad189f5a9"
 }
