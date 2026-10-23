@@ -10,9 +10,11 @@ declare
   -- Exact request replay already returned above. Read and lock the current code
   -- only for a genuinely new request; concurrent master edits serialize here.
   select code into v_branch_code from public.branches where id=p_branch_id and is_active for share;
-  if not found or nullif(btrim(v_branch_code),'')is null or v_branch_code~'[[:space:]%_{}]'then
+  if not found or v_branch_code!~'[^[:space:]]'or v_branch_code~'[[:cntrl:]]'then
     raise exception 'Kode cabang PO kosong atau tidak valid; periksa master cabang'using errcode='22023';
   end if;
+  -- Existing allocation uses left(...)=prefix, not LIKE: master punctuation
+  -- such as underscore and percent is literal and must not be renamed/rejected.
   p_no_po_prefix:=p_no_po_prefix||v_branch_code||'-';
   if length(p_no_po_prefix)+p_no_po_digits>30 then
     raise exception 'Nomor PO dengan kode cabang melebihi 30 karakter; pendekkan awalan atau jumlah digit pada Penomoran Dokumen'using errcode='22023';

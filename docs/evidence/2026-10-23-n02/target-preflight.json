@@ -1,0 +1,13 @@
+{
+  "history": 219,
+  "latest": "20261023022600",
+  "catalogUnchangedSinceP07": true,
+  "activeBranchCount": 21,
+  "invalidActiveBranchCodes": 0,
+  "expandedPrefixOverflowBranches": 0,
+  "configuredPrefixPresent": false,
+  "migrationSHA256": "f95d668e9f3c310a3c0ec699a4980ac6a820b4db2bce3787555b7cc54b46623e",
+  "newestCompletedPhysicalBackupUTC": "2026-10-22T15:14:23.542Z",
+  "physicalRestoreTested": false,
+  "targetBusinessWrites": false
+}

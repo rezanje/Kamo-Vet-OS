@@ -26,7 +26,7 @@
 **Files:** new SQL migration/test and narrow SQL runner; modify settings numbering page; new real-page rendering test; existing PO lifecycle suite unchanged.
 **Interfaces:** existing `create_purchase_order_atomic(text,text,integer,uuid,uuid,uuid,date,jsonb)` and its JSON receipt remain unchanged. Number prefix becomes configured/date prefix + locked branch code + `-`.
 
-- [x] Write SQL acceptance for two branches, second same-branch sequence, replay after branch rename, invalid code/length/warehouse/access, injected audit failure rollback and unchanged historical number. Write actual-page regression for PO example/help and unchanged non-PO example.
+- [x] Write SQL acceptance for two branches, second same-branch sequence, replay after branch rename, blank/control code, literal punctuation, expanded length/warehouse/access, injected audit failure rollback and unchanged historical number. Write actual-page regression for PO example/help and unchanged non-PO example.
 - [x] Run RED against current main in owned network-none PostgreSQL17.6 and Vitest; save exact failures.
 - [x] Apply one guarded definition patch to creator; locked branch lookup, code validation and existing expanded-length guard. Update only PO help/example.
 - [x] Run GREEN SQL plus existing purchase_order_lifecycle, focused page/numbering tests and one bounded branch-edit/creation race. Then full app suite/typecheck/scoped lint/build once stable.

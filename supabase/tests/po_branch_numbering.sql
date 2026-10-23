@@ -2,10 +2,11 @@
 begin;
 insert into auth.users(id)values(md5('n02-owner')::uuid),(md5('n02-staff')::uuid);
 insert into profiles(id,role,is_active)values(md5('n02-owner')::uuid,'OWNER',true),(md5('n02-staff')::uuid,'STAFF',true)on conflict(id)do update set role=excluded.role,is_active=true;
-insert into branches(id,code,name,type)values(md5('n02-a')::uuid,'N02A','Fiction branch A','KLINIK'),(md5('n02-b')::uuid,'N02B','Fiction branch B','KLINIK'),(md5('n02-blank')::uuid,' ','Fiction blank code','KLINIK');
-insert into warehouses(id,branch_id,code,name,type)values(md5('n02-wa')::uuid,md5('n02-a')::uuid,'N02WA','Fiction warehouse A','VET'),(md5('n02-wb')::uuid,md5('n02-b')::uuid,'N02WB','Fiction warehouse B','VET'),(md5('n02-wblank')::uuid,md5('n02-blank')::uuid,'N02WX','Fiction warehouse blank','VET');
+insert into branches(id,code,name,type)values(md5('n02-a')::uuid,'N02A','Fiction branch A','KLINIK'),(md5('n02-b')::uuid,'N02B','Fiction branch B','KLINIK'),(md5('n02-blank')::uuid,' ','Fiction blank code','KLINIK'),(md5('n02-literal')::uuid,'N02_C','Fiction literal punctuation','KLINIK');
+insert into warehouses(id,branch_id,code,name,type)values(md5('n02-wa')::uuid,md5('n02-a')::uuid,'N02WA','Fiction warehouse A','VET'),(md5('n02-wb')::uuid,md5('n02-b')::uuid,'N02WB','Fiction warehouse B','VET'),(md5('n02-wblank')::uuid,md5('n02-blank')::uuid,'N02WX','Fiction warehouse blank','VET'),(md5('n02-wliteral')::uuid,md5('n02-literal')::uuid,'N02WL','Fiction literal warehouse','VET');
 insert into user_branches(user_id,branch_id)values(md5('n02-staff')::uuid,md5('n02-a')::uuid);
 insert into purchase_orders(id,no_po,branch_id,to_warehouse_id,total,status)values(md5('n02-legacy')::uuid,'PO-OLD-0007',md5('n02-a')::uuid,md5('n02-wa')::uuid,100,'Draft');
+insert into purchase_orders(no_po,branch_id,total,status)values('LIT.N02XC-9999',md5('n02-a')::uuid,100,'Draft');
 -- fixture-end:
 set local role authenticated;
 set local request.jwt.claim.role='authenticated';
@@ -16,6 +17,17 @@ do $$declare a jsonb;b jsonb;c jsonb;begin
  c:=create_purchase_order_atomic('n02-a2','N02.',4,null,md5('n02-wa')::uuid,md5('n02-a')::uuid,current_date,'[{"nama":"Fiction item","qty":1,"harga_beli":100}]');
  if a->>'no_po'<>'N02.N02A-0001'or b->>'no_po'<>'N02.N02B-0001'or c->>'no_po'<>'N02.N02A-0002'then raise exception 'N02 branch identity/independent sequence missing: %, %, %',a->>'no_po',b->>'no_po',c->>'no_po';end if;
  if a is distinct from create_purchase_order_atomic('n02-a1','DIFFERENT.',4,null,md5('n02-wa')::uuid,md5('n02-a')::uuid,current_date,'[{"nama":"Fiction item","qty":1,"harga_beli":100}]')then raise exception 'N02 exact retry changed receipt';end if;
+end$$;
+do $$declare a jsonb;begin
+ a:=create_purchase_order_atomic('n02-underscore','LIT.',4,null,md5('n02-wliteral')::uuid,md5('n02-literal')::uuid,current_date,'[{"nama":"Fiction item","qty":1,"harga_beli":100}]');
+ if a->>'no_po'<>'LIT.N02_C-0001'then raise exception 'N02 literal underscore rejected, renamed or treated as wildcard';end if;
+end$$;
+reset role;
+update branches set code='N02%C'where id=md5('n02-literal')::uuid;
+set local role authenticated;
+do $$declare a jsonb;begin
+ a:=create_purchase_order_atomic('n02-percent','LIT.',4,null,md5('n02-wliteral')::uuid,md5('n02-literal')::uuid,current_date,'[{"nama":"Fiction item","qty":1,"harga_beli":100}]');
+ if a->>'no_po'<>'LIT.N02%C-0001'then raise exception 'N02 literal percent rejected, renamed or treated as wildcard';end if;
 end$$;
 reset role;
 update branches set code='N02AX'where id=md5('n02-a')::uuid;
