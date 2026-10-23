@@ -28,6 +28,7 @@ type Line = {
   diskon_persen?: number;
 };
 
+const uncertainPayment = "Hasil pembayaran belum dapat dipastikan. Periksa invoice yang sudah tersimpan sebelum mencoba lagi dengan permintaan yang sama; jangan menerima pembayaran ulang.";
 const todayIso = () => hariIniWIB();
 
 function barisUntukPosting(rows: Line[]): ClinicInvoiceLineInput[] {
@@ -49,19 +50,19 @@ async function postInvoiceAtomik(
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
-): Promise<{ invoiceNo: string | null; error: { code?: string; message: string } | null }> {
+): Promise<{ invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
   const { data: invoiceId, error } = demo
     ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
     : payments
     ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
     : await supabase.rpc("clinic_post_invoice", params);
-  if (error || !invoiceId) return { invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
+  if (error || !invoiceId) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
   const { data: invoice, error: readError } = await supabase
     .from("invoices").select("invoice_no").eq("id", invoiceId).maybeSingle();
   if (readError || !invoice?.invoice_no) {
-    return { invoiceNo: null, error: readError ?? { message: "Nomor invoice tidak terbaca setelah tersimpan" } };
+    return { invoiceId, invoiceNo: null, error: readError ?? { message: "Nomor invoice tidak terbaca setelah tersimpan" } };
   }
-  return { invoiceNo: invoice.invoice_no, error: null };
+  return { invoiceId, invoiceNo: invoice.invoice_no, error: null };
 }
 
 export async function bayarVisit(formData: FormData) {
@@ -142,10 +143,12 @@ export async function bayarVisit(formData: FormData) {
   const { data: v } = await supabase.from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle();
 
   // Invoice aktif (belum di-void) untuk visit ini — kalau ada, ini jalur EDIT (Addendum §7).
-  const { data: activeInvoice } = await supabase
+  const { data: activeInvoice, error: activeInvoiceError } = await supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+
+  if (activeInvoiceError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat diverifikasi. Muat ulang tanpa membuat pembayaran baru.")}`);
 
   // A lost create response must replay its sealed request/hash instead of
   // becoming a correction. Different creation keys keep the normal edit path.
@@ -280,16 +283,15 @@ export async function bayarVisit(formData: FormData) {
     p_lines: barisUntukPosting(rows),
   }, payments, demo);
   if (posted.error || !posted.invoiceNo) {
-    redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(posted.error))}`);
+    redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
   }
   const invoiceNo = posted.invoiceNo;
 
-  if (visitStatus === "Selesai") {
-    const checkedOut = await supabase.rpc("set_visit_service_state", { p_visit_id: visitId, p_action: "checkout" });
-    if (checkedOut.error) redirect(`${back}?error=${encodeURIComponent(checkedOut.error.message)}`);
-  } else {
+  // Paid creation and checkout commit atomically in the posting RPC. Do not
+  // repeat checkout here: a retry may arrive after later inpatient admission.
+  if (visitStatus !== "Selesai") {
     const visitUpdated = await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
-    if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent(visitUpdated.error.message)}`);
+    if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent("Invoice sudah tersimpan, tetapi status kunjungan belum terkonfirmasi. Jangan membuat invoice baru; muat ulang dan periksa tagihan yang sama.")}`);
   }
 
   // Poin: dipakai & didapat dicatat saat tagihan benar-benar LUNAS. Kalau dicatat
@@ -464,11 +466,9 @@ export async function bayarRombongan(formData: FormData) {
       p_lines: barisUntukPosting(rows),
     });
     if (posted.error || !posted.invoiceNo) {
-      dilewati.push(`${b.hewan}: ${parseClinicPostingError(posted.error)}`);
+      dilewati.push(`${b.hewan}: ${posted.invoiceId ? "invoice sudah tersimpan; periksa status tanpa membayar ulang" : parseClinicPostingError(posted.error, uncertainPayment)}`);
       continue;
     }
-    const checkedOut = await supabase.rpc("set_visit_service_state", { p_visit_id: b.visitId, p_action: "checkout" });
-    if (checkedOut.error) redirect(`${back}?error=${encodeURIComponent(checkedOut.error.message)}`);
 
     // Poin yang benar-benar terpakai dihitung dari nota yang BERHASIL terbit —
     // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan.

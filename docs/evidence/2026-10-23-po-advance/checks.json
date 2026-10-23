@@ -1,0 +1,43 @@
+{
+  "base": "102f3b0555305524611296e29d16affc12553eb7",
+  "branch": "codex/fix-po-advance-cap-20261023",
+  "focusedTests": {
+    "files": 2,
+    "passed": 18
+  },
+  "fullTests": {
+    "files": 312,
+    "passed": 2431
+  },
+  "typecheck": "passed",
+  "scopedLint": "passed",
+  "build": {
+    "status": "passed",
+    "staticPages": 193,
+    "inheritedWarnings": true
+  },
+  "postgres16": {
+    "migrationsReplayed": 223,
+    "acceptance": "passed",
+    "concurrency": [
+      "read committed cap",
+      "repeatable read cap",
+      "identical request retry",
+      "PO revision ordering",
+      "advance/refund both orders",
+      "concurrent refund retry",
+      "recovery/pending advance/PO revision"
+    ],
+    "network": "none",
+    "ownedContainersRemoved": true
+  },
+  "browser": "browser.json",
+  "targetWrites": 0,
+  "targetMigration": "not applied",
+  "authenticatedHostedSmoke": "not run: target DB/preview authentication unavailable",
+  "remainingPolicy": [
+    "partial receipt eligibility",
+    "fractional final PO remainder"
+  ],
+  "release": "draft candidate only"
+}

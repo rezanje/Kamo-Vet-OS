@@ -1,0 +1,195 @@
+{
+  "baseline": {
+    "commit": "102f3b0555305524611296e29d16affc12553eb7",
+    "migrations": 222,
+    "command": "python3 scripts/test-activity-audit-baseline.py --ref 102f3b0555305524611296e29d16affc12553eb7",
+    "exitCode": 0,
+    "log": "sql-baseline.log",
+    "expectedFailures": [
+      "posted_sale_cancellations.sql: protected sales-return source alias",
+      "clinical_occupation_selection.sql: direct employee status update lifecycle guard"
+    ],
+    "clockDiagnosis": "Two raw UTC future-date fixture assertions reproduced on pristine main when UTC/Jakarta dates differ. Both purchase/asset suites pass on pristine main with Jakarta fixture clock, with guards/assertions unchanged.",
+    "initialUtcLog": "sql-initial-utc.log"
+  },
+  "originalBaseline": "6289994422ce32e795f6f27baba04b5db477210d",
+  "branch": "codex/a01-activity-audit-20261022",
+  "pullRequest": "https://github.com/rezanje/Kamo-Vet-OS/pull/83",
+  "scope": {
+    "registeredSources": 179,
+    "schemaTables": 226,
+    "explicitExclusions": 47,
+    "note": "Source/trigger counts are not a proof of complete business-action or transitive RPC coverage. See source-coverage.md and mutation-inventory.json.",
+    "minimumSensitiveMetadata": true,
+    "readerRoles": [
+      "OWNER",
+      "ADMIN"
+    ]
+  },
+  "candidateCodeSha256": {
+    "scripts/inventory-activity-mutations.mjs": "c92338587726bc1b1664898320d9e75ce5d9fdee31d047b9eee453a22ceedee7",
+    "scripts/test-activity-audit-baseline.py": "ef4043e02ded9eb2c917339cc6474363f7403a5201c17cf4c41254a00e9a166b",
+    "scripts/test-activity-audit-browser.mjs": "56f5dd2decc0d5c3c500bf25d3a6b42e2fdf37ac771fca9225a79b67fff85c11",
+    "scripts/test-activity-audit-postgres.py": "8891e77bb0ea96be062a3d96a5499ca801538b2214e579d5aa2e82af1a486ded",
+    "src/app/(app)/crm/pelanggan/PelangganClient.tsx": "5d72dc2698c4ce2fbd76b2fed558bee6d9f4f250144fb22161f82aff363a60b7",
+    "src/app/(app)/klinik/pembayaran/[visitId]/page.tsx": "7c86d581ba2da89fc48db72b02a1732482f9b28536aacc7dbccf08007f06f2f9",
+    "src/app/(app)/klinik/penerimaan/page.tsx": "e8dde0d0f46efb4b6ece69e46bab135d54ecf73a3e6510c386245295786258e9",
+    "src/app/(app)/layout.tsx": "7fdbf9e57b4bd23b7c6cced27fa9cc6a2d4bd2f948781fbad9ffb89905b80c9e",
+    "src/app/(app)/pembelian/[id]/page.tsx": "89c400a0e3a1e5b1c4ffc6db5c695b82e0b7d100a242f0755c02401f357e1e6e",
+    "src/app/(app)/pembelian/faktur/[id]/page.tsx": "81fdc98c75a9a886b75a14b85a211177a55e84cbbb52be3f7d29ce6ce08dbf18",
+    "src/app/(app)/pembelian/perintah-bayar/page.tsx": "bd06cc65dbcec56dd13007a402d31d67eb3708d2f80bad34508338a4b483a56d",
+    "src/app/(app)/pembelian/uang-muka/page.tsx": "62686129089cc7a53406471e644eebc8734a7173ad1af5f6663c9a536b497b72",
+    "src/app/(app)/penjualan/faktur/[id]/page.tsx": "548abc0fc868f420c27256b63caaba4017b545a3f9ae966441ca0155225efc8a",
+    "src/app/(app)/penjualan/pesanan/[id]/page.tsx": "c04fd8f3582f288b46c34874d90312ff9021f86c3f725d0d8b8ced2297b3fa72",
+    "src/app/(app)/penjualan/uang-muka/page.tsx": "749b2e9f1838c6547d2321f505b542b6308775c96f3c022451bf1e340a51301a",
+    "src/app/(app)/perusahaan/log-aktifitas/page.tsx": "a8f2afd906c4758a01b01bd803b893242957d307576d670e6ba57a6102fd936c",
+    "src/app/(app)/pos/sku/[id]/page.tsx": "2b352c2b945767e048319c3829c9d3e959d649d74509153bd53c0d7b0c35f69c",
+    "src/components/ActivityHistoryLink.tsx": "75b18516baba94a277d761e4f335a46c59458d8225d744bfc0d64c4599e4014b",
+    "src/components/ActivityMenuLink.tsx": "4d25556e1604635d0c95714f2438c0c5289d8695f592d0cff9b30fc8ee5dfd4f",
+    "src/components/__tests__/activity-document-links.test.tsx": "5b45ca7bf80fefb6a1a0c99b8b8eb6d24bf244dd503a428fe59bc58d3fd5b7ce",
+    "src/components/__tests__/activity-history-link.test.tsx": "dcb4378a9daa94ee855e88f202a273c86ff7880869e3711afe7ee6b007dc2e29",
+    "src/components/__tests__/activity-log-page.test.tsx": "dddeb948d474b83ca38fa7ffdbb40f879f736b0a9de74ff82c4fcdc94d68aed4",
+    "src/components/__tests__/activity-menu-link.test.tsx": "bbfea8d14be7634d0a3d6d82b43b1e520b4e48a3e745111420a28a9848935d9d",
+    "src/lib/__tests__/activity-log.test.ts": "a60e246c793858ddac5862a7a9b2f2e9ef1ced99f7d1aad0699c902d6fe79141",
+    "src/lib/activity-log.ts": "71c549b5a4dfb2bbd16a786ea82b9772dad55e9dfaa08832abcc3303f49fa669",
+    "src/lib/nav.ts": "3dfbb69857b002fa35eedb820fc5a4914dc2e409916f7951d9c951b953edc8c8",
+    "supabase/migrations/20261022070000_activity_audit.sql": "3923d623bbb408721c0ce7886ce0d9c4d88bde47a1e464560249a79e9e63a447",
+    "supabase/migrations/20261022080000_activity_audit_framework.sql": "bff4655be821e26cc65fe1fd299cc9a7facc4ef8c8342b473f4ca7c807ee1ad3",
+    "supabase/migrations/20261022081000_activity_audit_financial.sql": "4487178b41dff67c66bbe85d10d23b66855ee3e0bfd5adb1b90bce44d90dfb8a",
+    "supabase/migrations/20261022082000_activity_audit_inventory.sql": "4f3195b282a7c08a6ec3f99c528465cd33aadc71ff4d638cf7af21097b8ca594",
+    "supabase/migrations/20261022083000_activity_audit_people_settings.sql": "c7fb85c07f7f9d3936e3f856c8bb078dcf3d114a13c409723a37ad978988cd15",
+    "supabase/migrations/20261022084000_activity_audit_remaining_modules.sql": "bfd2ffe958dc4f6f1ba3a233e00abc357bb4466e8b3cc8b948345002266455e3",
+    "supabase/tests/activity_audit.sql": "6f3047e784227ac82474de3ded8643ae9a802056de5fd1fb3e15f764ea676b9a",
+    "supabase/tests/activity_audit_financial.sql": "d6066f3639cf294ddfc66767bff5b86ad1932c94285dc6f2e65623e3ae8444d6",
+    "supabase/tests/activity_audit_framework.sql": "8396fdaa9e554dfc60f661b7d4d1a492f1b15ad11dbcbfc64bc1d8ae5f7e47c7",
+    "supabase/tests/activity_audit_inventory.sql": "1eab7107beef45e8f0b3e0d02d6979e97bf95562a82a6d737884e2d61857e4ea",
+    "supabase/tests/activity_audit_people_settings.sql": "a7c6369154dd71356f36420646d25fda7c3e5d98b5707814aaefd1e9ddefa08c",
+    "supabase/tests/activity_audit_remaining_modules.sql": "05b0582019ce5369e9807b3a1bbd07ad773c7773e3c51155f00fc9a2ec9c335f"
+  },
+  "vitest": {
+    "command": "npm test -- --reporter=dot",
+    "filesPassed": 315,
+    "testsPassed": 2458,
+    "failed": 0,
+    "log": "app-tests-final.log"
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit",
+    "exitCode": 0,
+    "log": "typecheck-final.log"
+  },
+  "scopedEslint": {
+    "exitCode": 0,
+    "log": "lint-final.log"
+  },
+  "build": {
+    "command": "npm run build",
+    "configuration": "fictional loopback Supabase URL and key",
+    "exitCode": 0,
+    "log": "build-final.log",
+    "warnings": "Existing repository-wide ESLint warnings remain; scoped changed-file lint passed. Final build had no Edge-runtime/cache warning."
+  },
+  "sql": {
+    "command": "python3 scripts/test-activity-audit-postgres.py",
+    "migrationsApplied": 228,
+    "database": "owned network-none PostgreSQL16, fictional auth/storage, isolated per-suite clones",
+    "fixtureTimeZone": "Asia/Jakarta",
+    "passed": [
+      "activity_audit.sql",
+      "activity_audit_framework.sql",
+      "activity_audit_financial.sql",
+      "activity_audit_inventory.sql",
+      "activity_audit_people_settings.sql",
+      "activity_audit_remaining_modules.sql",
+      "master_data_lifecycle.sql",
+      "master_item_code_history.sql",
+      "stock_document_corrections.sql",
+      "clinic_billing_lifecycle.sql",
+      "manual-journal-corrections.sql",
+      "cash-entry-corrections.sql",
+      "wholesale_corrections.sql",
+      "purchase_invoice_lifecycle.sql",
+      "purchase_payment_corrections.sql",
+      "asset_purchase_correction.sql",
+      "bank_reconciliation_lifecycle.sql",
+      "internal_transfer_corrections.sql"
+    ],
+    "failed": [
+      {
+        "suite": "posted_sale_cancellations.sql",
+        "message": "ERROR:  Efek retur hanya melalui jalur koreksi catatan retur resmi",
+        "baselineReproducedOn": "102f3b0555305524611296e29d16affc12553eb7"
+      }
+    ],
+    "exitCode": 1,
+    "log": "sql-final.log"
+  },
+  "browser": {
+    "command": "node scripts/test-activity-audit-browser.mjs",
+    "exitCode": 0,
+    "log": "browser-final.log",
+    "boundary": "Actual server page, Chromium and loopback HTTP; fictional query boundary, not real auth/API/database integration.",
+    "cases": [
+      "40-row cursors in both directions",
+      "filter preservation/reset",
+      "deleted-object history",
+      "nested receipt/source lookup",
+      "sensitive metadata rendering",
+      "long composite key preserved",
+      "390px no document overflow",
+      "denied roles and failed load feedback"
+    ]
+  },
+  "inventory": {
+    "exitCode": 0,
+    "log": "inventory-final.log",
+    "schema": "schema-snapshot.json",
+    "directLiteralRegistered": 288,
+    "directLiteralTotal": 289,
+    "manuallyReviewedDynamicDirectTargets": [
+      "overtime_requests",
+      "reimbursements",
+      "cash_advances"
+    ],
+    "rpcSitesListed": 139,
+    "unclassifiedLiteralDirect": 0
+  },
+  "independentReview": {
+    "status": "No outstanding important findings",
+    "stage": "Final179-source SQL/UI candidate before conflict-free latest-main integration",
+    "sixA01Suites": "Independently passed with228 migrations",
+    "fixedFindings": [
+      "payment mapping own branch requirement",
+      "unknown dynamic module denied even for unrestricted readers",
+      "source-column SELECT permissions in contract",
+      "nested source queries and long composite keys"
+    ]
+  },
+  "priorSessionAdditionalChecks": {
+    "stage": "Before latest-main integration; actual results reported, not rerun or conflated with final commands",
+    "passed": [
+      "inpatient_consent.sql",
+      "compound_catalog_sku_binding.sql",
+      "moving_average_inventory.sql"
+    ],
+    "failed": [
+      "clinical_occupation_selection.sql (baseline separately reproduced again)"
+    ],
+    "notRun": [
+      "moving-average concurrency runner"
+    ]
+  },
+  "notPerformed": [
+    "production or staging migration/deployment",
+    "production data mutations",
+    "merge to main",
+    "PR86 candidate import or branch edit",
+    "existing authentication/permission changes",
+    "full real authenticated staging UAT",
+    "representative-volume/concurrency/recovery validation",
+    "Google Sheet edit"
+  ],
+  "releaseState": "Ready for code review; not production-release approved. A01 business checklist remains pending scope acceptance/UAT and shared database release coordination.",
+  "baselineCommit": "102f3b0555305524611296e29d16affc12553eb7",
+  "logNormalization": "Final command logs retain messages/results; terminal carriage returns and trailing whitespace normalized for Git evidence."
+}

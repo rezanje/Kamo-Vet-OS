@@ -3,6 +3,7 @@
 // ponytail: dynamic item rows serialized to hidden JSON, same pattern as PermintaanForm.
 
 import { usePreservedAction } from "@/components/LocalTransactionDraft";
+import { PurchasePriceInput } from "@/components/PurchasePriceInput";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import { draftRows } from "@/components/TransactionDraft";
 import Link from "next/link";
@@ -96,7 +97,7 @@ export function POForm({
         {items.map((it) => <option key={it.id} value={itemLabel(it)} />)}
       </datalist>
 
-      <div className="grid2">
+      <div className="grid2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))"}}>
         {/* Kolom kiri: detail PO */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <SecHeader num="01" title="DETAIL PO" desc="Supplier, gudang tujuan & cabang." />
@@ -183,14 +184,14 @@ export function POForm({
               const faktor = Number(r.faktor) || 1;
               return (
                 <div key={i}>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                     <input
                       className="fi"
                       list="po-items"
                       placeholder="Kode / nama barang"
                       value={r.nama}
                       onChange={(e) => setNama(i, e.target.value)}
-                      style={{ flex: 2 }}
+                      style={{ flex: "1 1 160px", minWidth: 0 }}
                     />
                     <input
                       className="fi"
@@ -222,17 +223,7 @@ export function POForm({
                         {r.satuan || "—"}
                       </span>
                     )}
-                    <input
-                      className="fi"
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={r.harga_beli}
-                      onChange={(e) => set(i, { harga_beli: Number(e.target.value) })}
-                      style={{ width: 110 }}
-                      title={`Harga beli per ${r.satuan || "satuan"}`}
-                      placeholder="Harga beli"
-                    />
+                    <PurchasePriceInput price={r.harga_beli} onChange={value=>set(i,{harga_beli:value})} label={`Harga beli per ${r.satuan || "satuan"}`} />
                     <button
                       type="button"
                       onClick={() => del(i)}

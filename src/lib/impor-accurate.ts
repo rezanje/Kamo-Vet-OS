@@ -206,6 +206,7 @@ function parseDataRow(
   }
   if (!code) return { rejected: rowIssue(rowNo, get, "Kode barang wajib diisi") };
   if (!name) return { rejected: rowIssue(rowNo, get, "Nama barang wajib diisi") };
+  if (!typeRaw) return { rejected: rowIssue(rowNo, get, "Jenis barang wajib diisi: INV (Persediaan), SVC (Jasa), NON (Non-Persediaan), atau GROUP (Grup).") };
   const itemType = mapItemType(typeRaw);
   if (!itemType) return { rejected: rowIssue(rowNo, get, `Jenis barang "${typeRaw || "(kosong)"}" tidak didukung`) };
   if (!category) return { rejected: rowIssue(rowNo, get, "Kategori barang wajib diisi") };

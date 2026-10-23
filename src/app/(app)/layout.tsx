@@ -1,3 +1,6 @@
+import { ActivityNavigationProvider } from "@/components/ActivityHistoryLink";
+import { ActivityMenuLink } from "@/components/ActivityMenuLink";
+import { bolehBukaPath } from "@/lib/akses";
 import Link from "next/link";
 import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { Suspense } from "react";
@@ -53,8 +56,11 @@ export default async function AppLayout({
   const activeBranch = await ActiveBranch();
   const canCreateAccount = (await loadRoleCapabilities(supabase, profile?.role ?? "")).create_accounts;
 
+  const canReadActivity = !!profile?.is_active && ["OWNER", "ADMIN"].includes(profile.role)
+    && bolehBukaPath(profile.role, "/perusahaan/log-aktifitas", aksesModul ?? []);
+
   return (
-    <DraftUserProvider userId={user.id}><div className="shell">
+    <ActivityNavigationProvider allowed={canReadActivity}><DraftUserProvider userId={user.id}><div className="shell">
       <NavigationFeedback />
       <Suspense fallback={null}><TransactionDraftComplete userId={user.id} /></Suspense>
       {!isStaff && (
@@ -83,8 +89,8 @@ export default async function AppLayout({
         )}
         {activeBranch}
         {canCreateAccount && <div style={{ padding: "8px 16px" }}><Link href="/pengaturan/pengguna" className="back-btn">Tambah akun karyawan</Link></div>}
-        <div className="ct">{children}</div>
+        <div className="ct"><ActivityMenuLink />{children}</div>
       </div>
-    </div></DraftUserProvider>
+    </div></DraftUserProvider></ActivityNavigationProvider>
   );
 }

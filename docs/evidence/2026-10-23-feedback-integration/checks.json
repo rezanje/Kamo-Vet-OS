@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-23",
+  "applicationVerifiedTree": "eb3b552f0d141fe119ce58bf9773ead75d380d52 plus integration test/tooling changes; final commit adds no product changes",
+  "application": {
+    "command": "npm test",
+    "filesPassed": 331,
+    "testsPassed": 2575,
+    "typecheck": "PASS npx tsc --noEmit",
+    "scopedLint": "PASS conflict pages/tests and browser runner",
+    "build": "PASS npm run build; 194 static pages"
+  },
+  "native": {
+    "engine": "PostgreSQL 17.6",
+    "report": "native-final.json",
+    "suitesPassed": 20,
+    "suitesRun": 20,
+    "dpConcurrency": "PASS cap RC/RR, identical retry, PO revision, refund/cancel/recovery interactions",
+    "importConcurrency": "PASS concurrent prepare and post reuse same receipt; one journal/audit",
+    "auditFailureRollback": "PASS DP, cancellation and paid checkout",
+    "syntheticBackupRestore": "PASS pg_dump/pg_restore catalog, ACL and fixture count; target physical restore NOT tested",
+    "k08SurgicalRollbackReapply": "PASS function definition/security/owner/ACL identity"
+  },
+  "reviewFix": {
+    "catalogUnitTests": 5,
+    "catalogUnitResult": "PASS; legacy exemption mutation fails changed/removed branch-filter tests",
+    "nativeFocusedReport": "native-review-fix.json",
+    "nativeFocusedSuitesPassed": 3,
+    "fullApplicationRerun": "NOT RUN after verification-only guard/doc fix; no product changes"
+  },
+  "browser": {
+    "result": "PASS real pages SSR + Chromium fictional query boundary",
+    "viewports": [
+      1280,
+      390
+    ],
+    "hostedAuthenticatedSmoke": "NOT RUN; no signed-in hosted session",
+    "screenshots": [
+      "browser/purchase-desktop.png",
+      "browser/purchase-mobile.png",
+      "browser/sales-mobile.png"
+    ]
+  },
+  "targetWrites": 0,
+  "productionRelease": "NOT PERFORMED",
+  "sourcePrBranchesModified": false,
+  "rolloutSecurityGates": [
+    "Table/function ownership, including SECURITY DEFINER execution owner",
+    "View owner/ACL/security_invoker/security_barrier",
+    "Role attributes/BYPASSRLS and membership/inheritance"
+  ],
+  "knownBaselineOutOfScope": [
+    "posted_sale_cancellations.sql protected sales-return alias failure from original PR83 runner",
+    "clinical_occupation_selection.sql direct employee-status fixture guard",
+    "legacy unauthenticated inpatient discharge fixture boundary"
+  ]
+}

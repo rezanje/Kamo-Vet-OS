@@ -1,0 +1,38 @@
+
+ RUN  v4.1.9 /workspace/kamo-n01
+
+ ❯ src/lib/__tests__/related-document-routes.test.ts (11 tests | 1 failed) 11ms
+   × uses actual detail routes and exact row anchors for payment/list documents 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/related-document-routes.test.ts > uses actual detail routes and exact row anchors for payment/list documents
+AssertionError: expected undefined to be '/pembelian/20000000-0000-4000-8000-00…' // Object.is equality
+
+- Expected:
+"/pembelian/20000000-0000-4000-8000-000000000002#legacy-payment-10000000-0000-4000-8000-000000000001"
+
++ Received:
+undefined
+
+ ❯ src/lib/__tests__/related-document-routes.test.ts:13:67
+     11|  expect(relatedDocumentHref('purchase-advance',id)).toBe('/pembelian/u…
+     12|  expect(relatedDocumentHref('sales-advance',id)).toBe('/penjualan/uang…
+     13|  expect(relatedDocumentHref('legacy-purchase-payment',id,parent)).toBe…
+       |                                                                   ^
+     14|  expect(relatedDocumentHref('purchase-return',id)).toBe('/pembelian/re…
+     15|  expect(relatedDocumentHref('payment-order',id)).toBe('/pembelian/peri…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 10 passed (11)
+   Start at  20:07:27
+   Duration  210ms (transform 26ms, setup 0ms, import 37ms, tests 11ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

@@ -159,7 +159,10 @@ export type InitialStockCheck = {
 
 export type InitialStockRow = ResolvedSaldoAwal & { itemName: string | null };
 
+export type InitialStockValuation = { policy: string; source_value: string; posted_value: string; residual: string; allocated_source_row: number | null; rate_adjustment: string; control: string };
+
 export type InitialStockState = {
+  valuation?: InitialStockValuation;
   ok: boolean;
   phase: "preview" | "done";
   message: string;
@@ -511,6 +514,18 @@ function newMasters(items: AccurateItem[], master: MasterAccurate, categories: A
   };
 }
 
+function invalidMasterInput(parsed: Awaited<ReturnType<typeof bacaUploads>>["parsed"]): AccurateImportState | null {
+  if (parsed.rows.length) return null;
+  const rows = buatPreviewAccurate(parsed, []);
+  const reasons = [...new Set(parsed.rejected.map((row) => row.reason))].slice(0, 3);
+  return {
+    ...stateError(`Tidak ada barang/jasa yang siap diimpor. ${parsed.rejected.length} baris ditolak, ${parsed.skipped.length} dilewati. ${reasons.length ? reasons.join(" ") : "Isi baris master dan kolom wajib pada file, lalu jalankan Cek perubahan lagi."}`),
+    rows: ringkasPreviewAccurate(rows),
+    total_rows: rows.length,
+    summary: summarize(rows),
+  };
+}
+
 export async function previewImporAccurate(formData: FormData): Promise<AccurateImportState> {
   try {
     const supabase = await assertBolehKelola();
@@ -519,6 +534,8 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
     const upload = await bacaUploads(files);
     let parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
+    const invalid = invalidMasterInput(parsed);
+    if (invalid) return invalid;
     const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
     const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
@@ -749,6 +766,8 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
     const upload = await bacaUploads(files);
     let parsed = upload.parsed;
     if (parsed.errors.length) return stateError(parsed.errors.join(" "));
+    const invalid = invalidMasterInput(parsed);
+    if (invalid) return invalid;
     const pakaiKategoriDariMaster = parsed.categories.some((row) => row.parent_name);
     const parsedCategories = !pakaiKategoriDariMaster && categoryFile
       ? await bacaWorkbookKategoriAccurate(new Uint8Array(await categoryFile.arrayBuffer()))
@@ -1032,13 +1051,17 @@ function getInitialStockScopeSelection(formData: FormData): InitialStockScopeSel
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function muatMasterSaldoAwal(supabase: any): Promise<ReadonlyMap<string, SaldoAwalMasterItem>> {
-  const rows = await loadAll(supabase, "items", "id,code,unit,item_type,track_expiry,item_units(unit,factor)");
+  const rows = await loadAll(supabase, "items", "id,code,unit,item_type,is_active,track_expiry,item_units(unit,factor)");
+  const seen = new Set<string>();
   return new Map(rows.map((row) => {
+    const codeKey = String(row.code ?? "").trim().toLowerCase();
+    if (codeKey && seen.has(codeKey)) throw new Error("Kode SKU ambigu di master. Periksa kode sebelum menyiapkan saldo.");
+    seen.add(codeKey);
     const item: SaldoAwalMasterItem = {
       id: String(row.id),
       code: String(row.code ?? ""),
       unit: String(row.unit ?? ""),
-      itemType: String(row.item_type ?? ""),
+      itemType: row.is_active === false ? "Tidak aktif" : String(row.item_type ?? ""),
       trackExpiry: Boolean(row.track_expiry),
       units: (row.item_units ?? []).map((unit: Record<string, unknown>) => ({
         unit: String(unit.unit ?? ""),
@@ -1131,61 +1154,45 @@ async function assertMasterImportPosted(supabase: any, runId: string) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function createInitialStockRun(supabase: any, input: {
-  sourceName: string;
-  sourceHash: string;
-  branchId: string;
-  warehouseId: string;
-  asOf: string;
-  summary: Record<string, number>;
-  rows: ResolvedSaldoAwal[];
-}) {
-  const existing = await supabase.from("import_runs")
-    .select("id,status,kind,branch_id,warehouse_id,as_of_date")
-    .eq("kind", "initial_stock")
-    .eq("source_hash", input.sourceHash)
-    .maybeSingle();
-  if (existing.error) throw new Error(existing.error.message);
-  if (existing.data) {
-    if (existing.data.status !== "previewed") throw new Error("Batch saldo awal yang sama sudah pernah diposting.");
-    return String(existing.data.id);
+// Persisted evidence is always reloaded through RLS and the originating account.
+export async function recoverInitialStock(runId: string): Promise<InitialStockState> {
+  try {
+    const supabase = await assertBolehKelola();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("Batch tidak dapat diakses.");
+    const { data: run, error } = await supabase.from("import_runs").select("id,created_by,status,summary,source_hash,branch_id,warehouse_id,as_of_date")
+      .eq("id", runId).eq("kind", "initial_stock").eq("created_by", user.id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!run || !run.branch_id || !["previewed", "posted"].includes(run.status)) throw new Error("Batch tidak dapat diakses atau belum lengkap.");
+    const records: { source_row: number; source_code: string | null; status: string; reason: string | null; payload: Record<string, string | null> }[] = [];
+    for (let start = 0; ; start += PAGE_SIZE) {
+      const result = await supabase.from("import_run_rows").select("source_row,source_code,status,reason,payload")
+        .eq("run_id", runId).order("id").range(start, start+PAGE_SIZE-1);
+      if (result.error) throw new Error(result.error.message);
+      records.push(...(result.data ?? []));
+      if ((result.data ?? []).length < PAGE_SIZE) break;
+    }
+    const rows: InitialStockRow[] = records.map(record => {
+      const p = record.payload;
+      return {
+        row: record.source_row, itemCode: String(record.source_code ?? p.item_code ?? ""), itemName: null,
+        qty: Number(p.base_qty ?? 0), unit: String(p.unit ?? ""), unitCost: Number(p.base_unit_cost ?? 0),
+        batchNo: p.batch_no ?? null, expDate: p.exp_date ?? null, branchName: null, warehouseName: null, asOf: run.as_of_date,
+        itemId: String(p.item_id ?? ""), warehouseId: String(p.warehouse_id ?? run.warehouse_id),
+        baseQty: Number(p.base_qty ?? 0), baseUnitCost: Number(p.base_unit_cost ?? 0), value: Number(p.base_qty ?? 0)*Number(p.base_unit_cost ?? 0),
+        status: record.status === "posted" ? "valid" : record.status, reason: record.reason ?? null,
+      } as InitialStockRow;
+    });
+    return { ok: true, phase: run.status === "posted" ? "done" : "preview", message: run.status === "posted"
+      ? "Batch sudah diposting. Buka bukti posting di Keuangan / Persediaan Awal."
+      : "Batch tersimpan dipulihkan. Stok dan jurnal belum diposting; lanjutkan review OWNER.",
+      branch_id: run.branch_id, warehouse_id: run.warehouse_id, as_of: run.as_of_date,
+      run_id: run.id, master_run_id: null, source_hash: run.source_hash, rows,
+      source_qty: Number(run.summary?.source_qty ?? 0), source_value: Number(run.summary?.source_value ?? 0),
+      valuation: run.summary?.valuation, checks: [], scope_clarification: null };
+  } catch (error) {
+    return initialStockStateError(error instanceof Error ? error.message : "Batch belum dapat dipulihkan.");
   }
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Sesi login kedaluwarsa.");
-  const inserted = await supabase.from("import_runs").insert({
-    kind: "initial_stock",
-    source_name: input.sourceName,
-    source_hash: input.sourceHash,
-    branch_id: input.branchId,
-    warehouse_id: input.warehouseId,
-    as_of_date: input.asOf,
-    summary: input.summary,
-    created_by: user.id,
-  }).select("id").single();
-  if (inserted.error) throw new Error(inserted.error.message);
-  const rowPayload = input.rows.map((row) => ({
-    run_id: inserted.data.id,
-    source_row: row.row,
-    source_code: row.itemCode,
-    status: row.status,
-    reason: row.reason,
-    payload: {
-      item_id: row.itemId,
-      item_code: row.itemCode,
-      warehouse_id: row.warehouseId,
-      base_qty: row.baseQty,
-      base_unit_cost: row.baseUnitCost,
-      as_of: input.asOf,
-      batch_no: row.batchNo,
-      exp_date: row.expDate,
-    },
-  }));
-  if (rowPayload.length) {
-    const insertedRows = await supabase.from("import_run_rows").insert(rowPayload);
-    if (insertedRows.error) throw new Error(insertedRows.error.message);
-  }
-  return String(inserted.data.id);
 }
 
 export async function preflightSaldoAwalSekali(formData: FormData): Promise<InitialStockState> {
@@ -1202,7 +1209,6 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
     if (barang.errors.length) return initialStockStateError(barang.errors.join(" "));
     const scope = await loadInitialScopeFromFile(supabase, saldo.rows, selectedAsOf, getInitialStockScopeSelection(formData));
     if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
-    await rememberInitialStockScope(supabase, saldo.rows, getInitialStockScopeSelection(formData));
     const { warehouse, asOf } = scope;
     const existing = await muatMasterSaldoAwal(supabase);
     const projected = new Map(existing);
@@ -1247,7 +1253,8 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
   try {
     const supabase = await assertBolehKelola();
     const masterRunId = String(formData.get("master_run_id") ?? "").trim();
-    await assertMasterImportPosted(supabase, masterRunId);
+    const stockOnly = formData.get("import_mode") === "stock_only";
+    if (!stockOnly) await assertMasterImportPosted(supabase, masterRunId);
     const file = getInitialStockFile(formData);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const selectedAsOf = getInitialStockAsOf(formData);
@@ -1255,43 +1262,33 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     if (parsed.errors.length) return initialStockStateError(parsed.errors.join(" "));
     const scope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf, getInitialStockScopeSelection(formData));
     if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
-    await rememberInitialStockScope(supabase, parsed.rows, getInitialStockScopeSelection(formData));
     const { branch, warehouse, asOf } = scope;
     const master = await muatMasterSaldoAwal(supabase);
     const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);
     const sourceHash = await hashFiles([
       { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v4:${branch.id}:${warehouse.id}:${asOf}`) },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v5:${branch.id}:${warehouse.id}:${asOf}:${formData.get("valuation_policy") ?? "STRICT"}:${stockOnly ? "stock_only" : "master"}`) },
     ]);
-    const summary = initialStockSummary(resolved);
-    const runId = await createInitialStockRun(supabase, {
-      sourceName: file.name,
-      sourceHash,
-      branchId: branch.id,
-      warehouseId: warehouse.id,
-      asOf,
-      summary,
-      rows: resolved,
+    const policy = String(formData.get("valuation_policy") ?? "STRICT");
+    const rowPayload = resolved.map(row => ({
+      source_row: row.row, source_code: row.itemCode, status: row.status, reason: row.reason,
+      payload: { item_id: row.itemId || null, item_code: row.itemCode, unit: row.unit, warehouse_id: row.warehouseId,
+        base_qty: row.baseQty, base_unit_cost: row.baseUnitCost, as_of: asOf,
+        batch_no: row.batchNo, exp_date: row.expDate, source_values: row.sourceValues ?? [] },
+    }));
+    const prepared = await supabase.rpc("prepare_accurate_initial_stock", {
+      p_source_hash: sourceHash, p_source_name: file.name, p_branch_id: branch.id, p_warehouse_id: warehouse.id,
+      p_as_of: asOf, p_rows: rowPayload, p_policy: policy,
     });
-    const names = new Map([...master.values()].map((item) => [item.id, item.code]));
-    return {
-      ok: summary.valid > 0,
-      phase: "preview",
-      message: summary.rejected
-        ? `${summary.valid} baris siap untuk posting. ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi dan tidak masuk.`
-        : `${summary.valid} baris siap, ${summary.skipped} dilewati, ke ${warehouse.name}, ${branch.name}, per ${asOf}.`,
-      branch_id: branch.id,
-      warehouse_id: warehouse.id,
-      as_of: asOf,
-      run_id: runId,
-      master_run_id: masterRunId,
-      source_hash: sourceHash,
-      rows: initialStockRowsState(resolved, names),
-      source_qty: summary.source_qty,
-      source_value: summary.source_value,
-      checks: [],
-      scope_clarification: null,
-    };
+    if (prepared.error) throw new Error(prepared.error.message);
+    if (!prepared.data) throw new Error("Hasil persiapan belum diterima. Periksa batch tersimpan sebelum mencoba ulang.");
+    // No reconstruction from a possibly changed master: exact persisted rows win.
+    const recovered = await recoverInitialStock(String(prepared.data));
+    if (recovered.ok) {
+      await rememberInitialStockScope(supabase, parsed.rows, getInitialStockScopeSelection(formData));
+      revalidatePath(BACK);
+    }
+    return recovered;
   } catch (error) {
     return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal dibaca.");
   }

@@ -1,0 +1,83 @@
+{
+  "baseSha": "102f3b0555305524611296e29d16affc12553eb7",
+  "branch": "codex/k08-clinic-billing-consistency-20261022",
+  "fullTests": {
+    "exitCode": 0,
+    "files": 312,
+    "tests": 2440
+  },
+  "focused": {
+    "exitCode": 0,
+    "files": 5,
+    "tests": 64
+  },
+  "typecheck": {
+    "exitCode": 0
+  },
+  "scopedLint": {
+    "exitCode": 0,
+    "errors": 0,
+    "existingWarnings": 1
+  },
+  "build": {
+    "exitCode": 0,
+    "environment": "fictional local URL/key only"
+  },
+  "sql": {
+    "exitCode": 0,
+    "migrations": 223,
+    "suitesPassed": 5,
+    "rollbackRoundtrip": "exact function definition/owner/security/ACL",
+    "baselineFixtureGap": "raw clinic_inpatient_discharge fails protect_inpatient_care_staff unauthenticated setup identically before/after K08"
+  },
+  "browserPayment": {
+    "passed": true,
+    "reload": true,
+    "serverFailure": true,
+    "networkFailure": true,
+    "stableRequestKey": true,
+    "accountIsolation": true,
+    "refsUnitsAmountsStaff": true,
+    "acknowledgedSuccessCleanup": true,
+    "mixedPayment": true,
+    "mixedDraftRecovery": true,
+    "legacyDraftRecovery": true,
+    "clinicalSource305to400Review": true,
+    "lockedRetryPayloadPreserved": true,
+    "stockFailureDraftRetained": true,
+    "uncertainPaymentHonesty": true,
+    "mobile390": true,
+    "productionMutations": false
+  },
+  "browserOtherClinicForms": {
+    "passed": true,
+    "forms": 2,
+    "reload": true,
+    "failedSave": true,
+    "networkError": true,
+    "ordinaryPagination": true,
+    "followupsAndUploadedReferences": true,
+    "unitFactorPrice": true,
+    "accountIsolation": true,
+    "discard": true,
+    "successCleanup": true,
+    "expiredDrafts": true,
+    "malformedDrafts": true,
+    "disabledStorage": true,
+    "productionMutations": false
+  },
+  "independentReview": {
+    "modelRequested": "gpt-6.1-sol",
+    "effortRequested": "high",
+    "remainingP1P2": 0
+  },
+  "frozenPRs": {
+    "83": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+    "88": "bf9022d30b6ec6b3d12361605a1e7c1ddc36fdc4"
+  },
+  "targetMigrationApplied": false,
+  "merged": false,
+  "targetDeployed": false,
+  "uat": "pending",
+  "screenshotsVisuallyInspected": true
+}

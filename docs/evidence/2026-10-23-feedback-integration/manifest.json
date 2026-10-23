@@ -1,0 +1,78 @@
+{
+  "base": "102f3b0555305524611296e29d16affc12553eb7",
+  "sourceHeads": {
+    "83": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+    "86": "cdc96ddb5e16d280618ba1cf5c016a1b9031cf58",
+    "87": "b5bbb6344b82986de5c05fd46b0fc905f6dfe390",
+    "88": "bf9022d30b6ec6b3d12361605a1e7c1ddc36fdc4",
+    "89": "b44011489a7aa9ebd2bf68b240900b62a63c0780",
+    "90": "84930123c533c7e8b0701de220c006f06d3232e9",
+    "91": "cd08481ca6422b5e5c2bce68ca53111979288fc7"
+  },
+  "migrations": [
+    {
+      "path": "supabase/migrations/20261022070000_activity_audit.sql",
+      "sha256": "3923d623bbb408721c0ce7886ce0d9c4d88bde47a1e464560249a79e9e63a447",
+      "sourcePr": 83,
+      "sourceHead": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261022080000_activity_audit_framework.sql",
+      "sha256": "bff4655be821e26cc65fe1fd299cc9a7facc4ef8c8342b473f4ca7c807ee1ad3",
+      "sourcePr": 83,
+      "sourceHead": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261022081000_activity_audit_financial.sql",
+      "sha256": "4487178b41dff67c66bbe85d10d23b66855ee3e0bfd5adb1b90bce44d90dfb8a",
+      "sourcePr": 83,
+      "sourceHead": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261022082000_activity_audit_inventory.sql",
+      "sha256": "4f3195b282a7c08a6ec3f99c528465cd33aadc71ff4d638cf7af21097b8ca594",
+      "sourcePr": 83,
+      "sourceHead": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261022083000_activity_audit_people_settings.sql",
+      "sha256": "c7fb85c07f7f9d3936e3f856c8bb078dcf3d114a13c409723a37ad978988cd15",
+      "sourcePr": 83,
+      "sourceHead": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261022084000_activity_audit_remaining_modules.sql",
+      "sha256": "bfd2ffe958dc4f6f1ba3a233e00abc357bb4466e8b3cc8b948345002266455e3",
+      "sourcePr": 83,
+      "sourceHead": "3b6f82dde5bfe616f2759f121de45d7a1de11b29",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261022190000_recoverable_inventory_preparation.sql",
+      "sha256": "7b7469cf256821110e22d978679f23f37fd044ec374a4c42bdb0e646fc2995d9",
+      "sourcePr": 86,
+      "sourceHead": "cdc96ddb5e16d280618ba1cf5c016a1b9031cf58",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261022232107_clinic_paid_checkout_atomic.sql",
+      "sha256": "d76c8afcd35430cbd214213bb45cf9468d21b44b70033b7204272c26847338d4",
+      "sourcePr": 90,
+      "sourceHead": "84930123c533c7e8b0701de220c006f06d3232e9",
+      "unchangedFromSource": true
+    },
+    {
+      "path": "supabase/migrations/20261023010000_purchase_advance_cap_atomic.sql",
+      "sha256": "650638a3f6e5e258c71fa5a72c233e0c3ce54a153971dcb9e2d996782f4687bf",
+      "sourcePr": 91,
+      "sourceHead": "cd08481ca6422b5e5c2bce68ca53111979288fc7",
+      "unchangedFromSource": true
+    }
+  ],
+  "applicationConflictResolution": "Preserve A01 history links and N01 stored document anchors on six pages; preserve AdvanceForm/TransactionDraftComplete with history/back links; K08 payment page auto-merge retained invoice history link."
+}

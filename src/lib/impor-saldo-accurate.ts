@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { xlsxSourceNumbers } from "./xlsx-source-numbers";
 
 export type ReconcileInput = {
   sourceQty: number;
@@ -25,6 +26,8 @@ export type SaldoAwalDraft = {
   qty: number;
   unit: string;
   unitCost: number;
+  sourceQty?: string;
+  sourceUnitCost?: string;
   batchNo: string | null;
   expDate: string | null;
   branchName: string | null;
@@ -75,6 +78,7 @@ export type ResolvedSaldoAwal = SaldoAwalDraft & {
   value: number;
   warehouseId: string;
   sourceRows?: number[];
+  sourceValues?: { qty: string; unit_cost: string; factor: string; unit: string }[];
   status: "valid" | "rejected" | "skipped";
   reason: string | null;
 };
@@ -290,6 +294,14 @@ function numberValue(value: ExcelJS.CellValue | undefined) {
   return Number(text);
 }
 
+// Apply the same locale interpretation as numberValue without a Number roundtrip.
+function sourceNumberText(value: ExcelJS.CellValue | undefined, xml?: string): string {
+  if (xml !== undefined) return xml;
+  if (value && typeof value === "object" && "result" in value) return sourceNumberText((value as {result?:ExcelJS.CellValue}).result);
+  if (typeof value === "number") return String(value);
+  return cellText(value).replace(/\./g, "").replace(/,/g, ".");
+}
+
 /**
  * ExcelJS mengembalikan rumus tanpa nilai tersimpan sebagai `{ formula }`.
  * Nilainya tidak boleh ditebak: terutama rumus yang merujuk workbook lain
@@ -307,6 +319,7 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
   const worksheet = workbook.getWorksheet("Saldo Awal") ?? workbook.worksheets[0];
   if (!worksheet) return { rows: [], errors: ["Sheet Saldo Awal tidak ditemukan"] };
 
+  const numericSources = await xlsxSourceNumbers(bytes, worksheet.name);
   const headers = new Map<string, number>();
   worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, column) => {
     headers.set(normalizeHeader(cellText(cell.value)), column);
@@ -373,7 +386,7 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     if (columns.expDate && row.getCell(columns.expDate).value != null && !expDate) {
       errors.push(`Baris ${rowNo}: Tanggal kedaluwarsa tidak valid`);
     }
-    rows.push({ row: rowNo, itemCode, qty: rawQty, unit, unitCost, batchNo, expDate, branchName, warehouseName, asOf });
+    rows.push({ row: rowNo, itemCode, qty: rawQty, unit, unitCost, sourceQty: sourceNumberText(rawQtyCell, numericSources.get(row.getCell(columns.qty!).address)), sourceUnitCost: sourceNumberText(unitCostCell, numericSources.get(row.getCell(columns.unitCost!).address)), batchNo, expDate, branchName, warehouseName, asOf });
   }
   const rentang = (baris: number[]) => `${baris.length} baris (${baris.slice(0, 3).join(", ")}${baris.length > 3 ? ", …" : ""})`;
   if (rumusQtyTanpaNilai.length || rumusHppTanpaNilai.length) {
@@ -398,9 +411,15 @@ export function resolveSaldoAwalRows(
     if (!item) reason = "Kode barang tidak ditemukan";
     else if (item.itemType !== "Persediaan") reason = "Jasa atau non-persediaan dilewati";
     else if (!item.unit) reason = "Satuan dasar barang belum tersedia";
-    else if (row.unit.trim().toLowerCase() !== item.unit.trim().toLowerCase()) {
-      factor = item.units.find((unit) => unit.unit.trim().toLowerCase() === row.unit.trim().toLowerCase())?.factor ?? 0;
-      if (!factor) reason = "Satuan tidak terdaftar di master barang";
+    else {
+      const sourceUnit = row.unit.trim().toLowerCase();
+      const factors = item.units.filter(unit => unit.unit.trim().toLowerCase() === sourceUnit).map(unit => unit.factor);
+      if (sourceUnit === item.unit.trim().toLowerCase()) factors.push(1);
+      if (new Set(factors).size > 1) reason = "Konversi satuan ambigu di master barang";
+      else {
+        factor = factors[0] ?? 0;
+        if (!Number.isFinite(factor) || factor <= 0) reason = "Satuan tidak terdaftar di master barang";
+      }
     }
     if (!reason && item?.trackExpiry && row.qty > 0 && !row.expDate) reason = "Tanggal kedaluwarsa wajib untuk barang bertanggal";
     if (!reason && row.expDate && row.expDate < "1900-01-01") reason = "Tanggal kedaluwarsa tidak valid";
@@ -409,6 +428,7 @@ export function resolveSaldoAwalRows(
     return {
       ...row,
       itemId: item?.id ?? "",
+      sourceValues: [{ qty: row.sourceQty ?? String(row.qty), unit_cost: row.sourceUnitCost ?? String(row.unitCost), factor: String(factor), unit: row.unit }],
       baseQty: converted.baseQty,
       baseUnitCost: converted.baseUnitCost,
       value: converted.value,
@@ -450,6 +470,7 @@ export function resolveSaldoAwalRows(
       value,
       baseUnitCost: baseQty > 0 ? value / baseQty : firstCost,
       sourceRows,
+      sourceValues: group.flatMap(row => row.sourceValues ?? []),
     }];
   });
   return [...passthrough, ...merged].sort((a, b) => a.row - b.row);

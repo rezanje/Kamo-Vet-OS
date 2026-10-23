@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import {readCompleteList} from "@/lib/checked-list";
+import {PreservedForm,TransactionDraftComplete} from "@/components/LocalTransactionDraft";
+import {PromoTargets} from "./PromoTargets";
+import styles from "./PromoForm.module.css";
 import { SecHeader } from "@/components/SecHeader";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
 import { createPromo, togglePromo } from "./actions";
@@ -39,14 +43,15 @@ export default async function PromoAdminPage({
   const { error, success } = await searchParams;
   const supabase = await createClient();
   const today = hariIniWIB();
+  const {data:{user}} = await supabase.auth.getUser();
 
-  const [{ data: promos }, { data: branches }, { data: items }, { data: promoItems }] = await Promise.all([
+  const [{ data: promos }, branches, items, { data: promoItems }] = await Promise.all([
     supabase.from("promos")
       .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
       .order("created_at", { ascending: false }),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    readCompleteList<{id:string;code:string;name:string}>((from,to)=>supabase.from("branches").select("id,code,name",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),"Daftar cabang promo",{maxRows:null}),
     // Jasa ikut ditawarkan: grooming & tindakan juga sering dipromokan.
-    supabase.from("items").select("id, code, name").eq("is_active", true).order("name"),
+    readCompleteList<{id:string;code:string;name:string}>((from,to)=>supabase.from("items").select("id,code,name",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),"Daftar barang promo",{maxRows:null}),
     supabase.from("promo_items").select("promo_id, item_id"),
   ]);
   const branchName = new Map((branches ?? []).map((b) => [b.id, b.name]));
@@ -85,7 +90,7 @@ export default async function PromoAdminPage({
 
       <div className="crm-sec">
         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
-        <form action={createPromo} style={{ display: "grid", gridTemplateColumns: "2fr 1.3fr 1fr 1fr", gap: 8, alignItems: "flex-end" }}>
+        <TransactionDraftComplete userId={user?.id ?? ""}/><PreservedForm key={user?.id ?? ""} action={createPromo} className={styles.form}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label className="flab">Nama promo *</label>
             <input className="fi" name="name" required placeholder="mis. Diskon Lebaran Royal Canin" />
@@ -146,18 +151,7 @@ export default async function PromoAdminPage({
             </div>
           </div>
 
-          {/* ── Barang yang kena ────────────────────────────────────────── */}
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Barang yang kena promo (kosongkan = semua barang)</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", maxHeight: 120, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 7, padding: "8px 10px" }}>
-              {(items ?? []).map((it) => (
-                <label key={it.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-                  <input type="checkbox" name="item_ids" value={it.id} /> {it.code} — {it.name}
-                </label>
-              ))}
-              {(items ?? []).length === 0 && <span style={{ fontSize: 10.5, color: "var(--td)" }}>Belum ada barang.</span>}
-            </div>
-          </div>
+          <PromoTargets userId={user?.id ?? ""} items={items} branches={branches}/>
 
           {/* ── Potong otomatis ─────────────────────────────────────────── */}
           <div style={{ gridColumn: "1 / -1", background: "#f8fafc", border: ".5px solid var(--bd)", borderRadius: 7, padding: "9px 11px" }}>
@@ -177,20 +171,10 @@ export default async function PromoAdminPage({
             <label className="flab">Berlaku s/d</label>
             <input className="fi" name="valid_until" type="date" />
           </div>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Cabang (kosongkan = semua cabang)</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", maxHeight: 96, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 7, padding: "8px 10px" }}>
-              {(branches ?? []).map((b) => (
-                <label key={b.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-                  <input type="checkbox" name="branch_ids" value={b.id} /> {b.name}
-                </label>
-              ))}
-            </div>
-          </div>
           <button type="submit" className="btn-acc" style={{ gridColumn: "1 / -1", justifyContent: "center" }}>
             <i className="ti ti-plus" /> Buat Promo
           </button>
-        </form>
+        </PreservedForm>
       </div>
 
       <div className="crm-sec">

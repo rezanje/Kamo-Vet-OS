@@ -1,4 +1,5 @@
 "use client";
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 
 import { infoHalaman } from "@/lib/pagination";
 import { TABLE_PAGE_SIZE } from "@/lib/checked-list";
@@ -404,6 +405,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <span style={{ fontSize: 11, fontWeight: 500, textAlign: "right", maxWidth: 180 }}>{row.val}</span>
                   </div>
                 ))}
+                {isAdmin && <ActivityHistoryLink entity="customers" id={sel.id} />}
                 {isAdmin && detail?.stat && (
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 6 }}>RINCIAN TRANSAKSI (ADMIN)</div>

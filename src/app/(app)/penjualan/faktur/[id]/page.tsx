@@ -1,3 +1,6 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
+import { DocumentBackLink, DocumentLink } from "@/components/RelatedDocuments";
+import { documentAnchor } from "@/lib/related-document-routes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -5,11 +8,11 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { WholesaleCorrectionForm } from "./WholesaleCorrectionForm";
 
 const rp = (n: number) => `Rp ${Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
-type Receipt = { id: string; no_terima: string; tanggal: string; jumlah: number; dari_uang_muka: number; metode: string; journal_id: string | null };
-type Invoice = { id: string; no_faktur: string; total: number; carried_paid: number; replaces_invoice_id: string | null; sales_receipts: Receipt[] };
+type Receipt = { advance_id: string | null; advance: {id: string;no_um: string;status: string} | {id: string;no_um: string;status: string}[] | null; id: string; no_terima: string; tanggal: string; jumlah: number; dari_uang_muka: number; metode: string; journal_id: string | null };
+type Invoice = { status: string; id: string; no_faktur: string; total: number; carried_paid: number; replaces_invoice_id: string | null; sales_receipts: Receipt[] };
 
 export default async function WholesaleInvoicePage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; success?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; success?: string; from?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -23,7 +26,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const [{ data: profile }, lines, orderInvoices, settings] = await Promise.all([
     db.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
     db.from("sales_invoice_items").select("id,nama,qty,harga,satuan,hpp").eq("invoice_id", id).order("id"),
-    db.from("sales_invoices").select("id,no_faktur,total,carried_paid,replaces_invoice_id,sales_receipts(id,no_terima,tanggal,jumlah,dari_uang_muka,metode,journal_id)").eq(invoice.order_id ? "order_id" : "id", invoice.order_id ?? id),
+    db.from("sales_invoices").select("id,no_faktur,total,status,carried_paid,replaces_invoice_id,sales_receipts(id,no_terima,tanggal,jumlah,dari_uang_muka,advance_id,advance:sales_advances!advance_id(id,no_um,status),metode,journal_id)").eq(invoice.order_id ? "order_id" : "id", invoice.order_id ?? id),
     db.from("company_settings").select("ppn_rate").eq("id", true).maybeSingle(),
   ]);
   if (lines.error || orderInvoices.error || settings.error) throw new Error("Rincian/alokasi pembayaran belum dapat diverifikasi. Muat ulang halaman.");
@@ -47,6 +50,8 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const customer = Array.isArray(invoice.customers) ? invoice.customers[0] : invoice.customers;
   const today = hariIniWIB();
   return <>
+    <DocumentBackLink from={sp.from} />
+    <ActivityHistoryLink entity="sales_invoices" id={id} />
     <Link className="back-btn" href="/penjualan/faktur">← Faktur & penerimaan</Link>
     <div className="crm-sec">
       <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
@@ -55,19 +60,25 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal} · jatuh tempo {invoice.jatuh_tempo} · {invoice.status}</p>
       <p>Total {rp(invoice.total)} · Pembayaran terbawa {rp(invoice.carried_paid)} · Penerimaan faktur ini {rp(ownPaid)} · Sisa piutang {rp(invoice.status === "batal" ? 0 : Math.max(0, Number(invoice.total) - paid))}</p>
       {invoice.order_id && <p><Link href={`/penjualan/pesanan/${invoice.order_id}`}>Buka pesanan dan bukti pengiriman fisik</Link></p>}
-      {invoice.replaces_invoice_id && <p>Menggantikan <Link href={`/penjualan/faktur/${invoice.replaces_invoice_id}`}>{byId.get(invoice.replaces_invoice_id)?.no_faktur ?? invoice.replaces_invoice_id}</Link></p>}
-      {successor && <p>Diganti oleh <Link href={`/penjualan/faktur/${successor.id}`}>{successor.no_faktur}</Link></p>}
+      {invoice.replaces_invoice_id && <p>{byId.has(invoice.replaces_invoice_id) ? <>Menggantikan <DocumentLink kind="sales-invoice" id={invoice.replaces_invoice_id} from={`/penjualan/faktur/${id}`}>{byId.get(invoice.replaces_invoice_id)!.no_faktur}</DocumentLink> · {byId.get(invoice.replaces_invoice_id)!.status}</> : "Faktur asal tidak tersedia atau tidak dapat diakses."}</p>}
+      {successor && <p>Diganti oleh <DocumentLink kind="sales-invoice" id={successor.id} from={`/penjualan/faktur/${id}`}>{successor.no_faktur}</DocumentLink> · {successor.status}</p>}
       {invoice.voided_on && <p>Dibatalkan {invoice.voided_on}: {invoice.void_reason}. Pengiriman fisik dan dokumen asli tetap disimpan.</p>}
-      <table className="tbl"><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>HPP alokasi</th></tr></thead><tbody>
+      <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>HPP alokasi</th></tr></thead><tbody>
         {(lines.data ?? []).map(i => <tr key={i.id}><td>{i.nama}</td><td>{Number(i.qty)} {i.satuan}</td><td>{rp(i.harga)}</td><td>{rp(i.hpp ?? 0)}</td></tr>)}
-      </tbody></table>
+      </tbody></table></div>
     </div>
     <div className="crm-sec">
       <h2 style={{ fontSize: 14 }}>Riwayat pembayaran asli</h2>
+      {ancestors.some(i => i.replaces_invoice_id && !byId.has(i.replaces_invoice_id)) && <p>Sebagian riwayat faktur asal tidak tersedia atau tidak dapat diakses. Pembayaran lama tidak direkonstruksi.</p>}
       <p>Pembayaran dari faktur terdahulu dibawa sebagai pelunasan pengganti. Angka di bawah adalah transaksi uang asli; tidak dijumlah ulang sebagai kas masuk.</p>
-      <table className="tbl"><thead><tr><th>Penerimaan</th><th>Faktur asal</th><th>Tanggal</th><th>Jumlah</th><th>Dari uang muka</th></tr></thead><tbody>
-        {ancestors.flatMap(i => (i.sales_receipts ?? []).map(r => <tr key={r.id}><td>{r.no_terima} · {r.metode}</td><td><Link href={`/penjualan/faktur/${i.id}`}>{i.no_faktur}</Link></td><td>{r.tanggal}</td><td>{rp(r.jumlah)}</td><td>{rp(r.dari_uang_muka)}</td></tr>))}
-      </tbody></table>
+      <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Penerimaan</th><th>Faktur asal</th><th>Tanggal</th><th>Jumlah</th><th>Dari uang muka / dokumen</th><th>Status</th></tr></thead><tbody>
+        {ancestors.flatMap(i => (i.sales_receipts ?? []).map(r => { const advance=Array.isArray(r.advance)?r.advance[0]:r.advance;return <tr id={documentAnchor('receipt',r.id)} style={{scrollMarginTop:90}} key={r.id}>
+          <td><DocumentLink kind="sales-receipt" id={r.id} parentId={i.id} from={i.id===id?undefined:`/penjualan/faktur/${id}`}>{r.no_terima}</DocumentLink> · {r.metode}<div><ActivityHistoryLink entity="sales_receipts" id={r.id} /></div></td>
+          <td><DocumentLink kind="sales-invoice" id={i.id} from={i.id===id?undefined:`/penjualan/faktur/${id}`}>{i.no_faktur}</DocumentLink></td><td>{r.tanggal}</td><td>{rp(r.jumlah)}</td>
+          <td>{rp(r.dari_uang_muka ?? 0)}{advance ? <p><DocumentLink kind="sales-advance" id={advance.id} from={`/penjualan/faktur/${id}#receipt-${r.id}`}>Uang muka {advance.no_um}</DocumentLink> · {advance.status}</p> : (r.advance_id || Number(r.dari_uang_muka)>0) && <p>Uang muka terkait tidak tersedia atau tidak dapat diakses. Alokasi lama tidak ditebak.</p>}</td>
+          <td>Transaksi uang tersimpan{ i.status==='batal' ? ' · faktur asal dibatalkan' : ''}</td>
+        </tr>}))}
+      </tbody></table></div>
       <p>Kredit pelanggan dari rangkaian ini: <strong>{rp(credits)}</strong>. Tercatat sebagai kewajiban pada akun 2103, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p>
       {invoice.status === "batal" && !successor && <Link href="/penjualan/faktur">Buka daftar penerimaan dan kredit</Link>}
     </div>

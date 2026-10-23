@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "./PembayaranForm.module.css";
+
 import { METODE_BAYAR as SPLIT_METHODS } from "@/lib/kas-akun";
 import { validateSplitPaymentTotal, type SplitPaymentDraft } from "@/lib/clinic-split-payment";
 
@@ -151,16 +153,19 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   );
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", draftScope = `payment:${visitId}:new` }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new` }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
-  draftUserId?: string; draftScope?: string;
+  draftUserId?: string; draftScope?: string; sourceVersion?: string;
   demoPolicy?: DemoFinancialPolicy | null; demoStaff?: PilihanPenjual[];
   manualUnitsEnabled?: boolean;
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
 }) {
+  const [draftSourceVersion, setDraftSourceVersion] = useState(sourceVersion);
+  const sourceChanged = !!sourceVersion && draftSourceVersion !== sourceVersion;
+  const latestSourceSubtotal = [...initialObat, ...initialJasa].reduce((sum,row)=>sum+nilaiBaris(row),0);
   const [obat, setObat] = useState<Line[]>(initialObat);
   const [jasa, setJasa] = useState<Line[]>(initialJasa);
   const [discount, setDiscount] = useState(initialDiscount);
@@ -240,10 +245,16 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
 
   const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit } = useClinicDraft({
     userId: draftUserId, scope: draftScope, requestKey,
-    snapshot: { obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson, mixed, splitPayments, demoEnabled, demoPolicyId, demoEmployees },
-    optionalSnapshotKeys: ["mixed", "splitPayments", "demoEnabled", "demoPolicyId", "demoEmployees"],
+    uncertainMessage: "Hasil pembayaran belum dapat dipastikan. Isian dan kunci percobaan tetap tersimpan. Periksa invoice sebelum mencoba lagi; jangan menerima pembayaran ulang.",
+    snapshot: { sourceVersion: draftSourceVersion, obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson, mixed, splitPayments, demoEnabled, demoPolicyId, demoEmployees },
+    optionalSnapshotKeys: ["sourceVersion", "mixed", "splitPayments", "demoEnabled", "demoPolicyId", "demoEmployees"],
     restore: value => {
+      const changed = !!sourceVersion && value.sourceVersion !== sourceVersion;
+      setDraftSourceVersion(typeof value.sourceVersion === "string" ? value.sourceVersion : sourceVersion ? "legacy-unknown" : "");
       const restoreRows = (saved: Line[], initial: Line[]) => {
+        // Never alter an uncertain retry payload silently. Explicit source review
+        // discards this browser draft and obtains a fresh request identity.
+        if (changed) return saved;
         const restored = saved.map(row => {
         const locked = initial.find(source => source.terkunci && source.item_id === row.item_id);
           return locked ? { ...row, deskripsi: locked.deskripsi, item_id: locked.item_id,
@@ -271,7 +282,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const today = hariIniWIB();
 
   return (
-    <form action={data => submit(data, bayarVisit)} ref={attachForm} onInput={capture} onChange={capture}>
+    <form action={data => sourceChanged ? Promise.resolve() : submit(data, bayarVisit)} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="requestKey" value={submissionKey} />
       {demoEnabled && !editMode && <>
@@ -292,6 +303,12 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
 
       {recovered && <div className="p2ban">Draf dipulihkan. Periksa isian sebelum menyimpan.
         <button type="button" className="btn-def" onClick={discard}>Buang draf</button>
+      </div>}
+      {sourceChanged && <div className="p2ban" role="alert">
+        <div>Data tagihan sumber berubah atau draf lama belum memiliki pembanding. Draf pembayaran lama belum dapat disimpan.
+          <br />Subtotal rekam medis terbaru: <b>{rp(latestSourceSubtotal)}</b> sebelum diskon dan pajak.
+          <br />Periksa invoice yang sudah tersimpan sebelum mengganti draf. Memuat tagihan terbaru mengganti isian pembayaran yang belum tersimpan.</div>
+        <button type="button" className="btn-def" onClick={discard}>Muat tagihan terbaru</button>
       </div>}
       {(storageError || saveError) && <div className="p2ban" role="alert">{storageError || saveError}</div>}
 
@@ -339,7 +356,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 14, alignItems: "start" }}>
+      <div className={styles.layout} style={{ display: "grid", gap: 14, alignItems: "start" }}>
         {/* ===== KIRI: rincian tagihan ===== */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em", marginBottom: 12, borderBottom: "2px solid var(--posb)", paddingBottom: 8, display: "inline-block" }}>
@@ -412,9 +429,10 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           {/* Status */}
           <div className="card" style={{ background: paidStatus === "Lunas" ? "#f0fdf4" : "#fff", borderColor: statusColor }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: statusColor, letterSpacing: ".02em" }}>STATUS PEMBAYARAN</span>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: statusColor, letterSpacing: ".02em" }}>PRATINJAU PEMBAYARAN</span>
               <span className={`bge ${paidStatus === "Lunas" ? "g" : paidStatus === "DP" ? "pu" : "r"}`}>{paidStatus.toUpperCase()}</span>
             </div>
+            <p style={{fontSize:11,color:"var(--tm)"}}>Status ini berlaku setelah penyimpanan berhasil; isian ini belum menjadi bukti pembayaran.</p>
             <div style={{ fontSize: 10.5, color: "var(--tm)" }}>Total Tagihan</div>
             <div style={{ fontSize: 24, fontWeight: 800, color: "var(--sb)", lineHeight: 1.2 }}>{rp(total)}</div>
             <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>Sisa yang Harus Dibayar</div>
@@ -513,8 +531,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
                 <i className="ti ti-printer" /> Cetak
               </span>
             )}
-            <SubmitButton className="btn-acc" name="finalize" value="0" disabled={!!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>{demoEnabled ? "Simpan lunas DEMO" : "Simpan"}</SubmitButton>
-            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={!!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
+            <SubmitButton className="btn-acc" name="finalize" value="0" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>{demoEnabled ? "Simpan lunas DEMO" : "Simpan"}</SubmitButton>
+            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
           </div>
         </div>
       </div>
