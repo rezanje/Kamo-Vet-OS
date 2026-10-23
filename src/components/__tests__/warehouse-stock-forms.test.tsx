@@ -21,7 +21,7 @@ it.each(["po", "transfer"])("shows %s stock in selected warehouse and chosen uni
   await act(async () => root.render(kind === "po"
     ? <POForm userId="owner" suppliers={[]} warehouses={warehouses} branches={[]} items={items} stock={stock} />
     : <PemindahanForm userId="owner" warehouses={warehouses} items={items} stock={stock} />));
-  await change(host.querySelector<HTMLInputElement>('input[list]')!, "OBAT — Obat");
+  await change(host.querySelector<HTMLInputElement>(kind === "po" ? 'input[list]' : '[aria-label="Barang pemindahan 1"]')!, "OBAT — Obat");
   expect(host.textContent).toContain("Pilih gudang untuk melihat stok");
   const warehouse = host.querySelector<HTMLSelectElement>(`select[name="${kind === "po" ? "to" : "from"}_warehouse_id"]`)!;
   await change(warehouse, "a");

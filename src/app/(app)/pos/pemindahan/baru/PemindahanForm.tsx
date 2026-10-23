@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import type { ItemUnit } from "@/lib/satuan";
 import { useEffect, useRef, useState } from "react";
@@ -32,6 +33,7 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
 
   const byLabel = new Map(items.map((it) => [label(it), it]));
+  const byId = new Map(items.map(item => [item.id, item]));
 
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -40,7 +42,7 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
 
   const onDisplay = (i: number, v: string) => {
     const it = byLabel.get(v);
-    set(i, { display: v, item_id: it?.id ?? "", satuan: it?.units[0]?.unit ?? "" });
+    set(i, { display: it?.name ?? v, item_id: it?.id ?? "", satuan: it?.units[0]?.unit ?? "" });
   };
 
   const payload = rows.filter((r) => r.item_id).map((r) => ({ item_id: r.item_id, qty: r.qty, satuan: r.satuan }));
@@ -52,12 +54,9 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
 
-      <datalist id="pemindahan-items">
-        {items.map((it) => <option key={it.id} value={label(it)} />)}
-      </datalist>
 
-      <div className="grid2">
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
+      <div className="grid2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))" }}>
+        <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
           <SecHeader num="01" title="DETAIL PENGIRIMAN" desc="Gudang asal, tujuan, dan tanggal kirim." />
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Gudang asal *</label>
@@ -84,7 +83,7 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
           </div>
         </div>
 
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
+        <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
           <SecHeader num="02" title="RINCIAN BARANG" desc="Cari barang dari master SKU, isi kuantitas."
             action={
               <button type="button" onClick={add} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
@@ -94,11 +93,12 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {rows.map((r, i) => {
-              const it = r.item_id ? byLabel.get(r.display) : undefined;
+              const it = byId.get(r.item_id);
               return (
-                <div key={i}><div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input className="fi" list="pemindahan-items" placeholder="Kode / nama barang" value={r.display}
-                    onChange={(e) => onDisplay(i, e.target.value)} style={{ flex: 1 }} />
+                <div key={i}><div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                  <div style={{ flex: "1 1 200px", minWidth: 0 }}><SearchableItemPicker items={items} value={r.item_id}
+                    ariaLabel={`Barang pemindahan ${i + 1}`} textValue={it && r.display === label(it) ? it.name : r.display}
+                    onTextChange={text => onDisplay(i, text)} onChange={id => { const selected = byId.get(id); if (selected) set(i, { item_id: id, display: selected.name, satuan: selected.units[0]?.unit ?? "" }); }} /></div>
                   <input className="fi" type="number" min={0} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 80 }} title="Kuantitas" />
