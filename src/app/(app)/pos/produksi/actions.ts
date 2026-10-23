@@ -1,22 +1,17 @@
 "use server";
-import { transactionDraftAck, assertDraftJournal } from "@/lib/transaction-draft-ack";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { postJournal } from "@/lib/posting";
-import { stockIn, stockOut } from "@/lib/inventory";
-import { nomorBerikutnya } from "@/lib/no-dokumen";
-import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
-import { bahanKurang, hppPerUnit, kebutuhanBahan, rencanaJadi, type BahanResep } from "@/lib/produksi";
+import type { BahanResep } from "@/lib/produksi";
+import Decimal from "decimal.js";
 
 import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
 
 const BASE = "/pos/produksi";
 
-const AKUN_PERSEDIAAN = "1301";
-const AKUN_DALAM_PROSES = "1302";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -30,15 +25,6 @@ async function assertBoleh(): Promise<Db> {
     redirect(`${BASE}?error=${encodeURIComponent("Hanya owner/admin yang bisa mengelola produksi")}`);
   }
   return supabase;
-}
-
-async function nextNoProduksi(supabase: Db, tanggal: string): Promise<string> {
-  // Tanggal dokumen dipakai apa adanya supaya nomor ikut bulan dokumennya,
-  // bukan bulan server.
-  const { nomor } = await nomorBerikutnya(supabase, "PRD", tanggal, {
-    table: "production_orders", column: "no_produksi",
-  });
-  return nomor;
 }
 
 // ── Resep produksi ────────────────────────────────────────────────────────────
@@ -96,152 +82,73 @@ export async function simpanResep(formData: FormData) {
   redirect(`${BASE}?success=${encodeURIComponent(`Resep "${nama}" tersimpan.`)}`);
 }
 
-// ── Perintah produksi: bahan KELUAR di sini ───────────────────────────────────
-export async function mulaiProduksi(formData: FormData) {
-  const supabase = await assertBoleh();
-  const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
-
-  const recipeId = String(formData.get("recipe_id") ?? "").trim();
-  const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
-  const batch = Number(formData.get("batch")) || 0;
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
-  const catatan = String(formData.get("catatan") ?? "").trim() || null;
-
-  if (!recipeId) gagal("Pilih resep produksinya");
-  if (!warehouseId) gagal("Pilih gudang tempat bahan diambil");
-  if (batch <= 0) gagal("Jumlah batch harus lebih dari 0");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  const { data: resep } = await supabase
-    .from("production_recipes")
-    .select("id, nama, output_qty, item_id, production_recipe_items(item_id, qty, items(name))")
-    .eq("id", recipeId).maybeSingle();
-  if (!resep) gagal("Resep tidak ditemukan");
-
-  type BahanRow = { item_id: string; qty: number; items: { name: string } | { name: string }[] | null };
-  const bahanResep: BahanResep[] = ((resep!.production_recipe_items ?? []) as unknown as BahanRow[]).map((b) => {
-    const it = Array.isArray(b.items) ? b.items[0] : b.items;
-    return { item_id: b.item_id, nama: it?.name ?? "Bahan", qty: Number(b.qty) };
-  });
-  if (bahanResep.length === 0) gagal("Resep ini belum punya bahan");
-
-  const kebutuhan = kebutuhanBahan(bahanResep, batch);
-
-  // Stok dicek DULU: bahan yang keluar sebagian lalu berhenti di tengah
-  // meninggalkan nilai yang menggantung tanpa barang jadi.
-  const { data: stokRows } = await supabase
-    .from("stock").select("item_id, qty")
-    .eq("warehouse_id", warehouseId)
-    .in("item_id", kebutuhan.map((k) => k.item_id));
-  const stok = new Map(((stokRows ?? []) as { item_id: string; qty: number }[]).map((s) => [s.item_id, Number(s.qty)]));
-  const kurang = bahanKurang(kebutuhan, stok);
-  if (kurang.length > 0) {
-    gagal(`Stok bahan tidak cukup: ${kurang.map((k) => `${k.nama ?? k.item_id} (butuh ${k.butuh}, ada ${k.ada})`).join(", ")}`);
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const no = await nextNoProduksi(supabase, tanggal);
-  const { data: doc, error } = await supabase
-    .from("production_orders")
-    .insert({
-      no_produksi: no, recipe_id: recipeId, warehouse_id: warehouseId, batch,
-      tanggal, catatan, created_by: user?.id ?? null,
-    })
-    .select("id").single();
-  if (error || !doc) gagal("Gagal membuat perintah produksi");
-
-  let nilaiBahan = 0;
-  for (const k of kebutuhan) {
-    const { cost } = await stockOut(supabase, {
-      warehouseId, itemId: k.item_id, qty: k.qty, source: "produksi", ref: no,
-    });
-    nilaiBahan += cost;
-    const { error: detailError } = await supabase.from("production_order_items").insert({
-      order_id: doc!.id, item_id: k.item_id, nama: k.nama ?? "Bahan", qty: k.qty, hpp: cost,
-    });
-    if(detailError) throw new Error("Bahan produksi belum terkonfirmasi lengkap. Periksa produksi sebelum menyimpan ulang.");
-  }
-
-  const { error: valueError } = await supabase.from("production_orders").update({ nilai_bahan: nilaiBahan }).eq("id", doc!.id);
-  if(valueError) throw new Error("Nilai produksi belum terkonfirmasi. Periksa produksi sebelum menyimpan ulang.");
-
-  // Nilainya pindah dari Persediaan ke Persediaan Dalam Proses — bukan hilang.
-  if (nilaiBahan > 0) {
-    await postJournal(supabase, {
-      tanggal,
-      deskripsi: `Bahan keluar produksi ${no} (${resep!.nama})`,
-      source: "produksi",
-      sourceRef: no,
-      lines: [
-        { code: AKUN_DALAM_PROSES, debit: nilaiBahan, credit: 0 },
-        { code: AKUN_PERSEDIAAN, debit: 0, credit: nilaiBahan },
-      ],
-    });
-  }
-
-  revalidatePath(BASE);
-  if(nilaiBahan>0) await assertDraftJournal(supabase,{tanggal,source:"produksi",sourceRef:no,lines:[{code:AKUN_DALAM_PROSES,debit:nilaiBahan,credit:0},{code:AKUN_PERSEDIAAN,debit:0,credit:nilaiBahan}]});
-  redirect(`${BASE}?success=${encodeURIComponent(`Produksi ${no} berjalan — bahan sudah keluar gudang. Rencana jadi ${rencanaJadi(Number(resep!.output_qty), batch)}.`)}${transactionDraftAck(formData)}`);
+// New production financial effects are one database transaction per stage.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function fail(message: string): never { return redirect(`${BASE}?error=${encodeURIComponent(message)}`); }
+function quantity(raw: FormDataEntryValue | null): string {
+  const text = String(raw ?? "").trim();
+  try { const value = new Decimal(text); if (value.isFinite() && value.gt(0) && value.lte(1e9) && text.length <= 120) return text; } catch { /* report a validation error */ }
+  return fail("Jumlah produksi harus positif dan valid.");
 }
-
-// ── Penyelesaian: barang jadi MASUK ───────────────────────────────────────────
-export async function selesaikanProduksi(formData: FormData) {
-  const supabase = await assertBoleh();
-  const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
-
-  const id = String(formData.get("id") ?? "").trim();
-  const qtyJadi = Number(formData.get("qty_jadi")) || 0;
-  const tanggal = String(formData.get("tanggal_selesai") ?? "").trim() || hariIniWIB();
-
-  if (!id) gagal("Perintah produksi tidak dikenali");
-  if (qtyJadi <= 0) gagal("Jumlah barang jadi harus lebih dari 0");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  const { data: doc } = await supabase
-    .from("production_orders")
-    .select("id, no_produksi, status, warehouse_id, nilai_bahan, production_recipes(nama, item_id)")
-    .eq("id", id).maybeSingle();
-  if (!doc) gagal("Perintah produksi tidak ditemukan");
-  if (doc!.status !== "berjalan") gagal("Perintah ini sudah selesai atau dibatalkan");
-
-  const rel = doc!.production_recipes as { nama: string; item_id: string } | { nama: string; item_id: string }[] | null;
-  const resep = Array.isArray(rel) ? rel[0] : rel;
-  if (!resep) gagal("Resep perintah ini sudah tidak ada");
-
-  const nilaiBahan = Number(doc!.nilai_bahan) || 0;
-  const hpp = hppPerUnit(nilaiBahan, qtyJadi);
-
-  await stockIn(supabase, {
-    warehouseId: doc!.warehouse_id, itemId: resep!.item_id, qty: qtyJadi,
-    unitCost: hpp, source: "produksi", ref: doc!.no_produksi, tanggal,
-  });
-
-  const { error: completionError } = await supabase.from("production_orders").update({
-    status: "selesai", qty_jadi: qtyJadi, tanggal_selesai: tanggal,
-  }).eq("id", id);
-  if(completionError) throw new Error("Penyelesaian produksi belum terkonfirmasi. Periksa produksi sebelum menyimpan ulang.");
-
-  // Nilai kembali dari Dalam Proses ke Persediaan, sekarang menempel di barang jadi.
-  if (nilaiBahan > 0) {
-    await postJournal(supabase, {
-      tanggal,
-      deskripsi: `Barang jadi masuk produksi ${doc!.no_produksi} (${resep!.nama})`,
-      source: "produksi",
-      sourceRef: doc!.no_produksi,
-      lines: [
-        { code: AKUN_PERSEDIAAN, debit: nilaiBahan, credit: 0 },
-        { code: AKUN_DALAM_PROSES, debit: 0, credit: nilaiBahan },
-      ],
-    });
+function requestKey(form: FormData): string {
+  const key = String(form.get("request_key") ?? "");
+  if (!/^[A-Za-z0-9._:-]{1,120}$/.test(key)) fail("Identitas simpan belum siap. Muat ulang dan periksa hasil terakhir sebelum menyimpan.");
+  return key;
+}
+type Receipt = { order_id: string; no_produksi: string; kind: string; tanggal: string; value: number; journal_id: string | null; already_posted: boolean };
+function receiptData(data: unknown, kind: string, expectedDate?: string, expectedOrder?: string): Receipt {
+  const r = data as Receipt | null;
+  if (!r || r.kind !== kind || !UUID.test(r.order_id) || typeof r.no_produksi !== "string" || !r.no_produksi.trim()
+    || typeof r.tanggal !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(r.tanggal) || (expectedDate && r.tanggal !== expectedDate) || (expectedOrder && r.order_id !== expectedOrder) || typeof r.already_posted !== "boolean"
+    || typeof r.value !== "number" || !Number.isFinite(r.value) || r.value < 0 || (r.journal_id !== null && !UUID.test(r.journal_id)) || (r.value>0 && !r.journal_id)) {
+    fail("Hasil produksi belum dapat dipastikan. Periksa dokumen terakhir; tidak ada sukses yang dikonfirmasi.");
   }
-
+  return r;
+}
+function confirmed(form: FormData, kind: string, key: string, r: Receipt): never {
   revalidatePath(BASE);
-  if(nilaiBahan>0) await assertDraftJournal(supabase,{tanggal,source:"produksi",sourceRef:doc!.no_produksi,lines:[{code:AKUN_PERSEDIAAN,debit:nilaiBahan,credit:0},{code:AKUN_DALAM_PROSES,debit:0,credit:nilaiBahan}]});
-  redirect(`${BASE}?success=${encodeURIComponent(
-    `Produksi ${doc!.no_produksi} selesai — ${qtyJadi} barang jadi masuk stok, harga pokok ${Math.round(hpp).toLocaleString("id-ID")}/unit.`,
-  )}${transactionDraftAck(formData)}`);
+  const scope = kind === "start" ? form.get("production_mode")==="adhoc"?"production-start-adhoc":"production-start" : `production-finish:${r.order_id}`;
+  const message = `${r.no_produksi} ${kind === "start" ? "bahan keluar dan WIP" : "barang jadi dan WIP"} terkonfirmasi.${r.already_posted ? " Hasil asal dibuka; tidak ada posting ulang." : ""}`;
+  return redirect(`${BASE}?success=${encodeURIComponent(message)}&request_scope=${encodeURIComponent(scope)}&request_done=${encodeURIComponent(key)}${transactionDraftAck(form)}`);
+}
+async function postProduction(form: FormData, kind: "start" | "finish", input: Record<string, unknown>) {
+  const key = requestKey(form); const db = await createClient(); let result;
+  try { result = await db.rpc(kind==="start"&&input.mode==="adhoc"?"post_production_adhoc_atomic":"post_production_atomic", { p_kind: kind, p_request_key: key, p_input: input }); }
+  catch { return fail("Posting produksi belum dapat dipastikan. Periksa hasil terakhir sebelum mencoba lagi."); }
+  if (result.error) fail(["P0001","42501","22023"].includes(result.error.code) ? result.error.message : "Posting produksi belum dapat dipastikan. Periksa hasil terakhir sebelum mencoba lagi.");
+  return confirmed(form,kind,key,receiptData(result.data,kind,String(input[kind === "start" ? "tanggal" : "tanggal_selesai"]),kind === "finish" ? String(input.id) : undefined));
+}
+export async function mulaiProduksi(form: FormData) {
+  const recipe = String(form.get("recipe_id") ?? ""); const warehouse = String(form.get("warehouse_id") ?? "");
+  if (!UUID.test(recipe) || !UUID.test(warehouse)) fail("Pilih resep dan gudang produksi yang valid.");
+  return postProduction(form,"start",{ recipe_id: recipe, warehouse_id: warehouse, batch: quantity(form.get("batch")), tanggal: String(form.get("tanggal") ?? "") || hariIniWIB(), catatan: String(form.get("catatan") ?? "").trim() || null });
+}
+export async function selesaikanProduksi(form: FormData) {
+  const id = String(form.get("id") ?? ""); if (!UUID.test(id)) fail("Perintah produksi tidak valid.");
+  return postProduction(form,"finish",{ id, qty_jadi: quantity(form.get("qty_jadi")), tanggal_selesai: String(form.get("tanggal_selesai") ?? "") || hariIniWIB() });
+}
+export async function mulaiProduksiAdhoc(form:FormData){
+  const id=(key:string)=>{const value=String(form.get(key)??'');if(!UUID.test(value))fail('Pilih barang, cabang dan gudang pekerjaan yang valid.');return value;};
+  const nama=String(form.get('nama')??'').trim();if(!nama||nama.length>120)fail('Nama pekerjaan wajib diisi, maksimal 120 karakter.');
+  let bahan:unknown;try{bahan=JSON.parse(String(form.get('bahan')??''));}catch{fail('Rincian bahan tidak valid.');}
+  if(!Array.isArray(bahan)||bahan.length===0||bahan.length>100)fail('Isi 1 sampai 100 baris bahan.');
+  const rows=bahan.map((raw:unknown)=>{if(!raw||typeof raw!=='object')fail('Rincian bahan tidak valid.');const r=raw as Record<string,unknown>;
+    if(!UUID.test(String(r.item_id??''))||!UUID.test(String(r.warehouse_id??'')))fail('Pilih barang dan gudang setiap bahan.');
+    const satuan=String(r.satuan??'');if(!satuan||satuan.length>40)fail('Pilih satuan setiap bahan.');
+    return {item_id:String(r.item_id),warehouse_id:String(r.warehouse_id),qty:quantity(String(r.qty??'')),satuan};});
+  const unit=String(form.get('output_unit')??'');if(!unit||unit.length>40)fail('Pilih satuan hasil pekerjaan.');
+  // Isolate ad-hoc request acknowledgements from recipe start forms.
+  form.set('production_mode','adhoc');
+  return postProduction(form,'start',{mode:'adhoc',nama,branch_id:id('branch_id'),warehouse_id:id('warehouse_id'),output_item_id:id('output_item_id'),output_qty:quantity(form.get('output_qty')),output_unit:unit,tanggal:String(form.get('tanggal')??'')||hariIniWIB(),catatan:String(form.get('catatan')??'').trim()||null,bahan:rows});
+}
+export async function recoverProductionPosting(form: FormData) {
+  const kind = String(form.get("production_kind") ?? ""); const key = requestKey(form);
+  const id = String(form.get("id") ?? "");
+  if (!["start","finish"].includes(kind) || (kind === "finish" && !UUID.test(id))) fail("Permintaan pemeriksaan produksi tidak valid.");
+  const db = await createClient(); let result;
+  try { result = await db.rpc("get_production_atomic_result", { p_kind: kind, p_request_key: key, p_order_id: kind === "finish" ? id : null }); }
+  catch { return fail("Hasil produksi belum dapat diperiksa. Tidak ada posting baru yang dijalankan."); }
+  if (result.error) fail("Hasil produksi belum dapat diperiksa. Tidak ada posting baru yang dijalankan.");
+  if (!result.data) fail("Belum ada hasil produksi yang terkonfirmasi untuk permintaan ini. Periksa daftar dan isian; tidak ada posting baru yang dijalankan.");
+  return confirmed(form,kind,key,receiptData(result.data,kind,undefined,kind === "finish" ? id : undefined));
 }

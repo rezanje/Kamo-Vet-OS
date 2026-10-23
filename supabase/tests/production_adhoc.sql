@@ -1,0 +1,84 @@
+-- Fictional fixtures, isolated PostgreSQL only. Core fixture identities already exist.
+create function pg_temp.ok(v boolean,label text) returns void language plpgsql as $$begin if v is distinct from true then raise exception 'ASSERT %',label;end if;end$$;
+create function pg_temp.reject(q text,fragment text) returns void language plpgsql as $$begin begin execute q;exception when others then if position(fragment in sqlerrm)=0 then raise exception 'Wrong rejection: %',sqlerrm;end if;return;end;raise exception 'Expected rejection: %',fragment;end$$;
+create function pg_temp.payload() returns jsonb language sql as $$select jsonb_build_object('mode','adhoc','nama','Fictional one-off','branch_id',md5('i08-branch')::uuid,'warehouse_id',md5('i08-wh')::uuid,'output_item_id',md5('i08-output')::uuid,'output_qty','5','output_unit','PCS','tanggal',current_date-1,'bahan',jsonb_build_array(jsonb_build_object('item_id',md5('i08-material')::uuid,'warehouse_id',md5('i08-wh')::uuid,'qty','1','satuan','BOX'),jsonb_build_object('item_id',md5('i08-material')::uuid,'warehouse_id',md5('i08-adhoc-wh')::uuid,'qty','3','satuan','PCS')))$$;
+begin;
+insert into warehouses(id,branch_id,code,name,type) values(md5('i08-adhoc-wh')::uuid,md5('i08-branch')::uuid,'I08AD','Fictional second source','RETAIL');
+insert into item_units(item_id,unit,factor,sell_price,buy_price) values(md5('i08-material')::uuid,'BOX',2,10,5);
+select stock_in_fifo(md5('i08-wh')::uuid,md5('i08-material')::uuid,2,2.5,'fixture','I08-AD-A',current_date-1,null);
+select stock_in_fifo(md5('i08-adhoc-wh')::uuid,md5('i08-material')::uuid,3,3.125,'fixture','I08-AD-B',current_date-1,null);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+do $$declare a jsonb;b jsonb;oid uuid;n int;begin
+ select count(*) into n from production_recipes;
+ a:=post_production_adhoc_atomic('start','adhoc-start',pg_temp.payload());oid:=(a->>'order_id')::uuid;
+ if (a->>'value')::numeric<>14.375 then raise exception 'Ad hoc cost not preserved';end if;
+ if (select count(*) from production_recipes)<>n or (select recipe_id from production_orders where id=oid) is not null then raise exception 'Ad hoc created or required master recipe';end if;
+ if (select count(distinct warehouse_id) from production_order_items where order_id=oid)<>2 or (select sum(qty) from production_order_items where order_id=oid)<>5 then raise exception 'Material warehouses/units lost';end if;
+ b:=post_production_adhoc_atomic('start','adhoc-start',pg_temp.payload());if b->>'order_id'<>oid::text or (b->>'already_posted')::boolean is distinct from true then raise exception 'Ad hoc duplicated';end if;
+ perform pg_temp.reject($q$select post_production_adhoc_atomic('start','adhoc-start',pg_temp.payload()||'{"output_qty":"6"}')$q$,'isian berbeda');
+ b:=get_production_atomic_result('start','adhoc-start',null);if b->>'order_id'<>oid::text then raise exception 'Ad hoc recovery missing';end if;
+ b:=post_production_atomic('finish','adhoc-finish',jsonb_build_object('id',oid,'qty_jadi',5,'tanggal_selesai',current_date));
+ perform post_production_atomic('finish','adhoc-finish-again',jsonb_build_object('id',oid,'qty_jadi',5,'tanggal_selesai',current_date));
+ if (select sum(qty*unit_cost) from stock_moves where source_ref=a->>'no_produksi' and qty>0)<>14.375 or (select sum(qty) from stock_moves where source_ref=a->>'no_produksi' and qty>0)<>5 then raise exception 'Ad hoc output reconciliation';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='1302' and j.source_ref=a->>'no_produksi')<>0 then raise exception 'Ad hoc WIP remains';end if;
+ perform pg_temp.reject(format('update production_order_items set warehouse_id=%L where order_id=%L',md5('i08-wh')::uuid,oid),'produksi');
+end$$;
+rollback;
+
+-- Running recipe jobs captured before these nullable columns existed still finish.
+begin;
+select stock_in_fifo(md5('i08-wh')::uuid,md5('i08-material')::uuid,2,2.5,'fixture','I08-PRE-EXTENSION',current_date-1,null);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select post_production_atomic('start','pre-extension',jsonb_build_object('recipe_id',md5('i08-recipe')::uuid,'warehouse_id',md5('i08-wh')::uuid,'batch',1,'tanggal',current_date-1));
+reset role;
+update production_atomic_postings p set source_snapshot=jsonb_set(jsonb_set(source_snapshot,'{order}',(source_snapshot->'order')-'output_item_id'),'{lines}',(select jsonb_agg(x-'warehouse_id') from jsonb_array_elements(p.source_snapshot->'lines')x)) where request_key='pre-extension';
+set local role authenticated;
+select post_production_atomic('finish','pre-extension-finish',jsonb_build_object('id',(get_production_atomic_result('start','pre-extension',null)->>'order_id')::uuid,'qty_jadi',1,'tanggal_selesai',current_date));
+rollback;
+
+-- Invalid metadata and a late shortage cannot leave partial issues or source rows.
+begin;
+insert into warehouses(id,branch_id,code,name,type) values(md5('i08-adhoc-wh')::uuid,md5('i08-branch')::uuid,'I08AD','Fictional second source','RETAIL');
+insert into item_units(item_id,unit,factor,sell_price,buy_price) values(md5('i08-material')::uuid,'BOX',2,10,5);
+select stock_in_fifo(md5('i08-wh')::uuid,md5('i08-material')::uuid,2,2.5,'fixture','I08-AD-A',current_date-1,null);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select pg_temp.reject($q$select post_production_adhoc_atomic('start','adhoc-short',pg_temp.payload())$q$,'Stok bahan');
+select pg_temp.reject($q$select post_production_adhoc_atomic('start','adhoc-branch',pg_temp.payload()||jsonb_build_object('branch_id',md5('i08-other')::uuid))$q$,'cabang');
+select pg_temp.reject($q$select post_production_adhoc_atomic('start','adhoc-unit',jsonb_set(pg_temp.payload(),'{bahan,0,satuan}','"NO-UNIT"'))$q$,'Satuan');
+select pg_temp.ok(not exists(select 1 from production_orders),'invalid ad hoc has no source');
+select pg_temp.ok(not exists(select 1 from stock_moves where source='produksi'),'invalid ad hoc has no issues');
+select set_config('request.jwt.claim.sub',md5('i08-staff')::uuid::text,true);
+select pg_temp.reject($q$select post_production_adhoc_atomic('start','adhoc-staff',pg_temp.payload())$q$,'OWNER/ADMIN');
+rollback;
+
+begin;
+insert into warehouses(id,branch_id,code,name,type) values(md5('i08-adhoc-wh')::uuid,md5('i08-branch')::uuid,'I08AD','Fictional second source','RETAIL');
+insert into item_units(item_id,unit,factor,sell_price,buy_price) values(md5('i08-material')::uuid,'BOX',2,10,5);
+select stock_in_fifo(md5('i08-wh')::uuid,md5('i08-material')::uuid,2,2.5,'fixture','I08-AD-FAIL-A',current_date-1,null);
+select stock_in_fifo(md5('i08-adhoc-wh')::uuid,md5('i08-material')::uuid,3,3.125,'fixture','I08-AD-FAIL-B',current_date-1,null);
+create function pg_temp.fail_adhoc_journal() returns trigger language plpgsql as $$begin raise exception 'Fictional ad hoc journal failure';end$$;
+create trigger fictional_i08_adhoc_journal before insert on journal_lines for each row execute function pg_temp.fail_adhoc_journal();
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select pg_temp.reject($q$select post_production_adhoc_atomic('start','adhoc-journal',pg_temp.payload())$q$,'Fictional ad hoc journal failure');
+select pg_temp.ok(not exists(select 1 from production_orders),'journal rollback no job');
+select pg_temp.ok(not exists(select 1 from stock_moves where source='produksi'),'journal rollback no material issue');
+reset role;
+select pg_temp.ok(not exists(select 1 from production_atomic_postings),'journal rollback no receipt');
+drop trigger fictional_i08_adhoc_journal on journal_lines;
+create function pg_temp.fail_adhoc_audit() returns trigger language plpgsql as $$begin if new.row_entity='production_order_items' then raise exception 'Fictional ad hoc audit failure';end if;return new;end$$;
+create trigger fictional_i08_adhoc_audit before insert on activity_log for each row execute function pg_temp.fail_adhoc_audit();
+set local role authenticated;
+select pg_temp.reject($q$select post_production_adhoc_atomic('start','adhoc-audit',pg_temp.payload())$q$,'Fictional ad hoc audit failure');
+select pg_temp.ok(not exists(select 1 from production_orders),'audit rollback no job');
+select pg_temp.ok(not exists(select 1 from stock_moves where source='produksi'),'audit rollback no material issue');
+reset role;
+select pg_temp.ok(not exists(select 1 from production_atomic_postings),'audit rollback no receipt');
+rollback;
