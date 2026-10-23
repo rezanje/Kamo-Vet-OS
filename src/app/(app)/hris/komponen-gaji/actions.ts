@@ -13,19 +13,29 @@ export async function simpanKomponen(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   const nama = String(formData.get("nama") ?? "").trim();
   const tipe = String(formData.get("tipe") ?? "").trim();
-  const nominal = Number(formData.get("nominal")) || 0;
+  const nominalRaw = String(formData.get("nominal") ?? "").trim();
+  const nominal = nominalRaw === "" ? 0 : Number(nominalRaw);
+  const employeeContext = String(formData.get("emp") ?? "").trim();
+  const emp = /^[0-9a-f-]{36}$/i.test(employeeContext) ? employeeContext : "";
+  const gagalSimpan = (message: string): never => {
+    const query = new URLSearchParams({ error: message, ...(id ? { edit: id } : {}), ...(emp ? { emp } : {}) });
+    redirect(`${BACK}?${query}`);
+  };
 
-  if (!nama) gagal("Nama komponen wajib diisi");
-  if (tipe !== "tunjangan" && tipe !== "potongan") gagal("Jenis komponen tidak dikenal");
-  if (nominal < 0) gagal("Nominal tidak boleh negatif");
+  if (!nama) gagalSimpan("Nama komponen wajib diisi");
+  if (tipe !== "tunjangan" && tipe !== "potongan") gagalSimpan("Jenis komponen tidak dikenal");
+  if (!Number.isFinite(nominal) || nominal < 0) gagalSimpan("Nominal tidak valid");
 
   const row = { nama, tipe, nominal };
   const { error } = id
     ? await supabase.from("salary_components").update(row).eq("id", id)
     : await supabase.from("salary_components").insert(row);
-  if (error) gagal(error.message);
+  if (error) gagalSimpan(error.message);
 
-  redirect(`${BACK}?success=1`);
+  revalidatePath(BACK);
+  if (emp) revalidatePath(`/hris/karyawan/${emp}`);
+  const query = new URLSearchParams({ success: "1", ...(emp ? { emp } : {}) });
+  redirect(`${BACK}?${query}`);
 }
 
 export async function toggleKomponen(formData: FormData) {
