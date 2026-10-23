@@ -26,11 +26,11 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   const [hasilSales, hasilInvoices, hasilReturs, hasilCabang] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
-        .select("id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
+        .select("id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
         .gte("created_at", mulai).lte("created_at", akhir)),
       // Tagihan klinik yang dibatalkan tidak dihitung sebagai transaksi.
       completeReportQuery(supabase.from("invoices")
-        .select("id, total, created_at, visits(customer_id, branches(name)), invoice_items(id)", { count: "exact" })
+        .select("id, total, created_at, visits(customer_id, branch_id, branches(name)), invoice_items(id)", { count: "exact" })
         .is("voided_at", null)
         .gte("created_at", mulai).lte("created_at", akhir)),
       // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
@@ -51,12 +51,12 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   }
 
   type SaleRow = SaleCompletion & {
-    id: string; customer_id: string | null; total: number; channel: string | null;
+    id: string; branch_id: string | null; customer_id: string | null; total: number; channel: string | null;
     created_at: string; branches: Rel<{ name: string }>; sale_items: { id: string }[] | null;
   };
   type InvRow = {
     id: string; total: number; created_at: string;
-    visits: Rel<{ customer_id: string | null; branches: Rel<{ name: string }> }>;
+    visits: Rel<{ customer_id: string | null; branch_id: string | null; branches: Rel<{ name: string }> }>;
     invoice_items: { id: string }[] | null;
   };
 
@@ -66,6 +66,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
     trx.push({
       tanggal: tanggalWIB(s.created_at),
       cabang: one(s.branches)?.name ?? "—",
+      cabangId: s.branch_id ?? null,
       customerId: s.customer_id,
       omzet: (Number(s.total) || 0) - (returPerStruk.get(s.id) ?? 0),
       item: s.sale_items?.length ?? 0,
@@ -78,6 +79,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
     trx.push({
       tanggal: tanggalWIB(inv.created_at),
       cabang: one(v?.branches ?? null)?.name ?? "—",
+      cabangId: v?.branch_id ?? null,
       customerId: v?.customer_id ?? null,
       omzet: Number(inv.total) || 0,
       item: inv.invoice_items?.length ?? 0,

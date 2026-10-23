@@ -10,6 +10,7 @@ export type Kanal = "POS" | "Online" | "Klinik";
 export type Trx = {
   tanggal: string;           // YYYY-MM-DD menurut WIB
   cabang: string;
+  cabangId?: string | null;
   customerId: string | null; // null = pembeli umum yang identitasnya tidak dicatat
   omzet: number;             // sudah dikurangi retur
   item: number;              // jumlah BARIS item pada dokumen
@@ -46,7 +47,7 @@ export function transaksiValid(status: string | null | undefined): boolean {
 export function batasTanggalWIB(dari: string, sampai: string) {
   return {
     mulai: `${dari}T00:00:00+07:00`,
-    akhir: `${sampai}T23:59:59.999+07:00`,
+    akhir: `${sampai}T23:59:59.999999+07:00`,
   };
 }
 
@@ -89,11 +90,11 @@ function kelompok<K extends string>(list: Trx[], kunci: (t: Trx) => K) {
   return map;
 }
 
-export type BarisCabang = Rekap & { cabang: string };
+export type BarisCabang = Rekap & { cabang: string; cabangId?: string };
 
 export function perCabang(list: Trx[]): BarisCabang[] {
-  return [...kelompok(list, (t) => t.cabang || "—")]
-    .map(([cabang, isi]) => ({ cabang, ...rekap(isi) }))
+  return [...kelompok(list, (t) => t.cabangId ? `id:${t.cabangId}` : `name:${t.cabang || "—"}`)]
+    .map(([, isi]) => ({ cabang: isi[0].cabang || "—", ...(isi[0].cabangId ? {cabangId:isi[0].cabangId} : {}), ...rekap(isi) }))
     .sort((a, b) => b.omzet - a.omzet);
 }
 
