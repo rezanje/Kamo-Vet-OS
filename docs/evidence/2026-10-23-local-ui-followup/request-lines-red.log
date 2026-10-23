@@ -1,0 +1,58 @@
+
+ RUN  v4.1.9 /workspace/kamo-local-ui-followup
+
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx (11 tests | 2 failed) 30ms
+   × loads all request lines using the authorized parent ID and preserves approved quantity/unit 8ms
+   × does not render partial receiving rows when the request-line query fails 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > loads all request lines using the authorized parent ID and preserves approved quantity/unit
+AssertionError: expected [] to deeply equal [ [ +0, 499 ], [ 500, 999 ], …(1) ]
+
+- Expected
++ Received
+
+- [
+-   [
+-     0,
+-     499,
+-   ],
+-   [
+-     500,
+-     999,
+-   ],
+-   [
+-     1000,
+-     1499,
+-   ],
+- ]
++ []
+
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx:17:161
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > does not render partial receiving rows when the request-line query fails
+AssertionError: expected '<div data-count="1205" data-lines="0"…' to contain 'role="alert"'
+
+Expected: "role="alert""
+Received: "<div data-count="1205" data-lines="0">sku-1204   </div>"
+
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx:18:133
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
+   Start at  08:21:51
+   Duration  270ms (transform 66ms, setup 0ms, import 120ms, tests 30ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

@@ -3,6 +3,7 @@
 // Editor baris dokumen penjualan — dipakai Penawaran & Pesanan.
 // ponytail: baris dinamis diserialisasi ke satu input hidden JSON, pola sama dgn POForm.
 
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 import { draftRows } from "@/components/TransactionDraft";
 import { useState } from "react";
@@ -33,10 +34,18 @@ export function BarisJualForm({ userId, scope, items, listId }: { userId: string
     return it ? unitOptions({ unit: it.unit, sell_price: it.sell_price }, it.units ?? []) : [];
   };
 
+  const selectItem = (i: number, id: string) => {
+    const it = items.find(item => item.id === id);
+    if (it) set(i, { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, satuan: it.unit ?? "", faktor: 1 });
+  };
+  const displayName = (r: Row) => {
+    const it = items.find(item => item.id === r.item_id);
+    return it && r.nama === label(it) ? it.name : r.nama;
+  };
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v);
     set(i, it
-      ? { nama: v, item_id: it.id, harga: Number(it.sell_price) || 0, satuan: it.unit ?? "", faktor: 1 }
+      ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, satuan: it.unit ?? "", faktor: 1 }
       : { nama: v, item_id: null, satuan: "", faktor: 1 });
   };
 
@@ -55,9 +64,6 @@ export function BarisJualForm({ userId, scope, items, listId }: { userId: string
     <>
       <LocalTransactionDraft userId={userId} scope={scope} state={{ snapshot: { rows }, restore: (value) => { if (!draftRows(value.rows, blank)) return false; setRows(value.rows); return true; }, reset: () => setRows([{ ...blank }]) }} />
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
-      <datalist id={listId}>
-        {items.map((it) => <option key={it.id} value={label(it)} />)}
-      </datalist>
 
       <div style={{ overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 640 }}>
@@ -75,9 +81,10 @@ export function BarisJualForm({ userId, scope, items, listId }: { userId: string
             {rows.map((r, i) => (
               <tr key={i}>
                 <td>
-                  <input className="fi" list={listId} value={r.nama}
-                    onChange={(e) => setNama(i, e.target.value)}
-                    placeholder="ketik atau pilih dari master" style={{ minWidth: 220 }} />
+                  <div style={{ minWidth: 220 }}><SearchableItemPicker items={items} value={r.item_id ?? ""}
+                    inputId={`${listId}-${i}`} ariaLabel={`Barang / jasa ${i + 1}`} textValue={displayName(r)}
+                    onTextChange={text => setNama(i, text)} onChange={id => selectItem(i, id)}
+                    placeholder="ketik atau pilih dari master" /></div>
                 </td>
                 <td>
                   <input className="fi" type="number" min={0} step="any" value={r.qty}

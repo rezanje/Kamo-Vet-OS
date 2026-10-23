@@ -1,0 +1,46 @@
+{
+  "item_ids": [
+    "K07"
+  ],
+  "scope": "Complete existing protocol medication/dose history and truthful read failure state",
+  "k07_complete": false,
+  "base_main": "9a43263",
+  "red": {
+    "tests": 1,
+    "fail": 1
+  },
+  "focused": {
+    "tests": 24,
+    "files": 4,
+    "exit": 0
+  },
+  "full_vitest": {
+    "tests": 2661,
+    "files": 348,
+    "exit": 0
+  },
+  "typecheck": {
+    "exit": 0,
+    "after_build": true
+  },
+  "scoped_lint": {
+    "exit": 0
+  },
+  "build": {
+    "exit": 0,
+    "existing_warnings": true
+  },
+  "independent_review": {
+    "p1_p2": 0,
+    "tests": 24,
+    "files": 4
+  },
+  "browser_run": false,
+  "authenticated_uat": false,
+  "migrations": [],
+  "target_write": false,
+  "pushed": false,
+  "pr_created": false,
+  "merged": false,
+  "deployed": false
+}
