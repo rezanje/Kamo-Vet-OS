@@ -1,0 +1,4 @@
+Independent read-only review /root/k08_review (Sol6.1 high): no P1/P2.
+Checked source IDs, same-session branch/visit/MR/invoice scope, pagination, status separation and unknown-data gaps. Incorrect invoice query route removed; tags remain text plus a visit payment link.
+Independent six handoff page tests passed. Final full/browser/build/type/lint performed separately by author on synced main57e5e6a.
+No edits or target access.

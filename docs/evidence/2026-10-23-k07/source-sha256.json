@@ -1,0 +1,7 @@
+{
+  "scripts/test-inpatient-handoff-browser.mjs": "c9cdeb527bc6efa3f0be83ca14566fa48dc190fea921c1fb1ef79a2f69ae272e",
+  "src/app/(app)/klinik/rawat-inap/[id]/HandoffPanel.tsx": "63ab5973ad1745eac95b3f394547f7bf71559d926f0a32ecbbacd97de1bbbba1",
+  "src/app/(app)/klinik/rawat-inap/[id]/page.tsx": "39455cccd0b6cc1edc0c533177cae672c3f447d9cbcbf42d4432482ea6dc777d",
+  "src/components/__tests__/inpatient-handoff-page.test.tsx": "970f7d4a8b6781817a7de54511f4e886822484307b15c3bd1bee650b0e6f451e",
+  "src/lib/inpatient-handoff.ts": "f85dbfc87ca415f1cc0903d9926bffce4c2114788ef861624ff5d42b584ce028"
+}
