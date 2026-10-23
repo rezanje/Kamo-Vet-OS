@@ -9,6 +9,7 @@ import { mulaiProduksi, selesaikanProduksi } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { kebutuhanBahan, rencanaJadi } from "@/lib/produksi";
+import { readCompleteList } from "@/lib/checked-list";
 
 // Produksi own brand: resep → perintah (bahan keluar) → penyelesaian (barang jadi
 // masuk). Satu halaman karena ketiganya dipakai berurutan oleh orang yang sama;
@@ -44,16 +45,18 @@ export default async function ProduksiPage({
   const { data: { user: draftUser } } = await supabase.auth.getUser();
   const draftUserId = draftUser?.id ?? "";
 
-  const [{ data: resepData }, { data: orderData }, { data: itemData }, { data: whData }] = await Promise.all([
-    supabase.from("production_recipes")
-      .select("id, nama, output_qty, is_active, items(code, name, unit), production_recipe_items(qty, items(name, unit))")
-      .eq("is_active", true).order("created_at", { ascending: false }),
+  const [resepData, { data: orderData }, itemData, whData] = await Promise.all([
+    readCompleteList<Resep>((from, to) => supabase.from("production_recipes")
+      .select("id, nama, output_qty, is_active, items(code, name, unit), production_recipe_items(qty, items(name, unit))", { count: "exact" })
+      .eq("is_active", true).order("created_at", { ascending: false }).order("id").range(from, to), "Resep produksi", { maxRows: null }),
     supabase.from("production_orders")
       .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty, items(unit)), warehouses(name)")
       .order("created_at", { ascending: false }).limit(50),
-    supabase.from("items").select("id, code, name, unit")
-      .eq("is_active", true).eq("item_type", "Persediaan").order("name"),
-    supabase.from("warehouses").select("id, name").eq("is_active", true).order("name"),
+    readCompleteList<BarangPilihan>((from, to) => supabase.from("items").select("id, code, name, unit", { count: "exact" })
+      .eq("is_active", true).eq("item_type", "Persediaan").order("name").order("id").range(from, to), "Barang produksi", { maxRows: null }),
+    readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("warehouses")
+      .select("id, name", { count: "exact" }).eq("is_active", true)
+      .order("name").order("id").range(from, to), "Gudang produksi", { maxRows: null }),
   ]);
 
   const resep = (resepData ?? []) as unknown as Resep[];
