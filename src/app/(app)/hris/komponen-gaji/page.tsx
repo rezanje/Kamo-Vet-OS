@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -13,19 +14,22 @@ type Pasangan = { id: string; employee_id: string; component_id: string; nominal
 export default async function KomponenGajiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; emp?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; emp?: string; edit?: string }>;
 }) {
-  const { error, success, emp } = await searchParams;
+  const { error, success, emp, edit } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: kompData }, { data: empData }, { data: pasangData }] = await Promise.all([
+  const [{ data: kompData, error: componentError }, { data: empData, error: employeeError }, { data: pasangData, error: assignmentError }] = await Promise.all([
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("tipe").order("nama"),
     supabase.from("employees").select("id, nama, jabatan, gaji_pokok").eq("status", "Aktif").order("nama"),
     supabase.from("employee_salary_components").select("id, employee_id, component_id, nominal"),
   ]);
+  if (componentError || employeeError || assignmentError) return <div role="alert" className="p2ban">Komponen gaji belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>;
 
   const komponen = (kompData ?? []) as Komponen[];
+  const editing = edit ? komponen.find(component => component.id === edit) : undefined;
+  if (edit && !editing) return <div role="alert" className="p2ban">Komponen untuk diedit tidak tersedia. <Link href="/hris/komponen-gaji">Kembali ke komponen gaji</Link></div>;
   const karyawan = (empData ?? []) as { id: string; nama: string; jabatan: string | null; gaji_pokok: number }[];
   const pasangan = (pasangData ?? []) as Pasangan[];
 
@@ -34,6 +38,8 @@ export default async function KomponenGajiPage({
   const milikDia = pasangan.filter((p) => p.employee_id === dipilih);
   const sudahDipakai = new Set(milikDia.map((p) => p.component_id));
   const orang = karyawan.find((k) => k.id === dipilih);
+  const contextEmp = emp || dipilih;
+  const contextHref = contextEmp ? `/hris/komponen-gaji?${new URLSearchParams({ emp: contextEmp })}` : "/hris/komponen-gaji";
 
   const nilai = (p: Pasangan) => (p.nominal ?? kompById.get(p.component_id)?.nominal ?? 0);
   const totalTunjangan = milikDia.filter((p) => kompById.get(p.component_id)?.tipe === "tunjangan")
@@ -53,27 +59,31 @@ export default async function KomponenGajiPage({
         <SecHeader num="01" title="DAFTAR KOMPONEN" desc="Nominal di sini jadi bawaan; per karyawan boleh beda." />
 
         {bolehKelola && (
-          <form action={simpanKomponen} style={{ marginBottom: 12 }}>
+          <form key={editing?.id ?? "create"} action={simpanKomponen} style={{ marginBottom: 12 }}>
+            <input type="hidden" name="id" value={editing?.id ?? ""} />
+            <input type="hidden" name="emp" value={contextEmp} />
+            {editing && <p>Perubahan nama dan nominal master berlaku untuk seluruh karyawan yang memakai komponen ini. Nominal khusus per karyawan tetap dipertahankan.</p>}
             <div className="frow">
               <div>
                 <label className="flab">Nama komponen *</label>
-                <input className="fi" name="nama" maxLength={60} placeholder="mis. Tunjangan makan" required />
+                <input className="fi" name="nama" maxLength={60} placeholder="mis. Tunjangan makan" defaultValue={editing?.nama ?? ""} required />
               </div>
               <div>
                 <label className="flab">Jenis *</label>
-                <select className="fi" name="tipe" defaultValue="tunjangan" required>
+                {editing ? <><input type="hidden" name="tipe" value={editing.tipe} /><div>{editing.tipe === "tunjangan" ? "Tunjangan" : "Potongan"}</div></> : <select className="fi" name="tipe" defaultValue="tunjangan" required>
                   <option value="tunjangan">Tunjangan (menambah gaji)</option>
                   <option value="potongan">Potongan (mengurangi gaji)</option>
-                </select>
+                </select>}
               </div>
               <div>
                 <label className="flab">Nominal bawaan</label>
-                <input className="fi" name="nominal" type="number" min={0} step="any" defaultValue={0} />
+                <input className="fi" name="nominal" type="number" min={0} step="any" defaultValue={editing?.nominal ?? 0} />
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              {editing && <Link className="btn-def" href={contextHref} style={{ marginRight: 8 }}>Batal edit</Link>}
               <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
-                Simpan komponen
+                {editing ? "Simpan perubahan komponen" : "Simpan komponen"}
               </SubmitButton>
             </div>
           </form>
@@ -102,6 +112,8 @@ export default async function KomponenGajiPage({
                   <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehKelola && (
                     <td>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <Link className="btn-def" href={`/hris/komponen-gaji?${new URLSearchParams({ ...(contextEmp ? { emp: contextEmp } : {}), edit: k.id })}`} style={{ fontSize: 10.5 }}>Edit</Link>
                       <form action={toggleKomponen}>
                         <input type="hidden" name="id" value={k.id} />
                         <input type="hidden" name="aktif" value={k.is_active ? "1" : "0"} />
@@ -109,6 +121,7 @@ export default async function KomponenGajiPage({
                           {k.is_active ? "Nonaktifkan" : "Aktifkan"}
                         </SubmitButton>
                       </form>
+                      </div>
                     </td>
                   )}
                 </tr>
