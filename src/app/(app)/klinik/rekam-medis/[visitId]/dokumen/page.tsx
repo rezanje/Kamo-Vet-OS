@@ -34,7 +34,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
 
   const { data: mr } = await supabase
     .from("medical_records")
-    .select("id, diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang, penunjang_urls, follow_up, catatan_resep, created_at")
+    .select("id, diagnosis, therapy, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang, penunjang_urls, follow_up, catatan_resep, created_at")
     .eq("visit_id", visitId).order("created_at", { ascending: false }).limit(1).maybeSingle();
 
   // Form persetujuan asli — sebelumnya nilai ini hardcoded "Ditandatangani".
@@ -135,6 +135,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
             <Clin label="Gejala Klinis" value={mr?.gejala_klinis} />
             <Clin label="Hasil Pemeriksaan Penunjang" value={mr?.hasil_penunjang} />
             <Clin label="Diagnosa" value={mr?.diagnosis} />
+            <Clin label="Terapi / tindakan" value={mr?.therapy} />
             <Clin label="Form Persetujuan" value={
               consentSigned
                 ? <span style={{ color: "#15803d", fontWeight: 600 }}>Ditandatangani{consentSigned.signer_name ? ` — ${consentSigned.signer_name}` : ""}</span>
