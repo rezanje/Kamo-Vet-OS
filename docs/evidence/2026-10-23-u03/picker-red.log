@@ -1,0 +1,48 @@
+
+ RUN  v4.1.9 /workspace/kamo-u03
+
+ ❯ src/components/__tests__/searchable-item-picker.test.tsx (4 tests | 2 failed) 242ms
+   × shows selected name and code separately instead of prefixing the name field 7ms
+   × exposes additional results beyond the first fifty without requiring a new search 26ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/searchable-item-picker.test.tsx > shows selected name and code separately instead of prefixing the name field
+AssertionError: expected 'SKU-1204 · Produk 1204' to be 'Produk 1204' // Object.is equality
+
+Expected: "Produk 1204"
+Received: "SKU-1204 · Produk 1204"
+
+ ❯ src/components/__tests__/searchable-item-picker.test.tsx:54:45
+     52| it('shows selected name and code separately instead of prefixing the n…
+     53|  await act(async()=>root.render(<SearchableItemPicker items={items} va…
+     54|  expect(host.querySelector('input')!.value).toBe('Produk 1204');
+       |                                             ^
+     55|  expect(host.querySelector('[data-item-code]')!.textContent).toBe('Kod…
+     56| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/searchable-item-picker.test.tsx > exposes additional results beyond the first fifty without requiring a new search
+AssertionError: expected undefined to be defined
+ ❯ src/components/__tests__/searchable-item-picker.test.tsx:61:15
+     59|  await act(async()=>host.querySelector('input')!.focus());
+     60|  const more=[...document.querySelectorAll('button')].find(b=>b.textCon…
+     61|  expect(more).toBeDefined();await act(async()=>more!.click());
+       |               ^
+     62|  expect(document.querySelectorAll('[role=option]')).toHaveLength(100);
+     63| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  07:39:29
+   Duration  798ms (transform 42ms, setup 0ms, import 85ms, tests 242ms, environment 300ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

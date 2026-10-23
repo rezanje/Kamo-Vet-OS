@@ -1,10 +1,11 @@
 "use client";
 
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { useState } from "react";
 import { type BahanKatalog, type KatalogRacikan, katalogTotal } from "@/lib/katalog-racikan";
 import { publishKatalogRacikan, setKatalogRacikanAktif, bindKatalogRacikanSku } from "./actions";
 
-type Item = { id: string; name: string; unit: string; sell_price: number };
+type Item = { id: string; code?:string; name: string; unit: string; sell_price: number };
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export function KatalogForm({ katalog, items, saleItems }: { katalog: KatalogRacikan[]; items: Item[]; saleItems: { id: string; name: string; code: string | null }[] }) {
@@ -35,18 +36,14 @@ export function KatalogForm({ katalog, items, saleItems }: { katalog: KatalogRac
     <div>
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Resep resmi ({katalog.length})</div>
       {katalog.map((formula) => <div key={formula.id} style={{ border: "1px solid var(--bd)", borderRadius: 8, padding: 10, marginBottom: 8 }}>
-        <div style={{ fontWeight: 700 }}>{formula.code} · {formula.name}</div>
+        <div style={{ fontWeight: 700 }}>{formula.name}</div><small style={{color:"var(--tm)"}}>Kode resep: {formula.code}</small>
         <div style={{ fontSize: 11, color: "var(--tm)" }}>
           Versi {formula.version} · {formula.dosage_form} · {formula.ingredients.length} bahan · {rp(katalogTotal(formula.ingredients))} · {formula.active ? "Aktif" : "Nonaktif"}
         </div>
         <form action={bindKatalogRacikanSku} style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
           <input type="hidden" name="formula_id" value={formula.id} />
           <label className="flab" htmlFor={`sale-${formula.id}`}>SKU jual racikan</label>
-          <select id={`sale-${formula.id}`} className="fi" name="sale_item_id" defaultValue={formula.sale_item_id ?? ""}>
-            <option value="">Belum ditautkan</option>
-            {formula.sale_item_id && !saleItems.some(item => item.id === formula.sale_item_id) && <option value={formula.sale_item_id}>SKU tersimpan tidak aktif / tidak tersedia — pilih ulang</option>}
-            {saleItems.map(item => <option key={item.id} value={item.id}>{item.code ? `${item.code} · ` : ""}{item.name}</option>)}
-          </select>
+          <SkuBinding key={`${formula.id}:${formula.sale_item_id}`} formula={formula} items={saleItems}/>
           <button type="submit" className="btn-def">Simpan tautan SKU</button>
         </form>
         {!formula.sale_item_id && <p style={{ fontSize: 11, color: "var(--tm)" }}>Pilih SKU secara eksplisit sebelum resep resmi digunakan di klinik.</p>}
@@ -80,10 +77,7 @@ export function KatalogForm({ katalog, items, saleItems }: { katalog: KatalogRac
       <input className="fi" name="dosage_instruction" value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder="Aturan pakai (opsional)" />
       <label className="flab">Bahan dan takaran</label>
       <div style={{ display: "flex", gap: 6 }}>
-        <select className="fi" value={itemId} onChange={(e) => setItemId(e.target.value)}>
-          <option value="">Pilih bahan baku</option>
-          {items.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.unit})</option>)}
-        </select>
+        <div style={{flex:1,minWidth:0}}><SearchableItemPicker ariaLabel="Bahan baku resep resmi" items={items.map(item=>({...item,code:item.code??""}))} value={itemId} onChange={setItemId}/></div>
         <button type="button" className="btn-def" onClick={addIngredient}>Tambah</button>
       </div>
       {ingredients.map((ingredient) => <div key={ingredient.item_id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -98,4 +92,9 @@ export function KatalogForm({ katalog, items, saleItems }: { katalog: KatalogRac
       <button type="submit" className="btn-acc" disabled={!code || !name.trim() || !ingredients.length || ingredients.some((i) => !(i.quantity > 0))}>Terbitkan versi</button>
     </form>
   </div>;
+}
+
+function SkuBinding({formula,items}:{formula:KatalogRacikan;items:{id:string;name:string;code:string|null}[]}){
+ const [id,setId]=useState(formula.sale_item_id??"");
+ return <div style={{flex:1,minWidth:180}}><input type="hidden" name="sale_item_id" value={id}/><SearchableItemPicker inputId={`sale-${formula.id}`} ariaLabel={`SKU jual ${formula.name}`} items={items.map(item=>({...item,code:item.code??""}))} value={id} onChange={setId} placeholder="Belum ditautkan — cari nama / kode"/></div>;
 }
