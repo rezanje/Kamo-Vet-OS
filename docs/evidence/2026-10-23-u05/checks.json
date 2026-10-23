@@ -1,0 +1,56 @@
+{
+  "item_ids": [
+    "U05"
+  ],
+  "scope": "Clinic material category/search select-release controls and bounded bulk preflight reads",
+  "global_u05_complete": false,
+  "base_main": "c627fe715544aa7c27656060a1d3d6fcc38dbfcf",
+  "red_ui": {
+    "fail": 3,
+    "baseline_pass": 8
+  },
+  "red_bulk": {
+    "fail": 1,
+    "baseline_pass": 2
+  },
+  "focused": {
+    "files": 4,
+    "tests": 25,
+    "exit": 0
+  },
+  "full_vitest": {
+    "files": 344,
+    "tests": 2632,
+    "exit": 0
+  },
+  "typecheck": {
+    "after_build": true,
+    "exit": 0
+  },
+  "scoped_lint": {
+    "exit": 0
+  },
+  "build": {
+    "exit": 0,
+    "existing_warnings": true
+  },
+  "browser": {
+    "widths": [
+      1280,
+      390
+    ],
+    "fixture_only": true,
+    "live_writes": 0,
+    "exit": 0
+  },
+  "independent_review": {
+    "p1_p2": 0,
+    "ui_tests": 18,
+    "bulk_tests": 3
+  },
+  "migrations": [],
+  "target_write": false,
+  "merged": false,
+  "deployed": false,
+  "uat": false
+}

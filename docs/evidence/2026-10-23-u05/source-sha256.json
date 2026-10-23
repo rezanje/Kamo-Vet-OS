@@ -1,0 +1,7 @@
+{
+  "src/app/(app)/klinik/bahan-baku/BahanBakuClient.tsx": "013a4e659001d873c8c81f7e2d1e132cdd80cceb9491150736e4dcc3cf1990d1",
+  "src/app/(app)/klinik/bahan-baku/actions.ts": "de5d570ab57d7f39d0781554e84bc9807e7246aa69aa966f88c78c14a0a1f954",
+  "src/components/__tests__/clinic-material-categories.test.tsx": "88c5305d3cf1a9afd3145a3701bd4d6a6a78d4e58b6af8865e604b8b9a3de859",
+  "src/lib/__tests__/clinic-material-bulk-actions.test.ts": "f4db617d22c0fbed7380f13529dda83795bb650e05730affd68f382d0e6b1449",
+  "scripts/test-clinic-material-categories-browser.mjs": "bd3a6e0821547f41058891918086e06ffee0b3204869c126ae5947db0da37b7b"
+}
