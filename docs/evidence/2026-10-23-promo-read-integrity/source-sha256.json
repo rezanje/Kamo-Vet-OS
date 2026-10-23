@@ -1,0 +1,8 @@
+{
+  "base": "e46f45e97ae2500b3aaade5e8a9e50915f9fcca3",
+  "files": {
+    "src/lib/promo-hitung.ts": "0c1bca3cad4f7ab32e635f533f9f1c7bbdca2421d54eef607768d7b877682efd",
+    "src/lib/__tests__/promo-active-loader.test.ts": "9a8097e9f2a29c492bf318a0ca3cf1e7d7089a6a8b361aba3a1429223eb8cfa8",
+    "src/app/(app)/crm/promo/PromoFields.tsx": "a06691194ca376a9a469bfc49859c450bb92cba25209de7b150f755fba79ebd3"
+  }
+}
