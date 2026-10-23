@@ -1,0 +1,5 @@
+{
+  "src/app/(app)/klinik/rekam-medis/[visitId]/page.tsx": "fe03d14316852037f7774970c33b64ae5bea3e3b1113a556256e297ae978d91e",
+  "src/components/__tests__/clinic-admission-readiness-page.test.tsx": "b1987d9886b33816b2d47653f4814e3bc4f1c38caffb226758df201c86c9d86d",
+  "src/lib/clinic-admission-readiness.ts": "0d12e8054eaba698fefe2ccee72749064fd18e2d0a85c9cc590940feb170f67b"
+}
