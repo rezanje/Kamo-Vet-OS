@@ -25,3 +25,9 @@ describe('private report configurations',()=>{
   expect(updated.find(x=>x.id==='a')?.href).toContain('2026-11');
  });
 });
+
+it('preserves canonical column selections but rejects repeated column parameters',()=>{
+ const columns=encodeURIComponent('{"t12345678-1":[2]}');
+ expect(reportPresetHref('/laporan/promo',`periode=2026-11&kolom=${columns}`)).toContain('kolom=');
+ expect(()=>reportPresetHref('/laporan/promo',`kolom=${columns}&kolom=${columns}`)).toThrow();
+});

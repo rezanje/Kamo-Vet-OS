@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { UnduhLaporan } from "./UnduhLaporan";
 import { Suspense } from "react";
 import { ReportPresets } from "./ReportPresets";
+import { ReportColumns, ReportColumnsFilterInput } from "./ReportColumns";
 import { reportFilterDefaults } from "@/lib/report-filter-defaults";
 
 export function LaporanPage({
@@ -41,14 +42,14 @@ export function LaporanPage({
 
       {filter && (
         <form data-report-filters className="crm-sec" style={{ marginBottom: 12 }}>
+          {unduhTampilan && <Suspense fallback={null}><ReportColumnsFilterInput /></Suspense>}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>{filter}</div>
         </form>
       )}
 
-      <div id="laporan-isi">
-        {ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}
-        {children}
-      </div>
+      {unduhTampilan ? <Suspense fallback={<div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}>
+        <ReportColumns>{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</ReportColumns>
+      </Suspense> : <div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}
     </div>
   );
 }
