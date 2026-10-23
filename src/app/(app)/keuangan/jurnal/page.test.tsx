@@ -10,11 +10,13 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     const filters: Record<string, unknown> = {};
     const query = {
       select() { return query; }, eq(key: string, value: unknown) { filters[key] = value; return query; },
+      in(key: string, values: unknown[]) { filters[`in:${key}`] = values; return query; },
       gte() { return query; }, lte() { return query; }, or() { return query; }, order() { return query; }, limit() { return query; },
       maybeSingle() { return Promise.resolve({ data: { role: fixture.role, is_active: fixture.active }, error: null }); },
       then(resolve: (value: unknown) => unknown) {
         const all = table === "journal_entries" ? fixture.entries : table === "recurring_journals" ? fixture.recurring : [];
-        const data = all.filter((row) => Object.entries(filters).every(([key, value]) => row[key] === value));
+        const data = all.filter((row) => Object.entries(filters).every(([key, value]) => key.startsWith("in:")
+          ? (value as unknown[]).includes(row[key.slice(3)]) : row[key] === value));
         return Promise.resolve({ data, error: null }).then(resolve);
       },
       rpc() { return Promise.resolve({ data: null, error: null }); },
@@ -50,9 +52,18 @@ it("filters to the exact journal and offers an authorized source schedule link",
 it("links a recurring receipt to its exact schedule and hides setup for inactive users", async () => {
   fixture.role = "FINANCE"; fixture.active = false;
   fixture.entries = [journal(ENTRY, "recurring", `${SCHEDULE}:2026-10`)];
+  fixture.recurring = [{ id: SCHEDULE, is_source_schedule: true }];
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ entry: ENTRY }) }));
   expect(html).toContain(`href="/keuangan/jurnal-berulang/${SCHEDULE}"`);
   expect(html).not.toContain("Buat jadwal dari jurnal");
+});
+
+it("keeps legacy recurring references out of the source-only detail route", async () => {
+  fixture.entries = [journal(ENTRY, "recurring", `${SCHEDULE}:2026-10`)];
+  fixture.recurring = [{ id: SCHEDULE, is_source_schedule: false }];
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ entry: ENTRY }) }));
+  expect(html).not.toContain(`href="/keuangan/jurnal-berulang/${SCHEDULE}"`);
+  expect(html).toContain(`${SCHEDULE}:2026-10`);
 });
 
 it("does not offer a source schedule from voided journals", async () => {

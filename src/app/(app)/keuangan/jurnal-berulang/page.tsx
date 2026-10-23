@@ -30,6 +30,11 @@ type SourceProof = {
   config: { name: string; first_period: string; last_period: string; day: number; count: number; mode: "manual" };
 };
 
+const LEGACY_HISTORY_FILTER_BATCH = 50;
+const LEGACY_HISTORY_QUERY_CONCURRENCY = 4;
+const LEGACY_HISTORY_CAP = 10_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function sourceProofMatches(row: Row, proof: SourceProof): boolean {
   const first = recurringSourcePeriodIndex(proof.config?.first_period ?? "");
   const last = recurringSourcePeriodIndex(proof.config?.last_period ?? "");
@@ -65,21 +70,58 @@ export default async function JurnalBerulangPage({
         .order("schedule_id").range(from, to).returns<SourceProof[]>(), "Rincian jadwal jurnal sumber"),
       supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
       supabase.from("branches").select("id, name").order("name"),
-      // Preserve legacy histories; new references identify the full schedule UUID.
-      readCompleteList<JurnalRecurringHistory & { id: string }>((from, to) => supabase.from("journal_entries")
-        .select("id, no_jurnal, tanggal, source_ref, branch_id, journal_lines(debit, credit)", { count: "exact" })
-        .eq("source", "recurring")
-        .order("tanggal", { ascending: false }).order("id").range(from, to), "Riwayat jurnal berulang"),
     ]);
   } catch (loadError) {
     return <div className="p2ban" role="alert">{loadError instanceof ListLoadError
       ? loadError.message : "Jurnal berulang belum dapat dimuat. Coba muat ulang."}</div>;
   }
-  const [rows, sourceProofs, { data: accounts }, { data: branches }, jurnalRows] = loaded;
+  const [rows, sourceProofs, { data: accounts }, { data: branches }] = loaded;
   const proofById = new Map(sourceProofs.map((proof) => [proof.id, proof]));
   const legacyRows = rows.filter((row) => !row.is_source_schedule);
-  const sourceScheduleIds = new Set(rows.filter((row) => row.is_source_schedule).map((row) => row.id));
-  const legacyJournalRows = jurnalRows.filter((journal) => !sourceScheduleIds.has((journal.source_ref ?? "").slice(0, 36)));
+  const sourceScheduleIds = rows.filter((row) => row.is_source_schedule && UUID.test(row.id)).map((row) => row.id);
+  // Source-schedule receipts are listed from their scoped occurrence table. Query
+  // only legacy identities here so a large source schedule cannot exhaust the
+  // complete-list cap or hide the legacy templates and their controls.
+  const legacyIds = legacyRows.map((row) => row.id).filter((id) => UUID.test(id));
+  const journalFilters = [] as { match: string; excludeSourceRefs: string[] }[];
+  for (let offset = 0; offset < legacyIds.length; offset += LEGACY_HISTORY_FILTER_BATCH) {
+    const idBatch = legacyIds.slice(offset, offset + LEGACY_HISTORY_FILTER_BATCH);
+    const prefixes = new Set(idBatch.map((id) => id.slice(0, 8)));
+    journalFilters.push({
+      match: idBatch.flatMap((id) => [
+        `source_ref.like.${id}:%`,
+        `source_ref.like.${id.slice(0, 8)}-%`,
+      ]).join(","),
+      excludeSourceRefs: sourceScheduleIds.filter((sourceId) => prefixes.has(sourceId.slice(0, 8))),
+    });
+  }
+  const historyById = new Map<string, JurnalRecurringHistory & { id: string }>();
+  try {
+    for (let offset = 0; offset < journalFilters.length; offset += LEGACY_HISTORY_QUERY_CONCURRENCY) {
+      const batch = journalFilters.slice(offset, offset + LEGACY_HISTORY_QUERY_CONCURRENCY);
+      const journalBatches = await Promise.all(batch.map(({ match, excludeSourceRefs }) =>
+        readCompleteList<JurnalRecurringHistory & { id: string }>((from, to) => {
+          let query = supabase.from("journal_entries")
+            .select("id, no_jurnal, tanggal, source_ref, branch_id, journal_lines(debit, credit)", { count: "exact" })
+            .eq("source", "recurring").or(match);
+          for (const sourceId of excludeSourceRefs) query = query.not("source_ref", "like", `${sourceId}:%`);
+          return query.order("tanggal", { ascending: false }).order("id").range(from, to);
+        }, "Riwayat jurnal berulang")
+      ));
+      for (const journals of journalBatches) {
+        for (const journal of journals) {
+          historyById.set(journal.id, journal);
+          if (historyById.size > LEGACY_HISTORY_CAP) {
+            throw new ListLoadError(`Riwayat jurnal berulang melebihi batas ${LEGACY_HISTORY_CAP.toLocaleString("id-ID")} baris dan belum dapat ditampilkan lengkap.`);
+          }
+        }
+      }
+    }
+  } catch (loadError) {
+    return <div className="p2ban" role="alert">{loadError instanceof ListLoadError
+      ? loadError.message : "Jurnal berulang belum dapat dimuat. Coba muat ulang."}</div>;
+  }
+  const legacyJournalRows = [...historyById.values()];
 
   const { riwayat, bermasalah, perluDitinjau } = riwayatJurnalRecurring(
     legacyJournalRows, legacyRows.map((row) => row.id), legacyRows,

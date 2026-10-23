@@ -30,6 +30,7 @@ const akunDari = (l: JournalLine): Akun | null =>
   Array.isArray(l.coa_accounts) ? (l.coa_accounts[0] ?? null) : l.coa_accounts;
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const SOURCE_SCHEDULE_LOOKUP_BATCH = 50;
 
 const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   manual:  { label: "Manual",  cls: "x" },
@@ -117,6 +118,23 @@ export default async function JurnalPage({
   const accounts = (accData ?? []) as unknown as CoaAccount[];
   const branches = (branchData ?? []) as unknown as Branch[];
   const entries  = (entryData  ?? []) as unknown as JournalEntry[];
+  const recurringScheduleIds = [...new Set(entries.flatMap((entry) =>
+    entry.source === "recurring" && entry.source_ref
+      && /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/i.test(entry.source_ref)
+      ? [entry.source_ref.slice(0, 36)] : []))];
+  const sourceRecurringIds = new Set<string>();
+  if (recurringScheduleIds.length > 0) {
+    const sourceScheduleLookups = await Promise.all(Array.from(
+      { length: Math.ceil(recurringScheduleIds.length / SOURCE_SCHEDULE_LOOKUP_BATCH) },
+      (_, index) => recurringScheduleIds.slice(index * SOURCE_SCHEDULE_LOOKUP_BATCH, (index + 1) * SOURCE_SCHEDULE_LOOKUP_BATCH),
+    ).map((ids) => supabase.from("recurring_journals")
+      .select("id").eq("is_source_schedule", true).in("id", ids)));
+    for (const { data: sourceSchedules, error: sourceScheduleError } of sourceScheduleLookups) {
+      if (!sourceScheduleError && Array.isArray(sourceSchedules)) {
+        for (const schedule of sourceSchedules as { id: string }[]) sourceRecurringIds.add(schedule.id);
+      }
+    }
+  }
   const adaSaringan = !!(cari || cabang || sumber || dari || sampai || entry);
 
   return (
@@ -291,7 +309,7 @@ export default async function JurnalPage({
                         {(Array.isArray(e.branches) ? e.branches[0] : e.branches)?.name ?? "Pusat"}
                       </td>
                       <td style={{ fontFamily: "monospace", fontSize: 10 }}>
-                        {e.source === "recurring" && e.source_ref && /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/i.test(e.source_ref)
+                        {e.source === "recurring" && e.source_ref && sourceRecurringIds.has(e.source_ref.slice(0, 36))
                           ? <Link href={`/keuangan/jurnal-berulang/${e.source_ref.slice(0, 36)}`}>{e.source_ref.slice(-7)} · jadwal</Link>
                           : <NoDok nomor={e.source_ref} />}
                       </td>

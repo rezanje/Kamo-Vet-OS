@@ -13,10 +13,12 @@ Scope is monthly source schedules from valid manual journals. Weekly or other re
 ## Verification
 
 - `python3 scripts/test-recurring-source-postgres.py` — passed on disposable network-isolated PostgreSQL 17.6 after applying 237 repository migrations. `recurring_source_journals.sql`, `recurring_source_guards.sql`, `atomic_recurring_journals.sql`, and `recurring_occurrence_limit.sql` passed. The deterministic two-session same-period race returned one journal/receipt and one new-post result. The runner removed its owned container and volume.
-- `npx vitest run` — 352 test files, 2,682 tests passed.
+- `npx vitest run` — 352 test files, 2,685 tests passed.
 - `npx tsc --noEmit` — passed.
 - `npm run lint` — passed with 12 existing warnings in unrelated clinic/image-upload files; no errors.
 - `npm run build` — passed; Next generated all 194 static pages and the new finance routes. Existing warnings include Supabase JS's `process.version` Edge Runtime import through the existing middleware and the lint warnings above.
+- Independent review found two app regressions and no critical SQL authorization/atomicity issue: the journal page linked legacy full-UUID references to a source-only route, and the recurring page read source receipts into the 10,000-row legacy history cap. The journal page now links only after verifying the source-schedule marker; the recurring list loads only current legacy template references in bounded database-filtered batches and excludes source UUIDs that could collide with abbreviated legacy refs. Ambiguous abbreviated legacy refs still reach the review warning. History without a current legacy template is not included in template progress.
+- Regression verification after those fixes — the journal and recurring-list test files pass 10/10 tests, including legacy/source link selection, 10,001 unrelated source receipts, and ambiguous legacy prefixes.
 - Target project migration and finance transactions — not run in this candidate pass. The new migration is `20261023073807_source_recurring_journals.sql` and must be reviewed against current target migration history/catalog before release. Full hosted workflow/UAT remains deferred.
 - Supabase advisors — not run; `supabase --version` returned `supabase: command not found`. No CLI installation or workaround was attempted.
 
