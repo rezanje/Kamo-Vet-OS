@@ -1,0 +1,33 @@
+
+ RUN  v4.1.9 /workspace/kamo-master-selectors
+
+ ❯ src/components/__tests__/master-item-reference.test.tsx (5 tests | 1 failed) 107ms
+   × blocks unfinished optional substitute searches while allowing deliberate empty clearing 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/master-item-reference.test.tsx > blocks unfinished optional substitute searches while allowing deliberate empty clearing
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/components/__tests__/master-item-reference.test.tsx:25:60
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  12:46:58
+   Duration  676ms (transform 67ms, setup 0ms, import 112ms, tests 107ms, environment 290ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

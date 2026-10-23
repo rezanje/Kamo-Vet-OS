@@ -1,0 +1,27 @@
+
+ RUN  v4.1.9 /workspace/kamo-master-selectors
+
+ ❯ src/components/__tests__/master-item-reference.test.tsx (2 tests | 1 failed) 74ms
+   × preserves repeated variant IDs and associated labels when a middle row is removed 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/master-item-reference.test.tsx > preserves repeated variant IDs and associated labels when a middle row is removed
+AssertionError: expected null not to be null
+ ❯ pick src/components/__tests__/master-item-reference.test.tsx:11:141
+
+ ❯ src/components/__tests__/master-item-reference.test.tsx:13:188
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  12:38:00
+   Duration  606ms (transform 67ms, setup 0ms, import 115ms, tests 74ms, environment 292ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
