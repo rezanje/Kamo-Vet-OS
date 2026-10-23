@@ -5,15 +5,16 @@ import {createPortal} from 'react-dom';
 export type SearchableItem={id:string;code:string;name:string};
 
 /** IDs remain authoritative. Visible names and reference codes are separate. */
-export function SearchableItemPicker({items,value,onChange,placeholder='Cari kode / nama barang',ariaLabel='Barang',selectedLabelFormat='name',inputId,textValue,onTextChange,readOnly=false}:{
+export function SearchableItemPicker({items,value,onChange,placeholder='Cari kode / nama barang',ariaLabel='Barang',selectedLabelFormat='name',inputId,textValue,onTextChange,readOnly=false,required=false}:{
  items:SearchableItem[];value:string;onChange:(id:string)=>void;placeholder?:string;ariaLabel?:string;
- selectedLabelFormat?:'code-name'|'name';inputId?:string;textValue?:string;onTextChange?:(text:string)=>void;readOnly?:boolean;
+ selectedLabelFormat?:'code-name'|'name';inputId?:string;textValue?:string;onTextChange?:(text:string)=>void;readOnly?:boolean;required?:boolean;
 }){
  const selected=items.find(item=>item.id===value),label=(item:SearchableItem)=>selectedLabelFormat==='name'?item.name:`${item.code} · ${item.name}`;
  const [override,setOverride]=useState<{value:string;text:string}|null>(null),[open,setOpen]=useState(false),[highlight,setHighlight]=useState(-1),[limit,setLimit]=useState(50);
  const [bounds,setBounds]=useState<{left:number;top:number;width:number;height:number;above:boolean}|null>(null);
  const input=useRef<HTMLInputElement>(null),popup=useRef<HTMLDivElement>(null),listId=useId();
  const query=textValue??(override?.value===value?override.text:selected?label(selected):'');
+ useEffect(()=>{input.current?.setCustomValidity(required&&!selected?'Pilih barang dari daftar.':'');},[required,selected]);
  const matches=useMemo(()=>{const q=query.trim().toLowerCase();return q?items.filter(item=>`${item.code} ${item.name}`.toLowerCase().includes(q)):items;},[items,query]);
  const hits=matches.slice(0,limit);
  useEffect(()=>{
@@ -29,7 +30,7 @@ export function SearchableItemPicker({items,value,onChange,placeholder='Cari kod
  const close=()=>{setOpen(false);setOverride(null);setHighlight(-1);};
  const choose=(item:SearchableItem)=>{onChange(item.id);setOverride({value:item.id,text:label(item)});setOpen(false);setHighlight(-1);};
  return <div style={{position:'relative',minWidth:0}}>
-  <input ref={input} id={inputId} className="fi" value={query} placeholder={placeholder} aria-label={ariaLabel} role="combobox" readOnly={readOnly}
+  <input ref={input} id={inputId} className="fi" value={query} placeholder={placeholder} aria-label={ariaLabel} role="combobox" readOnly={readOnly} required={required}
    aria-autocomplete="list" aria-expanded={open&&!readOnly} aria-controls={listId} aria-activedescendant={open&&hits[highlight]?`${listId}-option-${highlight}`:undefined}
    onFocus={()=>{if(!readOnly)setOpen(true);}}
    onBlur={event=>{if(!event.currentTarget.parentElement?.contains(event.relatedTarget as Node|null)&&!popup.current?.contains(event.relatedTarget as Node|null))close();}}
