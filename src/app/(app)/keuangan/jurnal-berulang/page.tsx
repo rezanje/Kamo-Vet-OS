@@ -6,6 +6,7 @@ import { NoDok } from "@/components/NoDok";
 import { toggleRecurring } from "./actions";
 import { riwayatJurnalRecurring, type JurnalRecurringHistory } from "@/lib/recurring";
 import { ListLoadError, readCompleteList } from "@/lib/checked-list";
+import { recurringSourcePeriodIndex, recurringSourceProgress } from "@/lib/recurring-source";
 
 type Row = {
   id: string;
@@ -16,9 +17,36 @@ type Row = {
   is_active: boolean;
   max_occurrences: number | null;
   last_posted: string | null;
+  is_source_schedule?: boolean;
   lines: { code: string; debit: number; credit: number }[];
   branches: { name: string } | null;
 };
+
+type SourceProof = {
+  id: string;
+  source_entry_id: string;
+  branch_id: string | null;
+  source_snapshot: { entry_id: string; no_jurnal: string; lines: { debit: number; credit: number }[] };
+  config: { name: string; first_period: string; last_period: string; day: number; count: number; mode: "manual" };
+};
+
+const LEGACY_HISTORY_FILTER_BATCH = 50;
+const LEGACY_HISTORY_QUERY_CONCURRENCY = 4;
+const LEGACY_HISTORY_CAP = 10_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function sourceProofMatches(row: Row, proof: SourceProof): boolean {
+  const first = recurringSourcePeriodIndex(proof.config?.first_period ?? "");
+  const last = recurringSourcePeriodIndex(proof.config?.last_period ?? "");
+  return !!row.is_source_schedule && proof.id === row.id && proof.source_entry_id === proof.source_snapshot?.entry_id
+    && proof.branch_id === row.branch_id && typeof proof.config?.name === "string" && !!proof.config.name.trim()
+    && Number.isSafeInteger(proof.config.count) && proof.config.count > 0 && first !== null && last !== null
+    && last - first + 1 === proof.config.count && proof.config.day === row.day_of_month
+    && row.max_occurrences === proof.config.count && proof.config.mode === "manual"
+    && typeof proof.source_snapshot.no_jurnal === "string" && Array.isArray(proof.source_snapshot.lines)
+    && proof.source_snapshot.lines.length > 0
+    && proof.source_snapshot.lines.every((line) => Number.isFinite(Number(line.debit)) && Number.isFinite(Number(line.credit)));
+}
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -35,24 +63,68 @@ export default async function JurnalBerulangPage({
   try {
     loaded = await Promise.all([
       readCompleteList<Row>((from, to) => supabase.from("recurring_journals")
-        .select("id, nama, deskripsi, day_of_month, branch_id, max_occurrences, is_active, last_posted, lines, branches(name)", { count: "exact" })
+        .select("id, nama, deskripsi, day_of_month, branch_id, max_occurrences, is_active, last_posted, is_source_schedule, lines, branches(name)", { count: "exact" })
         .order("created_at", { ascending: false }).order("id").range(from, to).returns<Row[]>(), "Jadwal jurnal berulang"),
+      readCompleteList<SourceProof>((from, to) => supabase.from("recurring_journal_sources")
+        .select("id:schedule_id,source_entry_id,branch_id,source_snapshot,config", { count: "exact" })
+        .order("schedule_id").range(from, to).returns<SourceProof[]>(), "Rincian jadwal jurnal sumber"),
       supabase.from("coa_accounts").select("code, name").eq("is_active", true).order("code"),
       supabase.from("branches").select("id, name").order("name"),
-      // Preserve legacy histories; new references identify the full schedule UUID.
-      readCompleteList<JurnalRecurringHistory & { id: string }>((from, to) => supabase.from("journal_entries")
-        .select("id, no_jurnal, tanggal, source_ref, branch_id, journal_lines(debit, credit)", { count: "exact" })
-        .eq("source", "recurring")
-        .order("tanggal", { ascending: false }).order("id").range(from, to), "Riwayat jurnal berulang"),
     ]);
   } catch (loadError) {
     return <div className="p2ban" role="alert">{loadError instanceof ListLoadError
       ? loadError.message : "Jurnal berulang belum dapat dimuat. Coba muat ulang."}</div>;
   }
-  const [rows, { data: accounts }, { data: branches }, jurnalRows] = loaded;
+  const [rows, sourceProofs, { data: accounts }, { data: branches }] = loaded;
+  const proofById = new Map(sourceProofs.map((proof) => [proof.id, proof]));
+  const legacyRows = rows.filter((row) => !row.is_source_schedule);
+  const sourceScheduleIds = rows.filter((row) => row.is_source_schedule && UUID.test(row.id)).map((row) => row.id);
+  // Source-schedule receipts are listed from their scoped occurrence table. Query
+  // only legacy identities here so a large source schedule cannot exhaust the
+  // complete-list cap or hide the legacy templates and their controls.
+  const legacyIds = legacyRows.map((row) => row.id).filter((id) => UUID.test(id));
+  const journalFilters = [] as { match: string; excludeSourceRefs: string[] }[];
+  for (let offset = 0; offset < legacyIds.length; offset += LEGACY_HISTORY_FILTER_BATCH) {
+    const idBatch = legacyIds.slice(offset, offset + LEGACY_HISTORY_FILTER_BATCH);
+    const prefixes = new Set(idBatch.map((id) => id.slice(0, 8)));
+    journalFilters.push({
+      match: idBatch.flatMap((id) => [
+        `source_ref.like.${id}:%`,
+        `source_ref.like.${id.slice(0, 8)}-%`,
+      ]).join(","),
+      excludeSourceRefs: sourceScheduleIds.filter((sourceId) => prefixes.has(sourceId.slice(0, 8))),
+    });
+  }
+  const historyById = new Map<string, JurnalRecurringHistory & { id: string }>();
+  try {
+    for (let offset = 0; offset < journalFilters.length; offset += LEGACY_HISTORY_QUERY_CONCURRENCY) {
+      const batch = journalFilters.slice(offset, offset + LEGACY_HISTORY_QUERY_CONCURRENCY);
+      const journalBatches = await Promise.all(batch.map(({ match, excludeSourceRefs }) =>
+        readCompleteList<JurnalRecurringHistory & { id: string }>((from, to) => {
+          let query = supabase.from("journal_entries")
+            .select("id, no_jurnal, tanggal, source_ref, branch_id, journal_lines(debit, credit)", { count: "exact" })
+            .eq("source", "recurring").or(match);
+          for (const sourceId of excludeSourceRefs) query = query.not("source_ref", "like", `${sourceId}:%`);
+          return query.order("tanggal", { ascending: false }).order("id").range(from, to);
+        }, "Riwayat jurnal berulang")
+      ));
+      for (const journals of journalBatches) {
+        for (const journal of journals) {
+          historyById.set(journal.id, journal);
+          if (historyById.size > LEGACY_HISTORY_CAP) {
+            throw new ListLoadError(`Riwayat jurnal berulang melebihi batas ${LEGACY_HISTORY_CAP.toLocaleString("id-ID")} baris dan belum dapat ditampilkan lengkap.`);
+          }
+        }
+      }
+    }
+  } catch (loadError) {
+    return <div className="p2ban" role="alert">{loadError instanceof ListLoadError
+      ? loadError.message : "Jurnal berulang belum dapat dimuat. Coba muat ulang."}</div>;
+  }
+  const legacyJournalRows = [...historyById.values()];
 
   const { riwayat, bermasalah, perluDitinjau } = riwayatJurnalRecurring(
-    jurnalRows, rows.map((row) => row.id), rows,
+    legacyJournalRows, legacyRows.map((row) => row.id), legacyRows,
   );
 
   return (
@@ -83,7 +155,7 @@ export default async function JurnalBerulangPage({
         <SecHeader
           num="01"
           title="DAFTAR TRANSAKSI BERULANG"
-          desc="Otomatis diposting tiap bulan (catch-up saat halaman Jurnal Umum dibuka)."
+          desc="Template lama tetap catch-up otomatis. Jadwal dari jurnal sumber berjalan manual, satu periode tiap tindakan."
         />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
@@ -101,27 +173,36 @@ export default async function JurnalBerulangPage({
             </thead>
             <tbody>
               {rows.map((r) => {
-                const nilai = (r.lines ?? []).reduce((a, l) => a + (Number(l.debit) || 0), 0);
+                const isSource = !!r.is_source_schedule;
+                const sourceProof = isSource ? proofById.get(r.id) : undefined;
+                const validSource = sourceProof && sourceProofMatches(r, sourceProof) ? sourceProof : undefined;
+                const sourceProgress = validSource ? recurringSourceProgress(validSource.config, r.last_posted) : null;
+                const nilai = isSource ? null : (r.lines ?? []).reduce((a, l) => a + (Number(l.debit) || 0), 0);
                 const jalan = (riwayat.get(r.id) ?? [])
                   .sort((a, b) => b.periode.localeCompare(a.periode));
-                const review = perluDitinjau.has(r.id);
-                const selesai = !review && r.max_occurrences !== null && jalan.length >= r.max_occurrences;
+                const review = isSource ? !validSource || sourceProgress === null : perluDitinjau.has(r.id);
+                const selesai = isSource
+                  ? !review && sourceProgress === validSource?.config.count
+                  : !review && r.max_occurrences !== null && jalan.length >= r.max_occurrences;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
-                      {r.nama}
-                      {r.deskripsi && <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{r.deskripsi}</div>}
+                      {isSource ? validSource?.config.name ?? "Jadwal sumber (rincian tidak tersedia)" : r.nama}
+                      {!isSource && r.deskripsi && <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{r.deskripsi}</div>}
                     </td>
                     <td style={{ fontSize: 11 }}>{r.branches?.name ?? "Pusat"}</td>
                     <td style={{ textAlign: "center", fontSize: 11.5 }}>{r.day_of_month}</td>
-                    <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(nilai)}</td>
+                    <td style={{ textAlign: "right", fontSize: 11.5 }}>{nilai === null ? validSource ? rp(validSource.source_snapshot.lines.reduce((sum, line) => sum + Number(line.debit), 0)) : "—" : rp(nilai)}</td>
                     {/* Rincian tiap kali jalan — sampai nomor jurnalnya, dan nomor itu
                         bisa diklik ke jurnalnya (permintaan Bu Nisa 14 Agustus). */}
                     <td style={{ fontSize: 11 }}>
                       <div style={{ marginBottom: 4, color: "var(--tm)" }}>
-                        {jalan.length} / {r.max_occurrences ?? "tanpa batas"} kali
+                        {isSource ? validSource && sourceProgress !== null ? `${sourceProgress} / ${validSource.config.count} periode` : "Receipt tidak tersedia" : `${jalan.length} / ${r.max_occurrences ?? "tanpa batas"} kali`}
                       </div>
-                      {jalan.length === 0 ? (
+                      {isSource ? validSource ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <Link href={`/keuangan/jurnal-berulang/${r.id}`} style={{ fontSize: 10 }}>Lihat periode</Link>
+                        <Link href={`/keuangan/jurnal?entry=${encodeURIComponent(validSource.source_entry_id)}`} style={{ fontSize: 10 }}>Jurnal sumber {validSource.source_snapshot.no_jurnal}</Link>
+                      </div> : <span style={{ color: "var(--td)" }}>Hubungi keuangan untuk meninjau akses atau receipt.</span> : jalan.length === 0 ? (
                         <span style={{ color: "var(--td)" }}>Belum pernah jalan</span>
                       ) : (
                         <details>
@@ -144,10 +225,10 @@ export default async function JurnalBerulangPage({
                         </details>
                       )}
                     </td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.last_posted ?? "Belum pernah"}</td>
-                    <td><span className={`bge ${r.is_active ? "g" : "x"}`}>{review ? "Perlu ditinjau" : selesai ? "Selesai" : r.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.last_posted ?? (isSource ? "Belum diposting" : "Belum pernah")}</td>
+                    <td><span className={`bge ${review ? "o" : r.is_active ? "g" : "x"}`}>{review ? "Perlu ditinjau" : selesai ? "Selesai" : r.is_active ? "Aktif" : "Nonaktif"}</span></td>
                     <td>
-                      {!selesai && <form action={toggleRecurring}>
+                      {!selesai && (!isSource || !review) && <form action={toggleRecurring}>
                         <input type="hidden" name="id" value={r.id} />
                         <input type="hidden" name="aktif" value={r.is_active ? "0" : "1"} />
                         <button type="submit" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
