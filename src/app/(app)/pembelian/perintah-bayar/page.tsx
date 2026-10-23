@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DurablePaymentOrderForm } from "./DurablePaymentOrderForm";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -168,6 +169,7 @@ export default async function PerintahBayarPage({
                 <tr key={o.id}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                     {o.no_pp}
+                    <div><ActivityHistoryLink entity="payment_orders" id={o.id} /></div>
                     <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>
                       {(o.payment_order_items ?? []).map((i) => { const invoice = one(i.purchase_invoices); return invoice ? <Link key={i.id} href={`/pembelian/faktur/${invoice.id}`} style={{ marginRight: 8 }}>{invoice.no_faktur}</Link> : null; })}
                     </div>

@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -47,6 +48,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const customer = Array.isArray(invoice.customers) ? invoice.customers[0] : invoice.customers;
   const today = hariIniWIB();
   return <>
+      <ActivityHistoryLink entity="sales_invoices" id={id} />
     <Link className="back-btn" href="/penjualan/faktur">← Faktur & penerimaan</Link>
     <div className="crm-sec">
       <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
@@ -66,7 +68,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       <h2 style={{ fontSize: 14 }}>Riwayat pembayaran asli</h2>
       <p>Pembayaran dari faktur terdahulu dibawa sebagai pelunasan pengganti. Angka di bawah adalah transaksi uang asli; tidak dijumlah ulang sebagai kas masuk.</p>
       <table className="tbl"><thead><tr><th>Penerimaan</th><th>Faktur asal</th><th>Tanggal</th><th>Jumlah</th><th>Dari uang muka</th></tr></thead><tbody>
-        {ancestors.flatMap(i => (i.sales_receipts ?? []).map(r => <tr key={r.id}><td>{r.no_terima} · {r.metode}</td><td><Link href={`/penjualan/faktur/${i.id}`}>{i.no_faktur}</Link></td><td>{r.tanggal}</td><td>{rp(r.jumlah)}</td><td>{rp(r.dari_uang_muka)}</td></tr>))}
+        {ancestors.flatMap(i => (i.sales_receipts ?? []).map(r => <tr key={r.id}><td>{r.no_terima} · {r.metode}<div><ActivityHistoryLink entity="sales_receipts" id={r.id} /></div></td><td><Link href={`/penjualan/faktur/${i.id}`}>{i.no_faktur}</Link></td><td>{r.tanggal}</td><td>{rp(r.jumlah)}</td><td>{rp(r.dari_uang_muka)}</td></tr>))}
       </tbody></table>
       <p>Kredit pelanggan dari rangkaian ini: <strong>{rp(credits)}</strong>. Tercatat sebagai kewajiban pada akun 2103, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p>
       {invoice.status === "batal" && !successor && <Link href="/penjualan/faktur">Buka daftar penerimaan dan kredit</Link>}

@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -25,6 +26,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   const payments = (invoice.purchase_invoice_payments ?? []) as Payment[];
   const paid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
   return <>
+      <ActivityHistoryLink entity="purchase_invoices" id={id} />
     <Link className="back-btn" href="/pembelian/faktur">Kembali ke faktur pembelian</Link>
     {sp.success && <div role="status" className="p2ban">{sp.success}</div>}
     {sp.error && <div role="alert" className="p2ban">{sp.error}</div>}
@@ -48,6 +50,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
       <SecHeader num="02" title="RIWAYAT PEMBAYARAN" desc="Pembatalan mempertahankan pembayaran asli dan mencatat pembaliknya. Faktur dan barang tetap tercatat." />
       {payments.length === 0 && <p>Belum ada pembayaran.</p>}
       {payments.sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.id.localeCompare(b.id)).map(payment => <article key={payment.id} style={{ borderBottom: "1px solid var(--bd)", padding: "12px 0" }}>
+        <ActivityHistoryLink entity="purchase_invoice_payments" id={payment.id} />
         <p><strong>{payment.reversal_of ? "Pembalik pembayaran" : payment.voided_at ? "Pembayaran dibatalkan" : "Pembayaran"}</strong> · {payment.tanggal} · {rp(payment.amount)} · {payment.metode}</p>
         {!!Number(payment.dari_uang_muka) && <p>Porsi uang muka: {rp(payment.dari_uang_muka)}</p>}
         {payment.catatan && <p>{payment.catatan}</p>}

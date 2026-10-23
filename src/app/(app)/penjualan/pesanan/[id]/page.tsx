@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { SalesRequestIdentity, SalesRecoveryComplete, SalesOrderRecovery } from "@/components/SalesRequestIdentity";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -67,6 +68,7 @@ export default async function DetailPesananPage({
 
   return (
     <>
+      <ActivityHistoryLink entity="sales_orders" id={id} />
       <SalesRecoveryComplete userId={userId} scope={sp.request_scope} requestKey={sp.request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/penjualan/pesanan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>

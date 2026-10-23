@@ -1,3 +1,4 @@
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -135,6 +136,7 @@ export default async function UangMukaJualPage({
                   <tr key={u.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                       {u.no_um}
+                      <div><ActivityHistoryLink entity="sales_advances" id={u.id} /></div>
                       {u.catatan && <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{u.catatan}</div>}
                     </td>
                     <td style={{ fontSize: 11 }}>{tgl(u.tanggal)}</td>
