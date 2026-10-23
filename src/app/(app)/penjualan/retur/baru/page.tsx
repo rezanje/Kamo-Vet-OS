@@ -95,6 +95,7 @@ export default async function ReturJualBaruPage({
       </div>
 
       {sale && rows.length === 0 && <form>
+        <input type="hidden" name="sale_id" value={sale.id} />
         <input type="hidden" name="source_ref" value={sale.no_struk ?? ""} />
         <PostingRequestIdentity recoverAction={recoverReturJual} scope={`sales-return:${sale.id}`} userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done} />
       </form>}

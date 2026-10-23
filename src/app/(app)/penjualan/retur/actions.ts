@@ -29,7 +29,7 @@ export async function buatReturJual(form:FormData) {
  const {data,error}=response;
  if(error)fail(['P0001','42501','22023'].includes(error.code)?error.message:'Respons refund belum terkonfirmasi. Periksa hasil terakhir.');
  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
- if(!data||!uuid.test(data.refund_request_id)||!['pending','diproses','selesai'].includes(data.status)
+ if(!data||!uuid.test(data.refund_request_id)||!['pending','diproses','selesai','batal'].includes(data.status)
   ||(data.status==='selesai'&&(!uuid.test(data.document_id)||typeof data.document_no!=='string'||!data.document_no.trim()))
   ||(data.status!=='selesai'&&(typeof data.quoted_total!=='number'||!Number.isFinite(data.quoted_total)||data.quoted_total<=0)))fail('Hasil refund belum terkonfirmasi. Periksa daftar sebelum mencoba lagi.');
  let spendingWarning="";
@@ -45,7 +45,7 @@ export async function buatReturJual(form:FormData) {
  }
  revalidatePath('/','layout');
  const scope="sales-return:"+source;
- const message=data.status==='selesai'?`Retur ${data.document_no} dan payout terkonfirmasi.`:`Permintaan refund ${data.status==='pending'?'diterima':'sedang diproses finance'}; retur, stok dan jurnal belum diposting. Jangan membuat permintaan pengganti untuk transaksi yang sama.`;
+ const message=data.status==='batal'?'Permintaan refund dibatalkan; retur, stok dan jurnal belum diposting.':data.status==='selesai'?`Retur ${data.document_no} dan payout terkonfirmasi.`:`Permintaan refund ${data.status==='pending'?'diterima':'sedang diproses finance'}; retur, stok dan jurnal belum diposting. Jangan membuat permintaan pengganti untuk transaksi yang sama.`;
  redirect(`${back}?${query}&success=${encodeURIComponent(message+spendingWarning)}&request_scope=${encodeURIComponent(scope)}&request_done=${encodeURIComponent(key)}`);
 }
 export async function recoverReturJual(form:FormData){form.set('tindakan','periksa');return buatReturJual(form);}

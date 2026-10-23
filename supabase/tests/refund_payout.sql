@@ -110,4 +110,72 @@ select claim_sales_refund_request((select(result->>'refund_request_id')::uuid fr
 select complete_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='customer-transfer'),(now()at time zone'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-CUSTOMER-TRANSFER');
 select complete_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='customer-transfer'),(now()at time zone'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-CUSTOMER-TRANSFER');
 select pg_temp.assert_ok((select total_spending=150000 and points=10 from customers where id='e9900000-0000-4000-8000-000000000007'),'finance completion and retry reconcile spending without changing points');
+
+-- Real FIFO stock/HPP: good cash return restores one unit; damaged transfer
+-- keeps stock unchanged while reversing source HPP to the existing loss account.
+reset role;
+insert into stock(warehouse_id,item_id,qty)values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',10);
+insert into stock_layers(warehouse_id,item_id,qty_in,qty_left,unit_cost,source,exp_date)values('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',10,10,125.5,'manual','2031-01-01');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+do $$declare doc uuid;issued record;begin
+ doc:=pg_temp.fee_sale('J03.STOCK','[{"method":"Transfer","amount":100000}]',0,100000,100000,'Transfer');
+ select * into issued from sale_stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',2,'sale','J03.STOCK');
+ perform pg_temp.lines(doc,100000,issued.cost,'e5500000-0000-4000-8000-000000000002');
+ perform finalize_pos_sale(doc);
+end$$;
+select pg_temp.assert_ok((select qty=8 from stock where item_id='e5500000-0000-4000-8000-000000000002'),'physical sale issued two units');
+insert into j03_results select 'stock-good',post_sales_return_with_payout(id,'j03-stock-good',pg_temp.j03_header('Tunai'),pg_temp.j03_items(no_struk,1))from sales where no_struk='J03.STOCK';
+select post_sales_return_with_payout(id,'j03-stock-good',pg_temp.j03_header('Tunai'),pg_temp.j03_items(no_struk,1))from sales where no_struk='J03.STOCK';
+select pg_temp.assert_ok((select qty=9 from stock where item_id='e5500000-0000-4000-8000-000000000002'),'good cash return retry restores exactly one unit');
+insert into j03_results select 'stock-damaged',post_sales_return_with_payout(id,'j03-stock-damaged',pg_temp.j03_header('Transfer'),jsonb_set(pg_temp.j03_items(no_struk,1),'{0,kondisi}','"rusak"'))from sales where no_struk='J03.STOCK';
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
+select claim_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='stock-damaged'));
+select complete_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='stock-damaged'),(now()at time zone'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-STOCK-DAMAGE');
+select complete_sales_refund_request((select(result->>'refund_request_id')::uuid from j03_results where name='stock-damaged'),(now()at time zone'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-STOCK-DAMAGE');
+reset role;
+select pg_temp.assert_ok((select qty=9 from stock where item_id='e5500000-0000-4000-8000-000000000002')and(select sum(qty_left)=9 and sum(qty_left*unit_cost)=1129.5 from stock_layers where item_id='e5500000-0000-4000-8000-000000000002'),'damaged return and retries preserve FIFO quantity and value');
+select pg_temp.assert_ok(pg_temp.return_balance('J03.STOCK','1111')=-50000 and pg_temp.return_balance('J03.STOCK','1113')=-50000 and pg_temp.return_balance('J03.STOCK','1112')=0,'stock refunds use actual cash/bank once');
+select pg_temp.assert_ok((select sum(ri.hpp)=251 and count(*)=2 from sales_return_items ri join sales_returns rt on rt.id=ri.return_id join sales s on s.id=rt.sale_id where s.no_struk='J03.STOCK'),'return source HPP reconciles exactly');
+select pg_temp.assert_ok((select sum(l.debit-l.credit)filter(where a.code='1301')=125.5 and sum(l.debit-l.credit)filter(where a.code='5902')=125.5 and sum(l.debit-l.credit)filter(where a.code='5101')=-251 and sum(l.debit-l.credit)=0 from sales_returns rt join sales s on s.id=rt.sale_id join journal_entries j on j.source='sales-return-hpp'and j.source_ref=rt.no_retur join journal_lines l on l.entry_id=j.id join coa_accounts a on a.id=l.account_id where s.no_struk='J03.STOCK'),'good/damaged HPP journals reconcile source cost and balance');
+set local role authenticated;
+
+-- Finance pagination counts only eligible branch sources, before LIMIT/OFFSET.
+reset role;
+savepoint j03_queue_pages;
+insert into auth.users(id,raw_user_meta_data)values('e1100000-0000-4000-8000-000000000003','{"full_name":"Fictional branch finance"}');
+update profiles set role='FINANCE',is_active=true where id='e1100000-0000-4000-8000-000000000003';
+insert into role_modules(role,module_id)values('FINANCE','pos'),('FINANCE','penjualan')on conflict do nothing;
+insert into user_branches(user_id,branch_id)values('e1100000-0000-4000-8000-000000000003','e2200000-0000-4000-8000-000000000001');
+insert into sales(branch_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id)values('e2200000-0000-4000-8000-000000000002','J03.OTHER.QUEUE',100,100,'Tunai',100,'e1100000-0000-4000-8000-000000000002');
+insert into sales_refund_requests(sale_id,branch_id,requested_by,request_key,payload,quoted_total,status,receipt,created_at)
+ select s.id,s.branch_id,'e1100000-0000-4000-8000-000000000002','j03-queue-other-'||n,'{}',1,'pending','{}',now()+interval '2 minutes'from sales s cross join generate_series(1,101)n where no_struk='J03.OTHER.QUEUE';
+insert into sales_refund_requests(sale_id,branch_id,requested_by,request_key,payload,quoted_total,status,receipt)
+ select s.id,s.branch_id,'e1100000-0000-4000-8000-000000000001','j03-queue-own-'||n,'{}',1,'pending','{}'from sales s cross join generate_series(1,101)n where no_struk='J03.STOCK';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000003',true);
+select set_config('request.headers','{"x-kamo-operational-branch":"e2200000-0000-4000-8000-000000000001"}',true);
+select pg_temp.assert_ok(jsonb_array_length(get_sales_refund_requests(null,true,'pending',0))=100,'foreign requests cannot hide first finance page');
+select pg_temp.assert_ok(jsonb_array_length(get_sales_refund_requests(null,true,'pending',100))=1,'eligible second finance page is reachable');
+select pg_temp.assert_ok(not exists(select 1 from jsonb_array_elements(get_sales_refund_requests(null,true,'pending',0))r where r->>'branch_id'<>'e2200000-0000-4000-8000-000000000001'),'foreign queue destination never exposed');
+reset role;
+rollback to savepoint j03_queue_pages;
+set local role authenticated;
+
+-- A null selected-payout response is authoritative only after source access.
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+select pg_temp.fee_sale('J03.LEGACY.RETURN','[{"method":"Tunai","amount":100000}]',0,100000,100000,'Tunai');
+select pg_temp.lines((select id from sales where no_struk='J03.LEGACY.RETURN'));
+select finalize_pos_sale((select id from sales where no_struk='J03.LEGACY.RETURN'));
+insert into j03_results select 'legacy-return',post_unit_return('sales',id,'j03-legacy-return',jsonb_build_object('tanggal',(now()at time zone'Asia/Jakarta')::date,'dari','kasir'),pg_temp.j03_items(no_struk,1))from sales where no_struk='J03.LEGACY.RETURN';
+select pg_temp.assert_ok(get_sales_return_payout((select(result->>'document_id')::uuid from j03_results where name='legacy-return'))is null,'authorized legacy source confirms no selected payout');
+select set_config('request.headers','{"x-kamo-operational-branch":"e2200000-0000-4000-8000-000000000002"}',true);
+do $$begin
+ begin perform get_sales_return_payout((select(result->>'document_id')::uuid from j03_results where name='legacy-return'));raise exception 'Expected source access denial';exception when insufficient_privilege then null;end;
+end$$;
+select set_config('request.headers','{}',true);
+select set_config('request.jwt.claim.sub','',true);
+do $$begin
+ begin perform get_sales_return_payout((select(result->>'document_id')::uuid from j03_results where name='legacy-return'));raise exception 'Expected inactive session denial';exception when insufficient_privilege then null;end;
+end$$;
 rollback;

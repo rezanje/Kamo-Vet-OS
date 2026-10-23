@@ -251,13 +251,16 @@ revoke all on function public.get_sales_refund_result(text) from public,anon,ser
 grant execute on function public.get_sales_refund_result(text) to authenticated;
 
 create function public.get_sales_refund_requests(p_sale_id uuid default null,p_office boolean default false,p_status text default '',p_offset integer default 0) returns jsonb
-language plpgsql security definer set search_path='' as $$declare r record;result jsonb:='[]';begin
+language plpgsql security definer set search_path='' as $$declare r record;b uuid;allowed uuid[]:='{}';result jsonb:='[]';begin
  if auth.uid() is null or auth.role() is distinct from 'authenticated' or not exists(select 1 from public.profiles where id=auth.uid() and is_active) then raise exception 'Sesi aktif diperlukan' using errcode='42501';end if;
  if p_office and not exists(select 1 from public.profiles where id=auth.uid() and role in('OWNER','ADMIN','FINANCE')) then raise exception 'Antrian refund hanya tersedia untuk finance berwenang' using errcode='42501';end if;
  if p_status not in('','pending','diproses','selesai','batal') or p_offset is null or p_offset<0 or p_offset>100000 then raise exception 'Filter refund tidak valid';end if;
- for r in select q.*,s.no_struk from public.sales_refund_requests q join public.sales s on s.id=q.sale_id where (p_office or q.requested_by=auth.uid()) and (p_sale_id is null or q.sale_id=p_sale_id) and (p_status='' or q.status=p_status) order by q.created_at desc,q.id limit 100 offset p_offset loop
-  if not public.user_can_access_branch(r.branch_id) then continue;end if;
-  if p_office then begin perform public.sales_refund_finance_access(r.branch_id);exception when insufficient_privilege then continue;end;end if;
+ -- Authorize branches before pagination: inaccessible rows must not consume a page.
+ for b in select id from public.branches where public.user_can_access_branch(id) and (not p_office or is_active) loop
+  if p_office then begin perform public.sales_refund_finance_access(b);exception when insufficient_privilege then continue;end;end if;
+  allowed:=array_append(allowed,b);
+ end loop;
+ for r in select q.*,s.no_struk from public.sales_refund_requests q join public.sales s on s.id=q.sale_id where q.branch_id=any(allowed) and (p_office or q.requested_by=auth.uid()) and (p_sale_id is null or q.sale_id=p_sale_id) and (p_status='' or q.status=p_status) order by q.created_at desc,q.id limit 100 offset p_offset loop
   result:=result||jsonb_build_array(jsonb_build_object('id',r.id,'sale_id',r.sale_id,'source_ref',r.no_struk,'branch_id',r.branch_id,'requested_by',r.requested_by,'status',r.status,'quoted_total',r.quoted_total,'destination',r.payload->'destination','requested_date',r.payload#>>'{header,tanggal}','created_at',r.created_at,'processed_by',r.processed_by,'return_id',r.return_id,'receipt',r.receipt));
  end loop;return result;
 end$$;
@@ -283,9 +286,12 @@ revoke all on function public.cancel_sales_refund_request(uuid,text,boolean) fro
 grant execute on function public.cancel_sales_refund_request(uuid,text,boolean) to authenticated;
 
 create function public.get_sales_return_payout(p_return uuid) returns jsonb
-language plpgsql security definer set search_path='' as $$declare r public.sales_refund_payouts%rowtype;begin
+language plpgsql security definer set search_path='' as $$declare r public.sales_refund_payouts%rowtype;source uuid;branch uuid;amount numeric;begin
+ select rt.sale_id,s.branch_id,rt.total into source,branch,amount from public.sales_returns rt join public.sales s on s.id=rt.sale_id where rt.id=p_return;
+ if not found then raise exception 'Sumber retur tidak dapat diakses'using errcode='42501';end if;
+ perform public.unit_posting_access('sales-return:'||source,branch);
  select * into r from public.sales_refund_payouts where return_id=p_return;if not found then return null;end if;
- perform public.unit_posting_access('sales-return:'||r.sale_id,r.branch_id);
+ if r.sale_id is distinct from source or r.branch_id is distinct from branch or r.amount is distinct from amount then raise exception 'Bukti payout tidak cocok dengan sumber retur';end if;
  return jsonb_build_object('method',r.method,'amount',r.amount,'account_name',r.account_snapshot->>'nama','expense_id',r.expense_id,'request_id',r.request_id);
 end$$;
 revoke all on function public.get_sales_return_payout(uuid) from public,anon,service_role;

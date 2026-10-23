@@ -27,7 +27,19 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
   if (!record) notFound();
   const rows = (items.data ?? []) as CorrectionReturnLine[];
   const owner = profile.data?.role === "OWNER" && profile.data.is_active;
-  const canCorrect = owner && !record.voided_at && provenance.data;
+  type Payout={method:"Tunai"|"Transfer";amount:number;account_name:string;expense_id:string;request_id:string|null};
+  const uuid=(v:unknown):v is string=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  let payout:Payout|null=null,payoutUnknown=false;
+  if(kind==="sales")try{
+    const result=await db.rpc("get_sales_return_payout",{p_return:id});
+    if(!result||result.error||result.data===undefined)throw Error("Unconfirmed payout");
+    if(result.data!==null){
+      const p=result.data as Payout;
+      if(!p||!["Tunai","Transfer"].includes(p.method)||!Number.isFinite(p.amount)||p.amount<=0||p.amount!==Number(record.total)||typeof p.account_name!=="string"||!p.account_name.trim()||!uuid(p.expense_id)||(p.request_id!==null&&!uuid(p.request_id))||(p.method==="Transfer"&&p.request_id===null))throw Error("Invalid payout proof");
+      payout=p;
+    }
+  }catch{payoutUnknown=true;}
+  const canCorrect = owner && !record.voided_at && provenance.data && !payoutUnknown && !payout;
   const journals = (provenance.data?.snapshot?.journals ?? []) as { id: string; no_jurnal: string }[];
   return <>
     <Link className="back-btn" href={base}>Kembali ke daftar retur</Link>
@@ -43,6 +55,12 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
       {rows.map(row => <p key={row.id}>{row.nama} · {Number(row.selected_qty ?? row.qty ?? 0)} {row.satuan ?? "satuan dasar"}</p>)}
       <p>Jurnal asal: {journals.length ? journals.map(j => j.no_jurnal).join(", ") : "Provenance lama belum tersedia"}</p>
     </div>
+    {payoutUnknown&&<p role="alert">Bukti payout belum dapat diperiksa. Koreksi ditahan; muat ulang dan periksa bukti refund sebelum mencoba lagi.</p>}
+    {payout&&<section className="crm-sec"><h3>Payout refund tersimpan</h3>
+      <p>{payout.method} · {payout.account_name} · Rp {payout.amount.toLocaleString("id-ID",{maximumFractionDigits:2})}</p>
+      <p>Koreksi otomatis ditahan untuk payout akun terpilih. Periksa bukti refund bersama Finance sebelum membalik uang atau stok.</p>
+      {payout.request_id&&["OWNER","ADMIN","FINANCE"].includes(profile.data?.role??"")&&<Link href="/kas-bank/refund?status=selesai">Buka antrean refund selesai</Link>}
+    </section>}
     {audit.data && <div className="crm-sec">
       <h3>Audit koreksi</h3>
       <p>{audit.data.created_at} · Pengguna {audit.data.created_by}</p>

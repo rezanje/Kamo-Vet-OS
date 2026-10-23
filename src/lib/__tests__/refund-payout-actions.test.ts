@@ -24,3 +24,8 @@ it('recovers by key without validating/returning the items again',async()=>{
  await expect(buatReturJual(f)).rejects.toThrow('belum diposting');expect(s.rpc).toHaveBeenCalledExactlyOnceWith('get_sales_refund_result',{p_request_key:'stable'});
 });
 it('treats a missing transport envelope as uncertain rather than throwing a destructuring error',async()=>{s.rpc.mockResolvedValue(undefined);await expect(buatReturJual(form())).rejects.toThrow(/belum terkonfirmasi/);});
+it('acknowledges a verified unpaid cancellation during receipt-only recovery without another posting',async()=>{
+ s.rpc.mockResolvedValue({data:{refund_request_id:request,status:'batal',quoted_total:50000},error:null});const f=form();f.set('tindakan','periksa');
+ const message=await buatReturJual(f).then(()=>'',e=>e.message);
+ expect(message).toContain('dibatalkan');expect(message).toContain('request_done=stable');expect(message).not.toContain('belum terkonfirmasi');expect(s.rpc).toHaveBeenCalledExactlyOnceWith('get_sales_refund_result',{p_request_key:'stable'});
+});
