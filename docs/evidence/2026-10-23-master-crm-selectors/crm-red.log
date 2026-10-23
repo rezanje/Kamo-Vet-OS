@@ -1,0 +1,57 @@
+
+ RUN  v4.1.9 /workspace/kamo-master-selectors
+
+ ❯ src/components/__tests__/crm-discount-catalog.test.tsx (3 tests | 2 failed) 244ms
+   × loads all authorized active catalog pages and keeps rule scope and item names separate from codes 148ms
+   × does not turn read failures into an empty rule list or offer a save form 87ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/crm-discount-catalog.test.tsx > loads all authorized active catalog pages and keeps rule scope and item names separate from codes
+AssertionError: expected [] to deeply equal [ [ 'items', +0, 499 ], …(2) ]
+
+- Expected
++ Received
+
+- [
+-   [
+-     "items",
+-     0,
+-     499,
+-   ],
+-   [
+-     "items",
+-     500,
+-     999,
+-   ],
+-   [
+-     "items",
+-     1000,
+-     1499,
+-   ],
+- ]
++ []
+
+ ❯ src/components/__tests__/crm-discount-catalog.test.tsx:12:178
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/crm-discount-catalog.test.tsx > does not turn read failures into an empty rule list or offer a save form
+AssertionError: expected null not to be null
+ ❯ src/components/__tests__/crm-discount-catalog.test.tsx:13:169
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  12:40:48
+   Duration  819ms (transform 72ms, setup 0ms, import 130ms, tests 244ms, environment 288ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
