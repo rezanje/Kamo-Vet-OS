@@ -7,13 +7,13 @@ import {createRequire} from 'node:module';
 import {createServer} from 'vite';
 const require=createRequire(import.meta.url);
 const {chromium}=require('/opt/codex/cua_node/lib/node_modules/playwright');
-const source=path.resolve('src'),out=path.resolve('docs/evidence/2026-10-22-clinic-material-categories');
+const source=path.resolve('src'),out=path.resolve('docs/evidence/2026-10-23-u05');
 await fs.mkdir(out,{recursive:true});
-const root=await fs.mkdtemp(path.join(os.tmpdir(),'kamo-k04-'));
+const root=await fs.mkdtemp(path.join(os.tmpdir(),'kamo-u05-'));
 const css=(await fs.readFile(path.join(source,'app/globals.css'),'utf8')).replace(/@import[^;]+;/g,'').replace(/@theme inline\s*\{[^}]*\}/g,'');
 await fs.writeFile(path.join(root,'fixture.css'),css+'\nbody{margin:0;background:#f0ede8}*{box-sizing:border-box}button,input,select{font:inherit}');
 await fs.writeFile(path.join(root,'index.html'),'<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script type="module" src="/main.tsx"></script>');
-await fs.writeFile(path.join(root,'main.tsx'),`import React from 'react';import {createRoot} from 'react-dom/client';import Page from '${source}/app/(app)/klinik/bahan-baku/page';const root=createRoot(document.getElementById('root'));window.__mode='normal';window.__render=async()=>root.render(<main style={{maxWidth:1100,margin:'auto',padding:12,minWidth:0}}><h1 style={{fontSize:22}}>Uji K04 · Data fiktif</h1><p>Komponen asli, tanpa perubahan master live</p>{await Page()}</main>);await window.__render();`);
+await fs.writeFile(path.join(root,'main.tsx'),`import React from 'react';import {createRoot} from 'react-dom/client';import Page from '${source}/app/(app)/klinik/bahan-baku/page';const root=createRoot(document.getElementById('root'));window.__mode='normal';window.__render=async()=>root.render(<main style={{maxWidth:1100,margin:'auto',padding:12,minWidth:0}}><h1 style={{fontSize:22}}>Uji U05 · Data fiktif</h1><p>Komponen asli, tanpa perubahan master live</p>{await Page()}</main>);await window.__render();`);
 const stubDB=`
 const categories=[{id:'p1',name:'Obat Klinik',parent_id:null,is_active:true},{id:'an',name:'Anestesi / Sedasi',parent_id:'p1',is_active:true},{id:'p2',name:'Nutrisi',parent_id:null,is_active:true},{id:'c2',name:'Umum',parent_id:'p2',is_active:true},{id:'empty',name:'Tanpa Kandidat',parent_id:null,is_active:true},{id:'old',name:'Kategori Lama Nonaktif',parent_id:'p1',is_active:false},{id:'old-parent',name:'Induk Lama Nonaktif',parent_id:null,is_active:false},{id:'old-child',name:'Anak Induk Nonaktif',parent_id:'old-parent',is_active:true},{id:'orphan',name:'Induk Dihapus',parent_id:'deleted-parent',is_active:true},...Array.from({length:1003},(_,i)=>({id:'cat'+i,name:'Kategori Fiktif '+i,parent_id:null,is_active:true}))];
 const row=(id,name,category_id,selected=false)=>({id,code:'QA-'+id,name,category_id,is_active:true,trashed_at:null,item_type:'Persediaan',sell_price:12.75,is_compound_material:selected});
@@ -33,7 +33,9 @@ try{
   await parent.selectOption('p1');await child.focus();await child.press('ArrowDown');await child.press('Enter');assert.equal(await child.inputValue(),'an');
   const sedasi=page.getByRole('checkbox',{name:/QA-SED/});await sedasi.waitFor();assert.equal(await sedasi.isChecked(),false);assert.equal(await page.getByRole('checkbox').count(),1);
   assert.equal(await page.getByText('Service must stay excluded',{exact:true}).count(),0);await page.getByRole('textbox',{name:'Cari bahan baku'}).fill('QA-SED');await page.getByRole('button',{name:/Pilih semua hasil \(1\)/}).click();assert.deepEqual(await page.evaluate(()=>window.__calls.at(-1)),{ids:['SED'],value:true});assert.equal(await sedasi.isChecked(),true);
-  await page.evaluate(()=>{window.__fail=true});await sedasi.focus();await sedasi.press('Space');await page.getByText('fixture denied',{exact:true}).waitFor();assert.equal(await sedasi.isChecked(),true);await page.evaluate(()=>{window.__fail=false});
+  const release=page.getByRole('button',{name:/Lepas semua hasil \(1\)/});await release.focus();await release.press('Enter');assert.deepEqual(await page.evaluate(()=>window.__calls.at(-1)),{ids:['SED'],value:false});assert.equal(await sedasi.isChecked(),false);
+  await page.getByRole('button',{name:/Pilih semua hasil \(1\)/}).click();assert.equal(await sedasi.isChecked(),true);
+  await page.evaluate(()=>{window.__fail=true});await release.focus();await release.press('Enter');await page.getByText('fixture denied',{exact:true}).waitFor();assert.equal(await sedasi.isChecked(),true);await page.evaluate(()=>{window.__fail=false});
   if(width===390)await page.screenshot({path:path.join(out,`materials-${width}-action.png`),fullPage:true});
   await page.locator(".tbl").evaluate(table=>{table.parentElement.scrollLeft=0});
   await page.screenshot({path:path.join(out,`materials-${width}.png`),fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -42,7 +44,7 @@ try{
   await parent.selectOption('empty');assert.equal(await page.getByRole('checkbox').count(),0);await page.getByText('Barang tidak ditemukan.',{exact:true}).waitFor();
   await page.evaluate(async()=>{window.__mode='error';await window.__render()});await page.getByRole('alert').waitFor();assert.equal(await page.getByRole('checkbox').count(),0);
   await page.evaluate(async()=>{window.__mode='empty';await window.__render()});await parent.waitFor();assert.equal(await parent.locator('option').count(),2);assert.equal(await page.getByRole('checkbox').count(),0);
-  assert.deepEqual(errors,[]);assert.equal(external,0);results.push({width,hierarchyStatusesAndHistory:true,eligibleAnesthesiaBeyond1000:true,completeCategoryPages:true,keyboardAndFilteredBulk:true,failedFlagRollback:true,parentSwitchAndEmptyError:true,documentOverflow:false,runtimeErrors:0,externalRequests:0,liveMasterWrites:0});await context.close();
+  assert.deepEqual(errors,[]);assert.equal(external,0);results.push({width,hierarchyStatusesAndHistory:true,eligibleAnesthesiaBeyond1000:true,completeCategoryPages:true,keyboardAndFilteredBulk:true,categorySelectAndReleaseSameFilter:true,filteredReleaseRetainsOtherSelections:true,failedFlagRollback:true,parentSwitchAndEmptyError:true,documentOverflow:false,runtimeErrors:0,externalRequests:0,liveMasterWrites:0});await context.close();
  }
  await fs.writeFile(path.join(out,'browser.json'),JSON.stringify(results,null,2)+'\n');console.log(JSON.stringify(results));
 }finally{await browser?.close();await server.close();await fs.rm(root,{recursive:true,force:true})}

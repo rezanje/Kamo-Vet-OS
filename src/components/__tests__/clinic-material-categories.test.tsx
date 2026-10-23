@@ -68,3 +68,32 @@ it('falls back to saved materials if the chosen parent is removed on refresh',as
  await render(items,categories.filter(c=>!['p1','an','c1'].includes(c.id)));
  expect(parent().value).toBe('__selected__');expect(child().disabled).toBe(true);expect(shown()).toContain('QA-history');expect(shown()).not.toContain('QA-sedasi');
 });
+
+it('can release all matching category results immediately after selecting them, preserving other selections',async()=>{
+ await render();await choose(parent(),'p1');await choose(child(),'an');
+ await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Pilih semua hasil'))!.click());
+ const release=[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Lepas semua hasil (1)'));
+ expect(release).toBeDefined();await act(async()=>release!.click());
+ expect(actions.bulk.mock.calls).toEqual([[['sedasi'],true],[['sedasi'],false]]);
+ expect(host.querySelector<HTMLInputElement>('tbody input[type=checkbox]')!.checked).toBe(false);
+ await choose(parent(),'__selected__');expect(shown()).toContain('QA-history');expect(shown()).toContain('QA-deleted-history');expect(shown()).not.toContain('QA-sedasi');
+});
+it('scopes category release to the current search and preserves selections outside the result',async()=>{
+ await render([row('sedasi','an',true),row('umum-obat','c1',true),row('other','c2',true)]);await choose(parent(),'p1');
+ const search=host.querySelector<HTMLInputElement>('[aria-label="Cari bahan baku"]')!;
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(search,'sedasi');search.dispatchEvent(new Event('input',{bubbles:true}));});
+ const release=[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Lepas semua hasil (1)'));
+ expect(release).toBeDefined();await act(async()=>release!.click());expect(actions.bulk).toHaveBeenCalledWith(['sedasi'],false);
+ await choose(parent(),'__selected__');expect(shown()).toContain('QA-umum-obat');expect(shown()).toContain('QA-other');expect(shown()).not.toContain('QA-sedasi');
+});
+it('rolls back a denied category release and announces the error',async()=>{
+ actions.bulk.mockResolvedValue({ok:false,error:'fixture release denied'});await render([row('sedasi','an',true)]);await choose(parent(),'p1');await choose(child(),'an');
+ const release=[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Lepas semua hasil (1)'));expect(release).toBeDefined();await act(async()=>release!.click());
+ expect(host.querySelector<HTMLInputElement>('tbody input[type=checkbox]')!.checked).toBe(true);expect(host.textContent).toContain('fixture release denied');expect(host.querySelector('[role=status]')).not.toBeNull();
+});
+it('disables both bulk actions and item toggles while category release is pending',async()=>{
+ let finish!:(value:{ok:true;updated:number})=>void;actions.bulk.mockImplementation(()=>new Promise(resolve=>{finish=resolve}));await render([row('sedasi','an',true)]);await choose(parent(),'p1');await choose(child(),'an');
+ const release=[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Lepas semua hasil (1)'));expect(release).toBeDefined();await act(async()=>release!.click());
+ expect([...host.querySelectorAll('button')].every(b=>b.disabled)).toBe(true);expect(host.querySelector<HTMLInputElement>('input[type=checkbox]')!.disabled).toBe(true);
+ await act(async()=>finish({ok:true,updated:1}));expect(release!.disabled).toBe(false);expect(host.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked).toBe(false);
+});

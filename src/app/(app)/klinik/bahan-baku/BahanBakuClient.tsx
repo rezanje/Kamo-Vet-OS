@@ -92,14 +92,14 @@ export function BahanBakuClient({ items, categories }: { items: ItemRow[]; categ
             <i className="ti ti-checks" /> Pilih semua hasil ({shown.length})
           </button>
         )}
-        {parent === "__selected__" && shown.length > 0 && (
+        {(group || parent === "__selected__") && shown.length > 0 && (
           <button type="button" className="btn-def" disabled={pending} onClick={() => setSemuaTerlihat(false)}>
             Lepas semua hasil ({shown.length})
           </button>
         )}
       </div>
-      <div style={{ fontSize: 10.5, color: message.includes("berhasil") ? "#15803d" : message ? "#dc2626" : "var(--tm)", marginBottom: 10 }}>
-        {message || (parent === "__selected__" ? "Daftar awal hanya menampilkan bahan yang sudah dipilih; kategori historis tetap ditampilkan tanpa mengubah asosiasinya." : "Pilihan kategori mengikuti master aktif. Pilih semua hanya berlaku untuk kategori dan pencarian yang tampil; jenis barang tetap Persediaan aktif.")}
+      <div role="status" aria-live="polite" style={{ fontSize: 10.5, color: message.includes("berhasil") ? "#15803d" : message ? "#dc2626" : "var(--tm)", marginBottom: 10 }}>
+        {message || (parent === "__selected__" ? "Daftar awal hanya menampilkan bahan yang sudah dipilih; kategori historis tetap ditampilkan tanpa mengubah asosiasinya." : "Pilihan kategori mengikuti master aktif. Pilih/lepas semua hanya berlaku untuk kategori dan pencarian yang tampil. Pilihan di luar hasil tetap tersimpan; jenis barang tetap Persediaan aktif.")}
       </div>
       <div style={{ overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 640 }}>
