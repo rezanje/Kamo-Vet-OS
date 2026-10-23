@@ -11,7 +11,8 @@ import { performersForService } from '@/lib/clinical-staff';
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
-import { hasInpatientConsent, templatesForBranch } from "@/lib/consent";
+import { clinicAdmissionReadiness } from "@/lib/clinic-admission-readiness";
+import { templatesForBranch } from "@/lib/consent";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
@@ -72,16 +73,18 @@ export default async function RekamMedisPage({
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
   let mrId: string | null = null;
+  let mrLoadFailed = false;
   let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
-    const { data: mr } = await supabase
+    const { data: mr, error: mrError } = await supabase
       .from("medical_records")
       .select("id, diagnosis, anamnesis")
       .eq("visit_id", visitId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    mrLoadFailed = !!mrError;
     record = mr;
     mrId = mr?.id ?? null;
     if (mr) {
@@ -102,7 +105,7 @@ export default async function RekamMedisPage({
   }
 
   // Rawat inap aktif utk visit ini (Addendum §3 — admit dari rekam medis, design klinik/07).
-  const [{ data: inpatient }, { data: referralRows }] = await Promise.all([
+  const [{ data: inpatient, error: inpatientError }, { data: referralRows }] = await Promise.all([
     supabase.from("inpatient_records")
       .select("id, condition_status, discharged_at")
       .eq("visit_id", visitId)
@@ -180,7 +183,7 @@ export default async function RekamMedisPage({
   }
 
   // Form persetujuan (spec 2026-07-20) — template yang berlaku utk cabang kunjungan ini.
-  const [{ data: consentRows }, { data: tplRows }] = await Promise.all([
+  const [{ data: consentRows, error: consentsError }, { data: tplRows, error: templatesError }] = await Promise.all([
     supabase.from("consents")
       .select("id, tindakan, isi_snapshot, kategori, template_id, status, signer_name, signature_data, signed_at")
       .eq("visit_id", visitId).order("created_at"),
@@ -191,9 +194,13 @@ export default async function RekamMedisPage({
     (tplRows ?? []) as { id: string; nama: string; kategori?: string; branch_id: string | null; is_active: boolean }[],
     (visit.branch_id as string) ?? null,
   );
-  const { data: inpatientConsentRule } = await supabase.from("consent_rules")
+  const { data: inpatientConsentRule, error: ruleError } = await supabase.from("consent_rules")
     .select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle();
-  const canAdmit = inpatientConsentRule?.wajib === false || hasInpatientConsent(consentRows ?? [], inpatientConsentRule?.template_id);
+  const admission = clinicAdmissionReadiness({
+    readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed),
+    status: visit.status, checkedOutAt: visit.checked_out_at ?? null, doctorId: visit.doctor_id ?? null,
+    medicalRecordId: mrId, rule: inpatientConsentRule, consents: consentRows ?? [],
+  });
 
   // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
   // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
@@ -425,8 +432,8 @@ export default async function RekamMedisPage({
             )}
           </div>
 
-          <div style={{ marginTop: 12 }}>
-            <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />
+          <div id="persetujuan-rawat-inap" style={{ marginTop: 12, scrollMarginTop: 20 }}>
+            {consentsError || templatesError ? <div className="card" role="alert"><p>Data persetujuan belum dapat dimuat lengkap. Muat ulang sebelum membuat atau menandatangani form baru.</p><Link className="back-btn" href={`/klinik/rekam-medis/${encodeURIComponent(visitId)}`}>Muat ulang persetujuan</Link></div> : <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />}
           </div>
 
           <ReferralPanel key={visit.id} visitId={visit.id as string} referrals={(referralRows ?? []) as { id: string; direction: string; facility: string; reason: string; notes: string | null; referred_at: string }[]} />
@@ -457,14 +464,14 @@ export default async function RekamMedisPage({
                 <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
                 <div style={{ flex: 2, minWidth: 240 }}>
                   <label className="flab">Rencana tindakan dari dokter PIC *</label>
-                  <input className="fi" name="treatment_plan" required placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />
+                  <input className="fi" name="treatment_plan" required maxLength={4000} placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />
                 </div>
                 <div style={{ flex: 1, minWidth: 140 }}>
                   <label className="flab">Dokter PIC</label>
                   <input className="fi" name="doctor_name" readOnly defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
                 </div>
-                {!canAdmit && <p style={{ fontSize: 11, color: "#b45309" }}>Buat dan tandatangani persetujuan khusus Rawat Inap sebelum masuk.</p>}
-                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…" disabled={!canAdmit}>Masukkan Rawat Inap</SubmitButton>
+                {!admission.canAdmit && <div role="status" style={{width:"100%",fontSize:12,color:"#b45309"}}><p>{admission.reason}</p>{admission.consentAction&&<a className="back-btn" href="#persetujuan-rawat-inap">Periksa persetujuan khusus Rawat Inap</a>}</div>}
+                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…" disabled={!admission.canAdmit}>Masukkan Rawat Inap</SubmitButton>
               </TransactionForm>
             )}
           </div>

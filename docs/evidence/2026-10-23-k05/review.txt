@@ -1,0 +1,4 @@
+Independent read-only review /root/k08_review (Sol6.1 high).
+P2 found: real ConsentSection received false empty arrays after read failures while initial tests mocked it. Fixed with unavailable/reload wrapper and real-component regression tests.
+Final assessment: no unresolved P1/P2. Independent final focused15tests passed. No RPC/auth/policy/data/target changes.
+Final project checks performed separately by author after sync to mainccd886b.
