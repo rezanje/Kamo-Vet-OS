@@ -47,7 +47,7 @@ do $$declare suffix text;branch uuid;begin
   insert into sales(id,branch_id,no_struk) values(md5('af-sale-'||suffix)::uuid,branch,'AF-SALE-'||suffix);
   insert into sales_orders(id,no_pesanan,branch_id) values(md5('af-order-'||suffix)::uuid,'AF-ORDER-'||suffix,branch);
   insert into sales_invoices(id,no_faktur,branch_id) values(md5('af-si-'||suffix)::uuid,'AF-SI-'||suffix,branch);
-  insert into purchase_orders(id,no_po,branch_id,supplier_id) values(md5('af-po-'||suffix)::uuid,'AF-PO-'||suffix,branch,md5('af-supplier')::uuid);
+  insert into purchase_orders(id,no_po,branch_id,supplier_id,total) values(md5('af-po-'||suffix)::uuid,'AF-PO-'||suffix,branch,md5('af-supplier')::uuid,1000);
   insert into purchase_invoices(id,no_faktur,po_id,branch_id,supplier_id,total) values(md5('af-pi-'||suffix)::uuid,'AF-PI-'||suffix,md5('af-po-'||suffix)::uuid,branch,md5('af-supplier')::uuid,1000);
   insert into visits(id,branch_id,customer_id,pet_id) values(md5('af-visit-'||suffix)::uuid,branch,md5('af-customer')::uuid,md5('af-pet')::uuid);
   insert into invoices(id,visit_id,invoice_no) values(md5('af-invoice-'||suffix)::uuid,md5('af-visit-'||suffix)::uuid,'AF-CLINIC-'||suffix);
@@ -69,7 +69,13 @@ insert into purchase_returns(id,no_retur,po_id,total,keterangan) values(md5('af-
 insert into purchase_return_items(id,return_id,nama,qty,harga) values(md5('af-purchase_return_items')::uuid,md5('af-purchase_returns')::uuid,'PRIVATE LINE',1,100);
 insert into invoice_payments(id,invoice_id,amount,catatan,request_key,request_hash) values(md5('af-invoice_payments')::uuid,md5('af-invoice-a')::uuid,10,'PRIVATE MEDICAL NOTE','PRIVATE REQUEST','PRIVATE HASH');
 insert into journal_lines(id,entry_id,account_id,debit,credit) select md5('af-journal_lines')::uuid,md5('af-journal-a')::uuid,id,100,0 from coa_accounts where code='1198';
-insert into asset_depreciations(id,asset_id,periode,amount) values(md5('af-asset_depreciations')::uuid,md5('af-asset-a')::uuid,'2026-10',10);
+-- The target protects automatic periods through its existing reset month.
+-- Choose a permissible synthetic source period; do not loosen that guard.
+create function pg_temp.af_source_period()returns text language plpgsql as $$declare cutoff date;begin
+ if to_regprocedure('public.operational_reset_cutoff()')is not null then execute 'select public.operational_reset_cutoff()'into cutoff;end if;
+ return case when cutoff is null then '2026-10'else to_char(cutoff+interval '1 month','YYYY-MM')end;
+end$$;
+insert into asset_depreciations(id,asset_id,periode,amount) values(md5('af-asset_depreciations')::uuid,md5('af-asset-a')::uuid,pg_temp.af_source_period(),10);
 insert into asset_changes(id,asset_id,jenis,nilai_lama,nilai_baru,keterangan) values(md5('af-asset_changes')::uuid,md5('af-asset-a')::uuid,'nilai',1000,1100,'PRIVATE NOTE');
 insert into asset_disposals(id,asset_id,account_id,jenis,harga_jual,keterangan) values(md5('af-asset_disposals')::uuid,md5('af-asset-a')::uuid,md5('af-account-a')::uuid,'jual',100,'PRIVATE NOTE');
 insert into asset_transfers(id,asset_id,dari_branch_id,ke_branch_id,keterangan) values(md5('af-asset_transfers')::uuid,md5('af-asset-a')::uuid,md5('af-a')::uuid,md5('af-b')::uuid,'PRIVATE NOTE');

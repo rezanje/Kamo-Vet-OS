@@ -1,0 +1,8 @@
+PASS covered target catalog comparison; one stored-view cast representation has semantic fixture
+RED confirmed combined acceptance rejects pre-candidate baseline
+PASS synthetic local pg_dump/pg_restore schema/ACL and fixture count roundtrip
+PASS explicit nine reviewed migration files, one local transaction
+PASS K08 surgical rollback/reapply preserves combined function/security/ACL
+PASS feedback_integration.sql
+PASS feedback_clinic_audit.sql
+PASS feedback_reset_cutoff.sql

@@ -1,0 +1,148 @@
+{
+  "serverVersion": "17.6",
+  "targetCatalogProject": "koaglxcyjqfmgfzxszkj",
+  "sourceRowsCopied": 0,
+  "targetWrites": 0,
+  "physicalTargetRestoreTested": false,
+  "overlay": {
+    "engine": "17.6 (Debian 17.6-2.pgdg13+1)",
+    "extraTargetTables": [
+      "kamo_maintenance.simulation_backups"
+    ],
+    "extraLocalTables": [],
+    "extraTargetFunctions": [
+      "kamo_maintenance.master_reset_fingerprint(p_snapshot jsonb)",
+      "public.create_fixed_asset_purchase(p_nama text, p_category_id uuid, p_tanggal date, p_harga numeric, p_nilai_sisa numeric, p_umur_bulan integer, p_branch_id uuid, p_funding text, p_credit_code text)",
+      "public.operational_reset_cutoff()",
+      "public.verify_simulation_backup(p_backup_id uuid, p_sha256 text, p_receipt jsonb)",
+      "public.protect_reset_automation_cutoff()",
+      "kamo_maintenance.reset_operational_tables()",
+      "public.reset_verified_operational_history(p_actor_id uuid, p_backup_id uuid, p_sha256 text, p_confirmation text)",
+      "kamo_maintenance.reset_master_tables()",
+      "kamo_maintenance.snapshot_manifest(p_snapshot jsonb)",
+      "public.prepare_simulation_backup(p_actor_id uuid)",
+      "public.download_simulation_backup(p_backup_id uuid)",
+      "kamo_maintenance.public_snapshot()",
+      "public.create_purchase_invoice_from_po(p_po_id uuid, p_no_faktur_prefix text, p_no_faktur_digits integer, p_no_faktur_pemasok text, p_tanggal date, p_jatuh_tempo date, p_keterangan text, p_items jsonb, p_layer_updates jsonb, p_layer_inserts jsonb, p_ppn numeric)"
+    ],
+    "extraLocalFunctions": [
+      "public.reprice_purchase_invoice_layers(p_updates jsonb, p_inserts jsonb)"
+    ],
+    "differentSharedFunctions": [
+      "public.post_recurring_journal_period",
+      "public.reset_simulasi_barang_dan_stok"
+    ],
+    "columnDrift": [],
+    "residual": [],
+    "after": {
+      "functions": {
+        "localCount": 293,
+        "targetCount": 293,
+        "onlyLocal": [],
+        "onlyTarget": [],
+        "different": []
+      },
+      "tables": {
+        "localCount": 225,
+        "targetCount": 225,
+        "onlyLocal": [],
+        "onlyTarget": [],
+        "different": []
+      },
+      "triggers": {
+        "localCount": 367,
+        "targetCount": 367,
+        "onlyLocal": [],
+        "onlyTarget": [],
+        "different": []
+      },
+      "policies": {
+        "localCount": 301,
+        "targetCount": 301,
+        "onlyLocal": [],
+        "onlyTarget": [],
+        "different": []
+      },
+      "views": {
+        "localCount": 1,
+        "targetCount": 1,
+        "onlyLocal": [],
+        "onlyTarget": [],
+        "different": []
+      },
+      "enums": {
+        "localCount": 11,
+        "targetCount": 11,
+        "onlyLocal": [],
+        "onlyTarget": [],
+        "different": []
+      },
+      "schemas": {
+        "localCount": 4,
+        "targetCount": 4,
+        "onlyLocal": [],
+        "onlyTarget": [],
+        "different": []
+      }
+    }
+  },
+  "baselineComparison": {
+    "functions": {
+      "localCount": 293,
+      "targetCount": 293,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "tables": {
+      "localCount": 225,
+      "targetCount": 225,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "triggers": {
+      "localCount": 367,
+      "targetCount": 367,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "policies": {
+      "localCount": 301,
+      "targetCount": 301,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "views": {
+      "localCount": 1,
+      "targetCount": 1,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "enums": {
+      "localCount": 11,
+      "targetCount": 11,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "schemas": {
+      "localCount": 4,
+      "targetCount": 4,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    }
+  },
+  "resetCutoffMirrored": true,
+  "restrictedHeaderColumnGrantVerified": true,
+  "viewCastEquivalenceFixture": true,
+  "restoreAndAssociativityFixture": true,
+  "suitesPassed": 20,
+  "suitesRun": 20,
+  "failures": [],
+  "focused": false
+}

@@ -1,0 +1,71 @@
+{
+  "serverVersion": "17.6",
+  "targetCatalogProject": "koaglxcyjqfmgfzxszkj",
+  "sourceRowsCopied": 0,
+  "targetWrites": 0,
+  "physicalTargetRestoreTested": false,
+  "unverifiedSecurityMetadata": [
+    "Table and function ownership, including SECURITY DEFINER execution ownership",
+    "View ownership, ACLs and security_invoker/security_barrier options",
+    "Role attributes (including BYPASSRLS) and role membership/inheritance"
+  ],
+  "baselineComparison": {
+    "functions": {
+      "localCount": 293,
+      "targetCount": 293,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "tables": {
+      "localCount": 225,
+      "targetCount": 225,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "triggers": {
+      "localCount": 367,
+      "targetCount": 367,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "policies": {
+      "localCount": 301,
+      "targetCount": 301,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "views": {
+      "localCount": 1,
+      "targetCount": 1,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "enums": {
+      "localCount": 11,
+      "targetCount": 11,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    },
+    "schemas": {
+      "localCount": 4,
+      "targetCount": 4,
+      "onlyLocal": [],
+      "onlyTarget": [],
+      "different": []
+    }
+  },
+  "resetCutoffMirrored": true,
+  "restrictedHeaderColumnGrantVerified": true,
+  "viewCastEquivalenceFixture": true,
+  "restoreAndAssociativityFixture": true,
+  "suitesPassed": 3,
+  "suitesRun": 3,
+  "failures": [],
+  "focused": true
+}

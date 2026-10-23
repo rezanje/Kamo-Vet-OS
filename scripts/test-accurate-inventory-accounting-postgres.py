@@ -87,7 +87,7 @@ alter default privileges in schema public grant all on sequences to authenticate
                 self.sql("begin;\n" + migration.read_text() + "\ncommit;")
             except RuntimeError as error:
                 raise RuntimeError(migration.name + ": " + str(error)) from error
-        print(f"Applied {len(migrations)} repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.", flush=True)
+        print(f"Applied {len(migrations)} repository migrations to isolated PostgreSQL {IMAGE.removeprefix('postgres:')} with fictional auth/storage shims.", flush=True)
 
 
 def main():

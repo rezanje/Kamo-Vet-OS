@@ -1,0 +1,1 @@
+PASS actual detail/list pages: two receipts, PO-linked invoice grouping, every purchase payment/reversal/replacement anchor, exact DP/payment-order destination and return, split sales receipt/DP links, unavailable-source redaction, desktop/390px mobile. Fictional query boundary; no live auth/DB or mutations.

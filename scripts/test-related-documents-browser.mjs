@@ -6,9 +6,19 @@ import path from 'node:path';
 import http from 'node:http';
 import {createRequire} from 'node:module';
 import {createServer} from 'vite';
+import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-const {chromium}=createRequire(import.meta.url)('playwright');
-const evidence=path.resolve('docs/evidence/2026-10-22-n01');
+const require=createRequire(import.meta.url);
+let playwright;
+try{playwright=require('playwright')}catch(error){
+ if(error.code!=='MODULE_NOT_FOUND')throw error;
+ playwright=require('/opt/codex/cua_node/lib/node_modules/playwright');
+}
+const {chromium}=playwright;
+const {SearchParamsContext}=require('next/dist/shared/lib/hooks-client-context.shared-runtime');
+const integration=process.env.KAMO_FEEDBACK_INTEGRATION==='1';
+const evidence=path.resolve(integration?'docs/evidence/2026-10-23-feedback-integration/browser':'docs/evidence/2026-10-22-n01');
+await fs.mkdir(evidence,{recursive:true});
 const id=n=>'10000000-0000-4000-8000-'+String(n).padStart(12,'0');
 const fixture=`
 const id=n=>'10000000-0000-4000-8000-'+String(n).padStart(12,'0');
@@ -20,7 +30,7 @@ const payments=[pay(11,{voided_at:'2026-10-22'}),pay(12,{reversal_of:id(11),amou
 const salesReceipts=[{id:id(41),no_terima:'SPLIT-CASH',tanggal:'2026-10-22',jumlah:20,dari_uang_muka:0,metode:'Tunai'}, {id:id(42),no_terima:'SPLIT-DP',tanggal:'2026-10-22',jumlah:30,dari_uang_muka:10,metode:'Transfer',advance_id:id(43),advance:{id:id(43),no_um:'SALES-DP',status:'aktif'}}];
 export async function createClient(){return {auth:{getUser:async()=>({data:{user:{id:'fictional-admin'}}})},from(table){
  let single=false;const filters={};
- const q={select(){return q},eq(k,v){filters[k]=v;return q},in(){return q},is(){return q},gt(){return q},order(){return q},limit(){return q},maybeSingle(){single=true;return q},then(resolve){
+ const q={select(){return q},eq(k,v){filters[k]=v;return q},in(){return q},is(){return q},gt(){return q},order(){return q},limit(){return q},range(){return q},maybeSingle(){single=true;return q},then(resolve){
  let data=[];
  if(table==='profiles')data={role:'ADMIN',is_active:true};
  if(table==='company_settings')data={ppn_rate:11};
@@ -32,7 +42,7 @@ export async function createClient(){return {auth:{getUser:async()=>({data:{user
  if(table==='purchase_advances')data=[{id:id(4),no_um:'DP-ONE',tanggal:'2026-10-22',jumlah:100,terpakai:10,status:'aktif',metode:'Transfer'}];
  if(table==='sales_advances')data=[{id:id(43),no_um:'SALES-DP',tanggal:'2026-10-22',jumlah:100,terpakai:10,status:'aktif'}];
  if(table==='payment_orders')data=[{id:id(30),no_pp:'PP-ONE',tanggal:'2026-10-22',status:'dibayar',total:10,payment_order_items:[]}];
- resolve({data,error:null});return Promise.resolve();
+ resolve({data,count:Array.isArray(data)?data.length:1,error:null});return Promise.resolve();
  }};return q;
  }}}
 `;
@@ -55,23 +65,28 @@ try{
  const paths={po:'/src/app/(app)/pembelian/[id]/page.tsx',receipt:'/src/app/(app)/pembelian/penerimaan/[id]/page.tsx',invoice:'/src/app/(app)/pembelian/faktur/[id]/page.tsx',sales:'/src/app/(app)/penjualan/faktur/[id]/page.tsx',advance:'/src/app/(app)/pembelian/uang-muka/page.tsx',salesAdvance:'/src/app/(app)/penjualan/uang-muka/page.tsx',order:'/src/app/(app)/pembelian/perintah-bayar/page.tsx'};
  const pages=Object.fromEntries(await Promise.all(Object.entries(paths).map(async([key,p])=>[key,(await vite.ssrLoadModule(p)).default])));
  const db=await vite.ssrLoadModule('\0n01-db');
+ const {ActivityNavigationProvider}=await vite.ssrLoadModule('/src/components/ActivityHistoryLink.tsx');
  const css=(await fs.readFile('src/app/globals.css','utf8')).replace(/@import[^;]+;/g,'').replace(/@theme inline\s*\{[^}]*\}/g,'');
  const errors=[];
  server=http.createServer(async(req,res)=>{try{
  if(req.url==='/favicon.ico'){res.writeHead(204);res.end();return}
  const u=new URL(req.url,'http://127.0.0.1');db.configure(u.searchParams.has('denied'));
  const route=u.pathname.startsWith('/pembelian/penerimaan/')?'receipt':u.pathname.startsWith('/pembelian/faktur/')?'invoice':u.pathname.startsWith('/penjualan/faktur/')?'sales':u.pathname==='/pembelian/uang-muka'?'advance':u.pathname==='/penjualan/uang-muka'?'salesAdvance':u.pathname==='/pembelian/perintah-bayar'?'order':'po';
- const html=renderToStaticMarkup(await pages[route]({params:Promise.resolve({id:u.pathname.split('/').at(-1)}),searchParams:Promise.resolve(Object.fromEntries(u.searchParams))}));
+ const content=await pages[route]({params:Promise.resolve({id:u.pathname.split('/').at(-1)}),searchParams:Promise.resolve(Object.fromEntries(u.searchParams))});
+ const html=renderToStaticMarkup(createElement(SearchParamsContext.Provider,{value:u.searchParams},createElement(ActivityNavigationProvider,{allowed:integration},content)));
  res.writeHead(200,{'content-type':'text/html;charset=utf-8'});res.end('<!doctype html><html lang="id"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+css+'\n*{box-sizing:border-box}body{margin:0;background:#f0ede8;font-family:Arial,sans-serif}.ct{padding:18px;max-width:1280px;margin:auto}p{overflow-wrap:anywhere}td{vertical-align:top}</style><main class="ct">'+html+'</main></html>');
  }catch(e){errors.push(String(e));res.writeHead(500);res.end(String(e))}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,executablePath:'/usr/bin/chromium',args:['--no-sandbox']});const context=await browser.newContext({baseURL:origin,viewport:{width:1280,height:900}});await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/pembelian/'+id(1));
+ if(integration)assert.equal(await page.getByRole('link',{name:'Riwayat aktivitas'}).count(),1);
  for(const label of ['Penerimaan GR-ONE','Penerimaan GR-TWO','Faktur INV-1','Uang muka DP-ONE'])assert.equal(await page.getByRole('link',{name:label,exact:true}).count(),1,label+' '+await page.locator('body').innerText());
  await page.getByRole('link',{name:'Penerimaan GR-TWO',exact:true}).click();assert(page.url().includes('/pembelian/penerimaan/'+id(3)));assert((await page.locator('main').innerText()).includes('PO yang sama'));
  await page.getByRole('link',{name:'Faktur INV-1',exact:true}).click();
+ if(integration)assert.equal(await page.getByRole('link',{name:'Riwayat aktivitas'}).count(),4);
  for(const n of [11,12,13])assert.equal(await page.locator('#payment-'+id(n)).count(),1);
- const payment=page.locator('#payment-'+id(13));await payment.getByRole('link',{name:'Uang muka DP-ONE',exact:true}).click();assert(page.url().endsWith('#advance-'+id(4)));assert.equal(await page.locator('#advance-'+id(4)).count(),1);
+ if(integration)assert.equal(await page.locator('a[href*=\"purchase_invoice_payments\"]').count(),3);
+ const payment=page.locator('#payment-'+id(13));await payment.getByRole('link',{name:'Uang muka DP-ONE',exact:true}).click();assert(page.url().endsWith('#advance-'+id(4)));assert.equal(await page.locator('#advance-'+id(4)).count(),1,await page.locator('body').innerText());
  await page.getByRole('link',{name:'Kembali ke transaksi asal'}).click();assert(page.url().endsWith('#payment-'+id(13)));
  await page.locator('#payment-'+id(13)).getByRole('link',{name:'Perintah bayar PP-ONE',exact:true}).click();assert(page.url().endsWith('#payment-order-'+id(30)));assert.equal(await page.locator('#payment-order-'+id(30)).count(),1);await page.getByRole('link',{name:'Kembali ke transaksi asal'}).click();
  await page.screenshot({path:path.join(evidence,'purchase-desktop.png'),fullPage:true});
