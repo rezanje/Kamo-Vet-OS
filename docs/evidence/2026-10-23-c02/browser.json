@@ -1,0 +1,22 @@
+[
+  {
+    "width": 1280,
+    "categoryHierarchySearchKeyboard": true,
+    "filteredAllAcross1204Rows": true,
+    "retainedOutsideFilterAndFailedSaveAndNavigation": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveWrites": 0
+  },
+  {
+    "width": 390,
+    "categoryHierarchySearchKeyboard": true,
+    "filteredAllAcross1204Rows": true,
+    "retainedOutsideFilterAndFailedSaveAndNavigation": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveWrites": 0
+  }
+]

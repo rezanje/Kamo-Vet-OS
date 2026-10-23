@@ -1,0 +1,46 @@
+
+ RUN  v4.1.9 /workspace/kamo-c02
+
+ ❯ src/components/__tests__/promo-category-select.test.tsx (2 tests | 2 failed) 37ms
+   × selects all category matches beyond the visible page and preserves selections outside the filter 31ms
+   × combines category with code search, keyboard selection and explicit clear without submitting 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/promo-category-select.test.tsx > selects all category matches beyond the visible page and preserves selections outside the filter
+AssertionError: expected null not to be null
+ ❯ category src/components/__tests__/promo-category-select.test.tsx:16:22
+     14| async function category(id: string) {
+     15|   const select = host.querySelector<HTMLSelectElement>('[aria-label="K…
+     16|   expect(select).not.toBeNull();
+       |                      ^
+     17|   await act(async () => { select!.value = id; select!.dispatchEvent(ne…
+     18| }
+ ❯ src/components/__tests__/promo-category-select.test.tsx:28:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/promo-category-select.test.tsx > combines category with code search, keyboard selection and explicit clear without submitting
+AssertionError: expected null not to be null
+ ❯ category src/components/__tests__/promo-category-select.test.tsx:16:22
+     14| async function category(id: string) {
+     15|   const select = host.querySelector<HTMLSelectElement>('[aria-label="K…
+     16|   expect(select).not.toBeNull();
+       |                      ^
+     17|   await act(async () => { select!.value = id; select!.dispatchEvent(ne…
+     18| }
+ ❯ src/components/__tests__/promo-category-select.test.tsx:36:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  03:07:08
+   Duration  688ms (transform 73ms, setup 0ms, import 132ms, tests 37ms, environment 345ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

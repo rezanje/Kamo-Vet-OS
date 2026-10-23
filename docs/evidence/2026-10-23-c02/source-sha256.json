@@ -1,0 +1,9 @@
+{
+  "scripts/test-promo-categories-browser.mjs": "d116eadd81fb7de3b697fa1e386a39253cc6b499945360a09590ee69db703245",
+  "src/app/(app)/crm/promo/PromoTargets.tsx": "19d76dd6ff6a4795a390af478807ef8ca623862f4e0d5a7b81d31dbfd9f16910",
+  "src/app/(app)/crm/promo/page.tsx": "9ed0adf05cb108bbefdb499e75a297bc19a778e1672e88407ff1fd19b4b3c63e",
+  "src/components/SearchableMultiSelect.tsx": "54cc55d9968aed4a9b7a7d2f6b9d14972108663996edff9e058f04680ce12922",
+  "src/components/__tests__/promo-category-page.test.tsx": "47334ab4f1aa4c8349dec9e30fdef38737f4c2ea0788084acf5faec2b1fe30eb",
+  "src/components/__tests__/promo-category-select.test.tsx": "54a0b03793799d32b5976836785df807aa5e34ede021fe00f0e7e9892ba5d90a",
+  "src/lib/promo-categories.ts": "89528476b2a21e28a1e42f3eb7403849b4377eb6a23e6ecc0095c6d8a9401635"
+}

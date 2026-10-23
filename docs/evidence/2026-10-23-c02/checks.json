@@ -1,0 +1,58 @@
+{
+  "base_main": "4a14ca914db85ac49ba32f04eabe774066d33815",
+  "branch": "codex/c02-crm-promo-categories-20261023",
+  "scope": "C02 promo category information/filter; CRM U05 category slice on PR87 item selector only",
+  "baseline_focused": {
+    "files": 4,
+    "tests": 17,
+    "exit": 0
+  },
+  "red": {
+    "selector_assertions_failed": 2,
+    "page_assertions_failed": 5
+  },
+  "focused_final": {
+    "files": 6,
+    "tests": 24,
+    "exit": 0
+  },
+  "full_vitest_final": {
+    "files": 334,
+    "tests": 2585,
+    "exit": 0
+  },
+  "browser": {
+    "viewports": [
+      1280,
+      390
+    ],
+    "category_matches_selected_and_deselected": 1204,
+    "retained_outside_filter_and_failed_save_and_navigation": true,
+    "keyboard": true,
+    "document_overflow": false,
+    "runtime_errors": 0,
+    "external_requests": 0,
+    "live_writes": 0,
+    "exit": 0
+  },
+  "typecheck": {
+    "exit": 0
+  },
+  "scoped_lint": {
+    "exit": 0,
+    "warnings": 0
+  },
+  "production_build": {
+    "exit": 0,
+    "warnings": "Existing Supabase Edge API/img/unused legacy field warnings; no failing gate.",
+    "initial_failure": "TS7022 fixed by explicit KategoriRow annotation; final typecheck/focused/full/build passed."
+  },
+  "independent_review": "Sol6.1 high, read-only: no P1/P2; independent10 focused tests passed.",
+  "migration_files": [],
+  "target_access": false,
+  "ready_or_merge_attempted": false,
+  "deployed": false,
+  "uat": "Deferred; fixture browser checks only.",
+  "preserved_pr94_sha": "9c9eb886004acfabb4bdfe2d0086997b582ee8c1",
+  "remaining_scope": "Global selectors and remaining CRM U05 are outside this batch. Categories reflect current master, not historical snapshots."
+}
