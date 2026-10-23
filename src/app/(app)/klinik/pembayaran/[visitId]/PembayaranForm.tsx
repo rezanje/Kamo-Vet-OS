@@ -1,5 +1,8 @@
 "use client";
+import { aggregateServiceLines } from "@/lib/service-line-promos";
 
+import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, type ServicePerformersSnapshot, type ServiceStaff } from "@/lib/service-performers";
 import styles from "./PembayaranForm.module.css";
 
 import { METODE_BAYAR as SPLIT_METHODS } from "@/lib/kas-akun";
@@ -22,6 +25,9 @@ import { normalizeKode, pesanVoucherDitolak, potonganVoucher } from "@/lib/vouch
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 
 type Line = {
+  key?: string;
+  source_invoice_item_id?: string | null;
+  service_performers?: ServicePerformersSnapshot | null;
   deskripsi: string; qty: number; harga: number; item_id?: string | null; satuan?: string | null;
   prescription_item_id?: string | null; recipe_id?: string | null;
   /** Diskon baris dalam persen — permintaan Pak Aldi, meeting 14 Agustus. */
@@ -43,12 +49,13 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 const labelMaster = (it: MasterItem) => `${it.code} — ${it.name}`;
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
+  serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean;
 }) {
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const add = () => setRows([...rows, { deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0 }]);
+  const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: serviceRows ? emptyServicePerformers() : null }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
   const subtotal = rows.reduce((a, r) => a + nilaiBaris(r), 0);
 
@@ -88,7 +95,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
         <thead><tr><th style={{ width: 26 }}>No.</th><th style={{ minWidth: 180 }}>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th>{allowUnits && <th style={{ width: 100 }}>Satuan</th>}<th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 66, textAlign: "center" }}>Disk %</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={r.key ?? r.source_invoice_item_id ?? r.prescription_item_id ?? i}>
               <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
               <td>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -97,6 +104,9 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                     <i className="ti ti-alert-triangle" title="Bukan dari master — stok tidak akan berkurang" style={{ color: "#d97706", fontSize: 13, flexShrink: 0 }} />
                   )}
                 </div>
+                {serviceRows && (sealedPerformers || r.prescription_item_id || r.terkunci
+                  ? <div style={{fontSize:10,color:"var(--tm)"}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>
+                  : <ServicePerformersField label={`Pelaksana ${r.deskripsi || `jasa baris ${i+1}`}`} value={r.service_performers} staff={serviceStaff} onChange={value => set(i,{service_performers:value})} />)}
               </td>
               <td>
                 <input className="fi" type="number" min={1} value={r.qty}
@@ -148,6 +158,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
         </tbody>
       </table>
       </div>
+      {serviceRows && !sealedPerformers && rows.some(row=>!row.prescription_item_id && !row.terkunci) && <ServicePerformersBulk rows={rows} setRows={setRows} staff={serviceStaff} />}
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 6, fontSize: 11.5 }}>
         <span style={{ fontWeight: 600, color: "var(--tm)" }}>Subtotal {title.split(" ")[0]}</span>
         <span style={{ fontWeight: 700 }}>{rp(subtotal)}</span>
@@ -156,12 +168,21 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   );
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, salespeople = [], initialSalespersonId = "", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new` }: {
+function ServicePerformersBulk({rows,setRows,staff}:{rows:Line[];setRows:(rows:Line[])=>void;staff:ServiceStaff[]}) {
+  const [value,setValue]=useState(emptyServicePerformers);
+  return <div>
+    <ServicePerformersField label="Isi pelaksana jasa sekaligus" value={value} staff={staff} onChange={setValue} />
+    <button type="button" className="btn-def" onClick={()=>setRows(bulkFillServicePerformers(rows.map(row=>({...row,jenis:"jasa"})),value).map((row,index)=>rows[index].prescription_item_id || rows[index].terkunci ? rows[index] : row))}>Isi baris jasa kosong</button>
+  </div>;
+}
+
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new` }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   draftUserId?: string; draftScope?: string; sourceVersion?: string;
   demoPolicy?: DemoFinancialPolicy | null; demoStaff?: PilihanPenjual[];
   manualUnitsEnabled?: boolean;
+  serviceStaff?: ServiceStaff[]; cashierName?: string;
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
@@ -190,7 +211,13 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   // Potongan ditampilkan di layar dengan rumus yang sama dengan server. Server
   // tetap menghitung ulang saat menyimpan — ini supaya kasir bisa menyebut angka
   // ke pemilik SEBELUM menekan bayar, bukan supaya layar menentukan uang.
-  const barisPotongan = barisSemua.map((r) => ({ item_id: r.item_id ?? "", qty: r.qty, harga: hargaNetto(r) }));
+  // Only pricing groups equivalent services; saved rows retain their separate performers.
+  const barisPotongan = aggregateServiceLines([
+    ...obat.map(row => ({...row, item_type:"Persediaan"})),
+    ...jasa.map(row => ({...row, item_type:row.item_id ? "Jasa" : "Persediaan"})),
+  ].filter(row => row.deskripsi.trim() && row.qty > 0).map(row => ({
+    item_id:row.item_id ?? "", qty:row.qty, harga:hargaNetto(row), satuan:row.satuan, item_type:row.item_type,
+  })));
   const promoVal = editMode ? 0 : hitungPromoKeranjang(bekal.promos, barisPotongan).reduce((a, p) => a + p.potongan, 0);
   const golonganVal = editMode ? 0 : diskonGolonganKeranjang(
     barisPotongan, bekal.aturanDiskon, bekal.golonganPersen, new Map(Object.entries(bekal.infoBarang)),
@@ -350,13 +377,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
         </>}
       </div>}
       <div className="card" style={{ marginBottom: 12 }}>
-        <label className="flab" htmlFor="clinic-salesperson">Penjual / dokter / petugas</label>
-        {editMode ? <div>{sealedSalespersonName} · mengikuti invoice tersimpan</div> : (
-          <select id="clinic-salesperson" className="fi" name="salesperson_id" value={salesperson} onChange={event => setSalesperson(event.target.value)}>
-            <option value="">Tanpa penjual</option>
-            {salespeople.map(person => <option key={person.id} value={person.id}>{person.nama}{person.jabatan ? ` — ${person.jabatan}` : ""}</option>)}
-          </select>
-        )}
+        <span className="flab">{editMode ? "Penjual historis" : "Kasir"}</span>
+        <div>{editMode ? `${sealedSalespersonName} · mengikuti invoice tersimpan` : `${cashierName} · akun yang sedang masuk`}</div>
+        {editMode && <div style={{fontSize:11}}>Kasir: {cashierName}</div>}
       </div>
 
       <div className={styles.layout} style={{ display: "grid", gap: 14, alignItems: "start" }}>
@@ -368,7 +391,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
           <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12 }}>

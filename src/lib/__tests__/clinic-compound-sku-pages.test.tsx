@@ -1,3 +1,4 @@
+vi.mock("@/lib/service-performers-server",()=>({loadServiceStaff:async()=>[],loggedInCashier:async()=>({employeeId:null,name:"Kasir Login"})}));
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

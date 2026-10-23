@@ -1,3 +1,5 @@
+import {createHash} from "node:crypto";
+vi.mock("@/lib/service-performers-server",()=>({loadServiceStaff:async()=>[],loggedInCashier:async()=>({employeeId:null,name:"Kasir Login"})}));
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({mode:'draft',fail:'',inpatientOpen:false,visitStatus:'Pembayaran',calls:[] as unknown[][]}));
@@ -62,4 +64,10 @@ it('shows zero remaining for stored single paid clinic invoices without receipt 
  const html=renderToStaticMarkup(await FakturPage({searchParams:Promise.resolve({})}));
  const row=html.split('<tr').find(r=>r.includes('INV-OLD-415'))!;expect(row).toContain('lunas');expect(row.match(/Rp 415.000/g)).toHaveLength(1);
  const partial=html.split('<tr').find(r=>r.includes('INV-DP'))!;expect(partial).toContain('Rp 250.000');expect(partial).toContain('DP');
+});
+
+it('retains the pre-performer billing source fingerprint when stored rows have no attribution',async()=>{
+ const source=[{deskripsi:'Care',qty:1,harga:305000,jenis:'jasa',item_id:'service',satuan:null,prescription_item_id:'prescription-a',recipe_id:null},{deskripsi:'Addition',qty:1,harga:95000,jenis:'jasa',item_id:'added-service',satuan:null,prescription_item_id:'prescription-b',recipe_id:null}];
+ const expected=createHash('sha256').update(JSON.stringify(source)).digest('hex');
+ expect(renderToStaticMarkup(await render())).toContain(`data-source="${expected}"`);
 });

@@ -1,4 +1,5 @@
 "use server";
+import { servicePerformerInput, type ServicePerformersInput } from "@/lib/service-performers";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
@@ -13,6 +14,7 @@ import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
+  service_performers?: ServicePerformersInput | null;
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
@@ -134,6 +136,7 @@ export async function simpanRekamMedis(formData: FormData) {
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" (invoice/struk existing tak berubah, nama-only otomatis).
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
+      ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
       // Kategori tindakan (§6.3) — dasar penentuan wajib/tidaknya form persetujuan.
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
     }));

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ServiceAttributionTable } from "@/components/ServiceAttributionTable";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -332,6 +333,7 @@ export default async function KomisiPage({
           </table>
         </div>
       </div>
+      <ServiceAttributionTable rows={hitungan.baris ?? []} />
     </MasterPage>
   );
 }

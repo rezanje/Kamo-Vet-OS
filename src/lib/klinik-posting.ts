@@ -1,3 +1,10 @@
+import { servicePerformerInput, type ServicePerformersInput } from "./service-performers";
+
+/** Keep legacy payload keys absent so retries retain their original request hash. */
+export function clinicServicePerformerInput(kind: string | undefined, value: unknown): ServicePerformersInput | undefined {
+  return kind !== "jasa" || value == null ? undefined : servicePerformerInput(value);
+}
+
 export type ClinicPostingLine = {
   itemId: string | null;
   recipeId: string | null;
@@ -15,11 +22,14 @@ export type ClinicInvoiceLineInput = {
   item_id: string | null;
   unit: string | null;
   prescription_item_id: string | null;
+  source_invoice_item_id?: string | null;
   recipe_id: string | null;
   discount_percent: number;
+  service_performers?: ServicePerformersInput | null;
 };
 
 export type ClinicInvoiceInput = {
+  service_pricing_version?: 1;
   tanggal: string;
   subtotal: number;
   discount: number;

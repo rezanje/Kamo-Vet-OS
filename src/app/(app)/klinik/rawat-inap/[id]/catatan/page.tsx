@@ -1,3 +1,4 @@
+import { loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -31,6 +32,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   const visit = one(rec.visits as Rel<{ created_at: string; branch_id: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
+  const serviceStaff = await loadServiceStaff(supabase, visit?.branch_id ?? null);
   const [doctors,paramedics]=await Promise.all([
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'doctor'}),
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'paramedic'}),
@@ -92,6 +94,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
 
       <CatatanForm
         key={`${user?.id ?? ""}:${id}`}
+        serviceStaff={serviceStaff}
         recordId={id}
         requestKey={crypto.randomUUID()}
         draftUserId={user?.id ?? ""}

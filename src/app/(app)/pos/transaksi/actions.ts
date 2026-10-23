@@ -10,9 +10,12 @@ import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
-import { hitungPromoKeranjang, loadPromoAktif, totalPotonganPromo } from "@/lib/promo-hitung";
+import { loadPromoAktif, totalPotonganPromo } from "@/lib/promo-hitung";
+import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-promos";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
-import { penjualValid } from "@/lib/penjual";
+import { loggedInCashier, validateServicePerformerRows } from "@/lib/service-performers-server";
+import type { ServicePerformersInput } from "@/lib/service-performers";
+import { readCompleteList } from "@/lib/checked-list";
 import { resolvePosPayments } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
@@ -22,6 +25,8 @@ import { recomputeCustomerTier } from "@/lib/customer-tier";
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
   satuan?: string | null; faktor?: number;
+  service_performers?: ServicePerformersInput | null;
+  item_type?: string;
 };
 
 
@@ -36,20 +41,18 @@ export async function checkoutSale(formData: FormData) {
   const metode = String(formData.get("metode") ?? "Tunai");
   const discount = Number(formData.get("discount")) || 0;
   const bayar = Number(formData.get("bayar")) || 0;
-  const salespersonId = String(formData.get("salespersonId") ?? "");
 
   if (!branchId) redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih cabang dulu")}`);
   let checkout: ReturnType<typeof posCheckoutIdentity>;
   try { checkout = posCheckoutIdentity(formData, branchId); }
   catch (error) { redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Identitas transaksi tidak valid")}`); }
   await resumePosCheckout(supabase, user.id, checkout, "backoffice");
-  if (!(await penjualValid(supabase, salespersonId, branchId))) {
-    redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih tenaga penjual atau pelaksana yang bertugas di cabang ini")}`);
-  }
+  const cashier = await loggedInCashier(supabase, user.id, branchId);
 
   let cart: CartLine[] = [];
   try {
-    cart = JSON.parse(String(formData.get("cart") ?? "[]"));
+    const submitted = JSON.parse(String(formData.get("cart") ?? "[]"));
+    cart = Array.isArray(submitted) ? submitted : [];
   } catch {
     cart = [];
   }
@@ -63,13 +66,24 @@ export async function checkoutSale(formData: FormData) {
   // Faktor satuan diambil ulang dari master — nilai dari keranjang cuma petunjuk
   // satuan mana yang dipilih, bukan sumber kebenaran konversi stok.
   const cartIds = rawRows.map((l) => l.item_id).filter((x): x is string => !!x);
-  const [unitOpts, hargaMap] = await Promise.all([
+  const [unitOpts, hargaMap, catalogue] = await Promise.all([
     loadUnitOptions(supabase, cartIds),
     loadHargaCabang(supabase, branchId, cartIds),
+    cartIds.length ? readCompleteList<{ id: string; item_type: string }>((from, to) => supabase.from("items")
+      .select("id, item_type", { count: "exact" }).in("id", [...new Set(cartIds)]).order("id").range(from, to), "Jenis barang POS", { maxRows: null }) : [],
   ]);
+  const itemTypes = new Map(catalogue.map(item => [item.id, item.item_type]));
+  let performerRows: CartLine[];
+  try {
+    const typedRows = rawRows.map(line => ({ ...line, item_type: line.item_id ? itemTypes.get(line.item_id) : undefined }));
+    const normalized = await validateServicePerformerRows(supabase, branchId, typedRows);
+    performerRows = typedRows.map((line, index) => ({ ...line, service_performers: normalized[index] }));
+  } catch (error) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Pelaksana jasa tidak valid")}`);
+  }
   // Harga juga diambil ulang dari master + pengecualian cabang: keranjang cuma
   // menentukan barang & satuan, tidak boleh menentukan harganya sendiri.
-  const rows = rawRows.map((l) => {
+  const rows = performerRows.map((l) => {
     const opts = l.item_id ? unitOpts.get(l.item_id) : undefined;
     const u = l.item_id ? resolveSubmittedUnit(opts ?? [], l.satuan) : null;
     return {
@@ -87,13 +101,13 @@ export async function checkoutSale(formData: FormData) {
   // dulu sempat hanya jalan di sini dan tidak di /kasir, dan selisih diam-diam
   // antara dua layar yang sama-sama menagih uang itu mahal ketahuannya.
   const promoAktif = await loadPromoAktif(supabase, branchId);
-  const rincianPromo = hitungPromoKeranjang(
-    promoAktif, rows.map((l) => ({ item_id: l.item_id ?? "", qty: l.qty, harga: l.harga })),
+  const rincianPromo = serviceLinePromos(
+    promoAktif, rows.map((l) => ({ ...l, item_id: l.item_id ?? "" })),
   );
   const potonganPromo = totalPotonganPromo(rincianPromo);
   // Rinciannya ikut disimpan ke baris struk (migrasi 0127) supaya laporan promo
   // bisa menyebut program mana yang menghabiskan uang, bukan cuma totalnya.
-  const promoPerItem = new Map(rincianPromo.map((h) => [h.item_id, h]));
+  const promoPerLine = new Map(rincianPromo.map((h) => [h.lineIndex, h]));
 
   // Diskon golongan diambil dari master lewat customer_id — BUKAN dari form.
   // Kalau dibaca dari form, kasir bisa mengarang diskon golongan sesukanya.
@@ -118,7 +132,7 @@ export async function checkoutSale(formData: FormData) {
         loadInfoBarang(supabase, cartIds),
       ]);
       diskonKategori = diskonGolonganKeranjang(
-        rows.map((l) => ({ item_id: l.item_id ?? "", qty: l.qty, harga: l.harga })),
+        aggregateServiceLines(rows.map((l) => ({ ...l, item_id: l.item_id ?? "" }))),
         aturan, Number(kat.diskon_persen), infoBarang,
       );
       rupiahPerPoin = Number(kat.rupiah_per_poin);
@@ -169,7 +183,7 @@ export async function checkoutSale(formData: FormData) {
       payment_plan: quote.parts, poin_earned: poin,
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
-      salesperson_id: salespersonId,
+      cashier_name: cashier.name, salesperson_id: cashier.employeeId,
     })
     .select("id").single();
   if (saleErr || !sale) {
@@ -182,22 +196,30 @@ export async function checkoutSale(formData: FormData) {
     .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   let checkoutFailure: string | null = null;
   try {
-    for (const l of rows) {
-      let lineHpp = 0;
-      if (wh && l.item_id) {
-        const { cost } = await stockOut(supabase, {
-          warehouseId: wh.id, itemId: l.item_id, qty: toBaseQty(l.qty, l.faktor), source: "sale", ref: noStruk,
-        });
-        lineHpp = cost;
-      }
-      const { error: itemErr } = await supabase.from("sale_items").insert({
+    const pendingLines: { id: string; line: typeof rows[number] }[] = [];
+    // Semua pelaksana dinormalisasi database sebelum ada pengeluaran stok.
+    // Jika petugas berubah status setelah preflight, baris ditolak tanpa stok
+    // barang lain dalam keranjang ikut terpotong.
+    for (const [index, l] of rows.entries()) {
+      const { data: insertedLine, error: itemErr } = await supabase.from("sale_items").insert({
         sale_id: sale.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
         target_species: l.target_species, satuan: l.satuan, faktor: l.faktor,
-        promo_id: l.item_id ? (promoPerItem.get(l.item_id)?.promoId ?? null) : null,
-        promo_discount: l.item_id ? (promoPerItem.get(l.item_id)?.potongan ?? 0) : 0,
-        hpp: l.item_id ? lineHpp : null,
+        service_performers: l.service_performers,
+        promo_id: l.item_id ? (promoPerLine.get(index)?.promoId ?? null) : null,
+        promo_discount: l.item_id ? (promoPerLine.get(index)?.potongan ?? 0) : 0,
+        hpp: l.item_id ? 0 : null,
+      }).select("id").single();
+      if (itemErr || !insertedLine) throw new Error(itemErr?.message ?? "Gagal menyimpan rincian transaksi");
+      pendingLines.push({ id: insertedLine.id, line: l });
+    }
+    for (const { id, line } of pendingLines) {
+      if (!wh || !line.item_id) continue;
+      const { cost } = await stockOut(supabase, {
+        warehouseId: wh.id, itemId: line.item_id, qty: toBaseQty(line.qty, line.faktor), source: "sale", ref: noStruk,
       });
-      if (itemErr) throw new Error(itemErr.message);
+      const { error: costError } = await supabase.from("sale_items").update({ hpp: cost })
+        .eq("id", id).eq("sale_id", sale.id).select("id").single();
+      if (costError) throw new Error(costError.message);
     }
   } catch (error) {
     checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";

@@ -13,12 +13,14 @@ import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } 
 import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
-import { hitungPromoKeranjang, loadPromoAktif } from "@/lib/promo-hitung";
+import { loadPromoAktif } from "@/lib/promo-hitung";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
-import { penjualValid } from "@/lib/penjual";
+import { serviceLinePromos, aggregateServiceLines } from "@/lib/service-line-promos";
+import { loggedInCashier, validateServicePerformerRows } from "@/lib/service-performers-server";
+import type { ServicePerformersInput } from "@/lib/service-performers";
 import { resolvePosPayments } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
@@ -34,6 +36,7 @@ import {
 } from "@/lib/grup-barang";
 
 type CartLine = {
+  service_performers?: ServicePerformersInput | null;
   item_id: string; nama: string; qty: number; harga: number; target_species?: string;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
   promo_discount?: number | null;   // diisi server dari master, bukan dari klien
@@ -68,10 +71,8 @@ export async function checkoutKasir(formData: FormData) {
   const branchId = shift!.branch_id;
   const customerId = String(formData.get("customerId") ?? "") || null;
   if (!customerId) redirect(`${failureUrl}${encodeURIComponent("Pilih pelanggan dulu sebelum bayar")}`);
-  const salespersonId = String(formData.get("salespersonId") ?? "");
-  if (!(await penjualValid(supabase, salespersonId, branchId))) {
-    redirect(`${failureUrl}${encodeURIComponent("Pilih tenaga penjual atau pelaksana yang aktif di cabang ini")}`);
-  }
+  const cashier = await loggedInCashier(supabase, user.id, branchId);
+  const salespersonId = cashier.employeeId;
   const metode = String(formData.get("metode") ?? "");
   if (!metode) redirect(`${failureUrl}${encodeURIComponent("Pilih metode pembayaran dulu")}`);
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
@@ -218,6 +219,13 @@ export async function checkoutKasir(formData: FormData) {
     }
   }
 
+  try {
+    const performers = await validateServicePerformerRows(supabase, branchId, rows);
+    rows.forEach((row, index) => { row.service_performers = performers[index]; });
+  } catch (error) {
+    redirect(`${failureUrl}${encodeURIComponent(error instanceof Error ? error.message : "Pelaksana jasa tidak valid")}`);
+  }
+
   // Harga bertingkat juga dihitung ULANG di server: harga yang dikirim layar
   // tidak menentukan uang, dan kasir tidak boleh kehilangan harga grosir hanya
   // karena layarnya sudah lama terbuka saat tingkatnya baru dipasang.
@@ -236,7 +244,7 @@ export async function checkoutKasir(formData: FormData) {
         const tiers = l.item_id ? perItem.get(l.item_id) : undefined;
         if (!tiers?.length) continue;
         const faktor = Number(l.faktor) || 1;
-        const perDasar = hargaTingkat(toBaseQty(l.qty, faktor), tiers, Number(l.harga) / faktor);
+        const perDasar = hargaTingkat(toBaseQty(l.item_type === "Jasa" ? rows.filter(row => row.item_id === l.item_id && row.satuan === l.satuan).reduce((sum,row) => sum + Number(row.qty),0) : l.qty, faktor), tiers, Number(l.harga) / faktor);
         const hargaTier = Math.round(perDasar * faktor);
         // Hanya menurunkan: harga khusus yang sudah diberi kasir (mis. nego) tidak
         // boleh naik lagi gara-gara tingkat harga.
@@ -249,13 +257,13 @@ export async function checkoutKasir(formData: FormData) {
   // layar kasir yang sudah lama terbuka bisa memegang promo yang sudah dicabut,
   // dan angka dari klien tidak boleh menentukan potongan uang.
   const promoAktif = await loadPromoAktif(supabase, branchId);
-  const potonganPromo = hitungPromoKeranjang(promoAktif, rows);
+  const potonganPromo = serviceLinePromos(promoAktif, rows);
   // Promo mana yang kena di baris mana ikut disimpan ke struk (migrasi 0127) —
   // tanpa itu laporan promo cuma bisa menghitung total diskon, tidak bisa bilang
   // program mana yang menghabiskannya.
-  const promoPerItem = new Map(potonganPromo.map((h) => [h.item_id, h.promoId]));
+  const promoPerItem = new Map(potonganPromo.map((h) => [h.lineIndex, h.promoId]));
   for (const h of potonganPromo) {
-    const baris = rows.find((l) => l.item_id === h.item_id);
+    const baris = rows[h.lineIndex];
     if (baris) baris.promo_discount = h.potongan;
   }
 
@@ -319,7 +327,7 @@ export async function checkoutKasir(formData: FormData) {
         loadInfoBarang(supabase, cartIds),
       ]);
       diskonKategori = diskonGolonganKeranjang(
-        rows.map((l) => ({ item_id: l.item_id, qty: l.qty, harga: l.harga })),
+        aggregateServiceLines(rows).map((l) => ({ item_id: l.item_id, qty: l.qty, harga: l.harga })),
         aturan, Number(kat.diskon_persen), infoBarang,
       );
       rupiahPerPoin = Number(kat.rupiah_per_poin);
@@ -383,7 +391,7 @@ export async function checkoutKasir(formData: FormData) {
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
       cashier_id: user?.id ?? null, shift_id: shift!.id,
-      salesperson_id: salespersonId,
+      salesperson_id: salespersonId, cashier_name: cashier.name,
     })
     .select("id").single();
   if (saleErr || !sale) {
@@ -391,12 +399,28 @@ export async function checkoutKasir(formData: FormData) {
     redirect(`${failureUrl}${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
   }
 
-  // Stok dipotong DULU per baris, lalu sale_item + snapshot disimpan. HPP Grup
-  // adalah total cost FIFO komponen Persediaan, bukan buy_price induk virtual.
+  // Validate every pending line snapshot before any separate stock request.
+  // A rejected later service performer must not follow an earlier stock issue.
   let checkoutFailure: string | null = null;
   try {
-    for (const r of rows) {
-      const saleLineId = randomUUID();
+    const pendingRows = rows.map(r => ({ r, id: randomUUID() }));
+    for (const [lineIndex,{r,id:saleLineId}] of pendingRows.entries()) {
+      const { data: saleItem, error: itemErr } = await supabase.from("sale_items").insert({
+        id: saleLineId, sale_id: sale.id, item_id: r.item_id, nama: r.nama, qty: r.qty, harga: r.harga,
+        satuan: r.satuan ?? null, faktor: r.faktor ?? 1,
+        target_species: r.target_species ?? "Universal",
+        service_performers: r.service_performers,
+        item_discount_type: r.item_discount_type ?? null,
+        item_discount_value: Math.max(0, Number(r.item_discount_value) || 0),
+        promo_id: r.item_id ? (promoPerItem.get(lineIndex) ?? null) : null,
+        promo_discount: linePromoApplied(r),
+        hpp: r.item_id ? 0 : null,
+      }).select("id").single();
+      if (itemErr || !saleItem) {
+        throw new Error(itemErr?.message ?? `Gagal simpan baris ${r.nama}`);
+      }
+    }
+    for (const {r,id:saleLineId} of pendingRows) {
       let lineHpp = 0;
       const snapshots = (r.group_components ?? []).map((snapshot) => ({ ...snapshot }));
 
@@ -422,23 +446,13 @@ export async function checkoutKasir(formData: FormData) {
         }
       }
 
-      const { data: saleItem, error: itemErr } = await supabase.from("sale_items").insert({
-        id: saleLineId, sale_id: sale.id, item_id: r.item_id, nama: r.nama, qty: r.qty, harga: r.harga,
-        satuan: r.satuan ?? null, faktor: r.faktor ?? 1,
-        target_species: r.target_species ?? "Universal",
-        item_discount_type: r.item_discount_type ?? null,
-        item_discount_value: Math.max(0, Number(r.item_discount_value) || 0),
-        promo_id: r.item_id ? (promoPerItem.get(r.item_id) ?? null) : null,
-        promo_discount: linePromoApplied(r),
-        hpp: r.item_id ? lineHpp : null,
-      }).select("id").single();
-      if (itemErr || !saleItem) {
-        throw new Error(itemErr?.message ?? `Gagal simpan baris ${r.nama}`);
-      }
+      const { error: costError } = await supabase.from("sale_items").update({ hpp: r.item_id ? lineHpp : null }).eq("id",saleLineId);
+      if (costError) throw Error(costError.message);
+
 
       if (snapshots.length > 0) {
         const { error: snapshotErr } = await supabase.from("sale_item_group_components").insert(
-          snapshots.map((snapshot) => ({ ...snapshot, sale_item_id: saleItem.id })),
+          snapshots.map((snapshot) => ({ ...snapshot, sale_item_id: saleLineId })),
         );
         if (snapshotErr) throw new Error(`Gagal simpan rincian Grup ${r.nama}: ${snapshotErr.message}`);
       }

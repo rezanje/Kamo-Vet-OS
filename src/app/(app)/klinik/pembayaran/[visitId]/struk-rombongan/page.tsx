@@ -1,3 +1,4 @@
+import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -33,23 +34,23 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const { data: invs } = invoiceIds.length
     ? await supabase
         .from("invoices")
-        .select("id, invoice_no, subtotal, discount, tax, total, metode_bayar, paid_status, dp_amount")
+        .select("id, invoice_no, subtotal, discount, tax, total, metode_bayar, paid_status, dp_amount, cashier_name")
         .in("invoice_no", invoiceIds)
     : { data: [] as Record<string, unknown>[] };
 
   type Inv = {
     id: string; invoice_no: string; subtotal: number; discount: number; tax: number;
-    total: number; metode_bayar: string | null; paid_status: string; dp_amount: number;
+    total: number; metode_bayar: string | null; paid_status: string; dp_amount: number; cashier_name: string | null;
   };
   const invRows = (invs ?? []) as unknown as Inv[];
 
   const { data: allItems } = invRows.length
-    ? await supabase.from("invoice_items").select("invoice_id, deskripsi, qty, harga")
+    ? await supabase.from("invoice_items").select("invoice_id, deskripsi, qty, harga, jenis, service_performers")
         .in("invoice_id", invRows.map((i) => i.id)).order("created_at")
-    : { data: [] as { invoice_id: string; deskripsi: string; qty: number; harga: number }[] };
+    : { data: [] as { invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] };
 
-  const itemsPerInv = new Map<string, { deskripsi: string; qty: number; harga: number }[]>();
-  for (const it of (allItems ?? []) as { invoice_id: string; deskripsi: string; qty: number; harga: number }[]) {
+  const itemsPerInv = new Map<string, { deskripsi: string; qty: number; harga: number; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[]>();
+  for (const it of (allItems ?? []) as { invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[]) {
     itemsPerInv.set(it.invoice_id, [...(itemsPerInv.get(it.invoice_id) ?? []), it]);
   }
   const invPerNo = new Map(invRows.map((i) => [i.invoice_no, i]));
@@ -95,10 +96,12 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
                 {b.hewan}
                 {inv ? <span style={{ fontWeight: 400, fontSize: 9.5 }}> · {inv.invoice_no}</span> : null}
               </div>
+              {inv && <Kv k="Kasir" v={inv.cashier_name ?? "Kasir belum tercatat"} />}
               {!inv && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
               {(inv ? itemsPerInv.get(inv.id) ?? [] : []).map((it, i) => (
                 <div key={i}>
                   <div>{it.deskripsi}</div>
+                  {it.jenis === "jasa" && <div style={{fontSize:9}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>{it.qty} x {rp(it.harga)}</span>
                     <span>{rp(it.qty * it.harga)}</span>
