@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { createQuestDef, createReward, fulfillRedemption, toggleQuestDef, toggleReward } from "./actions";
+import { readCompleteList } from "@/lib/checked-list";
+import { ItemReferenceField } from "@/components/ItemReferenceField";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -18,12 +20,16 @@ export default async function QuestAdminPage({
   const { error, success } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: defs }, { data: rewards }, { data: redemptions }, { data: branches }, { data: items }] = await Promise.all([
+  const [{ data: defs }, { data: rewards }, { data: redemptions }, branches, items] = await Promise.all([
     supabase.from("staff_quest_definitions").select("id, quest_type, title, target_kind, target_value, points_reward, is_active, branches(name)").order("created_at", { ascending: false }),
     supabase.from("staff_reward_catalog").select("id, reward_name, reward_type, points_cost, is_active").order("points_cost"),
     supabase.from("staff_reward_redemptions").select("id, points_spent, status, redeemed_at, profiles(full_name), staff_reward_catalog(reward_name)").order("redeemed_at", { ascending: false }).limit(20),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    supabase.from("items").select("id, name").eq("is_active", true).order("name"),
+    readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("branches")
+      .select("id, name", { count: "exact" }).eq("is_active", true)
+      .order("name").order("id").range(from, to), "Cabang target quest", { maxRows: null }),
+    readCompleteList<{ id: string; code: string | null; name: string }>((from, to) => supabase.from("items")
+      .select("id, code, name", { count: "exact" }).eq("is_active", true)
+      .order("name").order("id").range(from, to), "Produk target quest", { maxRows: null }),
   ]);
 
   return (
@@ -63,10 +69,8 @@ export default async function QuestAdminPage({
           </div>
           <div>
             <label className="flab">Produk (utk qty produk)</label>
-            <select className="fi" name="target_ref_id" defaultValue="">
-              <option value="">Semua produk</option>
-              {(items ?? []).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </select>
+            <ItemReferenceField name="target_ref_id" ariaLabel="Produk target quest" items={items.map(item => ({ ...item, code: item.code ?? "" }))} />
+            <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4 }}>Kosongkan untuk semua produk.</div>
           </div>
           <div>
             <label className="flab">Target *</label>
