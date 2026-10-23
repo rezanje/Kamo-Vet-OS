@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
+import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { isCompletedSale, saleMerchandiseTotal, salePaymentDescription, saleRefundMerchantFee, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 
 // Rincian penjualan PER DOKUMEN (per struk / per invoice) — pelengkap laporan
@@ -31,6 +32,7 @@ type Baris = {
   waktu: string;
   kanal: Kanal;
   cabang: string;
+  cabangId: string | null;
   pelanggan: string;
   metode: string;
   total: number;
@@ -50,29 +52,29 @@ const BADGE: Record<Kanal, { cls: string; style?: React.CSSProperties }> = {
 export default async function PenjualanRinciPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; kanal?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; cabang_id?: string; kanal?: string }>;
 }) {
   const sp = await searchParams;
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cabang = sp.cabang || "";
+  const cabangId = sp.cabang_id || "";
   const kanal = sp.kanal || "";
 
   const supabase = await createClient();
   // Rentang dipakai apa adanya sebagai batas hari WIB. created_at disimpan UTC,
   // jadi batasnya digeser 7 jam supaya struk jam 07:00 WIB tidak jatuh ke hari sebelumnya.
-  const mulai = `${dari}T00:00:00+07:00`;
-  const akhir = `${sampai}T23:59:59+07:00`;
+  const {mulai,akhir} = batasTanggalWIB(dari,sampai);
 
   const [{ data: sales }, { data: invoices }, { data: returs }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase
       .from("sales")
-      .select("id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
+      .select("id, branch_id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
       .gte("created_at", mulai).lte("created_at", akhir)
       .order("created_at", { ascending: false })),
     completeReportQuery(supabase
       .from("invoices")
-      .select("id, invoice_no, total, metode_bayar, paid_status, created_at, visit_id, visits(branches(name), customers(name))", { count: "exact" })
+      .select("id, invoice_no, total, metode_bayar, paid_status, created_at, visit_id, visits(branch_id, branches(name), customers(name))", { count: "exact" })
       .is("voided_at", null)
       .gte("created_at", mulai).lte("created_at", akhir)
       .order("created_at", { ascending: false })),
@@ -88,14 +90,14 @@ export default async function PenjualanRinciPage({
   }
 
   type SaleRow = SalePaymentSource & {
-    id: string; no_struk: string | null; total: number; metode_bayar: string | null;
+    id: string; branch_id: string | null; no_struk: string | null; total: number; metode_bayar: string | null;
     channel: string | null; marketplace_status: string | null; created_at: string;
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
   };
   type InvRow = {
     id: string; invoice_no: string | null; total: number; metode_bayar: string | null;
     paid_status: string | null; created_at: string; visit_id: string;
-    visits: Rel<{ branches: Rel<{ name: string }>; customers: Rel<{ name: string }> }>;
+    visits: Rel<{ branch_id: string | null; branches: Rel<{ name: string }>; customers: Rel<{ name: string }> }>;
   };
 
   const barisSales: Baris[] = ((sales ?? []) as unknown as SaleRow[]).filter(isCompletedSale).map((s) => ({
@@ -105,6 +107,7 @@ export default async function PenjualanRinciPage({
     waktu: s.created_at,
     kanal: s.channel ? "Online" : "POS",
     cabang: one(s.branches)?.name ?? "—",
+    cabangId: s.branch_id ?? null,
     pelanggan: one(s.customers)?.name ?? "—",
     metode: s.channel ?? salePaymentDescription(s),
     total: Number(s.total) || 0,
@@ -125,6 +128,7 @@ export default async function PenjualanRinciPage({
       waktu: i.created_at,
       kanal: "Klinik" as const,
       cabang: one(v?.branches ?? null)?.name ?? "—",
+      cabangId: v?.branch_id ?? null,
       pelanggan: one(v?.customers ?? null)?.name ?? "—",
       metode: i.metode_bayar ?? "—",
       total: Number(i.total) || 0,
@@ -137,7 +141,7 @@ export default async function PenjualanRinciPage({
   });
 
   const rows = [...barisSales, ...barisKlinik]
-    .filter((r) => (cabang ? r.cabang === cabang : true))
+    .filter((r) => (cabangId ? r.cabangId === cabangId : cabang ? r.cabang === cabang : true))
     .filter((r) => (kanal ? r.kanal === kanal : true))
     .sort((a, b) => b.waktu.localeCompare(a.waktu));
 
@@ -166,10 +170,16 @@ export default async function PenjualanRinciPage({
           </div>
           <div style={{ minWidth: 190 }}>
             <label className="flab">Cabang</label>
+            {cabangId ? <>
+              <input type="hidden" name="cabang_id" value={cabangId}/>
+              <div>{cabangList.find(b=>b.id===cabangId)?.name ?? rows[0]?.cabang ?? "Cabang tidak tersedia"} · {cabangId.slice(0,8)}</div>
+              <Link href={`/laporan/transaksi-cabang?${new URLSearchParams({dari,sampai,...(kanal?{kanal}:{})})}`}>Ganti cabang / semua cabang</Link>
+            </> : <>
             <select className="fi" name="cabang" defaultValue={cabang}>
               <option value="">Semua cabang</option>
               {(cabangList ?? []).map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
             </select>
+            </>}
           </div>
           <div style={{ minWidth: 140 }}>
             <label className="flab">Jenis</label>
