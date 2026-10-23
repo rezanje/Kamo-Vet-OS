@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { formatDokumen } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import Decimal from "decimal.js";
 
 const BASE = "/pembelian/uang-muka";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -16,7 +17,11 @@ export async function bayarUangMuka(formData: FormData) {
 
   const supplierId = String(formData.get("supplier_id") ?? "").trim();
   const poId = String(formData.get("po_id") ?? "").trim() || null;
-  const jumlah = Number(formData.get("jumlah")) || 0;
+  let jumlah = 0;
+  try {
+    const amount = new Decimal(String(formData.get("jumlah") ?? ""));
+    if (amount.isFinite() && amount.gt(0) && amount.lte(9999999999999) && amount.decimalPlaces() <= 2) jumlah = amount.toNumber();
+  } catch { /* Invalid input is rejected below, before the atomic RPC. */ }
   const metode = String(formData.get("metode") ?? "Transfer");
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
   const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
@@ -25,7 +30,7 @@ export async function bayarUangMuka(formData: FormData) {
   const requestKey = String(formData.get("draft_key") ?? "").trim();
   if (!supplierId) gagal("Pilih pemasok penerima uang muka");
   if (!requestKey || requestKey.length > 120) gagal("Kunci uang muka belum tersedia. Muat ulang formulir sebelum menyimpan.");
-  if (!Number.isSafeInteger(jumlah) || jumlah <= 0) gagal("Nominal uang muka harus rupiah bulat lebih dari 0");
+  if (jumlah <= 0) gagal("Nominal uang muka harus lebih dari 0 dan maksimal 2 angka desimal");
   const format = await formatDokumen(supabase,"UM",hariIniWIB());
   const {data,error} = await supabase.rpc("pay_purchase_advance_atomic", {
     p_request_key:requestKey,p_no_prefix:format.prefix,p_no_digits:format.digit,

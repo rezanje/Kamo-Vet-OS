@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Owned network-none PostgreSQL16 tests only; no target connection or credentials."""
+"""Owned network-none PostgreSQL17.6 tests only; no target connection or credentials."""
 from pathlib import Path
 import importlib.util,subprocess,time,sys
+from decimal import Decimal
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('isolated',ROOT/'scripts/test-accurate-inventory-accounting-postgres.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+m.IMAGE='postgres:17.6'
 AUTH="set role authenticated;set request.jwt.claim.role='authenticated';set request.jwt.claim.sub='d6000000-0000-4000-8000-000000000001';"
 def races(db):
  db.sql("""insert into auth.users(id)values('d6000000-0000-4000-8000-000000000001');
@@ -14,8 +16,8 @@ def races(db):
  insert into coa_accounts(code,name,type,normal_balance)values('1196','Fiction race bank','ASET','D');
  insert into cash_accounts(id,nama,jenis,coa_code,is_active)values('d6700000-0000-4000-8000-000000000001','Fiction race bank','Bank','1196',true);
  insert into purchase_orders(id,no_po,supplier_id,status,total)values
- ('d6400000-0000-4000-8000-000000000010','PO.RACE.RC','d6300000-0000-4000-8000-000000000001','Draft',100),
- ('d6400000-0000-4000-8000-000000000011','PO.RACE.RR','d6300000-0000-4000-8000-000000000001','Draft',100),
+ ('d6400000-0000-4000-8000-000000000010','PO.RACE.RC','d6300000-0000-4000-8000-000000000001','Draft',100.55),
+ ('d6400000-0000-4000-8000-000000000011','PO.RACE.RR','d6300000-0000-4000-8000-000000000001','Draft',100.55),
  ('d6400000-0000-4000-8000-000000000012','PO.RACE.RETRY','d6300000-0000-4000-8000-000000000001','Draft',100),
  ('d6400000-0000-4000-8000-000000000013','PO.RACE.VOID','d6300000-0000-4000-8000-000000000001','Draft',100),
  ('d6400000-0000-4000-8000-000000000014','PO.RACE.RECOVERY','d6300000-0000-4000-8000-000000000001','Draft',100);""")
@@ -32,12 +34,12 @@ def races(db):
  def finish(p):p.wait(timeout=15);return p.returncode,p.stdout.read(),p.stderr.read()
  try:
   for iso,po in [('read committed','10'),('repeatable read','11')]:
-   first=start(f'begin isolation level {iso};'+pay('first-'+po,po)+f"select pg_sleep(1) /* dp-holder-{po} */;commit;")
+   first=start(f'begin isolation level {iso};'+pay('first-'+po,po,'60.40')+f"select pg_sleep(1) /* dp-holder-{po} */;commit;")
    wait('dp-holder-'+po)
-   second=start(f'begin isolation level {iso};/* dp-waiter-{po} */'+pay('second-'+po,po)+'commit;')
+   second=start(f'begin isolation level {iso};/* dp-waiter-{po} */'+pay('second-'+po,po,'60.40')+'commit;')
    wait('dp-waiter-'+po,True);a=finish(first);b=finish(second)
    total=db.sql(f"select coalesce(sum(jumlah),0) from purchase_advances where po_id='d6400000-0000-4000-8000-0000000000{po}';")
-   if a[0] or b[0]==0 or ('sisa batas' not in b[2] and 'serialize' not in b[2]) or float(total)!=60:raise AssertionError(f'{iso} cap race: first={a}, second={b}, total={total}')
+   if a[0] or b[0]==0 or ('sisa batas' not in b[2] and 'serialize' not in b[2]) or Decimal(total)!=Decimal('60.40'):raise AssertionError(f'{iso} cap race: first={a}, second={b}, total={total}')
    print('PASS concurrent cap '+iso,flush=True)
   first=start('begin;'+pay('same-key','12')+"select pg_sleep(1) /* dp-same-holder */;commit;");wait('dp-same-holder')
   second=start('/* dp-same-waiter */'+pay('same-key','12'));wait('dp-same-waiter',True)
@@ -78,5 +80,5 @@ def races(db):
    if p.poll()is None:p.kill();p.wait()
 def main():
  with m.DisposablePostgres() as db:
-  db.bootstrap();db.sql((ROOT/'supabase/tests/purchase_advance_atomic.sql').read_text());print('PASS purchase_advance_atomic.sql',flush=True);races(db)
+  db.bootstrap();db.sql((ROOT/'supabase/tests/purchase_advance_atomic.sql').read_text());print('PASS purchase_advance_atomic.sql',flush=True);db.sql((ROOT/'supabase/tests/purchase_advance_precision.sql').read_text());print('PASS purchase_advance_precision.sql',flush=True);races(db)
 if __name__=='__main__':main()
