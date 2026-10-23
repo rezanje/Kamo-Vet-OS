@@ -1,0 +1,28 @@
+# C01 — edit promo existing
+
+C01 code-complete untuk konfigurasi promo existing pada `/crm/promo/[id]/edit`. Dasar main `c627fe7` (termasuk PR98 dan perubahan N02 yang telah dirilis). PR ini tidak menyelesaikan C03 bulk Excel, kebijakan kampanye C05, U05 global, ataupun K07 yang masih parsial.
+
+## Cakupan nyata
+
+- Tautan Edit terlihat bagi OWNER/ADMIN aktif. Form memuat nama, saran, tipe, diskon, syarat qty/subtotal/kelipatan, otomatis/manual, periode, target barang dan cabang yang tersimpan. Aktivasi/nonaktivasi tetap menggunakan action existing.
+- Header dan selisih target disimpan satu RPC atomik. Snapshot header + target terurut menghasilkan token konflik; tab lama, perubahan status, atau perubahan target menolak penyimpanan usang. Retry setelah respons hilang tidak menghasilkan promo baru atau menimpa konfigurasi yang lebih baru. Pesan gagal mempertahankan isian/target; pengguna membuka data terbaru untuk menyelesaikan konflik.
+- Target lama nonaktif/tidak tersedia dipertahankan secara eksplisit dan diberi label; tidak diam-diam menjadi promo semua barang/cabang. Pilihan baru hanya dari katalog aktif. Target cabang baru memakai pemeriksaan `user_can_access_branch` existing; opsi dibaca lewat session/RLS existing, lengkap dengan checked pagination. Pilih/lepas semua hanya menyentuh hasil aktif filter/pencarian; target lama di luar hasil tetap tersimpan.
+- Profil aktif OWNER/ADMIN dibaca dari sesi dan dikunci sepanjang operasi. Guard sumber juga menolak mutasi langsung oleh non-pengelola pada `promos`/`promo_items`, menutup policy prototipe yang dahulu terlalu permisif tanpa menambah role, pembaca, atau hak cabang. Internal helper tidak dapat dieksekusi role aplikasi. Child writes mengunci parent untuk koordinasi dengan token editor.
+- Menggunakan A01 existing (pelaku, waktu, kolom berubah, angka/flag before-after yang aman dan relasi target). Teks nama/saran, rule bebas, dan array target tidak disalin sebagai payload log; nilai tersebut disamarkan, identitas objek/target dan kolom perubahan tetap tercatat. Reader OWNER/ADMIN/global dan imutabilitas log tidak diperluas. Tidak merekonstruksi nilai atau versi historis yang tidak tercatat.
+- Edit hanya menyentuh `promos` dan `promo_items` serta audit A01. Tidak menulis ulang sales/invoice/payment/journal atau menghitung ulang diskon lama. Kunci rule lama yang tidak diedit tetap dipertahankan. Model diskon per unit, min/max/kelipatan dan eligibility engine tidak diubah.
+
+## Bukti yang dijalankan
+
+- SQL RED pada main: `C01 missing atomic promo editor` setelah bootstrap berhasil. [Log RED](../evidence/2026-10-23-c01/sql-red.log).
+- Fixture PostgreSQL 16 milik runner, `--network none`: 236 migration repository berhasil diterapkan di database disposable; tes role/actor spoof, validation, rollback audit, token lama, target nonaktif, pembatas cabang, audit denial/redaction dan snapshot penjualan terposting lulus. Dua sesi bersamaan membuktikan perubahan header maupun target menang lebih dahulu lalu editor usang ditolak setelah lock. [Log SQL](../evidence/2026-10-23-c01/sql-final.log).
+- 66 tes fokus / 9 file dan seluruh 2.653 tes aplikasi / 346 file lulus; lint terbatas file berubah, typecheck sesudah build, serta build produksi lulus. Build masih memuat warning dependency Supabase/Edge Runtime existing. [Fokus](../evidence/2026-10-23-c01/focused.log), [suite](../evidence/2026-10-23-c01/full-tests.log), [lint](../evidence/2026-10-23-c01/lint.log), [typecheck](../evidence/2026-10-23-c01/typecheck.log), [build](../evidence/2026-10-23-c01/build.log).
+- Chromium 1280px dan 390px menggunakan editor nyata dengan fixture fiktif: prefill tanggal terbuka/target lama, keyboard, filter kategori, pilih/lepas hasil aktif, konflik dan reload draf, tanpa overflow/error runtime/request eksternal/live write. [Hasil](../evidence/2026-10-23-c01/browser.json), [desktop](../evidence/2026-10-23-c01/promo-edit-1280.png), [mobile](../evidence/2026-10-23-c01/promo-edit-390.png). Ini bukan UAT terautentikasi ke target.
+- Review independen: tidak ada temuan P1/P2; reviewer menjalankan sendiri 29 tes / 4 file. [Review](../evidence/2026-10-23-c01/review.txt). [Hash source yang diuji](../evidence/2026-10-23-c01/source-sha256.json).
+
+## Release dan rollback
+
+Migration baru hanya `20261023070134_promo_edit_atomic.sql`, dihasilkan Supabase CLI. Lane rilis memeriksa parity/history target dan backup sesuai prosedur existing, lalu menerapkan **hanya migration ini** secara atomik/error-stop, mencatat history sekali dan men-deploy kode yang cocok. Jangan menjalankan ulang migration sebelumnya, reset atau purge. Tidak ada migration target/merge/deploy oleh lane implementasi ini.
+
+Rollback aplikasi dapat memakai commit sebelum C01 sambil mempertahankan migration kompatibel ini: tidak ada kolom/tabel keuangan baru dan UI lama tetap berjalan untuk pengelola. Jangan menghapus audit atau mengembalikan transaksi historis. Jika rollback SQL diperlukan, lakukan terkoordinasi setelah aplikasi lama aktif: drop kedua trigger `promo_configuration_guard`, lalu fungsi `edit_promo(uuid,text,jsonb,uuid[])`, `read_promo_edit(uuid)`, `promo_edit_snapshot(uuid)`, `guard_promo_configuration()`, `assert_promo_manager()`; kembalikan konfigurasi A01 promos ke `metadata_only=true,value_keys='{}'`. Ini mengembalikan guard ke keadaan prototipe sebelumnya sehingga rollback aplikasi saja lebih disarankan. Konfigurasi promo yang telah sah diedit adalah data bisnis; rollback kode tidak otomatis menghapus edit tersebut.
+
+Status: kode + tes + review selesai; publikasi candidate terpisah dari ready/merge, target migration, deployment dan UAT. Parent/lane rilis mengelola status Sheet. Workflow simulation lengkap tetap ditunda sesuai instruksi pengguna.
