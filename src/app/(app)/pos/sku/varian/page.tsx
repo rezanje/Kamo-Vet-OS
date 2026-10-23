@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { readCompleteList } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import { VariantFamilyForm } from "./VariantFamilyForm";
 
@@ -11,12 +12,15 @@ export default async function VariantFamilyPage({ searchParams }: { searchParams
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  const [{ data: profile }, { data: items }, { data: categories }, { data: families }] = await Promise.all([
+  let result;
+  try { result = await Promise.all([
     supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle(),
-    supabase.from("items").select("id,code,name").eq("is_active", true).neq("item_type", "Grup").order("code").limit(2000),
-    supabase.from("item_categories").select("id,name").eq("is_active", true).order("name"),
+    readCompleteList<{id:string;code:string;name:string}>((from,to)=>supabase.from("items").select("id,code,name",{count:'exact'}).eq("is_active",true).neq("item_type","Grup").order("code").order("id").range(from,to),"SKU keluarga varian",{maxRows:null}),
+    readCompleteList<{id:string;name:string}>((from,to)=>supabase.from("item_categories").select("id,name",{count:'exact'}).eq("is_active",true).order("name").order("id").range(from,to),"Kategori keluarga varian",{maxRows:null}),
     supabase.from("item_variant_families").select("id,name,category_id,item_variant_members(item_id,label,sort_order,items(code,name))").order("name"),
-  ]);
+  ]); } catch { return <div role="alert" className="p2ban">Data keluarga varian belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>; }
+  const [{data:profile,error:profileError},items,categories,{data:families,error:familyError}] = result;
+  if(profileError||familyError)return <div role="alert" className="p2ban">Data keluarga varian belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>;
   const boleh = profile?.is_active === true && (profile.role === "OWNER" || profile.role === "ADMIN");
   return (
     <>

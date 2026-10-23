@@ -1,0 +1,12 @@
+// @vitest-environment jsdom
+import {act} from 'react';import {createRoot,type Root} from 'react-dom/client';import {beforeEach,afterEach,it,expect,vi} from 'vitest';
+vi.mock('@/app/(app)/pos/sku/actions',()=>({simpanBarang:vi.fn()}));
+import {BarangForm,type BarangRow} from '@/app/(app)/pos/sku/BarangForm';
+const editing:BarangRow={id:'group',name:'Grup fiktif',code:'GRUP',item_type:'Grup',unit:'paket',upc:null,category_id:null,brand_id:null,supplier_id:null,substitute_item_id:null,buy_unit:null,sell_price:100,buy_price:50,min_stock:0,min_buy:0,min_sell_qty:1,default_discount:0,is_active:true,tindakan_kategori:null,group_components:[{component_item_id:'a',qty:4,unit:'box',factor:10}]};
+const items=[{id:'a',code:'SKU-A',name:'Nama sama',unit:'pcs',item_type:'Persediaan' as const,sell_price:10,buy_price:5,units:[{unit:'pcs',factor:1},{unit:'box',factor:10}]},{id:'b',code:'SKU-B',name:'Nama sama',unit:'ml',item_type:'Persediaan' as const,sell_price:20,buy_price:6,units:[{unit:'ml',factor:1}]}];
+let host:HTMLDivElement,root:Root;
+beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});host=document.createElement('div');document.body.append(host);root=createRoot(host)});afterEach(async()=>{await act(async()=>root.unmount());host.remove()});
+it('preserves group quantities/unit factors while searching and changes the exact component only on selection',async()=>{
+ await act(async()=>root.render(<BarangForm editing={editing} categories={[]} brands={[]} satuanMaster={[]} kandidatGrup={items}/>));await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='Rincian Grup')!.click());const input=host.querySelector<HTMLInputElement>('[aria-label="Barang / jasa komponen 1"]')!;expect(input.getAttribute('role')).toBe('combobox');expect(input.value).toBe('Nama sama');const payload=()=>JSON.parse(host.querySelector<HTMLInputElement>('[name=group_components]')!.value);expect(payload()).toEqual(editing.group_components);
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'SKU-B');input.dispatchEvent(new Event('input',{bubbles:true}))});expect(payload()).toEqual(editing.group_components);await act(async()=>document.querySelector<HTMLButtonElement>('[role=option]')!.click());expect(payload()).toEqual([{component_item_id:'b',qty:4,unit:'ml',factor:1}]);expect(input.value).toBe('Nama sama');expect(host.textContent).toContain('Kode: SKU-B');
+});

@@ -23,7 +23,11 @@ it('exposes only the selected SKU’s explicitly bound active formulas and rejec
   ] as KatalogRacikan[];
   const render = async (formulaId: string, allowCustom = false) => act(async () => root.render(<CompoundEditor items={[item]} materials={[]} catalog={catalog} allowCustom={allowCustom} value={{ saleItemId: 'sku', formulaId, dosageForm: 'puyer', instruction: '', ingredients: [{ item_id: 'material', nama: 'Test material', qty: 1, satuan: 'gram', harga: 10 }] }} onChange={() => {}} />));
   await render('other-version');
-  expect([...host.querySelectorAll('option')].map(option => option.value)).toEqual(['', 'version']);
+  const picker=host.querySelector<HTMLInputElement>('[aria-label="Komposisi racikan"]')!;
+  await act(async()=>picker.focus());
+  const options=[...document.querySelectorAll('[role=option]')];
+  expect(options).toHaveLength(1);expect(options[0].textContent).toContain('Formula A (v1)');expect(options[0].textContent).toContain('Kode: A');
+  await act(async()=>picker.blur());
   expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(true);
   await render('version');
   expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(false);

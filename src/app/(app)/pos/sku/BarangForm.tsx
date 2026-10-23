@@ -1,5 +1,7 @@
 "use client";
 
+import { ItemReferenceField } from "@/components/ItemReferenceField";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -70,9 +72,6 @@ export function BarangForm({
   // berjenjang yang mengurus kemasan; ini mengurus volume dalam satuan yang sama.
   const [tiers, setTiers] = useState<Tingkat[]>(editing?.tiers ?? []);
   const [groupComponents, setGroupComponents] = useState<KomponenGrupDraft[]>(editing?.group_components ?? []);
-  const [cariKomponen, setCariKomponen] = useState<string[]>(
-    () => (editing?.group_components ?? []).map(() => ""),
-  );
   const addTier = () => setTiers((t) => [...t, { min_qty: 0, harga: 0 }]);
   const setTier = (i: number, patch: Partial<Tingkat>) =>
     setTiers((t) => t.map((x, j) => (j === i ? { ...x, ...patch } : x)));
@@ -92,11 +91,9 @@ export function BarangForm({
     setGroupComponents((rows) => rows.map((row, j) => j === i ? { ...row, ...patch } : row));
   const addGroupComponent = () => {
     setGroupComponents((rows) => [...rows, { component_item_id: "", qty: 1, unit: "", factor: 1 }]);
-    setCariKomponen((queries) => [...queries, ""]);
   };
   const delGroupComponent = (i: number) => {
     setGroupComponents((rows) => rows.filter((_, j) => j !== i));
-    setCariKomponen((queries) => queries.filter((_, j) => j !== i));
   };
 
   const gantiJenis = (v: ItemType) => {
@@ -431,13 +428,8 @@ export function BarangForm({
               </div>
               <div>
                 <label className="flab">Substitusi dengan</label>
-                <select className="fi" name="substitute_item_id" defaultValue={editing?.substitute_item_id ?? ""}>
-                  <option value="">— tidak ada —</option>
-                  {editing?.substitute_item_id && !barangLain.some(b => b.id === editing.substitute_item_id) && <option value={editing.substitute_item_id}>Barang pengganti tersimpan (Nonaktif)</option>}
-                  {barangLain.filter((b) => b.id !== editing?.id).map((b) => (
-                    <option key={b.id} value={b.id}>{b.code ? `${b.code} — ` : ""}{b.name}</option>
-                  ))}
-                </select>
+                <ItemReferenceField name="substitute_item_id" defaultValue={editing?.substitute_item_id ?? ""}
+                  items={barangLain.filter(b => b.id !== editing?.id).map(b => ({...b, code: b.code ?? ""}))} ariaLabel="Substitusi dengan" />
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                   Barang pengganti saat yang ini kosong.
                 </div>
@@ -488,44 +480,18 @@ export function BarangForm({
           {groupComponents.map((row, i) => {
             const item = kandidatGrup.find((candidate) => candidate.id === row.component_item_id);
             const unitOptions = item?.units ?? (row.unit ? [{ unit: row.unit, factor: row.factor }] : []);
-            const query = cariKomponen[i]?.trim().toLowerCase() ?? "";
-            const cocok = kandidatGrup.filter((candidate) =>
-              candidate.name.toLowerCase().includes(query) || candidate.code?.toLowerCase().includes(query));
-            // Pencarian tidak boleh menghilangkan pilihan yang sudah terisi.
-            const pilihan = item && !cocok.some((candidate) => candidate.id === item.id)
-              ? [item, ...cocok] : cocok;
             return (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 110px 120px 38px", gap: 7, alignItems: "end", marginBottom: 8 }}>
                 <div>
                   {i === 0 && <label className="flab">Barang / jasa komponen *</label>}
-                  <input className="fi" type="search" aria-label={`Cari komponen ${i + 1}`}
-                    placeholder="Cari nama / kode barang…" value={cariKomponen[i] ?? ""}
-                    style={{ marginBottom: 5 }}
-                    onChange={(e) => setCariKomponen((queries) => queries.map((q, j) => j === i ? e.target.value : q))}
-                    onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} />
-                  <select className="fi" aria-label={`Barang / jasa komponen ${i + 1}`}
-                    value={row.component_item_id} required
-                    onChange={(e) => {
-                      const selected = kandidatGrup.find((candidate) => candidate.id === e.target.value);
+                  <SearchableItemPicker items={kandidatGrup.map(candidate => ({...candidate, code: candidate.code ?? ""}))}
+                    value={row.component_item_id} required ariaLabel={`Barang / jasa komponen ${i + 1}`}
+                    onChange={id => {
+                      const selected = kandidatGrup.find(candidate => candidate.id === id);
                       const firstUnit = selected?.units[0] ?? { unit: "", factor: 1 };
-                      setGroupComponent(i, {
-                        component_item_id: e.target.value,
-                        unit: firstUnit.unit,
-                        factor: firstUnit.factor,
-                      });
-                    }}>
-                    <option value="">— pilih komponen —</option>
-                    {pilihan.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {candidate.code ? `${candidate.code} — ` : ""}{candidate.name} · {candidate.item_type}
-                      </option>
-                    ))}
-                  </select>
-                  {query && (
-                    <div role="status" style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-                      {cocok.length ? `${cocok.length} barang / jasa ditemukan.` : "Tidak ada barang / jasa yang cocok."}
-                    </div>
-                  )}
+                      setGroupComponent(i, { component_item_id: id, unit: firstUnit.unit, factor: firstUnit.factor });
+                    }} />
+                  {item && <small style={{color:'var(--tm)'}}>Jenis: {item.item_type}</small>}
                 </div>
                 <div>
                   {i === 0 && <label className="flab">Qty *</label>}

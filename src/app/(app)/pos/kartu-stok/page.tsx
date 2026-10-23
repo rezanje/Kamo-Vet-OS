@@ -128,7 +128,8 @@ export default async function KartuStokPage({
         <>
           <div className="crm-sec" style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 9 }}>
-              <i className="ti ti-history" /> {item?.code} — {item?.name}
+              <i className="ti ti-history" /> {item?.name}
+              {item?.code && <small data-item-code style={{display:"block",fontWeight:400,color:"var(--tm)"}}>Kode: {item.code}</small>}
               <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--tm)" }}> · satuan {sat}</span>
             </div>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 11 }}>

@@ -212,7 +212,7 @@ export default async function ProduksiPage({
                 return (
                   <tr key={r.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.nama}</td>
-                    <td style={{ fontSize: 11.5 }}>{jadi ? `${jadi.code} — ${jadi.name}` : "—"}</td>
+                    <td style={{ fontSize: 11.5 }}>{jadi ? <><span>{jadi.name}</span><small style={{display:'block',color:'var(--tm)'}}>Kode: {jadi.code}</small></> : "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>
                       {Number(r.output_qty)} {jadi?.unit ?? ""}
                     </td>

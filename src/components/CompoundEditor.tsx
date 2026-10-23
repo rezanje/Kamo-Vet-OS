@@ -1,4 +1,5 @@
 "use client";
+import { SearchableItemPicker } from "./SearchableItemPicker";
 import { useState } from "react";
 import type { CompoundDraft, CompoundSaleSku } from "@/lib/master-compound-cart";
 import type { KatalogRacikan } from "@/lib/katalog-racikan";
@@ -33,10 +34,9 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
       {onAddStock&&<button type="button" className="btn-def" style={{marginTop:8}} onClick={()=>onAddStock(sku)}>Ambil stok obat jadi</button>}
     </div>}
     <label className="flab">Komposisi racikan</label>
-    <select className="fi" aria-label="Komposisi racikan" value={value.formulaId} onChange={event=>onChange({...value,formulaId:event.target.value})}>
-      <option value="">{allowCustom?"Racikan khusus pasien":"Pilih resep resmi"}</option>
-      {boundCatalog.map(row=><option key={row.version_id} value={row.version_id}>{row.code} · {row.name} (v{row.version})</option>)}
-    </select>
+    <SearchableItemPicker items={boundCatalog.map(row=>({id:row.version_id,code:row.code,name:`${row.name} (v${row.version})`}))}
+      value={value.formulaId} ariaLabel="Komposisi racikan" placeholder={allowCustom?"Racikan khusus pasien / cari resep resmi":"Pilih resep resmi"}
+      onChange={id=>onChange({...value,formulaId:id})} />
     {sku&&!boundCatalog.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Resep resmi belum ditautkan ke SKU ini. OWNER/ADMIN dapat mengaturnya di Katalog Racikan Resmi.</span>}
     {formula?<div style={{fontSize:11,padding:9,background:"#f4f0ff",borderRadius:8}}>
       <strong>{formula.name} · {formula.dosage_form}</strong>
