@@ -36,11 +36,11 @@ select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002'
 insert into j03_results select 'processing',claim_sales_refund_request((result->>'refund_request_id')::uuid) from j03_results where name='pending';
 select pg_temp.assert_ok((select result->>'status'='diproses' from j03_results where name='processing'),'finance claim reserves return');
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
-select pg_temp.reject($q$select post_unit_return('sales',(select id from sales where no_struk='J03.REQUEST'),'reservation-cash',jsonb_build_object('tanggal',current_date,'dari','kasir'),pg_temp.j03_items('J03.REQUEST'))$q$,'claimed refund blocks conflicting old return path');
+select pg_temp.reject($q$select post_unit_return('sales',(select id from sales where no_struk='J03.REQUEST'),'reservation-cash',jsonb_build_object('tanggal',(now() at time zone 'Asia/Jakarta')::date,'dari','kasir'),pg_temp.j03_items('J03.REQUEST'))$q$,'claimed refund blocks conflicting old return path');
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
 -- Wrong account and a journal failure must preserve the processing reservation,
 -- with no return, expense, allocation or completion metadata committed.
-select pg_temp.reject($q$select complete_sales_refund_request((select (result->>'refund_request_id')::uuid from j03_results where name='pending'),current_date,'e6600000-0000-4000-8000-000000000001','FICT-CASH-AS-BANK')$q$,'transfer cannot use cash account');
+select pg_temp.reject($q$select complete_sales_refund_request((select (result->>'refund_request_id')::uuid from j03_results where name='pending'),(now() at time zone 'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000001','FICT-CASH-AS-BANK')$q$,'transfer cannot use cash account');
 reset role;
 create function pg_temp.j03_fail_journal() returns trigger language plpgsql as $$begin if current_setting('test.j03_fail',true)='yes' then raise exception 'Fictional J03 journal failure';end if;return new;end$$;
 create trigger fictional_j03_journal_fail before insert on journal_lines for each row execute function pg_temp.j03_fail_journal();
@@ -48,7 +48,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
 set local test.j03_fail='yes';
 do $$begin
- begin perform complete_sales_refund_request((select (result->>'refund_request_id')::uuid from j03_results where name='pending'),current_date,'e6600000-0000-4000-8000-000000000003','FICT-FAIL');raise exception 'Expected journal failure';
+ begin perform complete_sales_refund_request((select (result->>'refund_request_id')::uuid from j03_results where name='pending'),(now() at time zone 'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-FAIL');raise exception 'Expected journal failure';
  exception when others then if sqlerrm<>'Fictional J03 journal failure' then raise;end if;end;
 end$$;
 reset role;
@@ -57,8 +57,8 @@ drop trigger fictional_j03_journal_fail on journal_lines;
 set local test.j03_fail='no';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
-insert into j03_results select 'complete',complete_sales_refund_request((result->>'refund_request_id')::uuid,current_date,'e6600000-0000-4000-8000-000000000003','FICT-TRANSFER-1') from j03_results where name='pending';
-insert into j03_results select 'complete-retry',complete_sales_refund_request((result->>'refund_request_id')::uuid,current_date,'e6600000-0000-4000-8000-000000000003','FICT-TRANSFER-1') from j03_results where name='pending';
+insert into j03_results select 'complete',complete_sales_refund_request((result->>'refund_request_id')::uuid,(now() at time zone 'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-TRANSFER-1') from j03_results where name='pending';
+insert into j03_results select 'complete-retry',complete_sales_refund_request((result->>'refund_request_id')::uuid,(now() at time zone 'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','FICT-TRANSFER-1') from j03_results where name='pending';
 select pg_temp.assert_ok((select result->>'status'='selesai' from j03_results where name='complete'),'transfer completion confirmed');
 select pg_temp.assert_ok(pg_temp.return_balance('J03.REQUEST','1113')=-100000 and pg_temp.return_balance('J03.REQUEST','1111')=0,'selected bank, not original cash');
 select pg_temp.assert_ok((select count(*)=2 from sales_returns) and (select sum(jumlah)=150000 from expenses),'transfer retry no duplicate money');

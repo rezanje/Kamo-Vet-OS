@@ -25,9 +25,9 @@ def race_checks(db):
  def done(p):p.wait(timeout=15);return p.returncode,p.stdout.read(),p.stderr.read()
  def receipt(text):return json.loads(next(line for line in reversed(text.splitlines())if line.startswith('{')))
  def post(ref,key,method='Transfer'):
-  return "select post_sales_return_with_payout(s.id,'"+key+"',jsonb_build_object('tanggal',current_date,'dari','kasir','refund_method','"+method+"','destination',jsonb_build_object('bank','Fictional bank','account','0001234','name','Fictional recipient')),jsonb_build_array(jsonb_build_object('source_line_id',i.id,'item_id',i.item_id,'qty',2,'satuan','pcs','kondisi','baik')))from sales s join sale_items i on i.sale_id=s.id where s.no_struk='"+ref+"'"
+  return "select post_sales_return_with_payout(s.id,'"+key+"',jsonb_build_object('tanggal',(now() at time zone 'Asia/Jakarta')::date,'dari','kasir','refund_method','"+method+"','destination',jsonb_build_object('bank','Fictional bank','account','0001234','name','Fictional recipient')),jsonb_build_array(jsonb_build_object('source_line_id',i.id,'item_id',i.item_id,'qty',2,'satuan','pcs','kondisi','baik')))from sales s join sale_items i on i.sale_id=s.id where s.no_struk='"+ref+"'"
  def claim(rid):return f"select claim_sales_refund_request('{rid}')"
- def complete(rid,ref):return f"select complete_sales_refund_request('{rid}',current_date,'e6600000-0000-4000-8000-000000000003','{ref}')"
+ def complete(rid,ref):return f"select complete_sales_refund_request('{rid}',(now() at time zone 'Asia/Jakarta')::date,'e6600000-0000-4000-8000-000000000003','{ref}')"
  def counts(ref):return db.sql(f"select jsonb_build_array((select count(*)from sales_returns where sale_id=s.id),(select count(*)from sales_refund_payouts where sale_id=s.id),(select count(*)from sales_refund_requests where sale_id=s.id))from sales s where no_struk='{ref}'")
  try:
   first=start('j03-pending-first',post('J03.RACE','race-pending')+';select pg_sleep(1)',CASHIER);wait('j03-pending-first','sleep')
