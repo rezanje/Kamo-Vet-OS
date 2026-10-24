@@ -26,10 +26,11 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   if (error) throw new Error("Faktur dan riwayat pembayaran belum dapat dimuat.");
   if (!invoice) notFound();
   const po = one(invoice.purchase_orders);
-  const [replacementResult, originalResult, receipts] = await Promise.all([
+  const [replacementResult, originalResult, receipts, returns] = await Promise.all([
     supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('replaces_invoice_id',id).maybeSingle(),
     invoice.replaces_invoice_id ? supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('id',invoice.replaces_invoice_id).maybeSingle() : {data:null,error:null},
     po && invoice.po_id ? supabase.from('goods_receipts').select('id,no_terima').eq('po_id',invoice.po_id).order('tanggal') : {data:[],error:null},
+    po && invoice.po_id ? supabase.from('purchase_returns').select('id,no_retur,voided_at').eq('po_id',invoice.po_id).order('tanggal') : {data:[],error:null},
   ]);
   const replacement = replacementResult.data;
   const replacementError = replacementResult.error;
@@ -41,6 +42,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
     ...(replacement ? [{kind:'purchase-invoice' as const,id:replacement.id,label:`Faktur pengganti ${replacement.no_faktur}`,status:replacement.voided_at?'Dibatalkan':'Aktif'}] : []),
     ...payments.map(p => ({kind:'purchase-payment' as const,id:p.id,parentId:id,label:`Pembayaran ${p.tanggal} · ${rp(p.amount)}`,status:p.reversal_of?'Pembalik pembayaran':p.voided_at?'Dibatalkan':p.replaces_payment_id?'Pengganti':'Tersimpan'})),
     ...(receipts.data ?? []).map(r => ({kind:'goods-receipt' as const,id:r.id,label:`Penerimaan ${r.no_terima}`,status:'Dokumen tersimpan'})),
+    ...(returns.data ?? []).map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur PO ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),
   ];
   const owner = profile?.role === "OWNER" && profile.is_active;
   const paid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
@@ -66,7 +68,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
       {!invoice.voided_at && <Link className="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</Link>}
       {owner && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} />}
     </section>
-    <RelatedDocuments documents={related} from={`/pembelian/faktur/${id}`} error={!!receipts.error || !!replacementError || !!originalResult.error} note={invoice.po_id ? "Penerimaan dikelompokkan melalui PO yang sama; alokasi per penerimaan tidak tersimpan." : "Faktur ini tidak memiliki relasi PO tersimpan. Penerimaan tidak ditebak dari nomor dokumen."} />
+    <RelatedDocuments documents={related} from={`/pembelian/faktur/${id}`} error={!!receipts.error || !!returns.error || !!replacementError || !!originalResult.error} note={invoice.po_id ? "Penerimaan dan retur dikelompokkan melalui PO yang sama; alokasi langsung ke faktur ini tidak tersimpan." : "Faktur ini tidak memiliki relasi PO tersimpan. Penerimaan dan retur tidak ditebak dari nomor dokumen."} />
     <section className="crm-sec">
       <SecHeader num="02" title="RIWAYAT PEMBAYARAN" desc="Pembatalan mempertahankan pembayaran asli dan mencatat pembaliknya. Faktur dan barang tetap tercatat." />
       {payments.length === 0 && <p>Belum ada pembayaran.</p>}

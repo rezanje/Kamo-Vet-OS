@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { DocumentLink } from "@/components/RelatedDocuments";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
@@ -224,7 +225,7 @@ export default async function DetailPesananPage({
                 const hpp = (k.sales_delivery_items ?? []).reduce((a, x) => a + Number(x.hpp ?? 0), 0);
                 return (
                   <tr key={k.id}>
-                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{k.no_kirim}</td>
+                    <td style={{ fontSize: 11.5, fontWeight: 600 }}><DocumentLink kind="sales-delivery" id={k.id}>{k.no_kirim}</DocumentLink></td>
                     <td style={{ fontSize: 11 }}>{tgl(k.tanggal)}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
                       {qty} unit dikirim{k.ekspedisi ? ` · ${k.ekspedisi}` : ""}{k.no_resi ? ` · ${k.no_resi}` : ""}

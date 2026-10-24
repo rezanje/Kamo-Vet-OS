@@ -9,6 +9,7 @@ beforeEach(()=>{state.table='';state.extra=null;state.failed=false;state.queries
 it.each([
  ['sales_invoices',`/penjualan/faktur/${id}`],['sales_returns',`/penjualan/retur/${id}`],
  ['purchase_returns',`/pembelian/retur/${id}`],['goods_receipts',`/pembelian/penerimaan/${id}`],
+ ['sales_deliveries',`/penjualan/pengiriman?delivery=${id}#delivery-${id}`],
  ['sales_advances',`/penjualan/uang-muka#advance-${id}`],
 ])('opens the exact saved %s document rather than an unfiltered list',async(table,path)=>{
  state.table=table;await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(path);
