@@ -89,7 +89,7 @@ body {
 .klab { font-size: 10.5px; color: var(--tm); margin-bottom: 3px; }
 .kval { font-size: 17px; font-weight: 500; color: var(--tx); }
 .kdelta { font-size: 10px; margin-top: 2px; }
-.tbl { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.4; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th { text-align: left; padding: 8px 10px; color: #fff; background: var(--sb); font-weight: 500; font-size: 12px; white-space: nowrap; }
 .tbl thead th:first-child { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
 .tbl thead th:last-child { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
@@ -119,7 +119,7 @@ body {
 .fg { margin-bottom: 8px; }
 .btn-acc { padding: 7px 13px; background: var(--sb); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; line-height: 1.4; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; transition: background .12s; }
 .btn-acc:hover { background: #24365f; }
-.btn-def { padding: 7px 13px; border: .5px solid var(--bd); border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; line-height: 1.4; color: var(--tm); }
+.btn-def { padding: 7px 13px; border: .5px solid var(--bd); border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; color: var(--tm); }
 .back-btn { background: none; border: none; cursor: pointer; color: var(--tm); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
 .pg-hd { font-size: 14px; font-weight: 500; color: var(--tx); margin-bottom: 2px; }
 .pg-sub { font-size: 12px; color: var(--tm); margin-bottom: 13px; }
