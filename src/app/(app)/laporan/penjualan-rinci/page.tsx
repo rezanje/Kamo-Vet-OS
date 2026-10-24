@@ -6,6 +6,7 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { isCompletedSale, saleMerchandiseTotal, salePaymentDescription, saleRefundMerchantFee, type SalePaymentSource } from "@/lib/sale-payment-reporting";
+import { hrefInvoiceKlinik } from "@/lib/tautan-dokumen";
 
 // Rincian penjualan PER DOKUMEN (per struk / per invoice) — pelengkap laporan
 // "Penjualan per Kasir" yang hanya menampilkan rekap per orang. Sebelum halaman ini
@@ -123,7 +124,7 @@ export default async function PenjualanRinciPage({
     const v = one(i.visits);
     return {
       id: i.id,
-      href: `/klinik/pembayaran/${i.visit_id}/invoice`,
+      href: hrefInvoiceKlinik(i.visit_id, i.id),
       nomor: i.invoice_no ?? "—",
       waktu: i.created_at,
       kanal: "Klinik" as const,

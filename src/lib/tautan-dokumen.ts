@@ -46,13 +46,15 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
   { tabel: "cash_entries", kolom: "no_bukti", label: "Kas masuk/keluar",
     extra: "jenis", href: (r) => r.extra === "Masuk" || r.extra === "Keluar"
       ? `/kas-bank/kas-${r.extra.toLowerCase()}?entry=${r.id}#cash-entry-${r.id}` : "/kas-bank" },
-  { tabel: "invoices", kolom: "invoice_no", label: "Invoice klinik", extra: "visit_id", href: (r) => `/klinik/pembayaran/${r.extra ?? ""}/invoice` },
+  { tabel: "invoices", kolom: "invoice_no", label: "Invoice klinik", extra: "visit_id", href: (r) => hrefInvoiceKlinik(r.extra ?? "", r.id) },
   { tabel: "journal_entries", kolom: "no_jurnal", label: "Jurnal",
     href: (r) => `/keuangan/jurnal?entry=${r.id}#journal-${r.id}` },
 ];
 
 /** Halaman satu pintu untuk sebuah nomor dokumen. */
 export const hrefDokumen = (nomor: string): string => `/dokumen/${encodeURIComponent(nomor.trim())}`;
+export const hrefInvoiceKlinik = (visitId: string, invoiceId: string): string =>
+  `/klinik/pembayaran/${encodeURIComponent(visitId)}/invoice?invoice_id=${encodeURIComponent(invoiceId)}`;
 export const hrefPerintahProduksi = (nomor: string): string =>
   `/pos/produksi?nomor=${encodeURIComponent(nomor)}#selected-production`;
 
