@@ -109,9 +109,9 @@ describe("compound master SKUs reach clinic POS", () => {
     fixture.tables.visits[0].status = "Pembayaran";
     expect(formProps(await exam())).toBeUndefined();
   });
-  it("keeps raw ingredients and services out of the inpatient medicine picker", async () => {
+  it("includes inventory ingredients but keeps services out of the inpatient medicine picker", async () => {
     const props = formProps(await inpatient());
-    expect((props?.items as { id: string }[]).map(item => item.id)).not.toContain("material");
+    expect((props?.items as { id: string }[]).map(item => item.id)).toContain("material");
     expect((props?.items as { id: string }[]).map(item => item.id)).not.toContain("service");
     expect(props?.bahanItems).toEqual([expect.objectContaining({ id: "material" })]);
   });
@@ -124,6 +124,28 @@ describe("compound master SKUs reach clinic POS", () => {
     expect(props?.items).toHaveLength(1250);
     expect((props?.items as { id: string; units: unknown[] }[]).find(item => item.id === "medicine-1249")?.units)
       .toEqual(expect.arrayContaining([expect.objectContaining({ unit: "btl", factor: 50, sell_price: 45000 })]));
+  });
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s keeps late-page inventory ingredients with branch stock/price and active-state filtering", async (_name, page) => {
+    const base = { is_active: true, is_compound_material: true, item_type: "Persediaan", category_id: "worm", unit: "tablet", sell_price: 1000 };
+    fixture.tables.item_categories.push({ id: "medicine", name: "OBAT & VITAMIN" }, { id: "worm", name: "OBAT CACING", parent_id: "medicine" });
+    fixture.tables.items.push(
+      ...Array.from({ length: 655 }, (_, i) => ({ ...base, id: `ingredient-${i}`, name: `Medicine ${i}` })),
+      { ...base, id: "anthel", name: "Anthel fixture" },
+      { ...base, id: "zero-stock", name: "Anthel zero stock" },
+      { ...base, id: "archived", name: "Anthel archived", is_active: false },
+    );
+    fixture.tables.stock.push({ id: "anthel-stock", item_id: "anthel", warehouse_id: "warehouse", qty: 50 },
+      { id: "retail-stock", item_id: "anthel", warehouse_id: "retail", qty: 900 },
+      { id: "other-stock", item_id: "zero-stock", warehouse_id: "other-branch", qty: 700 });
+    fixture.tables.item_branch_prices.push({ id: "anthel-price", item_id: "anthel", branch_id: "branch", unit: "tablet", sell_price: 2500 },
+      { id: "other-price", item_id: "anthel", branch_id: "other-branch", unit: "tablet", sell_price: 99000 });
+    const props = formProps(await page());
+    const medicines = props?.items as { id: string }[];
+    expect(medicines).toContainEqual(expect.objectContaining({ id: "anthel", stok: 50, sell_price: 2500 }));
+    expect(medicines).toContainEqual(expect.objectContaining({ id: "zero-stock", stok: 0, sell_price: 1000 }));
+    expect(medicines).toContainEqual(expect.objectContaining({ id: "ingredient-654" }));
+    expect(medicines.map(row => row.id)).not.toContain("archived");
+    expect(props?.bahanItems).toContainEqual(expect.objectContaining({ id: "anthel" }));
   });
   it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s exposes an active compound SKU beyond the old master limit with branch price and stock", async (_name, page) => {
     const props = formProps(await page());
@@ -186,7 +208,7 @@ describe("clinic item categories", () => {
     const ids = (key: string) => (props?.[key] as { id: string }[]).map(item => item.id);
     expect(ids("jasaItems")).toEqual(["consult", "vaccine", "lab"]);
     expect(ids("tindakanItems")).toEqual(["steril", "scaling"]);
-    expect(ids("items")).toEqual(["food", "group", "uncategorized"]);
+    expect(ids("items")).toEqual(["food", "uncategorized", "ingredient"]);
     expect(ids("bahanItems")).toEqual(["ingredient"]);
     expect(props?.tindakanItems).toEqual(expect.arrayContaining([expect.objectContaining({ id: "steril", sell_price: 75000, tindakan_kategori: "Operasi" })]));
   });
@@ -210,9 +232,9 @@ describe("clinic item categories", () => {
     fixture.tables.item_units = [{ id: "consult-unit", item_id: "imported-service", unit: "paket", factor: 2, sell_price: 80000, buy_price: 0 }];
     const props = formProps(await page());
     const ids = (key: string) => (props?.[key] as { id: string }[]).map(sku => sku.id);
-    expect(ids("jasaItems")).toEqual(["imported-service", "uncategorized-service"]);
+    expect(ids("jasaItems")).toEqual(["imported-service", "uncategorized-service", "vaccine"]);
     expect(ids("tindakanItems")).toEqual(["action"]);
-    expect(ids("items")).toEqual(["vaccine", "stock"]);
+    expect(ids("items")).toEqual(["stock"]);
     expect(props?.jasaItems).toContainEqual(expect.objectContaining({
       id: "imported-service", item_type: "Jasa", tindakan_kategori: "Konsultasi", sell_price: 45000,
       units: expect.arrayContaining([expect.objectContaining({ unit: "paket", factor: 2, sell_price: 80000 })]),

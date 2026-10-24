@@ -10,6 +10,7 @@ vi.mock("@/components/PetPhotoUpload", () => ({ PetPhotoUpload: () => null }));
 vi.mock("@/components/PenunjangUpload", () => ({ PenunjangUpload: () => null }));
 import { RekamForm } from "@/app/(app)/klinik/rekam-medis/[visitId]/RekamForm";
 import { CatatanForm } from "@/app/(app)/klinik/rawat-inap/[id]/catatan/CatatanForm";
+import { splitClinicItems } from "@/lib/clinic-item-categories";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -19,22 +20,25 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
-const base = { unit: "pcs", stok: 5, sell_price: 10000 };
+const base = { unit: "pcs", stok: 5, sell_price: 10000, category_id: null as string | null, is_compound_material: false };
 const service = { ...base, id: "consult", name: "Konsultasi", item_type: "Jasa" };
-const action = { ...base, id: "steril", name: "Steril", sell_price: 75000, item_type: "Jasa", tindakan_kategori: "Operasi" };
-const vaccine = { ...base, id: "vaccine", name: "Vaksin", sell_price: 35000, item_type: "Jasa", tindakan_kategori: "Vaksinasi" };
+const action = { ...base, id: "steril", name: "Steril", sell_price: 75000, item_type: "Jasa", category_id: "actions", tindakan_kategori: "Operasi" };
+const vaccine = { ...base, id: "vaccine", name: "Vaksin", sell_price: 35000, item_type: "Jasa", category_id: "medicine", tindakan_kategori: "Vaksinasi" };
 const food = { ...base, id: "food", name: "Makanan kucing", item_type: "Persediaan", units: [{ unit: "pcs", factor: 1, sell_price: 10000, buy_price: 5000 }] };
+const ingredient = { ...base, id: "ingredient", name: "Bahan diizinkan", item_type: "Persediaan", is_compound_material: true };
+const compound = { ...base, id: "compound", name: "Obat Racik Sirup", item_type: "Persediaan", category_id: "actions" };
+const categories = [{ id: "actions", name: "TINDAKAN" }, { id: "medicine", name: "OBAT" }];
+const groups = splitClinicItems([vaccine, food, service, action, ingredient, compound], categories, new Set([compound.id]));
 const common = {
-  requestKey: "request", draftUserId: "owner", items: [vaccine, food], jasaItems: [service], tindakanItems: [action],
-  bahanItems: [{ ...base, id: "ingredient", name: "Bahan diizinkan" }],
-  racikanItems: [{ ...base, id: "compound", name: "Obat Racik Sirup" }], katalogRacikan: [], bolehManual: true,
+  requestKey: "request", draftUserId: "owner", items: groups.obat, jasaItems: groups.jasa, tindakanItems: groups.tindakan,
+  bahanItems: groups.bahan, racikanItems: groups.racikan, katalogRacikan: [], bolehManual: true,
 };
 const patient = { name: "Milo", species: "Kucing", breed: null, noRM: "RM1", owner: "Pemilik", phone: "08123", address: "", photo: null, dokter: "Dokter" };
-async function render(kind: string) {
+async function render(kind: string, medicines = common.items) {
   await act(async () => root.render(kind === "exam"
-    ? <RekamForm {...common} visitId="visit" petId="pet" currentWeight={null} dokterOpsi={[]} providerOpsi={[]}
+    ? <RekamForm {...common} items={medicines} visitId="visit" petId="pet" currentWeight={null} dokterOpsi={[]} providerOpsi={[]}
       patient={{ ...patient, tglPeriksa: "13 Oct", dokterId: null, providerId: null, tier: "Umum", keluhan: "Kontrol" }} />
-    : <CatatanForm {...common} recordId="inpatient" backHref="/klinik/rawat-inap/inpatient"
+    : <CatatanForm {...common} items={medicines} recordId="inpatient" backHref="/klinik/rawat-inap/inpatient"
       patient={{ ...patient, tglMasuk: "13 Oct", kondisi: "Stabil" }} />));
 }
 async function tab(name: string) {
@@ -69,11 +73,45 @@ it.each(["exam", "inpatient"])("%s picks catalog actions and restores unchanged 
   expect(cart()).toEqual(expected);
 });
 
-it.each(["exam", "inpatient"])("%s keeps non-Jasa/non-Tindakan services selectable in Obat with their existing transaction kind", async kind => {
+it.each(["exam", "inpatient"])("%s keeps a service under an Obat category in Jasa with its existing transaction kind", async kind => {
   await render(kind);
-  const row = [...host.querySelectorAll("tr")].find(row => row.textContent?.includes("Vaksin"))!;
-  await act(async () => row.querySelector<HTMLButtonElement>("button")!.click());
+  expect([...host.querySelectorAll("tbody tr")].some(row => row.textContent?.includes("Vaksin"))).toBe(false);
+  await tab("Jasa");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Vaksin"]')!.click());
   expect(cart()).toEqual([expect.objectContaining({ item_id: "vaccine", nama_obat: "Vaksin", harga: 35000, jenis: "jasa", kategori: "Vaksinasi" })]);
+});
+
+it.each(["exam", "inpatient"])("%s searches the whole inventory before pagination and resets the page for an ingredient medicine", async kind => {
+  const medicines = Array.from({ length: 81 }, (_, i) => ({ ...food, id: `stock-${i}`, name: `Stock ${i}` }));
+  const anthel = { ...food, id: "anthel", name: "Anthel fixture", stok: 50, is_compound_material: true };
+  const inventory = splitClinicItems([...medicines, anthel, service, action, compound], categories, new Set([compound.id])).obat;
+  await render(kind, inventory);
+  const next = () => host.querySelector<HTMLButtonElement>('button[aria-label="Obat berikutnya"]')!;
+  await act(async () => next().click());
+  expect(host.textContent).toContain("82 obat · 2/3");
+  const control = () => host.querySelector<HTMLInputElement>('input[placeholder="Cari nama obat / scan barcode…"]')!;
+  const change = async (value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(control(), value);
+    control().dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await change("AnTh");
+  expect(host.textContent).toContain("Anthel fixture");
+  expect(host.textContent).toContain("1 obat · 1/1");
+  expect(next().disabled).toBe(true);
+  const row = [...host.querySelectorAll("tr")].find(row => row.textContent?.includes("Anthel fixture"))!;
+  await act(async () => row.querySelector<HTMLButtonElement>("button")!.click());
+  expect(cart()).toEqual([expect.objectContaining({ item_id: "anthel", harga: 10000, qty: 1, jenis: "obat" })]);
+  await change("no-match");
+  expect(host.textContent).toContain("Tidak ada obat.");
+  await change("");
+  expect(host.textContent).toContain("82 obat · 1/3");
+  await act(async () => next().click());
+  await act(async () => next().click());
+  expect(host.textContent).toContain("82 obat · 3/3");
+  const medicineTable = [...host.querySelectorAll("table")].find(table => table.querySelector("th")?.textContent === "Nama Obat")!;
+  expect(medicineTable.querySelectorAll("tbody tr")).toHaveLength(2);
+  expect(medicineTable.textContent).toContain("Stock 80");
+  expect(medicineTable.textContent).toContain("Anthel fixture");
 });
 
 it.each(["exam", "inpatient"])("%s searches only finished compounds and designated ingredients in Racikan", async kind => {
