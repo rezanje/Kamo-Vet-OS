@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { advanceRecipeStatus, voidRecipe, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -48,6 +49,26 @@ export default async function RacikDetailPage({
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
 
+  type InvoiceLine = { id: string; invoice_id: string; invoices: Rel<{ id: string; visit_id: string; invoice_no: string | null; voided_at: string | null }> };
+  let invoiceLines: InvoiceLine[] = [];
+  let invoiceLookupFailed = false;
+  if (visit) {
+    try {
+      invoiceLines = await readCompleteList<InvoiceLine>((from, to) => supabase
+        .from("invoice_items")
+        .select("id, invoice_id, invoices(id, visit_id, invoice_no, voided_at)", { count: "exact" })
+        .eq("compound_recipe_id", recipeId)
+        .order("id")
+        .range(from, to), "Invoice racikan", { maxRows: null });
+    } catch {
+      invoiceLookupFailed = true;
+    }
+  }
+  const linkedInvoices = Array.from(new Map(invoiceLines.flatMap(line => {
+    const invoice = one(line.invoices);
+    return invoice && invoice.id === line.invoice_id && invoice.visit_id === visit?.id ? [[invoice.id, invoice] as const] : [];
+  })).values());
+
   // Semua racikan dalam resep yang sama (referensi: daftar bisa >1 baris).
   const { data: siblings } = mr
     ? await supabase
@@ -74,6 +95,17 @@ export default async function RacikDetailPage({
           <i className="ti ti-printer" /> Cetak resep kunjungan
         </Link>}
       </div>
+
+      {visit && <div className="crm-sec" aria-label="Invoice terkait" style={{ marginBottom: 14 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Invoice terkait racikan</div>
+        {invoiceLookupFailed ? <p role="alert">Tautan invoice belum dapat diperiksa. Coba muat ulang.</p> : linkedInvoices.length ?
+          linkedInvoices.map(invoice => <div key={invoice.id}>
+            {invoice.voided_at ? <span>{invoice.invoice_no ?? "Invoice tanpa nomor"} · Dibatalkan</span> :
+              <Link href={`/klinik/pembayaran/${visit.id}/invoice?invoice_id=${invoice.id}`}>
+                {invoice.invoice_no ?? "Buka invoice tersimpan"}
+              </Link>}
+          </div>) : <p>Belum ada invoice terkait yang tersedia untuk akses Anda.</p>}
+      </div>}
 
       {/* Judul besar (referensi) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
