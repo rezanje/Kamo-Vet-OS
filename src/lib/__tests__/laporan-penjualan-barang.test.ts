@@ -15,7 +15,8 @@ describe("klasifikasi baris penjualan klinik", () => {
     expect(jenisBarisKlinik({ jenis: "jasa", item_id: null, deskripsi: "Puyer Batuk" }, "visit-1", racikan)).toBe("Jasa");
   });
 
-  it("memakai ID racikan tersimpan walau nama invoice berbeda atau item katalog terikat", () => {
-    expect(jenisBarisKlinik({ jenis: "obat", item_id: "catalog-item", compound_recipe_id: "saved-recipe", deskripsi: "Label invoice hasil posting" }, "visit-1", racikan)).toBe("Racikan");
+  it("memakai ID racikan tersimpan walau nama invoice berbeda atau jenis baris jasa", () => {
+    expect(jenisBarisKlinik({ jenis: "obat", item_id: null, compound_recipe_id: "saved-recipe", deskripsi: "Label invoice hasil posting" }, "visit-1", racikan)).toBe("Racikan");
+    expect(jenisBarisKlinik({ jenis: "jasa", item_id: null, compound_recipe_id: "saved-recipe", deskripsi: "Label invoice hasil posting" }, "visit-1", racikan)).toBe("Racikan");
   });
 });
