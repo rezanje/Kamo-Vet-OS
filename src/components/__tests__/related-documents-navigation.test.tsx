@@ -33,10 +33,11 @@ beforeEach(()=>{
   }
   if(table==='sales_invoices')data=single&&m.rootMissing?null:single?{id:id(40),no_faktur:'SI-1',order_id:id(50),replaces_invoice_id:m.salesLegacy?id(90):m.salesCorrected?id(45):null,total:100,carried_paid:0,revision:0,status:'aktif',tanggal:'2026-10-22',jatuh_tempo:'2026-11-22',customers:null}: [{id:id(40),no_faktur:'SI-1',total:100,carried_paid:0,status:'aktif',replaces_invoice_id:m.salesLegacy?id(90):m.salesCorrected?id(45):null,sales_receipts:[{id:id(41),no_terima:'SPLIT-CASH',tanggal:'2026-10-22',jumlah:20,metode:'Tunai',advance_id:null},{id:id(42),no_terima:'SPLIT-DP',tanggal:'2026-10-22',jumlah:30,metode:'Transfer',dari_uang_muka:10,advance_id:id(43),advance:m.denied?null:{id:id(43),no_um:'SALES-DP',status:'aktif'}}]}];
   if(table==='sales_invoices'&&!single&&m.salesCorrected)data=[...(data as unknown[]),{id:id(45),no_faktur:'SI-ORIGINAL',status:'batal',carried_paid:0,replaces_invoice_id:null,sales_receipts:[{id:id(46),no_terima:'OLD-RECEIPT',tanggal:'2026-10-21',jumlah:30,metode:'Transfer'}]}];
+  if(table==='sales_receipts')data=[{id:id(41),invoice_id:id(40),no_terima:'SPLIT-CASH',tanggal:'2026-10-22',jumlah:20,metode:'Tunai',advance_id:null},{id:id(42),invoice_id:id(40),no_terima:'SPLIT-DP',tanggal:'2026-10-22',jumlah:30,metode:'Transfer',dari_uang_muka:10,advance_id:id(43),advance:m.denied?null:{id:id(43),no_um:'SALES-DP',status:'aktif'}},...(m.salesCorrected?[{id:id(46),invoice_id:id(45),no_terima:'OLD-RECEIPT',tanggal:'2026-10-21',jumlah:30,metode:'Transfer'}]:[])].filter(r=>Array.isArray(filters.invoice_id)&&filters.invoice_id.includes(r.invoice_id));
   if(table==='company_settings')data={ppn_rate:11};
-  resolve({data,error});
+  resolve({data,error,count:Array.isArray(data)?data.length:null});
  }};
- for(const name of ['select','eq','in','order','maybeSingle'])q[name]=(...args:unknown[])=>{m.calls.push([table,name,...args]);if(name==='eq')filters[String(args[0])]=args[1];if(name==='maybeSingle')single=true;return q};return q;
+ for(const name of ['select','eq','in','order','range','maybeSingle'])q[name]=(...args:unknown[])=>{m.calls.push([table,name,...args]);if(name==='eq'||name==='in')filters[String(args[0])]=args[1];if(name==='maybeSingle')single=true;return q};return q;
  });
 });
 it('opens every stored receipt and DP from its PO without searching',async()=>{

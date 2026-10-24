@@ -6,11 +6,13 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   from(table: string) {
     let filter = "";
-    const receipt = { id: "receipt", no_terima: "RC-1", tanggal: "2026-10-21", jumlah: 30, dari_uang_muka: 0, metode: "Transfer", journal_id: "journal" };
+    const receipt = { id: "receipt", invoice_id: "invoice", no_terima: "RC-1", tanggal: "2026-10-21", jumlah: 30, dari_uang_muka: 0, metode: "Transfer", journal_id: "journal" };
     const invoice = { id: "invoice", no_faktur: "FJS-1", order_id: null, tanggal: "2026-10-21", jatuh_tempo: "2026-11-21", total: 100, carried_paid: 0, status: "berjalan", sales_receipts: [receipt] };
-    const q = { select: () => q, eq: (key: string) => { filter = key; return q; }, order: () => q, in: () => q,
+    const q = { select: () => q, eq: (key: string) => { filter = key; return q; }, order: () => q, in: () => q, range: () => q,
       maybeSingle: async () => ({ data: table === "profiles" ? { role: "OWNER", is_active: true } : table === "company_settings" ? { ppn_rate: 11 } : invoice }),
-      then: (resolve: (value: unknown) => void) => { if (table === "sales_invoices") state.filter = filter; resolve({ data: table === "sales_invoices" ? [invoice] : [], error: null }); },
+      then: (resolve: (value: unknown) => void) => { if (table === "sales_invoices") state.filter = filter;
+        const data = table === "sales_invoices" ? [invoice] : table === "sales_receipts" ? [receipt] : [];
+        resolve({ data, count: data.length, error: null }); },
     };
     return q;
   },
