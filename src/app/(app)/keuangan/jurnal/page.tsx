@@ -65,10 +65,10 @@ export default async function JurnalPage({
 }: {
   searchParams: Promise<{
     success?: string; error?: string;
-    cari?: string; cabang?: string; sumber?: string; dari?: string; sampai?: string; entry?: string;
+    cari?: string; cabang?: string; sumber?: string; dari?: string; sampai?: string; entry?: string; nomor?: string;
   }>;
 }) {
-  const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "", entry = "" } = await searchParams;
+  const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "", entry = "", nomor = "" } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
@@ -96,7 +96,10 @@ export default async function JurnalPage({
   if (sumber) qEntries = qEntries.eq("source", sumber);
   if (dari) qEntries = qEntries.gte("tanggal", dari);
   if (sampai) qEntries = qEntries.lte("tanggal", sampai);
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry)) qEntries = qEntries.eq("id", entry);
+  const selectedId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry);
+  const selectedNumber = !selectedId && /^JRN[.\-/][A-Za-z0-9.\-/]*\d{3,}$/.test(nomor);
+  if (selectedId) qEntries = qEntries.eq("id", entry);
+  else if (selectedNumber) qEntries = qEntries.eq("no_jurnal", nomor);
   if (cari.trim()) {
     const q = cari.trim();
     qEntries = qEntries.or(`no_jurnal.ilike.%${q}%,deskripsi.ilike.%${q}%,source_ref.ilike.%${q}%`);
@@ -135,7 +138,7 @@ export default async function JurnalPage({
       }
     }
   }
-  const adaSaringan = !!(cari || cabang || sumber || dari || sampai || entry);
+  const adaSaringan = !!(cari || cabang || sumber || dari || sampai || entry || nomor);
 
   return (
     <>
@@ -267,13 +270,14 @@ export default async function JurnalPage({
                   const badge = SOURCE_BADGE[e.source] ?? { label: e.source, cls: "g" };
                   const tgl = e.tanggal ? new Date(e.tanggal).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit" }) : "—";
                   return (
-                    <tr id={entry === e.id ? `journal-${e.id}` : undefined} style={entry === e.id ? { scrollMarginTop: 90 } : undefined} key={e.id}>
+                    <tr id={entry === e.id ? `journal-${e.id}` : selectedNumber && nomor === e.no_jurnal ? "selected-journal" : undefined}
+                      style={entry === e.id || selectedNumber && nomor === e.no_jurnal ? { scrollMarginTop: 90 } : undefined} key={e.id}>
                       {/* Rinciannya dibuka pakai <details> bawaan browser — tidak perlu
                           halaman baru maupun JavaScript. Sebelum ini layar jurnal hanya
                           menampilkan total, jadi akun yang kena tidak kelihatan di mana pun
                           selain Buku Besar (dilaporkan tim 2026-08-11). */}
                       <td style={{ fontFamily: "monospace", fontSize: 10.5, fontWeight: 600 }}>
-                        <details open={entry === e.id}>
+                        <details open={entry === e.id || selectedNumber && nomor === e.no_jurnal}>
                           <summary style={{ cursor: "pointer", listStyle: "none" }}>
                             <i className="ti ti-chevron-right" style={{ fontSize: 11, verticalAlign: "-1px" }} />
                             {e.no_jurnal}

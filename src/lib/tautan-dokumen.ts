@@ -40,7 +40,9 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
     tabel: "opname_results", kolom: "no_hasil", label: "Hasil opname",
     extra: "order_id", href: (r) => `/pos/opname/${r.extra ?? ""}`,
   },
-  { tabel: "cash_entries", kolom: "no_bukti", label: "Kas masuk/keluar", href: () => `/kas-bank/kas-keluar` },
+  { tabel: "cash_entries", kolom: "no_bukti", label: "Kas masuk/keluar",
+    extra: "jenis", href: (r) => r.extra === "Masuk" || r.extra === "Keluar"
+      ? `/kas-bank/kas-${r.extra.toLowerCase()}?entry=${r.id}#cash-entry-${r.id}` : "/kas-bank" },
   { tabel: "invoices", kolom: "invoice_no", label: "Invoice klinik", extra: "visit_id", href: (r) => `/klinik/pembayaran/${r.extra ?? ""}/invoice` },
   { tabel: "journal_entries", kolom: "no_jurnal", label: "Jurnal",
     href: (r) => `/keuangan/jurnal?entry=${r.id}#journal-${r.id}` },
@@ -48,6 +50,16 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
 
 /** Halaman satu pintu untuk sebuah nomor dokumen. */
 export const hrefDokumen = (nomor: string): string => `/dokumen/${encodeURIComponent(nomor.trim())}`;
+
+// Bukti kas dan jurnal punya layar modul sendiri. Tautan langsung ini menjaga
+// akses FINANCE yang sudah ada tanpa membuka resolver lintas modul `/dokumen`.
+export function hrefNomorModul(nomor: string): string | null {
+  const value = nomor.trim();
+  if (/^KM[.\-/]/.test(value)) return `/kas-bank/kas-masuk?bukti=${encodeURIComponent(value)}#selected-cash-entry`;
+  if (/^KK[.\-/]/.test(value)) return `/kas-bank/kas-keluar?bukti=${encodeURIComponent(value)}#selected-cash-entry`;
+  if (/^JRN[.\-/]/.test(value)) return `/keuangan/jurnal?nomor=${encodeURIComponent(value)}#selected-journal`;
+  return null;
+}
 
 /**
  * Nomor dokumen atau bukan?

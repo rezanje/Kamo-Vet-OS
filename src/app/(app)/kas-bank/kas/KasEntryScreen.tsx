@@ -21,6 +21,8 @@ type Baris = {
   keterangan: string | null; voided_at: string | null;
   rekening: Rel<{ nama: string }>; branches: Rel<{ name: string }>;
 };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CASH_SELECT = "id, no_bukti, tanggal, jumlah, lawan_code, account_id, revision, keterangan, voided_at, rekening:account_id(nama), branches(name)";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtTgl = (d: string) =>
@@ -39,10 +41,10 @@ export async function KasEntryScreen({
   jenis: JenisKas;
   searchParams: Promise<{
     error?: string; success?: string;
-    cari?: string; cabang?: string; akun?: string; urut?: string;
+    cari?: string; cabang?: string; akun?: string; urut?: string; entry?: string; bukti?: string;
   }>;
 }) {
-  const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal" } = await searchParams;
+  const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal", entry = "", bukti = "" } = await searchParams;
   const supabase = await createClient();
   const boleh = await bolehTransaksiKas();
   const { data: { user } } = await supabase.auth.getUser();
@@ -56,13 +58,22 @@ export async function KasEntryScreen({
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase
       .from("cash_entries")
-      .select("id, no_bukti, tanggal, jumlah, lawan_code, account_id, revision, keterangan, voided_at, rekening:account_id(nama), branches(name)")
+      .select(CASH_SELECT)
       .eq("jenis", jenis)
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(50),
     getAccountBalances(supabase),
   ]);
 
   const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string }[];
+  let cashRows = (rows ?? []) as unknown as Baris[];
+  const byId = UUID.test(entry);
+  const byProof = !byId && new RegExp(`^${jenis === "Masuk" ? "KM" : "KK"}[.\\-/][A-Za-z0-9.\\-/]*\\d{3,}$`).test(bukti);
+  if ((byId || byProof) && !cashRows.some((row) => byId ? row.id === entry : row.no_bukti === bukti)) {
+    const query = supabase.from("cash_entries").select(CASH_SELECT).eq("jenis", jenis);
+    const selected = await (byId ? query.eq("id", entry) : query.eq("no_bukti", bukti)).maybeSingle();
+    if (selected.error) throw new Error("Bukti kas terpilih belum dapat dibaca.");
+    if (selected.data) cashRows = [selected.data as unknown as Baris, ...cashRows];
+  }
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
 
   // Pengeluaran kasir cabang tercatat di tabel beban, bukan di kas entries. Sejak
@@ -99,7 +110,7 @@ export async function KasEntryScreen({
     });
   const namaAkun = new Map(coa.map((a) => [a.code, a.name]));
 
-  const dariKas: BarisGabung[] = ((rows ?? []) as unknown as Baris[]).map((t) => ({
+  const dariKas: BarisGabung[] = cashRows.map((t) => ({
     key: `kas-${t.id}`, id: t.id, no: t.no_bukti, tanggal: t.tanggal,
     rekening: one(t.rekening)?.nama ?? "—",
     akun: `${t.lawan_code} — ${namaAkun.get(t.lawan_code) ?? "—"}`,
@@ -293,8 +304,10 @@ export async function KasEntryScreen({
             </thead>
             <tbody>
               {daftar.map((t) => (
-                <tr key={t.key} style={t.dibatalkan ? { opacity: 0.55 } : undefined}>
+                <tr id={t.asal === "kas" && UUID.test(t.id) ? `cash-entry-${t.id}` : undefined} key={t.key}
+                  style={{ scrollMarginTop: 90, ...(t.dibatalkan ? { opacity: 0.55 } : {}) }}>
                   <td style={{ fontSize: 10.5, fontWeight: 600 }}>
+                    {t.asal === "kas" && t.no === bukti && <span id="selected-cash-entry" />}
                     {t.asal === "beban"
                       ? <Link href={`/buku-besar/beban/${t.id}`} style={{ color: "#2563eb" }}>Pengeluaran kasir</Link>
                       : t.no}
