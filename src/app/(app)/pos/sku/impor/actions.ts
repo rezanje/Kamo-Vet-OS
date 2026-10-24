@@ -60,12 +60,14 @@ async function assertBolehKelola() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function muatMaster(supabase: any): Promise<MasterImpor> {
-  const [{ data: kat }, { data: merek }, { data: satuan }, { data: items }] = await Promise.all([
-    supabase.from("item_categories").select("id, name, parent_id").eq("is_active", true),
-    supabase.from("brands").select("id, name"),
-    supabase.from("units").select("nama").eq("is_active", true),
-    supabase.from("items").select("code"),
+  const [categories, merek, units, items] = await Promise.all([
+    loadAll(supabase, "item_categories", "id,name,parent_id,is_active", "id"),
+    loadAll(supabase, "brands", "id,name", "id"),
+    loadAll(supabase, "units", "nama,is_active", "nama"),
+    loadAll(supabase, "items", "code", "code"),
   ]);
+  const kat = categories.filter(row => row.is_active === true);
+  const satuan = units.filter(row => row.is_active === true);
 
   return {
     kategori: new Map(((kat ?? []) as { id: string; name: string }[]).map((k) => [k.name.toLowerCase(), k.id])),
@@ -96,7 +98,10 @@ export async function imporBarang(formData: FormData) {
   if (!dibaca.ok) gagal(dibaca.pesan);
   if (!dibaca.ok) return; // penyempit tipe; redirect di atas tidak pernah balik
 
-  const { siap, salah } = periksaBaris(dibaca.baris, await muatMaster(supabase));
+  let master: MasterImpor;
+  try { master = await muatMaster(supabase); }
+  catch { return gagal("Data master belum dapat dimuat. Muat ulang sebelum mengimpor; belum ada barang yang disimpan."); }
+  const { siap, salah } = periksaBaris(dibaca.baris, master);
 
   // Tidak ada satu pun baris yang bisa masuk — kembalikan daftar masalahnya utuh,
   // jangan "berhasil 0 barang" yang bikin pemakai kira filenya sudah beres.
@@ -285,13 +290,16 @@ function getCategoryUpload(formData: FormData): File | null {
 // Supabase membatasi select per 1.000 baris. Master saat ini >4.000 SKU, jadi
 // preview wajib dipaginasi agar kode lama setelah baris 1.000 tidak salah dianggap baru.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadAll(supabase: any, table: string, columns: string): Promise<any[]> {
+async function loadAll(supabase: any, table: string, columns: string, order?: string): Promise<any[]> {
   const rows: unknown[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase.from(table).select(columns).range(from, from + PAGE_SIZE - 1);
+    let query = supabase.from(table).select(columns);
+    if (order) query = query.order(order);
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
-    rows.push(...(data ?? []));
-    if ((data ?? []).length < PAGE_SIZE) break;
+    if (!Array.isArray(data)) throw new Error("Data master belum dapat dimuat.");
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) break;
   }
   return rows;
 }
