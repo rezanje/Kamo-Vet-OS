@@ -5,7 +5,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { NoDok } from "@/components/NoDok";
 import { ResepForm, type BarangPilihan } from "./ResepForm";
 import { mulaiProduksi, selesaikanProduksi } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -13,6 +12,7 @@ import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { kebutuhanBahan } from "@/lib/produksi";
 import { readCompleteList } from "@/lib/checked-list";
 import { ProductionAdhocForm } from "./ProductionAdhocForm";
+import { hrefPerintahProduksi } from "@/lib/tautan-dokumen";
 
 // Produksi own brand: resep → perintah (bahan keluar) → penyelesaian (barang jadi
 // masuk). Satu halaman karena ketiganya dipakai berurutan oleh orang yang sama;
@@ -47,14 +47,16 @@ type Perintah = {
 export default async function ProduksiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; nomor?: string | string[] }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, nomor } = await searchParams;
+  const requestedNumber = typeof nomor === "string" && nomor.length > 0 && nomor.length <= 30
+    && !/[\u0000-\u001f\u007f]/.test(nomor) ? nomor : null;
   const supabase = await createClient();
   const { data: { user: draftUser } } = await supabase.auth.getUser();
   const draftUserId = draftUser?.id ?? "";
 
-  const [resepData, { data: orderData }, itemData, whData, branchData] = await Promise.all([
+  const [resepData, { data: orderData }, itemData, whData, branchData, selectedResult] = await Promise.all([
     readCompleteList<Resep>((from,to)=>supabase.from("production_recipes")
       .select("id, nama, output_qty, is_active, items(code, name, unit), production_recipe_items(qty, items(name, unit))",{count:"exact"})
       .eq("is_active", true).order("created_at", { ascending: false }).order("id").range(from,to),"Resep produksi",{maxRows:null}),
@@ -65,6 +67,9 @@ export default async function ProduksiPage({
       .eq("is_active", true).eq("item_type", "Persediaan").order("name").order("id").range(from,to),"Barang produksi",{maxRows:null}),
     readCompleteList<{id:string;name:string;branch_id:string}>((from,to)=>supabase.from("warehouses").select("id, name, branch_id",{count:"exact"}).eq("is_active", true).order("name").order("id").range(from,to),"Gudang produksi",{maxRows:null}),
     readCompleteList<{id:string;name:string}>((from,to)=>supabase.from("branches").select("id, name",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),"Cabang produksi",{maxRows:null}),
+    requestedNumber ? supabase.from("production_orders")
+      .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty, items(unit)), warehouses(name)")
+      .eq("no_produksi", requestedNumber).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
 
   const resep = (resepData ?? []) as unknown as Resep[];
@@ -73,13 +78,18 @@ export default async function ProduksiPage({
   const barang = ((itemData ?? []) as BarangPilihan[]).map(item => ({ ...item, units: unitOptions({ unit: item.unit, sell_price: 0 }, itemUnits.get(item.id) ?? []) }));
   const gudang = whData;
   const berjalan = perintah.filter((p) => p.status === "berjalan");
-  const sourceResult = await supabase.rpc("read_production_atomic_sources", { p_order_ids: perintah.map(p => p.id) });
+  const selected = selectedResult.data && selectedResult.data.no_produksi === requestedNumber
+    ? selectedResult.data as Perintah : null;
+  const sourceResult = await supabase.rpc("read_production_atomic_sources", {
+    p_order_ids: [...new Set([...perintah.map(p => p.id), ...(selected ? [selected.id] : [])])],
+  });
   type FrozenSource = {recipe_name:string;output_name:string;unit:string|null;planned_qty:number;materials?:MaterialSource[]};
   const sourceMap = !sourceResult.error && sourceResult.data && typeof sourceResult.data === "object" && !Array.isArray(sourceResult.data) ? sourceResult.data as Record<string,FrozenSource> : {};
   const sourceFor = (id:string) => {
     const source = sourceMap[id];
     return source && typeof source.recipe_name === "string" && typeof source.output_name === "string" && (source.unit===null || typeof source.unit === "string") && typeof source.planned_qty === "number" && Number.isFinite(source.planned_qty) ? source : undefined;
   };
+  const selectedSource = selected ? sourceFor(selected.id) : undefined;
 
   return (
     <>
@@ -101,6 +111,18 @@ export default async function ProduksiPage({
       )}
 
       {sourceResult.error && <div role="alert" className="p2ban">Bukti sumber produksi belum dapat diperiksa. Penyelesaian ditahan; muat ulang sebelum melanjutkan.</div>}
+
+      {nomor !== undefined && <section id="selected-production" className="crm-sec" aria-label="Perintah produksi terpilih">
+        {requestedNumber === null ? <p>Nomor pekerjaan tidak valid.</p> :
+          selectedResult.error || sourceResult.error ? <p role="alert">Pekerjaan belum dapat diperiksa. Muat ulang.</p> :
+          !selected || !selectedSource ? <p>Pekerjaan tidak tersedia untuk akses Anda.</p> : <>
+              <h2 style={{ fontSize: 14, marginBottom: 8 }}>Perintah produksi {selected.no_produksi}</h2>
+              <p>{selectedSource.recipe_name} · {selectedSource.output_name} · {selected.status === "selesai" ? "Selesai" : selected.status === "berjalan" ? "Berjalan" : "Batal"}</p>
+              <p>Rencana {selectedSource.planned_qty.toLocaleString("id-ID")} {selectedSource.unit ?? ""} · Jadi {Number(selected.qty_jadi).toLocaleString("id-ID")} · Modal bahan {rp(Number(selected.nilai_bahan))}</p>
+              <p>Mulai {tgl(selected.tanggal)} · Selesai {tgl(selected.tanggal_selesai)} · Gudang {one(selected.warehouses)?.name ?? "—"}</p>
+              <FrozenMaterials materials={selectedSource.materials} fallback={one(selected.warehouses)?.name}/>
+            </>}
+      </section>}
 
       {/* 01 — perintah produksi yang masih berjalan, beserta penyelesaiannya */}
       <div className="crm-sec">
@@ -132,7 +154,7 @@ export default async function ProduksiPage({
                   return (
                     <tr key={p.id}>
                       <td style={{ fontSize: 11, fontWeight: 600 }}>
-                        <NoDok nomor={p.no_produksi} />
+                        <Link href={hrefPerintahProduksi(p.no_produksi)}>{p.no_produksi}</Link>
                         <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{tgl(p.tanggal)}</div>
                       </td>
                       <td style={{ fontSize: 11.5 }}>{frozen?.recipe_name ?? "Sumber lama / belum terverifikasi"}{frozen && <div>{frozen.output_name}</div>} <span style={{ color: "var(--td)" }}>× {Number(p.batch)}</span>
@@ -281,7 +303,7 @@ export default async function ProduksiPage({
             <tbody>
               {perintah.filter((p) => p.status === "selesai").map((p) => (
                 <tr key={p.id}>
-                  <td style={{ fontSize: 11, fontWeight: 600 }}><NoDok nomor={p.no_produksi} /></td>
+                  <td style={{ fontSize: 11, fontWeight: 600 }}><Link href={hrefPerintahProduksi(p.no_produksi)}>{p.no_produksi}</Link></td>
                   <td style={{ fontSize: 11.5 }}>{sourceFor(p.id)?.recipe_name??one(p.production_recipes)?.nama??"Sumber lama / belum terverifikasi"}<div>{sourceFor(p.id)?.output_name??''}</div><FrozenMaterials materials={sourceFor(p.id)?.materials} fallback={one(p.warehouses)?.name}/></td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>{Number(p.qty_jadi).toLocaleString("id-ID")}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(p.nilai_bahan))}</td>

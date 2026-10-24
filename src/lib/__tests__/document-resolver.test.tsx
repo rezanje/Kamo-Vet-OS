@@ -1,7 +1,7 @@
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({table:'',extra:null as string|null,failed:false,queries:[]as string[]}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from:(table:string)=>{state.queries.push(table);const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:state.failed?null:table===state.table?{id:'10000000-0000-4000-8000-000000000001',visit_id:state.extra,order_id:state.extra,invoice_id:state.extra,jenis:state.extra}:null,error:state.failed?{message:'private fixture'}:null})};return q;}})}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from:(table:string)=>{state.queries.push(table);const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:state.failed?null:table===state.table?{id:'10000000-0000-4000-8000-000000000001',visit_id:state.extra,order_id:state.extra,invoice_id:state.extra,jenis:state.extra,no_produksi:state.extra}:null,error:state.failed?{message:'private fixture'}:null})};return q;}})}));
 vi.mock('next/navigation',()=>({redirect:(path:string)=>{throw Error(path);}}));
 import Resolver from '@/app/(app)/dokumen/[no]/page';
 const id='10000000-0000-4000-8000-000000000001';
@@ -14,8 +14,10 @@ it.each([
  ['journal_entries',`/keuangan/jurnal?entry=${id}#journal-${id}`],
  ['sales_advances',`/penjualan/uang-muka#advance-${id}`],
  ['purchase_advances',`/pembelian/uang-muka#advance-${id}`],
+ ['production_orders',`/pos/produksi?nomor=FICTION.2026.00001#selected-production`],
 ])('opens the exact saved %s document rather than an unfiltered list',async(table,path)=>{
- state.table=table;await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(path);
+ state.table=table;if(table==='production_orders')state.extra='FICTION.2026.00001';
+ await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(path);
 });
 it('preserves actual clinical visit ownership when invoice id differs from visit id',async()=>{state.table='invoices';state.extra='20000000-0000-4000-8000-000000000002';await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(`/klinik/pembayaran/${state.extra}/invoice`);});
 it('opens a numbered sales receipt at its stored invoice and exact receipt row',async()=>{

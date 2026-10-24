@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hrefDokumen, tampakNomorDokumen } from "../tautan-dokumen";
+import { hrefDokumen, hrefNomorModul, tampakNomorDokumen } from "../tautan-dokumen";
 
 describe("tampakNomorDokumen", () => {
   it("mengenali nomor dokumen VetOS", () => {
@@ -22,4 +22,8 @@ describe("hrefDokumen", () => {
   it("nomor dengan garis miring tetap aman di URL", () => {
     expect(hrefDokumen("FJ/2026/01")).toBe("/dokumen/FJ%2F2026%2F01");
   });
+});
+
+it("does not infer a production source from a configurable document prefix", () => {
+  expect(hrefNomorModul("PRD.2026.10.00001")).toBeNull();
 });

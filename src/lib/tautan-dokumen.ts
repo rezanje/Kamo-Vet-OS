@@ -41,6 +41,8 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
     tabel: "opname_results", kolom: "no_hasil", label: "Hasil opname",
     extra: "order_id", href: (r) => `/pos/opname/${r.extra ?? ""}`,
   },
+  { tabel: "production_orders", kolom: "no_produksi", label: "Perintah produksi",
+    extra: "no_produksi", href: (r) => hrefPerintahProduksi(r.extra ?? "") },
   { tabel: "cash_entries", kolom: "no_bukti", label: "Kas masuk/keluar",
     extra: "jenis", href: (r) => r.extra === "Masuk" || r.extra === "Keluar"
       ? `/kas-bank/kas-${r.extra.toLowerCase()}?entry=${r.id}#cash-entry-${r.id}` : "/kas-bank" },
@@ -51,6 +53,8 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
 
 /** Halaman satu pintu untuk sebuah nomor dokumen. */
 export const hrefDokumen = (nomor: string): string => `/dokumen/${encodeURIComponent(nomor.trim())}`;
+export const hrefPerintahProduksi = (nomor: string): string =>
+  `/pos/produksi?nomor=${encodeURIComponent(nomor)}#selected-production`;
 
 // Bukti kas dan jurnal punya layar modul sendiri. Tautan langsung ini menjaga
 // akses FINANCE yang sudah ada tanpa membuka resolver lintas modul `/dokumen`.
