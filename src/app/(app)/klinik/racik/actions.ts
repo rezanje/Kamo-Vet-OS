@@ -111,26 +111,48 @@ export async function addRacikan(formData: FormData) {
   redirect(`/klinik/rekam-medis/${visitId}?racikan=dibuat${transactionDraftAck(formData)}`);
 }
 
-// Petunjuk racik diisi apoteker di halaman racik (bukan dokter): jumlah jadi + langkah
-// racik teknis. Hanya selama racikan belum diserahkan.
+// Recipient usage is separate from technical steps; never infer it from legacy text.
+export async function updateRacikPemakaian(formData: FormData) {
+  const recipeId = String(formData.get("recipeId") ?? "");
+  const back = `/klinik/racik/${recipeId}`;
+  if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
+  if (!formData.has("dosage_instruction")) redirect(`${back}?error=${encodeURIComponent("Petunjuk pemakaian tidak terkirim. Muat ulang halaman.")}`);
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("compounding_recipes")
+    .update({
+      dosage_instruction: String(formData.get("dosage_instruction") ?? "").trim() || null,
+      total_volume: String(formData.get("total_volume") ?? "").trim() || null,
+    })
+    .eq("id", recipeId).in("status", ["pending", "ready"]).select("id").maybeSingle();
+  if (error) {
+    const message = error.code === "P0001" && error.message.startsWith("USAGE_LINK_MISSING:")
+      ? "Petunjuk pemakaian belum disimpan karena resep belum tertaut atau tidak dapat diakses. Minta dokter meninjau resep."
+      : error.code === "P0001" && error.message.startsWith("RECIPE_LINKED:")
+        ? "Petunjuk pemakaian resep resmi tidak dapat diubah di sini."
+        : parseClinicPostingError(error, "Petunjuk pemakaian belum tersimpan. Periksa resep lalu coba lagi.");
+    redirect(`${back}?error=${encodeURIComponent(message)}`);
+  }
+  if (!data) redirect(`${back}?error=${encodeURIComponent("Racikan tidak tersedia atau sudah diserahkan / void — tidak bisa diubah")}`);
+  revalidatePath(back);
+  revalidatePath("/klinik/rekam-medis", "layout");
+  revalidatePath("/klinik/rawat-inap", "layout");
+  redirect(`${back}?success=pemakaian${transactionDraftAck(formData)}`);
+}
+
+// Internal technical steps remain separate; quantity is owned by the main form.
 export async function updateRacikPetunjuk(formData: FormData) {
   const supabase = await createClient();
   const recipeId = String(formData.get("recipeId") ?? "");
-  const totalVolume = String(formData.get("total_volume") ?? "").trim() || null;
   const steps = String(formData.get("compounding_steps") ?? "").trim() || null;
   const back = `/klinik/racik/${recipeId}`;
   if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
 
-  const { data: r } = await supabase.from("compounding_recipes").select("status").eq("id", recipeId).maybeSingle();
-  if (!r || r.status === "handed_over" || r.status === "void") {
-    redirect(`${back}?error=${encodeURIComponent("Racikan sudah diserahkan / void — tidak bisa diubah")}`);
-  }
-
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("compounding_recipes")
-    .update({ total_volume: totalVolume, compounding_steps: steps })
-    .eq("id", recipeId);
+    .update({ compounding_steps: steps })
+    .eq("id", recipeId).in("status", ["pending", "ready"]).select("id").maybeSingle();
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  if (!data) redirect(`${back}?error=${encodeURIComponent("Racikan tidak tersedia atau sudah diserahkan / void — tidak bisa diubah")}`);
 
   revalidatePath(back);
   redirect(`${back}?success=petunjuk${transactionDraftAck(formData)}`);
