@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
+import {StockDecimal,stockDecimalPreview,type StockDecimalPreview} from '@/lib/initial-stock-decimal';
 import { bacaCsv, periksaBaris, type BarisSalah, type MasterImpor } from "@/lib/impor-barang";
 import { replaceItemUnitConfiguration } from "@/lib/satuan";
 import { pesanSimpanGagal } from "@/lib/barang";
@@ -168,6 +169,7 @@ export type InitialStockRow = ResolvedSaldoAwal & { itemName: string | null };
 export type InitialStockValuation = { policy: string; source_value: string; posted_value: string; residual: string; allocated_source_row: number | null; rate_adjustment: string; control: string };
 
 export type InitialStockState = {
+  decimal_preview?:StockDecimalPreview;
   valuation?: InitialStockValuation;
   ok: boolean;
   phase: "preview" | "done";
@@ -1082,6 +1084,7 @@ function initialStockSummary(rows: ResolvedSaldoAwal[]) {
   const valid = rows.filter((row) => row.status === "valid");
   const skipped = rows.filter((row) => row.status === "skipped");
   return {
+    decimal_preview:stockDecimalPreview(rows),
     valid: valid.length,
     skipped: skipped.length,
     rejected: rows.length - valid.length - skipped.length,
@@ -1181,7 +1184,9 @@ export async function recoverInitialStock(runId: string): Promise<InitialStockSt
         qty: Number(p.base_qty ?? 0), unit: String(p.unit ?? ""), unitCost: Number(p.base_unit_cost ?? 0),
         batchNo: p.batch_no ?? null, expDate: p.exp_date ?? null, branchName: null, warehouseName: null, asOf: run.as_of_date,
         itemId: String(p.item_id ?? ""), warehouseId: String(p.warehouse_id ?? run.warehouse_id),
-        baseQty: Number(p.base_qty ?? 0), baseUnitCost: Number(p.base_unit_cost ?? 0), value: Number(p.base_qty ?? 0)*Number(p.base_unit_cost ?? 0),
+        baseQty: Number(p.base_qty ?? 0), baseQtyExact:String(p.base_qty??0),baseUnitCost: Number(p.base_unit_cost ?? 0), value: Number(p.base_qty ?? 0)*Number(p.base_unit_cost ?? 0),
+        valueExact:new StockDecimal(String(p.base_qty??0)).times(String(p.base_unit_cost??0)).toFixed(),
+        sourceValues:Array.isArray((p as unknown as {source_values?:unknown}).source_values)?(p as unknown as {source_values:ResolvedSaldoAwal['sourceValues']}).source_values:undefined,
         status: record.status === "posted" ? "valid" : record.status, reason: record.reason ?? null,
       } as InitialStockRow;
     });
@@ -1191,7 +1196,7 @@ export async function recoverInitialStock(runId: string): Promise<InitialStockSt
       branch_id: run.branch_id, warehouse_id: run.warehouse_id, as_of: run.as_of_date,
       run_id: run.id, master_run_id: null, source_hash: run.source_hash, rows,
       source_qty: Number(run.summary?.source_qty ?? 0), source_value: Number(run.summary?.source_value ?? 0),
-      valuation: run.summary?.valuation, checks: [], scope_clarification: null };
+      decimal_preview:stockDecimalPreview(rows),valuation: run.summary?.valuation, checks: [], scope_clarification: null };
   } catch (error) {
     return initialStockStateError(error instanceof Error ? error.message : "Batch belum dapat dipulihkan.");
   }
@@ -1244,6 +1249,7 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
       rows: initialStockRowsState(resolved, names),
       source_qty: summary.source_qty,
       source_value: summary.source_value,
+      decimal_preview:summary.decimal_preview,
       checks: [],
       scope_clarification: null,
     };
@@ -1270,19 +1276,23 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);
     const sourceHash = await hashFiles([
       { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v5:${branch.id}:${warehouse.id}:${asOf}:${formData.get("valuation_policy") ?? "STRICT"}:${stockOnly ? "stock_only" : "master"}`) },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v6-decimal-source:${branch.id}:${warehouse.id}:${asOf}:${formData.get("valuation_policy") ?? "STRICT"}:${stockOnly ? "stock_only" : "master"}`) },
     ]);
     const policy = String(formData.get("valuation_policy") ?? "STRICT");
     const rowPayload = resolved.map(row => ({
       source_row: row.row, source_code: row.itemCode, status: row.status, reason: row.reason,
       payload: { item_id: row.itemId || null, item_code: row.itemCode, unit: row.unit, warehouse_id: row.warehouseId,
-        base_qty: row.baseQty, base_unit_cost: row.baseUnitCost, as_of: asOf,
+        base_qty: row.baseQtyExact??row.baseQty, base_unit_cost: row.baseUnitCost, as_of: asOf,
         batch_no: row.batchNo, exp_date: row.expDate, source_values: row.sourceValues ?? [] },
     }));
     const prepared = await supabase.rpc("prepare_accurate_initial_stock", {
       p_source_hash: sourceHash, p_source_name: file.name, p_branch_id: branch.id, p_warehouse_id: warehouse.id,
       p_as_of: asOf, p_rows: rowPayload, p_policy: policy,
     });
+    if(prepared.error?.message.startsWith('Nilai sumber belum tepat dua desimal.')){
+      const summary=initialStockSummary(resolved);
+      return {...initialStockStateError('Nilai uang memiliki pecahan di bawah 0,01. Pilih pembulatan total nilai uang ke 2 desimal untuk menyiapkan batch tanpa mengedit file. Jumlah stok tidak dibulatkan; stok dan jurnal belum diposting.'),rows:initialStockRowsState(resolved,new Map([...master.values()].map(item=>[item.id,item.code]))),source_qty:summary.source_qty,source_value:summary.source_value,decimal_preview:summary.decimal_preview};
+    }
     if (prepared.error) throw new Error(prepared.error.message);
     if (!prepared.data) throw new Error("Hasil persiapan belum diterima. Periksa batch tersimpan sebelum mencoba ulang.");
     // No reconstruction from a possibly changed master: exact persisted rows win.

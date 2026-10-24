@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DocumentBackLink } from "@/components/RelatedDocuments";
 import { documentAnchor } from "@/lib/related-document-routes";
@@ -117,7 +118,7 @@ export default async function PerintahBayarPage({
                         <td style={{ fontSize: 11 }}>{tgl(f.jatuh_tempo)}</td>
                         <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(s)}</td>
                         <td style={{ textAlign: "right" }}>
-                          <input className="fi" type="number" name={`jumlah_${f.id}`} min={0} max={s} step="any"
+                          <NumberInput className="fi" type="number" name={`jumlah_${f.id}`} min={0} max={s} step="any"
                             defaultValue={s} style={{ width: 130, textAlign: "right" }} />
                         </td>
                       </tr>

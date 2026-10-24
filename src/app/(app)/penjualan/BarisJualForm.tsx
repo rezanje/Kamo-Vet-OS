@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 // Editor baris dokumen penjualan — dipakai Penawaran & Pesanan.
 // ponytail: baris dinamis diserialisasi ke satu input hidden JSON, pola sama dgn POForm.
 
@@ -87,7 +89,7 @@ export function BarisJualForm({ userId, scope, items, listId }: { userId: string
                     placeholder="ketik atau pilih dari master" /></div>
                 </td>
                 <td>
-                  <input className="fi" type="number" min={0} step="any" value={r.qty}
+                  <NumberInput className="fi" type="number" min={0} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 80, textAlign: "right" }} />
                 </td>
@@ -105,7 +107,7 @@ export function BarisJualForm({ userId, scope, items, listId }: { userId: string
                   )}
                 </td>
                 <td>
-                  <input className="fi" type="number" min={0} step="any" value={r.harga}
+                  <NumberInput className="fi" type="number" min={0} step="any" value={r.harga}
                     onChange={(e) => set(i, { harga: Number(e.target.value) })}
                     style={{ width: 120, textAlign: "right" }} />
                 </td>

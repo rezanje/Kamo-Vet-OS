@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { draftRecord, draftNumber, draftString } from "@/components/TransactionDraft";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 
@@ -157,7 +159,7 @@ export function TerimaForm({
                     </td>
                     <td style={{ textAlign: "right", fontSize: 11.5, color: "var(--tm)" }}>{r.qty}</td>
                     <td style={{ textAlign: "right" }}>
-                      <input
+                      <NumberInput
                         className="fi"
                         type="number"
                         min={0}
@@ -169,7 +171,7 @@ export function TerimaForm({
                       />
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      <input
+                      <NumberInput
                         className="fi"
                         type="number"
                         min={0}
@@ -196,7 +198,7 @@ export function TerimaForm({
                             />
                             {batchOf(r.id).map((b, i) => (
                               <div key={i} style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
-                                <input className="fi" type="number" min={0} step="any"
+                                <NumberInput className="fi" type="number" min={0} step="any"
                                   value={String(b.qty ?? "")} placeholder="jml"
                                   onChange={(e) => ubahBatch(r.id, i, { qty: Number(e.target.value) })}
                                   style={{ width: 48, height: 26, fontSize: 10.5, textAlign: "right" }} />

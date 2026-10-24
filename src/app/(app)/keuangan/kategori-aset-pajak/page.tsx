@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -62,7 +63,7 @@ export default async function KategoriAsetPajakPage({
               </div>
               <div>
                 <label className="flab">Masa manfaat (bulan) *</label>
-                <input className="fi" name="umur_bulan" type="number" min={1} required />
+                <NumberInput className="fi" name="umur_bulan" type="number" min={1} required />
               </div>
               <div>
                 <label className="flab">Metode *</label>
@@ -73,7 +74,7 @@ export default async function KategoriAsetPajakPage({
               </div>
               <div>
                 <label className="flab">Tarif per tahun (%)</label>
-                <input className="fi" name="tarif_persen" type="number" min={0} max={100} step="any"
+                <NumberInput className="fi" name="tarif_persen" type="number" min={0} max={100} step="any"
                   placeholder="wajib untuk saldo menurun" />
               </div>
               <div style={{ display: "flex", alignItems: "flex-end" }}>

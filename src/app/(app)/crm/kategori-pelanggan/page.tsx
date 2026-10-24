@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -57,12 +58,12 @@ export default async function KategoriPelangganPage({
             </div>
             <div style={{ width: 150 }}>
               <label className="flab">Diskon (%)</label>
-              <input className="fi" name="diskon_persen" type="number" min={0} max={100} step="0.01"
+              <NumberInput className="fi" name="diskon_persen" type="number" min={0} max={100} step="0.01"
                 defaultValue={editing?.diskon_persen ?? 0} required />
             </div>
             <div style={{ width: 170 }}>
               <label className="flab">Rp per 1 poin</label>
-              <input className="fi" name="rupiah_per_poin" type="number" min={1} step="any"
+              <NumberInput className="fi" name="rupiah_per_poin" type="number" min={1} step="any"
                 defaultValue={editing?.rupiah_per_poin ?? 1000} required />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Makin kecil, makin royal. 1000 = tiap Rp1.000 dapat 1 poin.

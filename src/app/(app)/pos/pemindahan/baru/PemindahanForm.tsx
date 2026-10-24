@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import type { ItemUnit } from "@/lib/satuan";
@@ -99,7 +101,7 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
                   <div style={{ flex: "1 1 200px", minWidth: 0 }}><SearchableItemPicker items={items} value={r.item_id}
                     ariaLabel={`Barang pemindahan ${i + 1}`} textValue={it && r.display === label(it) ? it.name : r.display}
                     onTextChange={text => onDisplay(i, text)} onChange={id => { const selected = byId.get(id); if (selected) set(i, { item_id: id, display: selected.name, satuan: selected.units[0]?.unit ?? "" }); }} /></div>
-                  <input className="fi" type="number" min={0} step="any" value={r.qty}
+                  <NumberInput className="fi" type="number" min={0} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 80 }} title="Kuantitas" />
                   <select className="fi" aria-label="Satuan barang" value={r.satuan} onChange={e => set(i, { satuan: e.target.value })} style={{ width: 90 }}>{(it?.units ?? []).map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}</select>

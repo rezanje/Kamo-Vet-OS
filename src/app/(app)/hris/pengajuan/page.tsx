@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -138,7 +139,7 @@ export default async function PengajuanPage({
             <input type="hidden" name="id" value={k.id} />
             <div>
               <label className="flab">Cicil (bulan)</label>
-              <input className="fi" name="tenor_bulan" type="number" min={1} max={24} step={1}
+              <NumberInput className="fi" name="tenor_bulan" type="number" min={1} max={24} step={1}
                 defaultValue={k.tenor_bulan} style={{ width: 90, height: 28, fontSize: 10.5 }} />
             </div>
             <PilihRekening rekening={rekening} label="Uang keluar dari" width={150} />

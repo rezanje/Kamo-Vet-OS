@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import {useEffect,useRef,useState} from "react";
 import Decimal from "decimal.js";
 import {LocalTransactionDraft,PreservedForm,usePreservedAction} from "@/components/LocalTransactionDraft";
@@ -50,7 +52,7 @@ export function AdvanceForm({userId,suppliers,orders,advances,rekening}:{userId:
   {issue&&<p role="alert">{issue}</p>}
   {!poId&&<p style={{fontSize:11,color:"var(--tm)"}}>DP belum terkait PO mengikuti alur pemasok yang sudah ada; tidak dihitung sebagai sisa batas PO tertentu.</p>}
   <div className="frow" style={{flexWrap:"wrap"}}>
-   <div><label className="flab" htmlFor="advance-amount">Nominal (Rp) *</label><input ref={nominal} id="advance-amount" className="fi" name="jumlah" type="number" min="0.01" step="0.01" max={po&&valuationValid?remaining.toDecimalPlaces(2,Decimal.ROUND_DOWN).toString():undefined} required/><div style={{fontSize:10}}>Maksimal 2 angka desimal; nominal DP dan jurnal disimpan tanpa pembulatan.</div></div>
+   <div><label className="flab" htmlFor="advance-amount">Nominal (Rp) *</label><NumberInput ref={nominal} id="advance-amount" className="fi" name="jumlah" type="number" min="0.01" step="0.01" max={po&&valuationValid?remaining.toDecimalPlaces(2,Decimal.ROUND_DOWN).toString():undefined} required/><div style={{fontSize:10}}>Maksimal 2 angka desimal; nominal DP dan jurnal disimpan tanpa pembulatan.</div></div>
    <div><label className="flab" htmlFor="advance-method">Metode</label><select id="advance-method" className="fi" name="metode" defaultValue="Transfer">{METODE_BAYAR.map(method=><option key={method}>{method}</option>)}</select></div>
    <PilihRekening rekening={rekening} label="Dibayar dari" width={170}/>
    <div><label className="flab" htmlFor="advance-note">Catatan</label><input id="advance-note" className="fi" name="catatan" placeholder="opsional"/></div>

@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { PreservedForm, LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 
 import Link from "next/link";
@@ -90,12 +92,12 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
           <div className="frow">
             <div>
               <label className="flab">Berat badan (kg)</label>
-              <input className="fi" type="number" name="berat" min={0} max={200} step="0.01"
+              <NumberInput className="fi" type="number" name="berat" min={0} max={200} step="0.01"
                 defaultValue={log.berat ?? ""} disabled={!editable} />
             </div>
             <div>
               <label className="flab">Suhu tubuh (°C)</label>
-              <input className="fi" type="number" name="suhu" min={25} max={45} step="0.1"
+              <NumberInput className="fi" type="number" name="suhu" min={25} max={45} step="0.1"
                 defaultValue={log.suhu ?? ""} disabled={!editable} />
             </div>
           </div>

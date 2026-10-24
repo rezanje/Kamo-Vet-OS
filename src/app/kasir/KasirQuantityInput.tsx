@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useEffect, useRef, useState } from "react";
 
 export function KasirQuantityInput({ quantity, label, onChange }: { quantity: number; label: string; onChange: (quantity: number) => void }) {
@@ -12,7 +14,7 @@ export function KasirQuantityInput({ quantity, label, onChange }: { quantity: nu
   const message = valid ? "" : "Masukkan jumlah lebih dari 0 yang valid.";
   useEffect(() => { input.current?.setCustomValidity(message); }, [message]);
 
-  return <input ref={input} type="number" inputMode="decimal" min={0} max={Number.MAX_SAFE_INTEGER} step="any" required
+  return <NumberInput ref={input} type="number" inputMode="decimal" min={0} max={Number.MAX_SAFE_INTEGER} step="any" required
     className="fi" aria-label={label} aria-invalid={!valid || undefined} value={text}
     title="Ketik jumlah. Isian tidak valid kembali ke jumlah terakhir saat keluar."
     style={{ fontSize: 10.5, width: 58, minWidth: 0, padding: "3px 2px", textAlign: "center" }}

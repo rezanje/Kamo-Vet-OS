@@ -6,7 +6,7 @@ vi.mock('@/lib/rombongan-server',()=>({bacaSaudaraKunjungan:async()=>[]}));
 vi.mock('@/app/(app)/klinik/rekam-medis/[visitId]/RacikanInline',()=>({RacikanInline:()=>null}));
 vi.mock('@/app/(app)/klinik/rekam-medis/[visitId]/ReferralPanel',()=>({ReferralPanel:()=>null}));
 vi.mock('@/app/(app)/klinik/rawat-inap/actions',()=>({admitInpatient:async()=>{}}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'actor'}}})},from(table:string){let single=false;const q={select:()=>q,eq:()=>q,in:()=>q,is:()=>q,order:()=>q,limit:()=>q,range:()=>q,maybeSingle:()=>{single=true;return q},then:(done:(v:unknown)=>unknown)=>{
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:async()=>({data:false,error:null}),auth:{getUser:async()=>({data:{user:{id:'actor'}}})},from(table:string){let single=false;const q={select:()=>q,eq:()=>q,in:()=>q,is:()=>q,order:()=>q,limit:()=>q,range:()=>q,maybeSingle:()=>{single=true;return q},then:(done:(v:unknown)=>unknown)=>{
  let data:unknown=[];
  if(table==='visits')data={id:'visit-a',branch_id:'branch-a',status:s.status,doctor_id:s.doctor,dokter:'Drh Fictional',checked_out_at:s.checkedOut,created_at:'2026-10-23T01:00:00Z',pets:{name:'Fictional pet'},customers:{name:'Fictional owner'}};
  if(table==='medical_records')data={id:'mr-a',diagnosis:'Fictional diagnosis',anamnesis:'Fictional notes'};

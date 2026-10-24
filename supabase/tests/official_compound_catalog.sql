@@ -125,6 +125,18 @@ begin
     update public.compounding_recipes set recipe_name = 'Diubah' where id = v_recipe_id;
   exception when sqlstate 'P0001' then failed := true; end;
   if not failed then raise exception 'issued official recipe snapshot was edited'; end if;
+  -- The recipient editor submits the unchanged official instruction with quantity.
+  -- Its linked print instruction must remain intact without rewriting the snapshot.
+  update public.compounding_recipes set dosage_instruction=dosage_instruction,total_volume='7'
+    where id=v_recipe_id and status in ('pending','ready');
+  if (select aturan_pakai from public.prescription_items where compound_recipe_id=v_recipe_id) is distinct from '3x sehari' then
+    raise exception 'unchanged official recipient save lost its printed usage';
+  end if;
+  failed := false;
+  begin
+    update public.compounding_recipes set dosage_instruction='Forbidden official edit' where id=v_recipe_id;
+  exception when sqlstate 'P0001' then failed := true;end;
+  if not failed then raise exception 'recipient editor bypassed official dosage immutability';end if;
   failed := false;
   begin
     update public.compounding_ingredients set quantity = 100 where recipe_id = v_recipe_id;

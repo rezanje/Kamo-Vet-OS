@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -107,7 +108,7 @@ export default async function ExpensePage({
             </div>
             <div>
               <label className="flab">Jumlah (Rp) *</label>
-              <input className="fi" name="jumlah" type="number" min={0} step="any" placeholder="50000" required />
+              <NumberInput className="fi" name="jumlah" type="number" min={0} step="any" placeholder="50000" required />
             </div>
             <div>
               <label className="flab">Deskripsi</label>

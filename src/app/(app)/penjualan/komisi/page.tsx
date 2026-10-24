@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { ServiceAttributionTable } from "@/components/ServiceAttributionTable";
 import { createClient } from "@/lib/supabase/server";
@@ -130,15 +131,15 @@ export default async function KomisiPage({
             <div className="frow">
               <div>
                 <label className="flab">Persen (%)</label>
-                <input className="fi" name="persen" type="number" min={0} max={100} step="any" placeholder="isi kalau jenisnya persen" />
+                <NumberInput className="fi" name="persen" type="number" min={0} max={100} step="any" placeholder="isi kalau jenisnya persen" />
               </div>
               <div>
                 <label className="flab">Nominal per unit (Rp)</label>
-                <input className="fi" name="nominal" type="number" min={0} step="any" placeholder="isi kalau jenisnya nominal" />
+                <NumberInput className="fi" name="nominal" type="number" min={0} step="any" placeholder="isi kalau jenisnya nominal" />
               </div>
               <div>
                 <label className="flab">Cair kalau tembus (Rp)</label>
-                <input className="fi" name="min_omzet" type="number" min={0} step="any" defaultValue={0} />
+                <NumberInput className="fi" name="min_omzet" type="number" min={0} step="any" defaultValue={0} />
               </div>
             </div>
 

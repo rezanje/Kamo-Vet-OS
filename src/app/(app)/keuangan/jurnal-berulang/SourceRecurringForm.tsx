@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -81,13 +83,13 @@ export function SourceRecurringForm({ userId, source, firstPeriod, currentPeriod
               </div>
               <div className="fg" style={{ width: 135, marginBottom: 0 }}>
                 <label className="flab" htmlFor="source-schedule-day">Tanggal posting *</label>
-                <input id="source-schedule-day" className="fi" type="number" name="day" min={1} max={28} step={1} value={day} required onChange={(event) => setDay(event.target.value)} />
+                <NumberInput id="source-schedule-day" className="fi" type="number" name="day" min={1} max={28} step={1} value={day} required onChange={(event) => setDay(event.target.value)} />
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <div className="fg" style={{ width: 220, marginBottom: 0 }}>
                 <label className="flab" htmlFor="source-schedule-count">Jumlah bulan</label>
-                <input id="source-schedule-count" className="fi" type="number" name="count" min={1} step={1} value={count} onChange={(event) => { setCount(event.target.value); setEnd(""); }} />
+                <NumberInput id="source-schedule-count" className="fi" type="number" name="count" min={1} step={1} value={count} onChange={(event) => { setCount(event.target.value); setEnd(""); }} />
               </div>
               <div className="fg" style={{ minWidth: 180, marginBottom: 0 }}>
                 <label className="flab" htmlFor="source-schedule-end">Atau bulan terakhir</label>

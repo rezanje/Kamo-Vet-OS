@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { draftRows } from "@/components/TransactionDraft";
@@ -151,7 +153,7 @@ export function JurnalForm({
                   </select>
                 </td>
                 <td>
-                  <input
+                  <NumberInput
                     className="fi"
                     type="number"
                     min={0}
@@ -165,7 +167,7 @@ export function JurnalForm({
                   />
                 </td>
                 <td>
-                  <input
+                  <NumberInput
                     className="fi"
                     type="number"
                     min={0}

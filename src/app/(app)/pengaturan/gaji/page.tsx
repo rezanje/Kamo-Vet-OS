@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -49,20 +50,20 @@ export default async function AturanGajiPage({
           <div className="frow">
             <div>
               <label className="flab">Potongan mulai dari menit ke-</label>
-              <input className="fi" name="telat_mulai_menit" type="number" min={0} step={1} defaultValue={a.telat_mulai_menit} />
+              <NumberInput className="fi" name="telat_mulai_menit" type="number" min={0} step={1} defaultValue={a.telat_mulai_menit} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Telat di bawah angka ini tidak dipotong.</div>
             </div>
             <div>
               <label className="flab">Tiap berapa menit</label>
-              <input className="fi" name="telat_blok_menit" type="number" min={1} step={1} defaultValue={a.telat_blok_menit} />
+              <NumberInput className="fi" name="telat_blok_menit" type="number" min={1} step={1} defaultValue={a.telat_blok_menit} />
             </div>
             <div>
               <label className="flab">Potongan per blok</label>
-              <input className="fi" name="telat_nominal_per_blok" type="number" min={0} step="any" defaultValue={a.telat_nominal_per_blok} />
+              <NumberInput className="fi" name="telat_nominal_per_blok" type="number" min={0} step="any" defaultValue={a.telat_nominal_per_blok} />
             </div>
             <div>
               <label className="flab">Batas atas per hari</label>
-              <input className="fi" name="telat_maks" type="number" min={0} step="any" defaultValue={a.telat_maks} />
+              <NumberInput className="fi" name="telat_maks" type="number" min={0} step="any" defaultValue={a.telat_maks} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>0 = tanpa batas atas.</div>
             </div>
           </div>
@@ -84,11 +85,11 @@ export default async function AturanGajiPage({
           <div className="frow">
             <div>
               <label className="flab">Potongan bolos per hari</label>
-              <input className="fi" name="bolos_per_hari" type="number" min={0} step="any" defaultValue={a.bolos_per_hari} />
+              <NumberInput className="fi" name="bolos_per_hari" type="number" min={0} step="any" defaultValue={a.bolos_per_hari} />
             </div>
             <div>
               <label className="flab">Upah lembur per jam</label>
-              <input className="fi" name="lembur_per_jam" type="number" min={0} step="any" defaultValue={a.lembur_per_jam} />
+              <NumberInput className="fi" name="lembur_per_jam" type="number" min={0} step="any" defaultValue={a.lembur_per_jam} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Dipakai untuk lembur yang sudah disetujui.</div>
             </div>
           </div>

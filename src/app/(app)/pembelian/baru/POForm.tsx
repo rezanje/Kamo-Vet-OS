@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 // ponytail: dynamic item rows serialized to hidden JSON, same pattern as PermintaanForm.
 
 import { usePreservedAction } from "@/components/LocalTransactionDraft";
@@ -199,7 +201,7 @@ export function POForm({
                       <SearchableItemPicker items={items} value={r.item_id ?? ""} textValue={displayName(r)}
                         onTextChange={text => setNama(i, text)} onChange={id => chooseItem(i, id)} ariaLabel={`Barang PO ${i + 1}`} />
                     </div>
-                    <input
+                    <NumberInput
                       className="fi"
                       type="number"
                       min={0}

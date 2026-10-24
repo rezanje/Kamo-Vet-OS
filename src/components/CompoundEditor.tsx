@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { SearchableItemPicker } from "./SearchableItemPicker";
 import { useState } from "react";
 import type { CompoundDraft, CompoundSaleSku } from "@/lib/master-compound-cart";
@@ -56,7 +58,7 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
         {materialPages>1&&<div style={{display:"flex",gap:8}}><button type="button" disabled={currentMaterialPage===1} onClick={()=>setMaterialPage(currentMaterialPage-1)}>Sebelumnya</button><span>{currentMaterialPage}/{materialPages}</span><button type="button" disabled={currentMaterialPage===materialPages} onClick={()=>setMaterialPage(currentMaterialPage+1)}>Berikutnya</button></div>}
       </div>}
       {value.ingredients.map(row=><div key={row.item_id} style={{display:"flex",alignItems:"center",gap:6}}>
-        <span style={{flex:1,fontSize:11}}>{row.nama}</span><input className="fi" aria-label={`Jumlah bahan ${row.nama}`} type="number" min={0.001} step="any" value={row.qty||""} style={{width:70}} onChange={event=>onChange({...value,ingredients:value.ingredients.map(ingredient=>ingredient.item_id===row.item_id?{...ingredient,qty:Number(event.target.value)}:ingredient)})} /><span style={{fontSize:11}}>{row.satuan}</span>
+        <span style={{flex:1,fontSize:11}}>{row.nama}</span><NumberInput className="fi" aria-label={`Jumlah bahan ${row.nama}`} type="number" min={0.001} step="any" value={row.qty||""} style={{width:70}} onChange={event=>onChange({...value,ingredients:value.ingredients.map(ingredient=>ingredient.item_id===row.item_id?{...ingredient,qty:Number(event.target.value)}:ingredient)})} /><span style={{fontSize:11}}>{row.satuan}</span>
         <button type="button" className="btn-def" aria-label={`Hapus bahan ${row.nama}`} onClick={()=>onChange({...value,ingredients:value.ingredients.filter(ingredient=>ingredient.item_id!==row.item_id)})}>×</button>
       </div>)}
     </>:null}

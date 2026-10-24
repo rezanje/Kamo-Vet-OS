@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { STATUS_REPRODUKSI } from "@/lib/anabul";
@@ -129,7 +130,7 @@ export default async function TambahAnabulPage({
             <div className="frow">
               <div>
                 <label className="flab">Berat (kg)</label>
-                <input className="fi" name="weight" type="number" step="0.1" placeholder="3.5" />
+                <NumberInput className="fi" name="weight" type="number" step="0.1" placeholder="3.5" />
               </div>
               <div>
                 <label className="flab">Warna</label>

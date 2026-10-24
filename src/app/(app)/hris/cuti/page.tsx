@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -160,7 +161,7 @@ export default async function CutiPage({
             </div>
             <div>
               <label className="flab">Durasi (hari / jam)</label>
-              <input
+              <NumberInput
                 className="fi"
                 name="durasi"
                 type="number"

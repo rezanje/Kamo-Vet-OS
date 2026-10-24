@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -125,7 +126,7 @@ export default async function TutupBukuPage({
             </label>
             <div>
               <label className="flab">Masa tenggang (hari)</label>
-              <input className="fi" type="number" name="jeda" min={0} max={28} defaultValue={jedaHari} style={{ width: 90 }} />
+              <NumberInput className="fi" type="number" name="jeda" min={0} max={28} defaultValue={jedaHari} style={{ width: 90 }} />
             </div>
             <button type="submit" className="btn-def"><i className="ti ti-device-floppy" /> Simpan aturan</button>
           </form>

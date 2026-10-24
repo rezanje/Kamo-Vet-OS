@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 // Item dipilih dari master SKU (sama pola dgn POForm), bukan diketik bebas:
 // tanpa item_id stok tidak bisa dipotong/ditambah saat barang diterima.
 
@@ -98,7 +100,7 @@ export function PermintaanForm({
                     textValue={it && r.cari === `${it.code ? `${it.code} — ` : ""}${it.name}` ? it.name : r.cari}
                     onTextChange={text => set(i, { cari: text, item_id: "", satuan: "" })} onChange={id => setItem(i, id)} /></div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                    <input className="fi" type="number" min={0} step="any" value={r.qty_diminta}
+                    <NumberInput className="fi" type="number" min={0} step="any" value={r.qty_diminta}
                       onChange={(e) => set(i, { qty_diminta: Number(e.target.value) })}
                       style={{ width: 70 }} title="Qty diminta" />
                     {opts.length > 1 ? (

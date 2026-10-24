@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -47,7 +48,7 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
         {rows.map((r) => (
           <div className="fg" key={r.k}>
             <label className="flab">{r.name} — minimum (Rp)</label>
-            <input className="fi" name={r.k} type="number" min={0} defaultValue={r.v} />
+            <NumberInput className="fi" name={r.k} type="number" min={0} defaultValue={r.v} />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>Saat ini: {rp(r.v)}</div>
           </div>
         ))}
@@ -57,14 +58,14 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
         </label>
         <div className="fg">
           <label className="flab">Poin hangus setelah (bulan)</label>
-          <input className="fi" name="points_expiry_months" type="number" min={1} max={120} defaultValue={c.points_expiry_months} />
+          <NumberInput className="fi" name="points_expiry_months" type="number" min={1} max={120} defaultValue={c.points_expiry_months} />
         </div>
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5, margin: "10px 0 8px" }}>
           <input type="checkbox" name="tier_downgrade_enabled" defaultChecked={!!c.tier_downgrade_enabled} /> Aktifkan downgrade tier
         </label>
         <div className="fg">
           <label className="flab">Turun satu tingkat setelah tidak transaksi (hari)</label>
-          <input className="fi" name="tier_downgrade_days" type="number" min={1} max={3650} defaultValue={c.tier_downgrade_days} />
+          <NumberInput className="fi" name="tier_downgrade_days" type="number" min={1} max={3650} defaultValue={c.tier_downgrade_days} />
         </div>
         <button type="submit" className="btn-acc" style={{ marginTop: 6 }}>Simpan Aturan Loyalty</button>
       </form>

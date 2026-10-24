@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { useState } from "react";
 import { type BahanKatalog, type KatalogRacikan, katalogTotal } from "@/lib/katalog-racikan";
@@ -82,7 +84,7 @@ export function KatalogForm({ katalog, items, saleItems }: { katalog: KatalogRac
       </div>
       {ingredients.map((ingredient) => <div key={ingredient.item_id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <span style={{ flex: 1, fontSize: 11 }}>{ingredient.name}</span>
-        <input className="fi" type="number" step="any" min="0.000001" required value={ingredient.quantity}
+        <NumberInput className="fi" type="number" step="any" min="0.000001" required value={ingredient.quantity}
           onChange={(e) => setIngredients(ingredients.map((i) => i.item_id === ingredient.item_id ? { ...i, quantity: Number(e.target.value) } : i))}
           style={{ width: 65 }} />
         <span style={{ fontSize: 11 }}>{ingredient.unit}</span>

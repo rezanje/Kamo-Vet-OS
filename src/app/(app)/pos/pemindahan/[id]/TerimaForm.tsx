@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
@@ -46,7 +48,7 @@ export function TerimaForm({ sourceTransferId, rows, userId }: { sourceTransferI
                 {r.name} <span style={{ color: "var(--td)", fontSize: 10.5 }}>({r.code})</span>
               </span>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>sisa {r.sisa}</span>
-              <input className="fi" type="number" min={0} max={r.sisa} step="any"
+              <NumberInput className="fi" type="number" min={0} max={r.sisa} step="any"
                 value={qty[r.item_id] ?? 0}
                 onChange={(e) => setQty((q) => ({ ...q, [r.item_id]: Number(e.target.value) }))}
                 style={{ width: 90 }} title="Qty diterima" />
