@@ -22,11 +22,11 @@ export function InitialStockImport({
   presetState?: InitialStockState | null;
   onPresetStateChange?: (state: InitialStockState) => void;
 }) {
-  const [state, setState] = useState<InitialStockState | null>(null);
+  const [saved, setSaved] = useState<{result:InitialStockState;file:File;master:string}|null>(null);
   const [localError, setLocalError] = useState("");
   const [rowFilter, setRowFilter] = useState<"auto" | "all" | "valid" | "skipped" | "rejected">("auto");
   const [pending, startTransition] = useTransition();
-  const displayedState = presetState ?? state;
+  const displayedState = presetState ?? (saved?.file===sourceFile&&saved?.master===masterRunId?saved?.result:null);
   const activeFilter = rowFilter === "auto" ? (displayedState?.rows.some(row=>row.status==='rejected') ? "rejected" : "all") : rowFilter;
   const validCount = displayedState?.rows.filter((row) => row.status === "valid").length ?? 0;
   const skippedCount = displayedState?.rows.filter((row) => row.status === "skipped").length ?? 0;
@@ -39,8 +39,8 @@ export function InitialStockImport({
   const [normalizeMoney,setNormalizeMoney]=useState(false);
   const [asOf,setAsOf]=useState('');
   const generation=useRef(0),request=useRef<number|null>(null);
-  const invalidate=()=>{generation.current++;request.current=null;setState(null);setLocalError('');};
-  useEffect(()=>{generation.current++;request.current=null;setState(null);return()=>{generation.current++;};},[sourceFile,masterRunId]);
+  const invalidate=()=>{generation.current++;request.current=null;setSaved(null);setLocalError('');};
+  useEffect(()=>{const activeGeneration=generation;activeGeneration.current++;request.current=null;return()=>{activeGeneration.current++;};},[sourceFile,masterRunId]);
 
   const run = () => {
     if(request.current!==null)return;
@@ -60,7 +60,7 @@ export function InitialStockImport({
       const result = await previewSaldoAwalAccurate(data);
       if(token!==generation.current)return;
       setRowFilter(result.rows.some(row=>row.status==='rejected') ? "rejected" : "all");
-      setState(result);
+      setSaved({result,file:sourceFile,master:masterRunId});
       onPresetStateChange?.(result);
       }catch{if(token===generation.current)setLocalError('Hasil persiapan belum dapat dipastikan. Muat ulang untuk memeriksa batch tersimpan; stok dan jurnal belum dinyatakan masuk.');}
       finally{if(token===generation.current)request.current=null;}

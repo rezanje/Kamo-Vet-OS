@@ -45,3 +45,9 @@ it('preserves localized textual decimals below a HALF_UP boundary, including cac
  expect(r.errors).toEqual([]);expect(r.rows[0].sourceUnitCost).toBe('0.004999999999999999999');
  }
 });
+it('keeps a blank zero-stock quantity from aborting other valid standalone rows',async()=>{
+ const w=new ExcelJS.Workbook();const s=w.addWorksheet('Saldo Awal');s.addRow(['Kode Barang','Kuantitas','Satuan','HPP']);s.addRow(['F',null,'PCS',1]);s.addRow(['F','1.25','PCS',1]);
+ const parsed=await bacaWorkbookSaldoAwal(new Uint8Array(await w.xlsx.writeBuffer()));expect(parsed.errors).toEqual([]);
+ const master=new Map([['f',{id:'fiction',code:'F',unit:'PCS',itemType:'Persediaan',trackExpiry:false,units:[]}]]);
+ const resolved=resolveSaldoAwalRows(parsed.rows,master,'wh');expect(resolved.map(row=>row.status)).toEqual(['skipped','valid']);expect(resolved[1].baseQtyExact).toBe('1.25');
+});

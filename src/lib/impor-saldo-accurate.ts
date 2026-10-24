@@ -433,9 +433,9 @@ export function resolveSaldoAwalRows(
     }
     if (!reason && item?.trackExpiry && row.qty > 0 && !row.expDate) reason = "Tanggal kedaluwarsa wajib untuk barang bertanggal";
     if (!reason && row.expDate && row.expDate < "1900-01-01") reason = "Tanggal kedaluwarsa tidak valid";
-    const exactQty=new StockDecimal(row.sourceQty??row.qty).times(factor);
-    const exactValue=new StockDecimal(row.sourceQty??row.qty).times(row.sourceUnitCost??row.unitCost);
-    const converted={baseQty:exactQty.toNumber(),baseUnitCost:new StockDecimal(row.sourceUnitCost??row.unitCost).div(factor).toNumber(),value:exactValue.toNumber()};
+    const exactQty=new StockDecimal(row.sourceQty||row.qty).times(factor);
+    const exactValue=new StockDecimal(row.sourceQty||row.qty).times(row.sourceUnitCost||row.unitCost);
+    const converted={baseQty:exactQty.toNumber(),baseUnitCost:new StockDecimal(row.sourceUnitCost||row.unitCost).div(factor).toNumber(),value:exactValue.toNumber()};
     const skipped = !reason && exactQty.isZero();
     return {
       ...row,
