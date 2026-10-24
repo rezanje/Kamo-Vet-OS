@@ -188,6 +188,37 @@ export async function simpanRekamMedis(formData: FormData) {
   return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
 }
 
+// Clinical corrections never call initial submission or accept billing/master fields.
+export async function koreksiRekamMedis(formData: FormData) {
+  const visitId = String(formData.get("visitId") ?? "");
+  const recordId = String(formData.get("medical_record_id") ?? "");
+  const back = `/klinik/rekam-medis/${encodeURIComponent(visitId)}`;
+  const editable = `${back}?edit=${encodeURIComponent(recordId)}`;
+  const revisionRaw = String(formData.get("expected_revision") ?? "");
+  const revision = Number(revisionRaw);
+  const reason = String(formData.get("correction_reason") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  const temperatureRaw = String(formData.get("suhu") ?? "").trim();
+  const suhu = temperatureRaw === "" ? null : Number(temperatureRaw);
+  if (!visitId || !recordId || !/^\d+$/.test(revisionRaw) || !Number.isSafeInteger(revision)
+    || reason.length < 3 || reason.length > 1000 || !requestKey || requestKey.length > 100
+    || (suhu !== null && (!Number.isFinite(suhu) || suhu < 0 || suhu > 60 || Math.round(suhu * 100) / 100 !== suhu))) {
+    redirect(`${editable}&error=${encodeURIComponent("Identitas, alasan koreksi, atau suhu tidak valid. Muat ulang dan periksa isian.")}`);
+  }
+  const text = (name: string) => String(formData.get(name) ?? "") || null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("clinic_correct_unpaid_record", {
+    p_visit_id: visitId, p_record_id: recordId, p_expected_revision: revision,
+    p_changes: { anamnesis: text("anamnesis"), diagnosis: text("diagnosis"), therapy: text("therapy"),
+      suhu, gejala_klinis: text("gejala_klinis"), hasil_penunjang: text("hasil_penunjang") },
+    p_reason: reason, p_request_key: requestKey,
+  });
+  if (error || data !== recordId) redirect(`${editable}&error=${encodeURIComponent(error?.message ?? "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.")}`);
+  for (const path of [back, `${back}/resep`, `${back}/dokumen`, "/klinik/rekam-medis", "/klinik/antrian",
+    "/klinik/rawat-inap", "/klinik/racik", "/laporan/anamnesa"]) revalidatePath(path);
+  return { saved: true, href: `${back}?success=correction` };
+}
+
 export async function createReferral(formData: FormData) {
   const supabase = await createClient();
   const visitId = String(formData.get("visit_id") ?? "").trim();
