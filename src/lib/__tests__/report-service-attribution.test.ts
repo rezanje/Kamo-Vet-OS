@@ -14,7 +14,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
             doctor_id: "doctor-saved", doctor_name: "Dokter Tersimpan",
             staff_id: "groomer-saved", staff_name: "Groomer Tersimpan",
           },
-          invoices: { visit_id: "visit-1", invoice_no: "INV.FICTION", created_at: "2026-10-24T09:00:00Z",
+          invoices: { id: "invoice-1", visit_id: "visit-1", invoice_no: "INV.FICTION", created_at: "2026-10-24T09:00:00Z",
             paid_status: "Lunas", visits: { branches: { name: "Ciawi" }, customers: { name: "Pelanggan Fiktif" }, pets: { name: "Anabul Fiktif" } } },
         }] : [];
         return resolve({ data: rows, count: rows.length, error: null });

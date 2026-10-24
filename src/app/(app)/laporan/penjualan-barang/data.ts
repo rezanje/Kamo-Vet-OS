@@ -24,7 +24,7 @@ type InvoiceItem = {
   jenis: string | null; item_id: string | null;
   service_performers: ServicePerformersSnapshot | null;
   invoices: Rel<{
-    visit_id: string; invoice_no: string | null; created_at: string; paid_status: string;
+    id: string; visit_id: string; invoice_no: string | null; created_at: string; paid_status: string;
     visits: Rel<HubunganVisit>;
   }>;
 };
@@ -73,7 +73,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       const [invoiceItems, saleItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, service_performers, invoices!inner(visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
+            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
             .is("invoices.voided_at", null)
             .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
             .order("id").range(awal, ujung);
@@ -112,13 +112,13 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
 
       for (const item of invoiceItems) {
         const invoice = one(item.invoices);
-        if (!invoice) continue;
+        if (!invoice?.id) throw new Error("Invoice sumber baris laporan tidak dapat diverifikasi.");
         const visit = one(invoice.visits);
         const nilai = nilaiBaris(item);
         const jenis = jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
         rows.push({
           id: `klinik-${item.id}`, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",
-          href: `/klinik/pembayaran/${invoice.visit_id}/invoice`, kanal: "Klinik",
+          href: `/klinik/pembayaran/${invoice.visit_id}/invoice?invoice_id=${encodeURIComponent(invoice.id)}`, kanal: "Klinik",
           jenis,
           cabang: one(visit?.branches ?? null)?.name ?? "—",
           pelanggan: one(visit?.customers ?? null)?.name ?? "—",
