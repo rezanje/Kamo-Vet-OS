@@ -315,7 +315,7 @@ export default async function JurnalPage({
                       <td style={{ fontFamily: "monospace", fontSize: 10 }}>
                         {e.source === "recurring" && e.source_ref && sourceRecurringIds.has(e.source_ref.slice(0, 36))
                           ? <Link href={`/keuangan/jurnal-berulang/${e.source_ref.slice(0, 36)}`}>{e.source_ref.slice(-7)} · jadwal</Link>
-                          : <NoDok nomor={e.source_ref} />}
+                          : <NoDok nomor={e.source_ref} source={e.source} />}
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`bge ${badge.cls}`} style={{ fontSize: 9 }}>

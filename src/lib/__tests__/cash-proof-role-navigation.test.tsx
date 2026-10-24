@@ -19,3 +19,16 @@ it('opens a numbered journal on the existing FINANCE-authorized journal screen',
  expect(html).not.toContain('/dokumen/');
  expect(bolehBukaPath('FINANCE','/keuangan/jurnal',[])).toBe(true);
 });
+it('opens a short custom production number only when its saved source identifies production',()=>{
+ const saved=renderToStaticMarkup(<NoDok nomor="PROD.01" source="produksi"/>);
+ expect(saved).toContain('href="/pos/produksi?nomor=PROD.01#selected-production"');
+ expect(renderToStaticMarkup(<NoDok nomor="PROD.01"/>)).not.toContain('href=');
+ expect(renderToStaticMarkup(<NoDok nomor="catatan bebas" source="manual"/>)).not.toContain('href=');
+});
+it('does not send an unrelated PRD-like document to production',()=>{
+ const unrelated=renderToStaticMarkup(<NoDok nomor="PRD.2026.10.00001" source="purchase"/>);
+ expect(unrelated).toContain('href="/dokumen/PRD.2026.10.00001"');
+ expect(unrelated).not.toContain('/pos/produksi');
+ const production=renderToStaticMarkup(<NoDok nomor="PRD.2026.10.00001" source="produksi"/>);
+ expect(production).toContain('/pos/produksi?nomor=PRD.2026.10.00001');
+});
