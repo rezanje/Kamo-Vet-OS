@@ -23,11 +23,26 @@ it('localizes dates without changing their business day, and hides malformed/nes
 it('opens only allowlisted existing routes, never a guessed clinical invoice or child route',async()=>{
  const a='11111111-1111-4111-8111-111111111111';
  const rows=['purchase_orders','goods_receipts','purchase_invoices','purchase_returns','sales_invoices','sales_orders','sales_returns','sales','invoices','purchase_invoice_payments'].map(entity=>({entity,entity_id:a,action:'update'} as ActivityRow));
- const db={from:()=>({select:()=>({in:async()=>({data:[{id:a}],error:null})})})} as unknown as SupabaseClient;
+ const db={from:()=>({select:()=>({in:async()=>({data:[{id:a,channel:null}],error:null})})})} as unknown as SupabaseClient;
  const result=await activitySourceLinks(db,rows,null);
  const paths=['/pembelian/','/pembelian/penerimaan/','/pembelian/faktur/','/pembelian/retur/','/penjualan/faktur/','/penjualan/pesanan/','/penjualan/retur/','/pos/struk/'];
  rows.slice(0,8).forEach((row,index)=>expect(result.links.get(activitySourceKey(row.entity,a))).toBe(paths[index]+a));
  expect(result.links.size).toBe(8);expect(result.unavailable).toBe(false);
+});
+
+it('preserves item identifiers exactly instead of interpreting them as numbers or statuses',()=>{
+ expect(activityValue('code','123456')).toBe('123456');
+ expect(activityValue('code','001234')).toBe('001234');
+ expect(activityValue('code','draft')).toBe('draft');
+});
+
+it('never links an online sale or missing channel to a retail-only receipt',async()=>{
+ const a='11111111-1111-4111-8111-111111111111';
+ const rows=[{entity:'sales',entity_id:a,action:'update'} as ActivityRow];
+ for(const channel of ['online','marketplace',undefined]){
+  const db={from:()=>({select:()=>({in:async()=>({data:[{id:a,channel}],error:null})})})} as unknown as SupabaseClient;
+  expect((await activitySourceLinks(db,rows,null)).links.size).toBe(0);
+ }
 });
 
 it('denies a source moved outside the current branch grant even if its legacy SELECT policy returns it',async()=>{

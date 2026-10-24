@@ -51,6 +51,7 @@ export function activityValue(field:string,value:unknown):string {
  if(!Object.hasOwn(FIELDS,field))return 'Nilai disamarkan';
  if(value===undefined)return '—';
  if(value===null)return 'Kosong';
+ if(field==='code')return typeof value==='string'&&value.length<=160?value:'Nilai disamarkan';
  if(typeof value==='boolean')return value?'Ya':'Tidak';
  if(DATES.has(field)&&typeof value==='string'){
   if(/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value)
@@ -81,6 +82,7 @@ const SOURCE_ROUTES:Record<string,(id:string)=>string|null>={
 };
 export const activitySourceKey=(entity:string,id:string)=>JSON.stringify([entity,id]);
 const SOURCE_SELECT:Record<string,string>={
+ sales:'id,branch_id,channel',
  goods_receipts:'id,purchase_orders(branch_id)',purchase_returns:'id,purchase_orders(branch_id)',
  purchase_invoices:'id,branch_id,purchase_orders(branch_id)',sales_returns:'id,sales(branch_id)',
 };
@@ -105,8 +107,11 @@ export async function activitySourceLinks(db:SupabaseClient,rows:ActivityRow[],a
   try{
    const {data,error}=await db.from(entity).select(SOURCE_SELECT[entity]??'id,branch_id').in('id',[...ids]);
    if(error||!Array.isArray(data)){unavailable=true;return;}
-   for(const source of data){
+   for(const candidate of data as unknown[]){
+    if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))continue;
+    const source=candidate as Record<string,unknown>;
     if(typeof source.id!=='string'||!ids.has(source.id))continue;
+    if(entity==='sales'&&source.channel!==null)continue;
     // Some legacy sources have permissive SELECT policies. Recheck current
     // account branch grants instead of treating a historic audit scope as current.
     if(allowed!==null&&!sourceBranches(entity,source).every(branch=>typeof branch==='string'&&canUseBranch(allowed,branch)))continue;
