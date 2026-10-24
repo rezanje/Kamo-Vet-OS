@@ -35,7 +35,7 @@ export default async function RefundPage({searchParams}:{searchParams:Promise<{s
   <form method="get"><label>Status <select name="status" defaultValue={status}><option value="">Semua</option>{['pending','diproses','selesai','batal'].map(s=><option key={s} value={s}>{s}</option>)}</select></label><button type="submit" className="btn-def">Tampilkan</button></form>
   {!rows.length&&<p>Belum ada permintaan pada halaman ini.</p>}
   {rows.map(row=><section className="crm-sec" key={row.id} style={{overflowWrap:'anywhere'}}>
-   <h3><Link href={`/pos/transaksi/${row.sale_id}`}>{row.source_ref}</Link> · {row.status}</h3><small>ID permintaan: {row.id}</small>
+   <h3><Link href={`/penjualan/${row.sale_id}`}>{row.source_ref}</Link> · {row.status}</h3><small>ID permintaan: {row.id}</small>
    <p>Rp {row.quoted_total.toLocaleString('id-ID',{maximumFractionDigits:2})} · Tanggal permintaan {row.requested_date}</p>
    {row.destination&&<p>Tujuan: {row.destination.bank} · {row.destination.account} · {row.destination.name}</p>}
    {row.return_id&&<p><Link href={`/penjualan/retur/${row.return_id}`}>Lihat retur dan jurnal asal</Link></p>}
