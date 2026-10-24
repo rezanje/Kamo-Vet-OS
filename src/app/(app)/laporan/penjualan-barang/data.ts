@@ -6,6 +6,7 @@ import { nilaiBaris } from "@/lib/tagihan-klinik";
 import { lineDiscount } from "@/lib/pos-calc";
 import { jenisBarisKlinik, kunciRacikan, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
+import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? (value[0] ?? null) : value;
@@ -21,6 +22,7 @@ type HubunganVisit = {
 type InvoiceItem = {
   id: string; deskripsi: string; qty: number; harga: number; diskon_persen: number;
   jenis: string | null; item_id: string | null;
+  service_performers: ServicePerformersSnapshot | null;
   invoices: Rel<{
     visit_id: string; invoice_no: string | null; created_at: string; paid_status: string;
     visits: Rel<HubunganVisit>;
@@ -28,6 +30,7 @@ type InvoiceItem = {
 };
 type SaleItem = {
   id: string; nama: string; qty: number; harga: number;
+  service_performers: ServicePerformersSnapshot | null;
   item_discount_type: "nominal" | "percent" | null;
   item_discount_value: number | null; promo_discount: number | null;
   sales: Rel<SaleCompletion & {
@@ -38,7 +41,7 @@ type SaleItem = {
 export type Baris = {
   id: string; waktu: string; dokumen: string; href: string; kanal: "POS" | "Online" | "Klinik";
   jenis: JenisBarisPenjualan; cabang: string; pelanggan: string; hewan: string;
-  nama: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
+  nama: string; pelaksana: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
 };
 
 function potong<T>(items: T[], ukuran = 100): T[][] {
@@ -70,7 +73,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       const [invoiceItems, saleItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, invoices!inner(visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
+            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, service_performers, invoices!inner(visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
             .is("invoices.voided_at", null)
             .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
             .order("id").range(awal, ujung);
@@ -78,7 +81,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         }) : Promise.resolve([] as InvoiceItem[]),
         bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("sale_items")
-            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, sales!inner(id, no_struk, created_at, channel, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
+            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, no_struk, created_at, channel, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
             .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
             .order("id").range(awal, ujung);
           return { data: data as unknown as SaleItem[] | null, error, count };
@@ -112,14 +115,16 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         if (!invoice) continue;
         const visit = one(invoice.visits);
         const nilai = nilaiBaris(item);
+        const jenis = jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
         rows.push({
           id: `klinik-${item.id}`, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",
           href: `/klinik/pembayaran/${invoice.visit_id}/invoice`, kanal: "Klinik",
-          jenis: jenisBarisKlinik(item, invoice.visit_id, namaRacikan),
+          jenis,
           cabang: one(visit?.branches ?? null)?.name ?? "—",
           pelanggan: one(visit?.customers ?? null)?.name ?? "—",
           hewan: one(visit?.pets ?? null)?.name ?? "—",
-          nama: item.deskripsi, qty: Number(item.qty) || 0, harga: Number(item.harga) || 0,
+          nama: item.deskripsi, pelaksana: jenis === "Jasa" ? servicePerformerNames(item.service_performers).join(" · ") : "—",
+          qty: Number(item.qty) || 0, harga: Number(item.harga) || 0,
           diskon: Math.max(0, (Number(item.qty) || 0) * (Number(item.harga) || 0) - nilai),
           nilai, status: invoice.paid_status,
         });
@@ -139,7 +144,9 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
           id: `kasir-${item.id}`, waktu: sale.created_at, dokumen: sale.no_struk ?? "—",
           href: `/penjualan/${sale.id}`, kanal: itemKanal, jenis: "Barang",
           cabang: one(sale.branches)?.name ?? "—", pelanggan: one(sale.customers)?.name ?? "—",
-          hewan: "—", nama: item.nama, qty, harga, diskon, nilai: qty * harga - diskon, status: "—",
+          hewan: "—", nama: item.nama,
+          pelaksana: item.service_performers ? servicePerformerNames(item.service_performers).join(" · ") : "—",
+          qty, harga, diskon, nilai: qty * harga - diskon, status: "—",
         });
       }
     } catch (error) {
@@ -151,7 +158,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
 
   const cari = q.toLocaleLowerCase("id-ID");
   const terpilih = pesanError ? [] : rows.filter((row) =>
-    row.jenis === jenis && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan]
+    row.jenis === jenis && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
       .some((value) => value.toLocaleLowerCase("id-ID").includes(cari))),
   ).sort((a, b) => b.waktu.localeCompare(a.waktu) || a.id.localeCompare(b.id));
   const nilaiTotal = terpilih.reduce((sum, row) => sum + row.nilai, 0);

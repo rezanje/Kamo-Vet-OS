@@ -47,7 +47,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
             <option value="Jasa">Jasa/tindakan</option>
           </> : <option value="Barang">Barang kasir/online</option>}
         </select></div>
-        <div><label className="flab">Cari nama / invoice / pelanggan</label><input className="fi" name="q" defaultValue={q} placeholder="Mis. puyer" style={{ minWidth: 190 }} /></div>
+        <div><label className="flab">Cari nama / invoice / pelanggan / pelaksana</label><input className="fi" name="q" defaultValue={q} placeholder="Mis. puyer" style={{ minWidth: 190 }} /></div>
         <button className="btn-def" type="submit"><i className="ti ti-filter" /> Tampilkan</button>
       </>}
       ringkasan={!pesanError ? <KartuAngka items={[
@@ -65,9 +65,9 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
             <Link className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}&format=xlsx`}>Excel lengkap</Link>
             <a className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}&format=print`} target="_blank" rel="noopener noreferrer">Cetak / PDF lengkap</a>
           </div>
-          <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 1200, width: "100%" }}>
+          <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 1350, width: "100%" }}>
             <thead><tr>
-              <th>Waktu</th><th>No. dokumen</th><th>Cabang</th><th>Pelanggan / pasien</th><th>Barang / layanan</th>
+              <th>Waktu</th><th>No. dokumen</th><th>Cabang</th><th>Pelanggan / pasien</th><th>Barang / layanan</th><th>Pelaksana tersimpan</th>
               <th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th>
               <th style={{ textAlign: "right" }}>Diskon item</th><th style={{ textAlign: "right" }}>Nilai baris</th>
             </tr></thead>
@@ -77,12 +77,13 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
                 <td><Link href={row.href} style={{ color: "#2563eb", fontWeight: 700 }}>{row.dokumen}</Link></td>
                 <td>{row.cabang}</td><td>{row.pelanggan}{row.hewan !== "—" && <div style={{ color: "var(--td)" }}>Pasien: {row.hewan}</div>}</td>
                 <td style={{ fontWeight: 600 }}>{row.nama}<div style={{ fontSize: 9.5, fontWeight: 400, color: "var(--td)" }}>{row.jenis}{row.status !== "—" ? ` · ${row.status}` : ""}</div></td>
+                <td>{row.pelaksana}</td>
                 <td style={{ textAlign: "right" }}>{row.qty.toLocaleString("id-ID", { maximumFractionDigits: 2 })}</td>
                 <td style={{ textAlign: "right" }}>{rupiah(row.harga)}</td>
                 <td style={{ textAlign: "right" }}>{row.diskon ? rupiah(row.diskon) : "—"}</td>
                 <td style={{ textAlign: "right", fontWeight: 700 }}>{rupiah(row.nilai)}</td>
               </tr>)}
-              {terlihat.length === 0 && <TabelKosong kolom={9} pesan="Belum ada penjualan untuk pilihan ini." />}
+              {terlihat.length === 0 && <TabelKosong kolom={10} pesan="Belum ada penjualan untuk pilihan ini." />}
             </tbody>
           </table></div>
           <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 11 }}>
