@@ -1,6 +1,6 @@
 # Numeric input coverage and verification — 2026-10-24
 
-Base: `bcb039e90a78cfb3b42b771f308c51b8e96564d2`. Screenshot from Library `libfile_6b87ee9676e08191abd579d4aae0414f` was materialized and inspected.
+Initial base: `bcb039e90a78cfb3b42b771f308c51b8e96564d2`. Integrated on `2142e8c6760e1c0d7c25527c37852821e17b6da2` (PR #139); the clinical correction constraints/defaults/read-only behavior are preserved. Screenshot from Library `libfile_6b87ee9676e08191abd579d4aae0414f` was materialized and inspected.
 
 The root cause is native number-input wheel stepping: existing CSS hid spinner buttons but did not disable wheel changes. The shared NumberInput retains the real numeric control, its name/value, constraints, handlers and ref. It overlays an exact Indonesian display while unfocused and exposes the native decimal editor while focused. No stored number, server parser or calculation is reformatted. Shared passive wheel capture blurs an active numeric editor before default stepping and never cancels normal scrolling.
 
@@ -18,7 +18,7 @@ Exceptions and interaction contract:
 Verification:
 
 - SKU regression asserts exact base prices and numeric tier/unit JSON in FormData. Shared tests cover signed decimal precision, blanks/zero, required/range/step validity, controlled cancel, refs, both draft restorers and unfocused/focused wheel event behavior.
-- Full suite: 440 files / 3,262 tests passed. Initial migration exposed two structural cashier-test selectors; they now locate the enclosing table cell and still verify original plus/minus behavior.
+- Full integrated suite: 444 files / 3,293 tests passed. Initial migration exposed two structural cashier-test selectors; they now locate the enclosing table cell and still verify original plus/minus behavior.
 - TypeScript check passed. ESLint: zero errors, 12 existing warnings. Production build passed with existing Supabase Edge Runtime warning.
 - `node scripts/test-numeric-input-browser.mjs`: 17 bounded Chromium checks on a local React fixture using the actual component/CSS. Includes page scroll, caret insertion, localized/raw paste, canonical copy/cut, invalid constraints, fractional quantities, negative/trailing-zero precision, extreme exponents, repeated edits/cancel, native reset display+payload, mobile layout/inputMode. Requires Playwright and Chromium; supports CHROMIUM_EXECUTABLE_PATH.
 - Independent review identified and resolved stale draft displays, exponent expansion and clipboard ambiguity. A separate trusted-browser reset discrepancy was also reproduced and fixed. Chromium browser checks are bounded; Firefox/Safari clipboard behavior and broad end-to-end product simulation are not verified. No live business-data mutations.

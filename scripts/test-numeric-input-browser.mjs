@@ -5,7 +5,8 @@
  */
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
-const {chromium}=await import(createRequire(import.meta.url).resolve('playwright'));
+const playwright=await import(createRequire(import.meta.url).resolve('playwright'));
+const {chromium}=playwright.default??playwright;
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
