@@ -10,6 +10,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
+import { readCompleteList, ListLoadError } from "@/lib/checked-list";
 import { batalkanUangMukaJual, terimaUangMukaJual } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -36,16 +37,22 @@ export default async function UangMukaJualPage({
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
-  const [{ data: umData }, { data: custData }, { data: soData }, rekening] = await Promise.all([
-    supabase.from("sales_advances")
-      .select("id, no_um, tanggal, jumlah, terpakai, catatan, status, customers(name), sales_orders(no_pesanan)")
-      .order("tanggal", { ascending: false }).order("created_at", { ascending: false }),
+  const [umResult, { data: custData }, { data: soData }, rekening] = await Promise.all([
+    readCompleteList<UM>((from, to) => supabase.from("sales_advances")
+      .select("id, no_um, tanggal, jumlah, terpakai, catatan, status, customers(name), sales_orders(no_pesanan)", { count: "exact" })
+      .order("tanggal", { ascending: false }).order("id").range(from, to),
+    "Daftar uang muka penjualan", { maxRows: null })
+      .then((rows) => ({ rows, error: "" }))
+      .catch((error) => {
+        if (!(error instanceof ListLoadError)) throw error;
+        return { rows: [] as UM[], error: error.message };
+      }),
     supabase.from("customers").select("id, name, phone").order("name").limit(500),
     supabase.from("sales_orders").select("id, no_pesanan, customer_id").in("status", ["draft", "diproses"]).order("tanggal", { ascending: false }),
     loadRekeningAktif(supabase),
   ]);
 
-  const daftar = (umData ?? []) as unknown as UM[];
+  const daftar = umResult.rows;
   const pelanggan = (custData ?? []) as { id: string; name: string; phone: string }[];
   const pesanan = (soData ?? []) as { id: string; no_pesanan: string }[];
 
@@ -56,7 +63,7 @@ export default async function UangMukaJualPage({
     <MasterPage
       back="/penjualan" icon="ti-coin" title="UANG MUKA PENJUALAN"
       desc="DP dari pelanggan — tercatat sebagai kewajiban, bukan pendapatan"
-      error={sp.error} success={sp.success} successMsg={sp.success ?? "Tersimpan."}
+      error={sp.error ?? umResult.error} success={sp.success} successMsg={sp.success ?? "Tersimpan."}
       bolehKelola={boleh}
       readOnlyNote="Hanya OWNER/ADMIN/FINANCE yang bisa mencatat uang muka."
     >
@@ -117,7 +124,7 @@ export default async function UangMukaJualPage({
       </div>
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <SecHeader num="02" title="DAFTAR UANG MUKA" desc={`Sisa yang belum terpakai: ${rp(totalSisa)}.`} />
+        <SecHeader num="02" title="DAFTAR UANG MUKA" desc={umResult.error ? "Daftar belum dapat diperiksa lengkap." : `Sisa yang belum terpakai: ${rp(totalSisa)}.`} />
 
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 860 }}>
@@ -170,7 +177,7 @@ export default async function UangMukaJualPage({
                   </tr>
                 );
               })}
-              {daftar.length === 0 && (
+              {daftar.length === 0 && !umResult.error && (
                 <tr><td colSpan={boleh ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
                   Belum ada uang muka dari pelanggan.
                 </td></tr>
