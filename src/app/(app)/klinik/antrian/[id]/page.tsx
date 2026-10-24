@@ -11,9 +11,6 @@ type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
-function many<T>(r: Rel<T>): T[] {
-  return Array.isArray(r) ? r : r ? [r] : [];
-}
 
 function petAge(dob: string | null | undefined): string | null {
   if (!dob) return null;
@@ -62,7 +59,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
     ? `PET-${new Date(pet.created_at as string).toISOString().slice(2, 10).replace(/-/g, "")}-${(pet.id as string).slice(0, 4).toUpperCase()}`
     : "—";
 
-  // ===== Riwayat medis (semua kunjungan hewan ini) =====
+  // Original operational visit set for the existing finance/inpatient/compound tabs.
   const { data: history } = pet
     ? await supabase
         .from("visits")
