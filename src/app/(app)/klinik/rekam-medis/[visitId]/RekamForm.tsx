@@ -325,8 +325,9 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
               )}
               {tab === "Racikan" && (
+                // K03: racikan rawat jalan harus lewat komposisi; jangan tampilkan jalan pintas stok obat jadi.
                 <CompoundEditor items={racikanItems} materials={bahanItems} catalog={katalogRacikan} allowCustom={bolehManual}
-                  value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} onAddStock={addObat} />
+                  value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} />
               )}
             </div>
 
