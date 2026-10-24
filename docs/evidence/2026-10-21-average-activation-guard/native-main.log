@@ -1,0 +1,26 @@
+Applied 216 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS activation guard: missing/wrong/unallocated GL, invalid journals, physical proof, no-side-effects, permissions, valid cutover and retry.
+PASS moving_average_inventory.sql
+PASS average_sale_corrections.sql
+PASS average_purchase_corrections.sql
+PASS moving_average_clinic.sql
+PASS reviewed inventory import fifo
+PASS reviewed inventory import average
+PASS FIFO accurate_inventory_accounting.sql
+PASS FIFO accurate_inventory_accounting_guards.sql
+PASS FIFO accurate_inventory_accounting_review.sql
+PASS FIFO purchase_invoice_lifecycle.sql
+PASS FIFO pos_merchant_fees.sql
+PASS FIFO pos_split_payments.sql
+PASS FIFO online_return_unit_posting.sql
+PASS FIFO clinic_compound_issue.sql
+PASS FIFO clinic_invoice_post.sql
+PASS FIFO clinic_billing_lifecycle.sql
+PASS FIFO sales_safe_posting.sql
+PASS FIFO posted_sale_cancellations.sql
+PASS journal-first: nonblocking conflict, then committed mismatch rejected; no activation effects.
+PASS activation-first: independent journal writer waits for atomic activation decision.
+PASS actor revocation-first: pending privilege change retries; revoked actor cannot activate.
+PASS activation-first actor snapshot stays locked through decision.
+PASS receipt-first and duplicate activation: completed receipt/GL included once, one seed and one already-active retry.
+Removed owned PostgreSQL test container and volumes.

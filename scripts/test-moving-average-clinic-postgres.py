@@ -17,12 +17,13 @@ sales.PSQL[-1] = sales.DB
 subprocess.run(['createdb', '-h127.0.0.1', '-p5432', sales.DB], check=True)
 try:
     sales.bootstrap_database()
+    opening_fixture = (ROOT / 'supabase/tests/fixtures/average_opening_gl.sql').read_text()
     clinic = (ROOT / 'supabase/tests/clinic_invoice_post.sql').read_text()
     clinic = clinic[:clinic.index('set local role authenticated;')]
     order = (ROOT / 'supabase/tests/sales_safe_posting.sql').read_text()
     order = order[:order.index('create function public.test_sales_reject_order_line()')]
     order = order.replace('begin;', '', 1)
-    source = clinic + order + (ROOT / 'supabase/tests/moving_average_clinic.sql').read_text()
+    source = clinic + order + opening_fixture + (ROOT / 'supabase/tests/moving_average_clinic.sql').read_text()
     sales.sql(sales.fixture_owner_updates(source.replace('update public.profiles ', 'update profiles ')))
     print('Moving-average clinic, compound restoration, invoice edit, sales delivery and historical invoice allocation passed.', flush=True)
     for name in ['clinic_compound_issue.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'sales_safe_posting.sql']:

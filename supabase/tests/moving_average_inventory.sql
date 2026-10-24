@@ -7,6 +7,7 @@ select set_config('request.jwt.claims','{"role":"authenticated"}',true);
 select stock_in_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',2,10000,'purchase','AVG.FIRST',current_date-2);
 select stock_in_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',2,20000,'purchase','AVG.SECOND',current_date-1);
 set local role authenticated;
+select pg_temp.seed_average_opening_gl();
 select activate_moving_average();
 select pg_temp.assert_ok((select average_cost=15000 from stock where warehouse_id='e3300000-0000-4000-8000-000000000001' and item_id='e5500000-0000-4000-8000-000000000002'),'activation preserves opening layer value');
 reset role;

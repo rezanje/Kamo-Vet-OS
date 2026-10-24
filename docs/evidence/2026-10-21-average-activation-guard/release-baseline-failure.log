@@ -1,0 +1,54 @@
+Applied 221 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/tmp/kamo-activation-release-baseline.py", line 20, in <module>
+    db.sql(s.fixture_owner_updates(fixture))
+  File "/workspace/kamo-average-activation/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  Efek retur hanya melalui jalur koreksi catatan retur resmi
+CONTEXT:  PL/pgSQL function public.return_record_protected_effect() line 7 at RAISE
+SQL statement "insert into public.stock_moves(
+    tanggal, warehouse_id, item_id, qty, unit_cost, source, source_ref, fifo_takes, fifo_shortfall
+  ) values (
+    coalesce(p_tanggal, current_date), p_warehouse_id, p_item_id, -p_qty,
+    v_cost / p_qty, p_source, p_source_ref,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_takes end,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_shortfall end
+  )"
+PL/pgSQL function stock_out_fifo(uuid,uuid,numeric,text,text,date) line 124 at SQL statement
+SQL statement "select *             from stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,src,'OTHER.FIFO')"
+PL/pgSQL function inline_code_block line 3 at SQL statement
+
+
+
+
+
+
+
+
+e1100000-0000-4000-8000-000000000001
+{"role":"authenticated"}
+2eabad0d-b290-416b-9bc3-7c8c6c41f454
+497b3136-89ee-43a6-9bc2-ef1766f54f79
+{"sale_id": "2eabad0d-b290-416b-9bc3-7c8c6c41f454", "finalized": true, "journal_id": "62cfbc04-acd9-4f62-b4d8-35845870e9f8"}
+
+{"voided": true, "sale_id": "2eabad0d-b290-416b-9bc3-7c8c6c41f454", "audit_id": "04ceddda-7552-459b-86a2-9218f2c52100", "revision": 1}
+{"voided": true, "sale_id": "2eabad0d-b290-416b-9bc3-7c8c6c41f454", "audit_id": "04ceddda-7552-459b-86a2-9218f2c52100", "revision": 1}
+
+
+
+
+
+
+
+
+cf63c19f-9921-4007-8ee8-5fb16f238382
+
+{"voided": true, "sale_id": "cf63c19f-9921-4007-8ee8-5fb16f238382", "audit_id": "fa1db586-29a6-4422-9a80-2f1cd3f2d75f", "revision": 1}
+
+
+
+
+84007629-cc0d-4c52-b8ef-4f0be07e9662
+4175ff7f-da28-4468-9159-1dfe43e8c4a5
+{"sale_id": "84007629-cc0d-4c52-b8ef-4f0be07e9662", "finalized": true, "journal_id": "72a73972-b851-41dd-9c6d-3c195a6feeb8"}

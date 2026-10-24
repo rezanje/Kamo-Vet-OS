@@ -7,6 +7,7 @@ select stock_in_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-
 insert into items(id,code,name,unit,item_type) values('ec500000-0000-4000-8000-000000000001','AVGVOIDGROUP','Average group','set','Grup');
 insert into item_group_components(group_item_id,component_item_id,qty,unit,factor) values('ec500000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',4,'pcs',1);
 set local role authenticated;
+select pg_temp.seed_average_opening_gl();
 select activate_moving_average();
 do $$declare doc uuid;line uuid:=gen_random_uuid();issued record;result jsonb;begin
  doc:=pg_temp.fee_sale('AVG.VOID.REGULAR');

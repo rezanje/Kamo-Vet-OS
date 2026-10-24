@@ -208,10 +208,31 @@ select pg_temp.assert_ok((select qty_left=3 from stock_layers where id='e8800000
 delete from sales where no_struk='VOID.CAPTURE';
 savepoint other_fifo_callers;
 do $$ declare src text;issued record;begin
- foreach src in array array['produksi','opname','penyesuaian','retur-beli','klinik-edit'] loop
+ foreach src in array array['produksi','opname','penyesuaian','klinik-edit'] loop
   select * into issued from stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,src,'OTHER.FIFO');
   if issued.cost<>12.345 or issued.shortfall<>0 or jsonb_array_length(issued.takes)<>1 then raise exception 'Shared FIFO caller changed: %',src;end if;
  end loop;
+end$$;
+-- PR72 deliberately closes direct return effects. Test that boundary instead
+-- of weakening its production guard; retain legacy FIFO coverage before PR72.
+do $$declare issued record;before_qty numeric;before_layers jsonb;before_moves bigint;begin
+ select qty into before_qty from stock where warehouse_id='e3300000-0000-4000-8000-000000000001' and item_id='e5500000-0000-4000-8000-000000000002';
+ select jsonb_agg(to_jsonb(l) order by id) into before_layers from stock_layers l;
+ select count(*) into before_moves from stock_moves;
+ if to_regclass('public.return_record_postings') is not null then
+  begin
+   perform stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,'retur-beli','OTHER.FIFO');
+   raise exception 'Expected official return-path rejection';
+  exception when insufficient_privilege then
+   if sqlerrm<>'Efek retur hanya melalui jalur koreksi catatan retur resmi' then raise;end if;
+  end;
+  if (select qty from stock where warehouse_id='e3300000-0000-4000-8000-000000000001' and item_id='e5500000-0000-4000-8000-000000000002') is distinct from before_qty
+   or (select jsonb_agg(to_jsonb(l) order by id) from stock_layers l) is distinct from before_layers
+   or (select count(*) from stock_moves)<>before_moves then raise exception 'Rejected direct return leaked stock or history';end if;
+ else
+  select * into issued from stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,'retur-beli','OTHER.FIFO');
+  if issued.cost<>12.345 or issued.shortfall<>0 or jsonb_array_length(issued.takes)<>1 then raise exception 'Legacy return FIFO contract changed';end if;
+ end if;
 end$$;
 select pg_temp.reject($q$select stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,'terima-permintaan','OTHER.FIFO')$q$,'request receipt must use its atomic posting RPC');
 select pg_temp.assert_ok(not exists(select 1 from stock_moves where source_ref='OTHER.FIFO' and (fifo_takes is not null or fifo_shortfall is not null)),'non-sale callers do not capture sale provenance');

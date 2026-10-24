@@ -18,6 +18,7 @@ sales.PSQL[-1] = sales.DB
 subprocess.run(['createdb', '-h127.0.0.1', '-p5432', sales.DB], check=True)
 try:
     sales.bootstrap_database()
+    opening_fixture = (ROOT / 'supabase/tests/fixtures/average_opening_gl.sql').read_text()
     for name in ['accurate_inventory_accounting.sql', 'accurate_inventory_accounting_guards.sql',
                  'accurate_inventory_accounting_review.sql']:
         sales.sql((ROOT / 'supabase/tests' / name).read_text())
@@ -32,9 +33,9 @@ try:
         print('Reviewed import in ' + method + ': one selected-equity journal and atomic source valuation passed.', flush=True)
     # Activation holds the exclusive inventory lock before stock writes. A
     # reviewed import must wait without holding conflicting stock relation locks.
-    setup = fixtures + """insert into items(id,code,name,unit,item_type) values(md5('ai-existing')::uuid,'AI-EXISTING','Existing activation stock','pcs','Persediaan');
+    setup = fixtures + opening_fixture + """insert into items(id,code,name,unit,item_type) values(md5('ai-existing')::uuid,'AI-EXISTING','Existing activation stock','pcs','Persediaan');
       insert into stock(warehouse_id,item_id,qty) values(md5('ai-wh')::uuid,md5('ai-existing')::uuid,1);
-      insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source) values(md5('ai-wh')::uuid,md5('ai-existing')::uuid,'2026-01-01',1,1,10,'manual');commit;"""
+      insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source) values(md5('ai-wh')::uuid,md5('ai-existing')::uuid,'2026-01-01',1,1,10,'manual');select pg_temp.seed_average_opening_gl();commit;"""
     sales.sql(setup)
     import uuid
     owner = str(uuid.UUID(hashlib.md5(b'ai-owner').hexdigest()))

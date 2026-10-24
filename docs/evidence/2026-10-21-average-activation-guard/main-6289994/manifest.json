@@ -1,0 +1,26 @@
+{
+  "base_main": "6289994422ce32e795f6f27baba04b5db477210d",
+  "previous_published_pr82_head": "513c2d7fee7280b7b145c7a4174325319e4f4525",
+  "rebase_completed": true,
+  "production_guard_source_changed": false,
+  "migration": "20261021170000_average_activation_accounting_guard.sql",
+  "migration_sha256": "2af2ac5d684384ff0378f86be3ca7db74a52ee8a7963813231f06219f555fabf",
+  "native_replay_migrations": 223,
+  "installed_baseline_migrations": 222,
+  "install_on_unreconciled_fixture": "PASS: stock160/GL0 unchanged, FIFO remains active, later activation rejected",
+  "activation_scope": "global singleton; per-branch reconciliation; no partial branch activation",
+  "global_scope_tests": "PASS: matched branch A cannot bypass unmatched branch B; operational-branch filter is not branch activation",
+  "native_guard_and_five_races": "PASS",
+  "current_main_then_guard_full_rollout_and_six_lock_scenarios": "PASS",
+  "vitest": {
+    "files": 308,
+    "passed": 2403,
+    "failed": 0
+  },
+  "typecheck": "PASS",
+  "scoped_eslint": "PASS, zero warnings",
+  "production_build": "PASS with fictional loopback Supabase; unrelated existing warnings",
+  "production_metadata_or_business_data_read": "not performed in this continuation",
+  "production_writes_or_activation": "none",
+  "release_authorization": "finish/review/rebase/push authorized; original draft-only production boundary remains; separate guard migration/merge/deploy approval needed"
+}

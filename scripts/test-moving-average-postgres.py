@@ -17,17 +17,19 @@ sales.PSQL[-1] = sales.DB
 subprocess.run(['createdb', '-h127.0.0.1', '-p5432', sales.DB], check=True)
 try:
     sales.bootstrap_database()
+    opening_fixture = (ROOT / 'supabase/tests/fixtures/average_opening_gl.sql').read_text()
     base = (ROOT / 'supabase/tests/pos_merchant_fees.sql').read_text()
     fixtures = base[:base.index('set local role authenticated;')]
     suite = (ROOT / 'supabase/tests/moving_average_inventory.sql').read_text()
-    sales.sql(sales.fixture_owner_updates(fixtures + suite))
+    sales.sql(sales.fixture_owner_updates(fixtures + opening_fixture + suite))
     print('Moving average and monthly closing regressions passed.', flush=True)
 
     # Independent sessions exercise the same posting/closing advisory lock.
-    setup = fixtures + """
+    setup = fixtures + opening_fixture + """
 update profiles set role='OWNER' where id='e1100000-0000-4000-8000-000000000001';
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
 select set_config('request.jwt.claims','{"role":"authenticated"}',true);
+select pg_temp.seed_average_opening_gl();
 select activate_moving_average();
 update inventory_costing_settings set activated_at=date_trunc('month',current_date)-interval '1 month' where id;
 select stock_in_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',10,100,'purchase','AVG.RACE.SEED',(date_trunc('month',current_date)-interval '1 month')::date);

@@ -16,12 +16,13 @@ sales.PSQL[-1] = sales.DB
 subprocess.run(['createdb', '-h127.0.0.1', '-p5432', sales.DB], check=True)
 try:
     sales.bootstrap_database()
+    opening_fixture = (ROOT / 'supabase/tests/fixtures/average_opening_gl.sql').read_text()
     for fixture_name, suite_name in [('purchase_invoice_lifecycle.sql', 'average_purchase_corrections.sql'),
                                       ('pos_merchant_fees.sql', 'average_sale_corrections.sql')]:
         base = (ROOT / 'supabase/tests' / fixture_name).read_text()
         fixture = base[:base.index('set local role authenticated;')]
         suite = (ROOT / 'supabase/tests' / suite_name).read_text()
-        sales.sql(sales.fixture_owner_updates(fixture + suite))
+        sales.sql(sales.fixture_owner_updates(fixture + opening_fixture + suite))
         print(suite_name + ': passed', flush=True)
     for name in ['purchase_invoice_lifecycle.sql']:
         sales.sql(sales.fixture_owner_updates((ROOT / 'supabase/tests' / name).read_text()))

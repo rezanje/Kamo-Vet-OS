@@ -9,7 +9,7 @@ import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-BASE = '9aafe37d13913735dacbee60ffd2099b43853db9'
+BASE = '6289994422ce32e795f6f27baba04b5db477210d'
 spec = importlib.util.spec_from_file_location('fixture', ROOT / 'scripts/test-accurate-inventory-accounting-postgres.py')
 harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
@@ -26,7 +26,8 @@ with tempfile.TemporaryDirectory(prefix='kamo-release-order-') as temporary:
     harness.ROOT = ROOT if '--clean-replay' in sys.argv else baseline
     with harness.DisposablePostgres() as db:
         db.bootstrap()
-        costing_core = db.sql("select pg_get_functiondef('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'::regprocedure)||pg_get_functiondef('public.stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)'::regprocedure)||pg_get_functiondef('public.activate_moving_average()'::regprocedure)||pg_get_functiondef('public.close_inventory_month(date)'::regprocedure);")
+        costing_core = db.sql("select pg_get_functiondef('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'::regprocedure)||pg_get_functiondef('public.stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)'::regprocedure)||pg_get_functiondef('public.close_inventory_month(date)'::regprocedure);")
+        expected_activation = db.sql("select pg_get_functiondef('public.activate_moving_average()'::regprocedure);")
         # Production retains this retired invoker overload, absent on a clean
         # repository replay. Its old write privileges are already revoked.
         db.sql("""create function public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric)
@@ -44,6 +45,10 @@ language plpgsql security invoker set search_path=public as $$begin raise except
                     raise AssertionError('Unexpected legacy write authority must abort return migration')
                 assert db.sql("select to_regclass('public.return_record_postings') is null and not has_table_privilege('authenticated','public.purchase_invoices','INSERT');") == 't'
                 print('PASS unexpected retired-overload authority aborts and rolls back fixture migration.', flush=True)
+            if path.name == '20261024110335_average_activation_accounting_guard.sql':
+                needle = " if exists(select 1 from public.stock_moves where tanggal>(stamp at time zone 'Asia/Jakarta')::date) then"
+                assert expected_activation.count(needle) == 1, 'Unexpected activation guard baseline'
+                expected_activation = expected_activation.replace(needle, ' perform public.inventory_assert_average_activation_accounting();\n' + needle)
             db.sql('begin;\n' + path.read_text() + '\ncommit;')
             print('Applied after deployed main: ' + path.name, flush=True)
         assert retired_hash == db.sql("select md5(pg_get_functiondef('public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric)'::regprocedure));"), 'Retired overload must remain unchanged'
@@ -79,8 +84,9 @@ rollback;""")
         print('PASS newly created return-request JSON cannot reference a trashed master.', flush=True)
         db.sql((ROOT / 'supabase/tests/remaining_average_composition.sql').read_text())
         print('PASS future-average correction boundary.', flush=True)
-        assert costing_core == db.sql("select pg_get_functiondef('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'::regprocedure)||pg_get_functiondef('public.stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)'::regprocedure)||pg_get_functiondef('public.activate_moving_average()'::regprocedure)||pg_get_functiondef('public.close_inventory_month(date)'::regprocedure);"), 'Concurrent PR80 costing/activation/closing definitions changed'
-        print('PASS concurrent PR80 costing/activation/closing source preserved exactly.', flush=True)
+        assert costing_core == db.sql("select pg_get_functiondef('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'::regprocedure)||pg_get_functiondef('public.stock_in_fifo(uuid,uuid,numeric,numeric,text,text,date,date)'::regprocedure)||pg_get_functiondef('public.close_inventory_month(date)'::regprocedure);"), 'Concurrent PR80 costing/activation/closing definitions changed'
+        assert expected_activation == db.sql("select pg_get_functiondef('public.activate_moving_average()'::regprocedure);"), 'Activation changed beyond the reviewed PR82 accounting guard'
+        print('PASS PR80 stock/closing source preserved; activation matches only the reviewed PR82 accounting guard.', flush=True)
         # Actual independent sessions: the activation/closing exclusive lock must
         # block correction entry before any stock/document row lock is acquired.
         for index, statement in enumerate([
@@ -117,7 +123,7 @@ rollback;""")
             holder.stdout.close();holder.stderr.close();waiter.stdout.close();waiter.stderr.close()
         print('PASS six real-session correction/posting versus activation-lock order races.', flush=True)
         if '--coverage-only' not in sys.argv:
-            names = ['internal_transfer_corrections.sql','stock_document_corrections.sql','monetary_opening_corrections.sql','monetary_opening_creation.sql','sales_safe_posting.sql','wholesale_corrections.sql','asset_purchase_correction.sql','accurate_inventory_accounting.sql','master_item_code_history.sql','pos_merchant_fees.sql','pos_split_payments.sql','online_return_unit_posting.sql']
+            names = (['average_activation_accounting.sql'] if (ROOT / 'supabase/tests/average_activation_accounting.sql').exists() else []) + ['internal_transfer_corrections.sql','stock_document_corrections.sql','monetary_opening_corrections.sql','monetary_opening_creation.sql','sales_safe_posting.sql','wholesale_corrections.sql','asset_purchase_correction.sql','accurate_inventory_accounting.sql','master_item_code_history.sql','pos_merchant_fees.sql','pos_split_payments.sql','online_return_unit_posting.sql','posted_sale_cancellations.sql']
             for index, name in enumerate(names):
                 database = 'fixture_' + str(index)
                 db.sql('create database ' + database + ' template postgres;')
@@ -128,11 +134,14 @@ rollback;""")
                     setup = subprocess.run(command, input=fixture, text=True, capture_output=True)
                     if setup.returncode: raise RuntimeError('Wholesale fixture setup: ' + setup.stderr[-5000:])
                 source = (ROOT / 'supabase/tests' / name).read_text()
-                if name == 'sales_safe_posting.sql': source = bootstrap.fixture_owner_updates(source)
+                if name == 'posted_sale_cancellations.sql':
+                    source = (ROOT / 'supabase/tests/pos_merchant_fees.sql').read_text().split('set local role authenticated;')[0] + source
+                if name in ('sales_safe_posting.sql', 'posted_sale_cancellations.sql'): source = bootstrap.fixture_owner_updates(source)
                 result = subprocess.run(command, input=source, text=True, capture_output=True)
                 if result.returncode:
                     raise RuntimeError(name + ': ' + result.stderr[-5000:])
                 print('PASS production-order fixture ' + name, flush=True)
+            opening_fixture = (ROOT / 'supabase/tests/fixtures/average_opening_gl.sql').read_text()
             average_fixtures = [
                 ('pos_merchant_fees.sql', 'moving_average_inventory.sql'),
                 ('purchase_invoice_lifecycle.sql', 'average_purchase_corrections.sql'),
@@ -142,14 +151,14 @@ rollback;""")
                 database = 'average_fixture_' + str(index)
                 db.sql('create database ' + database + ' template postgres;')
                 fixture = (ROOT / 'supabase/tests' / fixture_name).read_text().split('set local role authenticated;')[0]
-                source = bootstrap.fixture_owner_updates(fixture + (ROOT / 'supabase/tests' / suite_name).read_text())
+                source = bootstrap.fixture_owner_updates(fixture + opening_fixture + (ROOT / 'supabase/tests' / suite_name).read_text())
                 result = subprocess.run(db.command() + ['-d', database], input=source, text=True, capture_output=True)
                 if result.returncode: raise RuntimeError(suite_name + ': ' + result.stderr[-5000:])
                 print('PASS preserved PR80 suite ' + suite_name, flush=True)
             db.sql('create database average_fixture_clinic template postgres;')
             clinic = (ROOT / 'supabase/tests/clinic_invoice_post.sql').read_text().split('set local role authenticated;')[0]
             order = (ROOT / 'supabase/tests/sales_safe_posting.sql').read_text().split('create function public.test_sales_reject_order_line()')[0].replace('begin;', '', 1)
-            source = bootstrap.fixture_owner_updates((clinic + order + (ROOT / 'supabase/tests/moving_average_clinic.sql').read_text()).replace('update public.profiles ', 'update profiles '))
+            source = bootstrap.fixture_owner_updates((clinic + order + opening_fixture + (ROOT / 'supabase/tests/moving_average_clinic.sql').read_text()).replace('update public.profiles ', 'update profiles '))
             result = subprocess.run(db.command() + ['-d', 'average_fixture_clinic'], input=source, text=True, capture_output=True)
             if result.returncode: raise RuntimeError('moving_average_clinic.sql: ' + result.stderr[-5000:])
             print('PASS preserved PR80 clinic/compound/order-delivery suite.', flush=True)

@@ -1,0 +1,30 @@
+{
+  "base_main": "9aafe37d13913735dacbee60ffd2099b43853db9",
+  "branch": "codex/kamo-average-activation-guard",
+  "release_pr_heads": {
+    "68": "264fb237c978d2ec84cf09e65a9d7cbd0f241f61",
+    "69": "d40c22b923bb4b6141d38164081bdc4407c5ccea",
+    "70": "cc2a89e4d271b9b96ceaee14adab9ef84c2ea24c",
+    "71": "5dde2ef40a0928ba57ef521aae2468e3a2dd4cd3",
+    "72": "0eb82ad95445fb886405193537a3c092c49c9079",
+    "73": "5677efb4c407c5b7b624a3836694c71c6f4d5894",
+    "79": "8c85f53908242abbd55eee7786dfd840edad73b8"
+  },
+  "native_source_migrations": 216,
+  "native_chronological_combined_migrations": 223,
+  "vitest": {
+    "files": 283,
+    "passed": 2301,
+    "failed": 0
+  },
+  "focused_app_tests": 18,
+  "typecheck": "passed",
+  "scoped_eslint": "passed with zero warnings",
+  "build": "passed using fictional loopback Supabase; existing unrelated warnings",
+  "production_changes": "none",
+  "prototype_published": false,
+  "release_combined_caveat": "Resolved by the PR81 follow-up: all seven exact PR81 migrations pass both full replay orders; direct retur-beli fixture now asserts PR72 rejection and rollback. Earlier six-PR-head failure logs remain historical evidence.",
+  "draft_pr": "https://github.com/rezanje/Kamo-Vet-OS/pull/82",
+  "tested_implementation_commit": "7c66e896aad97c0190e672f2f964d5f0f9e8010e",
+  "latest_combined_evidence": "pr81-followup/manifest.json"
+}

@@ -12,6 +12,7 @@ select set_config('request.jwt.claims','{"role":"authenticated"}',true);
 -- first behavioral assertion demonstrates the real missing valuation change.
 do $$ begin
   if to_regprocedure('public.activate_moving_average()') is not null then
+    perform pg_temp.seed_average_opening_gl();
     perform public.activate_moving_average();
   end if;
 end $$;

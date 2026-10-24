@@ -1,0 +1,48 @@
+Applied 222 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Included chronological compatibility migration: 20261021073000_wholesale_invoice_corrections.sql
+Included chronological compatibility migration: 20261021073019_internal_transfer_corrections.sql
+Included chronological compatibility migration: 20261021073519_monetary_opening_corrections.sql
+Included chronological compatibility migration: 20261021074417_return_record_corrections.sql
+Included chronological compatibility migration: 20261021074519_fixed_asset_purchase_corrections.sql
+Included chronological compatibility migration: 20261021083000_stock_document_corrections.sql
+PASS activation guard: missing/wrong/unallocated GL, invalid journals, physical proof, no-side-effects, permissions, valid cutover and retry.
+PASS moving_average_inventory.sql
+PASS average_sale_corrections.sql
+PASS average_purchase_corrections.sql
+PASS moving_average_clinic.sql
+PASS reviewed inventory import fifo
+PASS reviewed inventory import average
+PASS FIFO accurate_inventory_accounting.sql
+PASS FIFO accurate_inventory_accounting_guards.sql
+PASS FIFO accurate_inventory_accounting_review.sql
+PASS FIFO purchase_invoice_lifecycle.sql
+PASS FIFO pos_merchant_fees.sql
+PASS FIFO pos_split_payments.sql
+PASS FIFO online_return_unit_posting.sql
+PASS FIFO clinic_compound_issue.sql
+PASS FIFO clinic_invoice_post.sql
+PASS FIFO clinic_billing_lifecycle.sql
+PASS FIFO sales_safe_posting.sql
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-average-activation/scripts/test-average-activation-accounting-postgres.py", line 215, in <module>
+    main()
+  File "/workspace/kamo-average-activation/scripts/test-average-activation-accounting-postgres.py", line 210, in main
+    regressions(db)
+  File "/workspace/kamo-average-activation/scripts/test-average-activation-accounting-postgres.py", line 76, in regressions
+    db.sql(source_fixture(base + read('posted_sale_cancellations.sql')))
+  File "/workspace/kamo-average-activation/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  Efek retur hanya melalui jalur koreksi catatan retur resmi
+CONTEXT:  PL/pgSQL function public.return_record_protected_effect() line 7 at RAISE
+SQL statement "insert into public.stock_moves(
+    tanggal, warehouse_id, item_id, qty, unit_cost, source, source_ref, fifo_takes, fifo_shortfall
+  ) values (
+    coalesce(p_tanggal, current_date), p_warehouse_id, p_item_id, -p_qty,
+    v_cost / p_qty, p_source, p_source_ref,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_takes end,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_shortfall end
+  )"
+PL/pgSQL function stock_out_fifo(uuid,uuid,numeric,text,text,date) line 124 at SQL statement
+SQL statement "select *             from stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,src,'OTHER.FIFO')"
+PL/pgSQL function inline_code_block line 3 at SQL statement

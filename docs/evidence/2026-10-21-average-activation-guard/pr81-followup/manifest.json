@@ -1,0 +1,30 @@
+{
+  "pr81_head": "e23002326a8666bbaf1cb1545a04465944abb3ca",
+  "base_main": "9aafe37d13913735dacbee60ffd2099b43853db9",
+  "pr82_start_head": "a2be160b18e2e4ea9afb2dc7833199632ef2ce4a",
+  "production_code_changed_in_followup": false,
+  "migration_names": [
+    "supabase/migrations/20261021073000_wholesale_invoice_corrections.sql",
+    "supabase/migrations/20261021073019_internal_transfer_corrections.sql",
+    "supabase/migrations/20261021073519_monetary_opening_corrections.sql",
+    "supabase/migrations/20261021074417_return_record_corrections.sql",
+    "supabase/migrations/20261021074519_fixed_asset_purchase_corrections.sql",
+    "supabase/migrations/20261021083000_stock_document_corrections.sql",
+    "supabase/migrations/20261021183000_correction_master_reference_guards.sql"
+  ],
+  "replays": {
+    "production_order": "PASS: 215 deployed-main migrations, then seven PR81 migrations plus PR82 guard",
+    "clean": "PASS: 223 migrations in timestamp order",
+    "main": "PASS: 216 migrations plus existing regression matrix and five activation race scenarios",
+    "combined_guard_races": "PASS: five real-session activation/GL/actor/receipt races after all223 chronological migrations"
+  },
+  "helper_injected_into": [
+    "moving_average_inventory.sql",
+    "average_purchase_corrections.sql",
+    "average_sale_corrections.sql",
+    "moving_average_clinic.sql"
+  ],
+  "legacy_direct_return": "With PR72: expect SQLSTATE42501 and exact official-path error, verify quantity/layers/moves unchanged. Without PR72: retain successful FIFO cost contract.",
+  "runner_sha256": "0e8a20d29e57e3f9394dd3b3bcfe27e48093c9502afa6dc823382dad46836242",
+  "legacy_fixture_sha256": "d7c6d4ab5c6eb37f4ad890054e5a44e7327fe4d70b1d9ea2384df7011de56634"
+}
