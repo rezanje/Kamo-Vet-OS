@@ -5,6 +5,11 @@ describe('private report configurations',()=>{
   const href=reportPresetHref('/laporan/margin-racikan','dokter=doc-a&cabang=a&cabang=b&dari=2026-10-01&sampai=2026-10-31&rincian=bahan&halaman=5&draft_done=secret&error=no');
   expect(href).toBe('/laporan/margin-racikan?dokter=doc-a&cabang=a&cabang=b&dari=2026-10-01&sampai=2026-10-31&rincian=bahan');
  });
+ it('retains an applied branch ID when reopening a private transaction-detail report',()=>{
+  const href=reportPresetHref('/laporan/penjualan-rinci','dari=2026-10-01&sampai=2026-10-31&cabang_id=20000000-0000-4000-8000-000000000002&kanal=Klinik');
+  expect(href).toContain('cabang_id=20000000-0000-4000-8000-000000000002');
+  expect(readReportPresets(JSON.stringify([{id:'one',name:'Klinik cabang',href,savedAt:'2026-10-24T00:00:00Z'}]))[0].href).toBe(href);
+ });
  it('rejects external, executable, download and non-report destinations',()=>{
   for(const path of ['https://bad.test/laporan/promo','//bad.test','javascript:alert(1)','/laporan/promo/unduh','/pengaturan/reset','/laporan/../pengaturan','/laporan/%2e%2e/promo']) expect(()=>reportPresetHref(path,'')).toThrow();
  });
