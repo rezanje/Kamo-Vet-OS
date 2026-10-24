@@ -12,7 +12,7 @@ it('uses actual detail routes and exact row anchors for payment/list documents',
  expect(relatedDocumentHref('sales-advance',id)).toBe('/penjualan/uang-muka#advance-'+id);
  expect(relatedDocumentHref('legacy-purchase-payment',id,parent)).toBe('/pembelian/'+parent+'#legacy-payment-'+id);
  expect(relatedDocumentHref('purchase-return',id)).toBe('/pembelian/retur/'+id);
- expect(relatedDocumentHref('payment-order',id)).toBe('/pembelian/perintah-bayar#payment-order-'+id);
+ expect(relatedDocumentHref('payment-order',id)).toBe('/pembelian/perintah-bayar?order='+id+'#payment-order-'+id);
 });
 it('preserves a safe contextual return path and does not invent a payment detail route',()=>{
  const from='/pembelian/faktur/'+parent+'#payment-'+id;
@@ -21,6 +21,14 @@ it('preserves a safe contextual return path and does not invent a payment detail
  expect(u.searchParams.get('from')).toBe(from);expect(u.hash).toBe('#advance-'+id);
  expect(documentBackHref(from)).toBe(from);
  expect(relatedDocumentHref('purchase-payment',id)).toBeNull();
+});
+it('preserves the selected payment order while adding a safe return path',()=>{
+ const from='/pembelian/faktur/'+parent+'#payment-'+id;
+ const href=relatedDocumentHref('payment-order',id,undefined,from)!;
+ const u=new URL(href,'http://localhost');
+ expect(u.searchParams.get('order')).toBe(id);
+ expect(u.searchParams.get('from')).toBe(from);
+ expect(u.hash).toBe('#payment-order-'+id);
 });
 it.each(['javascript:alert(1)','//evil.example/pembelian/x','/pembelian/faktur/../../pengaturan','/crm/pelanggan','/pembelian/faktur/'+parent+'?replace=1','/pembelian/faktur/'+parent+'#unsafe','https://evil.example','/pembelian/faktur/'+parent+'\n'])('rejects untrusted return locations %s',bad=>expect(documentBackHref(bad)).toBeNull());
 it('rejects absent, malformed and injected route identities',()=>{

@@ -29,7 +29,7 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
   { tabel: "sales_advances", kolom: "no_um", label: "Uang muka penjualan", href: (r) => `/penjualan/uang-muka#advance-${r.id}` },
   { tabel: "purchase_orders", kolom: "no_po", label: "Pesanan pembelian", href: (r) => `/pembelian/${r.id}` },
   { tabel: "payment_orders", kolom: "no_pp", label: "Perintah bayar",
-    href: (r) => `/pembelian/perintah-bayar#payment-order-${r.id}` },
+    href: (r) => `/pembelian/perintah-bayar?order=${r.id}#payment-order-${r.id}` },
   { tabel: "purchase_invoices", kolom: "no_faktur", label: "Faktur pembelian", href: (r) => `/pembelian/faktur/${r.id}` },
   { tabel: "purchase_returns", kolom: "no_retur", label: "Retur pembelian", href: (r) => `/pembelian/retur/${r.id}` },
   { tabel: "goods_receipts", kolom: "no_terima", label: "Penerimaan barang", href: (r) => `/pembelian/penerimaan/${r.id}` },

@@ -20,6 +20,6 @@ it('opens a numbered sales receipt at its stored invoice and exact receipt row',
 });
 it('opens a numbered payment order at its saved page anchor',async()=>{
  state.table='payment_orders';
- await expect(Resolver({params:Promise.resolve({no:'PP.2026.10.00001'})})).rejects.toThrow(`/pembelian/perintah-bayar#payment-order-${id}`);
+ await expect(Resolver({params:Promise.resolve({no:'PP.2026.10.00001'})})).rejects.toThrow(`/pembelian/perintah-bayar?order=${id}#payment-order-${id}`);
 });
 it('does not present a failed source lookup as a verified missing document',async()=>{state.failed=true;const html=renderToStaticMarkup(await Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})}));expect(html).toContain('DOKUMEN BELUM DAPAT DIPERIKSA');expect(html).not.toContain('private fixture');expect(state.queries).toHaveLength(1);});

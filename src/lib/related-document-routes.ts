@@ -30,12 +30,12 @@ export function relatedDocumentHref(kind: DocumentKind, id: string, parentId?: s
       break;
     case 'purchase-advance': path = `/pembelian/uang-muka#advance-${id}`; break;
     case 'sales-advance': path = `/penjualan/uang-muka#advance-${id}`; break;
-    case 'payment-order': path = `/pembelian/perintah-bayar#payment-order-${id}`; break;
+    case 'payment-order': path = `/pembelian/perintah-bayar?order=${id}#payment-order-${id}`; break;
   }
   const back = documentBackHref(from);
   if (!back) return path;
   const [pathname, hash] = path.split('#');
-  return `${pathname}?${new URLSearchParams({ from: back })}${hash ? '#'+hash : ''}`;
+  return `${pathname}${pathname.includes('?') ? '&' : '?'}${new URLSearchParams({ from: back })}${hash ? '#'+hash : ''}`;
 }
 export function relatedDocumentStatus(status: string): string {
   const labels: Record<string, string> = { aktif: 'Aktif', batal: 'Dibatalkan', berjalan: 'Berjalan', lunas: 'Lunas', draft: 'Draft', disetujui: 'Disetujui', dibayar: 'Dibayar', diproses: 'Diproses', selesai: 'Selesai' };
