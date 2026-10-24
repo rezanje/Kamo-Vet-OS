@@ -60,23 +60,39 @@ export function AccurateImportForm({
   const [receiptDismissed, setReceiptDismissed] = useState(false);
   const [oneClickStockState, setOneClickStockState] = useState<InitialStockState | null>(null);
   const [initialStockAsOf, setInitialStockAsOf] = useState("");
+  const [normalizeMoney,setNormalizeMoney]=useState(false);
   const [scopeSelection, setScopeSelection] = useState<{ branchId: string; warehouseId: string } | null>(null);
   const [skipInitialStock, setSkipInitialStock] = useState(false);
   const [reapplyWithStock, setReapplyWithStock] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [pending, startTransition] = useTransition();
   const progressTimer = useRef<number | null>(null);
+  const pollingGeneration = useRef(0);
+  const generation = useRef(0);
+  const request = useRef<number | null>(null);
+  const invalidateRequest = () => {
+    generation.current += 1;
+    request.current = null;
+    setIsChecking(false);
+    setFlowMode("idle");
+    stopProgressPolling();
+  };
 
   const stopProgressPolling = () => {
+    pollingGeneration.current += 1;
     if (progressTimer.current != null) window.clearInterval(progressTimer.current);
     progressTimer.current = null;
   };
 
   const startProgressPolling = (runId: string) => {
+    stopProgressPolling();
+    const token = generation.current, pollToken = pollingGeneration.current;
     const refresh = async () => {
       try {
         const response = await fetch(`/api/impor/accurate/progres?run_id=${encodeURIComponent(runId)}`, { cache: "no-store" });
-        if (response.ok) setProgress(await response.json() as AccurateImportProgress);
+        if (!response.ok) return;
+        const result = await response.json() as AccurateImportProgress;
+        if (token === generation.current && pollToken === pollingGeneration.current) setProgress(result);
       } catch { /* hasil akhir tetap dari aksi impor */ }
     };
     void refresh();
@@ -84,6 +100,7 @@ export function AccurateImportForm({
   };
 
   useEffect(() => () => {
+    generation.current += 1;
     if (progressTimer.current != null) window.clearInterval(progressTimer.current);
   }, []);
 
@@ -91,12 +108,18 @@ export function AccurateImportForm({
     () => (state?.rows ?? []).filter((row) => showSame || row.status !== "Sama"),
     [showSame, state],
   );
+  // Preflight has no run_id; a saved preview must continue to accounting review.
+  const accountingReviewReady = Boolean(
+    !skipInitialStock && oneClickStockState?.ok
+    && oneClickStockState.phase === "preview" && oneClickStockState.run_id,
+  );
+  const accountingReviewHref = `/keuangan/persediaan-awal?run_id=${encodeURIComponent(oneClickStockState?.run_id ?? "")}`;
   const previewReady = Boolean(
     files.length === 1
     && (skipInitialStock || initialStockAsOf)
     && state?.ok
     && state.run_id
-    && (skipInitialStock || (oneClickStockState?.ok && oneClickStockState.phase === "preview")),
+    && (skipInitialStock || (oneClickStockState?.ok && oneClickStockState.phase === "preview" && !oneClickStockState.run_id)),
   );
   const importComplete = Boolean(oneClickStockState?.ok && oneClickStockState.phase === "done");
   const isBusy = pending || isChecking;
@@ -119,7 +142,7 @@ export function AccurateImportForm({
     stockCheckComplete: oneClickStockState !== null,
     stockReady: Boolean(oneClickStockState?.ok),
   });
-  const canCheck = files.length === 1 && !isBusy && !previewReady && !importComplete;
+  const canCheck = files.length === 1 && !isBusy && !previewReady && !accountingReviewReady && !importComplete;
   const canImportOnce = previewReady && !isBusy;
   const readyStockCount = oneClickStockState?.rows.filter((row) => row.status === "valid").length ?? 0;
   const shownPercentage = progress
@@ -146,6 +169,9 @@ export function AccurateImportForm({
       setLocalError("Cek perubahan dan saldo memakai satu file Excel yang sama.");
       return;
     }
+    if (request.current !== null) return;
+    const token = generation.current;
+    request.current = token;
     const file = files[0];
     setLocalError("");
     setScopeSelection(selection);
@@ -160,6 +186,7 @@ export function AccurateImportForm({
       if (categoryFile) masterData.append("category_file", categoryFile);
       setOneClickStatus("Mengecek master Barang & Jasa…");
       const masterPreview = await previewImporAccurate(masterData);
+      if (token !== generation.current) return;
       setState(masterPreview);
       if (!masterPreview.ok) {
         setOneClickPercentage(100);
@@ -180,29 +207,39 @@ export function AccurateImportForm({
       const stockData = new FormData();
       stockData.append("initial_stock_file", file);
       stockData.append("initial_stock_as_of", initialStockAsOf);
+      stockData.set('valuation_policy',normalizeMoney?'HALF_UP_BATCH_V1':'STRICT');
       isiPilihanTujuan(stockData, selection);
+      if (token !== generation.current) return;
       const stockPreview = await preflightSaldoAwalSekali(stockData);
+      if (token !== generation.current) return;
       setOneClickStockState(stockPreview);
       setOneClickPercentage(100);
       setOneClickStatus(stockPreview.ok ? "Pemeriksaan selesai. Import Sekali sudah bisa dijalankan." : stockPreview.message);
     } catch {
+      if (token !== generation.current) return;
       setState(null);
       setOneClickStockState(null);
       setOneClickPercentage(0);
       setOneClickStatus("Pemeriksaan terputus. Tidak ada barang atau stok yang disimpan.");
       setLocalError("Pemeriksaan belum selesai karena sambungan ke sistem terputus. Coba Cek perubahan lagi; data belum diimpor.");
     } finally {
+      if (token === generation.current) {
+      request.current = null;
       setIsChecking(false);
       setFlowMode("idle");
+      }
     }
   };
 
   const importSekali = () => {
+    if (request.current !== null) return;
     if (!previewReady || !state?.run_id || (!skipInitialStock && !oneClickStockState?.ok) || files.length !== 1) {
       setLocalError("Jalankan Cek perubahan sampai selesai sebelum Import Sekali.");
       return;
     }
     const file = files[0];
+    const token = generation.current;
+    request.current = token;
     const masterPreview = state;
     const masterRunId = state.run_id;
     setLocalError("");
@@ -222,10 +259,10 @@ export function AccurateImportForm({
         if (categoryFile) confirmData.append("category_file", categoryFile);
         try {
           masterDone = await konfirmasiImporAccurate(confirmData);
+          if (token !== generation.current) return;
           setState(masterDone);
         } finally {
-          stopProgressPolling();
-          setProgress(null);
+          if (token === generation.current) { stopProgressPolling(); setProgress(null); }
         }
       }
       if (!masterDone.ok || !masterDone.run_id) {
@@ -251,24 +288,29 @@ export function AccurateImportForm({
       stockPreviewData.append("initial_stock_file", file);
       stockPreviewData.append("master_run_id", masterDone.run_id);
       stockPreviewData.append("initial_stock_as_of", initialStockAsOf);
+      stockPreviewData.set('valuation_policy',normalizeMoney?'HALF_UP_BATCH_V1':'STRICT');
       isiPilihanTujuan(stockPreviewData);
+      if (token !== generation.current) return;
       const stockPreview = await previewSaldoAwalAccurate(stockPreviewData);
+      if (token !== generation.current) return;
       setOneClickStockState(stockPreview);
       if (!stockPreview.ok || !stockPreview.run_id || !stockPreview.branch_id || !stockPreview.warehouse_id || !stockPreview.as_of) {
         setOneClickStatus(stockPreview.message);
         return;
       }
 
+      window.history.replaceState(window.history.state, "", `/pos/sku/impor?run_id=${encodeURIComponent(stockPreview.run_id)}`);
       setOneClickPercentage(100);
       setOneClickStatus("Master tersimpan dan batch stok siap. Tinjau akun lawan di Keuangan / Persediaan Awal sebelum posting stok + jurnal.");
       } catch {
+        if (token !== generation.current) return;
         stopProgressPolling();
         setProgress(null);
         setOneClickPercentage(0);
         setOneClickStatus("Hasil impor belum diterima dari sistem.");
         setLocalError("Proses impor terputus sebelum hasilnya diterima. Jangan unggah file baru; muat ulang halaman lalu Cek perubahan dengan file yang sama agar statusnya dipastikan.");
       } finally {
-        setFlowMode("idle");
+        if (token === generation.current) { request.current = null; setFlowMode("idle"); }
       }
     });
   };
@@ -293,11 +335,17 @@ export function AccurateImportForm({
         Kalau file Barang &amp; Jasa punya kolom Subkategori, kategori induk dan subkategori otomatis ikut terbentuk.
       </div>
 
+      <ol aria-label="Status tahap impor" style={{fontSize:12,lineHeight:1.6}}>
+        <li>Master: {state?.phase === "done" && state.ok ? "tersimpan" : state?.ok ? "sudah diperiksa, belum disimpan" : "belum lolos pemeriksaan"}.</li>
+        <li>Persiapan saldo: {skipInitialStock ? "tidak diminta" : oneClickStockState?.run_id ? "batch tersimpan" : "belum tersimpan"}.</li>
+        <li>Review akun dan nilai: {oneClickStockState?.run_id ? "lanjutkan ke OWNER di Persediaan Awal" : "menunggu persiapan saldo"}.</li>
+        <li>Posting stok + jurnal: {skipInitialStock ? "tidak diminta pada impor master saja" : oneClickStockState?.phase === "done" ? "bukti batch tersimpan; periksa di Persediaan Awal" : "belum diposting"}.</li>
+      </ol>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7, marginTop: 12 }}>
         {[
           { number: 1, label: "Pilih file", active: files.length === 0, done: files.length === 1 },
-          { number: 2, label: "Cek perubahan", active: files.length === 1 && !previewReady && !importComplete, done: previewReady || importComplete },
-          { number: 3, label: "Import Sekali", active: previewReady || (isBusy && flowMode === "importing"), done: importComplete },
+          { number: 2, label: "Cek perubahan", active: files.length === 1 && !previewReady && !accountingReviewReady && !importComplete, done: previewReady || accountingReviewReady || importComplete },
+          { number: 3, label: accountingReviewReady ? "Tinjau stok + jurnal" : "Import Sekali", active: previewReady || accountingReviewReady || (isBusy && flowMode === "importing"), done: importComplete },
         ].map((step) => (
           <div key={step.number} style={{
             display: "flex", alignItems: "center", gap: 7, padding: "8px 9px", borderRadius: 8,
@@ -331,6 +379,7 @@ export function AccurateImportForm({
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             style={{ display: "none" }}
             onChange={(event) => {
+              invalidateRequest();
               const selected = event.target.files?.[0] ?? null;
               setFiles(selected ? [selected] : []);
               setState(null);
@@ -358,6 +407,7 @@ export function AccurateImportForm({
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             style={{ display: "none" }}
             onChange={(event) => {
+              invalidateRequest();
               setCategoryFile(event.target.files?.[0] ?? null);
               setState(null);
               setOneClickStockState(null);
@@ -375,10 +425,12 @@ export function AccurateImportForm({
           onClick={() => { void cekPerubahanSekali(); }} style={{ background: canCheck ? "var(--posb)" : "#94a3b8", cursor: canCheck ? "pointer" : "not-allowed" }}>
           <i className={`ti ${isChecking ? "ti-loader-2" : "ti-eye"}`} style={isChecking ? { animation: "btn-spin .8s linear infinite" } : undefined} /> {isChecking ? "Memproses…" : "Cek perubahan"}
         </button>
-        <button type="button" className="btn-acc" disabled={!canImportOnce}
+        {accountingReviewReady ? <Link href={accountingReviewHref} className="btn-acc" style={{ background: "#15803d", justifyContent: "center", textDecoration: "none" }}>
+          <i className="ti ti-clipboard-check" /> Tinjau dan posting stok + jurnal
+        </Link> : <button type="button" className="btn-acc" disabled={!canImportOnce}
           onClick={importSekali} style={{ background: canImportOnce ? "#15803d" : "#94a3b8", cursor: canImportOnce ? "pointer" : "not-allowed" }}>
           <i className={`ti ${pending && flowMode === "importing" ? "ti-loader-2" : "ti-database-import"}`} style={pending && flowMode === "importing" ? { animation: "btn-spin .8s linear infinite" } : undefined} /> {pending && flowMode === "importing" ? "Mengimpor…" : "Import Sekali"}
-        </button>
+        </button>}
         {files.length > 0 && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {files[0].name}</span>}
         {categoryFile && <span style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {categoryFile.name} — dipakai bila file Barang &amp; Jasa tidak punya Subkategori.</span>}
       </div>
@@ -392,6 +444,7 @@ export function AccurateImportForm({
           required
           value={initialStockAsOf}
           onChange={(event) => {
+            invalidateRequest();
             setInitialStockAsOf(event.target.value);
             setOneClickStockState(null);
             setScopeSelection(null);
@@ -405,6 +458,8 @@ export function AccurateImportForm({
           Wajib dipilih. Dipakai hanya bila Per Tanggal di file kosong; bila file berisi tanggal berbeda, impor akan diblokir.
         </span>
       </label>}
+
+      {!skipInitialStock&&<label style={{display:'block',marginTop:10,fontSize:11}}><input type="checkbox" aria-label="Bulatkan nilai uang ke 2 desimal" checked={normalizeMoney} onChange={event=>{invalidateRequest();setNormalizeMoney(event.target.checked);setOneClickStockState(null);setOneClickStatus('');setLocalError('');}}/> Bulatkan total nilai uang ke 2 desimal (HALF_UP). Jumlah stok tidak dibulatkan. Nilai sumber dan selisih ditampilkan sebelum review; file tidak perlu diedit.</label>}
 
       {(localError || (state && !state.ok)) && (
         <div className="p2ban" style={{ marginTop: 12, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
@@ -446,6 +501,15 @@ export function AccurateImportForm({
               setOneClickStatus("Isi tanggal saldo, lalu Cek perubahan untuk melanjutkan impor saldo awal.");
             }}>Impor saldo awal juga</button>
           </div>}
+        </div>
+      )}
+
+      {accountingReviewReady && !isBusy && (
+        <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
+          <div style={{ fontSize: 12, fontWeight: 900 }}>Master tersimpan, batch saldo siap ditinjau</div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>
+            Stok dan jurnal belum diposting. Lanjutkan melalui Tinjau dan posting stok + jurnal. OWNER perlu memeriksa batch, cabang, tanggal, nilai, dan akun ekuitas sebelum posting.
+          </div>
         </div>
       )}
 

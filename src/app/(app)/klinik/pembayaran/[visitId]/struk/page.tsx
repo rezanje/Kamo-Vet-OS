@@ -1,3 +1,4 @@
+import { servicePerformerNames } from "@/lib/service-performers";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -22,12 +23,12 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
 
   const { data: invoice } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at, cashier_name")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!invoice) notFound();
 
   const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga").eq("invoice_id", invoice.id).order("created_at");
+    .from("invoice_items").select("deskripsi, qty, harga, jenis, service_performers").eq("invoice_id", invoice.id).order("created_at");
   const { data: payments } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
@@ -63,13 +64,14 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Hr />
         <Kv k="No" v={invoice.invoice_no ?? "-"} />
         <Kv k="Tgl" v={tgl} />
-        <Kv k="Kasir" v={visit.dokter ?? "-"} />
+        <Kv k="Kasir" v={invoice.cashier_name ?? "Kasir belum tercatat"} />
         <Kv k="Pasien" v={`${pet?.name ?? "-"} (${pet?.species ?? "-"})`} />
         <Kv k="Pemilik" v={cust?.name ?? "-"} />
         <Hr />
         {(items ?? []).map((it, i) => (
           <div key={i} style={{ marginBottom: 3 }}>
             <div>{it.deskripsi}</div>
+            {it.jenis === "jasa" && <div style={{fontSize:9}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{it.qty} x {rp(it.harga)}</span>
               <span>{rp(it.qty * it.harga)}</span>

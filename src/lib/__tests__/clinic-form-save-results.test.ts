@@ -64,3 +64,6 @@ it('sends separate doctor/paramedic IDs with the entire inpatient transaction',a
  expect(await addDailyLogPos(data)).toMatchObject({saved:true});
  expect(fixture.calls.find(c=>c.name==='clinic_save_inpatient_log_with_status')?.args.p_log).toMatchObject({log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002',paramedic_id:'dc000000-0000-4000-8000-000000000003'});
 });
+
+it('persists optional therapy text in the existing atomic initial-record payload',async()=>{const data=form();data.set('therapy','Terapi fiktif\nObservasi');expect(await simpanRekamMedis(data)).toMatchObject({saved:true});expect(fixture.calls.find(c=>c.name==='clinic_save_initial_record')?.args.p_record).toMatchObject({therapy:'Terapi fiktif\nObservasi'});});
+it.each([undefined,'','   '])('keeps blank or absent therapy omitted so pre-deployment request hashes remain compatible (%s)',async(value)=>{const data=form();if(value!==undefined)data.set('therapy',value);expect(await simpanRekamMedis(data)).toMatchObject({saved:true});expect(fixture.calls.find(c=>c.name==='clinic_save_initial_record')?.args.p_record).not.toHaveProperty('therapy');});

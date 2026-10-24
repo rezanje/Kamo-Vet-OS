@@ -1,0 +1,18 @@
+
+> vetos@0.1.0 test
+> vitest run src/lib/__tests__/clinic-service-categories.test.ts src/lib/__tests__/clinic-compound-sku-pages.test.tsx src/components/__tests__/clinic-pos-categories.test.tsx src/lib/__tests__/clinic-payment.test.ts src/lib/__tests__/clinic-form-save-results.test.ts src/lib/__tests__/impor-accurate.test.ts
+
+
+ RUN  v4.1.9 /workspace/kamo-clinic-services-fix
+
+
+ Test Files  6 passed (6)
+      Tests  79 passed (79)
+   Start at  09:56:30
+   Duration  1.88s (transform 1.14s, setup 0ms, import 2.10s, tests 1.32s, environment 455ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

@@ -1,0 +1,41 @@
+[RED log excerpt: long Received SSR markup omitted; assertion failures and run summary retained.]
+
+ RUN  v4.1.9 /workspace/kamo-k05
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx (12 tests | 2 failed) 92ms
+   × does not claim missing documents or offer creation from an incomplete consents read 14ms
+   × does not claim missing documents or offer creation from an incomplete consent_templates read 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > does not claim missing documents or offer creation from an incomplete consents read
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Data persetujuan belum dapat dimuat l…'
+
+Expected: "Data persetujuan belum dapat dimuat lengkap"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:28:192
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > does not claim missing documents or offer creation from an incomplete consent_templates read
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Data persetujuan belum dapat dimuat l…'
+
+Expected: "Data persetujuan belum dapat dimuat lengkap"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:28:192
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  06:45:06
+   Duration  678ms (transform 252ms, setup 0ms, import 398ms, tests 92ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

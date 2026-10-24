@@ -1,14 +1,18 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 // ponytail: dynamic item rows serialized to hidden JSON, same pattern as PermintaanForm.
 
 import { usePreservedAction } from "@/components/LocalTransactionDraft";
+import { PurchasePriceInput } from "@/components/PurchasePriceInput";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import { draftRows } from "@/components/TransactionDraft";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { WarehouseStock } from "@/lib/warehouse-stock";
 import { WarehouseStockHint } from "@/components/WarehouseStockHint";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SecHeader } from "@/components/SecHeader";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { buatPO } from "../actions";
@@ -50,7 +54,6 @@ export function POForm({
   }, []);
   const stockByItem = new Map(stock.filter(s => s.warehouse_id === warehouseId).map(s => [s.item_id, Number(s.qty)]));
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
-  const byLabel = new Map(items.map((it) => [itemLabel(it), it]));
 
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -60,11 +63,24 @@ export function POForm({
 
   // Pilih dari master SKU → link item_id + prefill harga beli; teks bebas tetap boleh (item_id null).
   const setNama = (i: number, v: string) => {
-    const it = byLabel.get(v);
+    // Recognize the old exact code/name label only when unambiguous. Ordinary
+    // typed names stay free text; selecting an option supplies the actual ID.
+    const matches = items.filter(it => itemLabel(it) === v);
+    const it = matches.length === 1 ? matches[0] : undefined;
     const dasar = it?.units[0];
     set(i, it
       ? { nama: v, item_id: it.id, harga_beli: dasar?.buy_price || Number(it.buy_price) || 0, satuan: dasar?.unit ?? it.unit ?? "", faktor: 1 }
       : { nama: v, item_id: null, satuan: "", faktor: 1 });
+  };
+  const chooseItem = (i: number, id: string) => {
+    const it = byId.get(id);
+    if (!it) return;
+    const dasar = it.units[0];
+    set(i, { nama: it.name, item_id: it.id, harga_beli: dasar?.buy_price || Number(it.buy_price) || 0, satuan: dasar?.unit ?? it.unit ?? "", faktor: 1 });
+  };
+  const displayName = (row: Row) => {
+    const item = row.item_id ? byId.get(row.item_id) : undefined;
+    return item && row.nama === itemLabel(item) ? item.name : row.nama;
   };
 
   // Beli per box → harga beli & faktor ikut satuan yang dipilih.
@@ -92,11 +108,8 @@ export function POForm({
       }, reset: () => { setRows([{ ...blank }]); setWarehouseId(""); } }} />
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
-      <datalist id="po-items">
-        {items.map((it) => <option key={it.id} value={itemLabel(it)} />)}
-      </datalist>
 
-      <div className="grid2">
+      <div className="grid2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))"}}>
         {/* Kolom kiri: detail PO */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <SecHeader num="01" title="DETAIL PO" desc="Supplier, gudang tujuan & cabang." />
@@ -183,16 +196,12 @@ export function POForm({
               const faktor = Number(r.faktor) || 1;
               return (
                 <div key={i}>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <input
-                      className="fi"
-                      list="po-items"
-                      placeholder="Kode / nama barang"
-                      value={r.nama}
-                      onChange={(e) => setNama(i, e.target.value)}
-                      style={{ flex: 2 }}
-                    />
-                    <input
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                    <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+                      <SearchableItemPicker items={items} value={r.item_id ?? ""} textValue={displayName(r)}
+                        onTextChange={text => setNama(i, text)} onChange={id => chooseItem(i, id)} ariaLabel={`Barang PO ${i + 1}`} />
+                    </div>
+                    <NumberInput
                       className="fi"
                       type="number"
                       min={0}
@@ -222,17 +231,7 @@ export function POForm({
                         {r.satuan || "—"}
                       </span>
                     )}
-                    <input
-                      className="fi"
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={r.harga_beli}
-                      onChange={(e) => set(i, { harga_beli: Number(e.target.value) })}
-                      style={{ width: 110 }}
-                      title={`Harga beli per ${r.satuan || "satuan"}`}
-                      placeholder="Harga beli"
-                    />
+                    <PurchasePriceInput price={r.harga_beli} onChange={value=>set(i,{harga_beli:value})} label={`Harga beli per ${r.satuan || "satuan"}`} />
                     <button
                       type="button"
                       onClick={() => del(i)}

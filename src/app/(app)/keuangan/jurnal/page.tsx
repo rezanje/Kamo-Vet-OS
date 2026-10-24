@@ -30,6 +30,7 @@ const akunDari = (l: JournalLine): Akun | null =>
   Array.isArray(l.coa_accounts) ? (l.coa_accounts[0] ?? null) : l.coa_accounts;
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+const SOURCE_SCHEDULE_LOOKUP_BATCH = 50;
 
 const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   manual:  { label: "Manual",  cls: "x" },
@@ -64,14 +65,15 @@ export default async function JurnalPage({
 }: {
   searchParams: Promise<{
     success?: string; error?: string;
-    cari?: string; cabang?: string; sumber?: string; dari?: string; sampai?: string;
+    cari?: string; cabang?: string; sumber?: string; dari?: string; sampai?: string; entry?: string;
   }>;
 }) {
-  const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "" } = await searchParams;
+  const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "", entry = "" } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
   const isOwner = profile?.role === "OWNER" && profile.is_active === true;
+  const canCreateSourceSchedule = profile?.is_active === true && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
 
   // Jurnal berulang: catch-up bulan tertinggal (idempotent via last_posted).
   let recurringPosted: { nama: string; periode: string }[] = [];
@@ -94,6 +96,7 @@ export default async function JurnalPage({
   if (sumber) qEntries = qEntries.eq("source", sumber);
   if (dari) qEntries = qEntries.gte("tanggal", dari);
   if (sampai) qEntries = qEntries.lte("tanggal", sampai);
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry)) qEntries = qEntries.eq("id", entry);
   if (cari.trim()) {
     const q = cari.trim();
     qEntries = qEntries.or(`no_jurnal.ilike.%${q}%,deskripsi.ilike.%${q}%,source_ref.ilike.%${q}%`);
@@ -115,7 +118,24 @@ export default async function JurnalPage({
   const accounts = (accData ?? []) as unknown as CoaAccount[];
   const branches = (branchData ?? []) as unknown as Branch[];
   const entries  = (entryData  ?? []) as unknown as JournalEntry[];
-  const adaSaringan = !!(cari || cabang || sumber || dari || sampai);
+  const recurringScheduleIds = [...new Set(entries.flatMap((entry) =>
+    entry.source === "recurring" && entry.source_ref
+      && /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/i.test(entry.source_ref)
+      ? [entry.source_ref.slice(0, 36)] : []))];
+  const sourceRecurringIds = new Set<string>();
+  if (recurringScheduleIds.length > 0) {
+    const sourceScheduleLookups = await Promise.all(Array.from(
+      { length: Math.ceil(recurringScheduleIds.length / SOURCE_SCHEDULE_LOOKUP_BATCH) },
+      (_, index) => recurringScheduleIds.slice(index * SOURCE_SCHEDULE_LOOKUP_BATCH, (index + 1) * SOURCE_SCHEDULE_LOOKUP_BATCH),
+    ).map((ids) => supabase.from("recurring_journals")
+      .select("id").eq("is_source_schedule", true).in("id", ids)));
+    for (const { data: sourceSchedules, error: sourceScheduleError } of sourceScheduleLookups) {
+      if (!sourceScheduleError && Array.isArray(sourceSchedules)) {
+        for (const schedule of sourceSchedules as { id: string }[]) sourceRecurringIds.add(schedule.id);
+      }
+    }
+  }
+  const adaSaringan = !!(cari || cabang || sumber || dari || sampai || entry);
 
   return (
     <>
@@ -289,7 +309,9 @@ export default async function JurnalPage({
                         {(Array.isArray(e.branches) ? e.branches[0] : e.branches)?.name ?? "Pusat"}
                       </td>
                       <td style={{ fontFamily: "monospace", fontSize: 10 }}>
-                        <NoDok nomor={e.source_ref} />
+                        {e.source === "recurring" && e.source_ref && sourceRecurringIds.has(e.source_ref.slice(0, 36))
+                          ? <Link href={`/keuangan/jurnal-berulang/${e.source_ref.slice(0, 36)}`}>{e.source_ref.slice(-7)} · jadwal</Link>
+                          : <NoDok nomor={e.source_ref} />}
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`bge ${badge.cls}`} style={{ fontSize: 9 }}>
@@ -303,9 +325,12 @@ export default async function JurnalPage({
                         {rp(totK)}
                       </td>
                       <td>
-                        {e.voided_at ? <span className="bge r" style={{ fontSize: 9 }}>Dibatalkan / digantikan</span> : ["manual", "manual-correction"].includes(e.source) && isOwner ? (
-                          <JurnalCorrectionForm userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />
-                        ) : ["manual", "manual-correction"].includes(e.source) ? <span style={{ color: "var(--tm)", fontSize: 10 }}>Khusus Super Admin</span> : <span style={{ color: "var(--tm)", fontSize: 10 }}>Koreksi dari transaksi sumber</span>}
+                        {e.voided_at ? <span className="bge r" style={{ fontSize: 9 }}>Dibatalkan / digantikan</span> : ["manual", "manual-correction"].includes(e.source) ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                          {canCreateSourceSchedule && <Link className="btn-def" style={{ padding: "4px 8px", fontSize: 10 }} href={`/keuangan/jurnal-berulang/dari-jurnal/${e.id}`}>Buat jadwal dari jurnal</Link>}
+                          {isOwner
+                            ? <JurnalCorrectionForm userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />
+                            : !canCreateSourceSchedule && <span style={{ color: "var(--tm)", fontSize: 10 }}>Khusus Super Admin</span>}
+                        </div> : <span style={{ color: "var(--tm)", fontSize: 10 }}>Koreksi dari transaksi sumber</span>}
                       </td>
                     </tr>
                   );

@@ -174,6 +174,7 @@ type InvoiceLine = {
     visits: Rel<{ branch_id: string; dokter: string | null; doctor_id: string | null }> }>;
 };
 type Recipe = { id: string; recipe_name: string; status: string };
+type CompoundSaleBinding = {request_key:string;recipe_id:string;visit_id:string;sale_item_id:string;sale_name:string};
 type OfficialUsage = { recipe_id: string; formula_version_id: string };
 type Version = { id: string; name: string; version: number; formula_id: string };
 export async function loadCompoundReport(client: SupabaseClient, params: ReportParams) {
@@ -209,25 +210,33 @@ export async function loadCompoundReport(client: SupabaseClient, params: ReportP
     return record.visit_id;
   }));
   const recipeIds = lines.flatMap(row => row.compound_recipe_id ? [row.compound_recipe_id] : []);
-  const [recipes, usage, snapshots, issues] = await Promise.all([
+  const [recipes, usage, snapshots, issues, saleBindings] = await Promise.all([
     byIds<Recipe>(client,"compounding_recipes","id,recipe_name,status","id",recipeIds),
     byIds<OfficialUsage>(client,"compound_official_usage","recipe_id,formula_version_id","recipe_id",recipeIds,"recipe_id"),
     byIds<IngredientSnapshot>(client,"compounding_ingredients","id,recipe_id,item_id,ingredient_name,quantity,unit","recipe_id",recipeIds),
     ingredientIssues(client, lines.map(row => row.id)),
+    byIds<CompoundSaleBinding>(client,"clinic_compound_sales","request_key,recipe_id,visit_id,sale_item_id,sale_name","recipe_id",recipeIds,"request_key"),
   ]);
   const versions = await byIds<Version>(client,"compound_formula_versions","id,name,version,formula_id","id",usage.map(row => row.formula_version_id));
   const recipeMap = new Map(recipes.map(row => [row.id,row]));
   const usageMap = new Map(usage.map(row => [row.recipe_id,row.formula_version_id]));
   const versionMap = new Map(versions.map(row => [row.id,row]));
+  const saleMap = new Map<string,CompoundSaleBinding>();
+  for(const binding of saleBindings){
+    if(!recipeIds.includes(binding.recipe_id)||!binding.sale_item_id||!binding.visit_id||saleMap.has(binding.recipe_id))throw new Error("Data laporan gagal dibaca: tautan induk racikan tidak valid");
+    saleMap.set(binding.recipe_id,binding);
+  }
   const branchMap = new Map(scope.branches.map(row => [row.id,row.name]));
   const values = compoundSales(lines.map(line => {
     const invoice = one(line.invoices), visit = one(invoice?.visits ?? null);
     if (!invoice || !visit || !scope.branchIds.includes(visit.branch_id)) throw new Error("Data laporan gagal dibaca: cabang invoice tidak tersedia");
     const recipe = line.compound_recipe_id ? recipeMap.get(line.compound_recipe_id) : undefined;
+    const saleBinding=line.compound_recipe_id?saleMap.get(line.compound_recipe_id):undefined;
+    if(saleBinding&&saleBinding.visit_id!==invoice.visit_id)throw new Error("Data laporan gagal dibaca: kunjungan induk racikan tidak cocok");
     const formulaVersionId = line.compound_recipe_id ? usageMap.get(line.compound_recipe_id) ?? null : null;
     const version = formulaVersionId ? versionMap.get(formulaVersionId) : undefined;
     const doctor = visit.dokter?.trim() || "Belum tercatat";
-    return { id: line.id, recipeId: line.compound_recipe_id, qty: line.qty, price: line.harga,
+    return { id: line.id, recipeId: line.compound_recipe_id, saleItemId:saleBinding?.sale_item_id??null, saleItemName:saleBinding?.sale_name??null, qty: line.qty, price: line.harga,
       discountPercent: line.diskon_persen ?? 0, hpp: line.hpp, name: line.deskripsi, recipeName: recipe?.recipe_name ?? line.deskripsi,
       formulaVersionId, version: version?.version ?? null, formulaName: version?.name ?? null,
       branchId: visit.branch_id, branch: branchMap.get(visit.branch_id) ?? visit.branch_id, doctor,

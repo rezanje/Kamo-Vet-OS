@@ -1,0 +1,14 @@
+
+ RUN  v4.1.9 /workspace/kamo-selector-remaining
+
+
+ Test Files  5 passed (5)
+      Tests  29 passed (29)
+   Start at  12:28:20
+   Duration  1.62s (transform 452ms, setup 0ms, import 746ms, tests 1.12s, environment 1.25s)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

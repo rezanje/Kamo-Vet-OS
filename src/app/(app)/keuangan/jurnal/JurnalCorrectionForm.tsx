@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -38,8 +40,8 @@ export function JurnalCorrectionForm({ entryId, revision, tanggal: initialDate, 
         <input aria-label="Deskripsi koreksi" className="fi" name="deskripsi" value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} required />
         {lines.map((line, index) => <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px", gap: 5 }}>
           <select aria-label={`Akun baris ${index + 1}`} className="fi" value={line.account_id} onChange={(e) => setLine(index, { account_id: e.target.value })}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.code} — {account.name}</option>)}</select>
-          <input aria-label={`Debit baris ${index + 1}`} className="fi" type="number" min="0" step="0.01" value={line.debit || ""} onChange={(e) => setLine(index, { debit: Number(e.target.value) || 0, credit: 0 })} />
-          <input aria-label={`Kredit baris ${index + 1}`} className="fi" type="number" min="0" step="0.01" value={line.credit || ""} onChange={(e) => setLine(index, { credit: Number(e.target.value) || 0, debit: 0 })} />
+          <NumberInput aria-label={`Debit baris ${index + 1}`} className="fi" type="number" min="0" step="0.01" value={line.debit || ""} onChange={(e) => setLine(index, { debit: Number(e.target.value) || 0, credit: 0 })} />
+          <NumberInput aria-label={`Kredit baris ${index + 1}`} className="fi" type="number" min="0" step="0.01" value={line.credit || ""} onChange={(e) => setLine(index, { credit: Number(e.target.value) || 0, debit: 0 })} />
         </div>)}
         <input aria-label="Alasan koreksi" className="fi" name="reason" placeholder="Alasan koreksi (wajib)" value={reason} onChange={(e) => setReason(e.target.value)} required minLength={3} />
         <SubmitButton className="btn-def" disabled={!ready || !balanced || reason.trim().length < 3}>Simpan koreksi</SubmitButton>

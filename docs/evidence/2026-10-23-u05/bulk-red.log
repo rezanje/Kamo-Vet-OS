@@ -1,0 +1,37 @@
+
+ RUN  v4.1.9 /workspace/kamo-u05
+
+ ❯ src/lib/__tests__/clinic-material-bulk-actions.test.ts (3 tests | 1 failed) 18ms
+   × reads and releases every explicit matching result beyond the API thousand-row cap 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/clinic-material-bulk-actions.test.ts > reads and releases every explicit matching result beyond the API thousand-row cap
+AssertionError: expected { ok: false, …(1) } to deeply equal { ok: true, updated: 1205 }
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
+-   "updated": 1205,
++   "error": "Sebagian barang sudah tidak aktif atau tidak ditemukan.",
++   "ok": false,
+  }
+
+ ❯ src/lib/__tests__/clinic-material-bulk-actions.test.ts:7:173
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  07:26:57
+   Duration  262ms (transform 45ms, setup 0ms, import 61ms, tests 18ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

@@ -7,9 +7,9 @@ const MAX_AGE = 12 * 60 * 60 * 1000;
 type Draft<T> = { version: 1; savedAt: number; requestKey: string; fields: Record<string, string>; snapshot: T };
 
 /** Session-only drafts are isolated by the authenticated server user and encounter. */
-export function useClinicDraft<T extends Record<string, unknown>>({ userId, scope, requestKey, snapshot, restore, optionalSnapshotKeys = [] }: {
+export function useClinicDraft<T extends Record<string, unknown>>({ userId, scope, requestKey, snapshot, restore, optionalSnapshotKeys = [], uncertainMessage }: {
   userId: string; scope: string; requestKey: string; snapshot: T; restore: (value: T) => void;
-  optionalSnapshotKeys?: (keyof T)[];
+  optionalSnapshotKeys?: (keyof T)[]; uncertainMessage?: string;
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -69,6 +69,7 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
               if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)
                 && typeof draft.fields[control.name] === "string" && !(control instanceof HTMLInputElement && ["hidden", "file"].includes(control.type))) {
                 control.value = draft.fields[control.name];
+                control.dispatchEvent(new Event("vetos:numeric-sync"));
               }
             }
             lastSnapshot.current = JSON.stringify(draft.snapshot);
@@ -119,7 +120,7 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
       // Next handles server redirects; only transport failures need an inline retry message.
       if (typeof (error as { digest?: unknown })?.digest === "string"
         && (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")) throw error;
-      setSaveError("Belum tersimpan. Isian tetap tersedia; periksa koneksi lalu coba simpan lagi.");
+      setSaveError(uncertainMessage ?? "Belum tersimpan. Isian tetap tersedia; periksa koneksi lalu coba simpan lagi.");
     }
   }
   function preventFailedReset(event: Event) {

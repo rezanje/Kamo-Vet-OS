@@ -1,6 +1,10 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useMemo, useState } from "react";
+import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -25,6 +29,7 @@ type CartRow = {
   ingredients?: RacikanIngredient[]; dosage_form?: string; aturan_pakai?: string;
   official_version_id?: string;
   sale_item_id?: string;
+  service_performers?: ServicePerformersInput | null;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -36,7 +41,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[] }: {
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [] }: {
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
@@ -47,12 +52,14 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   katalogRacikan: KatalogRacikan[];
   bolehManual: boolean;
   doctors?:ClinicalStaff[];paramedics?:ClinicalStaff[];
+  serviceStaff?: ServiceStaff[];
 }) {
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
   const [tab, setTab] = useState<Tab>("Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);
+  const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
   // Retain legacy draft fields so older snapshots still recover intact.
@@ -127,14 +134,15 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const selectedFormula = katalogRacikan.find((formula) => formula.version_id === officialVersionId);
 
   const addObat = (it: ItemLite) => setCart((c) => {
-    const ex = c.find((r) => r.item_id === it.id);
+    const ex = it.item_type === "Jasa" ? undefined : c.find((r) => r.item_id === it.id && r.jenis !== "jasa");
     if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
     const isService = it.item_type === "Jasa";
     const u = isService ? undefined : (it.units ?? [])[0];
     return [...c, {
-      key: it.id, item_id: it.id, nama_obat: it.name, qty: 1,
+      key: isService ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
       satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
       kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
+        service_performers: isService ? emptyServicePerformers() : null,
     }];
   });
   const compoundDraft: CompoundDraft = { saleItemId, formulaId: officialVersionId, dosageForm: racikForm, instruction: racikAturan, ingredients: racikBahan };
@@ -233,11 +241,11 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
           <div className="frow">
             <div>
               <label className="flab">Berat badan (kg)</label>
-              <input className="fi" type="number" name="berat" min={0} max={200} step="0.01" placeholder="mis. 12.5" />
+              <NumberInput className="fi" type="number" name="berat" min={0} max={200} step="0.01" placeholder="mis. 12.5" />
             </div>
             <div>
               <label className="flab">Suhu tubuh (°C)</label>
-              <input className="fi" type="number" name="suhu" min={25} max={45} step="0.1" placeholder="mis. 38.6" />
+              <NumberInput className="fi" type="number" name="suhu" min={25} max={45} step="0.1" placeholder="mis. 38.6" />
             </div>
           </div>
           <div className="frow">
@@ -440,6 +448,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                                 </select>
                               ) : <span>{r.satuan}</span>}
                             </div>
+                            {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (
@@ -453,7 +463,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                           <td style={{ textAlign: "center" }}>
                             {r.jenis === "racikan"
                               ? <span style={{ fontSize: 10.5 }}>1</span>
-                              : <input className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
+                              : <NumberInput className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>
@@ -471,12 +481,17 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                 <textarea className="fi" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Aturan pakai obat…" style={{ resize: "vertical" }} />
               </div>
 
+              {cart.some(row => row.jenis === "jasa") && <div>
+                <ServicePerformersField label="Isi pelaksana jasa sekaligus" value={bulkPerformers} staff={serviceStaff} onChange={setBulkPerformers} />
+                <button type="button" className="btn-def" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
+                <p style={{fontSize:10}}>Baris yang sudah memiliki pelaksana tetap mengikuti pilihannya.</p>
+              </div>}
               <div style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
                 <Row k="Subtotal" v={rp(subtotal)} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
                   <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <input className="fi" type="number" min={0} max={100} value={discountPct || ""} onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value))))} style={{ width: 54, padding: "3px 6px", textAlign: "right" }} />
+                    <NumberInput className="fi" type="number" min={0} max={100} value={discountPct || ""} onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value))))} style={{ width: 54, padding: "3px 6px", textAlign: "right" }} />
                     <span style={{ fontSize: 11, color: "var(--tm)" }}>%</span>
                     <span style={{ fontSize: 11, width: 72, textAlign: "right", color: "#b91c1c" }}>{discountVal > 0 ? `-${rp(discountVal)}` : rp(0)}</span>
                   </span>

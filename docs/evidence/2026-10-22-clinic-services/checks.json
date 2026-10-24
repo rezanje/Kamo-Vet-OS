@@ -1,0 +1,22 @@
+{
+  "fictionalCatalogOnly": true,
+  "businessSubmit": false,
+  "checks": [
+    {
+      "route": "exam",
+      "serviceFromImportedCategoryVisible": true,
+      "transactionMetadataPreserved": true,
+      "draftRestored": true,
+      "desktopAndMobile": true,
+      "runtimeErrors": []
+    },
+    {
+      "route": "inpatient",
+      "serviceFromImportedCategoryVisible": true,
+      "transactionMetadataPreserved": true,
+      "draftRestored": true,
+      "desktopAndMobile": true,
+      "runtimeErrors": []
+    }
+  ]
+}

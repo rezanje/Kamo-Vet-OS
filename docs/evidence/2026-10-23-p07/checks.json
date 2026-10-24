@@ -1,0 +1,67 @@
+{
+  "baseSha": "4a14ca914db85ac49ba32f04eabe774066d33815",
+  "branch": "codex/p07-final-partial-po-20261023",
+  "migration": {
+    "path": "supabase/migrations/20261023022600_po_final_partial_close.sql",
+    "sha256": "27942048d1b7b0df13bd02b06f560b116eb28c4f4223ef56919528a67dd5eae2",
+    "targetApplied": false
+  },
+  "appTests": {
+    "files": 336,
+    "tests": 2591,
+    "result": "PASS"
+  },
+  "focused": {
+    "files": 5,
+    "tests": 35,
+    "result": "PASS"
+  },
+  "typecheck": "PASS",
+  "scopedLint": "PASS",
+  "build": "PASS",
+  "sql": {
+    "engine": "PostgreSQL17.6",
+    "migrations": 233,
+    "acceptanceSuites": [
+      "purchase_short_close.sql",
+      "purchase_short_close_guards.sql"
+    ],
+    "nativeRegressions": [
+      "purchase_advance_atomic.sql",
+      "purchase_invoice_lifecycle.sql"
+    ],
+    "concurrency": [
+      "close-first receipt rejected and invoice only5",
+      "receipt-first stale close and unconfirmed partial invoice rejected",
+      "identical retry one immutable proof/one A01 status event"
+    ],
+    "result": "PASS"
+  },
+  "review": {
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "remainingP1P2": 0,
+    "priorCandidate": "b1c1d3a7a4928ce78a1ef12a62c3f7afb09fe981",
+    "minorResolved": "P07 confirmation explicitly opts out of draft save/restore; old stored true ignored, fresh click required. Follow-up not independently re-reviewed."
+  },
+  "hostedUAT": "NOT RUN",
+  "browserInteraction": "Actual client mount/reload/click in jsdom tested; real browser/hosted UAT NOT RUN",
+  "targetWrites": 0,
+  "sourceBranchesModified": false,
+  "PR94": "target migration218 confirmed by parent; code not in main at verification; do not replay its migration",
+  "release": "draft candidate; parent coordinates target rollout/main/deployment",
+  "confirmationFollowup": {
+    "red": "2 actual DOM/React mismatch failures observed",
+    "focused": {
+      "files": 6,
+      "tests": 30,
+      "result": "PASS"
+    },
+    "newTests": 3,
+    "typecheck": "PASS",
+    "scopedLint": "PASS",
+    "sqlRepeated": false,
+    "serverOrMigrationChanged": false,
+    "build": "PASS; existing unrelated image/unused-variable warnings"
+  }
+}

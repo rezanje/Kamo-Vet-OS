@@ -1,4 +1,7 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
+import { SearchableItemPicker } from "./SearchableItemPicker";
 import { useState } from "react";
 import type { CompoundDraft, CompoundSaleSku } from "@/lib/master-compound-cart";
 import type { KatalogRacikan } from "@/lib/katalog-racikan";
@@ -33,19 +36,18 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
       {onAddStock&&<button type="button" className="btn-def" style={{marginTop:8}} onClick={()=>onAddStock(sku)}>Ambil stok obat jadi</button>}
     </div>}
     <label className="flab">Komposisi racikan</label>
-    <select className="fi" aria-label="Komposisi racikan" value={value.formulaId} onChange={event=>onChange({...value,formulaId:event.target.value})}>
-      <option value="">{allowCustom?"Racikan khusus pasien":"Pilih resep resmi"}</option>
-      {boundCatalog.map(row=><option key={row.version_id} value={row.version_id}>{row.code} · {row.name} (v{row.version})</option>)}
-    </select>
+    <SearchableItemPicker items={boundCatalog.map(row=>({id:row.version_id,code:row.code,name:`${row.name} (v${row.version})`}))}
+      value={value.formulaId} ariaLabel="Komposisi racikan" placeholder={allowCustom?"Racikan khusus pasien / cari resep resmi":"Pilih resep resmi"}
+      onChange={id=>onChange({...value,formulaId:id})} />
     {sku&&!boundCatalog.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Resep resmi belum ditautkan ke SKU ini. OWNER/ADMIN dapat mengaturnya di Katalog Racikan Resmi.</span>}
     {formula?<div style={{fontSize:11,padding:9,background:"#f4f0ff",borderRadius:8}}>
       <strong>{formula.name} · {formula.dosage_form}</strong>
       <div>{formula.ingredients.map(row=>`${row.name} ${row.quantity} ${row.unit}`).join(" · ")}</div>
-      <div>Aturan pakai: {formula.dosage_instruction??"Tidak ditetapkan"}</div>
+      <div>Petunjuk pemakaian: {formula.dosage_instruction??"Tidak ditetapkan"}</div>
     </div>:allowCustom?<>
       <div style={{display:"flex",gap:6}}><select className="fi" aria-label="Bentuk racikan" value={value.dosageForm} onChange={event=>onChange({...value,dosageForm:event.target.value})}>
         {["sirup","nebul","salep","puyer","kapsul","lainnya"].map(form=><option key={form}>{form}</option>)}
-      </select><input className="fi" aria-label="Aturan pakai racikan" placeholder="Aturan pakai (opsional)" value={value.instruction} onChange={event=>onChange({...value,instruction:event.target.value})} /></div>
+      </select><input className="fi" aria-label="Aturan pakai racikan" placeholder="Petunjuk pemakaian (opsional)" value={value.instruction} onChange={event=>onChange({...value,instruction:event.target.value})} /></div>
       <input className="fi" aria-label="Cari bahan racikan" placeholder="Cari bahan baku..." value={materialSearch} onChange={event=>{setMaterialSearch(event.target.value);setMaterialPage(1);}} />
       {materialTerm&&<div style={{maxHeight:160,overflowY:"auto",display:"grid",gap:4}}>
         {materialMatches.slice((currentMaterialPage-1)*40,currentMaterialPage*40).map(item=><button key={item.id} type="button" className="btn-def" aria-label={`Pilih bahan ${item.name}`} style={{textAlign:"left"}} onClick={()=>{
@@ -56,7 +58,7 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
         {materialPages>1&&<div style={{display:"flex",gap:8}}><button type="button" disabled={currentMaterialPage===1} onClick={()=>setMaterialPage(currentMaterialPage-1)}>Sebelumnya</button><span>{currentMaterialPage}/{materialPages}</span><button type="button" disabled={currentMaterialPage===materialPages} onClick={()=>setMaterialPage(currentMaterialPage+1)}>Berikutnya</button></div>}
       </div>}
       {value.ingredients.map(row=><div key={row.item_id} style={{display:"flex",alignItems:"center",gap:6}}>
-        <span style={{flex:1,fontSize:11}}>{row.nama}</span><input className="fi" aria-label={`Jumlah bahan ${row.nama}`} type="number" min={0.001} step="any" value={row.qty||""} style={{width:70}} onChange={event=>onChange({...value,ingredients:value.ingredients.map(ingredient=>ingredient.item_id===row.item_id?{...ingredient,qty:Number(event.target.value)}:ingredient)})} /><span style={{fontSize:11}}>{row.satuan}</span>
+        <span style={{flex:1,fontSize:11}}>{row.nama}</span><NumberInput className="fi" aria-label={`Jumlah bahan ${row.nama}`} type="number" min={0.001} step="any" value={row.qty||""} style={{width:70}} onChange={event=>onChange({...value,ingredients:value.ingredients.map(ingredient=>ingredient.item_id===row.item_id?{...ingredient,qty:Number(event.target.value)}:ingredient)})} /><span style={{fontSize:11}}>{row.satuan}</span>
         <button type="button" className="btn-def" aria-label={`Hapus bahan ${row.nama}`} onClick={()=>onChange({...value,ingredients:value.ingredients.filter(ingredient=>ingredient.item_id!==row.item_id)})}>×</button>
       </div>)}
     </>:null}

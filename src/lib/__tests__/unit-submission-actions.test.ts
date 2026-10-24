@@ -15,14 +15,15 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "user" } } }) },
   from(table: string) {
     let activeOnly = false;
+    let counted = false;
     const rows = () => table === "items" ? (activeOnly && state.inactive ? [] : [{ id: "a", name: "Medicine", nama: "Medicine", unit: "pcs", sell_price: 100, buy_price: 50, item_type: "Persediaan", is_active: !state.inactive }]) : [];
     const single = () => ({ data: table === "sales" ? null : table === "warehouses" ? { id: "warehouse", branch_id: "branch" } : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" } : { id: "po" }, error: null });
     const query = {
-      select: () => query, in: () => query, order: () => query, range: () => query,
+      select: (_fields:string, options?:{count?:string}) => { counted=options?.count==="exact";return query; }, in: () => query, order: () => query, range: () => query,
       eq: (column: string, value: unknown) => { if (column === "is_active" && value === true) activeOnly = true; return query; },
       insert: () => { state.writes.push(table); return query; },
       single: async () => single(), maybeSingle: async () => single(),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows(), error: null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows(), count:counted?rows().length:null, error: null }).then(resolve),
     };
     return query;
   },

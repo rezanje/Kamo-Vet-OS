@@ -1,3 +1,6 @@
+import type { ClinicalCorrection } from "@/lib/clinical-correction";
+import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
@@ -11,7 +14,8 @@ import { performersForService } from '@/lib/clinical-staff';
 import { RekamForm } from "./RekamForm";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
-import { hasInpatientConsent, templatesForBranch } from "@/lib/consent";
+import { clinicAdmissionReadiness } from "@/lib/clinic-admission-readiness";
+import { templatesForBranch } from "@/lib/consent";
 import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
@@ -44,10 +48,10 @@ export default async function RekamMedisPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; racikan?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; racikan?: string; success?: string; edit?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, racikan, success } = await searchParams;
+  const { error, racikan, success, edit } = await searchParams;
   const supabase = await createClient();
   const { data: { user: draftUser } } = await supabase.auth.getUser();
   const draftUserId = draftUser?.id ?? "";
@@ -66,43 +70,63 @@ export default async function RekamMedisPage({
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
+  const serviceStaff = recorded ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
   const dokterOpsi = recorded ? [] : await daftarDokter(supabase, { branchId: visit.branch_id });
   const providerOpsi = recorded ? [] : performersForService(await daftarDokter(supabase,{branchId:visit.branch_id}),visit.poli);
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
-  let record: { diagnosis: string | null; anamnesis: string | null } | null = null;
+  let record: (Omit<ClinicalCorrection, "recordId" | "revision" | "prescriptions"> & { id: string; clinical_revision?: number }) | null = null;
   let mrId: string | null = null;
-  let resep: { nama_obat: string; qty: number; aturan_pakai: string | null }[] = [];
+  let mrLoadFailed = false;
+  let correctionDataFailed = false;
+  let resep: { nama_obat: string; qty: number; satuan?: string | null; aturan_pakai: string | null; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
-    const { data: mr } = await supabase
+    const { data: mr, error: mrError } = await supabase
       .from("medical_records")
-      .select("id, diagnosis, anamnesis")
+      .select("*")
       .eq("visit_id", visitId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    mrLoadFailed = !!mrError;
     record = mr;
     mrId = mr?.id ?? null;
     if (mr) {
-      const { data: pi } = await supabase
+      const { data: pi, error: piError } = await supabase
         .from("prescription_items")
-        .select("nama_obat, qty, aturan_pakai")
+        .select("nama_obat, qty, satuan, aturan_pakai, jenis, service_performers")
         .eq("medical_record_id", mr.id)
         .order("created_at");
       resep = pi ?? [];
       // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
-      const { data: cr } = await supabase
+      const { data: cr, error: crError } = await supabase
         .from("compounding_recipes")
         .select("id, recipe_name, dosage_form, total_volume, status")
         .eq("medical_record_id", mr.id)
         .order("created_at", { ascending: false });
       racikanList = cr ?? [];
+      correctionDataFailed = !!(piError || crError);
     }
   }
 
+  const correctionCheck = menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed && !correctionDataFailed
+    ? await supabase.rpc("clinic_can_correct_record", { p_record_id: mrId }) : { data: false, error: null };
+  const canCorrect = correctionCheck.data === true && !correctionCheck.error;
+  const editing = !!edit && edit === mrId && canCorrect;
+  const correction: ClinicalCorrection | undefined = editing && record && mrId ? {
+    recordId: mrId, revision: record.clinical_revision ?? 0,
+    anamnesis: record.anamnesis, diagnosis: record.diagnosis, therapy: record.therapy,
+    suhu: record.suhu, berat: record.berat, gejala_klinis: record.gejala_klinis, hasil_penunjang: record.hasil_penunjang,
+    penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
+    prescriptions: resep, compounds: racikanList,
+  } : undefined;
+  const { data: savedProvider } = editing && visit.service_provider_id
+    ? await supabase.from("employees").select("id,nama,jabatan").eq("id", visit.service_provider_id).maybeSingle()
+    : { data: null };
+
   // Rawat inap aktif utk visit ini (Addendum §3 — admit dari rekam medis, design klinik/07).
-  const [{ data: inpatient }, { data: referralRows }] = await Promise.all([
+  const [{ data: inpatient, error: inpatientError }, { data: referralRows }] = await Promise.all([
     supabase.from("inpatient_records")
       .select("id, condition_status, discharged_at")
       .eq("visit_id", visitId)
@@ -142,10 +166,10 @@ export default async function RekamMedisPage({
   const bolehManual = await bolehRacikKhusus();
   if (!recorded) {
     const masterRows = await readCompleteList<{
-      id: string; name: string; unit: string; sell_price: number; is_compound_material: boolean;
+      id: string; code: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean;
       item_type: string; tindakan_kategori: string | null; category_id: string | null;
     }>((from, to) => supabase
-      .from("items").select("id, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
+      .from("items").select("id, code, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
       .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
     const categories = await loadClinicItemCategories(supabase);
     const compoundRows = await loadClinicCompoundSkus(supabase, categories);
@@ -180,7 +204,7 @@ export default async function RekamMedisPage({
   }
 
   // Form persetujuan (spec 2026-07-20) — template yang berlaku utk cabang kunjungan ini.
-  const [{ data: consentRows }, { data: tplRows }] = await Promise.all([
+  const [{ data: consentRows, error: consentsError }, { data: tplRows, error: templatesError }] = await Promise.all([
     supabase.from("consents")
       .select("id, tindakan, isi_snapshot, kategori, template_id, status, signer_name, signature_data, signed_at")
       .eq("visit_id", visitId).order("created_at"),
@@ -191,9 +215,13 @@ export default async function RekamMedisPage({
     (tplRows ?? []) as { id: string; nama: string; kategori?: string; branch_id: string | null; is_active: boolean }[],
     (visit.branch_id as string) ?? null,
   );
-  const { data: inpatientConsentRule } = await supabase.from("consent_rules")
+  const { data: inpatientConsentRule, error: ruleError } = await supabase.from("consent_rules")
     .select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle();
-  const canAdmit = inpatientConsentRule?.wajib === false || hasInpatientConsent(consentRows ?? [], inpatientConsentRule?.template_id);
+  const admission = clinicAdmissionReadiness({
+    readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed),
+    status: visit.status, checkedOutAt: visit.checked_out_at ?? null, doctorId: visit.doctor_id ?? null,
+    medicalRecordId: mrId, rule: inpatientConsentRule, consents: consentRows ?? [],
+  });
 
   // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
   // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
@@ -240,6 +268,8 @@ export default async function RekamMedisPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {edit && !editing && <div className="p2ban" role="alert">Koreksi belum dapat dibuka. Periksa akses, status kunjungan, dan muat ulang data pemeriksaan.</div>}
       {racikan === "dibuat" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Racikan dibuat — stok bahan terpotong, worklist apoteker terupdate.
@@ -328,7 +358,7 @@ export default async function RekamMedisPage({
         </div>
       )}
 
-      {recorded ? (
+      {recorded && !editing ? (
         <>
           {menungguBayar ? (
             <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", justifyContent: "space-between" }}>
@@ -352,9 +382,12 @@ export default async function RekamMedisPage({
           </div>
           <div className="grid2">
             <div className="card">
-              <div className="card-hd"><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</div>
+              <div className="card-hd" style={{ justifyContent: "space-between" }}><span><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</span>
+                {canCorrect && <Link href={`/klinik/rekam-medis/${visit.id}?edit=${mrId}`} className="btn-def"><i className="ti ti-edit" /> Edit</Link>}
+              </div>
               <ReadField label="Anamnesis / catatan klinis" value={record?.anamnesis} />
               <ReadField label="Diagnosa" value={record?.diagnosis} />
+              <ReadField label="Terapi / tindakan" value={record?.therapy} />
             </div>
             <div className="card">
               <div className="card-hd" style={{ justifyContent: "space-between" }}>
@@ -376,7 +409,7 @@ export default async function RekamMedisPage({
                   <tbody>
                     {resep.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontWeight: 500 }}>{r.nama_obat}</td>
+                        <td style={{ fontWeight: 500 }}>{r.nama_obat}{r.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>}</td>
                         <td style={{ textAlign: "center" }}>{r.qty}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.aturan_pakai ?? "—"}</td>
                       </tr>
@@ -425,8 +458,8 @@ export default async function RekamMedisPage({
             )}
           </div>
 
-          <div style={{ marginTop: 12 }}>
-            <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />
+          <div id="persetujuan-rawat-inap" style={{ marginTop: 12, scrollMarginTop: 20 }}>
+            {consentsError || templatesError ? <div className="card" role="alert"><p>Data persetujuan belum dapat dimuat lengkap. Muat ulang sebelum membuat atau menandatangani form baru.</p><Link className="back-btn" href={`/klinik/rekam-medis/${encodeURIComponent(visitId)}`}>Muat ulang persetujuan</Link></div> : <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />}
           </div>
 
           <ReferralPanel key={visit.id} visitId={visit.id as string} referrals={(referralRows ?? []) as { id: string; direction: string; facility: string; reason: string; notes: string | null; referred_at: string }[]} />
@@ -457,14 +490,14 @@ export default async function RekamMedisPage({
                 <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
                 <div style={{ flex: 2, minWidth: 240 }}>
                   <label className="flab">Rencana tindakan dari dokter PIC *</label>
-                  <input className="fi" name="treatment_plan" required placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />
+                  <input className="fi" name="treatment_plan" required maxLength={4000} placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />
                 </div>
                 <div style={{ flex: 1, minWidth: 140 }}>
                   <label className="flab">Dokter PIC</label>
                   <input className="fi" name="doctor_name" readOnly defaultValue={visit.dokter ?? ""} placeholder="Drh. ..." />
                 </div>
-                {!canAdmit && <p style={{ fontSize: 11, color: "#b45309" }}>Buat dan tandatangani persetujuan khusus Rawat Inap sebelum masuk.</p>}
-                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…" disabled={!canAdmit}>Masukkan Rawat Inap</SubmitButton>
+                {!admission.canAdmit && <div role="status" style={{width:"100%",fontSize:12,color:"#b45309"}}><p>{admission.reason}</p>{admission.consentAction&&<a className="back-btn" href="#persetujuan-rawat-inap">Periksa persetujuan khusus Rawat Inap</a>}</div>}
+                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…" disabled={!admission.canAdmit}>Masukkan Rawat Inap</SubmitButton>
               </TransactionForm>
             )}
           </div>
@@ -472,11 +505,13 @@ export default async function RekamMedisPage({
       ) : (
         <RekamForm
           service={visit.poli}
-          key={`${user?.id ?? ""}:${visitId}`}
+          key={`${user?.id ?? ""}:${visitId}:${correction ? `${correction.recordId}:${correction.revision}` : "initial"}`}
+          correction={correction}
           visitId={visit.id}
           requestKey={randomUUID()}
           draftUserId={user?.id ?? ""}
           petId={visit.pet_id}
+          serviceStaff={serviceStaff}
           dokterOpsi={dokterOpsi}
           currentWeight={pet?.weight ?? null}
           items={obatItems}
@@ -502,7 +537,7 @@ export default async function RekamMedisPage({
             keluhan: visit.keluhan ?? null,
             photo: pet?.photo_url ?? null,
           }}
-          providerOpsi={providerOpsi}
+          providerOpsi={savedProvider ? [savedProvider] : providerOpsi}
         />
       )}
     </>

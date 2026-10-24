@@ -25,11 +25,13 @@ export default async function FakturLangsungPage({
     initial = { ...source, lampiran: attachments ?? [] } as DirectInvoiceInitial;
   }
 
-  const [{ data: suppliers }, { data: warehouses }, items] = await Promise.all([
-    // Tabel pemasok tidak punya penanda aktif/nonaktif — jangan saring kolom yang
-    // tidak ada, daftarnya jadi kosong tanpa pesan error.
-    supabase.from("suppliers").select("id, nama, termin_hari").eq("is_active", true).order("nama"),
-    supabase.from("warehouses").select("id, code, name, branches(name)").eq("is_active", true).order("code"),
+  const [suppliers, warehouses, items] = await Promise.all([
+    readCompleteList<{ id: string; nama: string; termin_hari: number }>((from, to) => supabase.from("suppliers")
+      .select("id, nama, termin_hari", { count: "exact" }).eq("is_active", true)
+      .order("nama").order("id").range(from, to), "Pemasok faktur langsung", { maxRows: null }),
+    readCompleteList<{ id: string; code: string; name: string; branches: { name: string } | { name: string }[] | null }>((from, to) => supabase.from("warehouses")
+      .select("id, code, name, branches(name)", { count: "exact" }).eq("is_active", true)
+      .order("code").order("id").range(from, to), "Gudang faktur langsung", { maxRows: null }),
     readCompleteList<{ id: string; code: string; name: string; buy_price: number; unit: string; track_expiry: boolean | null }>((from, to) => supabase
       .from("items").select("id, code, name, buy_price, unit, track_expiry", { count: "exact" })
       .eq("is_active", true).eq("item_type", "Persediaan").order("name").order("id").range(from, to),

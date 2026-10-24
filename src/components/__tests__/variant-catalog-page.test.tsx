@@ -1,0 +1,13 @@
+// @vitest-environment jsdom
+import {act} from 'react';import {createRoot,type Root} from 'react-dom/client';import {beforeEach,afterEach,it,expect,vi} from 'vitest';
+const fixture=vi.hoisted(()=>({fail:false,user:true,ranges:[] as unknown[][]}));
+vi.mock('next/navigation',()=>({redirect:(href:string)=>{throw new Error(href)}}));
+vi.mock('@/app/(app)/pos/sku/varian/actions',()=>({saveVariantFamily:vi.fn()}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:fixture.user?{id:'actor'}:null}})},from(table:string){let from=0,to=999;const q={select(){return q},eq(){return q},neq(){return q},order(){return q},limit(n:number){to=n-1;return q},range(a:number,b:number){from=a;to=b;fixture.ranges.push([table,a,b]);return q},maybeSingle:async()=>({data:{role:'OWNER',is_active:true},error:null}),then(resolve:(v:unknown)=>unknown){const rows=table==='items'?Array.from({length:2205},(_,i)=>({id:`sku-${i}`,code:`F-${i}`,name:`Barang fiktif ${i}`})):[];return Promise.resolve({data:rows.slice(from,to+1),count:rows.length,error:fixture.fail?{message:'private'}:null}).then(resolve)}};return q}})}));
+import Page from '@/app/(app)/pos/sku/varian/page';
+let host:HTMLDivElement,root:Root;
+beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});fixture.fail=false;fixture.user=true;fixture.ranges=[];host=document.createElement('div');document.body.append(host);root=createRoot(host)});afterEach(async()=>{await act(async()=>root.unmount());host.remove()});
+const render=async()=>{const page=await Page({searchParams:Promise.resolve({})});await act(async()=>root.render(page))};
+it('finds an active eligible SKU beyond row 2000 using checked catalog pages',async()=>{await render();expect(fixture.ranges.filter(r=>r[0]==='items')).toHaveLength(5);const input=host.querySelector<HTMLInputElement>('[aria-label="SKU varian 1"]')!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'F-2204');input.dispatchEvent(new Event('input',{bubbles:true}))});expect(document.querySelector('[role=option]')?.textContent).toContain('Barang fiktif 2204')});
+it('suppresses management forms on failed reads without exposing private errors',async()=>{fixture.fail=true;await render();expect(host.querySelector('[role=alert]')).not.toBeNull();expect(host.querySelector('form')).toBeNull();expect(host.textContent).not.toContain('private')});
+it('keeps unauthenticated catalog access blocked',async()=>{fixture.user=false;await expect(render()).rejects.toThrow('/login');expect(fixture.ranges).toEqual([])});

@@ -1,0 +1,76 @@
+
+ RUN  v4.1.9 /workspace/kamo-k08
+
+ ❯ src/components/__tests__/clinic-billing-source-draft.test.tsx (6 tests | 4 failed) 361ms
+   × retains the original retry payload/key and blocks stale305000 recovery until explicit source review 77ms
+   × does not silently bless stale rows after a second reload 88ms
+   × a legacy draft lacking source context requires review, never automatic addition/retry payload changes 30ms
+   × labels entered payment as preview until the atomic save is acknowledged 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-billing-source-draft.test.tsx > retains the original retry payload/key and blocks stale305000 recovery until explicit source review
+AssertionError: expected 'Draf dipulihkan. Periksa isian sebelu…' to contain 'tagihan sumber berubah'
+
+Expected: "tagihan sumber berubah"
+Received: "Draf dipulihkan. Periksa isian sebelum menyimpan.Buang drafFictional new patientKucingPemilik: Fictional ownerNo. HP: —Alamat: —No. Invoice: (baru)Tanggal: 2026-10-22Dokter: DoctorJenis Layanan: KlinikPenjual / dokter / petugasTanpa penjual RINCIAN TAGIHANRINCIAN LAYANAN DAN OBAT OBAT TambahNo.NamaQtyHarga SatuanDisk %SubtotalBelum ada item.Subtotal OBATRp 0 JASA / Tindakan TambahNo.NamaQtyHarga SatuanDisk %Subtotal1Rp 305.000Subtotal JASARp 305.000CATATAN RESEP—Subtotal (Obat + Jasa)Rp 305.000DiskonKode voucherPPN 0%Rp 0TOTAL TAGIHANRp 305.000STATUS PEMBAYARANBELUM LUNASTotal TagihanRp 305.000Sisa yang Harus DibayarRp 305.000RINGKASAN PEMBAYARANTotal TagihanRp 305.000Total PembayaranRp 0Sisa yang Harus DibayarRp 305.000PILIH METODE PEMBAYARANBayar dengan beberapa metodeTunaiBayar dengan uang tunaiTransferBayar melalui transfer bankKartuBayar dengan kartu debit atau kreditQRISBayar menggunakan QRISE-WalletBayar menggunakan e-walletPENERIMAAN PEMBAYARANJumlah BayarKembalianRp 0 Cetak Simpan Bayar & Selesai"
+
+ ❯ src/components/__tests__/clinic-billing-source-draft.test.tsx:25:54
+     23| });
+     24| it('retains the original retry payload/key and blocks stale305000 reco…
+     25|  seed();await render();expect(container.textContent).toContain('tagiha…
+       |                                                      ^
+     26|  expect(container.querySelector<HTMLInputElement>('[name=requestKey]')…
+     27|  expect([...container.querySelectorAll<HTMLButtonElement>('button[type…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/components/__tests__/clinic-billing-source-draft.test.tsx > does not silently bless stale rows after a second reload
+AssertionError: expected 'Draf dipulihkan. Periksa isian sebelu…' to contain 'tagihan sumber berubah'
+
+Expected: "tagihan sumber berubah"
+Received: "Draf dipulihkan. Periksa isian sebelum menyimpan.Buang drafFictional new patientKucingPemilik: Fictional ownerNo. HP: —Alamat: —No. Invoice: (baru)Tanggal: 2026-10-22Dokter: DoctorJenis Layanan: KlinikPenjual / dokter / petugasTanpa penjual RINCIAN TAGIHANRINCIAN LAYANAN DAN OBAT OBAT TambahNo.NamaQtyHarga SatuanDisk %SubtotalBelum ada item.Subtotal OBATRp 0 JASA / Tindakan TambahNo.NamaQtyHarga SatuanDisk %Subtotal1Rp 305.000Subtotal JASARp 305.000CATATAN RESEP—Subtotal (Obat + Jasa)Rp 305.000DiskonKode voucherPPN 0%Rp 0TOTAL TAGIHANRp 305.000STATUS PEMBAYARANBELUM LUNASTotal TagihanRp 305.000Sisa yang Harus DibayarRp 305.000RINGKASAN PEMBAYARANTotal TagihanRp 305.000Total PembayaranRp 0Sisa yang Harus DibayarRp 305.000PILIH METODE PEMBAYARANBayar dengan beberapa metodeTunaiBayar dengan uang tunaiTransferBayar melalui transfer bankKartuBayar dengan kartu debit atau kreditQRISBayar menggunakan QRISE-WalletBayar menggunakan e-walletPENERIMAAN PEMBAYARANJumlah BayarKembalianRp 0 Cetak Simpan Bayar & Selesai"
+
+ ❯ src/components/__tests__/clinic-billing-source-draft.test.tsx:32:131
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/components/__tests__/clinic-billing-source-draft.test.tsx > a legacy draft lacking source context requires review, never automatic addition/retry payload changes
+AssertionError: expected 'Draf dipulihkan. Periksa isian sebelu…' to contain 'tagihan sumber berubah'
+
+Expected: "tagihan sumber berubah"
+Received: "Draf dipulihkan. Periksa isian sebelum menyimpan.Buang drafFictional new patientKucingPemilik: Fictional ownerNo. HP: —Alamat: —No. Invoice: (baru)Tanggal: 2026-10-22Dokter: DoctorJenis Layanan: KlinikPenjual / dokter / petugasTanpa penjual RINCIAN TAGIHANRINCIAN LAYANAN DAN OBAT OBAT TambahNo.NamaQtyHarga SatuanDisk %SubtotalBelum ada item.Subtotal OBATRp 0 JASA / Tindakan TambahNo.NamaQtyHarga SatuanDisk %Subtotal1Rp 305.000Subtotal JASARp 305.000CATATAN RESEP—Subtotal (Obat + Jasa)Rp 305.000DiskonKode voucherPPN 0%Rp 0TOTAL TAGIHANRp 305.000STATUS PEMBAYARANBELUM LUNASTotal TagihanRp 305.000Sisa yang Harus DibayarRp 305.000RINGKASAN PEMBAYARANTotal TagihanRp 305.000Total PembayaranRp 0Sisa yang Harus DibayarRp 305.000PILIH METODE PEMBAYARANBayar dengan beberapa metodeTunaiBayar dengan uang tunaiTransferBayar melalui transfer bankKartuBayar dengan kartu debit atau kreditQRISBayar menggunakan QRISE-WalletBayar menggunakan e-walletPENERIMAAN PEMBAYARANJumlah BayarKembalianRp 0 Cetak Simpan Bayar & Selesai"
+
+ ❯ src/components/__tests__/clinic-billing-source-draft.test.tsx:38:58
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  src/components/__tests__/clinic-billing-source-draft.test.tsx > labels entered payment as preview until the atomic save is acknowledged
+AssertionError: expected 'Fictional new patientKucingPemilik: F…' to contain 'PRATINJAU PEMBAYARAN'
+
+Expected: "PRATINJAU PEMBAYARAN"
+Received: "Fictional new patientKucingPemilik: Fictional ownerNo. HP: —Alamat: —No. Invoice: (baru)Tanggal: 2026-10-22Dokter: DoctorJenis Layanan: KlinikPenjual / dokter / petugasTanpa penjual RINCIAN TAGIHANRINCIAN LAYANAN DAN OBAT OBAT TambahNo.NamaQtyHarga SatuanDisk %SubtotalBelum ada item.Subtotal OBATRp 0 JASA / Tindakan TambahNo.NamaQtyHarga SatuanDisk %Subtotal1Rp 305.0002Rp 95.000Subtotal JASARp 400.000CATATAN RESEP—Subtotal (Obat + Jasa)Rp 400.000DiskonKode voucherPPN 0%Rp 0TOTAL TAGIHANRp 400.000STATUS PEMBAYARANBELUM LUNASTotal TagihanRp 400.000Sisa yang Harus DibayarRp 400.000RINGKASAN PEMBAYARANTotal TagihanRp 400.000Total PembayaranRp 0Sisa yang Harus DibayarRp 400.000PILIH METODE PEMBAYARANBayar dengan beberapa metodeTunaiBayar dengan uang tunaiTransferBayar melalui transfer bankKartuBayar dengan kartu debit atau kreditQRISBayar menggunakan QRISE-WalletBayar menggunakan e-walletPENERIMAAN PEMBAYARANJumlah BayarKembalianRp 0 Cetak Simpan Bayar & Selesai"
+
+ ❯ src/components/__tests__/clinic-billing-source-draft.test.tsx:42:47
+     40|
+     41| it('labels entered payment as preview until the atomic save is acknowl…
+     42|  await render();expect(container.textContent).toContain('PRATINJAU PEM…
+       |                                               ^
+     43| });
+     44|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 2 passed (6)
+   Start at  22:58:29
+   Duration  1.14s (transform 210ms, setup 0ms, import 296ms, tests 361ms, environment 306ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

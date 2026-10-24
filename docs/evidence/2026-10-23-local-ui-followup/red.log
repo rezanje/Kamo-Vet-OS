@@ -1,0 +1,142 @@
+
+ RUN  v4.1.9 /workspace/kamo-local-ui-followup
+
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx (9 tests | 6 failed) 39ms
+   × loads a complete active catalog including entries beyond the default row limit 16ms
+   × shows no receiving form on catalog failure and hides database details 3ms
+   × shows no receiving form on truncated failure and hides database details 1ms
+   × shows no receiving form on header failure and hides database details 10ms
+   × keeps existing branch access/status guards before catalog loading 4ms
+   × keeps existing status access/status guards before catalog loading 1ms
+ ❯ src/components/__tests__/queue-page.test.tsx (8 tests | 1 failed) 62ms
+   × opens the existing medical record from a payment-stage queue row using its exact visit ID 28ms
+ ❯ src/components/__tests__/remaining-item-name-display.test.tsx (4 tests | 4 failed) 108ms
+   × sales rows choose duplicate names by ID and preserve selected units/prices across reload 53ms
+   × online explicit selection keeps bare names and legacy exact labels; ambiguous text is not a SKU 32ms
+   × online replacement display does not reprice original rows or alter request identity on reload 14ms
+   × production selects output/ingredients by ID with separate codes, retains quantities and blocks missing output 7ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > loads a complete active catalog including entries beyond the default row limit
+AssertionError: expected [] to deeply equal [ [ +0, 499 ], [ 500, 999 ], …(1) ]
+
+- Expected
++ Received
+
+- [
+-   [
+-     0,
+-     499,
+-   ],
+-   [
+-     500,
+-     999,
+-   ],
+-   [
+-     1000,
+-     1499,
+-   ],
+- ]
++ []
+
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx:12:144
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > shows no receiving form on catalog failure and hides database details
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > shows no receiving form on header failure and hides database details
+AssertionError: expected '<div data-count="1000">sku-999</div>' to contain 'role="alert"'
+
+Expected: "role="alert""
+Received: "<div data-count="1000">sku-999</div>"
+
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx:13:180
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > shows no receiving form on truncated failure and hides database details
+AssertionError: expected '<div data-count="999">sku-998</div>' to contain 'role="alert"'
+
+Expected: "role="alert""
+Received: "<div data-count="999">sku-998</div>"
+
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx:13:180
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > keeps existing branch access/status guards before catalog loading
+ FAIL  src/components/__tests__/clinic-receiving-page.test.tsx > keeps existing status access/status guards before catalog loading
+AssertionError: expected [ 'stock_requests', 'items' ] to not include 'items'
+ ❯ src/components/__tests__/clinic-receiving-page.test.tsx:15:426
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  src/components/__tests__/queue-page.test.tsx > opens the existing medical record from a payment-stage queue row using its exact visit ID
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'href="/klinik/rekam-medis/visit-payme…'
+
+Expected: "href="/klinik/rekam-medis/visit-payment""
+Received: "<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><a class="back-btn" href="/klinik"><i class="ti ti-arrow-left"></i> Kembali</a><span style="color:var(--td)">·</span><span style="font-size:9.5px;color:var(--td)"><i class="ti ti-broadcast"></i> Pembaruan otomatis · cabang Cabang A</span></div><div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><div style="width:44px;height:44px;border-radius:11px;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-users" style="font-size:22px;color:var(--posb)"></i></div><div><div style="font-size:20px;font-weight:800;color:var(--sb);line-height:1.1">ANTRIAN PASIEN</div><div style="font-size:11.5px;color:var(--tm)">Daftar pasien yang sedang menunggu pelayanan</div></div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px"><div class="card" style="padding:16px"><div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:11px;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-users" style="color:var(--posb);font-size:22px"></i></div><div><div style="font-size:10px;font-weight:700;color:var(--posb);letter-spacing:.03em">TOTAL ANTRIAN</div><div style="font-size:26px;font-weight:800;color:#141413;line-height:1.1">1</div><div style="font-size:10px;color:var(--tm)">Pasien</div></div></div></div><div class="card" style="padding:16px"><div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:11px;background:#e8f5ee;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-clock" style="color:#16a34a;font-size:22px"></i></div><div><div style="font-size:10px;font-weight:700;color:#16a34a;letter-spacing:.03em">MENUNGGU</div><div style="font-size:26px;font-weight:800;color:#141413;line-height:1.1">0</div><div style="font-size:10px;color:var(--tm)">Pasien</div></div></div></div><div class="card" style="padding:16px"><div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:11px;background:#fffbeb;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-stethoscope" style="color:#d97706;font-size:22px"></i></div><div><div style="font-size:10px;font-weight:700;color:#d97706;letter-spacing:.03em">SEDANG DIPERIKSA</div><div style="font-size:26px;font-weight:800;color:#141413;line-height:1.1">0</div><div style="font-size:10px;color:var(--tm)">Pasien</div></div></div></div><div class="card" style="padding:16px"><div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:11px;background:#f3f0ff;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-clipboard-check" style="color:#7c3aed;font-size:22px"></i></div><div><div style="font-size:10px;font-weight:700;color:#7c3aed;letter-spacing:.03em">SELESAI</div><div style="font-size:26px;font-weight:800;color:#141413;line-height:1.1">0</div><div style="font-size:10px;color:var(--tm)">Pasien</div></div></div></div></div><div style="display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start"><div class="crm-sec" style="margin-bottom:0"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div style="display:flex;gap:4px;flex-wrap:wrap"><a class="back-btn" style="padding:5px 12px;border-radius:7px;border:.5px solid var(--bd);background:#fff;color:var(--tm)" href="/klinik/antrian?filter=semua&amp;tanggal=2026-10-14&amp;cabang=">Semua Antrian</a><a class="back-btn" style="padding:5px 12px;border-radius:7px;border:.5px solid var(--bd);background:#fff;color:var(--tm)" href="/klinik/antrian?filter=menunggu&amp;tanggal=2026-10-14&amp;cabang=">Menunggu</a><a class="back-btn" style="padding:5px 12px;border-radius:7px;border:.5px solid var(--bd);background:#fff;color:var(--tm)" href="/klinik/antrian?filter=diperiksa&amp;tanggal=2026-10-14&amp;cabang=">Sedang Diperiksa</a><a class="back-btn" style="padding:5px 12px;border-radius:7px;border:.5px solid var(--bd);background:#fff;color:var(--tm)" href="/klinik/antrian?filter=selesai&amp;tanggal=2026-10-14&amp;cabang=">Selesai</a><a class="back-btn" style="padding:5px 12px;border-radius:7px;border:.5px solid var(--bd);background:var(--posb);color:#fff" href="/klinik/antrian?filter=aktif&amp;tanggal=2026-10-14&amp;cabang=">Aktif</a></div><a class="btn-acc" style="text-decoration:none;background:var(--posb);flex-shrink:0" href="/klinik/registrasi"><i class="ti ti-plus"></i> Daftarkan pasien</a></div><form style="display:flex;gap:6px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap" method="get"><input type="hidden" name="filter" value="aktif"/><div style="width:150px"><label class="flab">Tanggal</label><input class="fi" type="date" max="2026-10-14" name="tanggal" value="2026-10-14"/></div><div style="min-width:190px"><label class="flab">Cabang</label><input class="fi" readOnly="" aria-label="Cabang aktif" value="Cabang A"/></div><button type="submit" class="btn-def"><i class="ti ti-filter"></i> Tampilkan</button></form><div style="overflow-x:auto"><table class="tbl" style="min-width:780px"><thead><tr><th>No. Antri</th><th>Pasien</th><th>Pemilik</th><th>Cabang</th><th>Poli / Dokter</th><th>Jadwal</th><th>Estimasi</th><th>Status</th><th>Aksi</th></tr></thead><tbody><tr style="box-shadow:inset 3px 0 0 #b91c1c"><td style="font-family:ui-monospace, monospace;font-weight:700;font-size:12px;color:#b91c1c;padding-left:14px">—</td><td><a style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit" href="/klinik/antrian/visit-payment"><div style="width:38px;height:38px;border-radius:8px;background:var(--sf1);border:.5px solid var(--bd);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><i class="ti ti-paw" style="font-size:15.959999999999999px;color:var(--td)"></i></div><div><div style="font-weight:600;color:var(--posb)">—</div><div style="font-size:10px;color:var(--tm)"></div></div></a></td><td><div style="font-size:11.5px">—</div><div style="font-size:10px;color:var(--tm)"></div></td><td style="font-size:11px;color:var(--tm)">—</td><td><div style="font-size:11.5px">Umum</div></td><td style="font-size:10.5px;color:var(--tm);line-height:1.55"><div>Daftar 08.00</div><div>Check-in —</div><div>Mulai — · Selesai —</div><div style="color:var(--td)">Tunggu Belum tercatat · Layanan Belum tercatat</div></td><td style="font-size:10.5px;color:var(--tm)">—</td><td><span class="bge r">Pembayaran</span></td><td><div style="display:flex;gap:5px"><a class="btn-def" style="padding:4px 10px;font-size:10.5px;text-decoration:none;display:inline-flex;align-items:center;gap:4px" href="/klinik/antrian/visit-payment"><i class="ti ti-eye"></i> Detail</a><a class="btn-acc" style="padding:4px 10px;font-size:10.5px;text-decoration:none" href="/klinik/pembayaran/visit-payment"><i class="ti ti-cash"></i> Bayar</a></div></td></tr></tbody></table></div></div><div style="display:flex;flex-direction:column;gap:12px"><div class="card" style="border-color:var(--posb)"><div style="font-size:9.5px;font-weight:700;color:var(--posb);letter-spacing:.05em;margin-bottom:10px"><i class="ti ti-bell-ringing"></i> PANGGILAN BERIKUTNYA</div><div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center"><div style="font-size:32px;font-weight:800;color:var(--posb);font-family:ui-monospace, monospace;line-height:1">—</div><div style="width:64px;height:64px;border-radius:8px;background:var(--sf1);border:.5px solid var(--bd);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><i class="ti ti-paw" style="font-size:26.88px;color:var(--td)"></i></div><div><div style="font-size:13px;font-weight:700">—</div><div style="font-size:10.5px;color:var(--tm)"></div></div><div style="font-size:10.5px;color:var(--tm);border-top:.5px solid var(--bd);padding-top:8px;width:100%">Pemilik: —<br/>Umum</div></div><form style="margin-top:10px" action="javascript:throw new Error(&#x27;React form unexpectedly submitted.&#x27;)"><input type="hidden" name="id" value="visit-payment"/><input type="hidden" name="status" value="Diperiksa"/><button type="submit" class="pay-btn" style="background:var(--posb)"><i class="ti ti-bell"></i> Panggil Sekarang</button></form></div><div class="card"><div style="font-size:9.5px;font-weight:700;color:var(--sb);letter-spacing:.05em;margin-bottom:8px"><i class="ti ti-building-hospital"></i> INFORMASI POLI (MENUNGGU)</div><div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:.5px solid var(--bd)"><span style="font-size:11.5px;color:var(--tx)">Umum</span><span class="bge b">1 Antrian</span></div></div><div class="card" style="background:#fffbeb;border-color:#fde68a"><div style="font-size:9.5px;font-weight:700;color:#92400e;letter-spacing:.05em;margin-bottom:8px"><i class="ti ti-info-circle"></i> KETERANGAN STATUS</div><div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0"><span style="width:9px;height:9px;border-radius:50%;background:var(--posb);margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11px;font-weight:600;color:var(--tx)">Menunggu</div><div style="font-size:10px;color:var(--tm)">Pasien menunggu giliran</div></div></div><div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0"><span style="width:9px;height:9px;border-radius:50%;background:#d97706;margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11px;font-weight:600;color:var(--tx)">Sedang Diperiksa</div><div style="font-size:10px;color:var(--tm)">Pasien dalam pemeriksaan dokter</div></div></div><div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;margin-top:3px;flex-shrink:0"></span><div><div style="font-size:11px;font-weight:600;color:var(--tx)">Selesai</div><div style="font-size:10px;color:var(--tm)">Pemeriksaan telah selesai</div></div></div></div></div></div><script>addEventListener("submit",function(a){if(!a.defaultPrevented){var c=a.target,d=a.submitter,e=c.action,b=d;if(d){var f=d.getAttribute("formAction");null!=f&&(e=f,b=null)}"javascript:throw new Error('React form unexpectedly submitted.')"===e&&(a.preventDefault(),b?(a=document.createElement("input"),a.name=b.name,a.value=b.value,b.parentNode.insertBefore(a,b),b=new FormData(c),a.parentNode.removeChild(a)):b=new FormData(c),a=c.ownerDocument||c,(a.$$reactFormReplay=a.$$reactFormReplay||[]).push(c,d,b))}});</script>"
+
+ ❯ src/components/__tests__/queue-page.test.tsx:74:16
+     72| it("opens the existing medical record from a payment-stage queue row u…
+     73|   fixture.payment = true; const html = await render();
+     74|   expect(html).toContain('href="/klinik/rekam-medis/visit-payment"');
+       |                ^
+     75|   expect(html).toContain('Buka rekam medis');
+     76|   expect(html).toContain('href="/klinik/pembayaran/visit-payment"');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  src/components/__tests__/remaining-item-name-display.test.tsx > sales rows choose duplicate names by ID and preserve selected units/prices across reload
+AssertionError: expected null not to be null
+ ❯ pick src/components/__tests__/remaining-item-name-display.test.tsx:17:141
+
+ ❯ src/components/__tests__/remaining-item-name-display.test.tsx:20:160
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  src/components/__tests__/remaining-item-name-display.test.tsx > online explicit selection keeps bare names and legacy exact labels; ambiguous text is not a SKU
+AssertionError: expected null not to be null
+ ❯ pick src/components/__tests__/remaining-item-name-display.test.tsx:17:141
+
+ ❯ src/components/__tests__/remaining-item-name-display.test.tsx:27:100
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+ FAIL  src/components/__tests__/remaining-item-name-display.test.tsx > online replacement display does not reprice original rows or alter request identity on reload
+AssertionError: expected undefined to be 'Nama sama' // Object.is equality
+
+- Expected:
+"Nama sama"
+
++ Received:
+undefined
+
+ ❯ src/components/__tests__/remaining-item-name-display.test.tsx:32:237
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯
+
+ FAIL  src/components/__tests__/remaining-item-name-display.test.tsx > production selects output/ingredients by ID with separate codes, retains quantities and blocks missing output
+AssertionError: expected null not to be null
+ ❯ src/components/__tests__/remaining-item-name-display.test.tsx:36:162
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  11 failed | 10 passed (21)
+   Start at  08:17:05
+   Duration  788ms (transform 293ms, setup 0ms, import 587ms, tests 208ms, environment 352ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

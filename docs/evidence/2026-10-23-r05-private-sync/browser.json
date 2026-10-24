@@ -1,0 +1,28 @@
+[
+  {
+    "width": 1280,
+    "keyboardColumns": true,
+    "visibleExport": true,
+    "mergedFooter": true,
+    "savedAppliedUrl": true,
+    "monthPreservesColumns": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "hostedWrites": 0,
+    "scope": "Component fixture with fictional in-memory actions; not authenticated cross-browser/server/UAT proof."
+  },
+  {
+    "width": 390,
+    "keyboardColumns": true,
+    "visibleExport": true,
+    "mergedFooter": true,
+    "savedAppliedUrl": true,
+    "monthPreservesColumns": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "hostedWrites": 0,
+    "scope": "Component fixture with fictional in-memory actions; not authenticated cross-browser/server/UAT proof."
+  }
+]

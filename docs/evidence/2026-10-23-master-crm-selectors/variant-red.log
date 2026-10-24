@@ -1,0 +1,41 @@
+
+ RUN  v4.1.9 /workspace/kamo-master-selectors
+
+ ❯ src/components/__tests__/variant-catalog-page.test.tsx (3 tests | 2 failed) 87ms
+   × finds an active eligible SKU beyond row 2000 using checked catalog pages 68ms
+   × suppresses management forms on failed reads without exposing private errors 15ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/variant-catalog-page.test.tsx > finds an active eligible SKU beyond row 2000 using checked catalog pages
+AssertionError: expected [] to have a length of 5 but got +0
+
+- Expected
++ Received
+
+- 5
++ 0
+
+ ❯ src/components/__tests__/variant-catalog-page.test.tsx:11:153
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/variant-catalog-page.test.tsx > suppresses management forms on failed reads without exposing private errors
+AssertionError: expected null not to be null
+ ❯ src/components/__tests__/variant-catalog-page.test.tsx:12:172
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  12:42:15
+   Duration  692ms (transform 73ms, setup 0ms, import 133ms, tests 87ms, environment 298ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

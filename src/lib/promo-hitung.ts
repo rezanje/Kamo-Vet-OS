@@ -1,4 +1,5 @@
 import { hariIniWIB } from "./tanggal";
+import { readCompleteList } from "./checked-list";
 // Perhitungan potongan promo — pure, dipakai KLIEN (tampilan kasir) dan SERVER
 // (angka yang benar-benar disimpan). Dipisah dari lib/promo.ts karena file itu
 // hanya soal "promo ini aktif hari ini di cabang mana", bukan soal uang.
@@ -118,18 +119,16 @@ type AnyClient = any;
 export async function loadPromoAktif(supabase: AnyClient, branchId: string): Promise<PromoHitung[]> {
   const wibToday = hariIniWIB();
 
-  const { data } = await supabase
-    .from("promos")
-    .select("id, name, rule, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
-    .eq("is_active", true)
-    .eq("auto_apply", true);
-
   type Row = {
     id: string; name: string; rule: { min_subtotal?: number } | null;
     branch_ids: string[] | null; valid_from: string | null; valid_until: string | null;
     min_qty: number | null; max_qty: number | null; kelipatan: boolean; auto_apply: boolean;
     discount_type: "percent" | "nominal" | null; discount_value: number | null;
   };
+
+  const data = await readCompleteList<Row>((from,to) => supabase.from("promos")
+    .select("id, name, rule, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value", {count:"exact"})
+    .eq("is_active",true).eq("auto_apply",true).order("id").range(from,to), "Promo aktif");
 
   const aktif = ((data ?? []) as Row[]).filter((p) => {
     if (p.branch_ids && p.branch_ids.length > 0 && !p.branch_ids.includes(branchId)) return false;
@@ -139,11 +138,21 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string): Pro
   });
   if (aktif.length === 0) return [];
 
-  const { data: itemRows } = await supabase
-    .from("promo_items").select("promo_id, item_id").in("promo_id", aktif.map((p) => p.id));
+  type Target = {promo_id:string;item_id:string};
   const perPromo = new Map<string, string[]>();
-  for (const r of (itemRows ?? []) as { promo_id: string; item_id: string }[]) {
-    perPromo.set(r.promo_id, [...(perPromo.get(r.promo_id) ?? []), r.item_id]);
+  // A verified empty target list means all products. A failed/partial list must
+  // never be turned into that meaning; composite PK provides stable identity.
+  for(let offset=0;offset<aktif.length;offset+=200) {
+    const ids=aktif.slice(offset,offset+200).map(p=>p.id);
+    const itemRows=await readCompleteList<Target & {id:string}>(async(from,to)=>{
+      const result=await supabase.from("promo_items").select("promo_id,item_id",{count:"exact"})
+        .in("promo_id",ids).order("promo_id").order("item_id").range(from,to);
+      return {...result,data:Array.isArray(result.data)?(result.data as Target[]).map(row=>({...row,id:row.promo_id&&row.item_id?`${row.promo_id}:${row.item_id}`:""})):null};
+    },"Target barang promo");
+    for(const row of itemRows) {
+      const items=perPromo.get(row.promo_id)??[];
+      items.push(row.item_id);perPromo.set(row.promo_id,items);
+    }
   }
 
   return aktif.map((p) => ({

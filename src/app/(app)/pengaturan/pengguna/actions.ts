@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { assertAccountCreator, assertMasterAdmin } from "@/lib/master-guard";
+import { isAccountEditId } from "@/lib/user-account-edit";
 
 const BACK = "/pengaturan/pengguna";
 
@@ -94,4 +95,40 @@ export async function tautkanPengguna(form: FormData) {
   revalidatePath(BACK);
   revalidatePath("/hris/karyawan");
   redirect(`${BACK}?success=${encodeURIComponent("Akun sudah tertaut ke karyawan HRIS.")}`);
+}
+
+// Editing an existing login must never enter the signup/HRIS configuration flow.
+export async function simpanEditPengguna(form: FormData): Promise<{ ok: false; message: string }> {
+  const client = await assertMasterAdmin(BACK, "akun karyawan");
+  const profileId = String(form.get("profile_id") ?? "");
+  const fullName = String(form.get("full_name") ?? "").trim();
+  const role = String(form.get("role") ?? "");
+  const branchIds = form.getAll("branch_ids").map(String);
+  const version = String(form.get("expected_version") ?? "");
+  const requestId = String(form.get("request_id") ?? "");
+  if (!isAccountEditId(profileId) || !isAccountEditId(requestId) || branchIds.some((id) => !isAccountEditId(id))) {
+    return { ok: false, message: "Pilihan akun atau cabang tidak valid. Muat ulang halaman edit." };
+  }
+  if (!fullName || fullName.length > 200 || !["OWNER", "ADMIN", "FINANCE", "DOCTOR", "STAFF"].includes(role) || !version || version.length > 200) {
+    return { ok: false, message: "Isi nama akun (maks. 200 karakter), role, dan versi akun yang valid." };
+  }
+  try {
+    const { data, error } = await client.rpc("edit_user_account", {
+      p_profile_id: profileId, p_full_name: fullName, p_role: role,
+      p_branch_ids: [...new Set(branchIds)], p_expected_version: version, p_request_id: requestId,
+    });
+    if (error) {
+      return { ok: false, message: error.code === "40001" || String(error.message).startsWith("ACCOUNT_EDIT_CONFLICT:")
+        ? "Akun sudah berubah sejak halaman dibuka. Isian tetap tersimpan di halaman ini; muat ulang untuk meninjau data terbaru sebelum mengulang."
+        : "Perubahan akun ditolak. Periksa hak akses, role, dan penugasan cabang; isian tetap ada." };
+    }
+    if (!data || data.profile_id !== profileId || typeof data.version !== "string") {
+      return { ok: false, message: "Hasil simpan belum dapat dipastikan. Coba simpan lagi dengan isian yang sama." };
+    }
+  } catch {
+    return { ok: false, message: "Hasil simpan belum dapat dipastikan. Coba simpan lagi dengan isian yang sama." };
+  }
+  revalidatePath(BACK);
+  revalidatePath(`${BACK}/${profileId}/edit`);
+  redirect(`${BACK}?success=${encodeURIComponent("Perubahan akun berhasil disimpan.")}`);
 }

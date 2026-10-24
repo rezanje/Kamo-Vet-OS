@@ -302,6 +302,7 @@ export function RekamMedisImportForm() {
                       {clarification.candidates.map((candidate) => (
                         <option key={`${candidate.customer_id}-${candidate.pet_id ?? "baru"}`} value={JSON.stringify({ customer_id: candidate.customer_id, pet_id: candidate.pet_id })}>
                           Ini sama: {candidate.customer_name} · {candidate.customer_phone || "tanpa nomor"} · {candidate.pet_name ? `anabul ${candidate.pet_name}` : "buat anabul baru"}
+                          {clarification.candidates.some(other => other !== candidate && key(other.customer_name) === key(candidate.customer_name) && key(other.customer_phone) === key(candidate.customer_phone) && key(other.pet_name) === key(candidate.pet_name)) && ` · referensi ${candidate.pet_id ?? candidate.customer_id}`}
                         </option>
                       ))}
                       <option value="skip">Beda — jangan impor riwayat ini</option>

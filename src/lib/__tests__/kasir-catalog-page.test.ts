@@ -14,6 +14,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       select: (_columns: string, options?: { count?: string }) => { counted = options?.count === "exact"; return query; },
       eq: (column: string, value: unknown) => { rows = rows.filter(row => row[column] === value); return query; },
       is: () => query,
+      lte: (column:string,value:string) => { rows=rows.filter(row=>String(row[column])<=value);return query; },
       in: (column: string, values: unknown[]) => { rows = rows.filter(row => values.includes(row[column])); return query; },
       order: () => query,
       limit: (size: number) => { end = size - 1; return query; },

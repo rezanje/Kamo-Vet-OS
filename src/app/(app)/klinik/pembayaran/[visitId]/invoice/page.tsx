@@ -1,3 +1,4 @@
+import { servicePerformerNames } from "@/lib/service-performers";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -11,26 +12,32 @@ function one<T>(r: Rel<T>): T | null {
 }
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function InvoicePage({ params }: { params: Promise<{ visitId: string }> }) {
+export default async function InvoicePage({ params, searchParams }: { params: Promise<{ visitId: string }>; searchParams?:Promise<{invoice_id?:string|string[]}> }) {
   const { visitId } = await params;
+  const requested=(await searchParams)?.invoice_id;
+  if(requested!==undefined&&(typeof requested!=="string"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(requested)))notFound();
   const supabase = await createClient();
 
-  const { data: visit } = await supabase
+  const { data: visit,error:visitError } = await supabase
     .from("visits")
     .select("id, poli, dokter, created_at, pets(name, species, breed), customers(name, phone, address), branches(name, code)")
     .eq("id", visitId).maybeSingle();
+  if(visitError)throw new Error("Kunjungan sumber belum dapat diverifikasi. Muat ulang sebelum mencetak.");
   if (!visit) notFound();
 
-  const { data: invoice } = await supabase
-    .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, created_at")
-    .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
-  if (!invoice) notFound();
+  let invoiceQuery=supabase.from("invoices")
+    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name")
+    .eq("visit_id",visitId).is("voided_at",null);
+  if(requested)invoiceQuery=invoiceQuery.eq("id",requested);
+  const{data:invoice,error:invoiceError}=await invoiceQuery.maybeSingle();
+  if(invoiceError)throw new Error("Invoice sumber belum dapat diverifikasi. Muat ulang sebelum mencetak.");
+  if(!invoice||(requested&&invoice.id!==requested))notFound();
 
-  const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen").eq("invoice_id", invoice.id).order("created_at");
-  const { data: payments } = await supabase.from("invoice_payments")
+  const { data: items,error:itemsError } = await supabase
+    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, service_performers").eq("invoice_id", invoice.id).order("created_at");
+  const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
+  if(itemsError||paymentsError)throw new Error("Rincian invoice atau pembayaran belum dapat diverifikasi. Muat ulang sebelum mencetak.");
 
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
     .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
@@ -83,7 +90,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
           <div style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>
             <div>Pasien: <b style={{ color: "#141413" }}>{pet?.name ?? "-"}</b> ({pet?.species ?? "-"}{pet?.breed ? " / " + pet.breed : ""})</div>
             <div>Poli: {visit.poli}</div>
-            <div>Dokter: {visit.dokter ?? "-"}</div>
+            <div>Dokter PJ: {visit.dokter ?? "-"}</div>
+            <div>Kasir: {invoice.cashier_name ?? "Kasir belum tercatat"}</div>
           </div>
         </div>
 
@@ -102,7 +110,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ visitI
             {(items ?? []).map((it, i) => (
               <tr key={i}>
                 <td style={{ color: "var(--td)" }}>{i + 1}</td>
-                <td style={{ fontWeight: 500 }}>{it.deskripsi}</td>
+                <td style={{ fontWeight: 500 }}>{it.deskripsi}{it.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}</td>
                 <td style={{ textAlign: "center" }}>{it.qty}</td>
                 <td style={{ textAlign: "right" }}>{rp(it.harga)}</td>
                 <td style={{ textAlign: "center" }}>{Number(it.diskon_persen) > 0 ? `${Number(it.diskon_persen)}%` : "—"}</td>

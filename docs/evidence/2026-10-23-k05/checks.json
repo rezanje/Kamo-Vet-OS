@@ -1,0 +1,52 @@
+{
+  "item_ids": [
+    "K05"
+  ],
+  "inspected_not_completed": [
+    "U07",
+    "K06"
+  ],
+  "scope": "Admission readiness/error UX only; existing server eligibility unchanged",
+  "base_main": "ccd886ba5edebf083ef84c5e28d3e563c6e76d57",
+  "red": {
+    "initial_fail": 8,
+    "initial_existing_pass": 2,
+    "review_real_consent_panel_fail": 2
+  },
+  "focused": {
+    "files": 4,
+    "tests": 36,
+    "exit": 0
+  },
+  "full_vitest": {
+    "files": 342,
+    "tests": 2624,
+    "exit": 0
+  },
+  "typecheck": {
+    "exit": 0
+  },
+  "scoped_lint": {
+    "exit": 0
+  },
+  "production_build": {
+    "exit": 0,
+    "warnings": "Existing Supabase Edge/img/legacy warnings; no failing gate."
+  },
+  "independent_review": "No remaining P1/P2; final15focusedtests independently passed.",
+  "migration_files": [],
+  "server_rpc_changed": false,
+  "auth_permissions_changed": false,
+  "target_access": false,
+  "full_workflow_simulation": "Deferred",
+  "new_browser_run": false,
+  "merged": false,
+  "deployed": false,
+  "uat": "Pending",
+  "remaining_gaps": [
+    "K05 target end-to-end admission verification deferred",
+    "K06 closed/paid admission policy not changed",
+    "U07 latency cause/SLA unmeasured; pending/idempotency existing only"
+  ],
+  "next_batch": "C01 edit promo, preserve historical transactions and existing roles/audit."
+}

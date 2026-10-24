@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -51,7 +52,7 @@ export default async function PajakPage({
           </label>
           <div className="fg" style={{ maxWidth: 160 }}>
             <label className="flab">Tarif PPN (%)</label>
-            <input className="fi" type="number" name="ppn_rate" defaultValue={rate} min={1} max={50} step="any" />
+            <NumberInput className="fi" type="number" name="ppn_rate" defaultValue={rate} min={1} max={50} step="any" />
           </div>
           <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 10, lineHeight: 1.6 }}>
             Saat AKTIF: harga POS dianggap sudah termasuk PPN (dipisah di pembukuan), tagihan klinik

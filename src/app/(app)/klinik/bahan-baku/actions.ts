@@ -24,14 +24,18 @@ export async function setBahanBakuBanyak(itemIds: string[], value: boolean) {
   if (ids.length === 0) return { ok: false as const, error: "Belum ada barang yang dipilih." };
 
   const supabase = await createClient();
-  const { data: before, error: beforeError } = await supabase
-    .from("items")
-    .select("id, is_compound_material")
-    .in("id", ids)
-    .eq("is_active", true)
-    .eq("item_type", "Persediaan");
-  if (beforeError) return { ok: false as const, error: beforeError.message };
-  if ((before?.length ?? 0) !== ids.length) return { ok: false as const, error: "Sebagian barang sudah tidak aktif atau tidak ditemukan." };
+  // Keep each read below the API row/URL cap, just like the existing writes.
+  // Validate the complete explicit target set before changing any flag.
+  const before: {id:string;is_compound_material:boolean}[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const batch = ids.slice(i, i + 200);
+    const {data,error} = await supabase.from("items")
+      .select("id, is_compound_material").in("id", batch)
+      .eq("is_active", true).eq("item_type", "Persediaan");
+    if (error) return {ok:false as const,error:error.message};
+    if ((data?.length ?? 0) !== batch.length) return {ok:false as const,error:"Sebagian barang sudah tidak aktif atau tidak ditemukan."};
+    before.push(...(data ?? []));
+  }
 
   const berhasil: string[] = [];
   const rollback = async () => {

@@ -1,0 +1,16 @@
+a9a609bace624ed2ea42f513d24ee59b3e0bd9e8fa4bb5d50abe0894361d3f37  docs/rollback/2026-10-22-k08-paid-checkout.sql
+f0e4bedf756702b58b5aa1ab1f765d957dae5845494806ef248f3ef292b248a0  scripts/test-clinic-billing-consistency-postgres.py
+cbf345f25cca614aa2845747f1bb922a09b32239b11c9873b97e947afc754d3a  scripts/test-clinic-draft-browser.mjs
+1f45d423d7a9152326a705827bbc8d22fb6150b055d49ebfd64b17cd7db1fb70  scripts/test-clinic-payment-draft-browser.mjs
+ba1cdf549b432facbd8fde620212824093c7ac249894d09bae83fdb09927ec1b  src/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm.module.css
+ac066b629b7d99da96ca1cb6050e5294b6ce129e8b97ca2f28bdc1ac1e876204  src/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm.tsx
+71476e116a81d2347cdb5996f2626160812d9d3007ac63bcf0195a31ddc752ac  src/app/(app)/klinik/pembayaran/[visitId]/actions.ts
+966c354b438808954e58a5845c266f6b866277bb2794779efe0393e4b0522dc6  src/app/(app)/klinik/pembayaran/[visitId]/page.tsx
+36b5d5968b14b38435d46666d1a1132b53acf2420d98a65ff434c3b5e9fd006a  src/app/(app)/penjualan/faktur/page.tsx
+49d60e7c68a48e8b6589764cee7388e2534cd8cd68c1f1aadbc24b6c907c0dbb  src/components/__tests__/clinic-billing-reader.test.tsx
+10d4f033adba11e0ab1ca27db685b93ac6c5e35654164b8db5774992e2db57d8  src/components/__tests__/clinic-billing-source-draft.test.tsx
+7ed3ab89de865152a00ac825b2bd27c3e250cbbe9f3ae13ef0655d5f34bb9fcf  src/components/useClinicDraft.ts
+fa30494c6b917cb4f54ce9fce225a0ca0c4451651e05a9652eccfac09d9a1359  src/lib/__tests__/clinic-payment-action.test.ts
+8d126cdc7c93d6ab59e0988ae8e65b427ec3a59628e6183ab010c471ab8bfa25  src/lib/klinik-posting.ts
+d76c8afcd35430cbd214213bb45cf9468d21b44b70033b7204272c26847338d4  supabase/migrations/20261022232107_clinic_paid_checkout_atomic.sql
+3c97fe326a28366a46c79588fe43b86dc8d2f27726c60d1b9ebbf41890ac7137  supabase/tests/clinic_billing_consistency.sql

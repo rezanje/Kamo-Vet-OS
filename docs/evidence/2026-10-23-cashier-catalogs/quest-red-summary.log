@@ -1,0 +1,19 @@
+
+ RUN  v4.1.9 /workspace/kamo-cashier-catalogs
+
+ ❯ src/components/__tests__/quest-reference-catalog.test.tsx (4 tests | 4 failed) 61ms
+   × provides all active product targets with separate codes/exact IDs and all permitted active branches 31ms
+   × rejects failed or truncated items reference reads instead of presenting partial setup 15ms
+   × rejects failed or truncated branches reference reads instead of presenting partial setup 11ms
+   × retains an optional empty exact-reference field when the permitted product catalogue is verified empty 3ms
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  13:12:55
+   Duration  353ms (transform 81ms, setup 0ms, import 124ms, tests 61ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

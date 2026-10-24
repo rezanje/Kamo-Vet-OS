@@ -1,3 +1,7 @@
+import { NumberInput } from "@/components/NumberInput";
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
+import { DocumentBackLink } from "@/components/RelatedDocuments";
+import { documentAnchor } from "@/lib/related-document-routes";
 import { DurablePaymentOrderForm } from "./DurablePaymentOrderForm";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -30,7 +34,7 @@ const LABEL: Record<string, string> = { draft: "Menunggu setuju", disetujui: "Si
 export default async function PerintahBayarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; supplier?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; supplier?: string; from?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
@@ -73,6 +77,7 @@ export default async function PerintahBayarPage({
       bolehKelola={bolehAjukan}
       readOnlyNote="Hanya OWNER/ADMIN/FINANCE yang bisa mengajukan perintah pembayaran."
     >
+      <DocumentBackLink from={sp.from} />
       <div className="crm-sec">
         <SecHeader
           num="01" title="AJUKAN PEMBAYARAN"
@@ -113,7 +118,7 @@ export default async function PerintahBayarPage({
                         <td style={{ fontSize: 11 }}>{tgl(f.jatuh_tempo)}</td>
                         <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(s)}</td>
                         <td style={{ textAlign: "right" }}>
-                          <input className="fi" type="number" name={`jumlah_${f.id}`} min={0} max={s} step="any"
+                          <NumberInput className="fi" type="number" name={`jumlah_${f.id}`} min={0} max={s} step="any"
                             defaultValue={s} style={{ width: 130, textAlign: "right" }} />
                         </td>
                       </tr>
@@ -165,9 +170,10 @@ export default async function PerintahBayarPage({
             </thead>
             <tbody>
               {orders.map((o) => (
-                <tr key={o.id}>
+                <tr id={documentAnchor("payment-order",o.id)} style={{scrollMarginTop:90}} key={o.id}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>
                     {o.no_pp}
+                    <div><ActivityHistoryLink entity="payment_orders" id={o.id} /></div>
                     <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>
                       {(o.payment_order_items ?? []).map((i) => { const invoice = one(i.purchase_invoices); return invoice ? <Link key={i.id} href={`/pembelian/faktur/${invoice.id}`} style={{ marginRight: 8 }}>{invoice.no_faktur}</Link> : null; })}
                     </div>

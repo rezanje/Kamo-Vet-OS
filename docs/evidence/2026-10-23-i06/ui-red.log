@@ -1,0 +1,52 @@
+[Baseline RED log excerpt: long SSR Received markup omitted; assertion messages and run summary retained.]
+
+ RUN  v4.1.9 /workspace/kamo-i06
+
+ ❯ src/components/__tests__/opname-cancel-ui.test.tsx (3 tests | 3 failed) 33ms
+   × offers a reasoned cancellation for an empty draft and retains its exact route identity 27ms
+   × explains partially locked orders without offering draft cancellation 3ms
+   × shows retained cancellation evidence without rendering count/posting results 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/opname-cancel-ui.test.tsx > offers a reasoned cancellation for an empty draft and retains its exact route identity
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Batalkan draf'
+
+Expected: "Batalkan draf"
+
+ ❯ src/components/__tests__/opname-cancel-ui.test.tsx:13:142
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/components/__tests__/opname-cancel-ui.test.tsx > explains partially locked orders without offering draft cancellation
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'hitungan terkunci'
+
+Expected: "hitungan terkunci"
+
+ ❯ src/components/__tests__/opname-cancel-ui.test.tsx:14:135
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/components/__tests__/opname-cancel-ui.test.tsx > shows retained cancellation evidence without rendering count/posting results
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Fictional abandoned plan'
+
+Expected: "Fictional abandoned plan"
+
+ ❯ src/components/__tests__/opname-cancel-ui.test.tsx:15:149
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  02:13:10
+   Duration  287ms (transform 55ms, setup 0ms, import 100ms, tests 33ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

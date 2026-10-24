@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import type { LampiranDraft } from "@/lib/dokumen";
 import { draftRows, draftString } from "@/components/TransactionDraft";
@@ -192,11 +194,11 @@ export function FakturLangsungForm({
                       )}
                     </td>
                     <td>
-                      <input className="fi" type="number" min={0} step="any" value={r.qty}
+                      <NumberInput className="fi" type="number" min={0} step="any" value={r.qty}
                         onChange={(e) => set(r.key, { qty: Number(e.target.value) })} />
                     </td>
                     <td>
-                      <input className="fi" type="number" min={0} step="any" value={r.harga}
+                      <NumberInput className="fi" type="number" min={0} step="any" value={r.harga}
                         onChange={(e) => set(r.key, { harga: Number(e.target.value) })} />
                     </td>
                     <td>

@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -133,7 +134,7 @@ export default async function TargetPage({
               </div>
               <div>
                 <label className="flab">Nilai target (Rp) *</label>
-                <input className="fi" name="target" type="number" min={1} step="any" required />
+                <NumberInput className="fi" name="target" type="number" min={1} step="any" required />
               </div>
               <div style={{ display: "flex", alignItems: "flex-end" }}>
                 <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>

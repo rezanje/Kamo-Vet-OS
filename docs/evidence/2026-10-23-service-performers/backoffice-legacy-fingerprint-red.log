@@ -1,0 +1,61 @@
+
+ RUN  v4.1.9 /workspace/kamo-service-performers
+
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx (9 tests | 2 failed) 479ms
+   × fills only empty service rows, preserves explicit overrides and restores exact rows after retry 113ms
+   × retains the pre-deployment draft fingerprint without reintroducing a manual cashier selector 26ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/backoffice-service-performers.test.tsx > fills only empty service rows, preserves explicit overrides and restores exact rows after retry
+AssertionError: expected undefined to be '' // Object.is equality
+
+- Expected:
+""
+
++ Received:
+undefined
+
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx:71:81
+     69|   await act(async () => root.unmount()); root = createRoot(host); awai…
+     70|   expect(cart()).toEqual(expected);
+     71|   expect(host.querySelector<HTMLInputElement>('[name="salespersonId"]'…
+       |                                                                                 ^
+     72|   expect(host.textContent).toContain("Pilihan per baris yang sudah dii…
+     73| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/__tests__/backoffice-service-performers.test.tsx > retains the pre-deployment draft fingerprint without reintroducing a manual cashier selector
+AssertionError: expected { key: 'legacy-key', …(1) } to deeply equal { key: 'legacy-key', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "fingerprint": "f57444f34a58d52971cb962c10378ea51e2d302c2b0fa0bb566e7eb7d1b4182a",
++   "fingerprint": "b7f48ef9a4e59056012c347fea71e4c7ca8ae08d7c4819f737866ace322d8d3f",
+    "key": "legacy-key",
+  }
+
+ ❯ src/components/__tests__/backoffice-service-performers.test.tsx:130:84
+    128|   const identity = posCheckoutIdentity(baseline, "branch");
+    129|   await render();
+    130|   expect(posCheckoutIdentity(new FormData(host.querySelector("form")!)…
+       |                                                                                    ^
+    131|   expect(host.querySelector<HTMLInputElement>('[name="salespersonId"]'…
+    132|   expect(JSON.parse(sessionStorage.getItem(POS_DRAFT_KEY)!).salesperso…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed (9)
+   Start at  14:36:35
+   Duration  1.25s (transform 188ms, setup 0ms, import 270ms, tests 479ms, environment 329ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

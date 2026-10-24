@@ -1,6 +1,7 @@
 import { completeReportQuery } from "./report-query";
 import { isCompletedSale, saleMerchandiseTotal, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
 import { PosDecimal } from "./pos-money";
+import type { ServicePerformersSnapshot } from "./service-performers";
 // Pengumpul data komisi: menarik penjualan + retur satu periode lalu menyusunnya
 // jadi baris siap hitung untuk `hitungKomisi`.
 //
@@ -21,6 +22,8 @@ export const akhirPeriode = (periode: string): string => {
 };
 
 type SaleItemRow = {
+  id?: string;
+  service_performers?: ServicePerformersSnapshot | null;
   item_id: string | null;
   qty: number;
   harga: number;
@@ -30,6 +33,7 @@ type SaleItemRow = {
 };
 
 type SaleRow = SaleCompletion & SaleMerchantTotal & {
+  no_struk?: string;
   id: string;
   created_at: string;
   branch_id: string | null;
@@ -42,18 +46,30 @@ type SaleRow = SaleCompletion & SaleMerchantTotal & {
 type ReturRow = {
   sale_id: string;
   tanggal: string;
-  sales_return_items: { item_id: string | null; qty: number; harga: number }[] | null;
+  sales_return_items: { source_line_id?: string | null; item_id: string | null; qty: number; harga: number }[] | null;
 };
 
 type InvoiceRow = {
+  invoice_no?: string;
+  visit_id?: string;
   id: string;
   paid_at: string;
   clinic_demo_invoice_snapshots?: {invoice_id:string} | {invoice_id:string}[] | null;
   total: number;
   salesperson_id: string | null;
   visits: { branch_id: string | null; doctor_id: string | null } | { branch_id: string | null; doctor_id: string | null }[] | null;
-  invoice_items: { item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
+  invoice_items: { id?: string;service_performers?: ServicePerformersSnapshot | null;item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
 };
+
+type SourceAttribution = Pick<BarisJual,"employeeId"|"servicePerformers"|"sourceLineId"|"sourceDocumentId"|"sourceDocumentNumber"|"sourceDocumentHref"|"commissionPending">;
+function serviceAttribution(row:{id?:string;service_performers?:ServicePerformersSnapshot|null},legacy:string|null,documentId:string,number?:string,href?:string):SourceAttribution {
+  if(row.service_performers==null)return {employeeId:legacy};
+  const ids=[...new Set([row.service_performers.doctor_id,row.service_performers.staff_id].filter((id):id is string=>!!id))];
+  // Pending two-person policy is never replaced with a guessed split or two global payouts.
+  return {employeeId:ids.length===1?ids[0]:null,commissionPending:ids.length>1,servicePerformers:row.service_performers,
+    sourceLineId:row.id,sourceDocumentId:documentId,sourceDocumentNumber:number,sourceDocumentHref:href};
+}
+type SaleInfo={employeeId:string|null;branchId:string|null;hppPerUnit:Map<string,number>;sale:SaleMerchantTotal;lines:SaleItemRow[];documentId:string;number?:string};
 
 type FakturJualRow = {
   id: string;
@@ -88,7 +104,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
-      .select("id, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(item_id, qty, harga, item_discount_type, item_discount_value, hpp)", { count: "exact" })
+      .select("id, no_struk, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, harga, item_discount_type, item_discount_value, hpp, service_performers)", { count: "exact" })
       .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`)),
     completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
     completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
@@ -110,7 +126,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   let omzetTanpaPenjual = 0;
 
   // Untuk baris retur: modal & pemilik struk asli.
-  const infoStruk = new Map<string, { employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number>; sale: SaleMerchantTotal }>();
+  const infoStruk = new Map<string,SaleInfo>();
 
   for (const s of sales) {
     const employeeId = s.salesperson_id ?? (s.cashier_id ? empPerProfile.get(s.cashier_id) ?? null : null);
@@ -136,7 +152,8 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
       const kotor = subtotalPer[idx];
       const omzet = jumlahBaris > 0 ? kotor - (potonganStruk * kotor) / jumlahBaris : kotor;
-      if (!employeeId) omzetTanpaPenjual += omzet;
+      const attribution=serviceAttribution(it,employeeId,s.id,s.no_struk,`/penjualan/${s.id}`);
+      if (!attribution.employeeId) omzetTanpaPenjual += omzet;
 
       // Baris tanpa penjual tetap dibawa: realisasi target per cabang/kategori
       // tidak boleh kehilangan omzet cuma karena kasirnya belum terhubung ke
@@ -144,7 +161,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       baris.push({
         tanggal: s.created_at.slice(0, 10),
         sumber: "kasir",
-        employeeId,
+        ...attribution,
         branchId: s.branch_id,
         itemId: it.item_id,
         kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
@@ -154,13 +171,13 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       });
     }
 
-    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s });
+    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk });
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
   const { data: returData } = await completeReportQuery(supabase
     .from("sales_returns")
-    .select("id, sale_id, tanggal, sales_return_items(item_id, qty, harga)", { count: "exact" }).is("voided_at", null)
+    .select("id, sale_id, tanggal, sales_return_items(source_line_id, item_id, qty, harga)", { count: "exact" }).is("voided_at", null)
     .gte("tanggal", awal).lte("tanggal", akhir));
 
   for (const r of (returData ?? []) as ReturRow[]) {
@@ -174,12 +191,15 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       const gross = new PosDecimal(qty).times(it.harga);
       const nilai = Number(info.sale.merchant_fee_total) > 0 && Number(info.sale.total) > 0
         ? gross.times(saleMerchandiseTotal(info.sale)).div(info.sale.total).toNumber() : gross.toNumber();
-      if (!info.employeeId) omzetTanpaPenjual -= nilai;
-      const hppUnit = it.item_id ? info.hppPerUnit.get(it.item_id) : undefined;
+      const source=it.source_line_id?info.lines.find(line=>line.id===it.source_line_id):undefined;
+      const attribution:SourceAttribution=source?serviceAttribution(source,info.employeeId,info.documentId,info.number,`/penjualan/${info.documentId}`)
+        :info.lines.some(line=>line.service_performers!=null)?{employeeId:null,commissionPending:true,sourceDocumentId:info.documentId,sourceDocumentNumber:info.number,sourceDocumentHref:`/penjualan/${info.documentId}`}:{employeeId:info.employeeId};
+      if (!attribution.employeeId) omzetTanpaPenjual -= nilai;
+      const hppUnit = source && source.hpp!==null && Number(source.qty)>0 ? Number(source.hpp)/Number(source.qty) : it.item_id ? info.hppPerUnit.get(it.item_id) : undefined;
       baris.push({
         tanggal: r.tanggal,
         sumber: "kasir",
-        employeeId: info.employeeId,
+        ...attribution,
         branchId: info.branchId,
         itemId: it.item_id,
         kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
@@ -195,7 +215,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
   const { data: invData } = await completeReportQuery(supabase
     .from("invoices")
-    .select("id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(item_id, qty, harga, hpp), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
+    .select("id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
     .eq("paid_status", "Lunas").is("voided_at", null)
     .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
 
@@ -212,13 +232,14 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
     for (const [idx, it] of items.entries()) {
       const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
-      if (!employeeId) omzetTanpaPenjual += omzet;
+      const attribution=serviceAttribution(it,employeeId,inv.id,inv.invoice_no,inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined);
+      if (!attribution.employeeId) omzetTanpaPenjual += omzet;
 
       baris.push({
         tanggal: inv.paid_at.slice(0, 10),
         sumber: "klinik",
         fixedCommission: Array.isArray(inv.clinic_demo_invoice_snapshots) ? inv.clinic_demo_invoice_snapshots.length>0 : !!inv.clinic_demo_invoice_snapshots,
-        employeeId,
+        ...attribution,
         branchId: v?.branch_id ?? null,
         itemId: it.item_id,
         kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
@@ -312,9 +333,9 @@ async function infoStrukLuarPeriode(
   supabase: AnyClient,
   saleId: string,
   empPerProfile: Map<string, string>,
-): Promise<{ employeeId: string | null; branchId: string | null; hppPerUnit: Map<string, number>; sale: SaleMerchantTotal } | null> {
+): Promise<SaleInfo | null> {
   const { data } = await supabase
-    .from("sales").select("branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(item_id, qty, hpp)").eq("id", saleId).maybeSingle();
+    .from("sales").select("id, no_struk, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, hpp, service_performers)").eq("id", saleId).maybeSingle();
   if (!data || !isCompletedSale(data)) return null;
   const hppPerUnit = new Map<string, number>();
   for (const it of (data.sale_items ?? []) as { item_id: string | null; qty: number; hpp: number | null }[]) {
@@ -325,6 +346,7 @@ async function infoStrukLuarPeriode(
     branchId: data.branch_id,
     hppPerUnit,
     sale: data,
+    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,
   };
 }
 

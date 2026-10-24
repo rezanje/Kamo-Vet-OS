@@ -1,0 +1,98 @@
+
+ RUN  v4.1.9 /workspace/kamo-c02
+
+ ❯ src/components/__tests__/promo-category-page.test.tsx (5 tests | 5 failed) 185ms
+   × labels hierarchy, inactive, empty and unavailable category honestly and reads complete category pages 85ms
+   × filters a parent category including descendants and global promotions without widening explicit targets 28ms
+   × keeps existing inactive targets visible as information while selector remains active-only 26ms
+   × fails closed when category metadata or stored target links cannot be loaded completely 30ms
+   × finds a category beyond the first thousand and does not silently ignore an invalid category filter 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/promo-category-page.test.tsx > labels hierarchy, inactive, empty and unavailable category honestly and reads complete category pages
+AssertionError: expected 'Promo fooddiskon produk · pengingat s…' to contain 'Makanan › Anak kucing'
+
+Expected: "Makanan › Anak kucing"
+Received: "Promo fooddiskon produk · pengingat sajaPakan fiktif—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo emptydiskon produk · pengingat sajaBarang tanpa kategori—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo olddiskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo gonediskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo alldiskon produk · pengingat sajaSemua barang—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo lastdiskon produk · pengingat sajaKategori terakhir—Semua cabang— s/d ∞Aktif hari iniNonaktifkan"
+
+ ❯ src/components/__tests__/promo-category-page.test.tsx:28:29
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  src/components/__tests__/promo-category-page.test.tsx > filters a parent category including descendants and global promotions without widening explicit targets
+AssertionError: expected 'Promo fooddiskon produk · pengingat s…' not to contain 'Promo old'
+
+Expected: "Promo old"
+Received: "Promo fooddiskon produk · pengingat sajaPakan fiktif—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo emptydiskon produk · pengingat sajaBarang tanpa kategori—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo olddiskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo gonediskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo alldiskon produk · pengingat sajaSemua barang—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo lastdiskon produk · pengingat sajaKategori terakhir—Semua cabang— s/d ∞Aktif hari iniNonaktifkan"
+
+ ❯ src/components/__tests__/promo-category-page.test.tsx:34:95
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  src/components/__tests__/promo-category-page.test.tsx > keeps existing inactive targets visible as information while selector remains active-only
+AssertionError: expected 'Promo fooddiskon produk · pengingat s…' to contain 'Barang nonaktif'
+
+Expected: "Barang nonaktif"
+Received: "Promo fooddiskon produk · pengingat sajaPakan fiktif—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo emptydiskon produk · pengingat sajaBarang tanpa kategori—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo olddiskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo gonediskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo alldiskon produk · pengingat sajaSemua barang—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo lastdiskon produk · pengingat sajaKategori terakhir—Semua cabang— s/d ∞Aktif hari iniNonaktifkan"
+
+ ❯ src/components/__tests__/promo-category-page.test.tsx:37:72
+     35| });
+     36| it('keeps existing inactive targets visible as information while selec…
+     37|   await render('c2'); expect(host.querySelector('tbody')!.textContent)…
+       |                                                                        ^
+     38|   const input = host.querySelector<HTMLInputElement>('[aria-label="Car…
+     39|   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputEle…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  src/components/__tests__/promo-category-page.test.tsx > fails closed when category metadata or stored target links cannot be loaded completely
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ src/components/__tests__/promo-category-page.test.tsx:43:56
+     41| });
+     42| it('fails closed when category metadata or stored target links cannot …
+     43|   db.broken = 'item_categories'; await expect(render()).rejects.toThro…
+       |                                                        ^
+     44|   db.broken = 'promo_items'; await expect(render()).rejects.toThrow('b…
+     45| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  src/components/__tests__/promo-category-page.test.tsx > finds a category beyond the first thousand and does not silently ignore an invalid category filter
+AssertionError: expected 'Promo fooddiskon produk · pengingat s…' not to contain 'Promo food'
+
+Expected: "Promo food"
+Received: "Promo fooddiskon produk · pengingat sajaPakan fiktif—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo emptydiskon produk · pengingat sajaBarang tanpa kategori—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo olddiskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo gonediskon produk · pengingat saja——Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo alldiskon produk · pengingat sajaSemua barang—Semua cabang— s/d ∞Aktif hari iniNonaktifkanPromo lastdiskon produk · pengingat sajaKategori terakhir—Semua cabang— s/d ∞Aktif hari iniNonaktifkan"
+
+ ❯ src/components/__tests__/promo-category-page.test.tsx:47:136
+     45| });
+     46| it('finds a category beyond the first thousand and does not silently i…
+     47|   await render('c1002'); const text = host.querySelector('tbody')!.tex…
+       |                                                                                                                                        ^
+     48|   await render('missing-id'); expect(host.textContent).toContain('Filt…
+     49| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed (5)
+   Start at  03:07:51
+   Duration  929ms (transform 155ms, setup 0ms, import 275ms, tests 185ms, environment 290ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

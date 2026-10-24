@@ -1,0 +1,8 @@
+{
+  "src/app/(app)/hris/karyawan/[id]/page.tsx": "126456affef7666336132a43b5159728e8f5300b3fbd9b2981215ad18eb41161",
+  "src/app/(app)/hris/komponen-gaji/actions.ts": "57ba9993e16aece8a789ac59bb6c96d7c7f78eb130d9fd6c243b22887d5afba9",
+  "src/app/(app)/hris/komponen-gaji/page.tsx": "9c1d15d4a20a3228e7ccc8637276e2620a2d1427b340cb22dc375372812b8205",
+  "src/components/__tests__/named-employee-allowances.test.tsx": "02774538cc1814a7ce92c8f24517fa73550514d52dba3ae6de654e904e3c9678",
+  "src/components/__tests__/named-allowance-edit-state.test.tsx": "f4784dae655a5a4251869c03fb2c1caa8b75ee4cc5f3dc49461c8394bc2956ce",
+  "src/components/__tests__/item-name-print-contract.test.tsx": "e37d7fa982a3cf19fbf27522ea05ec7d5f538aa9555d917e24129196ea2897cd"
+}

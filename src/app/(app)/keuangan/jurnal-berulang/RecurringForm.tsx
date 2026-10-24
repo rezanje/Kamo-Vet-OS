@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { LocalTransactionDraft, PreservedForm } from "@/components/LocalTransactionDraft";
 import { draftRows } from "@/components/TransactionDraft";
 
@@ -39,11 +41,11 @@ export function RecurringForm({ userId, accounts, branches }: { userId: string; 
           </div>
           <div className="fg" style={{ width: 110, marginBottom: 0 }}>
             <label className="flab">Tgl posting *</label>
-            <input className="fi" type="number" name="day_of_month" min={1} max={28} defaultValue={1} required />
+            <NumberInput className="fi" type="number" name="day_of_month" min={1} max={28} defaultValue={1} required />
           </div>
           <div className="fg" style={{ width: 170, marginBottom: 0 }}>
             <label className="flab" htmlFor="recurring-count">Jumlah pengulangan</label>
-            <input id="recurring-count" className="fi" type="number" name="max_occurrences" min={1} max={2147483647} step={1} placeholder="Tanpa batas" />
+            <NumberInput id="recurring-count" className="fi" type="number" name="max_occurrences" min={1} max={2147483647} step={1} placeholder="Tanpa batas" />
             <span style={{ fontSize: 10, color: "var(--td)" }}>Kosong = tiap bulan tanpa batas</span>
           </div>
           <div className="fg" style={{ flex: 1, minWidth: 160, marginBottom: 0 }}>
@@ -66,9 +68,9 @@ export function RecurringForm({ userId, accounts, branches }: { userId: string; 
                 <option value="">Pilih akun</option>
                 {accounts.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
               </select>
-              <input className="fi" type="number" min={0} step="any" placeholder="Debit" value={r.debit || ""}
+              <NumberInput className="fi" type="number" min={0} step="any" placeholder="Debit" value={r.debit || ""}
                 onChange={(e) => set(i, { debit: Number(e.target.value), credit: 0 })} style={{ width: 130 }} />
-              <input className="fi" type="number" min={0} step="any" placeholder="Kredit" value={r.credit || ""}
+              <NumberInput className="fi" type="number" min={0} step="any" placeholder="Kredit" value={r.credit || ""}
                 onChange={(e) => set(i, { credit: Number(e.target.value), debit: 0 })} style={{ width: 130 }} />
               <button type="button" onClick={() => del(i)} className="btn-def" style={{ padding: "0 9px", color: "#b91c1c" }}>
                 <i className="ti ti-trash" />

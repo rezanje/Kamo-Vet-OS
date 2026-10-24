@@ -1,0 +1,1 @@
+{"review":{"ok":true,"can_post":false,"selected_rows":0,"excluded_rows":304,"blockers":["Jumlah/nilai sumber harus positif dan tepat dua desimal; tinjau pembulatan"]},"post":{"ok":false,"error":"Batch ini tidak dapat diposting. Tinjau laporan dan keputusan keuangan yang diperlukan."},"noFinancialWrites":true}

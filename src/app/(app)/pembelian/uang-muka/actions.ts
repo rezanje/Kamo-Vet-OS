@@ -1,83 +1,55 @@
 "use server";
 
-import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+import {revalidatePath} from "next/cache";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
-import { postJournal } from "@/lib/posting";
-import { kodeAkunBayar } from "@/lib/kas-akun";
-import { cekPeriode } from "@/lib/jurnal-guard";
-import { jurnalUangMuka } from "@/lib/uang-muka";
-import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { formatDokumen } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import Decimal from "decimal.js";
 
 const BASE = "/pembelian/uang-muka";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
 const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function nextNoUangMuka(supabase: any): Promise<string> {
-  const { nomor } = await nomorBerikutnya(supabase, "UM", hariIniWIB(), {
-    table: "purchase_advances", column: "no_um",
-  });
-  return nomor;
-}
 
 export async function bayarUangMuka(formData: FormData) {
   const supabase = await assertRole(BASE, "uang muka pembelian", BOLEH);
 
   const supplierId = String(formData.get("supplier_id") ?? "").trim();
   const poId = String(formData.get("po_id") ?? "").trim() || null;
-  const jumlah = Number(formData.get("jumlah")) || 0;
+  let jumlah = 0;
+  try {
+    const amount = new Decimal(String(formData.get("jumlah") ?? ""));
+    if (amount.isFinite() && amount.gt(0) && amount.lte(9999999999999) && amount.decimalPlaces() <= 2) jumlah = amount.toNumber();
+  } catch { /* Invalid input is rejected below, before the atomic RPC. */ }
   const metode = String(formData.get("metode") ?? "Transfer");
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
   const tanggal = String(formData.get("tanggal") ?? "").trim() || hariIniWIB();
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
 
+  const requestKey = String(formData.get("draft_key") ?? "").trim();
   if (!supplierId) gagal("Pilih pemasok penerima uang muka");
-  if (jumlah <= 0) gagal("Nominal uang muka harus lebih dari 0");
-
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  // PO yang dipilih harus milik pemasok yang sama — kalau tidak, uang mukanya
-  // nyangkut di pesanan orang lain dan tidak akan pernah bisa dipotongkan.
-  let branchId: string | null = null;
-  if (poId) {
-    const { data: po } = await supabase
-      .from("purchase_orders").select("id, supplier_id, branch_id").eq("id", poId).maybeSingle();
-    if (!po) gagal("PO tidak ditemukan");
-    if (po!.supplier_id && po!.supplier_id !== supplierId) gagal("PO itu milik pemasok lain");
-    branchId = (po!.branch_id as string | null) ?? null;
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const noUm = await nextNoUangMuka(supabase);
-
-  const { error } = await supabase.from("purchase_advances").insert({
-    no_um: noUm, supplier_id: supplierId, po_id: poId, tanggal, jumlah,
-    metode, account_id: accountId, catatan, created_by: user?.id ?? null,
+  if (!requestKey || requestKey.length > 120) gagal("Kunci uang muka belum tersedia. Muat ulang formulir sebelum menyimpan.");
+  if (jumlah <= 0) gagal("Nominal uang muka harus lebih dari 0 dan maksimal 2 angka desimal");
+  const format = await formatDokumen(supabase,"UM",hariIniWIB());
+  const {data,error} = await supabase.rpc("pay_purchase_advance_atomic", {
+    p_request_key:requestKey,p_no_prefix:format.prefix,p_no_digits:format.digit,
+    p_supplier_id:supplierId,p_po_id:poId,p_tanggal:tanggal,p_jumlah:jumlah,p_metode:metode,p_account_id:accountId,p_catatan:catatan,
   });
   if (error) gagal(error.message);
+  if (!data?.advance_id || !data?.journal_id || !data?.no_um) gagal("Uang muka belum terkonfirmasi lengkap. Periksa hasil transaksi sebelum menyimpan ulang.");
+  revalidatePath(BASE);
+  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} tercatat.`)}${transactionDraftAck(formData)}`);
+}
 
-  const kasCode = await kodeAkunBayar(supabase, metode, branchId, accountId);
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Uang muka pembelian ${noUm}`,
-    source: "purchase-advance",
-    sourceRef: noUm,
-    branchId,
-    lines: jurnalUangMuka(kasCode, jumlah),
-  });
-  await assertDraftJournal(supabase, {
-    tanggal,
-    deskripsi: `Uang muka pembelian ${noUm}`,
-    source: "purchase-advance",
-    sourceRef: noUm,
-    branchId,
-    lines: jurnalUangMuka(kasCode, jumlah),
-  });
-
-  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${noUm} tercatat.`)}${transactionDraftAck(formData)}`);
+export async function periksaUangMuka(formData:FormData) {
+  const supabase = await assertRole(BASE,"uang muka pembelian",BOLEH);
+  const key = String(formData.get("draft_key") ?? "").trim();
+  if (!key || key.length > 120) gagal("Kunci uang muka tidak valid");
+  const {data,error} = await supabase.rpc("get_purchase_advance_result",{p_request_key:key});
+  if (error || !data?.advance_id || !data?.journal_id) gagal(error?.message ?? "Belum ada uang muka tersimpan untuk draf ini. Periksa daftar sebelum mencoba kembali.");
+  revalidatePath(BASE);
+  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} sudah tersimpan; tidak diposting ulang.`)}${transactionDraftAck(formData)}`);
 }
 
 // Batal hanya boleh selama belum terpakai — kalau sudah dipotong ke pembayaran,
@@ -87,47 +59,9 @@ export async function batalkanUangMuka(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Uang muka tidak valid");
 
-  const { data: um } = await supabase
-    .from("purchase_advances")
-    .select("id, no_um, tanggal, jumlah, terpakai, status, metode, account_id, po_id")
-    .eq("id", id).maybeSingle();
-  if (!um) gagal("Uang muka tidak ditemukan");
-  if (um!.status === "batal") gagal("Uang muka ini sudah dibatalkan");
-  if (Number(um!.terpakai) > 0) gagal("Uang muka sudah dipakai untuk pembayaran — tidak bisa dibatalkan");
-
-  const tanggal = hariIniWIB();
-  const pesanPeriode = await cekPeriode(supabase, tanggal);
-  if (pesanPeriode) gagal(pesanPeriode);
-
-  let branchId: string | null = null;
-  if (um!.po_id) {
-    const { data: po } = await supabase.from("purchase_orders").select("branch_id").eq("id", um!.po_id).maybeSingle();
-    branchId = (po?.branch_id as string | null) ?? null;
-  }
-
-  // Jurnal pembalikan: uangnya kembali ke rekening, hak tagih hilang.
-  const kasCode = await kodeAkunBayar(supabase, um!.metode, branchId, um!.account_id);
-  const lines = jurnalUangMuka(kasCode, Number(um!.jumlah)).map((l) => ({
-    code: l.code, debit: l.credit, credit: l.debit,
-  }));
-  await postJournal(supabase, {
-    tanggal,
-    deskripsi: `Pembatalan uang muka ${um!.no_um}`,
-    source: "purchase-advance-void",
-    sourceRef: um!.no_um,
-    branchId,
-    lines,
-  });
-  await assertDraftJournal(supabase, {
-    tanggal,
-    deskripsi: `Pembatalan uang muka ${um!.no_um}`,
-    source: "purchase-advance-void",
-    sourceRef: um!.no_um,
-    branchId,
-    lines,
-  });
-
-  const { error: draftWriteError1 } = await supabase.from("purchase_advances").update({ status: "batal" }).eq("id", id).select("id").single();
-  if (draftWriteError1) throw new Error("Perubahan transaksi belum terkonfirmasi lengkap. Periksa daftar transaksi sebelum menyimpan ulang.");
-  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${um!.no_um} dibatalkan.`)}${transactionDraftAck(formData)}`);
+  const {data,error} = await supabase.rpc("cancel_purchase_advance_atomic",{p_advance_id:id});
+  if (error) gagal(error.message);
+  if (!data?.advance_id || !data?.journal_id) gagal("Pembatalan uang muka belum terkonfirmasi lengkap. Periksa daftar sebelum mencoba kembali.");
+  revalidatePath(BASE);
+  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} dibatalkan.`)}${transactionDraftAck(formData)}`);
 }

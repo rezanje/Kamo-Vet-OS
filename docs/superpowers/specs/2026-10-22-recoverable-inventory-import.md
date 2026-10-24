@@ -1,0 +1,11 @@
+# Recoverable inventory import
+
+Implement the authorized feedback batch in PR86; retain PR84/85 and main102f3b0. One executor, focused tests during iteration, full verification at the stable gate. No live migration/import, merge or deploy.
+
+Two explicit modes: existing master import remains strict about types; stock-only resolves exact existing active SKU/unit/expiry metadata and requires a selected date. Do not invent metadata. Mixed master results remain supported. All-invalid masters fail before writes.
+
+Save stock preparation and its rows in one invoker RPC transaction, with same-hash serialization and actor/scope checks. Exact retries return the existing complete run, including posted runs; never reconstruct persisted evidence from a later file/master snapshot. Recover exact own batches on reload via URL and database. File objects are never persisted; uploads not yet saved require reselect. Display master, preparation, review and actual posting stages separately. Synchronous request latches prevent double submissions; generation checks prevent stale file/date/category responses from updating UI or starting further stages. Uncertain responses instruct recovery, never imply success.
+
+Default STRICT preserves the posting precision guard. Opt-in HALF_UP_BATCH_V1 preserves raw numeric XML source strings and conversion factors, computes full source total, rounds the batch once to cents, computes 60-place base HPP, and allocates the residual to the first source-order row whose nonnegative finite numeric rate can represent it exactly. If no such row exists, fail without writes. Never round only the journal or change stock quantities. Persist source values, target, original-to-posted residual, rate adjustment and policy in audit payload/summary; expose them before explicit OWNER posting. This is a computed target, not an authoritative Accurate control total. Existing native posting atomically reconciles quantities, layers, moves and GL; its exact retry contract is retained.
+
+Test actual private bytes only outside git with explicit synthetic master/date. Cover invalid/mixed/master-only, stale responses, navigation recovery, lost responses, denied accounts/branches, atomic preparation, exact posting retry, strict precision denial and opt-in reconciliation. Preserve raw workbook. No full M04 completion claim.

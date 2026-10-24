@@ -1,0 +1,120 @@
+
+ RUN  v4.1.9 /workspace/kamo-n01
+
+ ❯ src/lib/__tests__/related-document-routes.test.ts (0 test)
+ ❯ src/components/__tests__/related-documents-navigation.test.tsx (7 tests | 6 failed) 65ms
+   × opens every stored receipt and DP from its PO without searching 40ms
+   × opens the PO and invoices of the same PO from a receipt without pretending direct allocation exists 9ms
+   × retains every purchase payment, cancellation, reversal, replacement, DP and precise order destination 6ms
+   × opens every split sales receipt and its explicitly allocated DP 4ms
+   × does not manufacture links or reveal hidden source document numbers 3ms
+   × distinguishes related-query failure from no related documents without exposing internals 2ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/related-document-routes.test.ts [ src/lib/__tests__/related-document-routes.test.ts ]
+Error: Cannot find module '../related-document-routes' imported from /workspace/kamo-n01/src/lib/__tests__/related-document-routes.test.ts
+ ❯ src/lib/__tests__/related-document-routes.test.ts:2:1
+      1| import { expect, it } from 'vitest';
+      2| import { relatedDocumentHref, documentBackHref, documentAnchor } from …
+       | ^
+      3| const id='10000000-0000-4000-8000-000000000001';
+      4| const parent='20000000-0000-4000-8000-000000000002';
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/related-documents-navigation.test.tsx > opens every stored receipt and DP from its PO without searching
+AssertionError: expected '<div style="display:flex;align-items:…' to contain '/pembelian/penerimaan/10000000-0000-4…'
+
+Expected: "/pembelian/penerimaan/10000000-0000-4000-8000-000000000002"
+Received: "<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:8px"><a class="back-btn" href="/pembelian"><i class="ti ti-arrow-left"></i> Kembali</a><span style="color:var(--td)">·</span><span style="font-size:13px;font-weight:500">PO-1</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"></div></div><div class="crm-sec"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:12px;border-bottom:.5px solid var(--bd);margin-bottom:14px"><div><div style="font-size:17px;font-weight:800">PO-1</div><div style="font-size:11px;color:var(--tm);margin-top:2px">22 Oktober 2026</div></div><span class="bge g" style="font-size:11px;padding:4px 12px">Diterima</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px"><div><div style="font-size:9.5px;font-weight:700;color:var(--td);letter-spacing:.03em;text-transform:uppercase;margin-bottom:3px">Supplier</div><div style="font-size:12.5px;font-weight:500">—</div></div><div><div style="font-size:9.5px;font-weight:700;color:var(--td);letter-spacing:.03em;text-transform:uppercase;margin-bottom:3px">Gudang tujuan</div><div style="font-size:12.5px;font-weight:500">—</div></div><div><div style="font-size:9.5px;font-weight:700;color:var(--td);letter-spacing:.03em;text-transform:uppercase;margin-bottom:3px">Cabang</div><div style="font-size:12.5px;font-weight:500">—</div></div><div><div style="font-size:9.5px;font-weight:700;color:var(--td);letter-spacing:.03em;text-transform:uppercase;margin-bottom:3px">Total PO</div><div style="font-size:12.5px;font-weight:500">Rp 100</div></div></div></div><div class="crm-sec"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;border-bottom:.5px solid var(--bd)"><div style="display:flex;align-items:flex-start;gap:10px"><div style="width:38px;height:38px;background:#16213e;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:16px;font-weight:800;color:#fff;line-height:1">01</span></div><div><div style="font-size:14px;font-weight:700;color:var(--tx);letter-spacing:.01em">DAFTAR ITEM</div><div style="font-size:10px;color:var(--tm);margin-top:2px">Barang, satuan, jumlah dipesan &amp; diterima.</div></div></div><div style="flex-shrink:0;text-align:right"><div style="font-size:15px;font-weight:900;color:#141413;line-height:1">KAM<i class="ti ti-paw" style="font-size:13px;vertical-align:-1px"></i></div><div style="font-size:7.5px;font-weight:600;color:#9ca3af;letter-spacing:.1em;margin-top:2px">PET CARE</div></div></div><div style="overflow-x:auto"><table class="tbl" style="min-width:660px"><thead><tr><th style="width:34px">No.</th><th>Nama Barang</th><th>Satuan</th><th style="text-align:center">Qty PO</th><th style="text-align:center">Qty Diterima</th><th style="text-align:right">Harga</th><th style="text-align:right">Subtotal</th></tr></thead><tbody><tr><td colSpan="7" style="text-align:center;color:var(--td);padding:18px 0;font-size:11px">Tidak ada item.</td></tr></tbody></table></div></div><div class="crm-sec" id="purchase-correction"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;border-bottom:.5px solid var(--bd)"><div style="display:flex;align-items:flex-start;gap:10px"><div style="width:38px;height:38px;background:#16213e;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:16px;font-weight:800;color:#fff;line-height:1">02</span></div><div><div style="font-size:14px;font-weight:700;color:var(--tx);letter-spacing:.01em">KOREKSI PEMBELIAN</div><div style="font-size:10px;color:var(--tm);margin-top:2px">PO dengan transaksi turunan mempertahankan riwayat penerimaan, stok, dan pembukuan.</div></div></div><div style="flex-shrink:0;text-align:right"><div style="font-size:15px;font-weight:900;color:#141413;line-height:1">KAM<i class="ti ti-paw" style="font-size:13px;vertical-align:-1px"></i></div><div style="font-size:7.5px;font-weight:600;color:#9ca3af;letter-spacing:.1em;margin-top:2px">PET CARE</div></div></div><p style="font-size:11px;color:var(--tm)">PO ini sudah memiliki transaksi turunan. Koreksi harga beli atau HPP melalui faktur pembelian. Untuk kesalahan jumlah atau satuan barang yang sudah diterima, periksa penerimaan dan stok bersama Super Admin sebelum membuat retur atau PO baru.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn-def" href="/pembelian/faktur/10000000-0000-4000-8000-000000000010">Lihat faktur INV-1</a></div></div>"
+
+ ❯ src/components/__tests__/related-documents-navigation.test.tsx:40:15
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  src/components/__tests__/related-documents-navigation.test.tsx > opens the PO and invoices of the same PO from a receipt without pretending direct allocation exists
+AssertionError: expected '<div class="no-print" style="display:…' to contain '/pembelian/10000000-0000-4000-8000-00…'
+
+Expected: "/pembelian/10000000-0000-4000-8000-000000000001"
+Received: "<div class="no-print" style="display:flex;align-items:center;gap:8px;margin-bottom:11px"><a class="back-btn" href="/pembelian/penerimaan"><i class="ti ti-arrow-left"></i> Kembali</a><span style="color:var(--td)">·</span><span style="font-size:13px;font-weight:500">GR-ONE</span><span style="margin-left:auto"><button aria-busy="false" class="btn-acc no-print" style="display:inline-flex;align-items:center;gap:5px;opacity:1"><i class="ti ti-printer"></i> Cetak tanda terima</button><style>@keyframes spin{to{transform:rotate(360deg)}}</style></span></div><div class="crm-sec" style="margin-bottom:0"><div style="font-size:15px;font-weight:800;color:var(--sb)">TANDA TERIMA BARANG</div><div style="font-size:11px;color:var(--tm);margin-bottom:12px">GR-ONE · 22 Oktober 2026</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 18px;font-size:11px;margin-bottom:14px"><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Pemasok</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">No. PO</span><span style="font-weight:600">PO-1</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Gudang</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Cabang</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Surat jalan</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Diterima oleh</span><span style="font-weight:600">—</span></div></div><div style="overflow-x:auto"><table class="tbl" style="min-width:760px"><thead><tr><th>Barang</th><th style="width:80px;text-align:right">Dipesan</th><th style="width:90px;text-align:right">Sisa sebelum</th><th style="width:90px;text-align:right">Diterima</th><th style="width:80px;text-align:right">Rusak</th><th style="width:110px;text-align:right">Harga</th><th style="width:120px;text-align:right">Subtotal</th></tr></thead><tbody></tbody><tfoot><tr><td colSpan="6" style="text-align:right;font-size:11px;font-weight:600">Nilai barang diterima</td><td style="text-align:right;font-size:13px;font-weight:800">Rp 0</td></tr></tfoot></table></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:34px;font-size:10.5px"><div><div style="color:var(--tm)">Pengirim / pemasok</div><div style="border-top:.5px solid #141413;margin-top:40px;padding-top:3px">( ____________________ )</div></div><div><div style="color:var(--tm)">Penerima</div><div style="border-top:.5px solid #141413;margin-top:40px;padding-top:3px">( — )</div></div></div></div>"
+
+ ❯ src/components/__tests__/related-documents-navigation.test.tsx:45:15
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  src/components/__tests__/related-documents-navigation.test.tsx > retains every purchase payment, cancellation, reversal, replacement, DP and precise order destination
+AssertionError: expected '<a class="back-btn" href="/pembelian/…' to contain 'id="payment-10000000-0000-4000-8000-0…'
+
+Expected: "id="payment-10000000-0000-4000-8000-000000000011""
+Received: "<a class="back-btn" href="/pembelian/faktur">Kembali ke faktur pembelian</a><section class="crm-sec"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;border-bottom:.5px solid var(--bd)"><div style="display:flex;align-items:flex-start;gap:10px"><div style="width:38px;height:38px;background:#16213e;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:16px;font-weight:800;color:#fff;line-height:1">01</span></div><div><div style="font-size:14px;font-weight:700;color:var(--tx);letter-spacing:.01em">INV-1</div><div style="font-size:10px;color:var(--tm);margin-top:2px">Tanggal 2026-10-22 · jatuh tempo 2026-11-22</div></div></div><div style="flex-shrink:0;text-align:right"><div style="font-size:15px;font-weight:900;color:#141413;line-height:1">KAM<i class="ti ti-paw" style="font-size:13px;vertical-align:-1px"></i></div><div style="font-size:7.5px;font-weight:600;color:#9ca3af;letter-spacing:.1em;margin-top:2px">PET CARE</div></div></div><p><strong>Faktur aktif</strong></p><a href="/pembelian/faktur/10000000-0000-4000-8000-000000000020">Lihat faktur asal</a><p>Total Rp 100 · Pembayaran bersih Rp 10</p><p></p><a href="/pembelian/10000000-0000-4000-8000-000000000001">Lihat pesanan pembelian</a><table class="tbl"><thead><tr><th>Barang</th><th>Jumlah</th><th>Harga</th></tr></thead><tbody></tbody></table><a class="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</a></section><section class="crm-sec"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;border-bottom:.5px solid var(--bd)"><div style="display:flex;align-items:flex-start;gap:10px"><div style="width:38px;height:38px;background:#16213e;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:16px;font-weight:800;color:#fff;line-height:1">02</span></div><div><div style="font-size:14px;font-weight:700;color:var(--tx);letter-spacing:.01em">RIWAYAT PEMBAYARAN</div><div style="font-size:10px;color:var(--tm);margin-top:2px">Pembatalan mempertahankan pembayaran asli dan mencatat pembaliknya. Faktur dan barang tetap tercatat.</div></div></div><div style="flex-shrink:0;text-align:right"><div style="font-size:15px;font-weight:900;color:#141413;line-height:1">KAM<i class="ti ti-paw" style="font-size:13px;vertical-align:-1px"></i></div><div style="font-size:7.5px;font-weight:600;color:#9ca3af;letter-spacing:.1em;margin-top:2px">PET CARE</div></div></div><article style="border-bottom:1px solid var(--bd);padding:12px 0"><p><strong>Pembayaran dibatalkan</strong> · 2026-10-22 · Rp 10 · Transfer</p></article><article style="border-bottom:1px solid var(--bd);padding:12px 0"><p><strong>Pembalik pembayaran</strong> · 2026-10-22 · Rp -10 · Transfer</p></article><article style="border-bottom:1px solid var(--bd);padding:12px 0"><p><strong>Pembayaran</strong> · 2026-10-22 · Rp 10 · Transfer</p><a href="/pembelian/perintah-bayar">Lihat perintah bayar</a></article></section>"
+
+ ❯ src/components/__tests__/related-documents-navigation.test.tsx:49:41
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  src/components/__tests__/related-documents-navigation.test.tsx > opens every split sales receipt and its explicitly allocated DP
+AssertionError: expected '<a class="back-btn" href="/penjualan/…' to contain 'id="receipt-10000000-0000-4000-8000-0…'
+
+Expected: "id="receipt-10000000-0000-4000-8000-000000000041""
+Received: "<a class="back-btn" href="/penjualan/faktur">← Faktur &amp; penerimaan</a><div class="crm-sec"><h1 style="font-size:18px">SI-1</h1><p>Tanpa pelanggan · 2026-10-22 · jatuh tempo 2026-11-22 · aktif</p><p>Total Rp 100 · Pembayaran terbawa Rp 0 · Penerimaan faktur ini Rp 50 · Sisa piutang Rp 50</p><p><a href="/penjualan/pesanan/10000000-0000-4000-8000-000000000050">Buka pesanan dan bukti pengiriman fisik</a></p><table class="tbl"><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>HPP alokasi</th></tr></thead><tbody></tbody></table></div><div class="crm-sec"><h2 style="font-size:14px">Riwayat pembayaran asli</h2><p>Pembayaran dari faktur terdahulu dibawa sebagai pelunasan pengganti. Angka di bawah adalah transaksi uang asli; tidak dijumlah ulang sebagai kas masuk.</p><table class="tbl"><thead><tr><th>Penerimaan</th><th>Faktur asal</th><th>Tanggal</th><th>Jumlah</th><th>Dari uang muka</th></tr></thead><tbody><tr><td>SPLIT-CASH · Tunai</td><td><a href="/penjualan/faktur/10000000-0000-4000-8000-000000000040">SI-1</a></td><td>2026-10-22</td><td>Rp 20</td><td>Rp NaN</td></tr><tr><td>SPLIT-DP · Transfer</td><td><a href="/penjualan/faktur/10000000-0000-4000-8000-000000000040">SI-1</a></td><td>2026-10-22</td><td>Rp 30</td><td>Rp 10</td></tr></tbody></table><p>Kredit pelanggan dari rangkaian ini: <strong>Rp 0</strong>. Tercatat sebagai kewajiban pada akun 2103, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p></div><div class="crm-sec"><h2 style="font-size:14px">Audit koreksi</h2><p>Belum ada koreksi.</p></div>"
+
+ ❯ src/components/__tests__/related-documents-navigation.test.tsx:54:39
+     52| it('opens every split sales receipt and its explicitly allocated DP',a…
+     53|  const html=renderToStaticMarkup(await SalesInvoice({params:Promise.re…
+     54|  for(const n of [41,42]){expect(html).toContain('id="receipt-'+id(n)+'…
+       |                                       ^
+     55|  expect(html).toContain('#advance-'+id(43));expect(html).toContain('SA…
+     56| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  src/components/__tests__/related-documents-navigation.test.tsx > does not manufacture links or reveal hidden source document numbers
+AssertionError: expected '<a class="back-btn" href="/pembelian/…' to contain 'tidak tersedia atau tidak dapat diaks…'
+
+Expected: "tidak tersedia atau tidak dapat diakses"
+Received: "<a class="back-btn" href="/pembelian/faktur">Kembali ke faktur pembelian</a><section class="crm-sec"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;border-bottom:.5px solid var(--bd)"><div style="display:flex;align-items:flex-start;gap:10px"><div style="width:38px;height:38px;background:#16213e;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:16px;font-weight:800;color:#fff;line-height:1">01</span></div><div><div style="font-size:14px;font-weight:700;color:var(--tx);letter-spacing:.01em">INV-1</div><div style="font-size:10px;color:var(--tm);margin-top:2px">Tanggal 2026-10-22 · jatuh tempo 2026-11-22</div></div></div><div style="flex-shrink:0;text-align:right"><div style="font-size:15px;font-weight:900;color:#141413;line-height:1">KAM<i class="ti ti-paw" style="font-size:13px;vertical-align:-1px"></i></div><div style="font-size:7.5px;font-weight:600;color:#9ca3af;letter-spacing:.1em;margin-top:2px">PET CARE</div></div></div><p><strong>Faktur aktif</strong></p><a href="/pembelian/faktur/10000000-0000-4000-8000-000000000020">Lihat faktur asal</a><p>Total Rp 100 · Pembayaran bersih Rp 10</p><p></p><a href="/pembelian/10000000-0000-4000-8000-000000000001">Lihat pesanan pembelian</a><table class="tbl"><thead><tr><th>Barang</th><th>Jumlah</th><th>Harga</th></tr></thead><tbody></tbody></table><a class="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</a></section><section class="crm-sec"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;border-bottom:.5px solid var(--bd)"><div style="display:flex;align-items:flex-start;gap:10px"><div style="width:38px;height:38px;background:#16213e;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:16px;font-weight:800;color:#fff;line-height:1">02</span></div><div><div style="font-size:14px;font-weight:700;color:var(--tx);letter-spacing:.01em">RIWAYAT PEMBAYARAN</div><div style="font-size:10px;color:var(--tm);margin-top:2px">Pembatalan mempertahankan pembayaran asli dan mencatat pembaliknya. Faktur dan barang tetap tercatat.</div></div></div><div style="flex-shrink:0;text-align:right"><div style="font-size:15px;font-weight:900;color:#141413;line-height:1">KAM<i class="ti ti-paw" style="font-size:13px;vertical-align:-1px"></i></div><div style="font-size:7.5px;font-weight:600;color:#9ca3af;letter-spacing:.1em;margin-top:2px">PET CARE</div></div></div><article style="border-bottom:1px solid var(--bd);padding:12px 0"><p><strong>Pembayaran dibatalkan</strong> · 2026-10-22 · Rp 10 · Transfer</p></article><article style="border-bottom:1px solid var(--bd);padding:12px 0"><p><strong>Pembalik pembayaran</strong> · 2026-10-22 · Rp -10 · Transfer</p></article><article style="border-bottom:1px solid var(--bd);padding:12px 0"><p><strong>Pembayaran</strong> · 2026-10-22 · Rp 10 · Transfer</p><a href="/pembelian/perintah-bayar">Lihat perintah bayar</a></article></section>"
+
+ ❯ src/components/__tests__/related-documents-navigation.test.tsx:60:132
+     58|  m.denied=true;
+     59|  const html=renderToStaticMarkup(await Invoice({params:Promise.resolve…
+     60|  expect(html).not.toContain('INV-ORIGINAL');expect(html).not.toContain…
+       |                                                                                                                                    ^
+     61|  const receipt=renderToStaticMarkup(await Receipt({params:Promise.reso…
+     62|  expect(receipt).not.toContain('/pembelian/faktur/'+id(10));expect(rec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  src/components/__tests__/related-documents-navigation.test.tsx > distinguishes related-query failure from no related documents without exposing internals
+AssertionError: expected '<div class="no-print" style="display:…' to contain 'belum dapat dimuat'
+
+Expected: "belum dapat dimuat"
+Received: "<div class="no-print" style="display:flex;align-items:center;gap:8px;margin-bottom:11px"><a class="back-btn" href="/pembelian/penerimaan"><i class="ti ti-arrow-left"></i> Kembali</a><span style="color:var(--td)">·</span><span style="font-size:13px;font-weight:500">GR-ONE</span><span style="margin-left:auto"><button aria-busy="false" class="btn-acc no-print" style="display:inline-flex;align-items:center;gap:5px;opacity:1"><i class="ti ti-printer"></i> Cetak tanda terima</button><style>@keyframes spin{to{transform:rotate(360deg)}}</style></span></div><div class="crm-sec" style="margin-bottom:0"><div style="font-size:15px;font-weight:800;color:var(--sb)">TANDA TERIMA BARANG</div><div style="font-size:11px;color:var(--tm);margin-bottom:12px">GR-ONE · 22 Oktober 2026</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 18px;font-size:11px;margin-bottom:14px"><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Pemasok</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">No. PO</span><span style="font-weight:600">PO-1</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Gudang</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Cabang</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Surat jalan</span><span style="font-weight:600">—</span></div><div style="display:flex;gap:6px"><span style="color:var(--tm);min-width:96px">Diterima oleh</span><span style="font-weight:600">—</span></div></div><div style="overflow-x:auto"><table class="tbl" style="min-width:760px"><thead><tr><th>Barang</th><th style="width:80px;text-align:right">Dipesan</th><th style="width:90px;text-align:right">Sisa sebelum</th><th style="width:90px;text-align:right">Diterima</th><th style="width:80px;text-align:right">Rusak</th><th style="width:110px;text-align:right">Harga</th><th style="width:120px;text-align:right">Subtotal</th></tr></thead><tbody></tbody><tfoot><tr><td colSpan="6" style="text-align:right;font-size:11px;font-weight:600">Nilai barang diterima</td><td style="text-align:right;font-size:13px;font-weight:800">Rp 0</td></tr></tfoot></table></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:34px;font-size:10.5px"><div><div style="color:var(--tm)">Pengirim / pemasok</div><div style="border-top:.5px solid #141413;margin-top:40px;padding-top:3px">( ____________________ )</div></div><div><div style="color:var(--tm)">Penerima</div><div style="border-top:.5px solid #141413;margin-top:40px;padding-top:3px">( — )</div></div></div></div>"
+
+ ❯ src/components/__tests__/related-documents-navigation.test.tsx:67:15
+     65|  m.relatedError=true;
+     66|  const html=renderToStaticMarkup(await Receipt({params:Promise.resolve…
+     67|  expect(html).toContain('belum dapat dimuat');expect(html).not.toConta…
+       |               ^
+     68| });
+     69| it('does not load related documents if root receipt is unavailable',as…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  6 failed | 1 passed (7)
+   Start at  19:59:14
+   Duration  422ms (transform 157ms, setup 0ms, import 174ms, tests 65ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

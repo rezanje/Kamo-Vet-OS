@@ -1,0 +1,9 @@
+Applied 223 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+PASS purchase_advance_atomic.sql
+PASS concurrent cap read committed
+PASS concurrent cap repeatable read
+PASS concurrent identical retry: one advance and one receipt
+PASS existing PO revision vs advance lock ordering
+PASS advance/refund ordering and concurrent refund retry
+PASS recovery vs pending advance and PO revision lock order
+Removed owned PostgreSQL test container and volumes.

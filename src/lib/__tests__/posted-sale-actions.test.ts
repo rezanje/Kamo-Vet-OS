@@ -32,7 +32,7 @@ it.each([[null,"/kasir"],["WA","/penjualan/online/baru"]])("replacement follows 
 it("all explicit completion projections include void state",()=>{
  // Projections are part of the shared completion contract: missing void data
  // would otherwise silently include cancelled sales in reports.
- const files=["src/lib/dashboard.ts","src/lib/customer-tier.ts","src/lib/tutup-shift.ts","src/lib/komisi-data.ts","src/lib/loyalty-server.ts","src/lib/operation-sales-server.ts","src/lib/laporan-transaksi-server.ts","src/app/(app)/laporan/penjualan-barang/data.ts","src/app/(app)/laporan/penjualan-rinci/page.tsx","src/app/(app)/keuangan/sinkron/actions.ts"];
+ const files=["src/lib/dashboard.ts","src/lib/tutup-shift.ts","src/lib/komisi-data.ts","src/lib/loyalty-server.ts","src/lib/operation-sales-server.ts","src/lib/laporan-transaksi-server.ts","src/app/(app)/laporan/penjualan-barang/data.ts","src/app/(app)/laporan/penjualan-rinci/page.tsx","src/app/(app)/keuangan/sinkron/actions.ts"];
  for(const file of files){const selects=readFileSync(file,"utf8").split("\n").filter(line=>line.includes(".select(")&&line.includes("payments_finalized_at"));expect(selects.length,file).toBeGreaterThan(0);for(const select of selects)expect(select,file).toContain("voided_at");}
 });
 

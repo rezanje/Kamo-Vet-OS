@@ -1,0 +1,27 @@
+
+ RUN  v4.1.9 /workspace/kamo-cashier-catalogs
+
+ ❯ src/components/__tests__/cashier-catalog-readers.test.tsx (14 tests | 12 failed) 46ms
+   × loads every receiving child by the authorized request ID, retaining approved quantity/unit and barcode catalogue 14ms
+   × retains cashier branch guard before any catalogue/child read 5ms
+   × retains cashier Disetujui guard before any catalogue/child read 4ms
+   × retains cashier Selesai guard before any catalogue/child read 3ms
+   × hides receiving form and private details on stock_requests failure 3ms
+   × hides receiving form and private details on stock_request_items failure 3ms
+   × hides receiving form and private details on items failure 3ms
+   × does not render silently truncated stock_request_items 2ms
+   × does not render silently truncated items 1ms
+   × loads late stock hints only from the existing selected shift-branch warehouse 2ms
+   × does not claim zero stock when warehouses cannot be read 1ms
+   × does not claim zero stock when stock cannot be read 1ms
+
+ Test Files  1 failed (1)
+      Tests  12 failed | 2 passed (14)
+   Start at  13:11:08
+   Duration  357ms (transform 87ms, setup 0ms, import 127ms, tests 46ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

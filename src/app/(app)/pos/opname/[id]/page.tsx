@@ -1,10 +1,14 @@
+import { opnameHasResult } from "@/lib/opname-result-presence";
+import { ListLoadFailure } from "@/components/ListPagination";
+import { OpnameCancellationPanel } from "@/components/OpnameCancellationPanel";
+import { opnameCancellationBlock, opnameWarehouseIds, type OpnameCancellation } from "@/lib/opname-cancellation";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { HasilView } from "./HasilView";
 
-type Order = {
+type Order = OpnameCancellation & {
   id: string;
   no_opname: string;
   tanggal_mulai: string;
@@ -30,16 +34,25 @@ export default async function OpnameDetailPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
 
+  const {data:{user}} = await supabase.auth.getUser();
+  if (!user) notFound();
+  const allowedWarehouses = await opnameWarehouseIds(supabase,user.id);
   const { data: orderRaw } = await supabase
     .from("opname_orders")
-    .select("id, no_opname, tanggal_mulai, penanggung_jawab, dikerjakan_oleh, keterangan, status, warehouse_id, warehouses(name)")
-    .eq("id", id).maybeSingle();
+    .select("id, no_opname, tanggal_mulai, penanggung_jawab, dikerjakan_oleh, keterangan, status, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason, warehouse_id, warehouses(name)")
+    .eq("id", id).in("warehouse_id",allowedWarehouses).maybeSingle();
   if (!orderRaw) notFound();
   const order = orderRaw as unknown as Order;
 
   const { count } = await supabase
     .from("opname_order_items").select("*", { count: "exact", head: true }).eq("order_id", id);
   const jumlahLingkup = count ?? 0;
+
+  let partialResult = false;
+  try { partialResult = order!.status === "Terbuka" && await opnameHasResult(supabase, id); }
+  catch (loadError) { return <ListLoadFailure error={loadError} label="Hasil opname" />; }
+
+  const blockedReason = order.status === "Terbuka" ? await opnameCancellationBlock(supabase,id) : null;
 
   return (
     <>
@@ -93,9 +106,14 @@ export default async function OpnameDetailPage({
         </div>
       </div>
 
+      <OpnameCancellationPanel order={order} blockedReason={blockedReason} cashier={false}/>
+
       {/* Menghitung stok hanya dari layar kasir (keputusan meeting 14 Agustus) —
           satu pintu, supaya tidak ada dua cara menghitung barang yang sama. */}
-      {order.status === "Terbuka" ? (
+      {partialResult ? <>
+        <div className="p2ban" role="alert">Sudah ada hasil tersimpan tetapi perintah belum selesai. Stok dan jurnal mungkin belum lengkap. Periksa hasil asal bersama back office; jangan posting ulang.</div>
+        <HasilView orderId={order!.id} />
+      </> : order.status === "Terbuka" ? (
         <div className="crm-sec">
           <SecHeader num="02" title="HITUNGAN BELUM MASUK" desc="Perintah ini masih menunggu hitungan fisik." />
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
@@ -103,9 +121,9 @@ export default async function OpnameDetailPage({
             hasil dan riwayatnya.
           </div>
         </div>
-      ) : (
+      ) : order.status === "Selesai" ? (
         <HasilView orderId={order.id} allowCorrections />
-      )}
+      ) : null}
     </>
   );
 }

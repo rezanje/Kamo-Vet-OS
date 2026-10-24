@@ -1,0 +1,145 @@
+Applied 228 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Fictional prerequisite: COA 4101 (legacy manual-journal fixture).
+PASS activity_audit.sql
+PASS activity_audit_framework.sql
+PASS activity_audit_financial.sql
+PASS activity_audit_inventory.sql
+PASS activity_audit_people_settings.sql
+PASS activity_audit_remaining_modules.sql
+PASS master_data_lifecycle.sql
+PASS master_item_code_history.sql
+PASS stock_document_corrections.sql
+PASS clinic_billing_lifecycle.sql
+PASS manual-journal-corrections.sql
+PASS cash-entry-corrections.sql
+FAIL posted_sale_cancellations.sql: ERROR:  Efek retur hanya melalui jalur koreksi catatan retur resmi
+CONTEXT:  PL/pgSQL function public.return_record_protected_effect() line 7 at RAISE
+SQL statement "insert into public.stock_moves(
+    tanggal, warehouse_id, item_id, qty, unit_cost, source, source_ref, fifo_takes, fifo_shortfall
+  ) values (
+    coalesce(p_tanggal, current_date), p_warehouse_id, p_item_id, -p_qty,
+    v_cost / p_qty, p_source, p_source_ref,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_takes end,
+    case when p_source in ('sale', 'sale-group', 'sale-online') then v_shortfall end
+  )"
+PL/pgSQL function stock_out_fifo(uuid,uuid,numeric,text,text,date) line 124 at SQL statement
+SQL statement "select *             from stock_out_fifo('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000002',0.1,src,'OTHER.FIFO')"
+PL/pgSQL function inline_code_block line 3 at SQL statement
+
+
+
+
+
+
+
+
+e1100000-0000-4000-8000-000000000001
+{"role":"authenticated"}
+01b2f15f-5810-41ba-bb2e-1b16caa43b73
+23822143-9e4c-4db1-a17a-8bb3ccc5441a
+{"sale_id": "01b2f15f-5810-41ba-bb2e-1b16caa43b73", "finalized": true, "journal_id": "44099627-a885-4387-a4f9-f81da050120f"}
+
+{"voided": true, "sale_id": "01b2f15f-5810-41ba-bb2e-1b16caa43b73", "audit_id": "af67c5af-b0cf-49bf-b99e-ae5f5d1b0e6d", "revision": 1}
+{"voided": true, "sale_id": "01b2f15f-5810-41ba-bb2e-1b16caa43b73", "audit_id": "af67c5af-b0cf-49bf-b99e-ae5f5d1b0e6d", "revision": 1}
+
+
+
+
+
+
+
+
+8e489341-e17b-425a-9305-949e77f6e054
+
+{"voided": true, "sale_id": "8e489341-e17b-425a-9305-949e77f6e054", "audit_id": "f5c13514-8e0e-4547-b368-293228651faa", "revision": 1}
+
+
+
+
+cfb18f38-2fa5-4ab9-a74f-fa2a5c756759
+5248253e-c1c0-420b-86ab-8af86640dda6
+{"sale_id": "cfb18f38-2fa5-4ab9-a74f-fa2a5c756759", "finalized": true, "journal_id": "b671c2e9-a19c-4262-8003-354421509c01"}
+
+
+ca96ef4d-4afb-40b5-b790-0113bf44906e
+483f8d46-b2fe-40d1-9fde-c910314a2041
+{"sale_id": "ca96ef4d-4afb-40b5-b790-0113bf44906e", "finalized": true, "journal_id": "66c0171c-2a02-4056-82db-e47dc62167e7"}
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+
+e1100000-0000-4000-8000-000000000001
+{"x-kamo-operational-branch":"e2200000-0000-4000-8000-000000000002"}
+
+{}
+9541d591-570b-4a51-9ac6-2f32ee0a699a
+516bb7b6-f850-4ce5-80d5-fb64c41dfb8d
+{"sale_id": "9541d591-570b-4a51-9ac6-2f32ee0a699a", "finalized": true, "journal_id": "aac3e3e4-b847-4699-8420-d08c20344a50"}
+{"document_id": "bba9380e-2db3-4156-a761-7ce99554cd33", "document_no": "RJ.2026.10.00001"}
+
+b1f583fc-5d65-40b2-8cd0-92320df6e165
+317a6406-6a94-47fc-ba97-e646b9ddb58a
+{"sale_id": "b1f583fc-5d65-40b2-8cd0-92320df6e165", "finalized": true, "journal_id": "fe6f5aee-e180-4cdf-87ce-02925fcdbb66"}
+{"voided": true, "sale_id": "b1f583fc-5d65-40b2-8cd0-92320df6e165", "audit_id": "6d8e8575-f44b-403d-8432-7579741eaeb0", "revision": 1}
+
+
+79645dc5-25cb-484a-ab90-07b3985affb0
+
+
+{"voided": true, "sale_id": "79645dc5-25cb-484a-ab90-07b3985affb0", "audit_id": "0ef420ed-ecd6-4eda-94fd-1562f16c86cd", "revision": 1}
+{"voided": true, "sale_id": "79645dc5-25cb-484a-ab90-07b3985affb0", "audit_id": "0ef420ed-ecd6-4eda-94fd-1562f16c86cd", "revision": 1}
+
+
+
+e003b048-a3ca-4f33-b730-ed4cec7606b9
+
+
+f127b211-446a-4b79-9821-21003af52b2a
+
+
+c73242ed-8c38-445d-97f2-4cc29cda0b65
+
+
+
+d1e595ac-0bf9-467b-91b5-f4f8dc772869
+
+
+
+(123.45,"[{""id"": ""e8800000-0000-4000-8000-000000000001"", ""qty"": 1, ""exp_date"": ""2030-01-01"", ""unit_cost"": 123.45}]",0,123.45)
+
+db1f68a8-c6d0-430b-88ed-cf8efff64ab6
+{"sale_id": "6851c05f-1c34-4cd3-b472-dac269195811", "finalized": true, "journal_id": "b36e16da-a3ce-4d42-8c63-f673c8454b3b"}
+
+{"voided": true, "sale_id": "6851c05f-1c34-4cd3-b472-dac269195811", "audit_id": "bc6c8cee-9d46-493a-b973-f975701a4580", "revision": 1}
+{"voided": true, "sale_id": "6851c05f-1c34-4cd3-b472-dac269195811", "audit_id": "bc6c8cee-9d46-493a-b973-f975701a4580", "revision": 1}
+
+
+aa6391a4-5130-401e-bc5a-ee955ea28200
+
+
+
+
+{"voided": true, "sale_id": "aa6391a4-5130-401e-bc5a-ee955ea28200", "audit_id": "861fb29d-4b16-4678-858a-f44a530668dc", "revision": 1}
+
+
+234ba8e3-5a62-4286-8d96-8041cd2b70f8
+
+
+
+
+
+PASS wholesale_corrections.sql
+PASS purchase_invoice_lifecycle.sql
+PASS purchase_payment_corrections.sql
+PASS asset_purchase_correction.sql
+PASS bank_reconciliation_lifecycle.sql
+PASS internal_transfer_corrections.sql
+Removed owned PostgreSQL test container and volumes.
+Failed suites: posted_sale_cancellations.sql

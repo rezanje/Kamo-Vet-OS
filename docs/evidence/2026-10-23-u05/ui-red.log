@@ -1,0 +1,52 @@
+
+ RUN  v4.1.9 /workspace/kamo-u05
+
+ ❯ src/components/__tests__/clinic-material-categories.test.tsx (11 tests | 3 failed) 195ms
+   × can release all matching category results immediately after selecting them, preserving other selections 23ms
+   × scopes category release to the current search and preserves selections outside the result 8ms
+   × rolls back a denied category release and announces the error 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-material-categories.test.tsx > can release all matching category results immediately after selecting them, preserving other selections
+AssertionError: expected undefined to be defined
+ ❯ src/components/__tests__/clinic-material-categories.test.tsx:76:18
+     74|  await act(async()=>[...host.querySelectorAll('button')].find(b=>b.tex…
+     75|  const release=[...host.querySelectorAll('button')].find(b=>b.textCont…
+     76|  expect(release).toBeDefined();await act(async()=>release!.click());
+       |                  ^
+     77|  expect(actions.bulk.mock.calls).toEqual([[['sedasi'],true],[['sedasi'…
+     78|  expect(host.querySelector<HTMLInputElement>('tbody input[type=checkbo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/components/__tests__/clinic-material-categories.test.tsx > scopes category release to the current search and preserves selections outside the result
+AssertionError: expected undefined to be defined
+ ❯ src/components/__tests__/clinic-material-categories.test.tsx:86:18
+     84|  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.…
+     85|  const release=[...host.querySelectorAll('button')].find(b=>b.textCont…
+     86|  expect(release).toBeDefined();await act(async()=>release!.click());ex…
+       |                  ^
+     87|  await choose(parent(),'__selected__');expect(shown()).toContain('QA-u…
+     88| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/components/__tests__/clinic-material-categories.test.tsx > rolls back a denied category release and announces the error
+AssertionError: expected undefined to be defined
+ ❯ src/components/__tests__/clinic-material-categories.test.tsx:91:127
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 8 passed (11)
+   Start at  07:21:50
+   Duration  745ms (transform 78ms, setup 0ms, import 123ms, tests 195ms, environment 274ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

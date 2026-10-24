@@ -1,5 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { promoCategoryOptions, promoCategoryItem, promoCategorySummary, promoMatchesCategory, type PromoCategoryItem } from "@/lib/promo-categories";
+import type { KategoriRow } from "@/lib/kategori";
+import {readCompleteList} from "@/lib/checked-list";
+import {PreservedForm,TransactionDraftComplete} from "@/components/LocalTransactionDraft";
+import {PromoFields} from "./PromoFields";
+import styles from "./PromoForm.module.css";
 import { SecHeader } from "@/components/SecHeader";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
 import { createPromo, togglePromo } from "./actions";
@@ -34,32 +40,48 @@ const STATUS_LABEL: Record<string, string> = { aktif: "Aktif hari ini", terjadwa
 export default async function PromoAdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kategori?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, kategori = "" } = await searchParams;
   const supabase = await createClient();
   const today = hariIniWIB();
+  const {data:{user}} = await supabase.auth.getUser();
 
-  const [{ data: promos }, { data: branches }, { data: items }, { data: promoItems }] = await Promise.all([
-    supabase.from("promos")
-      .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
-      .order("created_at", { ascending: false }),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    // Jasa ikut ditawarkan: grooming & tindakan juga sering dipromokan.
-    supabase.from("items").select("id, code, name").eq("is_active", true).order("name"),
-    supabase.from("promo_items").select("promo_id, item_id"),
+  const {data:me}=await supabase.from("profiles").select("role,is_active").eq("id",user?.id??"").maybeSingle();
+  const canEdit=!!user&&!!me?.is_active&&["OWNER","ADMIN"].includes(me.role);
+
+  const [promos, branches, activeItems, promoItems, categoryRows] = await Promise.all([
+    readCompleteList<PromoRow>((from,to)=>supabase.from("promos")
+      .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value",{count:"exact"})
+      .order("created_at", { ascending: false }).order("id").range(from,to),"Daftar promo",{maxRows:null}),
+    readCompleteList<{id:string;code:string;name:string}>((from,to)=>supabase.from("branches").select("id,code,name",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),"Daftar cabang promo",{maxRows:null}),
+    // Only active items can be selected; services retain existing eligibility.
+    readCompleteList<PromoCategoryItem>((from,to)=>supabase.from("items").select("id,code,name,category_id",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),"Daftar barang promo",{maxRows:null}),
+    // Composite keys are explicit, stable IDs for the checked pagination reader.
+    readCompleteList<{id:string;promo_id:string;item_id:string}>(async(from,to)=>{
+      const result=await supabase.from("promo_items").select("promo_id,item_id",{count:"exact"}).order("promo_id").order("item_id").range(from,to);
+      return {...result,data:result.data?.map(row=>({...row,id:`${row.promo_id}:${row.item_id}`}))??null};
+    },"Daftar target promo",{maxRows:null}),
+    readCompleteList<KategoriRow>((from,to)=>supabase.from("item_categories").select("id,name,parent_id,is_active",{count:"exact"}).order("name").order("id").range(from,to),"Daftar kategori promo",{maxRows:null}),
   ]);
-  const branchName = new Map((branches ?? []).map((b) => [b.id, b.name]));
-  const itemName = new Map((items ?? []).map((i) => [i.id, i.name]));
-  const rows = (promos ?? []) as PromoRow[];
-
-  // Barang per promo untuk kolom "Berlaku untuk" di daftar.
-  const barangPromo = new Map<string, string[]>();
-  for (const r of (promoItems ?? []) as { promo_id: string; item_id: string }[]) {
-    const list = barangPromo.get(r.promo_id) ?? [];
-    list.push(itemName.get(r.item_id) ?? "—");
-    barangPromo.set(r.promo_id, list);
+  const categories = promoCategoryOptions(categoryRows);
+  const items = activeItems.map(item=>promoCategoryItem(item,categories));
+  const itemById = new Map(items.map(item=>[item.id,item]));
+  // Read only explicit stored targets absent from the active selector (e.g. archived).
+  // Same session/RLS; inaccessible rows stay honestly unavailable, never all-items.
+  const missingIds = [...new Set(promoItems.map(row=>row.item_id))].filter(id=>!itemById.has(id));
+  for(let offset=0;offset<missingIds.length;offset+=200){
+    const legacyItems=await readCompleteList<PromoCategoryItem>((from,to)=>supabase.from("items").select("id,code,name,category_id",{count:"exact"}).in("id",missingIds.slice(offset,offset+200)).order("id").range(from,to),"Informasi target promo",{maxRows:null});
+    for(const item of legacyItems)itemById.set(item.id,promoCategoryItem(item,categories));
   }
+  const branchName = new Map(branches.map(b=>[b.id,b.name]));
+  const targetsByPromo = new Map<string,string[]>();
+  for(const row of promoItems){
+    const ids=targetsByPromo.get(row.promo_id)??[];ids.push(row.item_id);targetsByPromo.set(row.promo_id,ids);
+  }
+  const category = categories.find(c=>c.id===kategori);
+  const invalidCategory = !!kategori&&!category;
+  const rows = invalidCategory ? [] : kategori&&category ? promos.filter(p=>promoMatchesCategory(targetsByPromo.get(p.id)??[],itemById,category)) : promos;
 
   return (
     <>
@@ -81,130 +103,44 @@ export default async function PromoAdminPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Promo baru dibuat.</div>}
+      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : "Promo baru dibuat."}</div>}
 
       <div className="crm-sec">
         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
-        <form action={createPromo} style={{ display: "grid", gridTemplateColumns: "2fr 1.3fr 1fr 1fr", gap: 8, alignItems: "flex-end" }}>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Nama promo *</label>
-            <input className="fi" name="name" required placeholder="mis. Diskon Lebaran Royal Canin" />
-          </div>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Teks saran untuk kasir *</label>
-            <input className="fi" name="suggest" required placeholder="mis. Beli 2 Royal Canin diskon 10% item kedua" />
-          </div>
-          <div>
-            <label className="flab">Tipe</label>
-            <select className="fi" name="promo_type" defaultValue="diskon_produk">
-              <option value="diskon_produk">Diskon Produk</option>
-              <option value="bundling">Bundling</option>
-              <option value="tebus_murah">Tebus Murah</option>
-            </select>
-          </div>
-          <div>
-            <label className="flab">Jenis diskon</label>
-            <select className="fi" name="discount_type" defaultValue="">
-              <option value="">—</option>
-              <option value="percent">Persen</option>
-              <option value="nominal">Nominal</option>
-            </select>
-          </div>
-          <div>
-            <label className="flab">Nilai diskon</label>
-            <input className="fi" name="discount_value" type="number" min={0} step="any" placeholder="0" />
-          </div>
-          <div>
-            <label className="flab">Min. subtotal</label>
-            <input className="fi" name="min_subtotal" type="number" min={0} step="any" placeholder="0" />
-          </div>
-
-          {/* ── Aturan qty ──────────────────────────────────────────────── */}
-          <div style={{ gridColumn: "1 / -1", borderTop: ".5px solid var(--bd)", paddingTop: 10, marginTop: 2 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700 }}><i className="ti ti-adjustments" /> Aturan jumlah beli</div>
-            <div style={{ fontSize: 9.5, color: "var(--td)" }}>
-              Kosongkan semua kalau promo berlaku berapa pun jumlah belinya.
-            </div>
-          </div>
-          <div>
-            <label className="flab">Min. qty</label>
-            <input className="fi" name="min_qty" type="number" min={1} step="any" placeholder="mis. 2" />
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Beli kurang dari ini, promo tidak jalan.</div>
-          </div>
-          <div>
-            <label className="flab">Maks. qty</label>
-            <input className="fi" name="max_qty" type="number" min={1} step="any" placeholder="tanpa batas" />
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Batas jumlah yang dapat potongan.</div>
-          </div>
-          <div style={{ gridColumn: "span 2" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginTop: 17 }}>
-              <input type="checkbox" name="kelipatan" value="1" /> Berlaku kelipatan
-            </label>
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              Dicentang: min 2, beli 5 → yang dapat potongan 4, sisa 1 harga normal.
-              Tidak dicentang: syarat terpenuhi, seluruh qty dapat.
-            </div>
-          </div>
-
-          {/* ── Barang yang kena ────────────────────────────────────────── */}
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Barang yang kena promo (kosongkan = semua barang)</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", maxHeight: 120, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 7, padding: "8px 10px" }}>
-              {(items ?? []).map((it) => (
-                <label key={it.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-                  <input type="checkbox" name="item_ids" value={it.id} /> {it.code} — {it.name}
-                </label>
-              ))}
-              {(items ?? []).length === 0 && <span style={{ fontSize: 10.5, color: "var(--td)" }}>Belum ada barang.</span>}
-            </div>
-          </div>
-
-          {/* ── Potong otomatis ─────────────────────────────────────────── */}
-          <div style={{ gridColumn: "1 / -1", background: "#f8fafc", border: ".5px solid var(--bd)", borderRadius: 7, padding: "9px 11px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700 }}>
-              <input type="checkbox" name="auto_apply" value="1" /> Potong otomatis di kasir
-            </label>
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              Dicentang: potongan langsung masuk keranjang, kasir tidak perlu mengetik apa pun —
-              butuh jenis & nilai diskon terisi. Tidak dicentang: promo cuma muncul sebagai pengingat di layar kasir.
-            </div>
-          </div>
-          <div>
-            <label className="flab">Berlaku dari</label>
-            <input className="fi" name="valid_from" type="date" defaultValue={today} />
-          </div>
-          <div>
-            <label className="flab">Berlaku s/d</label>
-            <input className="fi" name="valid_until" type="date" />
-          </div>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="flab">Cabang (kosongkan = semua cabang)</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", maxHeight: 96, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 7, padding: "8px 10px" }}>
-              {(branches ?? []).map((b) => (
-                <label key={b.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-                  <input type="checkbox" name="branch_ids" value={b.id} /> {b.name}
-                </label>
-              ))}
-            </div>
-          </div>
+        <TransactionDraftComplete userId={user?.id ?? ""}/><PreservedForm key={user?.id ?? ""} action={createPromo} className={styles.form}>
+          <PromoFields userId={user?.id ?? ""} items={items} branches={branches} categories={categories} today={today}/>
           <button type="submit" className="btn-acc" style={{ gridColumn: "1 / -1", justifyContent: "center" }}>
             <i className="ti ti-plus" /> Buat Promo
           </button>
-        </form>
+        </PreservedForm>
       </div>
 
       <div className="crm-sec">
         <SecHeader num="02" title="DAFTAR PROMO" desc="Semua promo terdaftar + status masa berlaku." />
+        <form method="get" style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"end",marginBottom:12}}>
+          <label className="flab" style={{minWidth:0,maxWidth:"100%"}}>Kategori daftar promo
+            <select className="fi" aria-label="Kategori daftar promo" name="kategori" defaultValue={kategori} style={{display:"block",width:280,maxWidth:"100%"}}>
+              <option value="">Semua kategori</option>{invalidCategory&&<option value={kategori}>Filter kategori tidak tersedia</option>}
+              {categories.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </label>
+          <button type="submit" className="btn-def">Filter promo</button>
+          {kategori&&<Link className="back-btn" href="/crm/promo">Bersihkan filter</Link>}
+        </form>
+        <p style={{fontSize:11,color:"var(--tm)"}}>Kategori mengikuti master barang saat ini. Promo semua barang ikut setiap kategori; filter ini tidak mengubah aturan promo.</p>
+        {invalidCategory&&<p role="alert">Filter kategori tidak tersedia. Bersihkan filter atau pilih kategori yang tersedia.</p>}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
             <thead>
               <tr>
-                <th>Nama</th><th>Berlaku untuk</th><th>Aturan</th><th>Cabang</th>
+                <th>Nama</th><th>Berlaku untuk</th><th>Kategori</th><th>Aturan</th><th>Cabang</th>
                 <th>Tanggal</th><th>Status</th><th /></tr>
             </thead>
             <tbody>
               {rows.map((p) => {
                 const st = promoScheduleStatus(p, today);
+                const targets=targetsByPromo.get(p.id)??[];
+                const categoryLabels=promoCategorySummary(targets,itemById);
                 const cabang = !p.branch_ids || p.branch_ids.length === 0
                   ? "Semua cabang"
                   : p.branch_ids.map((id) => branchName.get(id) ?? "—").join(", ");
@@ -219,12 +155,14 @@ export default async function PromoAdminPage({
                           : <span> · pengingat saja</span>}
                       </div>
                     </td>
-                    <td style={{ fontSize: 11 }}>{ringkasBarang(barangPromo.get(p.id))}</td>
+                    <td style={{ fontSize: 11 }}>{ringkasBarang(targets.length?targets.map(id=>itemById.get(id)?.name??"Barang tidak tersedia"):undefined)}</td>
+                    <td style={{fontSize:11,minWidth:160,maxWidth:260,overflowWrap:"anywhere"}}>{categoryLabels.join(", ")}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{ringkasAturan(p)}</td>
                     <td style={{ fontSize: 11 }}>{cabang}</td>
                     <td style={{ fontSize: 11 }}>{p.valid_from ?? "—"} s/d {p.valid_until ?? "∞"}</td>
                     <td><span className={`bge ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span></td>
                     <td>
+                      {canEdit&&<Link className="back-btn" href={`/crm/promo/${p.id}/edit`}>Edit promo</Link>}
                       <form action={togglePromo}>
                         <input type="hidden" name="id" value={p.id} />
                         <input type="hidden" name="active" value={p.is_active ? "0" : "1"} />
@@ -236,7 +174,7 @@ export default async function PromoAdminPage({
                   </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada promo.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>{kategori ? "Tidak ada promo pada filter ini." : "Belum ada promo."}</td></tr>}
             </tbody>
           </table>
         </div>

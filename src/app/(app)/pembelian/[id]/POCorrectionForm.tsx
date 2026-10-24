@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import type { ItemUnit } from "@/lib/satuan";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
@@ -28,7 +30,7 @@ export function POEditForm({ userId, poId, revision, supplierId, warehouseId, ta
         const base = options[0]?.unit;
         return <div key={i} style={{ marginBottom: 10 }}><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <input className="fi" value={row.nama} onChange={e => set(i, { nama: e.target.value })} aria-label={`Nama item ${i + 1}`} />
-        <input className="fi" type="number" min={0} step="any" value={row.qty} onChange={e => set(i, { qty: Number(e.target.value) })} aria-label={`Qty item ${i + 1}`} style={{ width: 90 }} />
+        <NumberInput className="fi" type="number" min={0} step="any" value={row.qty} onChange={e => set(i, { qty: Number(e.target.value) })} aria-label={`Qty item ${i + 1}`} style={{ width: 90 }} />
         {row.item_id && <select className="fi" aria-label={`Satuan item ${i + 1}`} value={row.satuan ?? ""} onChange={e => {
           const unit = options.find(option => option.unit === e.target.value);
           if (unit) set(i, { satuan: unit.unit, faktor: unit.factor });
@@ -36,7 +38,7 @@ export function POEditForm({ userId, poId, revision, supplierId, warehouseId, ta
           {!selected && <option value={row.satuan ?? ""}>{row.satuan || "Pilih satuan"} — pilih ulang</option>}
           {options.map(unit => <option key={unit.unit} value={unit.unit}>{unit.unit}</option>)}
         </select>}
-        <input className="fi" type="number" min={0} step="any" value={row.harga_beli} onChange={e => set(i, { harga_beli: Number(e.target.value) })} aria-label={`Harga item ${i + 1}`} style={{ width: 120 }} />
+        <NumberInput className="fi" type="number" min={0} step="any" value={row.harga_beli} onChange={e => set(i, { harga_beli: Number(e.target.value) })} aria-label={`Harga item ${i + 1}`} style={{ width: 120 }} />
       </div>{base && <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4 }}>Stok masuk {Number(row.qty) * factor} {base} · modal Rp {Number(Number(row.harga_beli) / factor).toLocaleString("id-ID", { maximumFractionDigits: 2 })}/{base}</div>}</div>;
       })}
       <label className="flab">Alasan perubahan *</label><input className="fi" name="alasan" minLength={3} required placeholder="Contoh: jumlah pesanan dikoreksi" />

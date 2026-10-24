@@ -1,5 +1,9 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
+import { ItemReferenceField } from "@/components/ItemReferenceField";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -70,9 +74,6 @@ export function BarangForm({
   // berjenjang yang mengurus kemasan; ini mengurus volume dalam satuan yang sama.
   const [tiers, setTiers] = useState<Tingkat[]>(editing?.tiers ?? []);
   const [groupComponents, setGroupComponents] = useState<KomponenGrupDraft[]>(editing?.group_components ?? []);
-  const [cariKomponen, setCariKomponen] = useState<string[]>(
-    () => (editing?.group_components ?? []).map(() => ""),
-  );
   const addTier = () => setTiers((t) => [...t, { min_qty: 0, harga: 0 }]);
   const setTier = (i: number, patch: Partial<Tingkat>) =>
     setTiers((t) => t.map((x, j) => (j === i ? { ...x, ...patch } : x)));
@@ -92,11 +93,9 @@ export function BarangForm({
     setGroupComponents((rows) => rows.map((row, j) => j === i ? { ...row, ...patch } : row));
   const addGroupComponent = () => {
     setGroupComponents((rows) => [...rows, { component_item_id: "", qty: 1, unit: "", factor: 1 }]);
-    setCariKomponen((queries) => [...queries, ""]);
   };
   const delGroupComponent = (i: number) => {
     setGroupComponents((rows) => rows.filter((_, j) => j !== i));
-    setCariKomponen((queries) => queries.filter((_, j) => j !== i));
   };
 
   const gantiJenis = (v: ItemType) => {
@@ -207,7 +206,7 @@ export function BarangForm({
           </div>
           <div style={{ display: punyaStok ? "block" : "none" }}>
             <label className="flab">Stok minimum</label>
-            <input className="fi" name="min_stock" type="number" min={0} step="any" defaultValue={editing?.min_stock ?? 0} />
+            <NumberInput className="fi" name="min_stock" type="number" min={0} step="any" defaultValue={editing?.min_stock ?? 0} />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
               Batas bawah sebelum barang dianggap perlu dipesan lagi.
             </div>
@@ -231,13 +230,13 @@ export function BarangForm({
         <div className="frow">
           <div>
             <label className="flab">Harga jual * <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
-            <input className="fi" name="sell_price" type="number" min={0} step="any"
+            <NumberInput className="fi" name="sell_price" type="number" min={0} step="any"
               value={baseSell || ""} onChange={(e) => setBaseSell(Number(e.target.value))} required />
           </div>
           {!isGroup && (
             <div>
               <label className="flab">Harga beli / modal <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
-              <input className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
+              <NumberInput className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
             </div>
           )}
         </div>
@@ -268,12 +267,12 @@ export function BarangForm({
               <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 6 }}>
                 <div style={{ width: 150 }}>
                   {i === 0 && <label className="flab">Beli minimal ({labelDasar})</label>}
-                  <input className="fi" type="number" min={1} step="any" value={t.min_qty || ""}
+                  <NumberInput className="fi" type="number" min={1} step="any" value={t.min_qty || ""}
                     onChange={(e) => setTier(i, { min_qty: Number(e.target.value) })} placeholder="12" />
                 </div>
                 <div style={{ flex: 1, minWidth: 120 }}>
                   {i === 0 && <label className="flab">Harga per {labelDasar}</label>}
-                  <input className="fi" type="number" min={0} step="any" value={t.harga || ""}
+                  <NumberInput className="fi" type="number" min={0} step="any" value={t.harga || ""}
                     onChange={(e) => setTier(i, { harga: Number(e.target.value) })} placeholder="0" />
                   {baseSell > 0 && Number(t.harga) > 0 && Number(t.harga) < baseSell && (
                     <div style={{ fontSize: 9, color: "#15803d", marginTop: 2 }}>
@@ -328,12 +327,12 @@ export function BarangForm({
                   </div>
                   <div style={{ width: 104, flexShrink: 0 }}>
                     {i === 0 && <label className="flab">Isi ({labelDasar})</label>}
-                    <input className="fi" type="number" min={0} step="any" value={u.factor || ""}
+                    <NumberInput className="fi" type="number" min={0} step="any" value={u.factor || ""}
                       onChange={(e) => setUnit(i, { factor: Number(e.target.value) })} placeholder="12" />
                   </div>
                   <div style={{ flex: 1, minWidth: 110 }}>
                     {i === 0 && <label className="flab">Harga jual</label>}
-                    <input className="fi" type="number" min={0} step="any" value={u.sell_price || ""}
+                    <NumberInput className="fi" type="number" min={0} step="any" value={u.sell_price || ""}
                       onChange={(e) => setUnit(i, { sell_price: Number(e.target.value) })} placeholder="0" />
                     {f > 0 && Number(u.sell_price) > 0 && (
                       <div style={{ fontSize: 9, color: hemat < 0 ? "#15803d" : "var(--td)", marginTop: 2 }}>
@@ -344,7 +343,7 @@ export function BarangForm({
                   </div>
                   <div style={{ flex: 1, minWidth: 110 }}>
                     {i === 0 && <label className="flab">Harga beli</label>}
-                    <input className="fi" type="number" min={0} step="any" value={u.buy_price || ""}
+                    <NumberInput className="fi" type="number" min={0} step="any" value={u.buy_price || ""}
                       onChange={(e) => setUnit(i, { buy_price: Number(e.target.value) })} placeholder="0" />
                   </div>
                   <button type="button" onClick={() => delUnit(i)} className="btn-def"
@@ -367,7 +366,7 @@ export function BarangForm({
           <div className="frow">
             <div>
               <label className="flab">Diskon default (%)</label>
-              <input className="fi" name="default_discount" type="number" min={0} max={100} step="any"
+              <NumberInput className="fi" name="default_discount" type="number" min={0} max={100} step="any"
                 defaultValue={editing?.default_discount ?? 0} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Dipakai semua satuan. Kosongkan (0) kalau barang ini tidak pernah didiskon otomatis.
@@ -375,7 +374,7 @@ export function BarangForm({
             </div>
             <div>
               <label className="flab">Minimum jual <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
-              <input className="fi" name="min_sell_qty" type="number" min={0} step="any"
+              <NumberInput className="fi" name="min_sell_qty" type="number" min={0} step="any"
                 defaultValue={editing?.min_sell_qty ?? 0} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Jumlah paling sedikit yang boleh dibeli sekali transaksi. 0 = bebas.
@@ -423,7 +422,7 @@ export function BarangForm({
             <div className="frow">
               <div>
                 <label className="flab">Minimum beli</label>
-                <input className="fi" name="min_buy" type="number" min={0} step="any"
+                <NumberInput className="fi" name="min_buy" type="number" min={0} step="any"
                   defaultValue={editing?.min_buy ?? 0} />
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                   Jumlah pesan paling sedikit yang mau dilayani pemasok, dalam satuan beli.
@@ -431,13 +430,8 @@ export function BarangForm({
               </div>
               <div>
                 <label className="flab">Substitusi dengan</label>
-                <select className="fi" name="substitute_item_id" defaultValue={editing?.substitute_item_id ?? ""}>
-                  <option value="">— tidak ada —</option>
-                  {editing?.substitute_item_id && !barangLain.some(b => b.id === editing.substitute_item_id) && <option value={editing.substitute_item_id}>Barang pengganti tersimpan (Nonaktif)</option>}
-                  {barangLain.filter((b) => b.id !== editing?.id).map((b) => (
-                    <option key={b.id} value={b.id}>{b.code ? `${b.code} — ` : ""}{b.name}</option>
-                  ))}
-                </select>
+                <ItemReferenceField name="substitute_item_id" defaultValue={editing?.substitute_item_id ?? ""}
+                  items={barangLain.filter(b => b.id !== editing?.id).map(b => ({...b, code: b.code ?? ""}))} ariaLabel="Substitusi dengan" />
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                   Barang pengganti saat yang ini kosong.
                 </div>
@@ -488,48 +482,22 @@ export function BarangForm({
           {groupComponents.map((row, i) => {
             const item = kandidatGrup.find((candidate) => candidate.id === row.component_item_id);
             const unitOptions = item?.units ?? (row.unit ? [{ unit: row.unit, factor: row.factor }] : []);
-            const query = cariKomponen[i]?.trim().toLowerCase() ?? "";
-            const cocok = kandidatGrup.filter((candidate) =>
-              candidate.name.toLowerCase().includes(query) || candidate.code?.toLowerCase().includes(query));
-            // Pencarian tidak boleh menghilangkan pilihan yang sudah terisi.
-            const pilihan = item && !cocok.some((candidate) => candidate.id === item.id)
-              ? [item, ...cocok] : cocok;
             return (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 110px 120px 38px", gap: 7, alignItems: "end", marginBottom: 8 }}>
                 <div>
                   {i === 0 && <label className="flab">Barang / jasa komponen *</label>}
-                  <input className="fi" type="search" aria-label={`Cari komponen ${i + 1}`}
-                    placeholder="Cari nama / kode barang…" value={cariKomponen[i] ?? ""}
-                    style={{ marginBottom: 5 }}
-                    onChange={(e) => setCariKomponen((queries) => queries.map((q, j) => j === i ? e.target.value : q))}
-                    onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} />
-                  <select className="fi" aria-label={`Barang / jasa komponen ${i + 1}`}
-                    value={row.component_item_id} required
-                    onChange={(e) => {
-                      const selected = kandidatGrup.find((candidate) => candidate.id === e.target.value);
+                  <SearchableItemPicker items={kandidatGrup.map(candidate => ({...candidate, code: candidate.code ?? ""}))}
+                    value={row.component_item_id} required ariaLabel={`Barang / jasa komponen ${i + 1}`}
+                    onChange={id => {
+                      const selected = kandidatGrup.find(candidate => candidate.id === id);
                       const firstUnit = selected?.units[0] ?? { unit: "", factor: 1 };
-                      setGroupComponent(i, {
-                        component_item_id: e.target.value,
-                        unit: firstUnit.unit,
-                        factor: firstUnit.factor,
-                      });
-                    }}>
-                    <option value="">— pilih komponen —</option>
-                    {pilihan.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {candidate.code ? `${candidate.code} — ` : ""}{candidate.name} · {candidate.item_type}
-                      </option>
-                    ))}
-                  </select>
-                  {query && (
-                    <div role="status" style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-                      {cocok.length ? `${cocok.length} barang / jasa ditemukan.` : "Tidak ada barang / jasa yang cocok."}
-                    </div>
-                  )}
+                      setGroupComponent(i, { component_item_id: id, unit: firstUnit.unit, factor: firstUnit.factor });
+                    }} />
+                  {item && <small style={{color:'var(--tm)'}}>Jenis: {item.item_type}</small>}
                 </div>
                 <div>
                   {i === 0 && <label className="flab">Qty *</label>}
-                  <input className="fi" type="number" min={0.0001} step="any" required
+                  <NumberInput className="fi" type="number" min={0.0001} step="any" required
                     value={row.qty || ""}
                     onChange={(e) => setGroupComponent(i, { qty: Number(e.target.value) })} />
                 </div>

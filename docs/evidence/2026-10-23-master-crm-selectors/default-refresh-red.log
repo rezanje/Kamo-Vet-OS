@@ -1,0 +1,30 @@
+
+ RUN  v4.1.9 /workspace/kamo-master-selectors
+
+ ❯ src/components/__tests__/master-item-reference.test.tsx (4 tests | 1 failed) 103ms
+   × follows a new stored reference when the same master field is reused for another record 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/master-item-reference.test.tsx > follows a new stored reference when the same master field is reused for another record
+AssertionError: expected 'a' to be 'b' // Object.is equality
+
+Expected: "b"
+Received: "a"
+
+ ❯ src/components/__tests__/master-item-reference.test.tsx:20:234
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  12:46:01
+   Duration  793ms (transform 98ms, setup 0ms, import 143ms, tests 103ms, environment 354ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

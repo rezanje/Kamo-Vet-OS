@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -69,7 +70,7 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
             </div>
             <div>
               <label className="flab">Nominal</label>
-              <input className="fi" type="number" name="jumlah" min={1} step="any" required />
+              <NumberInput className="fi" type="number" name="jumlah" min={1} step="any" required />
             </div>
           </div>
           <div className="frow" style={{ marginBottom: 12 }}>

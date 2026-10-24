@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -114,7 +115,7 @@ export default async function VoucherPage({
             </div>
             <div>
               <label className="flab">Nilai *</label>
-              <input className="fi" name="nilai" type="number" min={1} step="any"
+              <NumberInput className="fi" name="nilai" type="number" min={1} step="any"
                 defaultValue={editing?.nilai ?? ""} placeholder="10000" required />
             </div>
             <div>
@@ -129,7 +130,7 @@ export default async function VoucherPage({
             {/* Pagar nilai potongan — terutama untuk voucher persen. */}
             <div>
               <label className="flab">Maks. potongan (Rp)</label>
-              <input className="fi" name="max_potongan" type="number" min={1} step="any"
+              <NumberInput className="fi" name="max_potongan" type="number" min={1} step="any"
                 defaultValue={editing?.max_potongan ?? ""} placeholder="kosong = tanpa batas" />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Diskon 10% dengan batas Rp 10.000 hanya memotong Rp 10.000 sebesar apa pun tagihannya.
@@ -137,7 +138,7 @@ export default async function VoucherPage({
             </div>
             <div>
               <label className="flab">Min. belanja (Rp)</label>
-              <input className="fi" name="min_belanja" type="number" min={0} step="any"
+              <NumberInput className="fi" name="min_belanja" type="number" min={0} step="any"
                 defaultValue={editing?.min_belanja || ""} placeholder="0 = bebas" />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Dihitung setelah diskon per barang.

@@ -1,0 +1,24 @@
+[
+  {
+    "width": 1280,
+    "prefilledOpenDateAndLegacyTargets": true,
+    "keyboardAndCategoryActiveOnly": true,
+    "matchingAllRetainsLegacy": true,
+    "conflictAndReloadRetainDraft": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveWrites": 0
+  },
+  {
+    "width": 390,
+    "prefilledOpenDateAndLegacyTargets": true,
+    "keyboardAndCategoryActiveOnly": true,
+    "matchingAllRetainsLegacy": true,
+    "conflictAndReloadRetainDraft": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "liveWrites": 0
+  }
+]

@@ -3,7 +3,7 @@
 import { changeMasterLifecycle } from "@/app/(app)/master-data/actions";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
-import { loadUnitOptions, parseUnitDrafts, resolveSubmittedUnit, unitOptions } from "@/lib/satuan";
+import { loadUnitOptions, parseUnitDrafts, resolveSubmittedUnit, replaceItemUnitConfiguration, unitOptions } from "@/lib/satuan";
 import { rapikanTingkat } from "@/lib/harga-tingkat";
 import { pickItemType, validasiBarang, validasiSatuanDasar, pesanSimpanGagal } from "@/lib/barang";
 import {
@@ -148,6 +148,13 @@ export async function simpanBarang(formData: FormData) {
     track_expiry: punyaStok && String(formData.get("track_expiry") ?? "") === "1",
   };
 
+  // Reject sold conversion changes before unrelated master writes. Base and
+  // alternate units change in one database transaction, including price-only edits.
+  if (id) {
+    try { await replaceItemUnitConfiguration(supabase, id, unitResmi, units); }
+    catch (error) { gagal(pesanSimpanGagal(error instanceof Error ? error.message : "Satuan tidak dapat disimpan")); }
+  }
+
   const { data: saved, error } = id
     ? await supabase.from("items").update(patch).eq("id", id).select("id").maybeSingle()
     : await supabase.from("items").insert({ ...patch, is_active: true }).select("id").maybeSingle();
@@ -171,12 +178,9 @@ export async function simpanBarang(formData: FormData) {
       if (tErr) gagal(pesanSimpanGagal(tErr.message));
     }
 
-    await supabase.from("item_units").delete().eq("item_id", itemId);
-    if (units.length) {
-      const { error: uErr } = await supabase.from("item_units").insert(
-        units.map((u) => ({ item_id: itemId, unit: u.unit, factor: u.factor, sell_price: u.sell_price, buy_price: u.buy_price })),
-      );
-      if (uErr) gagal(pesanSimpanGagal(uErr.message));
+    if (!id) {
+      try { await replaceItemUnitConfiguration(supabase, itemId, unitResmi, units); }
+      catch (error) { gagal(pesanSimpanGagal(error instanceof Error ? error.message : "Satuan tidak dapat disimpan")); }
     }
 
     // RPC = delete+insert satu transaksi. Jika insert resep baru ditolak trigger,

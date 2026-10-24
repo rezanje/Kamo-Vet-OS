@@ -1,0 +1,10 @@
+Applied 222 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+FAIL clinic_billing_consistency.sql: ERROR:  Paid invoice committed before checkout
+CONTEXT:  PL/pgSQL function inline_code_block line 7 at RAISE
+d1000000-0000-4000-8000-000000000001
+authenticated
+
+PASS clinic_invoice_post.sql
+PASS clinic_billing_lifecycle.sql
+Removed owned PostgreSQL test container and volumes.
+Failed suites: clinic_billing_consistency.sql

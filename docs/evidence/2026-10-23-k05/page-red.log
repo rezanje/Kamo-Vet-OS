@@ -1,0 +1,98 @@
+[RED log excerpt: long Received SSR markup omitted; assertion failures and run summary retained.]
+
+ RUN  v4.1.9 /workspace/kamo-k05
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx (10 tests | 8 failed) 90ms
+   × explains consents read failure as unverified instead of asking for another signature 14ms
+   × explains consent_rules read failure as unverified instead of asking for another signature 8ms
+   × explains consent_templates read failure as unverified instead of asking for another signature 6ms
+   × explains medical_records read failure as unverified instead of asking for another signature 4ms
+   × explains inpatient_records read failure as unverified instead of asking for another signature 5ms
+   × mirrors existing server rejection of closed visit (status) without creating a new eligibility policy 2ms
+   × mirrors existing server rejection of closed visit (checkout) without creating a new eligibility policy 3ms
+   × explains missing doctor and provides a direct consent section link for missing consent 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > explains consents read failure as unverified instead of asking for another signature
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Kesiapan rawat inap belum dapat diver…'
+
+Expected: "Kesiapan rawat inap belum dapat diverifikasi"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:24:247
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > explains consent_rules read failure as unverified instead of asking for another signature
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Kesiapan rawat inap belum dapat diver…'
+
+Expected: "Kesiapan rawat inap belum dapat diverifikasi"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:24:247
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > explains consent_templates read failure as unverified instead of asking for another signature
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Kesiapan rawat inap belum dapat diver…'
+
+Expected: "Kesiapan rawat inap belum dapat diverifikasi"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:24:247
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > explains medical_records read failure as unverified instead of asking for another signature
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Kesiapan rawat inap belum dapat diver…'
+
+Expected: "Kesiapan rawat inap belum dapat diverifikasi"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:24:247
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > explains inpatient_records read failure as unverified instead of asking for another signature
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Kesiapan rawat inap belum dapat diver…'
+
+Expected: "Kesiapan rawat inap belum dapat diverifikasi"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:24:247
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > mirrors existing server rejection of closed visit (status) without creating a new eligibility policy
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > mirrors existing server rejection of closed visit (checkout) without creating a new eligibility policy
+AssertionError: expected '<button type="submit" class="btn-acc"…' to contain 'disabled'
+
+Expected: "disabled"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:25:274
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  src/components/__tests__/clinic-admission-readiness-page.test.tsx > explains missing doctor and provides a direct consent section link for missing consent
+AssertionError: expected '<button type="submit" class="btn-acc"…' to contain 'disabled'
+
+Expected: "disabled"
+
+ ❯ src/components/__tests__/clinic-admission-readiness-page.test.tsx:26:163
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 2 passed (10)
+   Start at  06:41:48
+   Duration  664ms (transform 247ms, setup 0ms, import 399ms, tests 90ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

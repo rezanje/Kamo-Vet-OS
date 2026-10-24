@@ -1,0 +1,39 @@
+
+> vetos@0.1.0 test
+> vitest run --run src/components/__tests__/purchase-short-close-invoice.test.tsx
+
+
+ RUN  v4.1.9 /workspace/kamo-p07-final-partial
+
+ ❯ src/components/__tests__/purchase-short-close-invoice.test.tsx (1 test | 1 failed) 15ms
+   × lists explicitly finished partial PO, excludes temporary partial, and bills only received/uninvoiced quantities 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/purchase-short-close-invoice.test.tsx > lists explicitly finished partial PO, excludes temporary partial, and bills only received/uninvoiced quantities
+AssertionError: expected 'closed — Tanpa pemasok (undefined)' to contain 'Selesai parsial'
+
+Expected: "Selesai parsial"
+Received: "closed — Tanpa pemasok (undefined)"
+
+ ❯ src/components/__tests__/purchase-short-close-invoice.test.tsx:20:34
+     18|   expect(state.options.map(row => row.id)).toEqual(["closed"]);
+     19|   expect(state.options[0].items.map(row => [row.po_item_id, row.sisa])…
+     20|   expect(state.options[0].label).toContain("Selesai parsial");
+       |                                  ^
+     21| });
+     22|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  02:38:13
+   Duration  224ms (transform 51ms, setup 0ms, import 100ms, tests 15ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

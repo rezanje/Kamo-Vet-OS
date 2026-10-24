@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /workspace/kamo-report-presets
+
+ ❯ src/lib/__tests__/private-report-presets-actions.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/__tests__/private-report-presets-actions.test.ts [ src/lib/__tests__/private-report-presets-actions.test.ts ]
+Error: Cannot find package '@/app/(app)/laporan/preset-actions' imported from /workspace/kamo-report-presets/src/lib/__tests__/private-report-presets-actions.test.ts
+ ❯ src/lib/__tests__/private-report-presets-actions.test.ts:4:1
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  16:04:57
+   Duration  237ms (transform 48ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

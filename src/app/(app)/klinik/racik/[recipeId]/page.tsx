@@ -2,7 +2,7 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { advanceRecipeStatus, voidRecipe, updateRacikPetunjuk } from "../actions";
+import { advanceRecipeStatus, voidRecipe, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
 type Rel<T> = T | T[] | null;
@@ -35,12 +35,13 @@ export default async function RacikDetailPage({
 
   const { data: r } = await supabase
     .from("compounding_recipes")
-    .select(`id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, created_at, medical_record_id,
+    .select(`id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, created_at, medical_record_id, compound_official_usage(recipe_id),
       medical_records(id, diagnosis, anamnesis, catatan_resep, visit_id,
         visits(id, poli, dokter, keluhan, created_at, pets(name, species, breed, photo_url), customers(name, phone, address)))`)
     .eq("id", recipeId)
     .maybeSingle();
   if (!r) notFound();
+  const official = !!one(r.compound_official_usage as Rel<{ recipe_id: string }>);
 
   const mr = one(r.medical_records as Rel<{ id: string; diagnosis: string | null; anamnesis: string | null; catatan_resep: string | null; visit_id: string; visits: Rel<{ id: string; poli: string; dokter: string | null; keluhan: string | null; created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }> }>);
   const visit = one(mr?.visits ?? null);
@@ -67,8 +68,11 @@ export default async function RacikDetailPage({
 
   return (
     <>
-      <div style={{ marginBottom: 4 }}>
+      <div style={{ marginBottom: 4, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <Link href="/klinik/racik" className="back-btn"><i className="ti ti-arrow-left" /> Racik Obat</Link>
+        {visit && mr && <Link href={`/klinik/rekam-medis/${visit.id}/resep?record=${encodeURIComponent(mr.id)}`} className="btn-def" style={{ textDecoration: "none" }}>
+          <i className="ti ti-printer" /> Cetak resep kunjungan
+        </Link>}
       </div>
 
       {/* Judul besar (referensi) */}
@@ -78,7 +82,7 @@ export default async function RacikDetailPage({
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>RACIK OBAT</div>
-          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Petunjuk racik obat dari resep dokter</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Informasi obat dan petunjuk pemakaian untuk pemilik hewan</div>
         </div>
         <span className={`bge ${statusBadge(r.status)}`}>{statusLabel[r.status]}</span>
       </div>
@@ -87,6 +91,7 @@ export default async function RacikDetailPage({
       {success === "ready" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Obat siap diserahkan ke pasien.</div>}
       {success === "handed_over" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Racikan sudah diserahkan.</div>}
       {success === "petunjuk" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Petunjuk racik tersimpan.</div>}
+      {success === "pemakaian" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Petunjuk pemakaian tersimpan.</div>}
 
       {/* Kartu pasien + catatan resep */}
       <div className="card" style={{ marginBottom: 14, padding: 20 }}>
@@ -128,12 +133,11 @@ export default async function RacikDetailPage({
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
-              <tr><th style={{ width: 30 }}>No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Aturan Pakai</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Petunjuk Racik</th></tr>
+              <tr><th style={{ width: 30 }}>No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Petunjuk pemakaian</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Catatan racik tersimpan (internal)</th></tr>
             </thead>
             <tbody>
               {recipes.map((rc, ri) => {
                 const ings = rc.compounding_ingredients ?? [];
-                const steps = (rc.compounding_steps ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
                 return (
                   <tr key={rc.id}>
                     <td style={{ verticalAlign: "top", fontSize: 11, color: "var(--tm)" }}>{ri + 1}</td>
@@ -153,11 +157,7 @@ export default async function RacikDetailPage({
                     <td style={{ fontSize: 11.5, verticalAlign: "top" }}>{rc.total_volume || <Kosong />}</td>
                     <td style={{ fontSize: 11.5, verticalAlign: "top", textTransform: "capitalize" }}>{rc.dosage_form || <Kosong />}</td>
                     <td style={{ verticalAlign: "top" }}>
-                      {steps.length === 0 ? <Kosong /> : (
-                        <ol style={{ margin: 0, paddingLeft: 16 }}>
-                          {steps.map((s, i) => <li key={i} style={{ fontSize: 11, padding: "1px 0" }}>{s.replace(/^\d+[.)]\s*/, "")}</li>)}
-                        </ol>
-                      )}
+                      {rc.compounding_steps ? <div style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{rc.compounding_steps}</div> : <Kosong />}
                     </td>
                   </tr>
                 );
@@ -166,20 +166,23 @@ export default async function RacikDetailPage({
           </table>
         </div>
 
-        {/* Petunjuk racik diisi apoteker di sini — dokter hanya resepkan komposisi. */}
+        <p style={{ fontSize: 11, color: "var(--tm)", marginTop: 10 }}>
+          Catatan racik tersimpan perlu ditinjau oleh dokter sebelum digunakan sebagai petunjuk pemakaian. Isinya tidak disalin otomatis.
+        </p>
+
         {(r.status === "pending" || r.status === "ready") && (
-          <TransactionForm scope={`clinic-racik-instructions:${recipeId}`} action={updateRacikPetunjuk} style={{ border: ".5px solid #bfdbfe", background: "#f8fbff", borderRadius: 10, padding: 14, marginTop: 14 }}>
+          <TransactionForm scope={`clinic-racik-usage:${recipeId}`} action={updateRacikPemakaian} style={{ border: ".5px solid #bfdbfe", background: "#f8fbff", borderRadius: 10, padding: 14, marginTop: 14 }}>
             <input type="hidden" name="recipeId" value={r.id} />
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", marginBottom: 3 }}>
-              <i className="ti ti-pencil" /> ISI PETUNJUK RACIK — {r.recipe_name}
+              <i className="ti ti-pencil" /> ISI PETUNJUK PEMAKAIAN — {r.recipe_name}
             </div>
             <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 10 }}>
-              Diisi apoteker/PCA sebelum obat diracik. Kolom ini yang tampil di tabel atas.
+              Informasi penggunaan obat untuk pemilik hewan. Isi sesuai petunjuk dokter yang telah dikonfirmasi.
             </div>
             <div className="frow">
               <div>
-                <label className="flab">Jumlah racikan (hasil jadi)</label>
-                <input className="fi" name="total_volume" defaultValue={r.total_volume ?? ""} placeholder="mis. 60 ml / 10 kapsul" />
+                <label className="flab" htmlFor="usage-total-volume">Jumlah racikan (hasil jadi)</label>
+                <input className="fi" id="usage-total-volume" name="total_volume" defaultValue={r.total_volume ?? ""} />
               </div>
               <div>
                 <label className="flab">Bentuk sediaan</label>
@@ -187,13 +190,36 @@ export default async function RacikDetailPage({
               </div>
             </div>
             <div className="fg">
+              <label className="flab" htmlFor="recipient-instructions">Petunjuk pemakaian untuk pemilik hewan</label>
+              <textarea className="fi" id="recipient-instructions" name="dosage_instruction" rows={4} defaultValue={r.dosage_instruction ?? ""}
+                readOnly={official} placeholder="Isi petunjuk pemakaian yang telah dikonfirmasi dokter" style={{ resize: "vertical" }} />
+              {official && <div style={{ fontSize: 10.5, color: "var(--tm)" }}>Petunjuk pemakaian resep resmi mengikuti formula yang tersimpan dan tidak dapat diubah di sini.</div>}
+            </div>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…">Simpan Petunjuk Pemakaian</SubmitButton>
+          </TransactionForm>
+        )}
+
+        {/* Keep technical preparation and its existing drafts separate from recipient usage. */}
+        {(r.status === "pending" || r.status === "ready") && (
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ fontSize: 11, cursor: "pointer" }}>Instruksi peracikan internal — apoteker/PCA</summary>
+          <TransactionForm scope={`clinic-racik-instructions:${recipeId}`} action={updateRacikPetunjuk} style={{ border: ".5px solid #bfdbfe", background: "#f8fbff", borderRadius: 10, padding: 14, marginTop: 14 }}>
+            <input type="hidden" name="recipeId" value={r.id} />
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)", marginBottom: 3 }}>
+              <i className="ti ti-pencil" /> ISI PETUNJUK RACIK — {r.recipe_name}
+            </div>
+            <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 10 }}>
+              Khusus langkah teknis peracikan. Catatan lama perlu ditinjau; petunjuk untuk pemilik hewan diisi terpisah di atas.
+            </div>
+            <div className="fg">
               <label className="flab">Petunjuk racik — satu langkah per baris</label>
               <textarea className="fi" name="compounding_steps" rows={4} defaultValue={r.compounding_steps ?? ""}
-                placeholder={"Haluskan CTM 4 mg, larutkan dengan sedikit air matang\nTambahkan Mix Sirup, aduk rata\nKocok hingga homogen, masukkan ke botol sirup"}
+                placeholder="Isi langkah teknis peracikan sesuai resep yang telah dikonfirmasi"
                 style={{ resize: "vertical" }} />
             </div>
             <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…">Simpan Petunjuk Racik</SubmitButton>
           </TransactionForm>
+          </details>
         )}
 
         <div style={{ background: "#fffbeb", border: ".5px solid #fde68a", borderRadius: 10, padding: 14, marginTop: 14 }}>

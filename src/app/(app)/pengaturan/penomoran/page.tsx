@@ -1,7 +1,8 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { FORMAT_BAWAAN, bangunPrefix, contohNomor, formatNomor } from "@/lib/no-dokumen";
+import { FORMAT_BAWAAN, contohNomor } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { kembalikanBawaan, simpanFormatNomor } from "./actions";
 
@@ -33,6 +34,8 @@ export default async function PenomoranPage({
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/pengaturan");
 
   const hariIni = hariIniWIB();
+  const contoh = (jenis: string, pola: string, digit: number) =>
+    contohNomor(`${pola}${jenis === "PO" ? "CONTOH-" : ""}`, digit, hariIni);
   // Nomor terakhir yang benar-benar terpakai per seri sengaja tidak ditampilkan:
   // datanya tersebar di 20-an tabel dan layar pengaturan tidak perlu menariknya semua.
   const { data: simpanan } = await supabase
@@ -72,6 +75,9 @@ export default async function PenomoranPage({
           <b style={{ color: "#b45309" }}>Ubahlah di awal periode.</b> Mengganti awalan atau jumlah
           digit di tengah bulan membuat satu seri punya dua bentuk nomor — dokumennya tetap aman
           dan tidak ada yang tertimpa, tapi daftarnya jadi tidak enak dibaca.
+          <br /><b>Kode cabang PO</b> ditambahkan otomatis sesudah awalan dan sebelum angka urutan,
+          memakai cabang tujuan pesanan. CONTOH hanya ilustrasi; nomor asli memakai kode cabang di master.
+          Nomor PO lama tetap tersimpan. Urutan berjalan per awalan dan kode cabang.
         </div>
       </div>
 
@@ -101,7 +107,7 @@ export default async function PenomoranPage({
                         {f.label}
                         {ubah && <span style={{ fontSize: 9, color: "#b45309", marginLeft: 6 }}>diubah</span>}
                         <div style={{ fontSize: 9.5, color: "var(--td)" }}>
-                          bawaan: {contohNomor(f.pola, f.digit, hariIni)}
+                          bawaan: {contoh(f.jenis, f.pola, f.digit)}
                         </div>
                       </td>
                       <td>
@@ -111,11 +117,11 @@ export default async function PenomoranPage({
                         </form>
                       </td>
                       <td>
-                        <input className="fi" form={`f-${f.jenis}`} name="digit" type="number"
+                        <NumberInput className="fi" form={`f-${f.jenis}`} name="digit" type="number"
                           min={1} max={8} defaultValue={digit} style={{ fontSize: 11 }} />
                       </td>
                       <td style={{ fontSize: 11.5, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>
-                        {formatNomor(bangunPrefix(pola, hariIni), 1, digit)}
+                        {contoh(f.jenis, pola, digit)}
                       </td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{siklus(pola)}</td>
                       <td>

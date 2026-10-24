@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const fixture = vi.hoisted(()=>({tables:{} as Record<string,Record<string,unknown>[]>,failedPage:-1,truncatePage:-1}));
+const fixture = vi.hoisted(()=>({tables:{} as Record<string,Record<string,unknown>[]>,failedPage:-1,truncatePage:-1,failedMetadata:"",truncatedMetadata:""}));
 vi.mock("next/navigation",()=>({redirect:(href:string)=>{throw new Error(`REDIRECT:${href}`);}}));
 vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
   auth:{getUser:async()=>({data:{user:{id:"owner"}}})},
@@ -9,11 +9,13 @@ vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
     const sorts:string[]=[];
     const result=()=>{
       if(table==="items" && from===fixture.failedPage) return {data:null,count:null,error:{message:"Catalog temporarily unavailable"}};
+      if(table===fixture.failedMetadata && from===500) return {data:null,count:null,error:{message:"Private metadata fixture error"}};
       const rows=(fixture.tables[table] ?? []).filter(row=>filters.every(filter=>filter(row))).sort((a,b)=>{
         for(const column of sorts){if(a[column]===b[column])continue;return a[column]!<b[column]! ? -1 : 1;}return 0;
       });
       const page=rows.slice(from,Math.min(to+1,from+1000,limit));
       if(table==="items" && from===fixture.truncatePage)page.pop();
+      if(table===fixture.truncatedMetadata && from===500)page.pop();
       return {data:page,count:counted ? rows.length : null,error:null};
     };
     const q={select(_columns:string,options?:{count:string}){counted=options?.count==="exact";return q;},
@@ -30,7 +32,7 @@ vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
 import { siapkanFormBarang } from "../../app/(app)/pos/sku/data";
 
 beforeEach(()=>{
- fixture.failedPage=-1;fixture.truncatePage=-1;
+ fixture.failedPage=-1;fixture.truncatePage=-1;fixture.failedMetadata="";fixture.truncatedMetadata="";
  const items=Array.from({length:6001},(_,i)=>({id:`item-${String(i).padStart(4,"0")}`,code:`SKU-${i}`,name:i===6000?"Zebra late component":`Component ${String(i).padStart(4,"0")}`,
   unit:"pcs",sell_price:100,buy_price:50,item_type:i===6000?"Jasa":i===5999?"Non-Persediaan":"Persediaan",is_active:true}));
  fixture.tables={profiles:[{id:"owner",role:"OWNER",is_active:true}],items:[...items,
@@ -38,9 +40,27 @@ beforeEach(()=>{
   {...items[0],id:"nested-group",name:"Nested Z group",item_type:"Grup"}],
   item_units:[{item_id:"item-5998",unit:"box",factor:10,sell_price:900,buy_price:400}],
  };
+ for(const table of ["item_categories","brands","units","suppliers"]){
+  fixture.tables[table]=Array.from({length:1205},(_,i)=>({id:`meta-${String(i).padStart(4,"0")}`,name:`Metadata ${i}`,nama:`Metadata ${i}`,is_active:true,parent_id:null}));
+  fixture.tables[table].push({id:"inactive-metadata",name:"Inactive",nama:"Inactive",is_active:false,parent_id:null});
+ }
 });
 
 describe("Group component catalog on new and edit item forms",()=>{
+ it("loads all category/brand/unit/supplier choices beyond1000 without changing existing status semantics",async()=>{
+  const form=await siapkanFormBarang();
+  expect(form.categories).toHaveLength(1206);
+  for(const key of ["categories","brands","units","suppliers"] as const)expect(form[key]).toEqual(expect.arrayContaining([expect.objectContaining({id:"meta-1204"})]));
+  for(const key of ["brands","units","suppliers"] as const){expect(form[key]).toHaveLength(1205);expect(form[key].some(row=>row.id==="inactive-metadata")).toBe(false);}
+ });
+ it.each(["item_categories","brands","units","suppliers"])("rejects failed or truncated later %s pages instead of submitting incomplete context",async table=>{
+  fixture.failedMetadata=table;
+  let result=await siapkanFormBarang().then(()=>null,error=>error as Error);
+  expect(result?.message).toMatch(/belum.*dimuat/i);expect(result?.message).not.toContain("Private metadata");
+  fixture.failedMetadata="";fixture.truncatedMetadata=table;
+  result=await siapkanFormBarang().then(()=>null,error=>error as Error);
+  expect(result?.message).toMatch(/belum.*dimuat/i);
+ });
  it("loads eligible components past the API cap and former 5000 limit, retaining filters and alphabetical order",async()=>{
   const form=await siapkanFormBarang();
   expect(form.kandidatGrup).toHaveLength(6001);

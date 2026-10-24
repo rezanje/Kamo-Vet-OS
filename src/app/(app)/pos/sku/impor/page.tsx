@@ -1,20 +1,23 @@
 import Link from "next/link";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { ImporForm } from "./ImporForm";
-import { AccurateImportForm } from "./AccurateImportForm";
+import { InventoryImportWorkspace, type RecoverableStockBatch } from "./InventoryImportWorkspace";
+import { recoverInitialStock } from "./actions";
+import { createClient } from "@/lib/supabase/server";
 import { GroupComponentImport } from "./GroupComponentImport";
 
 export default async function ImporBarangPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    run_id?: string;
     error?: string;
     import_success?: string;
     stock_count?: string;
     problem_count?: string;
   }>;
 }) {
-  const { error, import_success, stock_count, problem_count } = await searchParams;
+  const { error, run_id, import_success, stock_count, problem_count } = await searchParams;
   const boleh = await bolehKelolaMaster();
   const initialReceipt = import_success === "1"
     ? {
@@ -23,6 +26,17 @@ export default async function ImporBarangPage({
       }
     : null;
 
+  let batches: RecoverableStockBatch[] = [];
+  let recoveryError: string | null = null;
+  if (boleh) {
+    const db = await createClient(); const {data:{user}} = await db.auth.getUser();
+    if (user) {
+      const result = await db.from("import_runs").select("id,source_name,status,as_of_date")
+        .eq("kind","initial_stock").eq("created_by",user.id).order("created_at",{ascending:false}).limit(20);
+      batches = result.data ?? []; recoveryError = result.error?.message ?? null;
+    }
+  }
+  const recovered = boleh && run_id ? await recoverInitialStock(run_id) : null;
   return (
     <>
       <div style={{ marginBottom: 4 }}>
@@ -51,7 +65,8 @@ export default async function ImporBarangPage({
         </div>
       ) : (
         <>
-          <AccurateImportForm initialReceipt={initialReceipt} />
+          {recoveryError && <p role="alert">Daftar batch belum dapat dimuat: {recoveryError}</p>}
+          <InventoryImportWorkspace batches={batches} recovered={recovered} initialReceipt={initialReceipt} />
           <GroupComponentImport />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>

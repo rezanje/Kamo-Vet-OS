@@ -256,3 +256,43 @@ export async function recoverPurchaseSubmission(formData: FormData) {
   if (kind === "invoice") redirect(`/pembelian/faktur?success=${encodeURIComponent(`Faktur ${data.no_faktur} sudah tersimpan.`)}&${confirmed}`);
   redirect(`/keuangan/aset?success=pembelian&${confirmed}`);
 }
+
+// Final partial receipt is an explicit immutable business action, not a PO edit.
+export async function closeRemainingPO(formData: FormData) {
+  const supabase = await createClient();
+  const poId = String(formData.get("po_id") ?? "");
+  const requestKey = String(formData.get("draft_key") ?? "");
+  const fail = (message: string): never => { throw new Error(message); };
+  if (!poId || !requestKey) fail("Identitas tutup sisa belum siap. Muat ulang formulir.");
+  let response;
+  if (formData.get("tindakan") === "periksa") {
+    response = await supabase.rpc("get_purchase_order_short_close", { p_po_id: poId, p_request_key: requestKey });
+  } else {
+    const reason = String(formData.get("reason") ?? "").trim();
+    let expected: unknown;
+    try { expected = JSON.parse(String(formData.get("expected_rows") ?? "null")); } catch { fail("Rincian PO tidak dapat dibaca. Muat ulang."); }
+    if (formData.get("confirmed") !== "1" || reason.length < 3 || reason.length > 1000 || !Array.isArray(expected) || !expected.length) fail("Periksa alasan, sisa barang, dan konfirmasi bahwa sisa tidak akan dikirim.");
+    response = await supabase.rpc("close_purchase_order_remainder", { p_po_id: poId, p_request_key: requestKey, p_expected_rows: expected, p_reason: reason, p_confirmed: true });
+  }
+  if (response.error) fail(response.error.message);
+  const proof = response.data;
+  if (!proof || proof.po_id !== poId || !proof.closed_at || !Array.isArray(proof.lines) || !proof.lines.length) fail("Hasil tutup sisa belum terkonfirmasi. Periksa hasil terakhir sebelum mengulang.");
+  for (const path of ["/pembelian", `/pembelian/${poId}`, `/pembelian/${poId}/terima`, "/pembelian/faktur/baru", "/pembelian/uang-muka", "/"]) revalidatePath(path);
+  redirect(`/pembelian/${poId}?success=${encodeURIComponent("Sisa penerimaan ditutup. Faktur hanya untuk jumlah diterima yang belum difakturkan.")}${transactionDraftAck(formData)}`);
+}
+
+export async function ubahHargaPO(formData: FormData) {
+  const id=String(formData.get('id')??''),key=String(formData.get('draft_key')??''),revision=Number(formData.get('revision')),reason=String(formData.get('alasan')??'').trim();
+  const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  if(!uuid(id)||!key||key.length>120||!Number.isSafeInteger(revision)||revision<0||reason.length<3||reason.length>1000)throw Error('Identitas dan alasan koreksi harga wajib diisi.');
+  let items:unknown;try{items=JSON.parse(String(formData.get('items')??''));}catch{throw Error('Rincian harga tidak valid.');}
+  if(!Array.isArray(items)||!items.length||items.length>1000)throw Error('Isi semua rincian harga PO.');
+  const db=await createClient();let response;
+  try{response=await db.rpc('revise_purchase_order_prices',{p_request_key:key,p_purchase_order_id:id,p_expected_revision:revision,p_items:items,p_reason:reason});}
+  catch{throw Error('Koreksi harga belum terkonfirmasi. Isian tetap tersedia; periksa hasil sebelum membuat koreksi baru.');}
+  if(response?.error)throw Error(['P0001','42501','22003','22023'].includes(response.error.code)?response.error.message:'Koreksi harga belum terkonfirmasi. Isian tetap tersedia.');
+  const data=response?.data;
+  if(!data||data.po_id!==id||data.revision!==revision+1||data.action!=='edit'||data.mode!=='prices'||!uuid(data.revision_id)||typeof data.total!=='number'||!Number.isFinite(data.total)||data.total<=0)throw Error('Koreksi harga belum terkonfirmasi. Isian tetap tersedia.');
+  revalidatePath('/pembelian');revalidatePath(`/pembelian/${id}`);
+  redirect(`/pembelian/${id}?success=prices${transactionDraftAck(formData)}`);
+}

@@ -1,0 +1,55 @@
+RED run excerpt; rendered HTML expansion omitted. Failure names, assertions and totals retained.
+
+ RUN  v4.1.9 /workspace/kamo-k08
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx (12 tests | 11 failed) 80ms
+   × keeps old paid415000 and new unposted400000 bound to their own visit IDs 36ms
+   × does not claim successful payment just because a URL says success: draft 3ms
+   × does not claim successful payment just because a URL says success: unpaid 2ms
+   × does not claim successful payment just because a URL says success: dp 2ms
+   × distinguishes committed money from incomplete visit checkout 5ms
+   × blocks unknown source state instead of manufacturing a new empty/unpaid invoice: invoices 11ms
+   × blocks unknown source state instead of manufacturing a new empty/unpaid invoice: medical_records 4ms
+   × blocks unknown source state instead of manufacturing a new empty/unpaid invoice: inpatient_records 5ms
+   × blocks unknown source state instead of manufacturing a new empty/unpaid invoice: prescription_items 3ms
+   × does not allow an invoice correction from incomplete money/line reads: invoice_items 3ms
+   × does not allow an invoice correction from incomplete money/line reads: invoice_payments 3ms
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > keeps old paid415000 and new unposted400000 bound to their own visit IDs
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' to contain 'belum tercatat sebagai pembayaran'
+Expected: "belum tercatat sebagai pembayaran"
+Received: "<div style="margin-bottom:4px"><a class="back-btn" href="/klinik/antrian"><i class="ti ti-arrow-left"></i> Antrian</a></div><div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><div style="width:44px;height:44 [rendered detail omitted]
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:36:198
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > does not claim successful payment just because a URL says success: draft
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > does not claim successful payment just because a URL says success: unpaid
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > does not claim successful payment just because a URL says success: dp
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' not to contain 'Pembayaran berhasil.'
+Expected: "Pembayaran berhasil."
+Received: "<div style="margin-bottom:4px"><a class="back-btn" href="/klinik/antrian"><i class="ti ti-arrow-left"></i> Antrian</a></div><div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><div style="width:44px;height:44 [rendered detail omitted]
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:39:90
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > distinguishes committed money from incomplete visit checkout
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' to contain 'status kunjungan belum selesai'
+Expected: "status kunjungan belum selesai"
+Received: "<div style="margin-bottom:4px"><a class="back-btn" href="/klinik/antrian"><i class="ti ti-arrow-left"></i> Antrian</a></div><div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><div style="width:44px;height:44 [rendered detail omitted]
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:45:88
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > blocks unknown source state instead of manufacturing a new empty/unpaid invoice: invoices
+AssertionError: promise resolved "{ …(10) }" instead of rejecting
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:48:41
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > blocks unknown source state instead of manufacturing a new empty/unpaid invoice: medical_records
+AssertionError: promise resolved "{ …(10) }" instead of rejecting
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:48:41
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > blocks unknown source state instead of manufacturing a new empty/unpaid invoice: inpatient_records
+AssertionError: promise resolved "{ …(10) }" instead of rejecting
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:48:41
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > blocks unknown source state instead of manufacturing a new empty/unpaid invoice: prescription_items
+AssertionError: promise resolved "{ …(10) }" instead of rejecting
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:48:41
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > does not allow an invoice correction from incomplete money/line reads: invoice_items
+AssertionError: promise resolved "{ …(10) }" instead of rejecting
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:51:57
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > does not allow an invoice correction from incomplete money/line reads: invoice_payments
+AssertionError: promise resolved "{ …(10) }" instead of rejecting
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:51:57
+ Test Files  1 failed (1)
+      Tests  11 failed | 1 passed (12)
+   Start at  22:59:07
+   Duration  411ms (transform 92ms, setup 0ms, import 145ms, tests 80ms, environment 0ms)

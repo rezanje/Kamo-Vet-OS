@@ -1,3 +1,5 @@
+import { NumberInput } from "@/components/NumberInput";
+import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { SalesRequestIdentity, SalesRecoveryComplete, SalesOrderRecovery } from "@/components/SalesRequestIdentity";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -67,6 +69,7 @@ export default async function DetailPesananPage({
 
   return (
     <>
+      <ActivityHistoryLink entity="sales_orders" id={id} />
       <SalesRecoveryComplete userId={userId} scope={sp.request_scope} requestKey={sp.request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/penjualan/pesanan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
@@ -142,7 +145,7 @@ export default async function DetailPesananPage({
                         <td style={{ fontSize: 11 }}>{b.nama}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{b.sisaKirim}</td>
                         <td>
-                          <input className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaKirim}
+                          <NumberInput className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaKirim}
                             step="any" defaultValue={b.sisaKirim} style={{ width: 90, textAlign: "right" }} />
                         </td>
                       </tr>
@@ -178,7 +181,7 @@ export default async function DetailPesananPage({
                         <td style={{ fontSize: 11 }}>{b.nama}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{b.sisaFaktur}</td>
                         <td>
-                          <input className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaFaktur}
+                          <NumberInput className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaFaktur}
                             step="any" defaultValue={b.sisaFaktur} style={{ width: 90, textAlign: "right" }} />
                         </td>
                       </tr>

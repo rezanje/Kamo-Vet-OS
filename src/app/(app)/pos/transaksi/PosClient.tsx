@@ -1,19 +1,23 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { diskonGolonganKeranjang, poinDidapat, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { bacaDraftPos, POS_DRAFT_KEY, type PosDraft } from "@/lib/pos-draft";
-import type { PilihanPenjual } from "@/lib/penjual";
+import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
 import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
-import { hitungPromoKeranjang, totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
+import { totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
+import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-promos";
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 
-export type Item = { id: string; code?: string; name: string; sell_price: number; target_species: string; units: ItemUnit[] };
+export type Item = { id: string; code?: string; name: string; item_type?: string; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
 export type Cust = {
   id: string; name: string; phone: string; points: number; pets: Pet[];
@@ -22,22 +26,24 @@ export type Cust = {
 };
 type Branch = { id: string; code: string; name: string };
 type Line = {
+  row_key: string; item_type?: string; service_performers: ServicePerformersInput | null;
   item_id: string; nama: string; qty: number; harga: number; target_species: string;
   satuan: string; faktor: number;
 };
 
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
-// Satu baris keranjang = kombinasi item + satuan; 1 box dan 3 pcs obat yang sama
-// harus berdiri sendiri karena harganya beda.
-const lineKey = (l: { item_id: string; satuan: string }) => `${l.item_id}::${l.satuan}`;
+// Jasa yang sama boleh berulang dengan pelaksana berbeda; identitas baris tetap
+// utuh saat jumlah, satuan, atau pilihan pelaksana diubah.
+const lineKey = (l: { row_key: string }) => l.row_key;
+const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satuan === b.satuan;
 
 // Harga jual bisa dikecualikan per cabang (migrasi 0073). Yang dikirim ke sini
 // HANYA pengecualiannya — jumlahnya sedikit — jadi ganti cabang cukup dihitung
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, salespeople, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {} }: {
-  items: Item[]; customers: Cust[]; branches: Branch[]; salespeople: PilihanPenjual[]; hargaPerCabang?: HargaPerCabang;
+export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {} }: {
+  items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; hargaPerCabang?: HargaPerCabang;
   promoPerCabang?: Record<string, PromoHitung[]>;
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
@@ -54,7 +60,10 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
   const [split, setSplit] = useState(false);
   const [merchantFeePercent, setMerchantFeePercent] = useState(0);
   const [payments, setPayments] = useState<PosPaymentPart[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
-  const [salespersonId, setSalespersonId] = useState("");
+  const [bulkPerformers, setBulkPerformers] = useState<ServicePerformersInput>(emptyServicePerformers);
+  // Hanya dipertahankan untuk identitas retry draft lama; kasir aktual selalu
+  // berasal dari akun di server dan tidak dapat dipilih dari layar.
+  const [legacySalespersonId, setLegacySalespersonId] = useState("");
   const [checkoutKey, setCheckoutKey] = useState("");
   const draftReady = useRef(false);
 
@@ -67,18 +76,23 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
         const branchExists = branches.some((branch) => branch.id === draft.branchId);
         const branch = branchExists ? draft.branchId : "";
         const customer = customers.find((candidate) => candidate.id === draft.customerId) ?? null;
+        const rowKeys = new Set<string>();
         const restoredCart = draft.cart.flatMap((line): Line[] => {
           const item = items.find((candidate) => candidate.id === line.item_id);
           const unit = item?.units.find((candidate) => candidate.unit === line.satuan);
           if (!item || !unit) return [];
           const price = hargaPerCabang[branch]?.[`${item.id}|${unit.unit}`] ?? unit.sell_price;
-          return [{ ...line, nama: item.name, target_species: item.target_species, harga: price, faktor: unit.factor }];
+          const rowKey = line.row_key && !rowKeys.has(line.row_key) ? line.row_key : crypto.randomUUID();
+          rowKeys.add(rowKey);
+          return [{ ...line, row_key: rowKey, item_type: item.item_type,
+            service_performers: item.item_type === "Jasa" ? line.service_performers ?? emptyServicePerformers() : null,
+            nama: item.name, target_species: item.target_species, harga: price, faktor: unit.factor }];
         });
         setBranchId(branch);
         setCust(customer);
         setCustQ(customer?.name ?? "");
         setPetId(customer?.pets.some((pet) => pet.id === draft.petId) ? draft.petId : "");
-        setSalespersonId(salespeople.some((person) => person.id === draft.salespersonId) ? draft.salespersonId : "");
+        setLegacySalespersonId(draft.salespersonId);
         setMetode(draft.metode || "Tunai");
         setMerchantFeePercent(draft.merchantFeePercent ?? 0);
         setSplit(draft.split ?? draft.metode === "Split");
@@ -90,7 +104,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
       draftReady.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [branches, customers, hargaPerCabang, items, salespeople]);
+  }, [branches, customers, hargaPerCabang, items]);
 
   useEffect(() => {
     if (!draftReady.current) return;
@@ -105,7 +119,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
       branchId,
       customerId: cust?.id ?? "",
       petId,
-      salespersonId,
+      salespersonId: legacySalespersonId,
       metode,
       split,
       payments,
@@ -115,7 +129,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
       cart,
     };
     sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
-  }, [branchId, bayar, cart, cust?.id, discount, metode, split, payments, merchantFeePercent, petId, salespersonId, checkoutKey]);
+  }, [branchId, bayar, cart, cust?.id, discount, metode, split, payments, merchantFeePercent, petId, legacySalespersonId, checkoutKey]);
 
   // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
   const katalog = useMemo(() => {
@@ -144,9 +158,11 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
   // dengan harga cabang lain yang tampil di layar.
   const gantiCabang = (id: string) => {
     setBranchId(id);
+    setBulkPerformers(emptyServicePerformers());
     const ov = hargaPerCabang[id];
     setCart((c) => c.map((l) => ({
       ...l,
+      service_performers: l.item_type === "Jasa" ? emptyServicePerformers() : null,
       harga: ov?.[`${l.item_id}|${l.satuan}`]
         ?? items.find((i) => i.id === l.item_id)?.units.find((u) => u.unit === l.satuan)?.sell_price
         ?? l.harga,
@@ -157,27 +173,29 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
     setCart((c) => {
       const u = it.units[0];
       const baris: Line = {
+        row_key: crypto.randomUUID(), item_type: it.item_type,
+        service_performers: it.item_type === "Jasa" ? emptyServicePerformers() : null,
         item_id: it.id, nama: it.name, qty: 1, harga: u.sell_price,
         target_species: it.target_species, satuan: u.unit, faktor: u.factor,
       };
-      const k = lineKey(baris);
-      if (c.some((l) => lineKey(l) === k)) return c.map((l) => (lineKey(l) === k ? { ...l, qty: l.qty + 1 } : l));
+      if (it.item_type !== "Jasa" && c.some((l) => sameProductUnit(l, baris))) {
+        return c.map((l) => sameProductUnit(l, baris) ? { ...l, qty: l.qty + 1 } : l);
+      }
       return [...c, baris];
     });
   const setQty = (k: string, d: number) =>
     setCart((c) => c.flatMap((l) => (lineKey(l) === k ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
   const remove = (k: string) => setCart((c) => c.filter((l) => lineKey(l) !== k));
 
-  // Ganti satuan → harga ikut satuan baru. Kalau satuan tujuan sudah ada di
-  // keranjang, qty-nya digabung supaya tidak muncul dua baris identik.
+  // Ganti satuan → harga ikut satuan baru. Barang fisik dengan satuan tujuan
+  // yang sama tetap digabung; setiap baris jasa mempertahankan identitasnya.
   const setSatuan = (k: string, unit: string) =>
     setCart((c) => {
       const l = c.find((x) => lineKey(x) === k);
       if (!l) return c;
       const u = pickUnit(unitsOf(l.item_id), unit);
       const baru: Line = { ...l, satuan: u.unit, faktor: u.factor, harga: u.sell_price };
-      const kBaru = lineKey(baru);
-      const kembar = c.find((x) => lineKey(x) === kBaru && x !== l);
+      const kembar = l.item_type === "Jasa" ? undefined : c.find((x) => sameProductUnit(x, baru) && x !== l);
       if (kembar) return c.flatMap((x) => (x === l ? [] : x === kembar ? [{ ...kembar, qty: kembar.qty + l.qty }] : [x]));
       return c.map((x) => (x === l ? baru : x));
     });
@@ -185,10 +203,10 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
   const subtotal = posSubtotal(cart);
   // Pakai rumus dan master yang sama dengan checkout, termasuk promo cabang
   // serta pengecualian diskon golongan per produk/kategori.
-  const promoDiscount = totalPotonganPromo(hitungPromoKeranjang(promoPerCabang[branchId] ?? [], cart));
+  const promoDiscount = totalPotonganPromo(serviceLinePromos(promoPerCabang[branchId] ?? [], cart));
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = diskonGolonganKeranjang(
-    cart, cust?.golonganId ? aturanDiskon[cust.golonganId] ?? [] : [],
+    aggregateServiceLines(cart), cust?.golonganId ? aturanDiskon[cust.golonganId] ?? [] : [],
     cust?.golongan?.diskon_persen ?? 0, infoMap,
   );
   const total = posNetTotal(subtotal, promoDiscount, diskonKategori, discount);
@@ -204,7 +222,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
     finalTotal = quote.total;
     resolvePosPayments({ total: quote.total, method: split ? "Split" : metode, bayar, payments: split ? quote.parts : [] });
   } catch { paymentValid = false; }
-  const canPay = checkoutKey && branchId && salespersonId && cart.length > 0 && paymentValid;
+  const canPay = checkoutKey && branchId && cart.length > 0 && paymentValid;
 
   const pickCust = (c: Cust) => { setCust(c); setCustQ(c.name); setPetId(""); };
   const clearCust = () => { setCust(null); setCustQ(""); setPetId(""); };
@@ -215,7 +233,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
       <input type="hidden" name="branchId" value={branchId} />
       <input type="hidden" name="customerId" value={cust?.id ?? ""} />
       <input type="hidden" name="petId" value={petId} />
-      <input type="hidden" name="salespersonId" value={salespersonId} />
+      <input type="hidden" name="salespersonId" value={legacySalespersonId} />
       <input type="hidden" name="metode" value={split ? "Split" : metode} />
       <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
       <input type="hidden" name="merchant_fee_percent" value={split ? 0 : merchantFeePercent} />
@@ -287,24 +305,22 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
             </div>
           )}
 
-          <div>
-            <label className="flab">Tenaga penjual / pelaksana *</label>
-            <select className="fi" value={salespersonId} onChange={(e) => setSalespersonId(e.target.value)} required>
-              <option value="">Pilih dokter, groomer, atau staf</option>
-              {salespeople.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.nama}{person.jabatan ? ` — ${person.jabatan}` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div style={{ fontSize: 10, color: "var(--td)" }}>Kasir tercatat otomatis dari akun yang sedang masuk.</div>
+          {cart.some(line => line.item_type === "Jasa") && <div data-service-bulk>
+            <ServicePerformersField label="Isi pelaksana untuk jasa yang masih kosong" value={bulkPerformers}
+              staff={serviceStaffByBranch[branchId] ?? []} onChange={setBulkPerformers} />
+            <button type="button" className="back-btn" disabled={!branchId || (!bulkPerformers.doctor_id && !bulkPerformers.staff_id)}
+              onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris kosong</button>
+            <p style={{ fontSize: 10, color: "var(--td)", margin: "5px 0" }}>Pilihan per baris yang sudah diisi tetap dipertahankan. Pelaksana dapat diubah pada setiap baris jasa.</p>
+          </div>}
 
           {/* Items */}
           {cart.map((l) => {
             const k = lineKey(l);
             const opts = unitsOf(l.item_id);
             return (
-              <div key={k} className="ci">
+              <div key={k} data-service-row={l.item_type === "Jasa" ? k : undefined}>
+              <div className="ci">
                 <div style={{ flex: 1, fontSize: 10.5 }}>
                   {l.nama}
                   <div style={{ fontSize: 9, color: "var(--td)" }}>
@@ -318,11 +334,14 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
                     {opts.map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                   </select>
                 )}
-                <button type="button" onClick={() => setQty(k, -1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-minus" /></button>
+                <button type="button" aria-label={`Kurangi jumlah ${l.nama}`} onClick={() => setQty(k, -1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-minus" /></button>
                 <span style={{ fontSize: 10.5, minWidth: 14, textAlign: "center" }}>{l.qty}</span>
-                <button type="button" onClick={() => setQty(k, 1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-plus" /></button>
+                <button type="button" aria-label={`Tambah jumlah ${l.nama}`} onClick={() => setQty(k, 1)} className="back-btn" style={{ fontSize: 12 }}><i className="ti ti-plus" /></button>
                 <div style={{ fontSize: 10.5, minWidth: 62, textAlign: "right" }}>{rp(l.qty * l.harga)}</div>
-                <button type="button" onClick={() => remove(k)} className="back-btn" style={{ color: "#b91c1c" }}><i className="ti ti-trash" /></button>
+                <button type="button" aria-label={`Hapus ${l.nama}`} onClick={() => remove(k)} className="back-btn" style={{ color: "#b91c1c" }}><i className="ti ti-trash" /></button>
+              </div>
+              {l.item_type === "Jasa" && <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers}
+                staff={serviceStaffByBranch[branchId] ?? []} onChange={value => setCart(rows => rows.map(row => row.row_key === k ? { ...row, service_performers: value } : row))} />}
               </div>
             );
           })}
@@ -337,7 +356,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
             )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
               <span>Diskon manual / promo</span>
-              <input className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
+              <NumberInput className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
             </div>
             <Row k="Tagihan barang" v={rp(total)} />
             <Row k="Fee merchant" v={rp(feeTotal)} />
@@ -361,7 +380,7 @@ export function PosClient({ items, customers, branches, salespeople, hargaPerCab
           </div>}
           {!split && metode === "Tunai" && (
             <div style={{ marginTop: 6 }}>
-              <input className="fi" type="number" min={0} placeholder="Uang dibayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
+              <NumberInput className="fi" type="number" min={0} placeholder="Uang dibayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
               {bayar > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginTop: 4, color: kurang ? "#b91c1c" : "#16a34a" }}>
                 <span>{kurang ? "Kurang" : "Kembali"}</span><span>{rp(kurang ? total - bayar : kembali)}</span>
               </div>}

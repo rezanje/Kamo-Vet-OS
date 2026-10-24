@@ -9,6 +9,15 @@ import { AKUN_PIUTANG_KARYAWAN } from "@/lib/kasbon";
 import { jurnalPenggajian } from "@/lib/payroll";
 import { akhirBulan, kumpulkanDataGaji } from "@/lib/payroll-data";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
+import { SERVICE_ATTRIBUTION_PENDING } from "@/lib/commission-readiness";
+
+async function kumpulkanGajiDenganAtribusi(...args:Parameters<typeof kumpulkanDataGaji>) {
+  try { return await kumpulkanDataGaji(...args); }
+  catch(error) {
+    if(error instanceof Error && error.message.startsWith(SERVICE_ATTRIBUTION_PENDING)) redirect(`${kembali(args[1])}&error=${encodeURIComponent(error.message.slice(SERVICE_ATTRIBUTION_PENDING.length).trim())}`);
+    throw error;
+  }
+}
 
 const BASE = "/hris/penggajian";
 const BOLEH = ["OWNER", "ADMIN"];
@@ -38,7 +47,7 @@ export async function hitungPenggajian(formData: FormData) {
   // Fence reseller commission reads against a simultaneous B2B invoice correction.
   const { data: wholesaleEpoch, error: epochError } = await supabase.rpc("get_wholesale_payroll_epoch", { p_periode: periode });
   if (epochError || wholesaleEpoch === null) gagal(epochError?.message ?? "Sumber komisi belum dapat diverifikasi");
-  const baris = await kumpulkanDataGaji(supabase, periode, penyesuaian);
+  const baris = await kumpulkanGajiDenganAtribusi(supabase, periode, penyesuaian);
   if (baris.length === 0) gagal("Tidak ada karyawan aktif");
 
   const { error } = await supabase.from("payrolls").upsert(
@@ -91,7 +100,7 @@ export async function simpanKoreksi(formData: FormData) {
     penyesuaian.set(r.employee_id, Number.isFinite(v) ? v : 0);
   }
 
-  const baris = await kumpulkanDataGaji(supabase, periode, penyesuaian);
+  const baris = await kumpulkanGajiDenganAtribusi(supabase, periode, penyesuaian);
   for (const b of baris) {
     const catatan = String(formData.get(`note_${b.employeeId}`) ?? "").trim() || null;
     const {error:correctionError} = await supabase.from("payrolls").update({
@@ -123,7 +132,7 @@ export async function sahkanPenggajian(formData: FormData) {
   if (slip.some((s) => s.status === "final")) gagal("Penggajian periode ini sudah disahkan");
 
   // Sumber kasbon & reimburse dibaca ulang supaya id-nya pasti yang berlaku sekarang.
-  const baris = await kumpulkanDataGaji(supabase, periode, new Map(slip.map((s) => [s.employee_id, 0])));
+  const baris = await kumpulkanGajiDenganAtribusi(supabase, periode, new Map(slip.map((s) => [s.employee_id, 0])));
   const perKaryawan = new Map(baris.map((b) => [b.employeeId, b]));
 
   const totalNetto = slip.reduce((a, s) => a + Number(s.total), 0);

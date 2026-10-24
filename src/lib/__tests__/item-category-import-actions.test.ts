@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import { beforeEach, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ hash: "", rpcCalls: [] as string[], blocked: [] as string[], rpcFailure: false, rpcFailureId: "", failItem: false, failCode: "", failUnits: false, missingRead: false, summary: {} as Record<string, unknown>, runStatus: "previewed", audit: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], categories: [] as Record<string, unknown>[] }));
+const state = vi.hoisted(() => ({ hash: "", rpcCalls: [] as string[], blocked: [] as string[], rpcFailure: false, rpcFailureId: "", failItem: false, failCode: "", failUnits: false, soldUnits: false, missingRead: false, summary: {} as Record<string, unknown>, runStatus: "previewed", audit: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], categories: [] as Record<string, unknown>[] }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   async rpc(_name: string, { p_category_id: id }: { p_category_id: string }) {
+    if (_name === "replace_item_unit_configuration") return {error:state.soldUnits?{message:"Konversi SKU sudah memiliki penjualan; buat SKU baru"}:state.failUnits?{message:"unit delete failed"}:null};
     state.rpcCalls.push(id);
     if (state.rpcFailure || state.rpcFailureId === id) return { error: { code: "XX000", message: "cleanup unavailable" } };
     if (state.items.some(row => row.category_id === id) || state.categories.some(row => row.parent_id === id) || state.blocked.includes(id)) {
@@ -66,7 +67,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 import { konfirmasiImporAccurate, previewImporAccurate } from "../../app/(app)/pos/sku/impor/actions";
 beforeEach(() => {
-  state.rpcCalls = []; state.blocked = []; state.rpcFailure = false; state.rpcFailureId = ""; state.failItem = false; state.failCode = ""; state.failUnits = false; state.missingRead = false; state.summary = {};
+  state.rpcCalls = []; state.blocked = []; state.rpcFailure = false; state.rpcFailureId = ""; state.failItem = false; state.failCode = ""; state.failUnits = false; state.soldUnits = false; state.missingRead = false; state.summary = {};
   state.runStatus = "previewed";
   state.audit = [];
   state.categories = [
@@ -331,4 +332,9 @@ it("preserves cleanup candidates when the persisted-category read is incomplete"
   state.failUnits = false; state.missingRead = false; state.runStatus = "posted";
   expect((await konfirmasiImporAccurate(form)).ok).toBe(true);
   expect(state.categories.map(row => row.id)).toEqual(["new"]);
+});
+
+it("marks sold conversion import rejected with a new-SKU reason, without deleting its source category",async()=>{
+ const form=await input([["A-1","Barang","INV","BARU","","PCS"]]);state.soldUnits=true;
+ const result=await konfirmasiImporAccurate(form);expect(result.summary.Ditolak).toBe(1);expect(result.rows[0].reason).toContain("buat SKU baru");
 });

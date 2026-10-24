@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /workspace/kamo-reference-catalogs
+
+ ❯ src/lib/__tests__/group-component-catalog.test.ts (9 tests | 5 failed) 264ms
+     × loads all category/brand/unit/supplier choices beyond1000 without changing existing status semantics 46ms
+     × rejects failed or truncated later item_categories pages instead of submitting incomplete context 41ms
+     × rejects failed or truncated later brands pages instead of submitting incomplete context 38ms
+     × rejects failed or truncated later units pages instead of submitting incomplete context 28ms
+     × rejects failed or truncated later suppliers pages instead of submitting incomplete context 32ms
+ ❯ src/components/__tests__/production-catalog-page.test.tsx (4 tests | 4 failed) 240ms
+   × supplies every permitted active production product, recipe and warehouse beyond1000 with exact IDs and late units 142ms
+   × does not offer actions against failed or truncated items choices 32ms
+   × does not offer actions against failed or truncated production_recipes choices 37ms
+   × does not offer actions against failed or truncated warehouses choices 28ms
+
+ Test Files  2 failed (2)
+      Tests  9 failed | 4 passed (13)
+   Start at  13:06:16
+   Duration  771ms (transform 380ms, setup 0ms, import 518ms, tests 504ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

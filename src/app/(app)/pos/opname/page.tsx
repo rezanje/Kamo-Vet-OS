@@ -1,3 +1,6 @@
+import { readListPage } from "@/lib/checked-list";
+import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
+import { opnameWarehouseIds } from "@/lib/opname-cancellation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -21,19 +24,29 @@ const fmtD = (d: string) =>
 export default async function OpnamePage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string; status?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; status?: string; hal?: string }>;
 }) {
-  const { success, error, status } = await searchParams;
+  const { success, error, status, hal } = await searchParams;
   const supabase = await createClient();
 
-  let q = supabase
-    .from("opname_orders")
-    .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, warehouses(name), opname_results(no_hasil), opname_order_items(item_id)")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (status) q = q.eq("status", status);
-  const { data } = await q;
-  const rows = (data ?? []) as unknown as Row[];
+  const {data:{user}} = await supabase.auth.getUser();
+  let history;
+  try {
+    const warehouses = user ? await opnameWarehouseIds(supabase, user.id) : [];
+    history = await readListPage<Row>(async (from, to) => {
+      let query = supabase.from("opname_orders")
+        .select("id, no_opname, tanggal_mulai, penanggung_jawab, keterangan, status, warehouses(name), opname_results(no_hasil), opname_order_items(item_id)", { count: "exact" })
+        .in("warehouse_id", warehouses)
+        .order("created_at", { ascending: false }).order("id");
+      if (["Terbuka", "Selesai", "Batal"].includes(status ?? "")) query = query.eq("status", status);
+      else if (status !== "semua") query = query.neq("status", "Batal");
+      const response = await query.range(from, to);
+      return { ...response, data: response.data as unknown as Row[] | null };
+    }, "Riwayat stok opname", hal);
+  } catch (loadError) {
+    return <ListLoadFailure error={loadError} label="Riwayat stok opname" />;
+  }
+  const { rows, count, pageInfo } = history;
 
   return (
     <>
@@ -60,12 +73,12 @@ export default async function OpnamePage({
         <SecHeader
           num="01"
           title="PERINTAH STOK OPNAME"
-          desc="Riwayat hitung stok seluruh cabang. Menghitungnya dikerjakan dari layar kasir; halaman ini untuk memantau hasil & selisihnya."
+          desc="Riwayat hitung stok cabang yang dapat kamu akses. Menghitungnya dikerjakan dari layar kasir; halaman ini untuk memantau hasil & selisihnya."
         />
 
         <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           <select className="fi" name="status" defaultValue={status ?? ""} style={{ width: 160 }}>
-            <option value="">Status: Semua</option>
+            <option value="">Aktif &amp; selesai</option><option value="semua">Semua riwayat</option><option value="Batal">Batal</option>
             <option value="Terbuka">Terbuka</option>
             <option value="Selesai">Selesai</option>
           </select>
@@ -102,7 +115,9 @@ export default async function OpnamePage({
                   </td>
                   <td style={{ fontSize: 11.5 }}>{r.penanggung_jawab}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? ""}</td>
-                  <td style={{ fontSize: 11.5 }}>{r.opname_results?.[0]?.no_hasil ?? "—"}</td>
+                  <td style={{ fontSize: 11.5 }}>{r.opname_results?.length
+                    ? <Link href={`/pos/opname/${r.id}#hasil`}>{r.opname_results.map(result => result.no_hasil).join(", ")}</Link>
+                    : "—"}</td>
                   <td>
                     <span className={`bge ${r.status === "Selesai" ? "g" : "o"}`}>{r.status}</span>
                   </td>
@@ -118,6 +133,7 @@ export default async function OpnamePage({
             </tbody>
           </table>
         </div>
+        <ListPagination path="/pos/opname" query={{ status: status ?? "" }} total={count} pageInfo={pageInfo} />
       </div>
     </>
   );

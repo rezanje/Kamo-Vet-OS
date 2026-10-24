@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { draftNumber } from "@/components/TransactionDraft";
@@ -53,17 +55,17 @@ export function RekonForm({ userId, rekening, hariIni, header }: { userId: strin
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Saldo rekening koran (bank)</label>
-              <input className="fi" name="saldo_bank" type="number" step="0.01" value={saldoBank || ""} onChange={(e) => setSaldoBank(Number(e.target.value))} placeholder="dari e-statement" />
+              <NumberInput className="fi" name="saldo_bank" type="number" step="0.01" value={saldoBank || ""} onChange={(e) => setSaldoBank(Number(e.target.value))} placeholder="dari e-statement" />
             </div>
             <div>
               <label className="flab">Biaya admin bank</label>
-              <input className="fi" name="biaya_adm" type="number" min={0} step="0.01" value={biayaAdm || ""} onChange={(e) => setBiayaAdm(Number(e.target.value))} />
+              <NumberInput className="fi" name="biaya_adm" type="number" min={0} step="0.01" value={biayaAdm || ""} onChange={(e) => setBiayaAdm(Number(e.target.value))} />
             </div>
           </div>
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Bunga bank</label>
-              <input className="fi" name="bunga" type="number" min={0} step="0.01" value={bunga || ""} onChange={(e) => setBunga(Number(e.target.value))} />
+              <NumberInput className="fi" name="bunga" type="number" min={0} step="0.01" value={bunga || ""} onChange={(e) => setBunga(Number(e.target.value))} />
             </div>
             <div>
               <label className="flab">Catatan</label>

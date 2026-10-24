@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { completeReportQuery } from "@/lib/report-query";
+import { readCompleteList } from "@/lib/checked-list";
 import type { BarangRow, KandidatKomponenGrup } from "./BarangForm";
 
 export const BARANG_FIELDS =
@@ -19,14 +20,22 @@ export async function siapkanFormBarang() {
   }
 
   const [
-    { data: categories }, { data: brands }, { data: units }, { data: suppliers },
+    categories, brands, units, suppliers,
     { data: barangLain }, { data: kandidatGrupRaw },
   ] = await Promise.all([
     // parent_id & is_active dipakai flatOptions() utk label bertingkat + buang cabang mati.
-    supabase.from("item_categories").select("id, name, parent_id, is_active").order("name"),
-    supabase.from("brands").select("id, name").eq("is_active", true).order("name"),
-    supabase.from("units").select("id, nama").eq("is_active", true).order("nama"),
-    supabase.from("suppliers").select("id, nama").eq("is_active", true).order("nama"),
+    readCompleteList<{ id: string; name: string; parent_id: string | null; is_active: boolean }>((from, to) => supabase
+      .from("item_categories").select("id, name, parent_id, is_active", { count: "exact" })
+      .order("name").order("id").range(from, to), "Kategori barang", { maxRows: null }),
+    readCompleteList<{ id: string; name: string }>((from, to) => supabase
+      .from("brands").select("id, name", { count: "exact" }).eq("is_active", true)
+      .order("name").order("id").range(from, to), "Merek barang", { maxRows: null }),
+    readCompleteList<{ id: string; nama: string }>((from, to) => supabase
+      .from("units").select("id, nama", { count: "exact" }).eq("is_active", true)
+      .order("nama").order("id").range(from, to), "Satuan barang", { maxRows: null }),
+    readCompleteList<{ id: string; nama: string }>((from, to) => supabase
+      .from("suppliers").select("id, nama", { count: "exact" }).eq("is_active", true)
+      .order("nama").order("id").range(from, to), "Pemasok barang", { maxRows: null }),
     // Kandidat barang substitusi — jasa tidak punya stok, jadi tidak bisa jadi pengganti.
     completeReportQuery<{ id: string; code: string; name: string }>(
       supabase.from("items").select("id, code, name", { count: "exact" }).eq("is_active", true)

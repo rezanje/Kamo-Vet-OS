@@ -69,7 +69,7 @@ describe("complete report reads", () => {
     expect(report.rows[0]).toMatchObject({ formulaVersionId: "inactive-v1", doctor: "Dr Satu", cost: 50, revenue: 180 });
     expect(report.summary.cost).toBe(100);
     expect(records.find(r => r.table === "invoice_items" && r.method === "gte")?.args).toEqual(["invoices.created_at","2026-10-01T00:00:00+07:00"]);
-    expect(records.find(r => r.table === "invoice_items" && r.method === "lte")?.args).toEqual(["invoices.created_at","2026-10-04T23:59:59.999+07:00"]);
+    expect(records.find(r => r.table === "invoice_items" && r.method === "lte")?.args).toEqual(["invoices.created_at","2026-10-04T23:59:59.999999+07:00"]);
     expect(records.some(r => r.table === "compound_issues")).toBe(false);
   });
   it("rejects invalid calendar/reversed ranges and filters rows before totals", async () => {

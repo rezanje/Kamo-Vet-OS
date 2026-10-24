@@ -21,7 +21,7 @@ it.each(["po", "transfer"])("shows %s stock in selected warehouse and chosen uni
   await act(async () => root.render(kind === "po"
     ? <POForm userId="owner" suppliers={[]} warehouses={warehouses} branches={[]} items={items} stock={stock} />
     : <PemindahanForm userId="owner" warehouses={warehouses} items={items} stock={stock} />));
-  await change(host.querySelector<HTMLInputElement>('input[list]')!, "OBAT — Obat");
+  await change(host.querySelector<HTMLInputElement>(kind === "po" ? '[aria-label="Barang PO 1"]' : '[aria-label="Barang pemindahan 1"]')!, "OBAT — Obat");
   expect(host.textContent).toContain("Pilih gudang untuk melihat stok");
   const warehouse = host.querySelector<HTMLSelectElement>(`select[name="${kind === "po" ? "to" : "from"}_warehouse_id"]`)!;
   await change(warehouse, "a");
@@ -54,7 +54,7 @@ it.each(["po", "transfer"])("restores selected warehouse stock for an existing %
 });
 it("does not show warehouse stock for a non-stock purchase item", async () => {
   await act(async () => root.render(<POForm userId="owner" suppliers={[]} warehouses={warehouses} branches={[]} items={[{ ...items[0], item_type: "Grup" }]} stock={stock} />));
-  await change(host.querySelector<HTMLInputElement>('input[list]')!, "OBAT — Obat");
+  await change(host.querySelector<HTMLInputElement>('[aria-label="Barang PO 1"]')!, "OBAT — Obat");
   await change(host.querySelector<HTMLSelectElement>('select[name="to_warehouse_id"]')!, "a");
   expect(host.textContent).not.toContain("Stok tersedia");
 });

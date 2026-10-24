@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { CorrectionTransactionForm } from "./CorrectionTransactionForm";
 import { SubmitButton } from "./SubmitButton";
 import { PilihRekening, type RekeningOpsi } from "./PilihRekening";
@@ -17,7 +19,7 @@ export function PurchasePaymentForm({ userId, invoiceId, remaining, today, accou
       <input type="hidden" name="invoice_id" value={invoiceId} />
       {replacement && <input type="hidden" name="replaces_payment_id" value={replacement.id} />}
       {replacement && <p style={{ width: "100%" }}>Rincian dari pembayaran yang dibatalkan. Periksa nominal, uang muka, dan rekening sebelum menyimpan pengganti.</p>}
-      <div><label className="flab" htmlFor={`amount-${invoiceId}`}>Nominal (maks Rp {remaining.toLocaleString("id-ID")})</label><input className="fi" id={`amount-${invoiceId}`} name="amount" type="number" required min={1} max={remaining} step={1} defaultValue={amount} /></div>
+      <div><label className="flab" htmlFor={`amount-${invoiceId}`}>Nominal (maks Rp {remaining.toLocaleString("id-ID")})</label><NumberInput className="fi" id={`amount-${invoiceId}`} name="amount" type="number" required min={1} max={remaining} step={1} defaultValue={amount} /></div>
       <div><label className="flab" htmlFor={`method-${invoiceId}`}>Metode</label><select className="fi" id={`method-${invoiceId}`} name="metode" defaultValue={replacement?.metode ?? "Transfer"}><option>Transfer</option><option>Tunai</option><option>Debit</option></select></div>
       <PilihRekening rekening={accounts} width={150} />
       {advances.length > 0 && <div><label className="flab" htmlFor={`advance-${invoiceId}`}>Potong uang muka</label><select className="fi" id={`advance-${invoiceId}`} name="advance_id" defaultValue={advanceId}><option value="">— tidak pakai —</option>{advances.map(a => <option key={a.id} value={a.id}>{a.no_um} · sisa Rp {a.sisa.toLocaleString("id-ID")}</option>)}</select></div>}

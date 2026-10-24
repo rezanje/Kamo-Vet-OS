@@ -1,3 +1,10 @@
+import { servicePerformerInput, type ServicePerformersInput } from "./service-performers";
+
+/** Keep legacy payload keys absent so retries retain their original request hash. */
+export function clinicServicePerformerInput(kind: string | undefined, value: unknown): ServicePerformersInput | undefined {
+  return kind !== "jasa" || value == null ? undefined : servicePerformerInput(value);
+}
+
 export type ClinicPostingLine = {
   itemId: string | null;
   recipeId: string | null;
@@ -15,11 +22,14 @@ export type ClinicInvoiceLineInput = {
   item_id: string | null;
   unit: string | null;
   prescription_item_id: string | null;
+  source_invoice_item_id?: string | null;
   recipe_id: string | null;
   discount_percent: number;
+  service_performers?: ServicePerformersInput | null;
 };
 
 export type ClinicInvoiceInput = {
+  service_pricing_version?: 1;
   tanggal: string;
   subtotal: number;
   discount: number;
@@ -94,7 +104,7 @@ export function toClinicCompoundRecipeInput(input: {
   };
 }
 
-export function parseClinicPostingError(error: { code?: string; message: string } | null): string {
+export function parseClinicPostingError(error: { code?: string; message: string } | null, uncertainFallback?: string): string {
   if (error?.code === "P0001") {
     if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
     const detailMessages: Record<string, string> = {
@@ -132,7 +142,7 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];
     if (match && match[2] && detailMessages[match[1]]) return `${detailMessages[match[1]]}: ${match[2]}`;
   }
-  return "Transaksi belum tersimpan. Periksa apakah invoice sudah dibuat lalu coba lagi.";
+  return uncertainFallback ?? "Transaksi belum tersimpan. Periksa apakah invoice sudah dibuat lalu coba lagi.";
 }
 
 export function parseClinicRecordError(error: { code?: string; message: string } | null): string {

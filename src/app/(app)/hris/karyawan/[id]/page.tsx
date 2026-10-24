@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { notFound, redirect } from "next/navigation";
@@ -53,7 +54,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
         <div className="grid2">
           {inputs.map(([key, label, type]) => key === 'jabatan' ? <EmployeeOccupationField key={key} value={employee.jabatan} /> : <div key={key}>
             <label className="flab" htmlFor={key}>{label}</label>
-            <input id={key} className="fi" name={key} type={type} defaultValue={employee[key] ?? ""} required={key === "nama" || key === "gaji_pokok"} min={type === "number" ? 0 : undefined} step={type === "number" ? "any" : undefined} />
+            <NumberInput id={key} className="fi" name={key} type={type} defaultValue={employee[key] ?? ""} required={key === "nama" || key === "gaji_pokok"} min={type === "number" ? 0 : undefined} step={type === "number" ? "any" : undefined} />
           </div>)}
           <div><label className="flab">Status</label><input type="hidden" name="status" value={employee.status} />{employee.status}<p>Gunakan aksi di daftar karyawan untuk mengubah status dengan alasan. Status ini tidak mencabut akses login.</p></div>
         </div>
@@ -69,12 +70,12 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
       <p>Gaji pokok: <b>{rp(employee.gaji_pokok)}</b>. Insentif tetap dapat dibuat sebagai komponen tunjangan. Nominal kosong mengikuti nominal master. Perubahan berlaku pada perhitungan gaji berikutnya; slip yang telah disahkan tetap tersimpan.</p>
       {benefitError ? <p role="alert">Komponen gaji gagal dimuat. Muat ulang halaman sebelum mengubah benefit.</p> : <>
         <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Komponen</th><th>Jenis</th><th>Nominal</th><th>Aksi</th></tr></thead><tbody>
-          {assigned.map(a => { const c = componentMap.get(a.component_id); return <tr key={a.id}><td>{c?.nama ?? "Komponen tidak tersedia"}{c && !c.is_active && " (Nonaktif)"}</td><td>{c?.tipe ?? "—"}</td><td>{rp(a.nominal ?? c?.nominal ?? 0)}{a.nominal === null && " (ikut master)"}</td><td><form action={lepasKomponen}><input type="hidden" name="id" value={a.id} /><input type="hidden" name="employee_id" value={id} /><input type="hidden" name="return_to" value="profil" /><SubmitButton className="btn-def" pendingText="Melepas…">Lepas</SubmitButton></form></td></tr>; })}
+          {assigned.map(a => { const c = componentMap.get(a.component_id); return <tr key={a.id}><td>{c?.nama ?? "Komponen tidak tersedia"}{c && !c.is_active && " (Nonaktif)"}</td><td>{c?.tipe ?? "—"}</td><td>{rp(a.nominal ?? c?.nominal ?? 0)}{a.nominal === null && " (ikut master)"}</td><td><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{c && <Link className="btn-def" href={`/hris/komponen-gaji?${new URLSearchParams({ emp: id, edit: c.id })}`} style={{ fontSize: 10.5 }}>Edit nama / nominal master</Link>}<form action={lepasKomponen}><input type="hidden" name="id" value={a.id} /><input type="hidden" name="employee_id" value={id} /><input type="hidden" name="return_to" value="profil" /><SubmitButton className="btn-def" pendingText="Melepas…">Lepas</SubmitButton></form></div></td></tr>; })}
           {!assigned.length && <tr><td colSpan={4}>Belum ada komponen benefit untuk karyawan ini.</td></tr>}
         </tbody></table></div>
         <form action={pasangKomponen} style={{ marginTop: 12 }}>
           <input type="hidden" name="employee_id" value={id} /><input type="hidden" name="return_to" value="profil" />
-          <div className="grid2"><div><label className="flab" htmlFor="component">Komponen *</label><select id="component" className="fi" name="component_id" required defaultValue=""><option value="">Pilih komponen untuk tambah atau ubah nominal</option>{components.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.nama} · {c.tipe} · {rp(c.nominal)}</option>)}</select></div><div><label className="flab" htmlFor="nominal">Nominal khusus (Rp, opsional)</label><input id="nominal" className="fi" name="nominal" type="number" min={0} step="any" placeholder="Kosong = ikut master" /></div></div>
+          <div className="grid2"><div><label className="flab" htmlFor="component">Komponen *</label><select id="component" className="fi" name="component_id" required defaultValue=""><option value="">Pilih komponen untuk tambah atau ubah nominal</option>{components.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.nama} · {c.tipe} · {rp(c.nominal)}</option>)}</select></div><div><label className="flab" htmlFor="nominal">Nominal khusus (Rp, opsional)</label><NumberInput id="nominal" className="fi" name="nominal" type="number" min={0} step="any" placeholder="Kosong = ikut master" /></div></div>
           <SubmitButton className="btn-acc" pendingText="Menyimpan…" style={{ marginTop: 12 }}>Simpan Benefit</SubmitButton>
         </form>
       </>}

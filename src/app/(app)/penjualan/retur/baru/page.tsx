@@ -1,3 +1,5 @@
+import {RefundSourcePanel} from "@/components/returns/RefundSourcePanel";
+import {recoverReturJual} from "@/app/(app)/penjualan/retur/actions";
 import Link from "next/link";
 import { PostingRequestIdentity } from "@/components/PostingRequestIdentity";
 import { createClient } from "@/lib/supabase/server";
@@ -93,17 +95,18 @@ export default async function ReturJualBaruPage({
       </div>
 
       {sale && rows.length === 0 && <form>
+        <input type="hidden" name="sale_id" value={sale.id} />
         <input type="hidden" name="source_ref" value={sale.no_struk ?? ""} />
-        <PostingRequestIdentity scope={`sales-return:${sale.id}`} userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done} />
+        <PostingRequestIdentity recoverAction={recoverReturJual} scope={`sales-return:${sale.id}`} userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done} />
       </form>}
 
       {sale && rows.length > 0 && (
-        <ReturJualForm
+        <RefundSourcePanel saleId={sale.id}><ReturJualForm
           userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done}
           saleId={sale.id}
           info={`${sale.no_struk} — ${sale.customers?.name ?? "Umum"}`}
           rows={rows}
-        />
+        /></RefundSourcePanel>
       )}
     </>
   );

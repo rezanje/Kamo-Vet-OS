@@ -1,0 +1,14 @@
+
+ RUN  v4.1.9 /workspace/kamo-report-presets
+
+
+ Test Files  13 passed (13)
+      Tests  123 passed (123)
+   Start at  16:23:08
+   Duration  2.33s (transform 977ms, setup 0ms, import 1.87s, tests 1.00s, environment 1.87s)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

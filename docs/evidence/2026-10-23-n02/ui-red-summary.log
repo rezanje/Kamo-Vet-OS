@@ -1,0 +1,3 @@
+ FAIL  src/components/__tests__/po-numbering-help.test.tsx > explains the PO-only authoritative branch suffix and shows an explicitly illustrative example
+AssertionError: expected '<div style="display:flex;align-items:…' to contain 'Kode cabang PO'
+Assertion failed before implementation: missing Kode cabang PO help and branch-bearing example. Full fictional SSR output retained privately.

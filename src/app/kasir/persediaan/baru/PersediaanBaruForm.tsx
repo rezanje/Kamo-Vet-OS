@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PreservedForm } from "@/components/LocalTransactionDraft";
@@ -183,7 +185,7 @@ function PersediaanBaruFields({ userId, branchId, branchName, warehouses, items,
                     <td>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
                         <button type="button" className="kpos-qtybtn" onClick={() => set(i, { qty_diminta: Math.max(0, (Number(r.qty_diminta) || 0) - 1) })}>−</button>
-                        <input className="fi" type="number" min={0} value={r.qty_diminta}
+                        <NumberInput className="fi" type="number" min={0} value={r.qty_diminta}
                           onChange={(e) => set(i, { qty_diminta: Number(e.target.value) })}
                           style={{ width: 48, textAlign: "center", padding: "4px 4px" }} />
                         <button type="button" className="kpos-qtybtn" onClick={() => set(i, { qty_diminta: (Number(r.qty_diminta) || 0) + 1 })}>+</button>

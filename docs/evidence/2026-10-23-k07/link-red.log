@@ -1,0 +1,30 @@
+[RED log excerpt: long Received SSR markup omitted; assertion messages and run summary retained.]
+
+ RUN  v4.1.9 /workspace/kamo-k07
+
+ ❯ src/components/__tests__/inpatient-handoff-page.test.tsx (6 tests | 1 failed) 290ms
+   × does not invent an invoice-specific route that ignores the requested old document 22ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/inpatient-handoff-page.test.tsx > does not invent an invoice-specific route that ignores the requested old document
+AssertionError: expected '<div style="margin-bottom:4px"><a cla…' not to contain '?invoice='
+
+Expected: "?invoice="
+
+ ❯ src/components/__tests__/inpatient-handoff-page.test.tsx:42:141
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  06:31:24
+   Duration  687ms (transform 140ms, setup 0ms, import 206ms, tests 290ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

@@ -1,0 +1,50 @@
+// Real page/components, synthetic catalog and actions. Only loopback requests.
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {createServer} from 'vite';
+const require=createRequire(import.meta.url);
+const {chromium}=require('/opt/codex/cua_node/lib/node_modules/playwright');
+const source=path.resolve('src'),out=path.resolve('docs/evidence/2026-10-23-u05');
+await fs.mkdir(out,{recursive:true});
+const root=await fs.mkdtemp(path.join(os.tmpdir(),'kamo-u05-'));
+const css=(await fs.readFile(path.join(source,'app/globals.css'),'utf8')).replace(/@import[^;]+;/g,'').replace(/@theme inline\s*\{[^}]*\}/g,'');
+await fs.writeFile(path.join(root,'fixture.css'),css+'\nbody{margin:0;background:#f0ede8}*{box-sizing:border-box}button,input,select{font:inherit}');
+await fs.writeFile(path.join(root,'index.html'),'<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script type="module" src="/main.tsx"></script>');
+await fs.writeFile(path.join(root,'main.tsx'),`import React from 'react';import {createRoot} from 'react-dom/client';import Page from '${source}/app/(app)/klinik/bahan-baku/page';const root=createRoot(document.getElementById('root'));window.__mode='normal';window.__render=async()=>root.render(<main style={{maxWidth:1100,margin:'auto',padding:12,minWidth:0}}><h1 style={{fontSize:22}}>Uji U05 · Data fiktif</h1><p>Komponen asli, tanpa perubahan master live</p>{await Page()}</main>);await window.__render();`);
+const stubDB=`
+const categories=[{id:'p1',name:'Obat Klinik',parent_id:null,is_active:true},{id:'an',name:'Anestesi / Sedasi',parent_id:'p1',is_active:true},{id:'p2',name:'Nutrisi',parent_id:null,is_active:true},{id:'c2',name:'Umum',parent_id:'p2',is_active:true},{id:'empty',name:'Tanpa Kandidat',parent_id:null,is_active:true},{id:'old',name:'Kategori Lama Nonaktif',parent_id:'p1',is_active:false},{id:'old-parent',name:'Induk Lama Nonaktif',parent_id:null,is_active:false},{id:'old-child',name:'Anak Induk Nonaktif',parent_id:'old-parent',is_active:true},{id:'orphan',name:'Induk Dihapus',parent_id:'deleted-parent',is_active:true},...Array.from({length:1003},(_,i)=>({id:'cat'+i,name:'Kategori Fiktif '+i,parent_id:null,is_active:true}))];
+const row=(id,name,category_id,selected=false)=>({id,code:'QA-'+id,name,category_id,is_active:true,trashed_at:null,item_type:'Persediaan',sell_price:12.75,is_compound_material:selected});
+const items=[...Array.from({length:1205},(_,i)=>row('i'+i,'A Fiction filler '+i,'cat0')),row('SED','ZZ Fiction sedasi','an'),row('NUT','Fiction nutrisi','c2'),row('HIST','Fiction historical material','old',true),row('DEL','Fiction missing category','deleted',true),row('OLDP','Fiction inactive parent association','old-child',true),{...row('SVC','Service must stay excluded','an'),item_type:'Jasa'},{...row('OFF','Inactive item excluded','an'),is_active:false},{...row('TRASH','Trashed item excluded','an'),trashed_at:'2026-01-01'}];
+export async function createClient(){return{auth:{getUser:async()=>({data:{user:{id:'fixture-owner'}}})},from(table){let from=0,to=999;const filters=[],orders=[];const q={select(){return q},eq(key,val){filters.push(r=>r[key]===val);return q},is(key,val){filters.push(r=>r[key]===val);return q},order(key){orders.push(key);return q},range(a,b){from=a;to=b;return q},single:async()=>({data:{role:'OWNER'}}),then(done){const all=(window.__mode==='empty'?[]:table==='items'?items:table==='item_categories'?categories:[]).filter(r=>filters.every(f=>f(r))).sort((a,b)=>{for(const key of orders){const cmp=String(a[key]).localeCompare(String(b[key]));if(cmp)return cmp;}return 0});return Promise.resolve({data:window.__mode==='error'&&table==='items'?null:all.slice(from,to+1),count:all.length,error:window.__mode==='error'&&table==='items'?{message:'fixture error'}:null}).then(done)}};return q}}}`;
+const server=await createServer({root,configFile:false,logLevel:'error',oxc:{jsx:{runtime:'automatic'}},server:{host:'127.0.0.1',port:3183,strictPort:true,fs:{allow:[root,source,path.resolve('node_modules'),'/opt/codex']}},resolve:{dedupe:['react','react-dom'],alias:[{find:'@',replacement:source},{find:'react-dom',replacement:path.dirname(require.resolve('react-dom'))},{find:'react',replacement:path.dirname(require.resolve('react'))}]},plugins:[{name:'fictional-boundaries',enforce:'pre',resolveId(id,importer){if(id==='next/navigation')return '\0nav';if(id==='next/link')return '\0link';if(id.endsWith('/lib/supabase/server'))return '\0db';if(id.includes('/klinik/bahan-baku/actions')||(id==='./actions'&&importer?.endsWith('/BahanBakuClient.tsx')))return '\0actions';},load(id){if(id==='\0nav')return 'export function redirect(url){throw new Error(url)}';if(id==='\0link')return 'import React from "react";export default function Link({children,...p}){return React.createElement("a",p,children)}';if(id==='\0db')return stubDB;if(id==='\0actions')return `export async function setBahanBaku(id,value){window.__calls.push({ids:[id],value});return window.__fail?{ok:false,error:'fixture denied'}:{ok:true}};export async function setBahanBakuBanyak(ids,value){window.__calls.push({ids,value});return window.__fail?{ok:false,error:'fixture denied'}:{ok:true,updated:ids.length}}`;}}]});
+let browser;
+try{
+ await server.listen();browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});const results=[];
+ for(const width of [1280,390]){
+  const context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage();let external=0;const errors=[];
+  await context.route('**/*',route=>{if(!route.request().url().startsWith('http://127.0.0.1:3183/')){external++;return route.abort()}return route.continue()});page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('http://127.0.0.1:3183/',{waitUntil:'networkidle'});await page.evaluate(()=>{window.__calls=[];window.__fail=false});
+  const parent=page.getByRole('combobox',{name:'Kategori induk',exact:true}),child=page.getByRole('combobox',{name:'Subkategori',exact:true});await parent.waitFor();
+  assert.equal(await parent.locator('option[value=old]').count(),0);assert.equal(await parent.locator('option[value=old-parent]').count(),0);assert.equal(await parent.locator('option[value=orphan]').count(),0);assert.equal(await parent.locator('option[value=cat1002]').count(),1);
+  assert.equal(await page.getByRole('checkbox',{name:/QA-HIST/}).isChecked(),true);assert.equal(await page.getByRole('checkbox',{name:/QA-DEL/}).isChecked(),true);assert.equal(await page.getByRole('checkbox',{name:/QA-OLDP/}).isChecked(),true);
+  await parent.selectOption('p1');await child.focus();await child.press('ArrowDown');await child.press('Enter');assert.equal(await child.inputValue(),'an');
+  const sedasi=page.getByRole('checkbox',{name:/QA-SED/});await sedasi.waitFor();assert.equal(await sedasi.isChecked(),false);assert.equal(await page.getByRole('checkbox').count(),1);
+  assert.equal(await page.getByText('Service must stay excluded',{exact:true}).count(),0);await page.getByRole('textbox',{name:'Cari bahan baku'}).fill('QA-SED');await page.getByRole('button',{name:/Pilih semua hasil \(1\)/}).click();assert.deepEqual(await page.evaluate(()=>window.__calls.at(-1)),{ids:['SED'],value:true});assert.equal(await sedasi.isChecked(),true);
+  const release=page.getByRole('button',{name:/Lepas semua hasil \(1\)/});await release.focus();await release.press('Enter');assert.deepEqual(await page.evaluate(()=>window.__calls.at(-1)),{ids:['SED'],value:false});assert.equal(await sedasi.isChecked(),false);
+  await page.getByRole('button',{name:/Pilih semua hasil \(1\)/}).click();assert.equal(await sedasi.isChecked(),true);
+  await page.evaluate(()=>{window.__fail=true});await release.focus();await release.press('Enter');await page.getByText('fixture denied',{exact:true}).waitFor();assert.equal(await sedasi.isChecked(),true);await page.evaluate(()=>{window.__fail=false});
+  if(width===390)await page.screenshot({path:path.join(out,`materials-${width}-action.png`),fullPage:true});
+  await page.locator(".tbl").evaluate(table=>{table.parentElement.scrollLeft=0});
+  await page.screenshot({path:path.join(out,`materials-${width}.png`),fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await parent.selectOption('p2');assert.equal(await child.inputValue(),'');assert.equal(await page.getByRole('checkbox',{name:/QA-NUT/}).count(),1);assert.equal(await sedasi.count(),0);
+  await parent.selectOption('__selected__');assert.equal(await page.getByRole('checkbox',{name:/QA-HIST/}).isChecked(),true);assert.equal(await page.getByRole('checkbox',{name:/QA-SED/}).isChecked(),true);
+  await parent.selectOption('empty');assert.equal(await page.getByRole('checkbox').count(),0);await page.getByText('Barang tidak ditemukan.',{exact:true}).waitFor();
+  await page.evaluate(async()=>{window.__mode='error';await window.__render()});await page.getByRole('alert').waitFor();assert.equal(await page.getByRole('checkbox').count(),0);
+  await page.evaluate(async()=>{window.__mode='empty';await window.__render()});await parent.waitFor();assert.equal(await parent.locator('option').count(),2);assert.equal(await page.getByRole('checkbox').count(),0);
+  assert.deepEqual(errors,[]);assert.equal(external,0);results.push({width,hierarchyStatusesAndHistory:true,eligibleAnesthesiaBeyond1000:true,completeCategoryPages:true,keyboardAndFilteredBulk:true,categorySelectAndReleaseSameFilter:true,filteredReleaseRetainsOtherSelections:true,failedFlagRollback:true,parentSwitchAndEmptyError:true,documentOverflow:false,runtimeErrors:0,externalRequests:0,liveMasterWrites:0});await context.close();
+ }
+ await fs.writeFile(path.join(out,'browser.json'),JSON.stringify(results,null,2)+'\n');console.log(JSON.stringify(results));
+}finally{await browser?.close();await server.close();await fs.rm(root,{recursive:true,force:true})}

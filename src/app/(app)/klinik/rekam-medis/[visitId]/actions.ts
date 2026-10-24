@@ -1,4 +1,5 @@
 "use server";
+import { servicePerformerInput, type ServicePerformersInput } from "@/lib/service-performers";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
@@ -13,6 +14,7 @@ import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
+  service_performers?: ServicePerformersInput | null;
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
@@ -59,6 +61,7 @@ export async function simpanRekamMedis(formData: FormData) {
   const gejala_klinis = String(formData.get("gejala_klinis") ?? "") || null;
   const hasil_penunjang = String(formData.get("hasil_penunjang") ?? "") || null;
   const diagnosis = String(formData.get("diagnosis") ?? "") || null;
+  const therapy = String(formData.get("therapy") ?? "").trim() || null;
   // Ringkasan teks tetap diisi utk dokumen rekam medis cetak (kolom lama).
   const followUps = parseFollowUps(formData.get("follow_ups"));
   const follow_up = followUps.length
@@ -133,6 +136,7 @@ export async function simpanRekamMedis(formData: FormData) {
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" (invoice/struk existing tak berubah, nama-only otomatis).
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
+      ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
       // Kategori tindakan (§6.3) — dasar penentuan wajib/tidaknya form persetujuan.
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
     }));
@@ -161,7 +165,7 @@ export async function simpanRekamMedis(formData: FormData) {
     p_visit_id: visitId,
     p_pet_id: petId,
     p_record: {
-      diagnosis, anamnesis, suhu, berat, gejala_klinis, hasil_penunjang,
+      diagnosis, ...(therapy ? { therapy } : {}), anamnesis, suhu, berat, gejala_klinis, hasil_penunjang,
       follow_up, catatan_resep, penunjang_urls: penunjangUrls,
     },
     p_followups: followUps,
@@ -182,6 +186,37 @@ export async function simpanRekamMedis(formData: FormData) {
   if (next === "resep") return { saved: true, href: `${back}/resep` };            // cetak resep
   if (next === "rawatinap") return { saved: true, href: back };                   // form admit rawat inap ada di view recorded
   return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
+}
+
+// Clinical corrections never call initial submission or accept billing/master fields.
+export async function koreksiRekamMedis(formData: FormData) {
+  const visitId = String(formData.get("visitId") ?? "");
+  const recordId = String(formData.get("medical_record_id") ?? "");
+  const back = `/klinik/rekam-medis/${encodeURIComponent(visitId)}`;
+  const editable = `${back}?edit=${encodeURIComponent(recordId)}`;
+  const revisionRaw = String(formData.get("expected_revision") ?? "");
+  const revision = Number(revisionRaw);
+  const reason = String(formData.get("correction_reason") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  const temperatureRaw = String(formData.get("suhu") ?? "").trim();
+  const suhu = temperatureRaw === "" ? null : Number(temperatureRaw);
+  if (!visitId || !recordId || !/^\d+$/.test(revisionRaw) || !Number.isSafeInteger(revision)
+    || reason.length < 3 || reason.length > 1000 || !requestKey || requestKey.length > 100
+    || (suhu !== null && (!Number.isFinite(suhu) || suhu < 0 || suhu > 60 || Math.round(suhu * 100) / 100 !== suhu))) {
+    redirect(`${editable}&error=${encodeURIComponent("Identitas, alasan koreksi, atau suhu tidak valid. Muat ulang dan periksa isian.")}`);
+  }
+  const text = (name: string) => String(formData.get(name) ?? "") || null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("clinic_correct_unpaid_record", {
+    p_visit_id: visitId, p_record_id: recordId, p_expected_revision: revision,
+    p_changes: { anamnesis: text("anamnesis"), diagnosis: text("diagnosis"), therapy: text("therapy"),
+      suhu, gejala_klinis: text("gejala_klinis"), hasil_penunjang: text("hasil_penunjang") },
+    p_reason: reason, p_request_key: requestKey,
+  });
+  if (error || data !== recordId) redirect(`${editable}&error=${encodeURIComponent(error?.message ?? "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.")}`);
+  for (const path of [back, `${back}/resep`, `${back}/dokumen`, "/klinik/rekam-medis", "/klinik/antrian",
+    "/klinik/rawat-inap", "/klinik/racik", "/laporan/anamnesa"]) revalidatePath(path);
+  return { saved: true, href: `${back}?success=correction` };
 }
 
 export async function createReferral(formData: FormData) {

@@ -1,0 +1,35 @@
+
+ RUN  v4.1.9 /workspace/kamo-k08
+
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx (14 tests | 1 failed) 62ms
+   × shows zero remaining for stored single paid clinic invoices without receipt rows while preserving partial payments 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/clinic-billing-reader.test.tsx > shows zero remaining for stored single paid clinic invoices without receipt rows while preserving partial payments
+AssertionError: expected '><td style="font-weight:600">INV-OLD-…' to contain 'lunas'
+
+Expected: "lunas"
+Received: "><td style="font-weight:600">INV-OLD-415</td><td>—<div style="font-size:10px;color:var(--td)">—</div></td><td>—</td><td>22/10/2026</td><td style="text-align:right">Rp 415.000</td><td style="text-align:right;color:#b45309;font-weight:600">Rp 415.000</td><td><span class="bge o">Lunas</span></td><td><a class="btn-def" style="font-size:10px" href="/klinik/pembayaran/old-visit">Buka</a></td></tr>"
+
+ ❯ src/components/__tests__/clinic-billing-reader.test.tsx:63:78
+     61| it('shows zero remaining for stored single paid clinic invoices withou…
+     62|  const html=renderToStaticMarkup(await FakturPage({searchParams:Promis…
+     63|  const row=html.split('<tr').find(r=>r.includes('INV-OLD-415'))!;expec…
+       |                                                                              ^
+     64|  const partial=html.split('<tr').find(r=>r.includes('INV-DP'))!;expect…
+     65| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 passed (14)
+   Start at  23:21:08
+   Duration  522ms (transform 171ms, setup 0ms, import 285ms, tests 62ms, environment 0ms)
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

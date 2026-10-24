@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { postInventoryAccounting, previewInventoryAccounting } from "./actions";
 import type { InventoryAccountingAccount, InventoryAccountingBatch, InventoryAccountingReceipt, InventoryAccountingReport } from "./types";
 
@@ -16,30 +16,41 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
   const [uncertain, setUncertain] = useState(false);
   const [receipt, setReceipt] = useState<InventoryAccountingReceipt | null>(null);
   const [pending, startTransition] = useTransition();
+  const generation = useRef(0), request = useRef<number | null>(null);
+  useEffect(() => () => { generation.current += 1; }, []);
 
-  const clearPreview = () => { setReport(null); setReceipt(null); setConfirmed(false); setError(""); setUncertain(false); };
-  const preview = () => startTransition(async () => {
+  const clearPreview = () => { generation.current += 1; request.current = null; setReport(null); setReceipt(null); setConfirmed(false); setError(""); setUncertain(false); };
+  const preview = () => {
+    if (request.current !== null) return;
+    const token = generation.current; request.current = token;
+    startTransition(async () => {
     setError("");
     try {
       const result = await previewInventoryAccounting(runId, equityId);
+      if (token !== generation.current) return;
       if (!result.ok) { setError(result.error); return; }
       setReport(result.report); setReceipt(result.report.receipt); setConfirmed(false); setUncertain(false);
     } catch {
+      if (token !== generation.current) return;
       setError("Laporan belum diterima. Coba muat laporan kembali.");
-    }
+    } finally { if (token === generation.current) request.current = null; }
   });
+  };
   const post = () => {
-    if (!report) return;
+    if (!report || request.current !== null) return;
+    const token = generation.current; request.current = token;
     startTransition(async () => {
       setError("");
       try {
         const result = await postInventoryAccounting({ report, reason, confirmed });
+        if (token !== generation.current) return;
         if (result.ok) { setReceipt(result.receipt); setUncertain(false); }
         else { setError(result.error); setUncertain(true); }
       } catch {
+        if (token !== generation.current) return;
         setError("Respons posting tidak diterima. Periksa laporan batch atau kirim ulang permintaan yang sama.");
         setUncertain(true);
-      }
+      } finally { if (token === generation.current) request.current = null; }
     });
   };
   const download = () => {
@@ -50,6 +61,7 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
   const canPost = Boolean(report?.can_post && report.status === "previewed" && !report.blockers.length && confirmed && reason.trim().length >= 10 && reason.trim().length <= 1000 && !receipt && !pending);
   // Keep a request whose outcome may be uncertain unchanged until a read or exact retry resolves it.
   const freezeRequest = pending || uncertain;
+  const valuation = (report?.evidence as {summary?:{valuation?:{policy:string;source_value:string;posted_value:string;residual:string;allocated_source_row:number|null}}}|undefined)?.summary?.valuation;
 
   return <div style={{ display: "grid", gap: 12 }}>
     <label style={{ display: "grid", gap: 5 }}>Batch Accurate
@@ -75,11 +87,12 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
         <dt>Batch / sumber</dt><dd style={{ margin: 0 }}>{report.run_id}<br />{report.source_name}<br />Hash: {report.source_hash}</dd>
         <dt>Baris terpilih / lainnya</dt><dd style={{ margin: 0 }}>{report.selected_rows} / {report.excluded_rows}</dd>
         <dt>Qty asli</dt><dd style={{ margin: 0 }}>{Number(report.original_qty).toLocaleString("id-ID", { maximumFractionDigits: 6 })}</dd>
-        <dt>Nilai asli impor</dt><dd style={{ margin: 0 }}>{money(report.original_value)}</dd>
+        <dt>Nilai stok untuk jurnal</dt><dd style={{ margin: 0 }}>{money(report.original_value)}</dd>
         <dt>Nilai FIFO tersisa</dt><dd style={{ margin: 0 }}>{money(report.remaining_value)} — informasi pembanding, bukan dasar jurnal historis</dd>
         <dt>Debit persediaan</dt><dd style={{ margin: 0 }}>{report.inventory_account ? `${report.inventory_account.code} — ${report.inventory_account.name}` : "Akun belum valid"} · {money(report.original_value)}</dd>
         <dt>Kredit ekuitas</dt><dd style={{ margin: 0 }}>{report.equity_account ? `${report.equity_account.code} — ${report.equity_account.name}` : "Akun belum valid"} · {money(report.original_value)}</dd>
       </dl>
+      {valuation && <section aria-label="Bukti normalisasi"><strong>Dasar valuasi: {valuation.policy}</strong><p>Nilai sumber presisi penuh: Rp {valuation.source_value}. Nilai posting: Rp {valuation.posted_value}. Residu: Rp {valuation.residual}. Baris alokasi: {valuation.allocated_source_row ?? "tidak ada"}.</p><p>Target dihitung dari sumber; bukan nilai kontrol Accurate yang diasumsikan. Cocokkan kebijakan dan residu sebelum konfirmasi.</p></section>}
       {report.blockers.length > 0 && <div role="status"><strong>Keputusan / pemeriksaan diperlukan</strong><ul>{report.blockers.map((blocker, index) => <li key={`${index}-${blocker}`}>{blocker}</li>)}</ul></div>}
       {report.status !== "previewed" && !receipt && <p>Batch ini hanya dapat ditinjau. Tidak ada tindakan perbaikan historis yang akan dijalankan dari laporan ini.</p>}
       <button type="button" className="btn-def" onClick={download}>Unduh laporan JSON</button>

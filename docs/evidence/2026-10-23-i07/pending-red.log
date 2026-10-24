@@ -1,0 +1,26 @@
+Applied 223 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-i07/scripts/test-sold-sku-units-postgres.py", line 13, in <module>
+    db.sql(prefix+(ROOT/'supabase/tests/sold_sku_units.sql').read_text())
+  File "/workspace/kamo-i07/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  Pending sold24 finalized against changed master28
+CONTEXT:  PL/pgSQL function inline_code_block line 6 at RAISE
+
+e1100000-0000-4000-8000-000000000001
+{"role":"authenticated"}
+4fd5d8e8-776d-43d0-ad30-4b1d19debfaa
+{"sale_id": "4fd5d8e8-776d-43d0-ad30-4b1d19debfaa", "finalized": true, "journal_id": "c83617d1-5170-4d41-afd9-db24f1a76563"}
+
+
+
+
+
+
+
+
+
+
+
+1fc93fbf-71e4-4897-ad80-1d612cbe7c50

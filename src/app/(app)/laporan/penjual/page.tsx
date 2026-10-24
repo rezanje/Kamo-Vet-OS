@@ -1,4 +1,5 @@
 import { completeReportQuery } from "@/lib/report-query";
+import { ServiceAttributionTable } from "@/components/ServiceAttributionTable";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { kumpulkanBarisKomisi } from "@/lib/komisi-data";
@@ -311,6 +312,7 @@ export default async function PenjualPage({
           keduanya sudah terhitung di rekap omzet paling atas.
         </div>
       </div>
+      <ServiceAttributionTable rows={baris} />
     </LaporanPage>
   );
 }

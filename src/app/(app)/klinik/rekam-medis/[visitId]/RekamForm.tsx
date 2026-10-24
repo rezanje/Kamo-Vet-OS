@@ -1,9 +1,15 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { ClinicalCorrection } from "@/lib/clinical-correction";
+import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
-import { simpanRekamMedis } from "./actions";
+import { simpanRekamMedis, koreksiRekamMedis } from "./actions";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
 import { PetPhotoUpload } from "@/components/PetPhotoUpload";
@@ -30,6 +36,7 @@ type CartRow = {
   ingredients?: RacikanIngredient[]; dosage_form?: string; aturan_pakai?: string;
   official_version_id?: string;
   sale_item_id?: string;
+  service_performers?: ServicePerformersInput | null;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -47,9 +54,11 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], correction }: {
+  correction?: ClinicalCorrection;
   visitId: string; petId: string; requestKey: string; draftUserId: string;
   service?: string | null;
+  serviceStaff?: ServiceStaff[];
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   racikanItems: ItemLite[];
@@ -62,10 +71,12 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   dokterOpsi: { id: string; nama: string; jabatan: string | null }[];
   providerOpsi: { id: string; nama: string; jabatan: string | null }[];
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<"Obat" | "Jasa" | "Tindakan" | "Racikan">("Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);
+  const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
 
@@ -79,13 +90,13 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const [followUps, setFollowUps] = useState<FollowUpDraft[]>([]);
-  const [penunjangPaths, setPenunjangPaths] = useState<string[]>([]);
+  const [penunjangPaths, setPenunjangPaths] = useState<string[]>(correction?.penunjang_urls ?? []);
   const {
     attachForm: draftAttachForm, submissionKey: draftSubmissionKey, recovered: draftRecovered,
     storageError: draftStorageError, saveError: draftSaveError,
     capture: draftCapture, discard: draftDiscard, submit: draftSubmit,
   } = useClinicDraft({
-    userId: draftUserId, scope: `exam:${visitId}`, requestKey,
+    userId: draftUserId, scope: correction ? `correction:${visitId}:${correction.recordId}:v${correction.revision}` : `exam:${visitId}`, requestKey,
     optionalSnapshotKeys: ["saleItemId"],
     snapshot: { saleItemId, cart, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, followUps, penunjangPaths },
     restore: (value) => {
@@ -125,14 +136,15 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 
   const addObat = (it: ItemLite) => {
     setCart((c) => {
-      const ex = c.find((r) => r.item_id === it.id);
+      const ex = it.item_type === "Jasa" ? undefined : c.find((r) => r.item_id === it.id && r.jenis !== "jasa");
       if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
       const isService = it.item_type === "Jasa";
       const u = isService ? undefined : (it.units ?? [])[0];
       return [...c, {
-        key: it.id, item_id: it.id, nama_obat: it.name, qty: 1,
+        key: isService ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
         satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
         kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
+        service_performers: isService ? emptyServicePerformers() : null,
       }];
     });
   };
@@ -157,9 +169,11 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const total = Math.max(0, subtotal - discountVal + ppn);
 
   return (
-    <form ref={draftAttachForm} action={(data) => draftSubmit(data, simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={draftCapture}>
+    <form ref={draftAttachForm} action={(data) => draftSubmit(data, correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={draftCapture}>
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}
       {(draftStorageError || draftSaveError) && <div role="alert" className="p2ban">{draftSaveError || draftStorageError}</div>}
+      {correction && <div className="p2ban">Koreksi catatan klinis. Resep, racikan, tindak lanjut, dan data pasien tetap mengikuti pemeriksaan tersimpan.</div>}
+      {correction && <><input type="hidden" name="medical_record_id" value={correction.recordId} /><input type="hidden" name="expected_revision" value={correction.revision} /></>}
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="petId" value={petId} />
       <input type="hidden" name="request_key" value={draftSubmissionKey} />
@@ -172,7 +186,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
           <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--sb)", letterSpacing: ".02em", marginBottom: 12 }}>DATA PASIEN</div>
 
           <div style={{ display: "flex", gap: 14, marginBottom: 14 }}>
-            <PetPhotoUpload petId={petId} initialUrl={patient.photo} />
+            <PetPhotoUpload petId={petId} initialUrl={patient.photo} readOnly={!!correction} />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 17, fontWeight: 800, color: "var(--sb)" }}>{patient.name}</span>
@@ -183,20 +197,22 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 <MiniKV k="Tgl Periksa" v={patient.tglPeriksa} />
                 <MiniKV k="Pemilik" v={patient.owner} />
                 {/* Dokter dipilih di sini, bukan cuma ditampilkan: dialah yang
-                    dicatat sebagai penanggung jawab kunjungan dan dapat insentif. */}
+                    dicatat sebagai penanggung jawab kunjungan; pelaksana jasa dipilih per baris. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter{isMedicalService(service) ? " *" : ""}</span>
-                  <select className="fi" name="doctor_id" required={isMedicalService(service)} defaultValue={patient.dokterId ?? ""}
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter PJ{isMedicalService(service) ? " *" : ""}</span>
+                  <select className="fi" name="doctor_id" disabled={!!correction} required={isMedicalService(service)} defaultValue={patient.dokterId ?? ""}
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
+                    {correction && patient.dokterId && <option value={patient.dokterId}>{patient.dokter}</option>}
                     {staffForService(dokterOpsi,service).map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
                   </select>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ color: "var(--tm)", minWidth: 62 }}>Pelaksana</span>
-                  <select className="fi" name="provider_id" defaultValue={patient.providerId ?? ""}
+                  <span style={{ color: "var(--tm)", minWidth: 62 }}>PIC kasus</span>
+                  <select className="fi" name="provider_id" disabled={!!correction} defaultValue={patient.providerId ?? ""}
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
+                    {correction && patient.providerId && !providerOpsi.some(p => p.id === patient.providerId) && <option value={patient.providerId}>PIC tersimpan</option>}
                     {providerOpsi.map((provider) => <option key={provider.id} value={provider.id}>{provider.nama}{provider.jabatan ? ` · ${provider.jabatan}` : ""}</option>)}
                   </select>
                 </div>
@@ -210,32 +226,35 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
           </div>
 
           <ExamField icon="ti-message-2" color="var(--posb)" label="Keluhan">
-            <input className="fi" name="keluhan" required={isMedicalService(service)} pattern={isMedicalService(service) ? ".*\\S.*" : undefined} title="Keluhan pasien wajib diisi" defaultValue={patient.keluhan ?? ""} placeholder="Keluhan utama pasien" />
+            <input className="fi" name="keluhan" readOnly={!!correction} required={isMedicalService(service)} pattern={isMedicalService(service) ? ".*\\S.*" : undefined} title="Keluhan pasien wajib diisi" defaultValue={patient.keluhan ?? ""} placeholder="Keluhan utama pasien" />
           </ExamField>
           <ExamField icon="ti-file-text" color="var(--posb)" label="Anamnesa">
-            <textarea className="fi" name="anamnesis" rows={2} placeholder="Riwayat & perjalanan penyakit" style={{ resize: "vertical" }} />
+            <textarea className="fi" name="anamnesis" defaultValue={correction?.anamnesis ?? ""} rows={2} placeholder="Riwayat & perjalanan penyakit" style={{ resize: "vertical" }} />
           </ExamField>
           <ExamField icon="ti-weight" color="#0891b2" label="Berat Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
-              <input className="fi" name="berat" type="number" step="0.1" min={0} max={batasBeratWajar(patient.species) ?? undefined} defaultValue={currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
+              <NumberInput className="fi" name="berat" type="number" step="0.1" min={0} max={batasBeratWajar(patient.species) ?? undefined} readOnly={!!correction} defaultValue={correction ? correction.berat ?? undefined : currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
               <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderLeft: "none", borderRadius: "0 6px 6px 0", padding: "6px 10px", fontSize: 11, color: "var(--tm)" }}>kg</span>
             </div>
           </ExamField>
           <ExamField icon="ti-temperature" color="#dc2626" label="Suhu Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
-              <input className="fi" name="suhu" type="number" step="0.1" placeholder="39.5" style={{ borderRadius: "6px 0 0 6px" }} />
+              <NumberInput className="fi" name="suhu" defaultValue={correction?.suhu ?? undefined} type="number" min={0} max={60} step={correction ? "0.01" : "0.1"} placeholder="39.5" style={{ borderRadius: "6px 0 0 6px" }} />
               <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderLeft: "none", borderRadius: "0 6px 6px 0", padding: "6px 10px", fontSize: 11, color: "var(--tm)" }}>°C</span>
             </div>
           </ExamField>
           <ExamField icon="ti-activity" color="#16a34a" label="Gejala Klinis">
-            <input className="fi" name="gejala_klinis" placeholder="mis. hidung berair, nafas cepat" />
+            <input className="fi" name="gejala_klinis" defaultValue={correction?.gejala_klinis ?? ""} placeholder="mis. hidung berair, nafas cepat" />
           </ExamField>
           <ExamField icon="ti-flask" color="#7c3aed" label="Hasil Pemeriksaan Penunjang">
-            <input className="fi" name="hasil_penunjang" placeholder="mis. Foto thorax normal" />
-            <PenunjangUpload name="penunjang_urls" value={penunjangPaths} onChange={setPenunjangPaths} />
+            <input className="fi" name="hasil_penunjang" defaultValue={correction?.hasil_penunjang ?? ""} placeholder="mis. Foto thorax normal" />
+            {correction ? <p>{penunjangPaths.length} lampiran pemeriksaan tersimpan.</p> : <PenunjangUpload name="penunjang_urls" value={penunjangPaths} onChange={setPenunjangPaths} />}
           </ExamField>
           <ExamField icon="ti-stethoscope" color="var(--posb)" label="Diagnosa">
-            <textarea className="fi" name="diagnosis" rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />
+            <textarea className="fi" name="diagnosis" defaultValue={correction?.diagnosis ?? ""} rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />
+          </ExamField>
+          <ExamField icon="ti-clipboard-text" color="var(--posb)" label="Terapi / tindakan">
+            <textarea className="fi" name="therapy" defaultValue={correction?.therapy ?? ""} aria-label="Terapi / tindakan" rows={3} maxLength={4000} placeholder="Catatan terapi / tindakan (opsional)" style={{ resize: "vertical" }} />
           </ExamField>
         </div>
 
@@ -245,6 +264,17 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
             <i className="ti ti-shopping-cart" style={{ color: "var(--posb)" }} /> INPUT OBAT &amp; JASA (POS)
           </div>
 
+          {correction ? <>
+            <p>Resep obat &amp; jasa tersimpan</p>
+            <table className="tbl"><thead><tr><th>Obat / jasa</th><th>Qty</th><th>Aturan pakai</th></tr></thead><tbody>
+              {correction.prescriptions.map((row, i) => <tr key={i}><td>{row.nama_obat}{row.service_performers && <div>{servicePerformerNames(row.service_performers).join(" · ")}</div>}</td><td>{row.qty} {row.satuan}</td><td>{row.aturan_pakai ?? "—"}</td></tr>)}
+            </tbody></table>
+            {correction.prescriptions.length === 0 && <p>Tidak ada resep.</p>}
+            {correction.catatan_resep && <p>{correction.catatan_resep}</p>}
+            <p>Racikan tersimpan</p>
+            {(correction.compounds ?? []).map(row => <div key={row.id}>{row.recipe_name}</div>)}
+            {!correction.compounds?.length && <p>Tidak ada racikan.</p>}
+          </> : <>
           {/* Tab jenis */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
             {([["Obat", "ti-pill"], ["Jasa", "ti-stethoscope"], ["Tindakan", "ti-package"], ["Racikan", "ti-flask"]] as const).map(([t, ic]) => (
@@ -335,6 +365,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                                 </select>
                               ) : <span>{r.satuan}</span>}
                             </div>
+                            {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (
@@ -348,7 +380,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                           <td style={{ textAlign: "center" }}>
                             {r.jenis === "racikan"
                               ? <span style={{ fontSize: 10.5 }}>1</span>
-                              : <input className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
+                              : <NumberInput className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>
@@ -368,12 +400,17 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 </div>
               )}
 
+              {cart.some(row => row.jenis === "jasa") && <div>
+                <ServicePerformersField label="Isi pelaksana jasa sekaligus" value={bulkPerformers} staff={serviceStaff} onChange={setBulkPerformers} />
+                <button type="button" className="btn-def" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
+                <p style={{fontSize:10}}>Baris yang sudah memiliki pelaksana tetap mengikuti pilihannya.</p>
+              </div>}
               <div style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
                 <Row k="Subtotal" v={rp(subtotal)} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
                   <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <input className="fi" type="number" min={0} max={100} value={discountPct || ""} onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value))))} style={{ width: 54, padding: "3px 6px", textAlign: "right" }} />
+                    <NumberInput className="fi" type="number" min={0} max={100} value={discountPct || ""} onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value))))} style={{ width: 54, padding: "3px 6px", textAlign: "right" }} />
                     <span style={{ fontSize: 11, color: "var(--tm)" }}>%</span>
                     <span style={{ fontSize: 11, width: 72, textAlign: "right", color: "#b91c1c" }}>{discountVal > 0 ? `-${rp(discountVal)}` : rp(0)}</span>
                   </span>
@@ -387,16 +424,21 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
               </div>
             </div>
           </div>
+          </>}
         </div>
       </div>
 
-      <FollowUpTable name="follow_ups" value={followUps} onChange={setFollowUps} />
+      {correction ? <div className="card"><b>Tindak lanjut tersimpan</b><p>{correction.follow_up ?? "Tidak ada tindak lanjut."}</p></div> : <FollowUpTable name="follow_ups" value={followUps} onChange={setFollowUps} />}
 
+      {correction && <div style={{ marginTop: 12 }}><label className="flab" htmlFor="correction-reason">Alasan koreksi *</label><textarea id="correction-reason" className="fi" name="correction_reason" required minLength={3} maxLength={1000} /></div>}
       {/* Aksi */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+      {correction ? <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+        <button type="button" className="btn-def" onClick={() => { draftDiscard(); router.push(`/klinik/rekam-medis/${visitId}`); }}>Batal</button>
+        <SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan koreksi</SubmitButton>
+      </div> : <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <SubmitButton className="btn-acc" icon="ti-printer" name="next" value="resep" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Cetak Resep</SubmitButton>
         <SubmitButton className="btn-acc" icon="ti-bed" name="next" value="rawatinap" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Lanjut Rawat Inap</SubmitButton>
-      </div>
+      </div>}
     </form>
   );
 }

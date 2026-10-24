@@ -1,0 +1,5 @@
+# U05 — lepas semua hasil pada filter bahan baku klinik
+
+Gap terbukti: filter kategori/subkategori menampilkan Pilih semua hasil tetapi Lepas semua hasil hanya ada pada view Bahan yang sudah dipilih. Tambahkan kontrol lepas pada filter kategori yang sama, gunakan fungsi/action bulk existing dan ID hasil aktif yang sama, pertahankan pilihan di luar filter. Pertahankan larangan pilih semua pada view global tanpa kategori. Umumkan respons lewat status live yang dapat dibaca teknologi bantu.
+
+RED: tiga tes gagal karena kontrol lepas tidak ada pada kategori. GREEN: tes pilih→lepas pada subkategori, batas pencarian/pilihan luar filter, penolakan update, serta pending. Review independen, lint/type/build dan suite proyek; browser fixture keyboard desktop/mobile. Read preflight action bulk existing juga dibatasi 200 ID per request: RED membuktikan target 1.205 gagal akibat cap API 1.000; semua target harus tervalidasi sebelum write pertama. Tidak mengubah RLS, eligibility bahan, master/schema atau histori. Scope ini melengkapi slice klinik U05, bukan seluruh selector global.

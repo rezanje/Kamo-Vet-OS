@@ -1,0 +1,5 @@
+Independent read-only review /root/k08_review (Sol 6.1 high): no P1/P2.
+Checked hierarchy/status/missing/cyclic categories, retained IDs and all-filtered hits, all-items/invalid-filter distinction, same-RLS explicit inactive target metadata, active-only selector, unchanged actions/eligibility.
+Independent focused four files / ten tests passed. Browser/full/build/type/lint gates run separately by author.
+Final post-review source change: explicit KategoriRow type annotation for TS7022; no runtime change.
+No edits or target access by reviewer.

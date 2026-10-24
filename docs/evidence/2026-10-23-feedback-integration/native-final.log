@@ -1,0 +1,36 @@
+Applied 222 repository migrations to isolated PostgreSQL 17.6 with fictional auth/storage shims.
+PASS covered target catalog comparison; one stored-view cast representation has semantic fixture
+RED confirmed combined acceptance rejects pre-candidate baseline
+PASS synthetic local pg_dump/pg_restore schema/ACL and fixture count roundtrip
+PASS explicit nine reviewed migration files, one local transaction
+PASS K08 surgical rollback/reapply preserves combined function/security/ACL
+PASS feedback_integration.sql
+PASS feedback_clinic_audit.sql
+PASS feedback_reset_cutoff.sql
+PASS purchase_advance_atomic.sql
+PASS accurate_inventory_preparation.sql
+PASS accurate_inventory_source_precision.sql
+PASS accurate_inventory_accounting.sql
+PASS accurate_inventory_accounting_guards.sql
+PASS accurate_inventory_accounting_review.sql
+PASS clinic_billing_consistency.sql
+PASS clinic_invoice_post.sql
+PASS clinic_billing_lifecycle.sql
+PASS inpatient_consent.sql
+PASS clinic_demo_financial_policy.sql
+PASS activity_audit.sql
+PASS activity_audit_framework.sql
+PASS activity_audit_financial.sql
+PASS activity_audit_inventory.sql
+PASS activity_audit_people_settings.sql
+PASS activity_audit_remaining_modules.sql
+PASS concurrent cap read committed
+PASS concurrent cap repeatable read
+PASS concurrent identical retry: one advance and one receipt
+PASS existing PO revision vs advance lock ordering
+PASS advance/refund ordering and concurrent refund retry
+PASS recovery vs pending advance and PO revision lock order
+PASS DP audit races
+PASS concurrent preparation/posting: same run/receipt, one journal and audit
+PASS import audit races
+Removed owned PostgreSQL test container and volumes.

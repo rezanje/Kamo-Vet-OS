@@ -1,0 +1,17 @@
+Applied 232 repository migrations to isolated PostgreSQL 17.6 with fictional auth/storage shims.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-p07-private-20261023/run-red.py", line 5, in <module>
+    db.bootstrap();db.sql((root/'supabase/tests/purchase_short_close.sql').read_text())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kamo-p07-final-partial/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  function close_purchase_order_remainder(uuid, unknown, jsonb, unknown, boolean) does not exist
+LINE 1: proof:=close_purchase_order_remainder(md5('p07-po')::uuid,'p...
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+QUERY:  proof:=close_purchase_order_remainder(md5('p07-po')::uuid,'p07-close',expected,'Supplier confirms remaining quantity unavailable',true)
+CONTEXT:  PL/pgSQL function inline_code_block line 7 at assignment
+523a6f96-f433-6b2c-850d-20693363f3a3
+{"no_um": "UM.P07.00001", "po_value": 1000, "advance_id": "a0e44e9e-26df-482d-969d-ebc1d17e97a5", "journal_id": "85669a3e-36bd-42da-afdd-664d46a7d415", "cash_source": {"code": "1196", "account_id": "cc1edec5-b386-5877-2cbf-3e0eee2278a1"}, "remaining_cap": 800, "existing_advances": 0}
+{"no_po": "PO.P07", "total": 500, "complete": false, "no_jurnal": "JRN-202610-0002", "no_terima": "TB.P07.00001", "receipt_id": "12c902cb-57cf-42ee-924d-d3766746cc54"}

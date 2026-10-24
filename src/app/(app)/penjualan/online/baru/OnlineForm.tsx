@@ -1,9 +1,12 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 // ponytail: baris item dinamis diserialisasi ke hidden JSON — pola sama dengan POForm.
 import type { SaleReplacement } from "@/lib/sale-replacement";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SecHeader } from "@/components/SecHeader";
 import { CHANNELS } from "@/lib/online";
 import { buatPenjualanOnline } from "../actions";
@@ -16,7 +19,7 @@ type Warehouse = { id: string; name: string; branch_name: string };
 type Item = { id: string; code: string; name: string; sell_price: number; units: ItemUnit[] };
 type Customer = { id: string; name: string; phone: string | null };
 // `nama` = nama bare yang diserialisasi ke server (kontrak actions.ts).
-// `label` = teks yang tampil di input (bisa "CODE — Nama" hasil pilih datalist, atau teks bebas).
+// `label` = nama yang tampil atau teks pencarian; draft lama boleh menyimpan label kode/nama.
 type Row = { item_id: string; nama: string; label: string; satuan: string; qty: number; harga: number };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -35,7 +38,7 @@ export function OnlineForm({
   customers: Customer[];
 }) {
   const {save,failure} = usePreservedAction(buatPenjualanOnline);
-  const [rows, setRows] = useState<Row[]>(replacement?.sale_items.map(row => ({ ...row, qty: Number(row.qty), harga: Number(row.harga), label: items.find(item => item.id === row.item_id) ? itemLabel(items.find(item => item.id === row.item_id)!) : row.nama })) ?? [{ ...blank }]);
+  const [rows, setRows] = useState<Row[]>(replacement?.sale_items.map(row => ({ ...row, qty: Number(row.qty), harga: Number(row.harga), label: items.find(item => item.id === row.item_id) ? items.find(item => item.id === row.item_id)!.name : row.nama })) ?? [{ ...blank }]);
   const [channel, setChannel] = useState<string>(replacement?.channel ?? "Shopee");
   const [custText, setCustText] = useState(replacement?.customer_id ? custLabel(customers.find(c => c.id === replacement.customer_id) ?? { id: "", name: "", phone: null }) : "");
 
@@ -48,12 +51,19 @@ export function OnlineForm({
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   // Wajib pilih dari master SKU — stok & HPP FIFO butuh item_id (teks bebas ditolak server).
-  // `label` (tampilan input) beda dari `nama` (bare, diserialisasi ke server): datalist
-  // menampilkan "CODE — Nama" tapi server hanya mau nama bare (I1).
+  // Pilihan eksplisit memakai ID; tempelan label datalist lama tetap dikenali.
+  const selectItem = (i: number, id: string) => {
+    const it = items.find(item => item.id === id);
+    if (it) set(i, { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, label: it.name, satuan: it.units[0]?.unit ?? "" });
+  };
+  const displayName = (r: Row) => {
+    const it = items.find(item => item.id === r.item_id);
+    return it && r.label === itemLabel(it) ? it.name : r.label;
+  };
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v);
     set(i, it
-      ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, label: itemLabel(it), satuan: it.units[0]?.unit ?? "" }
+      ? { nama: it.name, item_id: it.id, harga: Number(it.sell_price) || 0, label: it.name, satuan: it.units[0]?.unit ?? "" }
       // Tak match SKU manapun — item_id kosong (baris ini akan di-drop saat submit), jadi harga
       // lama juga direset ke 0 supaya tak ada harga basi nempel di SKU yang sudah tak valid.
       : { nama: v, item_id: "", label: v, harga: 0, satuan: "" });
@@ -85,15 +95,12 @@ export function OnlineForm({
       }}} />
       <input type="hidden" name="items" value={JSON.stringify(itemsToSubmit)} />
       <input type="hidden" name="customer_id" value={customerId} />
-      <datalist id="onl-items">
-        {items.map((it) => <option key={it.id} value={itemLabel(it)} />)}
-      </datalist>
       <datalist id="onl-customers">
         {customers.map((c) => <option key={c.id} value={custLabel(c)} />)}
       </datalist>
 
-      <div className="grid2">
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
+      <div className="grid2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))" }}>
+        <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
           <SecHeader num="01" title="DETAIL ORDER" desc="Channel, gudang online & data pembeli." />
 
           <div className="fg" style={{ marginBottom: 10 }}>
@@ -170,7 +177,7 @@ export function OnlineForm({
           )}
         </div>
 
-        <div className="crm-sec" style={{ marginBottom: 0 }}>
+        <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
           <SecHeader
             num="02"
             title="DAFTAR BARANG"
@@ -189,16 +196,12 @@ export function OnlineForm({
               const belumValid = !r.item_id && r.label.trim().length > 0;
               return (
               <div key={i} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input
-                    className="fi"
-                    list="onl-items"
-                    placeholder="Kode / nama barang"
-                    value={r.label}
-                    onChange={(e) => setNama(i, e.target.value)}
-                    style={belumValid ? { flex: 2, border: "1px solid #f59e0b" } : { flex: 2 }}
-                  />
-                  <input
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                  <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                    <SearchableItemPicker items={items} value={r.item_id} ariaLabel={`Barang online ${i + 1}`}
+                      textValue={displayName(r)} onTextChange={text => setNama(i, text)} onChange={id => selectItem(i, id)} />
+                  </div>
+                  <NumberInput
                     className="fi" type="number" min={0.000001} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 70 }} title="Qty" placeholder="Qty"
@@ -209,7 +212,7 @@ export function OnlineForm({
                   }} style={{ width: 90 }}>
                     {(items.find(it => it.id === r.item_id)?.units ?? []).map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                   </select>
-                  <input
+                  <NumberInput
                     className="fi" type="number" min={0} step="any" value={r.harga}
                     onChange={(e) => set(i, { harga: Number(e.target.value) })}
                     style={{ width: 110 }} title="Harga jual" placeholder="Harga"

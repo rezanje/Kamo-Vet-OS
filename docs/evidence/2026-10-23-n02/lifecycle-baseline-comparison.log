@@ -1,0 +1,7 @@
+Applied 234 repository migrations to isolated PostgreSQL 17.6 with fictional auth/storage shims.
+{
+  "main57e5e6a": "ERROR:  permission denied for table purchase_order_requests\nCONTEXT:  SQL expression \"not failed or exists(select 1 from purchase_order_requests where request_key='po-bad')\"\nPL/pgSQL function inline_code_block line 10 at IF\nauthenticated\na0000000-0000-4000-8000-000000000001\n",
+  "N02candidate": "ERROR:  permission denied for table purchase_order_requests\nCONTEXT:  SQL expression \"not failed or exists(select 1 from purchase_order_requests where request_key='po-bad')\"\nPL/pgSQL function inline_code_block line 10 at IF\nauthenticated\na0000000-0000-4000-8000-000000000001\n",
+  "identicalBaselineFailure": true
+}
+Removed owned PostgreSQL test container and volumes.

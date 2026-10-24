@@ -1,0 +1,6 @@
+{
+  "src/lib/inpatient-medication-history.ts": "de2d353cefa10a27cd8e7fb7d2e3b2d989dbbc74c6eb8be756814d69b7b654b5",
+  "src/app/(app)/klinik/rawat-inap/[id]/ObatKhusus.tsx": "0aa32b69b0b2000d0b4bc1c70c50f76bbe69ad920b7da80f213b85961c24a5ee",
+  "src/lib/__tests__/inpatient-medication-history.test.ts": "bc47265259ae5c7743d6c71133e2a3cfd5c99ddd2caa9ba495be3a5af23581a0",
+  "src/components/__tests__/inpatient-medication-read-errors.test.tsx": "a2275985e658f259652bab105c30a75dea84fd2e559bdf8369206861d3f291eb"
+}

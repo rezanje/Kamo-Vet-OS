@@ -1,0 +1,13 @@
+Independent reviewer /root/k08_review: No P1/P2 findings.
+Checked reads preserve existing filters, ordering, types, and the active OWNER/ADMIN guard.
+Failed or incomplete pages stop rendering; actions, permissions, and financial behavior remain unchanged.
+Independent verification: 28 tests passed across 5 files.
+Embedded ingredients and the last 50 production orders remain outside the completeness claim.
+No edits, publication, merge, or target actions.
+
+Final observed command results:
+Focused Vitest: exit 0, 28 tests / 5 files.
+Scoped ESLint: exit 0.
+npm run build: exit 0, existing Supabase Edge-runtime warnings retained.
+Separate post-build npx tsc --noEmit: exit 0.
+git diff --check: exit 0.

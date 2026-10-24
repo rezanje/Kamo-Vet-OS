@@ -1,3 +1,4 @@
+import { servicePerformerNames } from "@/lib/service-performers";
 import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -21,14 +22,14 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
+    .select("id, no_struk, cashier_name, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
   const paymentRows = receiptPaymentRows(sale);
 
   const { data: items } = await supabase
     .from("sale_items")
-    .select("nama, qty, satuan, harga, item_discount_type, item_discount_value, promos(name), sale_item_group_components(component_name, qty_per_group, unit, sort_order)")
+    .select("nama, qty, satuan, service_performers, harga, item_discount_type, item_discount_value, promos(name), sale_item_group_components(component_name, qty_per_group, unit, sort_order)")
     .eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers);
@@ -63,9 +64,11 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PETSHOP</div>
           <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Petshop"}</div>
         </div>
+        <p style={{fontSize:9}}>Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.</p>
         <Hr />
         <Row k="No" v={sale.no_struk ?? "-"} />
         <Row k="Tgl" v={tgl} />
+        <Row k="Kasir" v={sale.cashier_name || "Belum tercatat"} />
         <Row k="Pelanggan" v={cust?.name ?? "Umum"} />
         <Hr />
         {(items ?? []).map((it, i) => {
@@ -78,6 +81,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           return (
             <div key={i} style={{ marginBottom: 3 }}>
               <div>{it.nama}</div>
+              {it.service_performers && servicePerformerNames(it.service_performers).map(name => <div key={name} style={{fontSize:9.5}}>{name}</div>)}
               <div style={{ display: "flex", justifyContent: "space-between", gap: 4, alignItems: "start" }}>
                 {/* Satuan ikut tercetak (permintaan Bu Nisa, meeting 14 Agustus):
                     "2 x 35.000" tidak memberi tahu 2 botol atau 2 dus. */}

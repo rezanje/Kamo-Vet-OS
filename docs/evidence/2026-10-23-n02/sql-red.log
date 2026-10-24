@@ -1,0 +1,15 @@
+Applied 234 repository migrations to isolated PostgreSQL 17.6 with fictional auth/storage shims.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-n02-po-number/scripts/test-po-branch-number-postgres.py", line 37, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/workspace/kamo-n02-po-number/scripts/test-po-branch-number-postgres.py", line 14, in main
+    db.sql((ROOT/'supabase/tests'/name).read_text());print('PASS '+name,flush=True)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/kamo-n02-po-number/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  N02 branch identity/independent sequence missing: N02.0001, N02.0002, N02.0003
+CONTEXT:  PL/pgSQL function inline_code_block line 5 at RAISE
+fec6386d-85db-afe4-10ab-9573495e880f
+

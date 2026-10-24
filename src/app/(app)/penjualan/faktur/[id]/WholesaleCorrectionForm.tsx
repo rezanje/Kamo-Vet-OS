@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import Decimal from "decimal.js";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
@@ -52,7 +54,7 @@ export function WholesaleCorrectionForm({ userId, invoiceId, revision, today, du
         <tbody>{items.map(item => <tr key={item.id}>
           <td>{item.nama}<input type="hidden" name="line_id" value={item.id} /></td>
           <td>{item.qty} {item.satuan}</td>
-          <td><input className="fi" type="number" name={`harga_${item.id}`} aria-label={`Harga ${item.nama}`} min="0" max="1000000000" step="0.01" value={prices[item.id]} onInput={e => { const value = e.currentTarget.value; setPrices(p => ({ ...p, [item.id]: value })); }} readOnly={action === "cancel"} /></td>
+          <td><NumberInput className="fi" type="number" name={`harga_${item.id}`} aria-label={`Harga ${item.nama}`} min="0" max="1000000000" step="0.01" value={prices[item.id]} onInput={e => { const value = e.currentTarget.value; setPrices(p => ({ ...p, [item.id]: value })); }} readOnly={action === "cancel"} /></td>
         </tr>)}</tbody>
       </table>
       <div className="p2ban" aria-live="polite">

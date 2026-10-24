@@ -1,16 +1,22 @@
+vi.mock("@/lib/service-performers-server",async(importOriginal)=>{
+  const actual=await importOriginal<typeof import("../service-performers-server")>();
+  return {...actual,loadServiceStaff:async(...args:Parameters<typeof actual.loadServiceStaff>)=>fixture.realStaff?actual.loadServiceStaff(...args):[]};
+});
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failed: "" }));
+const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failed: "", realStaff:false }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   from(table: string) {
     const filters: ((row: Record<string, unknown>) => boolean)[] = [];
-    let from = 0; let to = 999; let counted = false;
+    let from = 0; let to = 999; let counted = false; let fields = "";let missingColumn=false;
+    const assignmentColumns=new Set(['employee_id','branch_id','role','effective_date','created_at']);
     const q = {
-      select(_fields: string, opts?: { count: string }) { counted = opts?.count === "exact"; return q; },
+      select(selectedFields: string, opts?: { count: string }) { fields = selectedFields; counted = opts?.count === "exact";if(table==='employee_branch_assignments')missingColumn=fields.split(',').some(field=>!assignmentColumns.has(field.split(':').at(-1)!.trim()));return q; },
       eq(k: string, v: unknown) { filters.push(r => r[k] === v); return q; },
       neq(k: string, v: unknown) { filters.push(r => r[k] !== v); return q; },
+      lte(k:string,v:unknown){filters.push(r=>String(r[k])<=String(v));return q;},
       in(k: string, values: unknown[]) { filters.push(r => values.includes(r[k])); return q; },
       or(expression: string) {
         const alternatives = expression.match(/category_id\.in\.\([^)]+\)|name\.ilike\.[^,]+/g) ?? [];
@@ -19,14 +25,17 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
           : String(row.name).toLowerCase().startsWith(filter.slice("name.ilike.".length).replace(/\*$/, "").toLowerCase())));
         return q;
       },
-      order() { return q; },
+      order(column:string) { if(table==='employee_branch_assignments'&&!assignmentColumns.has(column))missingColumn=true;return q; },
       limit(n: number) { to = n - 1; return q; },
       range(a: number, b: number) { from = a; to = b; return q; },
       maybeSingle: async () => ({ data: fixture.failed === table ? null : (fixture.tables[table] ?? []).find(r => filters.every(f => f(r))) ?? null, error: fixture.failed === table ? { message: "secret detail" } : null }),
       single: async () => ({ data: (fixture.tables[table] ?? [])[0] ?? null, error: null }),
       then(resolve: (v: unknown) => void) {
+        if(missingColumn)return Promise.resolve({data:null,count:null,error:{code:'42703',message:'column id does not exist'}}).then(resolve);
         const rows = (fixture.tables[table] ?? []).filter(r => filters.every(f => f(r)));
-        return Promise.resolve({ data: fixture.failed === table ? null : rows.slice(from, to + 1), count: counted ? rows.length : null, error: fixture.failed === table ? { message: "secret detail" } : null }).then(resolve);
+        const data = rows.slice(from, to + 1).map(row => table === "items"||table==='employee_branch_assignments'
+          ? Object.fromEntries(fields.split(",").map(field => {const [alias,column]=field.trim().split(':');return [alias,row[column??alias]];})) : row);
+        return Promise.resolve({ data: fixture.failed === table ? null : data, count: counted ? rows.length : null, error: fixture.failed === table ? { message: "secret detail" } : null }).then(resolve);
       },
     };
     return q;
@@ -51,6 +60,7 @@ function formProps(node: React.ReactNode): Record<string, unknown> | undefined {
 }
 beforeEach(() => {
   fixture.failed = "";
+  fixture.realStaff=false;
   const visit = { id: "visit", pet_id: "pet", branch_id: "branch", status: "Diperiksa", created_at: "2026-10-05T00:00:00Z", pets: { name: "Fictional", species: "Kucing" }, customers: { name: "Fictional owner" } };
   fixture.tables = {
     profiles: [{ id: "owner", role: "OWNER" }], visits: [visit],
@@ -71,13 +81,37 @@ beforeEach(() => {
 const exam = () => ExamPage({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) });
 const inpatient = () => InpatientPage({ params: Promise.resolve({ id: "inpatient" }) });
 describe("compound master SKUs reach clinic POS", () => {
+  it('opens an in-progress medical visit using the real staff reader against assignment columns without a synthetic id',async()=>{
+    fixture.realStaff=true;
+    fixture.tables.employees=[{id:'own',nama:'Fictional doctor',jabatan:'Dokter',status:'Aktif',branch_id:'branch'},{id:'assigned',nama:'Fictional nurse',jabatan:'Paramedis',status:'Aktif',branch_id:'other'}];
+    fixture.tables.employee_branch_assignments=[{employee_id:'assigned',branch_id:'branch',role:'SECONDARY',effective_date:'2020-01-01'}];
+    const props=formProps(await exam());
+    expect(props?.serviceStaff).toEqual(expect.arrayContaining([expect.objectContaining({id:'own'}),expect.objectContaining({id:'assigned'})]));
+    expect(props?.serviceStaff).toHaveLength(2);
+  });
+  it('loads assignment pages beyond 500 while preserving branch, active and effective-date eligibility',async()=>{
+    fixture.realStaff=true;
+    fixture.tables.employees=Array.from({length:605},(_,i)=>({id:`staff-${i}`,nama:`Fictional ${i}`,jabatan:'Paramedis',status:i===603?'Nonaktif':'Aktif',branch_id:'other'}));
+    fixture.tables.employee_branch_assignments=fixture.tables.employees.map((row,i)=>({employee_id:row.id,branch_id:i===604?'other':'branch',effective_date:i===602?'2099-01-01':'2020-01-01',role:'SECONDARY'}));
+    const staff=formProps(await exam())?.serviceStaff as {id:string}[];
+    expect(staff).toHaveLength(602);expect(staff.map(row=>row.id)).toContain('staff-601');
+    for(const id of ['staff-602','staff-603','staff-604'])expect(staff.map(row=>row.id)).not.toContain(id);
+  });
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s supplies separate code and name for every clinical picker", async (_name, page) => {
+    fixture.tables.items.forEach(row => { row.code = `CODE-${row.id}`; });
+    const props = formProps(await page());
+    expect(props?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "ordinary-549", name: "A ordinary 549", code: "CODE-ordinary-549" })]));
+    expect(props?.jasaItems).toEqual([expect.objectContaining({ id: "service", name: "Jasa", code: "CODE-service" })]);
+    expect(props?.bahanItems).toEqual([expect.objectContaining({ id: "material", name: "Bahan", code: "CODE-material" })]);
+    expect(props?.racikanItems).toEqual([expect.objectContaining({ id: "racik", name: "Obat Racik Sirup Flu", code: "CODE-racik" })]);
+  });
   it("does not reopen the editable initial form for a recorded visit", async () => {
     fixture.tables.visits[0].status = "Pembayaran";
     expect(formProps(await exam())).toBeUndefined();
   });
-  it("keeps raw ingredients and services out of the inpatient medicine picker", async () => {
+  it("includes inventory ingredients but keeps services out of the inpatient medicine picker", async () => {
     const props = formProps(await inpatient());
-    expect((props?.items as { id: string }[]).map(item => item.id)).not.toContain("material");
+    expect((props?.items as { id: string }[]).map(item => item.id)).toContain("material");
     expect((props?.items as { id: string }[]).map(item => item.id)).not.toContain("service");
     expect(props?.bahanItems).toEqual([expect.objectContaining({ id: "material" })]);
   });
@@ -90,6 +124,28 @@ describe("compound master SKUs reach clinic POS", () => {
     expect(props?.items).toHaveLength(1250);
     expect((props?.items as { id: string; units: unknown[] }[]).find(item => item.id === "medicine-1249")?.units)
       .toEqual(expect.arrayContaining([expect.objectContaining({ unit: "btl", factor: 50, sell_price: 45000 })]));
+  });
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s keeps late-page inventory ingredients with branch stock/price and active-state filtering", async (_name, page) => {
+    const base = { is_active: true, is_compound_material: true, item_type: "Persediaan", category_id: "worm", unit: "tablet", sell_price: 1000 };
+    fixture.tables.item_categories.push({ id: "medicine", name: "OBAT & VITAMIN" }, { id: "worm", name: "OBAT CACING", parent_id: "medicine" });
+    fixture.tables.items.push(
+      ...Array.from({ length: 655 }, (_, i) => ({ ...base, id: `ingredient-${i}`, name: `Medicine ${i}` })),
+      { ...base, id: "anthel", name: "Anthel fixture" },
+      { ...base, id: "zero-stock", name: "Anthel zero stock" },
+      { ...base, id: "archived", name: "Anthel archived", is_active: false },
+    );
+    fixture.tables.stock.push({ id: "anthel-stock", item_id: "anthel", warehouse_id: "warehouse", qty: 50 },
+      { id: "retail-stock", item_id: "anthel", warehouse_id: "retail", qty: 900 },
+      { id: "other-stock", item_id: "zero-stock", warehouse_id: "other-branch", qty: 700 });
+    fixture.tables.item_branch_prices.push({ id: "anthel-price", item_id: "anthel", branch_id: "branch", unit: "tablet", sell_price: 2500 },
+      { id: "other-price", item_id: "anthel", branch_id: "other-branch", unit: "tablet", sell_price: 99000 });
+    const props = formProps(await page());
+    const medicines = props?.items as { id: string }[];
+    expect(medicines).toContainEqual(expect.objectContaining({ id: "anthel", stok: 50, sell_price: 2500 }));
+    expect(medicines).toContainEqual(expect.objectContaining({ id: "zero-stock", stok: 0, sell_price: 1000 }));
+    expect(medicines).toContainEqual(expect.objectContaining({ id: "ingredient-654" }));
+    expect(medicines.map(row => row.id)).not.toContain("archived");
+    expect(props?.bahanItems).toContainEqual(expect.objectContaining({ id: "anthel" }));
   });
   it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s exposes an active compound SKU beyond the old master limit with branch price and stock", async (_name, page) => {
     const props = formProps(await page());
@@ -129,7 +185,7 @@ describe("compound master SKUs reach clinic POS", () => {
 
 
 describe("clinic item categories", () => {
-  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s splits Jasa and Tindakan by category, including child categories", async (_name, page) => {
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s prioritizes explicit clinic categories and falls back to service type", async (_name, page) => {
     fixture.tables.item_categories.push(
       { id: "actions", name: " TINDAKAN " },
       { id: "surgery", name: "Operasi", parent_id: "actions" },
@@ -150,10 +206,38 @@ describe("clinic item categories", () => {
     fixture.tables.item_branch_prices = [{ id: "steril-price", item_id: "steril", branch_id: "branch", unit: "pcs", sell_price: 75000 }];
     const props = formProps(await page());
     const ids = (key: string) => (props?.[key] as { id: string }[]).map(item => item.id);
-    expect(ids("jasaItems")).toEqual(["consult"]);
+    expect(ids("jasaItems")).toEqual(["consult", "vaccine", "lab"]);
     expect(ids("tindakanItems")).toEqual(["steril", "scaling"]);
-    expect(ids("items")).toEqual(["vaccine", "lab", "food", "group", "uncategorized"]);
+    expect(ids("items")).toEqual(["food", "uncategorized", "ingredient"]);
     expect(ids("bahanItems")).toEqual(["ingredient"]);
     expect(props?.tindakanItems).toEqual(expect.arrayContaining([expect.objectContaining({ id: "steril", sell_price: 75000, tindakan_kategori: "Operasi" })]));
+  });
+
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s exposes imported services without a literal Jasa ancestor and preserves pricing metadata", async (_name, page) => {
+    fixture.tables.item_categories = [
+      { id: "consult-category", name: "KONSULTASI" },
+      { id: "actions", name: "Tindakan" }, { id: "medicine", name: "Obat" },
+      { id: "vaccine", name: "Vaksin", parent_id: "medicine" },
+    ];
+    const base = { is_active: true, is_compound_material: false, unit: "kali", sell_price: 35000, item_type: "Jasa", tindakan_kategori: "Konsultasi" };
+    fixture.tables.items = [
+      { ...base, id: "imported-service", name: "Konsultasi fiktif", category_id: "consult-category" },
+      { ...base, id: "uncategorized-service", name: "Jasa tanpa kategori", category_id: null },
+      { ...base, id: "inactive-service", name: "Jasa nonaktif", category_id: "consult-category", is_active: false },
+      { ...base, id: "action", name: "Tindakan fiktif", category_id: "actions", tindakan_kategori: "Operasi" },
+      { ...base, id: "vaccine", name: "Vaksin fiktif", category_id: "vaccine" },
+      { ...base, id: "stock", name: "Barang fiktif", category_id: "consult-category", item_type: "Persediaan" },
+    ];
+    fixture.tables.item_branch_prices = [{ id: "consult-price", item_id: "imported-service", branch_id: "branch", unit: "kali", sell_price: 45000 }];
+    fixture.tables.item_units = [{ id: "consult-unit", item_id: "imported-service", unit: "paket", factor: 2, sell_price: 80000, buy_price: 0 }];
+    const props = formProps(await page());
+    const ids = (key: string) => (props?.[key] as { id: string }[]).map(sku => sku.id);
+    expect(ids("jasaItems")).toEqual(["imported-service", "uncategorized-service", "vaccine"]);
+    expect(ids("tindakanItems")).toEqual(["action"]);
+    expect(ids("items")).toEqual(["stock"]);
+    expect(props?.jasaItems).toContainEqual(expect.objectContaining({
+      id: "imported-service", item_type: "Jasa", tindakan_kategori: "Konsultasi", sell_price: 45000,
+      units: expect.arrayContaining([expect.objectContaining({ unit: "paket", factor: 2, sell_price: 80000 })]),
+    }));
   });
 });
