@@ -11,7 +11,7 @@ vi.mock("next/link", () => ({ default: ({ children, href }: React.PropsWithChild
 import { GET } from "../../app/(app)/laporan/penjualan-barang/unduh/route";
 import Page from "../../app/(app)/laporan/penjualan-barang/page";
 
-const rows: Baris[] = Array.from({ length: 205 }, (_, index) => ({ id: String(index), waktu: "2026-10-04T05:00:00Z", dokumen: `INV-${index}`, href: `/invoice/${index}`, kanal: "Klinik", jenis: "Racikan", cabang: "Klinik A", pelanggan: "Pemilik", hewan: "Kucing", nama: index === 204 ? "<obat>" : "Racikan", qty: 2, harga: 100, diskon: 10, nilai: 190, status: "Lunas" }));
+const rows: Baris[] = Array.from({ length: 205 }, (_, index) => ({ id: String(index), waktu: "2026-10-04T05:00:00Z", dokumen: `INV-${index}`, href: `/invoice/${index}`, kanal: "Klinik", jenis: "Racikan", cabang: "Klinik A", pelanggan: "Pemilik", hewan: "Kucing", nama: index === 204 ? "<obat>" : "Racikan", pelaksana: "—", qty: 2, harga: 100, diskon: 10, nilai: 190, status: "Lunas" }));
 beforeEach(() => {
   mocks.createClient.mockResolvedValue(clientFixture().client);
   mocks.load.mockReset().mockResolvedValue({ rows, pesanError: "", nilaiTotal: 38950, qtyTotal: 410 });

@@ -34,8 +34,8 @@ export async function GET(request: Request) {
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
   };
-  const columns = ["Waktu WIB", "No. dokumen", "Sumber", "Jenis", "Cabang", "Pelanggan", "Pasien", "Barang / layanan", "Qty", "Harga", "Diskon item", "Nilai baris", "Status"];
-  const data = rows.map(row => [waktuWIB(row.waktu), row.dokumen, row.kanal, row.jenis, row.cabang, row.pelanggan, row.hewan, row.nama, row.qty, row.harga, row.diskon, row.nilai, row.status]);
+  const columns = ["Waktu WIB", "No. dokumen", "Sumber", "Jenis", "Cabang", "Pelanggan", "Pasien", "Barang / layanan", "Pelaksana tersimpan", "Qty", "Harga", "Diskon item", "Nilai baris", "Status"];
+  const data = rows.map(row => [waktuWIB(row.waktu), row.dokumen, row.kanal, row.jenis, row.cabang, row.pelanggan, row.hewan, row.nama, row.pelaksana, row.qty, row.harga, row.diskon, row.nilai, row.status]);
   const context = "Nilai setelah diskon item. Diskon tingkat nota, retur kasir, dan pajak tidak dibagi ke tiap baris; total dapat berbeda dari pembayaran. Racikan dicocokkan dengan resep pada kunjungan yang sama.";
   const metadata: (string | number)[][] = [["Rincian penjualan per barang"], ["Dari tanggal WIB", dari], ["Sampai tanggal WIB", sampai],
     ["Sumber", kanal], ["Jenis", jenis], ["Cari", q], ["Baris penjualan", rows.length], ["Jumlah terjual", qtyTotal],
@@ -48,8 +48,8 @@ export async function GET(request: Request) {
     sheet.getRow(1).font = { bold: true };
     sheet.addRows(data);
     columns.forEach((_, index) => {
-      sheet.getColumn(index + 1).width = index >= 8 && index <= 11 ? 20 : 28;
-      if (index >= 8 && index <= 11) sheet.getColumn(index + 1).numFmt = '#,##0.00';
+      sheet.getColumn(index + 1).width = index >= 9 && index <= 12 ? 20 : 28;
+      if (index >= 9 && index <= 12) sheet.getColumn(index + 1).numFmt = '#,##0.00';
     });
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
     book.addWorksheet("Ringkasan dan filter").addRows(metadata);
