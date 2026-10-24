@@ -23,7 +23,8 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
   { tabel: "sales_receipts", kolom: "no_terima", label: "Penerimaan penjualan",
     extra: "invoice_id", href: (r) => `/penjualan/faktur/${r.extra ?? ""}#receipt-${r.id}` },
   { tabel: "sales_orders", kolom: "no_pesanan", label: "Pesanan penjualan", href: (r) => `/penjualan/pesanan/${r.id}` },
-  { tabel: "sales_quotations", kolom: "no_penawaran", label: "Penawaran", href: () => `/penjualan/penawaran` },
+  { tabel: "sales_quotations", kolom: "no_penawaran", label: "Penawaran",
+    href: (r) => `/penjualan/penawaran?quotation=${r.id}#quotation-${r.id}` },
   { tabel: "sales_deliveries", kolom: "no_kirim", label: "Pengiriman",
     href: (r) => `/penjualan/pengiriman?delivery=${r.id}#delivery-${r.id}` },
   { tabel: "sales_returns", kolom: "no_retur", label: "Retur penjualan", href: (r) => `/penjualan/retur/${r.id}` },
@@ -41,7 +42,8 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
   },
   { tabel: "cash_entries", kolom: "no_bukti", label: "Kas masuk/keluar", href: () => `/kas-bank/kas-keluar` },
   { tabel: "invoices", kolom: "invoice_no", label: "Invoice klinik", extra: "visit_id", href: (r) => `/klinik/pembayaran/${r.extra ?? ""}/invoice` },
-  { tabel: "journal_entries", kolom: "no_jurnal", label: "Jurnal", href: () => `/keuangan/jurnal` },
+  { tabel: "journal_entries", kolom: "no_jurnal", label: "Jurnal",
+    href: (r) => `/keuangan/jurnal?entry=${r.id}#journal-${r.id}` },
 ];
 
 /** Halaman satu pintu untuk sebuah nomor dokumen. */

@@ -7,7 +7,7 @@ vi.mock("next/navigation",()=>({redirect:(url:string)=>{throw new Error(url);},n
 vi.mock("next/link",()=>({default:({children,...props}:React.AnchorHTMLAttributes<HTMLAnchorElement>)=>React.createElement("a",props,children)}));
 vi.mock("@/lib/master-guard",()=>({assertRole:async()=>({rpc:state.rpc}),bolehTransaksiKas:async()=>true}));
 vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:"owner"}}})},from:(table:string)=>{
-  const data=table==="sales_orders"?{id:"00000000-0000-4000-8000-000000000001",no_pesanan:"SO.TEST",status:"diproses",total:200,warehouse_id:null,sales_order_items:[{id:"00000000-0000-4000-8000-000000000002",nama:"Test pcs",satuan:"pcs",qty:20,harga:10,qty_kirim:state.shipped,qty_faktur:state.billed}]}:[];
+  const data=table==="sales_orders"?{id:"00000000-0000-4000-8000-000000000001",no_pesanan:"SO.TEST",status:"diproses",total:200,warehouse_id:null,sales_quotations:{id:"10000000-0000-4000-8000-000000000003",no_penawaran:"SQ.TEST"},sales_order_items:[{id:"00000000-0000-4000-8000-000000000002",nama:"Test pcs",satuan:"pcs",qty:20,harga:10,qty_kirim:state.shipped,qty_faktur:state.billed}]}:[];
   const query={select:()=>query,eq:()=>query,order:()=>query,maybeSingle:async()=>({data}),then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data}).then(resolve)};
   return query;
 }})}));
@@ -26,6 +26,10 @@ async function render(params:{error?:string;request_done?:string;request_scope?:
 }
 const shipmentForm=()=>Array.from(container.querySelectorAll("form")).find(f=>f.textContent?.includes("Catat pengiriman"))!;
 const key=()=>shipmentForm().querySelector<HTMLInputElement>('input[name="request_key"]')!.value;
+it("links a sales order back to its stored quotation",async()=>{
+  await render();
+  expect(container.querySelector('a[href="/penjualan/penawaran?quotation=10000000-0000-4000-8000-000000000003#quotation-10000000-0000-4000-8000-000000000003"]')?.textContent).toContain("SQ.TEST");
+});
 it("keeps the actual shipment form identity after committed partial shipment loses its response",async()=>{
   await render();const original=key();expect(original).not.toBe("");
   const f=new FormData(shipmentForm());f.set("qty_00000000-0000-4000-8000-000000000002","2");

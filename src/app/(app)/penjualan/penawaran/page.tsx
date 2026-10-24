@@ -25,13 +25,15 @@ type Penawaran = {
   id: string; no_penawaran: string; tanggal: string; berlaku_sampai: string | null;
   total: number; status: string;
   customers: Rel<{ name: string }>;
-  sales_orders: { no_pesanan: string }[] | null;
+  sales_orders: { id: string; no_pesanan: string }[] | null;
 };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const QUOTATION_SELECT = "id, no_penawaran, tanggal, berlaku_sampai, total, status, customers(name), sales_orders(id, no_pesanan)";
 
 export default async function PenawaranPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; quotation?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
@@ -40,14 +42,20 @@ export default async function PenawaranPage({
 
   const [{ data: docData }, { data: custData }, { data: cabData }, itemData] = await Promise.all([
     supabase.from("sales_quotations")
-      .select("id, no_penawaran, tanggal, berlaku_sampai, total, status, customers(name), sales_orders(no_pesanan)")
+      .select(QUOTATION_SELECT)
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(200),
     supabase.from("customers").select("id, name, phone").order("name").limit(500),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, unit, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang penawaran", { maxRows: null }),
   ]);
 
-  const dok = (docData ?? []) as unknown as Penawaran[];
+  let dok = (docData ?? []) as unknown as Penawaran[];
+  if (sp.quotation && UUID.test(sp.quotation) && !dok.some((row) => row.id === sp.quotation)) {
+    const selected = await supabase.from("sales_quotations")
+      .select(QUOTATION_SELECT).eq("id", sp.quotation).maybeSingle();
+    if (selected.error) throw new Error("Penawaran terpilih belum dapat dibaca.");
+    if (selected.data) dok = [selected.data as unknown as Penawaran, ...dok];
+  }
   const pelanggan = (custData ?? []) as { id: string; name: string; phone: string }[];
   const cabang = (cabData ?? []) as { id: string; name: string }[];
   // Satuan turunan ikut dikirim supaya baris pesanan bisa memilih dus/box, bukan
@@ -127,7 +135,7 @@ export default async function PenawaranPage({
               {dok.map((d) => {
                 const so = (d.sales_orders ?? [])[0];
                 return (
-                  <tr key={d.id}>
+                  <tr id={UUID.test(d.id) ? `quotation-${d.id}` : undefined} style={{ scrollMarginTop: 90 }} key={d.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>{d.no_penawaran}</td>
                     <td style={{ fontSize: 11 }}>{tgl(d.tanggal)}</td>
                     <td style={{ fontSize: 11.5 }}>{one(d.customers)?.name ?? "—"}</td>
@@ -167,7 +175,7 @@ export default async function PenawaranPage({
                             </form>
                           )}
                           {so && (
-                            <Link href="/penjualan/pesanan" className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>
+                            <Link href={`/penjualan/pesanan/${so.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>
                               Lihat pesanan
                             </Link>
                           )}

@@ -9,6 +9,7 @@ it('uses actual detail routes and exact row anchors for payment/list documents',
  expect(relatedDocumentHref('purchase-payment',id,parent)).toBe('/pembelian/faktur/'+parent+'#payment-'+id);
  expect(relatedDocumentHref('sales-receipt',id,parent)).toBe('/penjualan/faktur/'+parent+'#receipt-'+id);
  expect(relatedDocumentHref('sales-delivery',id)).toBe('/penjualan/pengiriman?delivery='+id+'#delivery-'+id);
+ expect(relatedDocumentHref('sales-quotation',id)).toBe('/penjualan/penawaran?quotation='+id+'#quotation-'+id);
  expect(relatedDocumentHref('purchase-advance',id)).toBe('/pembelian/uang-muka#advance-'+id);
  expect(relatedDocumentHref('sales-advance',id)).toBe('/penjualan/uang-muka#advance-'+id);
  expect(relatedDocumentHref('legacy-purchase-payment',id,parent)).toBe('/pembelian/'+parent+'#legacy-payment-'+id);
