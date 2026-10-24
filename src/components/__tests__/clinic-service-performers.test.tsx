@@ -47,6 +47,23 @@ async function tab(name: string) {
 }
 const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="resep"]')!.value);
 
+it('outpatient compound requires a composition path instead of offering direct finished-stock use', async () => {
+  await render('exam'); await tab('Racikan');
+  const search = host.querySelector<HTMLInputElement>('[aria-label="Cari obat racik"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Obat Racik');
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const select = host.querySelector<HTMLButtonElement>('[aria-label="Pilih Obat Racik Sirup"]')!;
+  expect(select).toBeTruthy();
+  await act(async () => select.click());
+  expect(host.textContent).toContain('Komposisi racikan');
+  expect(host.textContent).not.toContain('Ambil stok obat jadi');
+  const addCompound = [...host.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent?.includes('Tambah racikan ke keranjang'));
+  expect(addCompound?.disabled).toBe(true);
+});
+
 
 it.each(["exam", "inpatient"])("%s retains distinct repeated service rows and explicit empty attribution", async kind => {
   await render(kind); await tab("Jasa");
