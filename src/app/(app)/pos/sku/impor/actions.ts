@@ -1054,7 +1054,8 @@ async function muatMasterSaldoAwal(supabase: any): Promise<ReadonlyMap<string, S
       id: String(row.id),
       code: String(row.code ?? ""),
       unit: String(row.unit ?? ""),
-      itemType: row.is_active === false ? "Tidak aktif" : String(row.item_type ?? ""),
+      itemType: String(row.item_type ?? ""),
+      isActive: row.is_active !== false,
       trackExpiry: Boolean(row.track_expiry),
       units: (row.item_units ?? []).map((unit: Record<string, unknown>) => ({
         unit: String(unit.unit ?? ""),
@@ -1212,6 +1213,7 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
         code: item.code,
         unit: item.unit,
         itemType: item.item_type,
+        isActive: item.is_active,
         trackExpiry: item.track_expiry,
         units: item.units.map((unit) => ({ unit: unit.unit, factor: unit.factor })),
       });

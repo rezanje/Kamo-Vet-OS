@@ -45,6 +45,7 @@ export type SaldoAwalMasterItem = {
   code: string;
   unit: string;
   itemType: string;
+  isActive?: boolean;
   trackExpiry: boolean;
   units: { unit: string; factor: number }[];
 };
@@ -410,6 +411,7 @@ export function resolveSaldoAwalRows(
     let factor = 1;
     if (!item) reason = "Kode barang tidak ditemukan";
     else if (item.itemType !== "Persediaan") reason = "Jasa atau non-persediaan dilewati";
+    else if (item.isActive === false) reason = "Barang tidak aktif; periksa status di master sebelum mengimpor saldo";
     else if (!item.unit) reason = "Satuan dasar barang belum tersedia";
     else {
       const sourceUnit = row.unit.trim().toLowerCase();
