@@ -77,6 +77,15 @@ it("hands a prepared batch to accounting review instead of offering import prepa
   expect(actions.previewSaldoAwalAccurate).toHaveBeenCalledTimes(1);
 });
 
+it('offers explicit money normalization without editing the file and forwards it to both stages',async()=>{
+ const option=host.querySelector<HTMLInputElement>('input[aria-label="Bulatkan nilai uang ke 2 desimal"]');
+ expect(option).not.toBeNull();expect(option?.checked).toBe(false);
+ await act(async()=>option!.click());await check();
+ expect(actions.preflightSaldoAwalSekali.mock.calls[0][0].get('valuation_policy')).toBe('HALF_UP_BATCH_V1');
+ await act(async()=>button('Import Sekali')!.click());
+ expect(actions.previewSaldoAwalAccurate.mock.calls[0][0].get('valuation_policy')).toBe('HALF_UP_BATCH_V1');
+});
+
 it("does not repeat stock preparation through the old continuation after a batch was saved", async () => {
   await check(); await act(async () => button("Import Sekali")!.click());
   await act(async () => button("Lanjutkan Import Sekali")?.click());

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {InitialStockDecimalPreview} from "./InitialStockDecimalPreview";
 import { useEffect, useRef, useState } from "react";
 import { previewSaldoAwalAccurate, type InitialStockState } from "./actions";
 
@@ -42,6 +43,7 @@ export function StockOnlyImport() {
     <button type="button" className="btn-acc" disabled={!file||!date||busy||Boolean(state?.ok)} onClick={()=>void prepare()}>Siapkan batch saldo</button>
     {busy&&<p role="status">Persiapan: menyiapkan batch. Stok dan jurnal belum diposting.</p>}
     {(error||(state&&!state.ok))&&<p role="alert">{error||state?.message}</p>}
+    <InitialStockDecimalPreview preview={state?.decimal_preview}/>
     {state?.scope_clarification&&<div role="group" aria-label="Pilih tujuan saldo">
       <p>Konfirmasi alias sumber: {state.scope_clarification.sourceBranch} / {state.scope_clarification.sourceWarehouse}. Pilih hanya jika tujuan berikut adalah gudang yang sama.</p>
       {state.scope_clarification.candidates.map(candidate=><button type="button" className="btn-def" key={candidate.warehouse.id} disabled={busy} onClick={()=>void prepare({branchId:candidate.branch.id,warehouseId:candidate.warehouse.id})}>Gunakan {candidate.branch.name} / {candidate.warehouse.name}</button>)}
