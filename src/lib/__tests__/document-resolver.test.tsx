@@ -19,7 +19,7 @@ it.each([
  state.table=table;if(table==='production_orders')state.extra='FICTION.2026.00001';
  await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(path);
 });
-it('preserves actual clinical visit ownership when invoice id differs from visit id',async()=>{state.table='invoices';state.extra='20000000-0000-4000-8000-000000000002';await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(`/klinik/pembayaran/${state.extra}/invoice`);});
+it('preserves the exact clinical invoice and visit when their IDs differ',async()=>{state.table='invoices';state.extra='20000000-0000-4000-8000-000000000002';await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(`/klinik/pembayaran/${state.extra}/invoice?invoice_id=${id}`);});
 it('opens a numbered sales receipt at its stored invoice and exact receipt row',async()=>{
  state.table='sales_receipts';state.extra='20000000-0000-4000-8000-000000000002';
  await expect(Resolver({params:Promise.resolve({no:'RC.2026.10.00001'})})).rejects.toThrow(`/penjualan/faktur/${state.extra}#receipt-${id}`);
