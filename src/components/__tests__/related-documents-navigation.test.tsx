@@ -25,6 +25,7 @@ beforeEach(()=>{
   if(table==='profiles')data={role:'ADMIN',is_active:true};
   if(table==='purchase_orders')data=m.rootMissing?null:po;
   if(table==='goods_receipts')data=!single?[{id:id(2),no_terima:'GR-ONE'},{id:id(3),no_terima:'GR-TWO'}]:m.rootMissing?null:{id:id(2),po_id:id(1),no_terima:'GR-ONE',tanggal:'2026-10-22',purchase_orders:m.denied?null:{id:id(1),no_po:'PO-1',status:'Diterima'},goods_receipt_items:[]};
+  if(table==='purchase_returns')data=m.denied?[]:[{id:id(31),no_retur:'RB-ONE',voided_at:null}];
   if(table==='purchase_invoices'){
    data=single&&filters.id===id(10)?{id:id(10),no_faktur:'INV-1',total:100,tanggal:'2026-10-22',jatuh_tempo:'2026-11-22',revision:0,voided_at:m.replacementVisible?'2026-10-22':null,po_id:id(1),purchase_orders:m.denied?null:po,replaces_invoice_id:id(20),original:m.denied?null:{id:id(20),no_faktur:'INV-ORIGINAL',voided_at:'2026-10-22'},purchase_invoice_items:[],purchase_invoice_payments:[payment(11,{voided_at:'2026-10-22'}),payment(12,{reversal_of:id(11),amount:-10}),payment(13,{replaces_payment_id:id(11),advance_id:id(4),advance:m.denied?null:{id:id(4),no_um:'DP-ONE',status:'aktif'},payment_order_id:id(30),payment_order:m.denied?null:{id:id(30),no_pp:'PP-ONE',status:'dibayar'}})]}:single?(filters.id===id(20)&&!m.denied?{id:id(20),no_faktur:'INV-ORIGINAL',voided_at:'2026-10-22'}:m.replacementVisible&&filters.replaces_invoice_id?{id:id(21),no_faktur:'INV-REPLACEMENT',voided_at:null}:null):[{id:id(10),no_faktur:'INV-1',voided_at:null}];
    if(m.rootMissing&&single&&filters.id===id(10))data=null;
@@ -51,6 +52,13 @@ it('retains every purchase payment, cancellation, reversal, replacement, DP and 
  const html=renderToStaticMarkup(await Invoice({params:Promise.resolve({id:id(10)}),searchParams:Promise.resolve({})}));
  for(const n of [11,12,13])expect(html).toContain('id="payment-'+id(n)+'"');
  expect(html).toContain('#payment-'+id(11));expect(html).toContain('#payment-'+id(13));expect(html).toContain('Pembalik pembayaran');expect(html).toContain('Pembayaran dibatalkan');expect(html).toContain('Pembayaran pengganti');expect(html).toContain('#advance-'+id(4));expect(html).toContain('#payment-order-'+id(30));expect(html).toContain('PP-ONE');
+});
+it('shows purchase returns sharing the invoice PO without claiming receipt allocation',async()=>{
+ const html=renderToStaticMarkup(await Invoice({params:Promise.resolve({id:id(10)}),searchParams:Promise.resolve({})}));
+ expect(html).toContain('/pembelian/retur/'+id(31));
+ expect(html).toContain('RB-ONE');
+ expect(html).toContain('PO yang sama');
+ expect(m.calls).toContainEqual(['purchase_returns','eq','po_id',id(1)]);
 });
 it('opens every split sales receipt and its explicitly allocated DP',async()=>{
  const html=renderToStaticMarkup(await SalesInvoice({params:Promise.resolve({id:id(40)}),searchParams:Promise.resolve({})}));

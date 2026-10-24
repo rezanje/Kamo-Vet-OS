@@ -25,6 +25,9 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
   if ([document, items, profile, provenance, audit, parent].some(result => result.error)) throw new Error("Rincian retur dan audit belum dapat dimuat.");
   const record = document.data;
   if (!record) notFound();
+  const relatedInvoices = kind === "purchase" && record.po_id
+    ? await db.from("purchase_invoices").select("id,no_faktur,voided_at").eq("po_id", record.po_id)
+    : { data: [], error: null };
   const rows = (items.data ?? []) as CorrectionReturnLine[];
   const owner = profile.data?.role === "OWNER" && profile.data.is_active;
   type Payout={method:"Tunai"|"Transfer";amount:number;account_name:string;expense_id:string;request_id:string|null};
@@ -50,6 +53,11 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
       <p>{record.voided_at ? "Dibatalkan / diganti" : "Aktif"} · {record.tanggal} · Revisi {record.revision}</p>
       <p>Nilai dokumen: Rp {Number(record.total).toLocaleString("id-ID")} · {record.keterangan}</p>
       {kind === "purchase" && record.po_id && <p><DocumentLink kind="purchase-order" id={record.po_id} from={`${base}/${id}`}>Pesanan pembelian asal</DocumentLink></p>}
+      {kind === "purchase" && record.po_id && <div>
+        <p>Faktur berikut memakai PO yang sama; alokasi retur ke faktur tertentu tidak tersimpan.</p>
+        {relatedInvoices.error && <p role="alert">Faktur pada PO yang sama belum dapat dimuat. Coba muat ulang.</p>}
+        {(relatedInvoices.data ?? []).map(invoice => <p key={invoice.id}><DocumentLink kind="purchase-invoice" id={invoice.id} from={`${base}/${id}`}>Faktur pada PO yang sama {invoice.no_faktur}</DocumentLink>{invoice.voided_at ? " · dibatalkan" : ""}</p>)}
+      </div>}
       {kind === "sales" && record.sale_id && <p><Link href={`/penjualan/${record.sale_id}`}>Penjualan asal</Link></p>}
       {parent.data && <p>Pengganti dari <Link href={`${base}/${parent.data.return_id}`}>dokumen asal</Link></p>}
       {rows.map(row => <p key={row.id}>{row.nama} · {Number(row.selected_qty ?? row.qty ?? 0)} {row.satuan ?? "satuan dasar"}</p>)}
