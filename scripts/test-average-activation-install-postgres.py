@@ -11,7 +11,7 @@ import tempfile
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-GUARD = '20261021170000_average_activation_accounting_guard.sql'
+GUARD = '20261024110335_average_activation_accounting_guard.sql'
 spec = importlib.util.spec_from_file_location('owned_install_fixture', ROOT / 'scripts/test-accurate-inventory-accounting-postgres.py')
 harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)

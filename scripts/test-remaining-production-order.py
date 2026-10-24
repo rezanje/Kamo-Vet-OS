@@ -45,7 +45,7 @@ language plpgsql security invoker set search_path=public as $$begin raise except
                     raise AssertionError('Unexpected legacy write authority must abort return migration')
                 assert db.sql("select to_regclass('public.return_record_postings') is null and not has_table_privilege('authenticated','public.purchase_invoices','INSERT');") == 't'
                 print('PASS unexpected retired-overload authority aborts and rolls back fixture migration.', flush=True)
-            if path.name == '20261021170000_average_activation_accounting_guard.sql':
+            if path.name == '20261024110335_average_activation_accounting_guard.sql':
                 needle = " if exists(select 1 from public.stock_moves where tanggal>(stamp at time zone 'Asia/Jakarta')::date) then"
                 assert expected_activation.count(needle) == 1, 'Unexpected activation guard baseline'
                 expected_activation = expected_activation.replace(needle, ' perform public.inventory_assert_average_activation_accounting();\n' + needle)
