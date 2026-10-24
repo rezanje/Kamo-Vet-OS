@@ -51,6 +51,16 @@ export const PETA_DOKUMEN: PetaDokumen[] = [
 /** Halaman satu pintu untuk sebuah nomor dokumen. */
 export const hrefDokumen = (nomor: string): string => `/dokumen/${encodeURIComponent(nomor.trim())}`;
 
+// Bukti kas dan jurnal punya layar modul sendiri. Tautan langsung ini menjaga
+// akses FINANCE yang sudah ada tanpa membuka resolver lintas modul `/dokumen`.
+export function hrefNomorModul(nomor: string): string | null {
+  const value = nomor.trim();
+  if (/^KM[.\-/]/.test(value)) return `/kas-bank/kas-masuk?bukti=${encodeURIComponent(value)}#selected-cash-entry`;
+  if (/^KK[.\-/]/.test(value)) return `/kas-bank/kas-keluar?bukti=${encodeURIComponent(value)}#selected-cash-entry`;
+  if (/^JRN[.\-/]/.test(value)) return `/keuangan/jurnal?nomor=${encodeURIComponent(value)}#selected-journal`;
+  return null;
+}
+
 /**
  * Nomor dokumen atau bukan?
  *

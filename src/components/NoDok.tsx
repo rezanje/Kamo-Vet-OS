@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { hrefDokumen, tampakNomorDokumen } from "@/lib/tautan-dokumen";
+import { hrefDokumen, hrefNomorModul, tampakNomorDokumen } from "@/lib/tautan-dokumen";
 
 /**
  * Nomor dokumen yang bisa diklik di mana pun (permintaan meeting 14 Agustus).
@@ -17,7 +17,7 @@ export function NoDok({
   if (!teks) return <span style={style}>—</span>;
   if (!tampakNomorDokumen(teks)) return <span style={style}>{teks}</span>;
   return (
-    <Link href={hrefDokumen(teks)} style={{ color: "#2563eb", textDecoration: "none", ...style }}>
+    <Link href={hrefNomorModul(teks) ?? hrefDokumen(teks)} style={{ color: "#2563eb", textDecoration: "none", ...style }}>
       {teks}
     </Link>
   );

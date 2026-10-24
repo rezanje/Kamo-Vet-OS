@@ -41,10 +41,10 @@ export async function KasEntryScreen({
   jenis: JenisKas;
   searchParams: Promise<{
     error?: string; success?: string;
-    cari?: string; cabang?: string; akun?: string; urut?: string; entry?: string;
+    cari?: string; cabang?: string; akun?: string; urut?: string; entry?: string; bukti?: string;
   }>;
 }) {
-  const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal", entry = "" } = await searchParams;
+  const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal", entry = "", bukti = "" } = await searchParams;
   const supabase = await createClient();
   const boleh = await bolehTransaksiKas();
   const { data: { user } } = await supabase.auth.getUser();
@@ -66,9 +66,11 @@ export async function KasEntryScreen({
 
   const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string }[];
   let cashRows = (rows ?? []) as unknown as Baris[];
-  if (UUID.test(entry) && !cashRows.some((row) => row.id === entry)) {
-    const selected = await supabase.from("cash_entries")
-      .select(CASH_SELECT).eq("jenis", jenis).eq("id", entry).maybeSingle();
+  const byId = UUID.test(entry);
+  const byProof = !byId && new RegExp(`^${jenis === "Masuk" ? "KM" : "KK"}[.\\-/][A-Za-z0-9.\\-/]*\\d{3,}$`).test(bukti);
+  if ((byId || byProof) && !cashRows.some((row) => byId ? row.id === entry : row.no_bukti === bukti)) {
+    const query = supabase.from("cash_entries").select(CASH_SELECT).eq("jenis", jenis);
+    const selected = await (byId ? query.eq("id", entry) : query.eq("no_bukti", bukti)).maybeSingle();
     if (selected.error) throw new Error("Bukti kas terpilih belum dapat dibaca.");
     if (selected.data) cashRows = [selected.data as unknown as Baris, ...cashRows];
   }
@@ -305,6 +307,7 @@ export async function KasEntryScreen({
                 <tr id={t.asal === "kas" && UUID.test(t.id) ? `cash-entry-${t.id}` : undefined} key={t.key}
                   style={{ scrollMarginTop: 90, ...(t.dibatalkan ? { opacity: 0.55 } : {}) }}>
                   <td style={{ fontSize: 10.5, fontWeight: 600 }}>
+                    {t.asal === "kas" && t.no === bukti && <span id="selected-cash-entry" />}
                     {t.asal === "beban"
                       ? <Link href={`/buku-besar/beban/${t.id}`} style={{ color: "#2563eb" }}>Pengeluaran kasir</Link>
                       : t.no}
