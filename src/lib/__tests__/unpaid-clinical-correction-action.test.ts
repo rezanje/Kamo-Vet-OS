@@ -1,0 +1,15 @@
+import{beforeEach,expect,it,vi}from'vitest';
+const state=vi.hoisted(()=>({calls:[]as{name:string;args:Record<string,unknown>}[],error:null as unknown,paths:[]as string[]}));
+vi.mock('next/cache',()=>({revalidatePath:(p:string)=>state.paths.push(p)}));
+vi.mock('next/navigation',()=>({redirect:(p:string)=>{throw new Error('REDIRECT '+p)}}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:async(name:string,args:Record<string,unknown>)=>{state.calls.push({name,args});return{data:'record',error:state.error}}})}));
+import{koreksiRekamMedis}from'@/app/(app)/klinik/rekam-medis/[visitId]/actions';
+beforeEach(()=>{state.calls=[];state.error=null;state.paths=[]});
+function form(){const f=new FormData();for(const[k,v]of Object.entries({visitId:'visit',medical_record_id:'record',expected_revision:'2',request_key:'stable-correction',correction_reason:'Koreksi diagnosis',anamnesis:'Catatan asli',diagnosis:'Diagnosis baru',therapy:'',suhu:'0',gejala_klinis:'Gejala',hasil_penunjang:'Hasil',resep:'[{"nama_obat":"Injected","qty":99}]',doctor_id:'injected',petId:'foreign',berat:'99'}))f.set(k,v);return f}
+it('corrects the exact visit/record/revision with only clinical fields and keeps zero/null',async()=>{expect(await koreksiRekamMedis(form())).toEqual({saved:true,href:'/klinik/rekam-medis/visit?success=correction'});expect(state.calls).toEqual([{name:'clinic_correct_unpaid_record',args:{p_visit_id:'visit',p_record_id:'record',p_expected_revision:2,p_request_key:'stable-correction',p_reason:'Koreksi diagnosis',p_changes:{anamnesis:'Catatan asli',diagnosis:'Diagnosis baru',therapy:null,suhu:0,gejala_klinis:'Gejala',hasil_penunjang:'Hasil'}}}]);expect(state.paths).toContain('/klinik/rekam-medis/visit/dokumen')});
+it.each(['paid','wrong branch','stale','unauthorized'])('keeps %s rejection on exact editable source without success acknowledgement',async message=>{state.error={message};await expect(koreksiRekamMedis(form())).rejects.toThrow('REDIRECT /klinik/rekam-medis/visit?edit=record&error=');expect(state.paths).toEqual([])});
+it.each(['-1','1.5','NaN',''])('rejects invalid revision %s without writes',async revision=>{const f=form();f.set('expected_revision',revision);await expect(koreksiRekamMedis(f)).rejects.toThrow('REDIRECT');expect(state.calls).toEqual([])});
+it.each(['NaN','Infinity','-1','61','38.333'])('rejects invalid temperature %s',async suhu=>{const f=form();f.set('suhu',suhu);await expect(koreksiRekamMedis(f)).rejects.toThrow('REDIRECT');expect(state.calls).toEqual([])});
+it('retries an unchanged request with the same identity rather than initial-save RPC',async()=>{await koreksiRekamMedis(form());await koreksiRekamMedis(form());expect(state.calls[0]).toEqual(state.calls[1]);expect(state.calls.every(x=>x.name==='clinic_correct_unpaid_record')).toBe(true)});
+
+it('preserves two-decimal stored temperature without rounding or duplicating submissions',async()=>{const f=form();f.set('suhu','38.25');await koreksiRekamMedis(f);expect(state.calls[0].args.p_changes).toMatchObject({suhu:38.25})});

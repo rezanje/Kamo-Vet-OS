@@ -1,3 +1,4 @@
+import type { ClinicalCorrection } from "@/lib/clinical-correction";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
@@ -47,10 +48,10 @@ export default async function RekamMedisPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; racikan?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; racikan?: string; success?: string; edit?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, racikan, success } = await searchParams;
+  const { error, racikan, success, edit } = await searchParams;
   const supabase = await createClient();
   const { data: { user: draftUser } } = await supabase.auth.getUser();
   const draftUserId = draftUser?.id ?? "";
@@ -74,15 +75,16 @@ export default async function RekamMedisPage({
   const providerOpsi = recorded ? [] : performersForService(await daftarDokter(supabase,{branchId:visit.branch_id}),visit.poli);
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
-  let record: { diagnosis: string | null; therapy: string | null; anamnesis: string | null } | null = null;
+  let record: (Omit<ClinicalCorrection, "recordId" | "revision" | "prescriptions"> & { id: string; clinical_revision?: number }) | null = null;
   let mrId: string | null = null;
   let mrLoadFailed = false;
-  let resep: { nama_obat: string; qty: number; aturan_pakai: string | null; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] = [];
+  let correctionDataFailed = false;
+  let resep: { nama_obat: string; qty: number; satuan?: string | null; aturan_pakai: string | null; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
     const { data: mr, error: mrError } = await supabase
       .from("medical_records")
-      .select("id, diagnosis, therapy, anamnesis")
+      .select("*")
       .eq("visit_id", visitId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -91,21 +93,37 @@ export default async function RekamMedisPage({
     record = mr;
     mrId = mr?.id ?? null;
     if (mr) {
-      const { data: pi } = await supabase
+      const { data: pi, error: piError } = await supabase
         .from("prescription_items")
-        .select("nama_obat, qty, aturan_pakai, jenis, service_performers")
+        .select("nama_obat, qty, satuan, aturan_pakai, jenis, service_performers")
         .eq("medical_record_id", mr.id)
         .order("created_at");
       resep = pi ?? [];
       // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
-      const { data: cr } = await supabase
+      const { data: cr, error: crError } = await supabase
         .from("compounding_recipes")
         .select("id, recipe_name, dosage_form, total_volume, status")
         .eq("medical_record_id", mr.id)
         .order("created_at", { ascending: false });
       racikanList = cr ?? [];
+      correctionDataFailed = !!(piError || crError);
     }
   }
+
+  const correctionCheck = menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed && !correctionDataFailed
+    ? await supabase.rpc("clinic_can_correct_record", { p_record_id: mrId }) : { data: false, error: null };
+  const canCorrect = correctionCheck.data === true && !correctionCheck.error;
+  const editing = !!edit && edit === mrId && canCorrect;
+  const correction: ClinicalCorrection | undefined = editing && record && mrId ? {
+    recordId: mrId, revision: record.clinical_revision ?? 0,
+    anamnesis: record.anamnesis, diagnosis: record.diagnosis, therapy: record.therapy,
+    suhu: record.suhu, berat: record.berat, gejala_klinis: record.gejala_klinis, hasil_penunjang: record.hasil_penunjang,
+    penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
+    prescriptions: resep, compounds: racikanList,
+  } : undefined;
+  const { data: savedProvider } = editing && visit.service_provider_id
+    ? await supabase.from("employees").select("id,nama,jabatan").eq("id", visit.service_provider_id).maybeSingle()
+    : { data: null };
 
   // Rawat inap aktif utk visit ini (Addendum §3 — admit dari rekam medis, design klinik/07).
   const [{ data: inpatient, error: inpatientError }, { data: referralRows }] = await Promise.all([
@@ -250,6 +268,8 @@ export default async function RekamMedisPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {edit && !editing && <div className="p2ban" role="alert">Koreksi belum dapat dibuka. Periksa akses, status kunjungan, dan muat ulang data pemeriksaan.</div>}
       {racikan === "dibuat" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Racikan dibuat — stok bahan terpotong, worklist apoteker terupdate.
@@ -338,7 +358,7 @@ export default async function RekamMedisPage({
         </div>
       )}
 
-      {recorded ? (
+      {recorded && !editing ? (
         <>
           {menungguBayar ? (
             <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", justifyContent: "space-between" }}>
@@ -362,7 +382,9 @@ export default async function RekamMedisPage({
           </div>
           <div className="grid2">
             <div className="card">
-              <div className="card-hd"><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</div>
+              <div className="card-hd" style={{ justifyContent: "space-between" }}><span><i className="ti ti-stethoscope" style={{ color: "var(--acc)" }} /> Hasil pemeriksaan</span>
+                {canCorrect && <Link href={`/klinik/rekam-medis/${visit.id}?edit=${mrId}`} className="btn-def"><i className="ti ti-edit" /> Edit</Link>}
+              </div>
               <ReadField label="Anamnesis / catatan klinis" value={record?.anamnesis} />
               <ReadField label="Diagnosa" value={record?.diagnosis} />
               <ReadField label="Terapi / tindakan" value={record?.therapy} />
@@ -483,7 +505,8 @@ export default async function RekamMedisPage({
       ) : (
         <RekamForm
           service={visit.poli}
-          key={`${user?.id ?? ""}:${visitId}`}
+          key={`${user?.id ?? ""}:${visitId}:${correction ? `${correction.recordId}:${correction.revision}` : "initial"}`}
+          correction={correction}
           visitId={visit.id}
           requestKey={randomUUID()}
           draftUserId={user?.id ?? ""}
@@ -514,7 +537,7 @@ export default async function RekamMedisPage({
             keluhan: visit.keluhan ?? null,
             photo: pet?.photo_url ?? null,
           }}
-          providerOpsi={providerOpsi}
+          providerOpsi={savedProvider ? [savedProvider] : providerOpsi}
         />
       )}
     </>
