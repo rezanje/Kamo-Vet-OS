@@ -1,0 +1,17 @@
+{
+  "base": "6184bcd45fb751f1e1c61b80bbb0a7ee8d16b863",
+  "files": {
+    "scripts/test-user-account-edit-browser.mjs": "3587e0383ea2acdac5023c2b810257fb9916c44825681aeb8c29bf9774edf22e",
+    "src/app/(app)/pengaturan/pengguna/[id]/edit/UserAccountEditForm.tsx": "60de27c94ee30edc8312791ad1d76ff40cdb822fef96be218e04d59709ec50ea",
+    "src/app/(app)/pengaturan/pengguna/[id]/edit/page.tsx": "353e0410041a4169ba0898a01dd3d16e94d85b2498981d0296454d636ceb0ac4",
+    "src/app/(app)/pengaturan/pengguna/actions.ts": "79a5aa931de7567a76b5cdb75f31a87e27e8a2f1644ff787d04bc3931107eaf9",
+    "src/app/(app)/pengaturan/pengguna/page.tsx": "a9e4ed6034162d08873465bce068f8f921af6bc26340e1285d44459b2a7ddf2f",
+    "src/components/__tests__/user-account-edit-form.test.tsx": "3514e821c4d8042ae724c43f2739929de37699719fbaac301d0d8b093f443f6c",
+    "src/components/__tests__/user-account-edit-links.test.tsx": "ef4ced58532e74e63dcea48ce8f5c4df4070b2c81862b10b6c30e13b87beca31",
+    "src/components/__tests__/user-account-edit-page.test.tsx": "2b3b41fdc619f9ecb28f4095aefaa74336c354359854c5c5d302ac544b4ea386",
+    "src/lib/__tests__/user-account-edit-action.test.ts": "13893463177685c156542c4c08bdb9a0818cda271299d516983af0cbc70a3102",
+    "src/lib/user-account-edit.ts": "1b0d9508ea2f3da282eed24f481e0af227f465cb2f4f8cfda7923a121233e109",
+    "supabase/migrations/20261024033000_user_account_edit.sql": "4dfe2cb56aca4a8dc9a8ae5963dabff4e6f380c47865b3bc5b79256b6818cfcb",
+    "supabase/tests/user_account_edit.sql": "39138e585b9ee04216d15f9c0ed58b8ffc4f636f7d3283b73813d0542f0a6eea"
+  }
+}

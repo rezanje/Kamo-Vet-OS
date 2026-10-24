@@ -79,7 +79,7 @@ export default async function PenggunaPage({
                 <th>Cabang</th>
                 <th>Karyawan HRIS</th>
                 <th>Status</th>
-                <th></th>
+                <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -99,6 +99,9 @@ export default async function PenggunaPage({
                   </form> : "Belum tertaut HRIS"}</td>
                   <td><span className={`bge ${p.is_active ? "g" : "r"}`}>{p.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   <td>
+                    {canManage && (actor?.role === "OWNER" || p.id === user?.id || !["OWNER", "ADMIN"].includes(p.role)) && (
+                      <Link href={`/pengaturan/pengguna/${p.id}/edit`} className="btn-def" style={{ display: "inline-block", padding: "4px 10px", fontSize: 10.5, marginBottom: 6 }}>Edit</Link>
+                    )}
                     {canManage && <form action={togglePengguna}>
                       <input type="hidden" name="id" value={p.id} />
                       <input type="hidden" name="aktif" value={p.is_active ? "0" : "1"} />

@@ -1,0 +1,26 @@
+[
+  {
+    "width": 1280,
+    "prefilled": true,
+    "keyboardBranches": true,
+    "rejectedSaveRetainsNameRoleBranches": true,
+    "sameRetryIdentity": true,
+    "noSensitiveOrHRISPayload": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "realUserWrites": 0
+  },
+  {
+    "width": 390,
+    "prefilled": true,
+    "keyboardBranches": true,
+    "rejectedSaveRetainsNameRoleBranches": true,
+    "sameRetryIdentity": true,
+    "noSensitiveOrHRISPayload": true,
+    "noDocumentOverflow": true,
+    "runtimeErrors": 0,
+    "externalRequests": 0,
+    "realUserWrites": 0
+  }
+]

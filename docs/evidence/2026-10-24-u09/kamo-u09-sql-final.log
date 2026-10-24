@@ -1,0 +1,37 @@
+Applied 248 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+user_account_edit.sql: passed.
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/workspace/kamo-u09-user-edit/scripts/test-accurate-inventory-accounting-postgres.py", line 113, in main
+    database.sql(test.read_text())
+  File "/workspace/kamo-u09-user-edit/scripts/test-accurate-inventory-accounting-postgres.py", line 64, in sql
+    raise RuntimeError(result.stderr + result.stdout)
+RuntimeError: ERROR:  ACCESS_DENIED: cabang pelaksana tidak dapat diakses
+CONTEXT:  PL/pgSQL function public.guard_service_line_performers() line 23 at RAISE
+SQL statement "insert into sale_items(sale_id,nama,qty,harga) values ('eb600000-0000-4000-8000-000000000002','Forbidden',1,0)"
+PL/pgSQL function inline_code_block line 4 at SQL statement
+{"role":"authenticated","sub":"eb100000-0000-4000-8000-000000000001"}
+
+
+{"role":"authenticated","sub":"eb100000-0000-4000-8000-000000000002"}
+{"x-kamo-operational-branch":"eb200000-0000-4000-8000-000000000002"}
+{"x-kamo-operational-branch":"eb200000-0000-4000-8000-000000000001"}
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/workspace/kamo-u09-user-edit/scripts/test-accurate-inventory-accounting-postgres.py", line 120, in <module>
+    main()
+  File "/workspace/kamo-u09-user-edit/scripts/test-accurate-inventory-accounting-postgres.py", line 115, in main
+    raise RuntimeError(test.name + ": " + str(error)) from error
+RuntimeError: employee_account_operational_context.sql: ERROR:  ACCESS_DENIED: cabang pelaksana tidak dapat diakses
+CONTEXT:  PL/pgSQL function public.guard_service_line_performers() line 23 at RAISE
+SQL statement "insert into sale_items(sale_id,nama,qty,harga) values ('eb600000-0000-4000-8000-000000000002','Forbidden',1,0)"
+PL/pgSQL function inline_code_block line 4 at SQL statement
+{"role":"authenticated","sub":"eb100000-0000-4000-8000-000000000001"}
+
+
+{"role":"authenticated","sub":"eb100000-0000-4000-8000-000000000002"}
+{"x-kamo-operational-branch":"eb200000-0000-4000-8000-000000000002"}
+{"x-kamo-operational-branch":"eb200000-0000-4000-8000-000000000001"}
