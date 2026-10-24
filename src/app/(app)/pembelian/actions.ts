@@ -280,3 +280,19 @@ export async function closeRemainingPO(formData: FormData) {
   for (const path of ["/pembelian", `/pembelian/${poId}`, `/pembelian/${poId}/terima`, "/pembelian/faktur/baru", "/pembelian/uang-muka", "/"]) revalidatePath(path);
   redirect(`/pembelian/${poId}?success=${encodeURIComponent("Sisa penerimaan ditutup. Faktur hanya untuk jumlah diterima yang belum difakturkan.")}${transactionDraftAck(formData)}`);
 }
+
+export async function ubahHargaPO(formData: FormData) {
+  const id=String(formData.get('id')??''),key=String(formData.get('draft_key')??''),revision=Number(formData.get('revision')),reason=String(formData.get('alasan')??'').trim();
+  const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  if(!uuid(id)||!key||key.length>120||!Number.isSafeInteger(revision)||revision<0||reason.length<3||reason.length>1000)throw Error('Identitas dan alasan koreksi harga wajib diisi.');
+  let items:unknown;try{items=JSON.parse(String(formData.get('items')??''));}catch{throw Error('Rincian harga tidak valid.');}
+  if(!Array.isArray(items)||!items.length||items.length>1000)throw Error('Isi semua rincian harga PO.');
+  const db=await createClient();let response;
+  try{response=await db.rpc('revise_purchase_order_prices',{p_request_key:key,p_purchase_order_id:id,p_expected_revision:revision,p_items:items,p_reason:reason});}
+  catch{throw Error('Koreksi harga belum terkonfirmasi. Isian tetap tersedia; periksa hasil sebelum membuat koreksi baru.');}
+  if(response?.error)throw Error(['P0001','42501','22003','22023'].includes(response.error.code)?response.error.message:'Koreksi harga belum terkonfirmasi. Isian tetap tersedia.');
+  const data=response?.data;
+  if(!data||data.po_id!==id||data.revision!==revision+1||data.action!=='edit'||data.mode!=='prices'||!uuid(data.revision_id)||typeof data.total!=='number'||!Number.isFinite(data.total)||data.total<=0)throw Error('Koreksi harga belum terkonfirmasi. Isian tetap tersedia.');
+  revalidatePath('/pembelian');revalidatePath(`/pembelian/${id}`);
+  redirect(`/pembelian/${id}?success=prices${transactionDraftAck(formData)}`);
+}
