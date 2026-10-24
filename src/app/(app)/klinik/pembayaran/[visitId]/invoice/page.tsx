@@ -34,10 +34,17 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   if(!invoice||(requested&&invoice.id!==requested))notFound();
 
   const { data: items,error:itemsError } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, service_performers").eq("invoice_id", invoice.id).order("created_at");
+    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, service_performers, compound_recipe_id, compounding_recipes(id, medical_records(visit_id))").eq("invoice_id", invoice.id).order("created_at");
   const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
   if(itemsError||paymentsError)throw new Error("Rincian invoice atau pembayaran belum dapat diverifikasi. Muat ulang sebelum mencetak.");
+
+  type RecipeRelation = { id: string; medical_records: Rel<{ visit_id: string }> };
+  const relatedRecipes = Array.from(new Map((items ?? []).flatMap(line => {
+    const recipe = one(line.compounding_recipes as Rel<RecipeRelation>);
+    return recipe && recipe.id === line.compound_recipe_id && one(recipe.medical_records)?.visit_id === visitId
+      ? [[recipe.id, recipe] as const] : [];
+  })).values());
 
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
     .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
@@ -61,6 +68,11 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         <Link href={`/klinik/pembayaran/${visitId}`} className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <PrintButton label="Cetak Invoice" />
       </div>
+      {relatedRecipes.length > 0 && <div className="no-print" aria-label="Racikan terkait" style={{ marginBottom: 14 }}>
+        Racikan pada invoice ini: {relatedRecipes.map((recipe, index) => <span key={recipe.id}>
+          {index > 0 ? " · " : ""}<Link href={`/klinik/racik/${recipe.id}`}>Buka racikan {index + 1}</Link>
+        </span>)}
+      </div>}
 
       <div style={{ maxWidth: 720, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", borderRadius: 10, padding: "32px 36px", fontSize: 12.5, color: "#141413" }}>
         {/* Kop */}
