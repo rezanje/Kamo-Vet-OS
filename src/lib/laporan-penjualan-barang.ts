@@ -5,11 +5,12 @@ export function kunciRacikan(visitId: string, nama: string): string {
 }
 
 export function jenisBarisKlinik(
-  baris: { jenis: string | null; item_id: string | null; deskripsi: string },
+  baris: { jenis: string | null; item_id: string | null; compound_recipe_id?: string | null; deskripsi: string },
   visitId: string,
   racikan: ReadonlySet<string>,
 ): JenisBarisPenjualan {
   if (baris.jenis === "jasa") return "Jasa";
+  if (baris.compound_recipe_id) return "Racikan";
   if (!baris.item_id && racikan.has(kunciRacikan(visitId, baris.deskripsi))) return "Racikan";
   return "Obat";
 }

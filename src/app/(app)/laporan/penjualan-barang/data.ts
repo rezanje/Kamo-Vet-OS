@@ -21,7 +21,7 @@ type HubunganVisit = {
 };
 type InvoiceItem = {
   id: string; deskripsi: string; qty: number; harga: number; diskon_persen: number;
-  jenis: string | null; item_id: string | null;
+  jenis: string | null; item_id: string | null; compound_recipe_id: string | null;
   service_performers: ServicePerformersSnapshot | null;
   invoices: Rel<{
     id: string; visit_id: string; invoice_no: string | null; created_at: string; paid_status: string;
@@ -73,7 +73,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       const [invoiceItems, saleItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
+            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
             .is("invoices.voided_at", null)
             .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
             .order("id").range(awal, ujung);
