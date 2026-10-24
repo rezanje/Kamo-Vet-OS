@@ -178,4 +178,21 @@ select set_config('request.jwt.claim.sub','',true);
 do $$begin
  begin perform get_sales_return_payout((select(result->>'document_id')::uuid from j03_results where name='legacy-return'));raise exception 'Expected inactive session denial';exception when insufficient_privilege then null;end;
 end$$;
+
+-- Refund source deletion must remain visible in the immutable activity index,
+-- without retaining the private request or bank destination payload.
+savepoint j03_audit_delete;
+reset role;
+select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);
+delete from sales_refund_payouts where request_id=(select id from sales_refund_requests where request_key='j03-request');
+delete from sales_refund_requests where request_key='j03-request';
+select pg_temp.assert_ok((select count(*)=1 from activity_log where row_entity='sales_refund_payouts' and action='delete'
+ and actor_id='e1100000-0000-4000-8000-000000000001' and before_state='{}' and after_state='{}'
+ and changed_fields=array['metadata'] and branch_ids=array['e2200000-0000-4000-8000-000000000001']::uuid[]),
+ 'deleted payout keeps redacted audit evidence');
+select pg_temp.assert_ok((select count(*)=1 from activity_log where row_entity='sales_refund_requests' and action='delete'
+ and actor_id='e1100000-0000-4000-8000-000000000001' and before_state='{}' and after_state='{}'
+ and changed_fields=array['metadata'] and branch_ids=array['e2200000-0000-4000-8000-000000000001']::uuid[]),
+ 'deleted request keeps redacted audit evidence');
+rollback to savepoint j03_audit_delete;
 rollback;
