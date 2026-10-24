@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 import { draftString, draftNumber } from "@/components/TransactionDraft";
@@ -34,7 +36,7 @@ export function KategoriUmur({ userId, purchase = false, kategori }: { userId: s
       </div>
       <div>
         <label className="flab">Umur ekonomis (bulan) *</label>
-        <input className="fi" name="umur_bulan" type="number" min={1} value={umur}
+        <NumberInput className="fi" name="umur_bulan" type="number" min={1} value={umur}
           onChange={(e) => setUmur(Number(e.target.value))} required />
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
           Terisi otomatis dari kategori; boleh diubah kalau umur aset ini beda.

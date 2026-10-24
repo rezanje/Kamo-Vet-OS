@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
 import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
 import { masterView, visibleMasters, type LifecycleRow } from "@/lib/master-lifecycle";
@@ -146,7 +147,7 @@ export default async function KaryawanPage({
             </div>
             <div>
               <label className="flab">Gaji Pokok (Rp)</label>
-              <input className="fi" name="gaji_pokok" type="number" min={0} step={50000} placeholder="3000000" />
+              <NumberInput className="fi" name="gaji_pokok" type="number" min={0} step={50000} placeholder="3000000" />
             </div>
             <div>
               <label className="flab">Status</label>

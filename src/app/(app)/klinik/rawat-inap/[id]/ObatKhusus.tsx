@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import {loadInpatientMedicationHistory} from "@/lib/inpatient-medication-history";
 import { createClient } from "@/lib/supabase/server";
@@ -176,11 +177,11 @@ export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif:
             </div>
             <div style={{ width: 104 }}>
               <label className="flab">Kali / hari *</label>
-              <input className="fi" type="number" name="frekuensi_per_hari" min={1} max={12} defaultValue={2} required />
+              <NumberInput className="fi" type="number" name="frekuensi_per_hari" min={1} max={12} defaultValue={2} required />
             </div>
             <div style={{ width: 96 }}>
               <label className="flab">Berapa hari *</label>
-              <input className="fi" type="number" name="durasi_hari" min={1} max={60} defaultValue={3} required />
+              <NumberInput className="fi" type="number" name="durasi_hari" min={1} max={60} defaultValue={3} required />
             </div>
             <div style={{ width: 140 }}>
               <label className="flab">Mulai</label>

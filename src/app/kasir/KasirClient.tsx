@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { checkoutKasir } from "./checkout";
@@ -663,7 +665,7 @@ export function KasirClient({
                           {/* Addendum §6: potongan per item (nominal / persen) */}
                           <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
                             <span style={{ fontSize: 8.5, color: "var(--td)" }}>Pot.</span>
-                            <input className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
+                            <NumberInput className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
                               onChange={(e) => setPot(k, Number(e.target.value))}
                               style={{ width: 52, padding: "1px 4px", fontSize: 9, textAlign: "right" }} />
                             <button type="button" onClick={() => togglePotType(k)} className="btn-def" style={{ padding: "0px 5px", fontSize: 8.5 }}>
@@ -740,7 +742,7 @@ export function KasirClient({
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Diskon</span>
               <span style={{ display: "flex", gap: 4 }}>
-                <input className="fi" type="number" min={0} step="0.01" value={diskon || ""} onChange={(e) => setDiskon(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
+                <NumberInput className="fi" type="number" min={0} step="0.01" value={diskon || ""} onChange={(e) => setDiskon(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
                 <button type="button" onClick={() => setDiskonPct(!diskonPct)} className="btn-def" style={{ padding: "2px 8px", fontSize: 10 }}>{diskonPct ? "%" : "Rp"}</button>
               </span>
             </div>
@@ -748,7 +750,7 @@ export function KasirClient({
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0" }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Poin digunakan {cust ? `(maks ${maxPoin.toLocaleString("id-ID")})` : ""}</span>
-              <input className="fi" type="number" min={0} max={maxPoin} value={poinUsed || ""} disabled={!cust}
+              <NumberInput className="fi" type="number" min={0} max={maxPoin} value={poinUsed || ""} disabled={!cust}
                 onChange={(e) => setPoin(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
             </div>
             {poinUsed > 0 && <Row k="" v={`- ${rp(poinUsed)}`} red />}
@@ -791,7 +793,7 @@ export function KasirClient({
 
             {!split && metode === "Tunai" && (
               <div style={{ marginBottom: 8 }}>
-                <input className="fi" type="number" min={0} placeholder="Uang bayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
+                <NumberInput className="fi" type="number" min={0} placeholder="Uang bayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginTop: 4, color: kurang ? "#b91c1c" : "#15803d" }}>
                   <span>{kurang ? "Kurang" : "Kembalian"}</span><span>{rp(kurang ? total - bayar : kembali)}</span>
                 </div>

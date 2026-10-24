@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
   ALERT_RULE_KEYS,
@@ -12,10 +13,10 @@ function Fields({ setting }: { setting: AlertSetting }) {
   return (
     <>
       <label className="flab">Ambang
-        <input className="fi" name="threshold" type="number" min="0" step="any" defaultValue={setting.threshold ?? ""} />
+        <NumberInput className="fi" name="threshold" type="number" min="0" step="any" defaultValue={setting.threshold ?? ""} />
       </label>
       <label className="flab">Periode (hari)
-        <input className="fi" name="period_days" type="number" min="1" step="1" required defaultValue={setting.periodDays ?? 30} />
+        <NumberInput className="fi" name="period_days" type="number" min="1" step="1" required defaultValue={setting.periodDays ?? 30} />
       </label>
       <label className="flab">Prioritas
         <select className="fi" name="severity" defaultValue={setting.severity}>

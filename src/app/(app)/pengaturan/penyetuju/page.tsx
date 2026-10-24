@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -206,7 +207,7 @@ export default async function PenyetujuPage({
             </div>
             <div>
               <label className="flab">Perlu izin di atas (Rp)</label>
-              <input className="fi" type="number" name="min_nilai" min={0} step={100000} defaultValue={5000000} style={{ width: 160 }} />
+              <NumberInput className="fi" type="number" name="min_nilai" min={0} step={100000} defaultValue={5000000} style={{ width: 160 }} />
             </div>
             <div>
               <label className="flab">Disetujui oleh</label>

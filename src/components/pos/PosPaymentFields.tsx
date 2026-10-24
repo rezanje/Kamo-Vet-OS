@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { POS_PAYMENT_METHODS, resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 
@@ -65,7 +67,7 @@ export function PosPaymentFields({ total, split, payments, bayar, method, feePer
                     <option key={method} value={method} disabled={payments.some((current, i) => i !== index && current.method === method)}>{method}</option>
                   ))}
                 </select>
-                <input className="fi" type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Nominal pembayaran ${index + 1}`}
+                <NumberInput className="fi" type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Nominal pembayaran ${index + 1}`}
                   placeholder="Nominal" value={part.amount || ""}
                   onChange={event => update(payments.map((current, i) => i === index ? { ...current, amount: Number(event.target.value) } : current))}
                   style={{ minWidth: 0, padding: "4px 5px", fontSize: 10.5, textAlign: "right" }} />
@@ -90,7 +92,7 @@ export function PosPaymentFields({ total, split, payments, bayar, method, feePer
             <div style={{ marginTop: 7 }}>
               <label style={{ display: "block", fontSize: 10.5, marginBottom: 4 }}>
                 Uang tunai diterima
-                <input className="fi" type="number" min={0} step="0.01" inputMode="decimal" aria-label="Uang tunai diterima"
+                <NumberInput className="fi" type="number" min={0} step="0.01" inputMode="decimal" aria-label="Uang tunai diterima"
                   value={bayar || ""} onChange={event => onBayarChange(Number(event.target.value))} style={{ marginTop: 4, textAlign: "right" }} />
               </label>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: cashChange < 0 ? "#b91c1c" : "#15803d" }}>
@@ -109,7 +111,7 @@ export function PosPaymentFields({ total, split, payments, bayar, method, feePer
 function FeeInput({ method, value, onChange }: { method: string; value: number; onChange: (value: number) => void }) {
   return <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, gap: 6, margin: "6px 0" }}>
     <span>Fee merchant {method} (%)</span>
-    <input className="fi" type="number" min={0} max={100} step="0.01" inputMode="decimal" aria-label={`Fee merchant ${method} (%)`}
+    <NumberInput className="fi" type="number" min={0} max={100} step="0.01" inputMode="decimal" aria-label={`Fee merchant ${method} (%)`}
       value={value} onChange={event => onChange(Number(event.target.value))} style={{ width: 80, minWidth: 0, padding: "4px 5px", textAlign: "right" }} />
   </label>;
 }

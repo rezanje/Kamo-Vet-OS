@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
@@ -231,13 +233,13 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
           </ExamField>
           <ExamField icon="ti-weight" color="#0891b2" label="Berat Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
-              <input className="fi" name="berat" type="number" step="0.1" min={0} max={batasBeratWajar(patient.species) ?? undefined} readOnly={!!correction} defaultValue={correction ? correction.berat ?? undefined : currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
+              <NumberInput className="fi" name="berat" type="number" step="0.1" min={0} max={batasBeratWajar(patient.species) ?? undefined} readOnly={!!correction} defaultValue={correction ? correction.berat ?? undefined : currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
               <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderLeft: "none", borderRadius: "0 6px 6px 0", padding: "6px 10px", fontSize: 11, color: "var(--tm)" }}>kg</span>
             </div>
           </ExamField>
           <ExamField icon="ti-temperature" color="#dc2626" label="Suhu Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
-              <input className="fi" name="suhu" defaultValue={correction?.suhu ?? undefined} type="number" min={0} max={60} step={correction ? "0.01" : "0.1"} placeholder="39.5" style={{ borderRadius: "6px 0 0 6px" }} />
+              <NumberInput className="fi" name="suhu" defaultValue={correction?.suhu ?? undefined} type="number" min={0} max={60} step={correction ? "0.01" : "0.1"} placeholder="39.5" style={{ borderRadius: "6px 0 0 6px" }} />
               <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderLeft: "none", borderRadius: "0 6px 6px 0", padding: "6px 10px", fontSize: 11, color: "var(--tm)" }}>°C</span>
             </div>
           </ExamField>
@@ -378,7 +380,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                           <td style={{ textAlign: "center" }}>
                             {r.jenis === "racikan"
                               ? <span style={{ fontSize: 10.5 }}>1</span>
-                              : <input className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
+                              : <NumberInput className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>
@@ -408,7 +410,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
                   <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <input className="fi" type="number" min={0} max={100} value={discountPct || ""} onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value))))} style={{ width: 54, padding: "3px 6px", textAlign: "right" }} />
+                    <NumberInput className="fi" type="number" min={0} max={100} value={discountPct || ""} onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value))))} style={{ width: 54, padding: "3px 6px", textAlign: "right" }} />
                     <span style={{ fontSize: 11, color: "var(--tm)" }}>%</span>
                     <span style={{ fontSize: 11, width: 72, textAlign: "right", color: "#b91c1c" }}>{discountVal > 0 ? `-${rp(discountVal)}` : rp(0)}</span>
                   </span>

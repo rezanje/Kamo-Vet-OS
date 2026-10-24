@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatReturBeli } from "../actions";
@@ -77,7 +79,7 @@ export function ReturBeliForm({ options, userId, confirmedScope, confirmedKey }:
                 <select className="fi" title="Satuan retur" value={chosen(it)?.unit ?? ""} onChange={e => setUnit(u => ({...u, [it.source_line_id]: e.target.value}))}>
                   {it.units.map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                 </select>
-                <input className="fi" type="number" min={0} max={it.sisa / (chosen(it)?.factor ?? 1)} step="any"
+                <NumberInput className="fi" type="number" min={0} max={it.sisa / (chosen(it)?.factor ?? 1)} step="any"
                   value={qty[it.source_line_id] ?? 0}
                   onChange={(e) => setQty((q) => ({ ...q, [it.source_line_id]: Number(e.target.value) }))}
                   style={{ width: 90 }} title="Qty retur" />

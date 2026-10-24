@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -177,7 +178,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                         </div>
                         <div>
                           <label className="flab">Nominal (maks {rp(r.sisa)})</label>
-                          <input className="fi" type="number" name="amount" min={1} max={r.sisa} step="any" defaultValue={r.sisa} style={{ width: 140 }} />
+                          <NumberInput className="fi" type="number" name="amount" min={1} max={r.sisa} step="any" defaultValue={r.sisa} style={{ width: 140 }} />
                         </div>
                         <div>
                           <label className="flab">Metode</label>

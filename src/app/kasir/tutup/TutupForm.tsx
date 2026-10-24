@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 
 import { tutupShiftKasir } from "../actions";
@@ -12,7 +14,7 @@ export function TutupForm({ shiftId }: { shiftId: string }) {
       <label className="flab">Total uang cash di kasir (fisik) *</label>
       <div className="pshop-rp" style={{ marginBottom: 12 }}>
         <span>Rp</span>
-        <input
+        <NumberInput
           className="fi" name="closing_balance" type="number" min={0} step="any"
           placeholder="0" required
         />

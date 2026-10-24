@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { aggregateServiceLines } from "@/lib/service-line-promos";
 
 import { ServicePerformersField } from "@/components/ServicePerformersField";
@@ -109,7 +111,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                   : <ServicePerformersField label={`Pelaksana ${r.deskripsi || `jasa baris ${i+1}`}`} value={r.service_performers} staff={serviceStaff} onChange={value => set(i,{service_performers:value})} />)}
               </td>
               <td>
-                <input className="fi" type="number" min={1} value={r.qty}
+                <NumberInput className="fi" type="number" min={1} value={r.qty}
                   onChange={(e) => set(i, { qty: Number(e.target.value) })}
                   readOnly={r.terkunci || !!r.recipe_id} disabled={r.terkunci}
                   title={r.terkunci ? "Dihitung otomatis dari lama rawat inap" : r.recipe_id ? "Satu hasil racikan tersimpan" : undefined}
@@ -134,9 +136,9 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                   </select>
                 )}
               </td>}
-              <td><input className="fi" type="number" min={0} step="any" value={r.harga} readOnly={!!r.recipe_id} title={r.recipe_id ? "Harga racikan tersimpan; koreksi melalui diskon" : undefined} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
+              <td><NumberInput className="fi" type="number" min={0} step="any" value={r.harga} readOnly={!!r.recipe_id} title={r.recipe_id ? "Harga racikan tersimpan; koreksi melalui diskon" : undefined} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td>
-                <input className="fi" type="number" min={0} max={100} step="any"
+                <NumberInput className="fi" type="number" min={0} max={100} step="any"
                   value={r.diskon_persen ?? 0}
                   onChange={(e) => set(i, { diskon_persen: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
                   style={{ textAlign: "center" }} />
@@ -403,7 +405,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               <SumRow label="Subtotal (Obat + Jasa)" value={rp(subtotal)} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0" }}>
                 <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
-                <input className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
+                <NumberInput className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
               </div>
               {promoVal > 0 && <SumRow label="Promo otomatis" value={`- ${rp(promoVal)}`} />}
               {golonganVal > 0 && <SumRow label="Diskon golongan pelanggan" value={`- ${rp(golonganVal)}`} />}
@@ -427,7 +429,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
                   <span style={{ fontSize: 11.5, color: "var(--tm)" }}>
                     Pakai poin <span style={{ fontSize: 9.5, color: "var(--td)" }}>(saldo {bekal.poinSaldo.toLocaleString("id-ID")})</span>
                   </span>
-                  <input className="fi" type="number" min={0} max={poinMaks} step={1}
+                  <NumberInput className="fi" type="number" min={0} max={poinMaks} step={1}
                     value={poinPakai || ""} placeholder="0"
                     onChange={(e) => setPoinPakai(Number(e.target.value))}
                     style={{ width: 100, textAlign: "right" }} />
@@ -506,7 +508,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
                   onChange={event => setSplitPayments(parts => parts.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
                   {SPLIT_METHODS.map(method => <option key={method}>{method}</option>)}
                 </select>
-                <input className="fi" type="number" min={1} step={1} aria-label={`Nominal pembayaran ${index + 1}`} value={part.amount || ""}
+                <NumberInput className="fi" type="number" min={1} step={1} aria-label={`Nominal pembayaran ${index + 1}`} value={part.amount || ""}
                   onChange={event => setSplitPayments(parts => parts.map((row, i) => i === index ? { ...row, amount: Number(event.target.value) } : row))} />
                 {splitPayments.length > 2 && <button className="btn-def" type="button" aria-label={`Hapus pembayaran ${index + 1}`}
                   onClick={() => setSplitPayments(parts => parts.filter((_, i) => i !== index))}>×</button>}
@@ -538,7 +540,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Jumlah Bayar</span>
-              <input className="fi" type="number" min={0} step={1} disabled={editMode} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
+              <NumberInput className="fi" type="number" min={0} step={1} disabled={editMode} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
               <span style={{ fontWeight: 600, color: "#15803d" }}>Kembalian</span>

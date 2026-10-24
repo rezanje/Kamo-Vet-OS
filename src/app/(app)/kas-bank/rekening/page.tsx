@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -84,7 +85,7 @@ export default async function RekeningPage({
             </div>
             <div>
               <label className="flab">Saldo awal</label>
-              <input className="fi" name="saldo_awal" type="number" min={0} max={1_000_000_000_000} step="0.01" defaultValue={0} />
+              <NumberInput className="fi" name="saldo_awal" type="number" min={0} max={1_000_000_000_000} step="0.01" defaultValue={0} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Kalau diisi, dijurnal hari ini dengan lawan <b>Modal Pemilik</b>. Kosongkan kalau saldo
                 akan masuk dari transaksi biasa.

@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -129,7 +130,7 @@ export default async function PenjualanOnlinePage({
                       {r.marketplace_status === "piutang" ? (
                         <form action={tandaiCair} style={{ display: "flex", gap: 5, alignItems: "center" }}>
                           <input type="hidden" name="sale_id" value={r.id} />
-                          <input
+                          <NumberInput
                             className="fi" type="number" name="nominal" min={1} step="any" required
                             placeholder="Dana cair" style={{ width: 110, padding: "3px 6px", fontSize: 10.5 }}
                           />

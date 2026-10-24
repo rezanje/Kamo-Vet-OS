@@ -1,4 +1,5 @@
 "use client";
+import { NumberInput } from "@/components/NumberInput";
 import {useState} from 'react';
 import {LocalTransactionDraft,usePreservedAction} from '@/components/LocalTransactionDraft';
 import {ProductionRequestIdentity} from '@/components/ProductionRequestIdentity';
@@ -31,7 +32,7 @@ function AdhocForm({userId,barang,gudang,cabang}:Props){
   </div>
   <div className="frow" style={{marginBottom:10}}>
    <div><label className="flab">Barang hasil *</label><input type="hidden" name="output_item_id" value={s.output}/><SearchableItemPicker items={barang} value={s.output} ariaLabel="Barang hasil" selectedLabelFormat="name" onChange={id=>patch({output:id,outputUnit:units(id)[0]?.unit??''})}/>{s.output&&<small>Kode: {barang.find(x=>x.id===s.output)?.code??'Item tidak tersedia'}</small>}</div>
-   <div><label className="flab">Rencana jumlah hasil *</label><input className="fi" name="output_qty" inputMode="decimal" required value={s.outputQty} onChange={e=>patch({outputQty:e.target.value})}/><select className="fi" name="output_unit" aria-label="Satuan hasil pekerjaan" required value={s.outputUnit} onChange={e=>patch({outputUnit:e.target.value})}><option value="">Pilih satuan</option>{units(s.output).map(x=><option key={x.unit} value={x.unit}>{x.unit}</option>)}</select></div>
+   <div><label className="flab">Rencana jumlah hasil *</label><NumberInput className="fi" name="output_qty" type="number" step="any" inputMode="decimal" required value={s.outputQty} onChange={e=>patch({outputQty:e.target.value})}/><select className="fi" name="output_unit" aria-label="Satuan hasil pekerjaan" required value={s.outputUnit} onChange={e=>patch({outputUnit:e.target.value})}><option value="">Pilih satuan</option>{units(s.output).map(x=><option key={x.unit} value={x.unit}>{x.unit}</option>)}</select></div>
    <div><label className="flab">Gudang hasil *</label><select className="fi" name="warehouse_id" aria-label="Gudang hasil" required value={s.warehouse} onChange={e=>patch({warehouse:e.target.value})}><option value="">Pilih gudang hasil</option>{wh.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
   </div>
   <input type="hidden" name="bahan" value={JSON.stringify(s.rows)}/>
@@ -39,7 +40,7 @@ function AdhocForm({userId,barang,gudang,cabang}:Props){
   {s.rows.map((r,i)=><div key={i} style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:8,alignItems:'end'}}>
    <div style={{flex:'1 1 200px'}}><label className="flab">Bahan {i+1}</label><SearchableItemPicker items={barang} value={r.item_id} ariaLabel={`Bahan ${i+1}`} selectedLabelFormat="name" onChange={id=>row(i,{item_id:id,satuan:units(id)[0]?.unit??''})}/>{r.item_id&&<small>Kode: {barang.find(x=>x.id===r.item_id)?.code??'Item tidak tersedia'}</small>}</div>
    <div style={{flex:'1 1 170px'}}><label className="flab">Gudang sumber</label><select className="fi" aria-label={`Gudang bahan ${i+1}`} required value={r.warehouse_id} onChange={e=>row(i,{warehouse_id:e.target.value})}><option value="">Pilih gudang sumber</option>{wh.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
-   <div style={{flex:'1 1 140px'}}><label className="flab">Jumlah / satuan</label><input className="fi" aria-label={`Jumlah bahan ${i+1}`} inputMode="decimal" required value={r.qty} onChange={e=>row(i,{qty:e.target.value})}/><select className="fi" aria-label={`Satuan bahan ${i+1}`} required value={r.satuan} onChange={e=>row(i,{satuan:e.target.value})}><option value="">Pilih satuan</option>{units(r.item_id).map(x=><option key={x.unit} value={x.unit}>{x.unit}</option>)}</select></div>
+   <div style={{flex:'1 1 140px'}}><label className="flab">Jumlah / satuan</label><NumberInput className="fi" aria-label={`Jumlah bahan ${i+1}`} type="number" step="any" inputMode="decimal" required value={r.qty} onChange={e=>row(i,{qty:e.target.value})}/><select className="fi" aria-label={`Satuan bahan ${i+1}`} required value={r.satuan} onChange={e=>row(i,{satuan:e.target.value})}><option value="">Pilih satuan</option>{units(r.item_id).map(x=><option key={x.unit} value={x.unit}>{x.unit}</option>)}</select></div>
    <button type="button" className="btn-def" aria-label={`Hapus bahan ${i+1}`} disabled={s.rows.length===1} onClick={()=>patch({rows:s.rows.filter((_,n)=>n!==i)})}>Hapus</button>
   </div>)}
   <button type="button" className="btn-def" disabled={s.rows.length>=100} style={{marginTop:10}} onClick={()=>patch({rows:[...s.rows,{item_id:'',warehouse_id:'',qty:'',satuan:''}]})}>Tambah bahan</button>

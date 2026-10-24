@@ -107,6 +107,13 @@ body {
 .fi:focus { border-color: var(--acc); }
 .fi[type="number"]::-webkit-outer-spin-button, .fi[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .fi[type="number"] { -moz-appearance: textfield; }
+.numeric-field { display: inline-grid; width: 100%; min-width: 0; vertical-align: middle; }
+.numeric-field > input, .numeric-field > .numeric-display { grid-area: 1 / 1; min-width: 0; width: 100%; }
+.numeric-display { pointer-events: none; user-select: none; overflow: hidden; white-space: nowrap; }
+.numeric-field > .numeric-display { background: transparent !important; border-color: transparent !important; visibility: hidden; }
+.numeric-field[data-has-number]:not(:focus-within) > input { color: transparent !important; }
+.numeric-field[data-has-number]:not(:focus-within) > .numeric-display { visibility: visible; }
+.numeric-paste-error { grid-column: 1; font-size: 11px; color: var(--rd); white-space: normal; }
 .flab { font-size: 10.5px; color: var(--tm); margin-bottom: 3px; display: block; }
 .frow { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 8px; }
 .fg { margin-bottom: 8px; }

@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { SalesRequestIdentity, SalesRecoveryComplete, SalesOrderRecovery } from "@/components/SalesRequestIdentity";
 import Link from "next/link";
@@ -144,7 +145,7 @@ export default async function DetailPesananPage({
                         <td style={{ fontSize: 11 }}>{b.nama}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{b.sisaKirim}</td>
                         <td>
-                          <input className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaKirim}
+                          <NumberInput className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaKirim}
                             step="any" defaultValue={b.sisaKirim} style={{ width: 90, textAlign: "right" }} />
                         </td>
                       </tr>
@@ -180,7 +181,7 @@ export default async function DetailPesananPage({
                         <td style={{ fontSize: 11 }}>{b.nama}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{b.sisaFaktur}</td>
                         <td>
-                          <input className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaFaktur}
+                          <NumberInput className="fi" type="number" name={`qty_${b.id}`} min={0} max={b.sisaFaktur}
                             step="any" defaultValue={b.sisaFaktur} style={{ width: 90, textAlign: "right" }} />
                         </td>
                       </tr>

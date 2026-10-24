@@ -70,7 +70,7 @@ it("retains plus/minus behavior and prevents Enter from checking out", async () 
   const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
   await act(async () => qty().dispatchEvent(event));
   expect(event.defaultPrevented).toBe(true);
-  const buttons = qty().parentElement!.querySelectorAll<HTMLButtonElement>("button");
+  const buttons = qty().closest("td")!.querySelectorAll<HTMLButtonElement>("button");
   await act(async () => buttons[1].click()); expect(cart()[0].qty).toBe(3.5); expect(qty().value).toBe("3.5");
   await act(async () => buttons[0].click()); expect(cart()[0].qty).toBe(2.5);
 });
@@ -78,7 +78,7 @@ it("retains plus/minus behavior and prevents Enter from checking out", async () 
 it("retains minimum-sale feedback and minus-to-remove behavior", async () => {
   await edit("0.5");
   expect(host.textContent).toContain("Pakan (min 2)");
-  const minus = qty().parentElement!.querySelector<HTMLButtonElement>("button")!;
+  const minus = qty().closest("td")!.querySelector<HTMLButtonElement>("button")!;
   await act(async () => minus.click());
   expect(cart()).toEqual([]);
 });

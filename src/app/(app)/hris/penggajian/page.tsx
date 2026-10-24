@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -212,7 +213,7 @@ export default async function PenggajianPage({
                             <span style={{ fontSize: 11 }}>{Number(s.penyesuaian) ? rp(s.penyesuaian) : "—"}</span>
                           ) : (
                             <>
-                              <input className="fi" name={`adj_${s.employee_id}`} type="number" step="any"
+                              <NumberInput className="fi" name={`adj_${s.employee_id}`} type="number" step="any"
                                 defaultValue={Number(s.penyesuaian) || ""} placeholder="0"
                                 style={{ width: 110, height: 26, fontSize: 10.5 }} />
                               <input className="fi" name={`note_${s.employee_id}`} defaultValue={s.catatan ?? ""}

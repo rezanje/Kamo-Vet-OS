@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useRef, useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -42,7 +44,7 @@ export function MonetaryOpeningForm({ userId, accountId }: { userId: string; acc
       <p>Saldo berjalan pada preview mencakup seluruh jurnal rekening di semua cabang terkait, termasuk jurnal bertanggal mendatang yang sudah tercatat.</p>
       <div style={{ maxWidth: 480, display: "grid", gap: 12 }}>
         <label className="flab">Saldo pembuka yang benar (Rp)
-          <input className="fi" name="amount" type="number" min="0" max="1000000000000" step="0.01" value={amount}
+          <NumberInput className="fi" name="amount" type="number" min="0" max="1000000000000" step="0.01" value={amount}
             onChange={e => { invalidate(); setAmount(e.target.value); }} />
         </label>
         <label className="flab">Alasan koreksi

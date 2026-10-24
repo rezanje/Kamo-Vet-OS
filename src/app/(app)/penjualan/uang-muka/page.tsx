@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DocumentBackLink } from "@/components/RelatedDocuments";
 import { documentAnchor } from "@/lib/related-document-routes";
@@ -92,7 +93,7 @@ export default async function UangMukaJualPage({
             <div className="frow">
               <div>
                 <label className="flab">Nominal (Rp) *</label>
-                <input className="fi" name="jumlah" type="number" min={1} step="any" required />
+                <NumberInput className="fi" name="jumlah" type="number" min={1} step="any" required />
               </div>
               <div>
                 <label className="flab">Metode</label>

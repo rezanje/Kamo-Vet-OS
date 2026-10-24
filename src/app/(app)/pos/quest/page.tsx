@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -74,11 +75,11 @@ export default async function QuestAdminPage({
           </div>
           <div>
             <label className="flab">Target *</label>
-            <input className="fi" name="target_value" type="number" min={1} required placeholder="5 / 1000000" />
+            <NumberInput className="fi" name="target_value" type="number" min={1} required placeholder="5 / 1000000" />
           </div>
           <div>
             <label className="flab">Poin reward *</label>
-            <input className="fi" name="points_reward" type="number" min={1} required placeholder="50" />
+            <NumberInput className="fi" name="points_reward" type="number" min={1} required placeholder="50" />
           </div>
           <div>
             <label className="flab">Cabang</label>
@@ -141,7 +142,7 @@ export default async function QuestAdminPage({
             </div>
             <div style={{ width: 90 }}>
               <label className="flab">Poin *</label>
-              <input className="fi" name="points_cost" type="number" min={1} required placeholder="500" />
+              <NumberInput className="fi" name="points_cost" type="number" min={1} required placeholder="500" />
             </div>
             <button type="submit" className="btn-acc"><i className="ti ti-plus" /></button>
           </form>

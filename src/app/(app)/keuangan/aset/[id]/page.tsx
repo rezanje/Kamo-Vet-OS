@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -203,7 +204,7 @@ export default async function DetailAsetPage({
               <input type="hidden" name="id" value={id} />
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Tambah nilai (perbaikan besar)</div>
               <div className="fg"><label className="flab">Nilai tambahan (Rp) *</label>
-                <input className="fi" name="tambahan" type="number" min={1} step="any" required /></div>
+                <NumberInput className="fi" name="tambahan" type="number" min={1} step="any" required /></div>
               <div className="fg"><label className="flab">Tanggal</label>
                 <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} /></div>
               <div className="fg"><label className="flab">Dibayar dengan</label>
@@ -220,7 +221,7 @@ export default async function DetailAsetPage({
               <input type="hidden" name="id" value={id} />
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>Revisi umur ekonomis</div>
               <div className="fg"><label className="flab">Umur baru (bulan) *</label>
-                <input className="fi" name="umur_bulan" type="number" min={1} defaultValue={aset.umur_bulan} required /></div>
+                <NumberInput className="fi" name="umur_bulan" type="number" min={1} defaultValue={aset.umur_bulan} required /></div>
               <div className="fg"><label className="flab">Tanggal</label>
                 <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} /></div>
               <div className="fg"><label className="flab">Alasan</label>
@@ -252,7 +253,7 @@ export default async function DetailAsetPage({
                   <option value="hapus">Dihapus (tanpa hasil)</option>
                 </select></div>
               <div className="fg"><label className="flab">Harga jual (Rp)</label>
-                <input className="fi" name="harga_jual" type="number" min={0} step="any" placeholder={`nilai buku ${rp(buku)}`} /></div>
+                <NumberInput className="fi" name="harga_jual" type="number" min={0} step="any" placeholder={`nilai buku ${rp(buku)}`} /></div>
               <div className="fg"><label className="flab">Tanggal</label>
                 <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} /></div>
               <div className="fg"><label className="flab">Uang masuk ke</label>

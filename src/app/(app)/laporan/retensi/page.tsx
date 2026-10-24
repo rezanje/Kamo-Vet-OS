@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
@@ -97,7 +98,7 @@ export default async function RetensiPage({
         <>
           <div style={{ minWidth: 190 }}>
             <label className="flab">Dorman kalau diam lebih dari</label>
-            <input className="fi" type="number" name="ambang" min={1} max={3650} defaultValue={ambang} />
+            <NumberInput className="fi" type="number" name="ambang" min={1} max={3650} defaultValue={ambang} />
           </div>
           <div style={{ minWidth: 200 }}>
             <label className="flab">Cabang pertama pelanggan</label>
