@@ -27,6 +27,8 @@ type Order = {
   suppliers: Rel<{ nama: string }>;
   payment_order_items: { id: string; jumlah: number; purchase_invoices: Rel<{ id: string; no_faktur: string }> }[] | null;
 };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ORDER_SELECT = "id, no_pp, tanggal, rencana_bayar, total, status, revision, catatan, suppliers(nama), payment_order_items(id, jumlah, purchase_invoices(id, no_faktur))";
 
 const BADGE: Record<string, string> = { draft: "o", disetujui: "b", dibayar: "g", batal: "x" };
 const LABEL: Record<string, string> = { draft: "Menunggu setuju", disetujui: "Siap dibayar", dibayar: "Dibayar", batal: "Batal" };
@@ -34,7 +36,7 @@ const LABEL: Record<string, string> = { draft: "Menunggu setuju", disetujui: "Si
 export default async function PerintahBayarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; supplier?: string; from?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; supplier?: string; from?: string; order?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
@@ -44,7 +46,7 @@ export default async function PerintahBayarPage({
   const [{ data: orderData }, { data: supData }, { data: invData }, { data: payData }, { data: antreData }, rekening] =
     await Promise.all([
       supabase.from("payment_orders")
-        .select("id, no_pp, tanggal, rencana_bayar, total, status, revision, catatan, suppliers(nama), payment_order_items(id, jumlah, purchase_invoices(id, no_faktur))")
+        .select(ORDER_SELECT)
         .order("created_at", { ascending: false }),
       supabase.from("suppliers").select("id, nama").order("nama"),
       supabase.from("purchase_invoices").select("id, no_faktur, tanggal, jatuh_tempo, total, supplier_id, suppliers(nama)").is("voided_at", null).order("jatuh_tempo"),
@@ -53,7 +55,13 @@ export default async function PerintahBayarPage({
       loadRekeningAktif(supabase),
     ]);
 
-  const orders = (orderData ?? []) as unknown as Order[];
+  let orders = (orderData ?? []) as unknown as Order[];
+  // The default list is capped by PostgREST. Include an explicitly linked older row.
+  if (sp.order && UUID.test(sp.order) && !orders.some((order) => order.id === sp.order)) {
+    const { data: selected } = await supabase.from("payment_orders")
+      .select(ORDER_SELECT).eq("id", sp.order).maybeSingle();
+    if (selected) orders = [selected as unknown as Order, ...orders];
+  }
   const pemasok = (supData ?? []) as { id: string; nama: string }[];
   const faktur = (invData ?? []) as unknown as {
     id: string; no_faktur: string; tanggal: string; jatuh_tempo: string; total: number;
