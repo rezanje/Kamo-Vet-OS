@@ -100,7 +100,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
       <div style={{ overflowX: "auto" }}><table className="tbl" style={{ width: "100%", minWidth: 1600 }}>
         <thead><tr>{table.columns.map(column => <th key={column.label} style={{ textAlign: column.format ? "right" : "left" }}>{column.label}</th>)}</tr></thead>
         <tbody>{pagination.rows.map(row => <tr key={row.id}>{row.cells.map((value,index) => <td key={index} style={{ textAlign: table.columns[index].format ? "right" : "left", whiteSpace: table.columns[index].format ? "nowrap" : undefined }}>
-          {row.href && index === 1 ? <Link href={row.href}>{cellText(value,table.columns[index])}</Link> : cellText(value,table.columns[index])}
+          {row.cellLinks?.[index] ? <Link href={row.cellLinks[index].href} title={row.cellLinks[index].title}>{cellText(value,table.columns[index])}</Link> : row.href && index === 1 ? <Link href={row.href}>{cellText(value,table.columns[index])}</Link> : cellText(value,table.columns[index])}
         </td>)}</tr>)}
         {pagination.rows.length === 0 && <TabelKosong kolom={table.columns.length} pesan="Belum ada data untuk pilihan ini." />}</tbody>
       </table></div>
@@ -121,6 +121,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
           Dokter mengikuti penanggung jawab kunjungan saat ini. Versi resmi tetap memakai ID saat racikan dibuat; metadata versi nonaktif dapat tidak tersedia.
           Nama dan satuan bahan mengikuti resep saat dibaca; label racikan ad hoc dapat berubah. Qty resep yang tidak valid ditampilkan kosong tanpa mengubah HPP invoice.
           Rincian bahan memakai HPP pemakaian historis yang ditautkan ke invoice. Jika histori belum tersedia, qty berasal dari resep tersimpan dan HPP bahan ditandai belum tersedia. Qty resep lama dapat berubah; nilai bahan tidak dihitung dari harga jual atau HPP stok saat ini.
+          Nama racikan membuka induk penjualan jika tautannya tersimpan; ID resep dan ID bahan membuka sumber masing-masing sesuai hak akses. Tautan invoice mengunci ID invoice asal, bukan memilih invoice pengganti.
           Hanya baris dengan tautan ID resep yang dihitung. Rincian rekonsiliasi menampilkan racikan tanpa tautan resep atau HPP historis, dengan ID sumber dan alasan. Baris obat lama tanpa tautan barang/resep juga perlu diperiksa jika kunjungannya memiliki catatan racikan; ini belum membuktikan baris tersebut adalah racikan. Baris tanpa tautan tidak masuk total keuangan; HPP, laba, dan margin yang tidak diketahui tetap kosong. Tautan tidak dicocokkan lewat nama.
         </> : null}
       </div>
