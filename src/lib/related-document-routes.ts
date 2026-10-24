@@ -1,6 +1,6 @@
 // Existing application routes only. Payments have no standalone detail route:
 // open their exact stored row within the invoice instead of inventing one.
-export type DocumentKind = 'purchase-return' | 'legacy-purchase-payment' | 'purchase-order' | 'goods-receipt' | 'purchase-invoice' | 'purchase-payment' | 'purchase-advance' | 'payment-order' | 'sales-invoice' | 'sales-receipt' | 'sales-delivery' | 'sales-advance';
+export type DocumentKind = 'purchase-return' | 'legacy-purchase-payment' | 'purchase-order' | 'goods-receipt' | 'purchase-invoice' | 'purchase-payment' | 'purchase-advance' | 'payment-order' | 'sales-invoice' | 'sales-receipt' | 'sales-delivery' | 'sales-quotation' | 'sales-advance';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RETURN_PATH = /^\/(?:pembelian\/(?:faktur\/|penerimaan\/|retur\/)?|penjualan\/(?:faktur\/|retur\/)?)([0-9a-f-]+)(?:#(?:payment|receipt|legacy-payment)-([0-9a-f-]+))?$/i;
 export function documentBackHref(input: unknown): string | null {
@@ -24,6 +24,7 @@ export function relatedDocumentHref(kind: DocumentKind, id: string, parentId?: s
     case 'purchase-invoice': path = `/pembelian/faktur/${id}`; break;
     case 'sales-invoice': path = `/penjualan/faktur/${id}`; break;
     case 'sales-delivery': path = `/penjualan/pengiriman?delivery=${id}#delivery-${id}`; break;
+    case 'sales-quotation': path = `/penjualan/penawaran?quotation=${id}#quotation-${id}`; break;
     case 'purchase-payment':
     case 'sales-receipt':
       if (!parentId || !UUID.test(parentId)) return null;

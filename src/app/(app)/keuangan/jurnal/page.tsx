@@ -267,13 +267,13 @@ export default async function JurnalPage({
                   const badge = SOURCE_BADGE[e.source] ?? { label: e.source, cls: "g" };
                   const tgl = e.tanggal ? new Date(e.tanggal).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit" }) : "—";
                   return (
-                    <tr key={e.id}>
+                    <tr id={entry === e.id ? `journal-${e.id}` : undefined} style={entry === e.id ? { scrollMarginTop: 90 } : undefined} key={e.id}>
                       {/* Rinciannya dibuka pakai <details> bawaan browser — tidak perlu
                           halaman baru maupun JavaScript. Sebelum ini layar jurnal hanya
                           menampilkan total, jadi akun yang kena tidak kelihatan di mana pun
                           selain Buku Besar (dilaporkan tim 2026-08-11). */}
                       <td style={{ fontFamily: "monospace", fontSize: 10.5, fontWeight: 600 }}>
-                        <details>
+                        <details open={entry === e.id}>
                           <summary style={{ cursor: "pointer", listStyle: "none" }}>
                             <i className="ti ti-chevron-right" style={{ fontSize: 11, verticalAlign: "-1px" }} />
                             {e.no_jurnal}

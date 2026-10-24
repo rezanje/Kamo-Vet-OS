@@ -40,7 +40,7 @@ export default async function DetailPesananPage({
 
   const [{ data: so }, { data: kirimData }, { data: fakturData }, { data: gudangData }] = await Promise.all([
     supabase.from("sales_orders")
-      .select("id, no_pesanan, tanggal, rencana_kirim, total, status, catatan, warehouse_id, customers(name, phone), branches(name), warehouses(name), sales_order_items(id, nama, satuan, qty, harga, qty_kirim, qty_faktur)")
+      .select("id, no_pesanan, tanggal, rencana_kirim, total, status, catatan, warehouse_id, quotation_id, sales_quotations(id,no_penawaran), customers(name, phone), branches(name), warehouses(name), sales_order_items(id, nama, satuan, qty, harga, qty_kirim, qty_faktur)")
       .eq("id", id).maybeSingle(),
     supabase.from("sales_deliveries").select("id, no_kirim, tanggal, ekspedisi, no_resi, sales_delivery_items(qty, hpp)").eq("order_id", id).order("tanggal"),
     supabase.from("sales_invoices").select("id, no_faktur, tanggal, jatuh_tempo, total, status").eq("order_id", id).order("tanggal"),
@@ -48,6 +48,7 @@ export default async function DetailPesananPage({
   ]);
 
   if (!so) notFound();
+  const quotation = one(so.sales_quotations as Rel<{ id: string; no_penawaran: string }>);
 
   const baris = (so.sales_order_items ?? []) as Baris[];
   const spek = baris.map((b) => ({
@@ -71,6 +72,7 @@ export default async function DetailPesananPage({
   return (
     <>
       <ActivityHistoryLink entity="sales_orders" id={id} />
+      {quotation && <p><DocumentLink kind="sales-quotation" id={quotation.id}>Penawaran asal {quotation.no_penawaran}</DocumentLink></p>}
       <SalesRecoveryComplete userId={userId} scope={sp.request_scope} requestKey={sp.request_done} />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/penjualan/pesanan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
