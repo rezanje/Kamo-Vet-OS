@@ -6,7 +6,7 @@ import {StockOnlyImport,StockValuation} from "./StockOnlyImport";
 import type {InitialStockState} from "./actions";
 export type RecoverableStockBatch={id:string;source_name:string;status:string;as_of_date:string|null};
 export function InventoryImportWorkspace({batches,recovered,initialReceipt}:{batches:RecoverableStockBatch[];recovered:InitialStockState|null;initialReceipt:{stockCount:number;problemCount:number}|null}){
- const [mode,setMode]=useState('master');
+ const [mode,setMode]=useState('');
  return <>
   <section className="crm-sec" aria-label="Batch saldo tersimpan">
    <h2 style={{fontSize:15}}>Lanjutkan batch saldo tersimpan</h2>
@@ -16,7 +16,8 @@ export function InventoryImportWorkspace({batches,recovered,initialReceipt}:{bat
    {recovered&&!recovered.ok&&<p role="alert">{recovered.message}</p>}
    {recovered?.ok&&recovered.run_id&&<div role="status"><p>{recovered.message}</p><StockValuation state={recovered}/><Link className="btn-acc" href={`/keuangan/persediaan-awal?run_id=${recovered.run_id}`}>Lanjutkan review / bukti posting batch</Link></div>}
   </section>
-  <label>Mode impor <select aria-label="Mode impor" value={mode} onChange={e=>setMode(e.target.value)}><option value="master">Master barang/jasa dan saldo</option><option value="stock_only">Saldo saja — SKU existing</option></select></label>
-  {mode==='master'?<AccurateImportForm initialReceipt={initialReceipt}/>:<StockOnlyImport/>}
+  <label>Mode impor <select aria-label="Mode impor" value={mode} onChange={e=>setMode(e.target.value)}><option value="">Pilih tujuan impor</option><option value="master">Perbarui master dan kategori; siapkan saldo</option><option value="stock_only">Siapkan saldo saja — kategori master tetap</option></select></label>
+  {!mode&&<p>Pilih mode sesuai tujuan file. Mode saldo saja memakai SKU yang sudah ada dan tidak memperbarui kategori barang.</p>}
+  {mode==='master'?<AccurateImportForm initialReceipt={initialReceipt}/>:mode==='stock_only'?<StockOnlyImport/>:null}
  </>;
 }
