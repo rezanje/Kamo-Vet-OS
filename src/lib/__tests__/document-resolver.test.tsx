@@ -13,6 +13,7 @@ it.each([
  ['sales_quotations',`/penjualan/penawaran?quotation=${id}#quotation-${id}`],
  ['journal_entries',`/keuangan/jurnal?entry=${id}#journal-${id}`],
  ['sales_advances',`/penjualan/uang-muka#advance-${id}`],
+ ['purchase_advances',`/pembelian/uang-muka#advance-${id}`],
 ])('opens the exact saved %s document rather than an unfiltered list',async(table,path)=>{
  state.table=table;await expect(Resolver({params:Promise.resolve({no:'FICTION.2026.00001'})})).rejects.toThrow(path);
 });
