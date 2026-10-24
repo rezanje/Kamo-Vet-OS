@@ -4,6 +4,7 @@ const s = vi.hoisted(() => ({ linked: true, failed: false, signedIn: true }));
 vi.mock('@/components/returns/ReturnRecordDetail', () => ({ ReturnRecordDetail: () => <div>Existing return content</div> }));
 vi.mock('next/navigation', () => ({ notFound: () => { throw Error('NOT_FOUND'); } }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
+ rpc:async()=>({data:null,error:null}),
  auth: { getUser: async () => ({ data: { user: s.signedIn ? { id: 'actor' } : null } }) },
  from: (table: string) => { const q = { select: () => q, eq: () => q, maybeSingle: () => q,
  then(resolve: (r: unknown) => unknown) { return Promise.resolve({ data: table === 'sales_returns' ? { id: '10000000-0000-4000-8000-000000000001', sale_id: s.linked ? '20000000-0000-4000-8000-000000000002' : null, no_retur: 'RET-FICTIONAL', total: 0, revision: 0 } : table === 'sales_return_items' ? [] : table === 'profiles' ? { role: 'STAFF', is_active: true } : null, error: s.failed ? { message: 'Synthetic private read failure' } : null }).then(resolve); }

@@ -4,7 +4,8 @@ import { formatPosMoney, PosDecimal } from "@/lib/pos-money";
 
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
-import { buatReturJual } from "../actions";
+import { buatReturJual, recoverReturJual } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 import { type ReturnFormRow } from "@/lib/return-source-units";
 import { usePreservedAction } from "@/components/LocalTransactionDraft";
 import { draftRecord, draftNumber, draftString } from "@/components/TransactionDraft";
@@ -28,6 +29,8 @@ export function ReturJualForm({
   const [qty, setQty] = useState<Record<string, number>>({});
   const [kondisi, setKondisi] = useState<Record<string, string>>({});
   const [exp, setExp] = useState<Record<string, string>>({});
+  const [payoutMethod,setPayoutMethod]=useState('');
+  const [destination,setDestination]=useState({bank:'',account:'',name:''});
 
   const payload = rows
     .map((r) => ({
@@ -43,9 +46,12 @@ export function ReturJualForm({
   return (
     <form action={save}>
       {failure && <div role="alert" className="p2ban">{failure}</div>}
-      <PostingRequestIdentity scope={`sales-return:${saleId}`} userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} state={{snapshot:{qty,unit,kondisi,exp},reset:()=>{setQty({});setUnit({});setKondisi({});setExp({});},restore:value=>{
+      <PostingRequestIdentity scope={`sales-return:${saleId}`} userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} recoverAction={recoverReturJual} state={{snapshot:{qty,unit,kondisi,exp,payoutMethod,destination},reset:()=>{setQty({});setUnit({});setKondisi({});setExp({});setPayoutMethod('');setDestination({bank:'',account:'',name:''});},restore:value=>{
         if(!draftRecord(value.qty,draftNumber)||!draftRecord(value.unit,draftString)||!draftRecord(value.kondisi,draftString)||!draftRecord(value.exp,draftString))return false;
-        setQty(value.qty);setUnit(value.unit);setKondisi(value.kondisi);setExp(value.exp);return true;
+        if(value.payoutMethod!==undefined&&(!['','Tunai','Transfer'].includes(String(value.payoutMethod))))return false;
+        if(value.destination!==undefined&&(!draftRecord(value.destination,draftString)||!['bank','account','name'].every(k=>typeof (value.destination as Record<string,string>)[k]==='string'&&(value.destination as Record<string,string>)[k].length<=120)))return false;
+        setQty(value.qty);setUnit(value.unit);setKondisi(value.kondisi);setExp(value.exp);
+        setPayoutMethod(String(value.payoutMethod??''));setDestination((value.destination??{bank:'',account:'',name:''}) as typeof destination);return true;
       }}} />
       <input type="hidden" name="source_ref" value={info.split(" — ")[0]} />
       <input type="hidden" name="sale_id" value={saleId} />
@@ -65,6 +71,23 @@ export function ReturJualForm({
             <label className="flab">Keterangan</label>
             <input className="fi" name="keterangan" placeholder="Alasan retur (opsional)" />
           </div>
+        </div>
+
+        <div style={{margin:'12px 0'}}>
+          <label className="flab">Cara payout refund *</label>
+          <select className="fi" name="refund_method" required value={payoutMethod} onChange={e=>setPayoutMethod(e.target.value)} style={{maxWidth:320}}>
+            <option value="">Pilih cara pengembalian uang</option><option value="Tunai">Tunai dari kas shift petshop</option><option value="Transfer">Transfer melalui finance</option>
+          </select>
+          <p>Transaksi yang memakai atau mendapat poin ditahan untuk rekonsiliasi; poin belum dibalik otomatis.</p>
+          {payoutMethod==='Tunai'&&<p>Uang keluar dari kas/shift petshop aktif, meskipun transaksi asal dibayar transfer. Shift aktif diperlukan.</p>}
+          {payoutMethod==='Transfer'&&<>
+            <p>Ini permintaan ke finance. Retur, stok dan jurnal belum diposting sampai finance mencatat transfer selesai. Jangan membayar tunai untuk permintaan transfer yang sama.</p>
+            <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
+              <div style={{flex:'1 1 180px'}}><label className="flab">Bank tujuan *</label><input className="fi" name="refund_bank" required maxLength={80} value={destination.bank} onChange={e=>setDestination(d=>({...d,bank:e.target.value}))}/></div>
+              <div style={{flex:'1 1 180px'}}><label className="flab">Nomor rekening *</label><input className="fi" name="refund_account" required maxLength={40} value={destination.account} onChange={e=>setDestination(d=>({...d,account:e.target.value}))}/></div>
+              <div style={{flex:'1 1 180px'}}><label className="flab">Nama penerima *</label><input className="fi" name="refund_name" required maxLength={120} value={destination.name} onChange={e=>setDestination(d=>({...d,name:e.target.value}))}/></div>
+            </div>
+          </>}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -124,16 +147,16 @@ export function ReturJualForm({
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: 10.5, color: "var(--tm)" }}>
-            Refund tunai dicatat sebagai pengeluaran kasir (kategori Retur Penjualan).
+            Payout mengikuti pilihan di atas; nilai dan kelayakan akhir diperiksa dari transaksi asal.
             {adaRusak && " Barang rusak/kadaluarsa tidak dikembalikan ke stok jualan — uangnya tetap kembali penuh."}
           </span>
           <span style={{ fontSize: 12, fontWeight: 700 }}>Total refund: {rp(total)}</span>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-          <button type="submit" className="btn-acc" disabled={payload.length === 0}>
-            <i className="ti ti-receipt-refund" /> Simpan retur & refund
-          </button>
+          <SubmitButton className="btn-acc" pendingText="Memproses…" disabled={payload.length === 0||!payoutMethod}>
+            {payoutMethod==='Transfer'?'Ajukan refund transfer':'Simpan retur & refund tunai'}
+          </SubmitButton>
         </div>
       </div>
     </form>

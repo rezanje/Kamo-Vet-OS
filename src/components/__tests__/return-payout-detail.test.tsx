@@ -1,0 +1,14 @@
+import {renderToStaticMarkup}from'react-dom/server';
+import {beforeEach,expect,it,vi}from'vitest';
+const s=vi.hoisted(()=>({rpc:vi.fn()}));
+vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND');}}));
+vi.mock('@/components/returns/ReturnCorrectionForm',()=>({ReturnCorrectionForm:()=> <div>Legacy correction form</div>}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'owner'}}})},rpc:s.rpc,from:(table:string)=>{const q={select:()=>q,eq:()=>q,maybeSingle:()=>q,then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:table==='sales_returns'||table==='purchase_returns'?{id:'10000000-0000-4000-8000-000000000001',total:50000,no_retur:'RJ.FICTION',revision:0}:table==='profiles'?{role:'OWNER',is_active:true}:table==='return_record_postings'?{snapshot:{journals:[]}}:table==='return_record_corrections'?null:[],error:null}).then(resolve)};return q;}})}));
+import {ReturnRecordDetail}from'../returns/ReturnRecordDetail';
+const id='10000000-0000-4000-8000-000000000001';
+const view=async(kind:'sales'|'purchase'='sales')=>renderToStaticMarkup(await ReturnRecordDetail({kind,id}));
+beforeEach(()=>{s.rpc.mockReset();s.rpc.mockResolvedValue({data:{method:'Transfer',amount:50000,account_name:'Fictional refund bank',expense_id:'20000000-0000-4000-8000-000000000002',request_id:'30000000-0000-4000-8000-000000000003'},error:null});});
+it('shows the actual selected payout account and blocks the incompatible legacy correction form',async()=>{const html=await view();expect(html).toContain('Fictional refund bank');expect(html).toContain('Transfer');expect(html).not.toContain('Legacy correction form');expect(html).toContain('Koreksi otomatis ditahan');expect(s.rpc).toHaveBeenCalledExactlyOnceWith('get_sales_return_payout',{p_return:id});});
+it('keeps supported legacy correction when the authoritative lookup confirms no selected payout',async()=>{s.rpc.mockResolvedValue({data:null,error:null});expect(await view()).toContain('Legacy correction form');});
+it.each([{data:null,error:{message:'private fixture'}},undefined,{data:{method:'Transfer',amount:1,account_name:'Wrong amount'},error:null}])('fails closed when payout proof cannot be confirmed %j',async response=>{s.rpc.mockResolvedValue(response);const html=await view();expect(html).not.toContain('Legacy correction form');expect(html).toContain('Bukti payout belum dapat diperiksa');expect(html).not.toContain('private fixture');});
+it('preserves purchase return correction without querying retail payout',async()=>{expect(await view('purchase')).toContain('Legacy correction form');expect(s.rpc).not.toHaveBeenCalled();});
