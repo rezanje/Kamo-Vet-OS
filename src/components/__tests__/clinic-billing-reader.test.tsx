@@ -4,18 +4,20 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({mode:'draft',fail:'',inpatientOpen:false,visitStatus:'Pembayaran',calls:[] as unknown[][]}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'cashier'}}})},rpc:async()=>({data:false,error:null}),from(table:string){
- let single=false;let selected='';const filters:Record<string,unknown>={};const q:Record<string,unknown>={then:(resolve:(v:unknown)=>void)=>{
+ let single=false;let selected='';let range:number[]|undefined;let ids:string[]|undefined;const filters:Record<string,unknown>={};const q:Record<string,unknown>={then:(resolve:(v:unknown)=>void)=>{
  let data:unknown=[];const error=state.fail===table?{message:'PRIVATE database problem'}:null;
  if(table==='visits')data={id:state.mode==='old'?'old-visit':'new-visit',status:state.visitStatus,poli:'Umum',created_at:'2026-10-22T00:00:00Z',branch_id:'branch',pets:{name:state.mode==='old'?'Old patient':'New patient'},customers:{name:'Fictional owner'}};
  if(table==='medical_records')data={id:'mr-new'};
  if(table==='inpatient_records')data=state.inpatientOpen?{id:'inpatient',discharged_at:null,consent_id:null}:null;
  if(table==='invoices')data=!single&&selected.includes('visits(pets')?[{id:'old-invoice',visit_id:'old-visit',invoice_no:'INV-OLD-415',created_at:'2026-10-22T00:00:00Z',total:415000,dp_amount:0,paid_status:'Lunas',invoice_payments:[],visits:null},{id:'dp-invoice',visit_id:'dp-visit',invoice_no:'INV-DP',created_at:'2026-10-22T00:00:00Z',total:400000,dp_amount:100000,paid_status:'DP',invoice_payments:[{amount:50000}],visits:null}]:single?(state.mode==='draft'?null:{id:state.mode==='old'?'old-invoice':'new-invoice',invoice_no:state.mode==='old'?'INV-OLD-415':'INV-NEW-400',paid_status:state.mode==='unpaid'?'Belum Lunas':state.mode==='dp'?'DP':'Lunas',total:state.mode==='old'?415000:400000,subtotal:state.mode==='old'?415000:400000,discount:0,tax:0,dp_amount:state.mode==='dp'?100000:0,created_at:'2026-10-22T00:00:00Z',metode_bayar:'Tunai',correction_pending:false}):[];
+ if(table==='invoice_payments'&&selected==='id,invoice_id,amount')data=[{id:'dp-payment',invoice_id:'dp-invoice',amount:50000}].filter(row=>!ids||ids.includes(row.invoice_id));
  if(table==='invoice_items')data=[{deskripsi:'Stored invoice item',qty:1,harga:state.mode==='old'?415000:400000,jenis:'jasa'}];
  if(table==='prescription_items')data=selected.includes('nama_obat')?[{id:'prescription-a',nama_obat:'Care',qty:1,harga:305000,jenis:'jasa',item_id:'service'},{id:'prescription-b',nama_obat:'Addition',qty:1,harga:95000,jenis:'jasa',item_id:'added-service'}]:[];
  if(table==='items')data=single?null:[];
  if(table==='clinic_demo_invoice_snapshots')data=null;
- resolve({data:error?null:data,error});}};
- for(const method of ['select','eq','gt','is','in','order','limit','maybeSingle'])q[method]=(...args:unknown[])=>{state.calls.push([table,method,...args]);if(method==='select')selected=String(args[0]);if(method==='eq')filters[String(args[0])]=args[1];if(method==='maybeSingle')single=true;return q};return q;
+ const count=Array.isArray(data)?data.length:undefined;if(range&&Array.isArray(data))data=data.slice(range[0],range[1]+1);
+ resolve({data:error?null:data,error,count});}};
+ for(const method of ['select','eq','gt','is','in','order','limit','range','maybeSingle'])q[method]=(...args:unknown[])=>{state.calls.push([table,method,...args]);if(method==='select')selected=String(args[0]);if(method==='range')range=args as number[];if(method==='in')ids=args[1]as string[];if(method==='eq')filters[String(args[0])]=args[1];if(method==='maybeSingle')single=true;return q};return q;
 }})}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')},redirect:(url:string)=>{throw Error(url)}}));
 vi.mock('@/lib/clinic-demo-policy-server',()=>({readDemoPolicy:async()=>null}));

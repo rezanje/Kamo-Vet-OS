@@ -1,3 +1,5 @@
+import {readCompleteList} from "@/lib/checked-list";
+import {loadSalesInvoicePayments} from "@/lib/sales-invoice-payments-server";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -46,28 +48,29 @@ export default async function FakturJualPage({
   const boleh = await bolehTransaksiKas();
   const today = hariIniWIB();
 
-  const [{ data: invData }, { data: klinikData }, { data: umData }, rekening] = await Promise.all([
-    supabase.from("sales_invoices")
-      .select("id, no_faktur, tanggal, jatuh_tempo, dpp, ppn, total, carried_paid, status, customer_id, kategori, catatan, customers(name), sales_orders(no_pesanan), sales_receipts(jumlah)")
-      .order("jatuh_tempo"),
-    supabase.from("invoices")
-      .select("id, visit_id, invoice_no, created_at, total, dp_amount, paid_status, visits(pets(name), customers(name), branches(name)), invoice_payments(amount)")
-      .is("voided_at", null).order("created_at", { ascending: false }),
-    supabase.from("sales_advances").select("id, no_um, customer_id, jumlah, terpakai").eq("status", "aktif"),
+  type Advance={id:string;no_um:string;customer_id:string|null;jumlah:number;terpakai:number};
+  type Credit={id:string;tanggal:string;customer_credit:number;sales_invoices:Rel<{id:string;no_faktur:string;customers:Rel<{name:string}>}>};
+  const [invData,klinikData,umData,rekening,credits]=await Promise.all([
+    readCompleteList<Omit<Faktur,'sales_receipts'>>((from,to)=>supabase.from('sales_invoices')
+      .select('id,no_faktur,tanggal,jatuh_tempo,dpp,ppn,total,carried_paid,status,customer_id,kategori,catatan,customers(name),sales_orders(no_pesanan)',{count:'exact'})
+      .order('jatuh_tempo').order('id').range(from,to),'Faktur penjualan',{maxRows:null}),
+    readCompleteList<Omit<FakturKlinik,'invoice_payments'>>((from,to)=>supabase.from('invoices')
+      .select('id,visit_id,invoice_no,created_at,total,dp_amount,paid_status,visits(pets(name),customers(name),branches(name))',{count:'exact'})
+      .is('voided_at',null).order('created_at',{ascending:false}).order('id').range(from,to),'Faktur klinik',{maxRows:null}),
+    readCompleteList<Advance>((from,to)=>supabase.from('sales_advances').select('id,no_um,customer_id,jumlah,terpakai',{count:'exact'})
+      .eq('status','aktif').order('id').range(from,to),'Uang muka pelanggan',{maxRows:null}),
     loadRekeningAktif(supabase),
+    readCompleteList<Credit>((from,to)=>supabase.from('wholesale_invoice_corrections')
+      .select('id,tanggal,customer_credit,sales_invoices!invoice_id(id,no_faktur,customers(name))',{count:'exact'})
+      .gt('customer_credit',0).order('tanggal').order('id').range(from,to),'Kredit pelanggan',{maxRows:null}),
   ]);
-
-  const creditResult = await supabase.from("wholesale_invoice_corrections")
-    .select("id,tanggal,customer_credit,sales_invoices!invoice_id(id,no_faktur,customers(name))").gt("customer_credit", 0).order("tanggal");
-  if (creditResult.error) throw new Error("Kredit pelanggan belum dapat dibaca: " + creditResult.error.message);
-  type Credit = { id: string; tanggal: string; customer_credit: number; sales_invoices: Rel<{ id: string; no_faktur: string; customers: Rel<{ name: string }> }> };
-  const credits = (creditResult.data ?? []) as unknown as Credit[];
-  const faktur = (invData ?? []) as unknown as Faktur[];
-  const fakturKlinik = (klinikData ?? []) as unknown as FakturKlinik[];
+  const {receipts,payments}=await loadSalesInvoicePayments(supabase,invData.map(row=>row.id),klinikData.map(row=>row.id));
+  const faktur:Faktur[]=invData.map(row=>({...row,sales_receipts:receipts.get(row.id)??[]}));
+  const fakturKlinik:FakturKlinik[]=klinikData.map(row=>({...row,invoice_payments:payments.get(row.id)??[]}));
 
   // Uang muka aktif per pelanggan, supaya DP yang sudah masuk tidak terlupa saat menagih.
   const umPerPelanggan = new Map<string, { id: string; no_um: string; sisa: number }[]>();
-  for (const u of (umData ?? []) as { id: string; no_um: string; customer_id: string | null; jumlah: number; terpakai: number }[]) {
+  for (const u of umData) {
     const sisa = Number(u.jumlah) - Number(u.terpakai);
     if (!u.customer_id || sisa <= 0) continue;
     const arr = umPerPelanggan.get(u.customer_id) ?? [];
