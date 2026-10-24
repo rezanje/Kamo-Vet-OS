@@ -8,7 +8,8 @@ export async function loadClinicItemCategories(client: any): Promise<ClinicItemC
     .select("id,name,parent_id", { count: "exact" }).order("id").range(from, to), "Kategori barang klinik");
 }
 
-/** Explicit clinic categories take precedence; imported services can use other category names. */
+/** Dedicated service/action categories keep their tabs. Obat requires inventory;
+ * ingredient eligibility does not prevent an inventory SKU being sold directly. */
 export function splitClinicItems<T extends { id: string; category_id?: string | null; item_type?: string | null; is_compound_material: boolean }>(
   items: T[], categories: ClinicItemCategory[], compoundIds: Set<string>,
 ) {
@@ -22,16 +23,15 @@ export function splitClinicItems<T extends { id: string; category_id?: string | 
       const name = category?.name.trim().toUpperCase();
       if (name === "JASA") return "Jasa";
       if (name === "TINDAKAN") return "Tindakan";
-      if (name === "OBAT") return "Obat";
       id = category?.parent_id;
     }
     return item.item_type === "Jasa" ? "Jasa" : "Obat";
   };
-  const classified = items.map(item => ({ item, category: categoryOf(item) }));
+  const classified = items.filter(item => !compoundIds.has(item.id)).map(item => ({ item, category: categoryOf(item) }));
   return {
     jasa: classified.filter(row => row.category === "Jasa").map(row => row.item),
     tindakan: classified.filter(row => row.category === "Tindakan").map(row => row.item),
-    obat: classified.filter(row => row.category === "Obat" && !row.item.is_compound_material && !compoundIds.has(row.item.id)).map(row => row.item),
+    obat: classified.filter(row => row.category === "Obat" && row.item.item_type === "Persediaan").map(row => row.item),
     racikan: items.filter(item => compoundIds.has(item.id)),
     bahan: items.filter(item => item.is_compound_material),
   };
