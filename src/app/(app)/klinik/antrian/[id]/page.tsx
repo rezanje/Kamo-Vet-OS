@@ -5,6 +5,7 @@ import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { PrintButton } from "@/components/PrintButton";
 import { RiwayatTabs, type MedEntry, type RacikanEntry, type InapEntry, type InvoiceEntry } from "./RiwayatTabs";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
+import {readPatientClinicalHistory} from '@/lib/patient-clinical-history-server';
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -70,12 +71,14 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
         .order("created_at", { ascending: false })
     : { data: [] };
 
-  const med: MedEntry[] = (history ?? []).map((v, i) => {
-    const mrs = many(v.medical_records).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const mr = mrs[0];
-    const resepCount = mrs.reduce((n, m) => n + many(m.prescription_items).length, 0);
-    const inv = one(v.invoices);
-    const items = inv ? many(inv.invoice_items) : [];
+  // Clinical continuity is independent of operational selection, within existing
+  // account branch grants. Financial/inpatient/compound actions below keep their
+  // original operational client and visit IDs.
+  const clinical=pet?await readPatientClinicalHistory(id,pet.id):{available:false,visits:[]};
+  const med: MedEntry[] = clinical.visits.map((v, i) => {
+    const mr=v.records[0];
+    const prescriptions=v.records.flatMap(record=>record.prescriptions);
+    const actions=prescriptions.filter(row=>row.jenis==='jasa'||row.jenis==='tindakan');
     return {
       visitId: v.id as string,
       date: v.created_at as string,
@@ -83,9 +86,10 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
       dokter: v.dokter as string | null,
       keluhan: (v.keluhan as string | null) ?? (mr?.anamnesis ?? null),
       diagnosis: mr?.diagnosis ?? null,
-      tindakan: items[0]?.deskripsi ?? null,
-      tindakanCount: items.length,
-      resepCount,
+      tindakan: actions[0]?.nama_obat ?? null,
+      tindakanCount: actions.length,
+      resepCount:prescriptions.length,
+      branchName:v.branchName,records:v.records,readOnly:true,
       color: POLI_COLOR[v.poli as string] ?? CYCLE[i % CYCLE.length],
     };
   });
@@ -239,7 +243,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        <RiwayatTabs med={med} racikan={racikan} inap={inap} invoices={invoices} />
+        <RiwayatTabs med={med} clinicalUnavailable={!clinical.available} racikan={racikan} inap={inap} invoices={invoices} />
       </div>
     </>
   );
