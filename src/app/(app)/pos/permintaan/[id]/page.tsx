@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -129,7 +130,7 @@ export default async function PermintaanDetailPage({
                     <td style={{ textAlign: "center", fontSize: 11.5 }}>{Number(it.qty_diminta)}</td>
                     <td style={{ textAlign: "center" }}>
                       {menunggu ? (
-                        <input
+                        <NumberInput
                           className="fi" type="number" min={0} step="any"
                           name={`qty_${it.id}`}
                           defaultValue={it.qty_disetujui ?? it.qty_diminta}
@@ -201,7 +202,7 @@ export default async function PermintaanDetailPage({
                         {Number(it.qty_disetujui ?? it.qty_diminta)}
                       </td>
                       <td>
-                        <input
+                        <NumberInput
                           className="fi" type="number" min={0} step="any"
                           name={`qty_${it.id}`}
                           defaultValue={Number(it.qty_disetujui ?? it.qty_diminta)}

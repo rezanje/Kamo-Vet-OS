@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 
 import { useState } from "react";
@@ -42,7 +44,7 @@ export function TambahPengeluaran({ branchId, today, shiftId }: { branchId: stri
             <div className="frow">
               <div>
                 <label className="flab">Jumlah (Rp) *</label>
-                <input className="fi" name="jumlah" type="number" min={0} step="any" placeholder="0" required />
+                <NumberInput className="fi" name="jumlah" type="number" min={0} step="any" placeholder="0" required />
               </div>
               <div>
                 <label className="flab">Metode</label>

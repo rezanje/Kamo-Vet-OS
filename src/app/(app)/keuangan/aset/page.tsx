@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { PreservedForm } from "@/components/LocalTransactionDraft";
 import { PurchaseRecoveryComplete } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
@@ -148,11 +149,11 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
           <div className="frow" style={{ marginBottom: 10 }}>
             <div>
               <label className="flab">Harga perolehan</label>
-              <input className="fi" type="number" name="harga" min={1} step="any" required />
+              <NumberInput className="fi" type="number" name="harga" min={1} step="any" required />
             </div>
             <div>
               <label className="flab">Nilai sisa</label>
-              <input className="fi" type="number" name="nilai_sisa" min={0} step="any" defaultValue={0} />
+              <NumberInput className="fi" type="number" name="nilai_sisa" min={0} step="any" defaultValue={0} />
             </div>
           </div>
           <div className="frow" style={{ marginBottom: 12 }}>
@@ -186,8 +187,8 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
           </div>
           <div className="frow" style={{ marginBottom: 10 }}><KategoriUmur userId={user?.id ?? ""} kategori={asetKategori} /></div>
           <div className="frow" style={{ marginBottom: 10 }}>
-            <div><label className="flab">Harga perolehan</label><input className="fi" type="number" name="harga" min={1} step="any" required /></div>
-            <div><label className="flab">Nilai sisa</label><input className="fi" type="number" name="nilai_sisa" min={0} step="any" defaultValue={0} /></div>
+            <div><label className="flab">Harga perolehan</label><NumberInput className="fi" type="number" name="harga" min={1} step="any" required /></div>
+            <div><label className="flab">Nilai sisa</label><NumberInput className="fi" type="number" name="nilai_sisa" min={0} step="any" defaultValue={0} /></div>
             <div><label className="flab">Cabang</label><select className="fi" name="branch_id" defaultValue=""><option value="">— Pusat / tanpa cabang —</option>{(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
           </div>
           <button type="submit" className="btn-def"><i className="ti ti-history" /> Simpan Saldo Awal Tanpa Jurnal</button>

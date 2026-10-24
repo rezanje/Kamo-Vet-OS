@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { PreservedForm, LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 
 // Panel bayar sekaligus untuk satu kedatangan (beberapa hewan).
@@ -109,7 +111,7 @@ export function LunasiRombonganForm({ visitId, requestKey, contextKey, jumlahPas
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Uang diterima</span>
-            <input className="fi" type="number" min={0} step={1} value={bayar || ""} placeholder="0"
+            <NumberInput className="fi" type="number" min={0} step={1} value={bayar || ""} placeholder="0"
               onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 140, textAlign: "right" }} />
           </div>
           <div style={{ fontSize: 12 }}>
@@ -139,7 +141,7 @@ export function LunasiRombonganForm({ visitId, requestKey, contextKey, jumlahPas
       {bekal.poinSaldo > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Pakai poin</span>
-          <input className="fi" type="number" min={0} max={poinMaks} step={1} value={poinPakai || ""} placeholder="0"
+          <NumberInput className="fi" type="number" min={0} max={poinMaks} step={1} value={poinPakai || ""} placeholder="0"
             onChange={(e) => setPoinPakai(Number(e.target.value))} style={{ width: 120, textAlign: "right" }} />
           <span style={{ fontSize: 10, color: "var(--td)" }}>
             Saldo {bekal.poinSaldo.toLocaleString("id-ID")} poin · 1 poin = Rp1, dibagi ke nota tiap hewan.

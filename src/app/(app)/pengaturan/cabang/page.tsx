@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -77,13 +78,13 @@ export default async function CabangPage({
               </div>
               <div>
                 <label className="flab">Lintang (lat)</label>
-                <input className="fi" name="lat" type="number" step="any" defaultValue={b.lat ?? ""}
+                <NumberInput className="fi" name="lat" type="number" step="any" defaultValue={b.lat ?? ""}
                   placeholder="-6.5971" disabled={!bolehKelola}
                   style={{ fontSize: 10.5, padding: "4px 6px", height: 28, width: 120 }} />
               </div>
               <div>
                 <label className="flab">Bujur (lng)</label>
-                <input className="fi" name="lng" type="number" step="any" defaultValue={b.lng ?? ""}
+                <NumberInput className="fi" name="lng" type="number" step="any" defaultValue={b.lng ?? ""}
                   placeholder="106.7991" disabled={!bolehKelola}
                   style={{ fontSize: 10.5, padding: "4px 6px", height: 28, width: 120 }} />
               </div>
@@ -91,7 +92,7 @@ export default async function CabangPage({
                 <label className="flab">Radius (m)</label>
                 {/* step harus 1: dengan step=10 & min=1, angka bulat seperti 300 dianggap tidak valid
                     dan browser MEMBLOKIR submit tanpa pesan apa pun. */}
-                <input className="fi" name="radius_m" type="number" min={1} step={1} defaultValue={b.radius_m}
+                <NumberInput className="fi" name="radius_m" type="number" min={1} step={1} defaultValue={b.radius_m}
                   disabled={!bolehKelola}
                   style={{ fontSize: 10.5, padding: "4px 6px", height: 28, width: 90 }} />
               </div>

@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { draftRecord, draftString } from "@/components/TransactionDraft";
 import { PreservedForm, LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 
@@ -190,7 +192,7 @@ export function HitungForm({
                           {kunci[r.item_id]} {r.unit}
                         </span>
                       ) : (
-                        <input className="fi" type="number" min={0} step="any" inputMode="decimal"
+                        <NumberInput className="fi" type="number" min={0} step="any" inputMode="decimal"
                           placeholder="—"
                           value={isian[r.item_id] ?? ""}
                           onChange={(e) => setIsian((m) => ({ ...m, [r.item_id]: e.target.value }))}

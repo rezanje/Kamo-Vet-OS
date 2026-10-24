@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
@@ -20,9 +21,9 @@ export default async function DemoPolicyPage({ searchParams }: { searchParams: P
       <p>Satu pool insentif dihitung dari jasa sesudah diskon, sebelum pajak dan admin, lalu dibagi rata ke petugas yang dipilih. Sisa Rp1 dibagikan menurut urutan ID petugas.</p>
       <form action={saveDemoPolicy}>
         <label className="flab">Nama versi<input className="fi" name="name" maxLength={100} required defaultValue={policy?.name ?? "DEMO insentif 5% / admin Transfer 1%"}/></label>
-        <label className="flab">Pool insentif jasa (%)<input className="fi" name="incentive_percent" type="number" min={0} max={100} step="0.01" required defaultValue={policy?.incentivePercent ?? 5}/></label>
+        <label className="flab">Pool insentif jasa (%)<NumberInput className="fi" name="incentive_percent" type="number" min={0} max={100} step="0.01" required defaultValue={policy?.incentivePercent ?? 5}/></label>
         <label className="flab">Biaya admin ditanggung<select className="fi" name="fee_bearer" defaultValue={policy?.feeBearer ?? "customer"}><option value="customer">Pelanggan — ditambahkan setelah pajak</option><option value="company">Perusahaan — dicatat sebagai beban, mengurangi bank</option></select></label>
-        {METODE_BAYAR.map(method => <label className="flab" key={method}>Admin {method} (%)<input className="fi" name={`fee:${method}`} type="number" min={0} max={100} step="0.01" required defaultValue={(policy?.feeRates[method] ?? (method==="Transfer" ? 100 : 0))/100}/></label>)}
+        {METODE_BAYAR.map(method => <label className="flab" key={method}>Admin {method} (%)<NumberInput className="fi" name={`fee:${method}`} type="number" min={0} max={100} step="0.01" required defaultValue={(policy?.feeRates[method] ?? (method==="Transfer" ? 100 : 0))/100}/></label>)}
         <label className="flab">Akun pendapatan admin<select className="fi" name="revenue_code" defaultValue={policy?.adminRevenueCode ?? "4303"}>{(accounts ?? []).filter(a=>a.type==="PENDAPATAN" && a.normal_balance==="K" && a.code!=="4201").map(a=><option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}</select></label>
         <label className="flab">Akun beban admin<select className="fi" name="expense_code" defaultValue={policy?.adminExpenseCode ?? "5501"}>{(accounts ?? []).filter(a=>a.type==="BEBAN" && a.normal_balance==="D").map(a=><option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}</select></label>
         <SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan versi baru</SubmitButton>

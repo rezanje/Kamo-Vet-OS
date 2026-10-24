@@ -2,9 +2,10 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { NumericInputSafety } from "@/components/NumericInputSafety";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // ponytail: one QueryClient, default options. Tune staleTime/retry when a screen needs it.
   const [client] = useState(() => new QueryClient());
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <QueryClientProvider client={client}><NumericInputSafety />{children}</QueryClientProvider>;
 }

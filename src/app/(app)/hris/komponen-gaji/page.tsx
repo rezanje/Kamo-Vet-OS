@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { MasterPage } from "@/components/MasterPage";
@@ -77,7 +78,7 @@ export default async function KomponenGajiPage({
               </div>
               <div>
                 <label className="flab">Nominal bawaan</label>
-                <input className="fi" name="nominal" type="number" min={0} step="any" defaultValue={editing?.nominal ?? 0} />
+                <NumberInput className="fi" name="nominal" type="number" min={0} step="any" defaultValue={editing?.nominal ?? 0} />
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
@@ -175,7 +176,7 @@ export default async function KomponenGajiPage({
                   </div>
                   <div>
                     <label className="flab">Nominal khusus (opsional)</label>
-                    <input className="fi" name="nominal" type="number" min={0} step="any" placeholder="kosong = ikut bawaan" />
+                    <NumberInput className="fi" name="nominal" type="number" min={0} step="any" placeholder="kosong = ikut bawaan" />
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-end" }}>
                     <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>

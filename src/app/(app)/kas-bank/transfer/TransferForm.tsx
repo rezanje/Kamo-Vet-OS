@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -40,8 +42,8 @@ export function TransferForm({ userId, mode = "create", header, rekening = [], b
           <div><label className="flab" htmlFor={field("to_account_id")}>Ke rekening *</label><select id={field("to_account_id")} className="fi" name="to_account_id" defaultValue={header?.to_account_id ?? ""} required><option value="">— pilih —</option>{rekening.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}</select></div>
         </div>
         <div className="frow" style={{ marginTop: 10, gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 220px), 1fr))" }}>
-          <div><label className="flab" htmlFor={field("jumlah")}>Jumlah *</label><input id={field("jumlah")} className="fi" type="number" name="jumlah" min="0.01" step="0.01" defaultValue={header?.jumlah} required/></div>
-          <div><label className="flab" htmlFor={field("biaya_admin")}>Biaya admin bank</label><input id={field("biaya_admin")} className="fi" type="number" name="biaya_admin" min="0" step="0.01" defaultValue={header?.biaya_admin ?? 0}/><small>Dipotong dari rekening sumber; dicatat sebagai beban.</small></div>
+          <div><label className="flab" htmlFor={field("jumlah")}>Jumlah *</label><NumberInput id={field("jumlah")} className="fi" type="number" name="jumlah" min="0.01" step="0.01" defaultValue={header?.jumlah} required/></div>
+          <div><label className="flab" htmlFor={field("biaya_admin")}>Biaya admin bank</label><NumberInput id={field("biaya_admin")} className="fi" type="number" name="biaya_admin" min="0" step="0.01" defaultValue={header?.biaya_admin ?? 0}/><small>Dipotong dari rekening sumber; dicatat sebagai beban.</small></div>
         </div>
         <div className="fg" style={{ marginTop: 10 }}><label className="flab" htmlFor={field("keterangan")}>Keterangan</label><input id={field("keterangan")} className="fi" name="keterangan" maxLength={1000} defaultValue={header?.keterangan ?? ""}/></div>
       </>}

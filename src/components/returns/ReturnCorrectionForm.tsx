@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { correctReturn } from "@/app/(app)/penjualan/retur/corrections";
@@ -33,7 +35,7 @@ export function ReturnCorrectionForm({ userId, kind, id, revision, rows }: {
       <label className="flab"><input type="checkbox" checked={cancel} onChange={event => setCancel(event.target.checked)} /> Batalkan seluruh catatan: bukti mengonfirmasi tidak ada barang yang diretur</label>
       {!cancel && rows.map(row => <div className="fg" key={row.id}>
         <label className="flab" htmlFor={`return-qty-${row.id}`}>{row.nama} — jumlah fisik terkonfirmasi ({row.satuan}), tercatat {Number(row.selected_qty)}</label>
-        <input id={`return-qty-${row.id}`} className="fi" type="number" min="0" step="any" required
+        <NumberInput id={`return-qty-${row.id}`} className="fi" type="number" min="0" step="any" required
           value={quantities[row.id] ?? row.selected_qty} onChange={event => setQuantities(current => ({ ...current, [row.id]: event.target.value }))} />
         {row.kondisi && <small>Kondisi: {row.kondisi}{row.exp_date ? ` · Kadaluarsa: ${row.exp_date}` : ""}</small>}
       </div>)}

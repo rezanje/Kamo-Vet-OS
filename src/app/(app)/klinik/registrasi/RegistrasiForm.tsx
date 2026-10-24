@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import { staffForService } from "@/lib/clinical-staff";
 
@@ -354,7 +356,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
             </div>
             <div>
               <label className="flab">Berat badan (kg)</label>
-              <input className="fi" type="number" step="0.1" min={0} max={batasBeratWajar(pet.species) ?? undefined} placeholder="12.5" value={pet.weight ?? ""} onChange={(e) => setPet({ weight: e.target.value ? Number(e.target.value) : null })} />
+              <NumberInput className="fi" type="number" step="0.1" min={0} max={batasBeratWajar(pet.species) ?? undefined} placeholder="12.5" value={pet.weight ?? ""} onChange={(e) => setPet({ weight: e.target.value ? Number(e.target.value) : null })} />
             </div>
           </div>
           <div className="frow">

@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 // ponytail: baris item dinamis diserialisasi ke hidden JSON — pola sama dengan POForm.
 import type { SaleReplacement } from "@/lib/sale-replacement";
 import Link from "next/link";
@@ -199,7 +201,7 @@ export function OnlineForm({
                     <SearchableItemPicker items={items} value={r.item_id} ariaLabel={`Barang online ${i + 1}`}
                       textValue={displayName(r)} onTextChange={text => setNama(i, text)} onChange={id => selectItem(i, id)} />
                   </div>
-                  <input
+                  <NumberInput
                     className="fi" type="number" min={0.000001} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
                     style={{ width: 70 }} title="Qty" placeholder="Qty"
@@ -210,7 +212,7 @@ export function OnlineForm({
                   }} style={{ width: 90 }}>
                     {(items.find(it => it.id === r.item_id)?.units ?? []).map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                   </select>
-                  <input
+                  <NumberInput
                     className="fi" type="number" min={0} step="any" value={r.harga}
                     onChange={(e) => set(i, { harga: Number(e.target.value) })}
                     style={{ width: 110 }} title="Harga jual" placeholder="Harga"
