@@ -1,17 +1,22 @@
-vi.mock("@/lib/service-performers-server",()=>({loadServiceStaff:async()=>[],loggedInCashier:async()=>({employeeId:null,name:"Kasir Login"})}));
+vi.mock("@/lib/service-performers-server",async(importOriginal)=>{
+  const actual=await importOriginal<typeof import("../service-performers-server")>();
+  return {...actual,loadServiceStaff:async(...args:Parameters<typeof actual.loadServiceStaff>)=>fixture.realStaff?actual.loadServiceStaff(...args):[]};
+});
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failed: "" }));
+const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failed: "", realStaff:false }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   from(table: string) {
     const filters: ((row: Record<string, unknown>) => boolean)[] = [];
-    let from = 0; let to = 999; let counted = false; let fields = "";
+    let from = 0; let to = 999; let counted = false; let fields = "";let missingColumn=false;
+    const assignmentColumns=new Set(['employee_id','branch_id','role','effective_date','created_at']);
     const q = {
-      select(selectedFields: string, opts?: { count: string }) { fields = selectedFields; counted = opts?.count === "exact"; return q; },
+      select(selectedFields: string, opts?: { count: string }) { fields = selectedFields; counted = opts?.count === "exact";if(table==='employee_branch_assignments')missingColumn=fields.split(',').some(field=>!assignmentColumns.has(field.split(':').at(-1)!.trim()));return q; },
       eq(k: string, v: unknown) { filters.push(r => r[k] === v); return q; },
       neq(k: string, v: unknown) { filters.push(r => r[k] !== v); return q; },
+      lte(k:string,v:unknown){filters.push(r=>String(r[k])<=String(v));return q;},
       in(k: string, values: unknown[]) { filters.push(r => values.includes(r[k])); return q; },
       or(expression: string) {
         const alternatives = expression.match(/category_id\.in\.\([^)]+\)|name\.ilike\.[^,]+/g) ?? [];
@@ -20,15 +25,16 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
           : String(row.name).toLowerCase().startsWith(filter.slice("name.ilike.".length).replace(/\*$/, "").toLowerCase())));
         return q;
       },
-      order() { return q; },
+      order(column:string) { if(table==='employee_branch_assignments'&&!assignmentColumns.has(column))missingColumn=true;return q; },
       limit(n: number) { to = n - 1; return q; },
       range(a: number, b: number) { from = a; to = b; return q; },
       maybeSingle: async () => ({ data: fixture.failed === table ? null : (fixture.tables[table] ?? []).find(r => filters.every(f => f(r))) ?? null, error: fixture.failed === table ? { message: "secret detail" } : null }),
       single: async () => ({ data: (fixture.tables[table] ?? [])[0] ?? null, error: null }),
       then(resolve: (v: unknown) => void) {
+        if(missingColumn)return Promise.resolve({data:null,count:null,error:{code:'42703',message:'column id does not exist'}}).then(resolve);
         const rows = (fixture.tables[table] ?? []).filter(r => filters.every(f => f(r)));
-        const data = rows.slice(from, to + 1).map(row => table === "items"
-          ? Object.fromEntries(fields.split(",").map(field => [field.trim(), row[field.trim()]])) : row);
+        const data = rows.slice(from, to + 1).map(row => table === "items"||table==='employee_branch_assignments'
+          ? Object.fromEntries(fields.split(",").map(field => {const [alias,column]=field.trim().split(':');return [alias,row[column??alias]];})) : row);
         return Promise.resolve({ data: fixture.failed === table ? null : data, count: counted ? rows.length : null, error: fixture.failed === table ? { message: "secret detail" } : null }).then(resolve);
       },
     };
@@ -54,6 +60,7 @@ function formProps(node: React.ReactNode): Record<string, unknown> | undefined {
 }
 beforeEach(() => {
   fixture.failed = "";
+  fixture.realStaff=false;
   const visit = { id: "visit", pet_id: "pet", branch_id: "branch", status: "Diperiksa", created_at: "2026-10-05T00:00:00Z", pets: { name: "Fictional", species: "Kucing" }, customers: { name: "Fictional owner" } };
   fixture.tables = {
     profiles: [{ id: "owner", role: "OWNER" }], visits: [visit],
@@ -74,6 +81,22 @@ beforeEach(() => {
 const exam = () => ExamPage({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) });
 const inpatient = () => InpatientPage({ params: Promise.resolve({ id: "inpatient" }) });
 describe("compound master SKUs reach clinic POS", () => {
+  it('opens an in-progress medical visit using the real staff reader against assignment columns without a synthetic id',async()=>{
+    fixture.realStaff=true;
+    fixture.tables.employees=[{id:'own',nama:'Fictional doctor',jabatan:'Dokter',status:'Aktif',branch_id:'branch'},{id:'assigned',nama:'Fictional nurse',jabatan:'Paramedis',status:'Aktif',branch_id:'other'}];
+    fixture.tables.employee_branch_assignments=[{employee_id:'assigned',branch_id:'branch',role:'SECONDARY',effective_date:'2020-01-01'}];
+    const props=formProps(await exam());
+    expect(props?.serviceStaff).toEqual(expect.arrayContaining([expect.objectContaining({id:'own'}),expect.objectContaining({id:'assigned'})]));
+    expect(props?.serviceStaff).toHaveLength(2);
+  });
+  it('loads assignment pages beyond 500 while preserving branch, active and effective-date eligibility',async()=>{
+    fixture.realStaff=true;
+    fixture.tables.employees=Array.from({length:605},(_,i)=>({id:`staff-${i}`,nama:`Fictional ${i}`,jabatan:'Paramedis',status:i===603?'Nonaktif':'Aktif',branch_id:'other'}));
+    fixture.tables.employee_branch_assignments=fixture.tables.employees.map((row,i)=>({employee_id:row.id,branch_id:i===604?'other':'branch',effective_date:i===602?'2099-01-01':'2020-01-01',role:'SECONDARY'}));
+    const staff=formProps(await exam())?.serviceStaff as {id:string}[];
+    expect(staff).toHaveLength(602);expect(staff.map(row=>row.id)).toContain('staff-601');
+    for(const id of ['staff-602','staff-603','staff-604'])expect(staff.map(row=>row.id)).not.toContain(id);
+  });
   it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s supplies separate code and name for every clinical picker", async (_name, page) => {
     fixture.tables.items.forEach(row => { row.code = `CODE-${row.id}`; });
     const props = formProps(await page());
