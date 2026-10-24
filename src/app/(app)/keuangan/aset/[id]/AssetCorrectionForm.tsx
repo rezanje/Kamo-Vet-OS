@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useRef, useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -39,7 +41,7 @@ export function AssetCorrectionForm({userId,assetId,revision,tanggal,harga}:{use
         <div className="fg"><label className="flab" htmlFor="asset-correct-date">Tanggal pembelian yang benar</label>
           <input className="fi" id="asset-correct-date" name="tanggal" type="date" defaultValue={tanggal} max={hariIniWIB()} required/></div>
         <div className="fg"><label className="flab" htmlFor="asset-correct-amount">Nominal pembelian yang benar (Rp)</label>
-          <input className="fi" id="asset-correct-amount" name="harga" type="number" defaultValue={harga} min="0.01" max="1000000000000000" step="any" required/></div>
+          <NumberInput className="fi" id="asset-correct-amount" name="harga" type="number" defaultValue={harga} min="0.01" max="1000000000000000" step="any" required/></div>
         <div className="fg"><label className="flab" htmlFor="asset-correct-reason">Alasan koreksi</label>
           <textarea className="fi" id="asset-correct-reason" name="alasan" minLength={3} maxLength={1000} required/></div>
         <button className="btn-def" type="button" data-preview disabled={!ready||busy} onClick={async event=>{

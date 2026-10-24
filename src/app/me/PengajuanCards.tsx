@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { ajukanKasbon, ajukanLembur, ajukanReimburse } from "./pengajuan";
 import { jadwalCicilan } from "@/lib/kasbon";
 
@@ -39,7 +40,7 @@ export function PengajuanCards({
           </div>
           <div>
             <label className="flab">Berapa jam *</label>
-            <input className="fi" name="jam" type="number" min={0.5} max={24} step="any" placeholder="2" required style={{ width: 100 }} />
+            <NumberInput className="fi" name="jam" type="number" min={0.5} max={24} step="any" placeholder="2" required style={{ width: 100 }} />
           </div>
           <div style={{ flex: "1 1 180px" }}>
             <label className="flab">Alasan</label>
@@ -61,11 +62,11 @@ export function PengajuanCards({
           <form action={ajukanKasbon} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
             <div>
               <label className="flab">Jumlah *</label>
-              <input className="fi" name="jumlah" type="number" min={1} step="any" placeholder="1000000" required style={{ width: 150 }} />
+              <NumberInput className="fi" name="jumlah" type="number" min={1} step="any" placeholder="1000000" required style={{ width: 150 }} />
             </div>
             <div>
               <label className="flab">Dicicil berapa bulan *</label>
-              <input className="fi" name="tenor_bulan" type="number" min={1} max={24} step={1} defaultValue={1} required style={{ width: 120 }} />
+              <NumberInput className="fi" name="tenor_bulan" type="number" min={1} max={24} step={1} defaultValue={1} required style={{ width: 120 }} />
             </div>
             <div style={{ flex: "1 1 180px" }}>
               <label className="flab">Keperluan</label>
@@ -97,7 +98,7 @@ export function PengajuanCards({
           </div>
           <div>
             <label className="flab">Jumlah *</label>
-            <input className="fi" name="jumlah" type="number" min={1} step="any" placeholder="50000" required style={{ width: 130 }} />
+            <NumberInput className="fi" name="jumlah" type="number" min={1} step="any" placeholder="50000" required style={{ width: 130 }} />
           </div>
           <div style={{ flex: "1 1 160px" }}>
             <label className="flab">Keterangan</label>

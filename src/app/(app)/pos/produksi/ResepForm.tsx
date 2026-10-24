@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 // Penyusun resep produksi own brand. Bentuknya sengaja mirip editor baris dokumen
 // lain (satu hidden input JSON) supaya tidak ada pola baru yang harus dipelajari.
 
@@ -47,7 +49,7 @@ export function ResepForm({ barang }: { barang: BarangPilihan[] }) {
         </div>
         <div>
           <label className="flab">Hasil per resep *</label>
-          <input className="fi" type="number" name="output_qty" min={0.001} step="any" defaultValue={1} required />
+          <NumberInput className="fi" type="number" name="output_qty" min={0.001} step="any" defaultValue={1} required />
           <select className="fi" name="output_unit" aria-label="Satuan hasil resep" value={outputUnit} disabled={!outputId} onChange={e => setOutputUnit(e.target.value)} style={{ marginTop: 3 }}>
             {!outputId && <option value="">— pilih barang jadi —</option>}
             {unitsOf(outputId).map(unit => <option key={unit.unit} value={unit.unit}>{unit.unit}</option>)}
@@ -66,7 +68,7 @@ export function ResepForm({ barang }: { barang: BarangPilihan[] }) {
           </div>
           <div style={{ width: 130 }}>
             {i === 0 && <label className="flab">Jumlah</label>}
-            <input className="fi" type="number" min={0} step="any" value={b.qty || ""}
+            <NumberInput className="fi" type="number" min={0} step="any" value={b.qty || ""}
               onChange={(e) => set(i, { qty: Number(e.target.value) })} placeholder="0" />
             {b.item_id && (
               <select className="fi" aria-label={`Satuan bahan ${i + 1}`} value={b.satuan} onChange={e => set(i, { satuan: e.target.value })} style={{ marginTop: 3 }}>

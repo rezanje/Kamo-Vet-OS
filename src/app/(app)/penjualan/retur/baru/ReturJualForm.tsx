@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { formatPosMoney, PosDecimal } from "@/lib/pos-money";
 
 import { useState } from "react";
@@ -111,7 +113,7 @@ export function ReturJualForm({
                 <select className="fi" title="Satuan retur" value={chosen(r)?.unit ?? ""} onChange={e => setUnit(u => ({...u, [r.source_line_id]: e.target.value}))}>
                   {r.units.map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                 </select>
-                <input className="fi" type="number" min={0} max={r.sisa / (chosen(r)?.factor ?? 1)} step="any"
+                <NumberInput className="fi" type="number" min={0} max={r.sisa / (chosen(r)?.factor ?? 1)} step="any"
                   value={qty[r.source_line_id] ?? 0}
                   onChange={(e) => setQty((q) => ({ ...q, [r.source_line_id]: Number(e.target.value) }))}
                   style={{ width: 90 }} title="Qty retur" />

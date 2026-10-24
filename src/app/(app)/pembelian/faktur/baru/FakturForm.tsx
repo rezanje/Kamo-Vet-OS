@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { draftRecord, draftNumber } from "@/components/TransactionDraft";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -123,11 +125,11 @@ export function FakturForm({ options, userId, initial }: { options: PoOption[]; 
                     <span style={{ width: 250, fontSize: 10.5, color: "#92400e" }}>{it.blockedReason}</span>
                   ) : (
                     <>
-                      <input className="fi" type="number" min={0} max={it.sisa} step="any"
+                      <NumberInput className="fi" type="number" min={0} max={it.sisa} step="any"
                         value={qty[it.po_item_id] ?? 0}
                         onChange={(e) => setQty((m) => ({ ...m, [it.po_item_id]: Number(e.target.value) }))}
                         style={{ width: 74 }} title={`Qty faktur dalam ${it.satuan}`} />
-                      <input className="fi" type="number" min={0} step="any"
+                      <NumberInput className="fi" type="number" min={0} step="any"
                         value={harga[it.po_item_id] ?? 0}
                         onChange={(e) => setHarga((m) => ({ ...m, [it.po_item_id]: Number(e.target.value) }))}
                         style={{ width: 110, borderColor: beda ? "#f59e0b" : undefined }} title={`Harga faktur per ${it.satuan}`} />

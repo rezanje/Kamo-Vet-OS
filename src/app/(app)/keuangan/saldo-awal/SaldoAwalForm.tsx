@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { draftRows } from "@/components/TransactionDraft";
 
@@ -82,7 +84,7 @@ export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: 
                   </select>
                 </td>
                 <td>
-                  <input
+                  <NumberInput
                     className="fi" type="number" step="any" style={{ textAlign: "right" }}
                     value={b.nilai} onChange={(e) => set(i, { nilai: e.target.value })} placeholder="0"
                   />

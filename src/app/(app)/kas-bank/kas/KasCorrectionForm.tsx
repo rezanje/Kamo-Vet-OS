@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -34,7 +36,7 @@ export function KasCorrectionForm({ userId, jenis, id, revision, tanggal: initia
         <label className="flab">Tanggal koreksi<input className="fi" type="date" name="tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required /></label>
         <label className="flab">Rekening<select className="fi" name="account_id" value={accountId} onChange={(e) => setAccountId(e.target.value)}>{rekening.map((r) => <option key={r.id} value={r.id}>{r.nama}</option>)}</select></label>
         <label className="flab">Akun lawan<select className="fi" name="lawan_code" value={lawanCode} onChange={(e) => setLawanCode(e.target.value)}>{coa.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}</select></label>
-        <label className="flab">Jumlah<input className="fi" type="number" min="0.01" step="0.01" name="jumlah" value={jumlah} onChange={(e) => setJumlah(e.target.value)} required /></label>
+        <label className="flab">Jumlah<NumberInput className="fi" type="number" min="0.01" step="0.01" name="jumlah" value={jumlah} onChange={(e) => setJumlah(e.target.value)} required /></label>
         <label className="flab">Keterangan<input className="fi" name="keterangan" value={keterangan} onChange={(e) => setKeterangan(e.target.value)} placeholder="Keterangan" /></label>
         <label className="flab">Alasan koreksi<input className="fi" name="reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Wajib diisi" minLength={3} required /></label>
         <SubmitButton className="btn-def" pendingText="Menyimpan…" disabled={!ready || reason.trim().length < 3}>Simpan koreksi</SubmitButton>

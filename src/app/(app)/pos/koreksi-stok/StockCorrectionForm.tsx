@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { previewStockCorrection, saveStockCorrection, recoverStockCorrection } from "./actions";
@@ -70,7 +72,7 @@ export function StockCorrectionForm({ userId, kind, documentId, revision, rows }
     <h3>Koreksi jumlah oleh Super Admin</h3>
     <p>Masukkan jumlah yang seharusnya tercatat pada transaksi asal. Perubahan diterapkan sebagai selisih terhadap stok saat ini. Dokumen asal, jurnal pembalikan, dan pengganti tetap tersimpan.</p>
     <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Barang</th><th>Jumlah tercatat</th><th>Jumlah yang benar</th></tr></thead><tbody>
-      {rows.map(r => <tr key={r.item_id}><td>{r.name}</td><td>{Number(r.qty)}</td><td><input className="fi" aria-label={`Jumlah benar ${r.name}`} name={`qty-${r.item_id}`} type="number" min="0" max="1000000000" step="any" value={saved?.quantities[r.item_id] ?? String(r.qty)} disabled={!saved || busy || !!saved.submission || done} onChange={e => { if (saved && persist({ ...saved, quantities: { ...saved.quantities, [r.item_id]: e.target.value } })) setPreview(null); }} /></td></tr>)}
+      {rows.map(r => <tr key={r.item_id}><td>{r.name}</td><td>{Number(r.qty)}</td><td><NumberInput className="fi" aria-label={`Jumlah benar ${r.name}`} name={`qty-${r.item_id}`} type="number" min="0" max="1000000000" step="any" value={saved?.quantities[r.item_id] ?? String(r.qty)} disabled={!saved || busy || !!saved.submission || done} onChange={e => { if (saved && persist({ ...saved, quantities: { ...saved.quantities, [r.item_id]: e.target.value } })) setPreview(null); }} /></td></tr>)}
     </tbody></table></div>
     <label className="flab" htmlFor={`stock-reason-${documentId}`}>Alasan koreksi</label>
     <input id={`stock-reason-${documentId}`} className="fi" name="reason" required minLength={3} maxLength={1000} value={saved?.reason ?? ""} disabled={!saved || busy || !!saved.submission || done} onChange={e => { if(saved) persist({ ...saved, reason: e.target.value }); }} />

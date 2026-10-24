@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -354,7 +356,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
             )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
               <span>Diskon manual / promo</span>
-              <input className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
+              <NumberInput className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
             </div>
             <Row k="Tagihan barang" v={rp(total)} />
             <Row k="Fee merchant" v={rp(feeTotal)} />
@@ -378,7 +380,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
           </div>}
           {!split && metode === "Tunai" && (
             <div style={{ marginTop: 6 }}>
-              <input className="fi" type="number" min={0} placeholder="Uang dibayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
+              <NumberInput className="fi" type="number" min={0} placeholder="Uang dibayar" value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} />
               {bayar > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginTop: 4, color: kurang ? "#b91c1c" : "#16a34a" }}>
                 <span>{kurang ? "Kurang" : "Kembali"}</span><span>{rp(kurang ? total - bayar : kembali)}</span>
               </div>}

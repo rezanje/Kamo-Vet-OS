@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { ProductionRequestIdentity } from "@/components/ProductionRequestIdentity";
 import Link from "next/link";
@@ -146,7 +147,7 @@ export default async function ProduksiPage({
                           <input type="hidden" name="id" value={p.id} />
                           <div style={{ width: 90 }}>
                             <label className="flab">Jadi {outputBaseUnit && `(${outputBaseUnit})`}</label>
-                            <input className="fi" type="number" name="qty_jadi" min={0} step="any"
+                            <NumberInput className="fi" type="number" name="qty_jadi" min={0} step="any"
                               defaultValue={rencana || ""} style={{ textAlign: "right" }} />
                           </div>
                           <div style={{ width: 130 }}>
@@ -205,7 +206,7 @@ export default async function ProduksiPage({
               </div>
               <div>
                 <label className="flab">Jumlah batch *</label>
-                <input className="fi" type="number" name="batch" min={1} step="any" defaultValue={1} required />
+                <NumberInput className="fi" type="number" name="batch" min={1} step="any" defaultValue={1} required />
               </div>
               <div>
                 <label className="flab">Tanggal</label>

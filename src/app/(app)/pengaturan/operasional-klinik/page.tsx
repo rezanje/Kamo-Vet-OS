@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -32,7 +33,7 @@ export default async function OperasionalKlinikSettings({ searchParams }: { sear
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Tambah periode kapasitas</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8, marginTop: 11 }}>
             <label className="flab">Cabang<select className="fi" name="branch_id" required><option value="">Pilih cabang…</option>{(branches ?? []).map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
-            <label className="flab">Jumlah kandang<input className="fi" name="capacity" type="number" min="1" step="1" required /></label>
+            <label className="flab">Jumlah kandang<NumberInput className="fi" name="capacity" type="number" min="1" step="1" required /></label>
             <label className="flab">Berlaku mulai<input className="fi" name="valid_from" type="date" required /></label>
             <label className="flab">Berlaku sampai<input className="fi" name="valid_until" type="date" /></label>
           </div>

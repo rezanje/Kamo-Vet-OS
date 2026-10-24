@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -70,7 +71,7 @@ export default async function DiskonGolonganPage({
             </div>
             <div style={{ width: 150 }}>
               <label className="flab">Diskon (%)</label>
-              <input className="fi" name="diskon_persen" type="number" min={0} max={100} step="0.01"
+              <NumberInput className="fi" name="diskon_persen" type="number" min={0} max={100} step="0.01"
                 defaultValue={0} required />
             </div>
             <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>

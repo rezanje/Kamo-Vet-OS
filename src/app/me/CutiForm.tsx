@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { useState } from "react";
 import { ajukanCutiPribadi } from "./actions";
 
@@ -15,7 +17,7 @@ export function CutiForm() {
       </div>
       <div>
         <label className="flab">Durasi ({jenis === "Lembur" ? "jam" : "hari"})</label>
-        <input className="fi" name="durasi" type="number" min={0} step="any" placeholder="0" />
+        <NumberInput className="fi" name="durasi" type="number" min={0} step="any" placeholder="0" />
       </div>
       <div>
         <label className="flab">Tanggal mulai *</label>

@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import type {PromoRow} from "@/lib/promo";
 import type {MultiSelectItem,MultiSelectCategory} from "@/components/SearchableMultiSelect";
 import {PromoTargets} from "./PromoTargets";
@@ -29,12 +30,12 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
           </div>
           <div>
             <label className="flab">Nilai diskon</label>
-            <input className="fi" name="discount_value" defaultValue={promo?.discount_value ?? ""} type="number" min={0} step="any" placeholder="0" />
+            <NumberInput className="fi" name="discount_value" defaultValue={promo?.discount_value ?? ""} type="number" min={0} step="any" placeholder="0" />
             <div style={{fontSize:9.5,color:"var(--td)",marginTop:3}}>Nominal adalah potongan per satuan yang mendapat promo, bukan total potongan paket.</div>
           </div>
           <div>
             <label className="flab">Min. subtotal</label>
-            <input className="fi" name="min_subtotal" defaultValue={promo?.rule?.min_subtotal ?? ""} type="number" min={0} step="any" placeholder="0" />
+            <NumberInput className="fi" name="min_subtotal" defaultValue={promo?.rule?.min_subtotal ?? ""} type="number" min={0} step="any" placeholder="0" />
           </div>
 
           {/* ── Aturan qty ──────────────────────────────────────────────── */}
@@ -46,12 +47,12 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
           </div>
           <div>
             <label className="flab">Min. qty</label>
-            <input className="fi" name="min_qty" defaultValue={promo?.min_qty ?? ""} type="number" min={1} step="any" placeholder="mis. 2" />
+            <NumberInput className="fi" name="min_qty" defaultValue={promo?.min_qty ?? ""} type="number" min={1} step="any" placeholder="mis. 2" />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Beli kurang dari ini, promo tidak jalan.</div>
           </div>
           <div>
             <label className="flab">Maks. qty</label>
-            <input className="fi" name="max_qty" defaultValue={promo?.max_qty ?? ""} type="number" min={1} step="any" placeholder="tanpa batas" />
+            <NumberInput className="fi" name="max_qty" defaultValue={promo?.max_qty ?? ""} type="number" min={1} step="any" placeholder="tanpa batas" />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Batas jumlah yang dapat potongan.</div>
           </div>
           <div style={{ gridColumn: "span 2" }}>

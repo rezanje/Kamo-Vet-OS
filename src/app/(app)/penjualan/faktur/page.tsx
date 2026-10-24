@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import {readCompleteList} from "@/lib/checked-list";
 import {loadSalesInvoicePayments} from "@/lib/sales-invoice-payments-server";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
@@ -199,7 +200,7 @@ export default async function FakturJualPage({
                               <input type="hidden" name="invoice_id" value={f.id} />
                               <div>
                                 <label className="flab">Nominal (maks {rp(sisa)})</label>
-                                <input className="fi" type="number" name="jumlah" min={1} max={sisa} step="any" defaultValue={sisa} style={{ width: 140 }} />
+                                <NumberInput className="fi" type="number" name="jumlah" min={1} max={sisa} step="any" defaultValue={sisa} style={{ width: 140 }} />
                               </div>
                               <div>
                                 <label className="flab">Metode</label>
