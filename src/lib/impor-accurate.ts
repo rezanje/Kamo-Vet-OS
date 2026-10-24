@@ -671,7 +671,16 @@ export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_n
   const perubahanKategori = rows.filter((row) => row.status === "Update" && row.changed_fields?.includes("category_name"));
   const sampelLain = rows.filter((row) => row.status !== "Dilewati" && row.status !== "Ditolak"
     && !(row.status === "Update" && row.changed_fields?.includes("category_name")));
-  return [...perluPerhatian, ...perubahanKategori, ...sampelLain].slice(0, batas)
+  // Beri tempat untuk kedua jenis baris penting walau masing-masing melebihi batas sampel.
+  const kuotaKategori = Math.min(perubahanKategori.length, perluPerhatian.length ? Math.ceil(batas / 2) : batas);
+  const kuotaPerhatian = Math.min(perluPerhatian.length, batas - kuotaKategori);
+  return [
+    ...perluPerhatian.slice(0, kuotaPerhatian),
+    ...perubahanKategori.slice(0, kuotaKategori),
+    ...perubahanKategori.slice(kuotaKategori),
+    ...perluPerhatian.slice(kuotaPerhatian),
+    ...sampelLain,
+  ].slice(0, batas)
     .sort((a, b) => a.row_no - b.row_no);
 }
 

@@ -606,7 +606,7 @@ export function AccurateImportForm({
 
           {state.phase === "preview" && state.category_change_count > 0 && (
             <div role="alert" style={{ marginTop: 9, padding: "8px 10px", borderRadius: 8, background: "#fffbeb", border: ".5px solid #f59e0b", color: "#92400e", fontSize: 10.5 }}>
-              <b>{state.category_change_count.toLocaleString("id-ID")} kategori barang akan berubah.</b> Periksa kategori pada file dan baris Update sebelum impor. File lama dapat mengembalikan kategori ke mapping sebelumnya.
+              <b>{state.category_change_count.toLocaleString("id-ID")} barang akan berganti kategori.</b> Periksa kategori pada file dan baris Update sebelum impor. File lama dapat mengembalikan kategori ke mapping sebelumnya.
             </div>
           )}
 

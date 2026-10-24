@@ -67,7 +67,7 @@ it("warns about every category change before import, including rows beyond the s
     rows: [{ row_no: 1, code: "A-1", name: "Vaccine", status: "Update", changed_fields: ["category_name"], reason: null, source: "fixture.xlsx:1", matrix: null }],
   });
   await check();
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("212 kategori barang akan berubah");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("212 barang akan berganti kategori");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("File lama");
 });
 
