@@ -7,6 +7,7 @@ import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 
 import { SaleCancelForm } from "./SaleCancelForm";
+import { SalePaymentCorrectionForm } from "./SalePaymentCorrectionForm";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -37,6 +38,8 @@ type ReturRow = {
   id: string; no_retur: string | null; tanggal: string; total: number; voided_at: string | null;
   sales_return_items: { id: string; nama: string; qty: number }[] | null;
 };
+type PaymentCorrection = { id: string; revision: number; reason: string; created_at: string;
+  before_payments: { method: string; amount: number }[]; after_payments: { method: string; amount: number }[] };
 
 export default async function PenjualanDetailPage({
   params, searchParams,
@@ -67,6 +70,18 @@ export default async function PenjualanDetailPage({
     .eq("sale_id", id)
     .order("tanggal", { ascending: false });
   const returs = (returData ?? []) as unknown as ReturRow[];
+  const { data: correctionData, error: correctionError } = isOwner
+    ? await supabase.from("sale_payment_corrections")
+      .select("id, revision, reason, created_at, before_payments, after_payments")
+      .eq("sale_id", id).order("revision", { ascending: false })
+    : { data: null, error: null };
+  const corrections = (correctionData ?? []) as PaymentCorrection[];
+  const cash = payments.find(part => part.method === "Tunai")?.amount ?? 0;
+  const transfer = payments.find(part => part.method === "Transfer")?.amount ?? 0;
+  const canCorrectPayment = isOwner && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan
+    && !!sale.payments_finalized_at && Number(sale.kembali) === 0 && cash + transfer > 0
+    && returs.length === 0 && !sale.sale_payments?.some(part => ["Tunai", "Transfer"].includes(part.method)
+      && (Number(part.fee_amount) !== 0 || Number(part.fee_percent) !== 0));
 
   const items = sale.sale_items ?? [];
   const cust = one(sale.customers);
@@ -86,7 +101,8 @@ export default async function PenjualanDetailPage({
 
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan." : "Dokumen tersimpan."}
+          <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan."
+            : success === "payment-corrected" ? "Metode pembayaran terkoreksi pada penjualan ini. Jurnal pembalik dan pengganti tersimpan." : "Dokumen tersimpan."}
         </div>
       )}
       {error && (
@@ -178,9 +194,26 @@ export default async function PenjualanDetailPage({
         </div>
       )}
 
+      {isOwner && <div className="crm-sec">
+        <SecHeader num="03" title="RIWAYAT KOREKSI METODE" desc="Perubahan pembayaran pada penjualan yang sama." />
+        {correctionError ? <p role="alert">Riwayat koreksi belum dapat dibaca. Muat ulang sebelum mengoreksi kembali.</p>
+          : corrections.length === 0 ? <p>Belum ada koreksi metode.</p>
+          : corrections.map(change => <div key={change.id} style={{ borderBottom: ".5px solid var(--bd)", padding: "8px 0" }}>
+            <strong>Revisi {change.revision}</strong> · {fmtDt(change.created_at)}<br />
+            {change.before_payments.map(part => `${part.method} ${rp(Number(part.amount))}`).join(" + ")}
+            {" → "}{change.after_payments.map(part => `${part.method} ${rp(Number(part.amount))}`).join(" + ")}
+            <div style={{ color: "var(--tm)" }}>Alasan: {change.reason}</div>
+          </div>)}
+      </div>}
+
       {isOwner && user && !sale.voided_at && <details className="crm-sec">
         <summary>Koreksi atau batalkan penjualan</summary>
-        <SaleCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />
+        {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
+          revision={sale.revision} cash={cash} transfer={transfer}
+          fixed={payments.filter(part => part.method !== "Tunai" && part.method !== "Transfer")} />}
+        {correctionError ? <p>Riwayat koreksi belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>
+          : corrections.length > 0 ? <p>Pembatalan penjualan yang sudah dikoreksi memerlukan rekonsiliasi seluruh jurnal koreksi. Hubungi finance sebelum membatalkan.</p>
+          : <SaleCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />}
       </details>}
       <DokumenPanel modul="penjualan" refId={sale.id} kembali={`/penjualan/${sale.id}`} />
     </>
