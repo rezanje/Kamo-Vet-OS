@@ -43,3 +43,34 @@ it.each(["medical_records", "compounding_recipes"])("fails closed when %s enrich
   expect(result.nilaiTotal).toBe(0);
   vi.restoreAllMocks();
 });
+
+it("opens the exact saved clinic invoice for each report line in a visit with multiple invoices", async () => {
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: {
+    invoice_items: [
+      { id: "first-line", deskripsi: "Konsultasi", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null,
+        invoices: { id: "first-invoice", visit_id: "visit", invoice_no: "INV-1", created_at: "2026-10-04T05:00:00Z", paid_status: "Lunas", voided_at: null, visits: {} } },
+      { id: "second-line", deskripsi: "Konsultasi", qty: 1, harga: 200, diskon_persen: 0, jenis: "jasa", item_id: null,
+        invoices: { id: "second-invoice", visit_id: "visit", invoice_no: "INV-2", created_at: "2026-10-04T06:00:00Z", paid_status: "Belum Lunas", voided_at: null, visits: {} } },
+    ], medical_records: [],
+  } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "Konsultasi" });
+  expect(result.pesanError).toBe("");
+  expect(result.rows.map(row => [row.dokumen, row.href])).toEqual([
+    ["INV-2", "/klinik/pembayaran/visit/invoice?invoice_id=second-invoice"],
+    ["INV-1", "/klinik/pembayaran/visit/invoice?invoice_id=first-invoice"],
+  ]);
+});
+
+it("does not publish partial clinic totals if an invoice source ID is unavailable", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: {
+    invoice_items: [{ id: "line", deskripsi: "Konsultasi", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null,
+      invoices: { visit_id: "visit", invoice_no: "INV", created_at: "2026-10-04T05:00:00Z", paid_status: "Lunas", voided_at: null, visits: {} } }],
+    medical_records: [],
+  } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "Konsultasi" });
+  expect(result.pesanError).not.toBe("");
+  expect(result.rows).toEqual([]);
+  expect(result.nilaiTotal).toBe(0);
+  vi.restoreAllMocks();
+});
