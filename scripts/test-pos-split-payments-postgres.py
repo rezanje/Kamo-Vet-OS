@@ -120,6 +120,31 @@ where id='e4400000-0000-4000-8000-000000000001';""")
     assert sql("select count(*) from journal_entries where source='sale' and source_ref='RACE.KEY.A'", tuples=True).stdout.strip() == '1'
     print('Concurrent identical checkout keys create one sale and one revenue journal.', flush=True)
 
+    def correction(key, cash, transfer):
+        return (f"select correct_pos_sale_payment('{winner}',0,'{key}',"
+                f"'Kasir salah membagi metode',{cash},{transfer});")
+    denied = docker(['exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'],
+                    input=AUTH + correction('race-correct-staff', 30000, 70000))
+    assert denied.returncode != 0 and 'Hanya Owner aktif' in denied.stderr, denied.stderr
+    sql("update profiles set role='OWNER' where id='e1100000-0000-4000-8000-000000000001'")
+    sql(AUTH + 'begin; ' + correction('race-correct-probe', 30000, 70000) + ' rollback;')
+    holder = start_sql('begin; ' + correction('race-correct-a', 30000, 70000)
+                       + ' /* j02-correction-holder */ select pg_sleep(3); commit;')
+    try:
+        wait_activity("wait_event='PgSleep' and query like '%j02-correction-holder%'")
+    except RuntimeError as error:
+        raise RuntimeError('J02 correction holder failed before barrier: ' + finish_sql(holder, succeeds=False)) from error
+    competitor = start_sql('/* j02-correction-competitor */ ' + correction('race-correct-b', 40000, 60000))
+    wait_activity("wait_event_type='Lock' and query like '%j02-correction-competitor%'")
+    finish_sql(holder)
+    error = finish_sql(competitor, succeeds=False)
+    assert 'Penjualan sudah berubah' in error, error
+    assert sql(f"select revision from sales where id='{winner}'", tuples=True).stdout.strip() == '1'
+    assert sql(f"select count(*) from sale_payment_corrections where sale_id='{winner}'", tuples=True).stdout.strip() == '1'
+    assert sql(f"select count(*) from journal_entries where source_ref in (select id::text from sale_payment_corrections where sale_id='{winner}')", tuples=True).stdout.strip() == '2'
+    sql("update profiles set role='STAFF' where id='e1100000-0000-4000-8000-000000000001'")
+    print('Concurrent same-sale corrections serialize; stale competitor adds no journal.', flush=True)
+
     def refund(key):
         return f"""select post_unit_return('sales','{SALE}','{key}',jsonb_build_object('tanggal',(now() at time zone 'Asia/Jakarta')::date,'dari','kasir'),jsonb_build_array(jsonb_build_object('source_line_id','{LINE}','item_id','e5500000-0000-4000-8000-000000000001','qty',2,'satuan','pcs','kondisi','baik')));"""
     holder = start_sql('begin; ' + refund('race-return-a') + ' /* split-refund-holder */ select pg_sleep(3); commit;')
@@ -157,6 +182,7 @@ create schema auth; create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
 create function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;
 create function auth.role() returns text language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
+create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
 create table storage.buckets(id text primary key,name text,public boolean);
 create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,owner uuid);
 create publication supabase_realtime;
@@ -174,7 +200,7 @@ alter default privileges in schema public grant all on sequences to authenticate
             except RuntimeError as error:
                 raise RuntimeError(migration.name + ': ' + str(error)) from error
         print(f'Applied {len(migrations)} repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.', flush=True)
-        for name in ['pos_split_payments.sql', 'online_return_unit_posting.sql', 'expense-workflow.sql']:
+        for name in ['pos_split_payments.sql', 'online_return_unit_posting.sql', 'expense-workflow.sql', 'pos_payment_method_corrections.sql']:
             try:
                 sql((ROOT / 'supabase/tests' / name).read_text())
             except RuntimeError as error:
