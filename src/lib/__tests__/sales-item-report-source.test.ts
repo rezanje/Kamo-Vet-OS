@@ -74,3 +74,17 @@ it("does not publish partial clinic totals if an invoice source ID is unavailabl
   expect(result.nilaiTotal).toBe(0);
   vi.restoreAllMocks();
 });
+
+it("reads saved compound recipe IDs and classifies posted racikan independently of invoice label", async () => {
+  const { client, records } = clientFixture({ tables: {
+    invoice_items: [{ id: "line", compound_recipe_id: "recipe", deskripsi: "Label invoice berbeda", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null,
+      invoices: { id: "invoice", visit_id: "visit", invoice_no: "INV", created_at: "2026-10-04T05:00:00Z", paid_status: "Lunas", voided_at: null, visits: {} } }],
+    medical_records: [],
+  } });
+  mocks.createClient.mockResolvedValue(client);
+  const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Racikan", q: "" });
+  expect(result.pesanError).toBe("");
+  expect(result.rows.map(row => row.nama)).toEqual(["Label invoice berbeda"]);
+  expect(result.nilaiTotal).toBe(100);
+  expect(records.find(record => record.table === "invoice_items" && record.method === "select")?.args[0]).toContain("compound_recipe_id");
+});
