@@ -660,7 +660,7 @@ export function buatPreviewAccurate(
  * Baris yang perlu perhatian selalu didahulukan supaya tidak tersembunyi oleh
  * ribuan data normal di awal file.
  */
-export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_no" | "status">>(
+export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_no" | "status"> & Partial<Pick<AccuratePreviewRow, "changed_fields">>>(
   rows: T[],
   batas = 200,
 ): T[] {
@@ -668,8 +668,19 @@ export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_n
   if (rows.length <= batas) return rows;
 
   const perluPerhatian = rows.filter((row) => row.status === "Dilewati" || row.status === "Ditolak");
-  const sampelLain = rows.filter((row) => row.status !== "Dilewati" && row.status !== "Ditolak");
-  return [...perluPerhatian.slice(0, batas), ...sampelLain.slice(0, Math.max(0, batas - perluPerhatian.length))]
+  const perubahanKategori = rows.filter((row) => row.status === "Update" && row.changed_fields?.includes("category_name"));
+  const sampelLain = rows.filter((row) => row.status !== "Dilewati" && row.status !== "Ditolak"
+    && !(row.status === "Update" && row.changed_fields?.includes("category_name")));
+  // Beri tempat untuk kedua jenis baris penting walau masing-masing melebihi batas sampel.
+  const kuotaKategori = Math.min(perubahanKategori.length, perluPerhatian.length ? Math.ceil(batas / 2) : batas);
+  const kuotaPerhatian = Math.min(perluPerhatian.length, batas - kuotaKategori);
+  return [
+    ...perluPerhatian.slice(0, kuotaPerhatian),
+    ...perubahanKategori.slice(0, kuotaKategori),
+    ...perubahanKategori.slice(kuotaKategori),
+    ...perluPerhatian.slice(kuotaPerhatian),
+    ...sampelLain,
+  ].slice(0, batas)
     .sort((a, b) => a.row_no - b.row_no);
 }
 

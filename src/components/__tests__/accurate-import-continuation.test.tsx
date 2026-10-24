@@ -14,7 +14,7 @@ import { AccurateImportForm } from "@/app/(app)/pos/sku/impor/AccurateImportForm
 
 const master: AccurateImportState = {
   ok: true, phase: "preview", message: "Master fiktif siap", run_id: "fiction-master",
-  source_fingerprint: "fiction-hash", source_hash: "fiction-hash", rows: [], total_rows: 1, hierarchy_count: 0,
+  source_fingerprint: "fiction-hash", source_hash: "fiction-hash", rows: [], total_rows: 1, category_change_count: 0, hierarchy_count: 0,
   summary: { Baru: 1, Update: 0, Sama: 0, Dilewati: 0, Ditolak: 0 },
   new_masters: { categories: [], brands: [], units: [], suppliers: [] },
 };
@@ -60,6 +60,16 @@ beforeEach(async () => {
   await act(async () => root.render(<AccurateImportForm />));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("warns about every category change before import, including rows beyond the sample", async () => {
+  actions.previewImporAccurate.mockResolvedValue({
+    ...master, category_change_count: 212, total_rows: 3422,
+    rows: [{ row_no: 1, code: "A-1", name: "Vaccine", status: "Update", changed_fields: ["category_name"], reason: null, source: "fixture.xlsx:1", matrix: null }],
+  });
+  await check();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("212 barang akan berganti kategori");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("File lama");
+});
 
 it("hands a prepared batch to accounting review instead of offering import preparation again", async () => {
   await check();

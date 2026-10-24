@@ -604,6 +604,12 @@ export function AccurateImportForm({
             </div>
           )}
 
+          {state.phase === "preview" && state.category_change_count > 0 && (
+            <div role="alert" style={{ marginTop: 9, padding: "8px 10px", borderRadius: 8, background: "#fffbeb", border: ".5px solid #f59e0b", color: "#92400e", fontSize: 10.5 }}>
+              <b>{state.category_change_count.toLocaleString("id-ID")} barang akan berganti kategori.</b> Periksa kategori pada file dan baris Update sebelum impor. File lama dapat mengembalikan kategori ke mapping sebelumnya.
+            </div>
+          )}
+
           {state.phase === "preview" && (
             <div style={{ marginTop: 10, padding: 10, background: "#f8fafc", border: ".5px solid #cbd5e1", borderRadius: 8, color: "#334155" }}>
               <MasterList label="Kategori" values={state.new_masters.categories} />
