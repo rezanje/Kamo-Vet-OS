@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { bolehTransaksiKas } from "@/lib/master-guard";
@@ -221,7 +222,7 @@ export async function KasEntryScreen({
           <div className="frow" style={{ marginTop: 10 }}>
             <div>
               <label className="flab">Jumlah *</label>
-              <input className="fi" type="number" name="jumlah" min={1} step="any" required />
+              <NumberInput className="fi" type="number" name="jumlah" min={1} step="any" required />
             </div>
             <div>
               <label className="flab">Keterangan</label>

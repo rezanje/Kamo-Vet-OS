@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
@@ -97,7 +98,7 @@ export default async function TransferAnggaranPage({
               </div>
               <div>
                 <label className="flab">Nominal (Rp) *</label>
-                <input className="fi" name="jumlah" type="number" min={1} step="any" required />
+                <NumberInput className="fi" name="jumlah" type="number" min={1} step="any" required />
               </div>
               <div>
                 <label className="flab">Alasan</label>

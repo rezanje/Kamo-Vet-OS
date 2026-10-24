@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -116,7 +117,7 @@ export default async function PenomoranPage({
                         </form>
                       </td>
                       <td>
-                        <input className="fi" form={`f-${f.jenis}`} name="digit" type="number"
+                        <NumberInput className="fi" form={`f-${f.jenis}`} name="digit" type="number"
                           min={1} max={8} defaultValue={digit} style={{ fontSize: 11 }} />
                       </td>
                       <td style={{ fontSize: 11.5, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>

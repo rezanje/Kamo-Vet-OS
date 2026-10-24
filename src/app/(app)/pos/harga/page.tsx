@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -148,14 +149,14 @@ export default async function HargaJualPage({
                     {branchId ? (
                       <span style={{ fontSize: 11 }}>{rp(r.hargaPusat)}</span>
                     ) : (
-                      <input className="fi" name={`h|${r.item.id}|${r.unit}`} type="number" min={0} step="any"
+                      <NumberInput className="fi" name={`h|${r.item.id}|${r.unit}`} type="number" min={0} step="any"
                         defaultValue={r.hargaPusat} disabled={!bolehKelola}
                         style={{ textAlign: "right", height: 26, fontSize: 11 }} />
                     )}
                   </td>
                   {branchId && (
                     <td style={{ textAlign: "right" }}>
-                      <input className="fi" name={`h|${r.item.id}|${r.unit}`} type="number" min={0} step="any"
+                      <NumberInput className="fi" name={`h|${r.item.id}|${r.unit}`} type="number" min={0} step="any"
                         defaultValue={r.override ?? ""} placeholder="ikut pusat" disabled={!bolehKelola}
                         style={{ textAlign: "right", height: 26, fontSize: 11 }} />
                     </td>

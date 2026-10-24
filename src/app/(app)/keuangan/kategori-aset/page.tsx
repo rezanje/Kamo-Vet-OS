@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
@@ -53,7 +54,7 @@ export default async function KategoriAsetPage({
             </div>
             <div>
               <label className="flab">Umur penyusutan (bulan) *</label>
-              <input className="fi" name="umur_bulan" type="number" min={1} step={1}
+              <NumberInput className="fi" name="umur_bulan" type="number" min={1} step={1}
                 defaultValue={editing?.umur_bulan ?? 48} required />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>48 bulan = 4 tahun.</div>
             </div>

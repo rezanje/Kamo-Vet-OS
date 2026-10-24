@@ -1,5 +1,7 @@
 "use client";
 
+import { NumberInput } from "@/components/NumberInput";
+
 import { ItemReferenceField } from "@/components/ItemReferenceField";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { useState } from "react";
@@ -204,7 +206,7 @@ export function BarangForm({
           </div>
           <div style={{ display: punyaStok ? "block" : "none" }}>
             <label className="flab">Stok minimum</label>
-            <input className="fi" name="min_stock" type="number" min={0} step="any" defaultValue={editing?.min_stock ?? 0} />
+            <NumberInput className="fi" name="min_stock" type="number" min={0} step="any" defaultValue={editing?.min_stock ?? 0} />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
               Batas bawah sebelum barang dianggap perlu dipesan lagi.
             </div>
@@ -228,13 +230,13 @@ export function BarangForm({
         <div className="frow">
           <div>
             <label className="flab">Harga jual * <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
-            <input className="fi" name="sell_price" type="number" min={0} step="any"
+            <NumberInput className="fi" name="sell_price" type="number" min={0} step="any"
               value={baseSell || ""} onChange={(e) => setBaseSell(Number(e.target.value))} required />
           </div>
           {!isGroup && (
             <div>
               <label className="flab">Harga beli / modal <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
-              <input className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
+              <NumberInput className="fi" name="buy_price" type="number" min={0} step="any" defaultValue={editing?.buy_price ?? 0} />
             </div>
           )}
         </div>
@@ -265,12 +267,12 @@ export function BarangForm({
               <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 6 }}>
                 <div style={{ width: 150 }}>
                   {i === 0 && <label className="flab">Beli minimal ({labelDasar})</label>}
-                  <input className="fi" type="number" min={1} step="any" value={t.min_qty || ""}
+                  <NumberInput className="fi" type="number" min={1} step="any" value={t.min_qty || ""}
                     onChange={(e) => setTier(i, { min_qty: Number(e.target.value) })} placeholder="12" />
                 </div>
                 <div style={{ flex: 1, minWidth: 120 }}>
                   {i === 0 && <label className="flab">Harga per {labelDasar}</label>}
-                  <input className="fi" type="number" min={0} step="any" value={t.harga || ""}
+                  <NumberInput className="fi" type="number" min={0} step="any" value={t.harga || ""}
                     onChange={(e) => setTier(i, { harga: Number(e.target.value) })} placeholder="0" />
                   {baseSell > 0 && Number(t.harga) > 0 && Number(t.harga) < baseSell && (
                     <div style={{ fontSize: 9, color: "#15803d", marginTop: 2 }}>
@@ -325,12 +327,12 @@ export function BarangForm({
                   </div>
                   <div style={{ width: 104, flexShrink: 0 }}>
                     {i === 0 && <label className="flab">Isi ({labelDasar})</label>}
-                    <input className="fi" type="number" min={0} step="any" value={u.factor || ""}
+                    <NumberInput className="fi" type="number" min={0} step="any" value={u.factor || ""}
                       onChange={(e) => setUnit(i, { factor: Number(e.target.value) })} placeholder="12" />
                   </div>
                   <div style={{ flex: 1, minWidth: 110 }}>
                     {i === 0 && <label className="flab">Harga jual</label>}
-                    <input className="fi" type="number" min={0} step="any" value={u.sell_price || ""}
+                    <NumberInput className="fi" type="number" min={0} step="any" value={u.sell_price || ""}
                       onChange={(e) => setUnit(i, { sell_price: Number(e.target.value) })} placeholder="0" />
                     {f > 0 && Number(u.sell_price) > 0 && (
                       <div style={{ fontSize: 9, color: hemat < 0 ? "#15803d" : "var(--td)", marginTop: 2 }}>
@@ -341,7 +343,7 @@ export function BarangForm({
                   </div>
                   <div style={{ flex: 1, minWidth: 110 }}>
                     {i === 0 && <label className="flab">Harga beli</label>}
-                    <input className="fi" type="number" min={0} step="any" value={u.buy_price || ""}
+                    <NumberInput className="fi" type="number" min={0} step="any" value={u.buy_price || ""}
                       onChange={(e) => setUnit(i, { buy_price: Number(e.target.value) })} placeholder="0" />
                   </div>
                   <button type="button" onClick={() => delUnit(i)} className="btn-def"
@@ -364,7 +366,7 @@ export function BarangForm({
           <div className="frow">
             <div>
               <label className="flab">Diskon default (%)</label>
-              <input className="fi" name="default_discount" type="number" min={0} max={100} step="any"
+              <NumberInput className="fi" name="default_discount" type="number" min={0} max={100} step="any"
                 defaultValue={editing?.default_discount ?? 0} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Dipakai semua satuan. Kosongkan (0) kalau barang ini tidak pernah didiskon otomatis.
@@ -372,7 +374,7 @@ export function BarangForm({
             </div>
             <div>
               <label className="flab">Minimum jual <span style={{ color: "var(--td)", fontWeight: 400 }}>/ {labelDasar}</span></label>
-              <input className="fi" name="min_sell_qty" type="number" min={0} step="any"
+              <NumberInput className="fi" name="min_sell_qty" type="number" min={0} step="any"
                 defaultValue={editing?.min_sell_qty ?? 0} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Jumlah paling sedikit yang boleh dibeli sekali transaksi. 0 = bebas.
@@ -420,7 +422,7 @@ export function BarangForm({
             <div className="frow">
               <div>
                 <label className="flab">Minimum beli</label>
-                <input className="fi" name="min_buy" type="number" min={0} step="any"
+                <NumberInput className="fi" name="min_buy" type="number" min={0} step="any"
                   defaultValue={editing?.min_buy ?? 0} />
                 <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                   Jumlah pesan paling sedikit yang mau dilayani pemasok, dalam satuan beli.
@@ -495,7 +497,7 @@ export function BarangForm({
                 </div>
                 <div>
                   {i === 0 && <label className="flab">Qty *</label>}
-                  <input className="fi" type="number" min={0.0001} step="any" required
+                  <NumberInput className="fi" type="number" min={0.0001} step="any" required
                     value={row.qty || ""}
                     onChange={(e) => setGroupComponent(i, { qty: Number(e.target.value) })} />
                 </div>

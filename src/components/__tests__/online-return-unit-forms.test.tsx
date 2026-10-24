@@ -4,7 +4,7 @@ import {createRoot} from 'react-dom/client';
 import {expect,it,vi} from 'vitest';
 vi.mock('@/app/(app)/penjualan/online/actions',()=>({buatPenjualanOnline:vi.fn(),recoverUnitPosting:vi.fn()}));
 vi.mock('@/app/(app)/pembelian/retur/actions',()=>({buatReturBeli:vi.fn()}));
-vi.mock('@/app/(app)/penjualan/retur/actions',()=>({buatReturJual:vi.fn()}));
+vi.mock('@/app/(app)/penjualan/retur/actions',()=>({buatReturJual:vi.fn(),recoverReturJual:vi.fn()}));
 import {OnlineForm} from '@/app/(app)/penjualan/online/baru/OnlineForm';
 import {ReturJualForm} from '@/app/(app)/penjualan/retur/baru/ReturJualForm';
 import {ReturBeliForm} from '@/app/(app)/pembelian/retur/baru/ReturBeliForm';

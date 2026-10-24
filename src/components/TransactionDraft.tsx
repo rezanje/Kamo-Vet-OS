@@ -36,6 +36,7 @@ export function TransactionDraft({ userId, domain, scope, requestKey, state }: {
         if (control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type)) control.checked = fields[fieldKey(control)] === "true";
         else {
           control.value = fields[fieldKey(control)];
+          control.dispatchEvent(new Event("vetos:numeric-sync"));
           if (control.hasAttribute("data-draft-state")) control.dispatchEvent(new CustomEvent("vetos:draft-restore", { detail: control.value }));
         }
       }

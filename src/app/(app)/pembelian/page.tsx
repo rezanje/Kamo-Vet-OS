@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
 import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
 import { masterView, visibleMasters, type LifecycleRow } from "@/lib/master-lifecycle";
@@ -334,7 +335,7 @@ export default async function PembelianPage({
                 </div>
                 <div>
                   <label className="flab">Termin (hari)</label>
-                  <input className="fi" name="termin_hari" type="number" min={0} defaultValue={editing?.termin_hari ?? 30} />
+                  <NumberInput className="fi" name="termin_hari" type="number" min={0} defaultValue={editing?.termin_hari ?? 30} />
                 </div>
               </div>
               <div className="frow" style={{ marginBottom: 12 }}>

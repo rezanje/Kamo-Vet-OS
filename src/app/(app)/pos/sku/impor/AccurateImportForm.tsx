@@ -60,6 +60,7 @@ export function AccurateImportForm({
   const [receiptDismissed, setReceiptDismissed] = useState(false);
   const [oneClickStockState, setOneClickStockState] = useState<InitialStockState | null>(null);
   const [initialStockAsOf, setInitialStockAsOf] = useState("");
+  const [normalizeMoney,setNormalizeMoney]=useState(false);
   const [scopeSelection, setScopeSelection] = useState<{ branchId: string; warehouseId: string } | null>(null);
   const [skipInitialStock, setSkipInitialStock] = useState(false);
   const [reapplyWithStock, setReapplyWithStock] = useState(false);
@@ -206,6 +207,7 @@ export function AccurateImportForm({
       const stockData = new FormData();
       stockData.append("initial_stock_file", file);
       stockData.append("initial_stock_as_of", initialStockAsOf);
+      stockData.set('valuation_policy',normalizeMoney?'HALF_UP_BATCH_V1':'STRICT');
       isiPilihanTujuan(stockData, selection);
       if (token !== generation.current) return;
       const stockPreview = await preflightSaldoAwalSekali(stockData);
@@ -286,6 +288,7 @@ export function AccurateImportForm({
       stockPreviewData.append("initial_stock_file", file);
       stockPreviewData.append("master_run_id", masterDone.run_id);
       stockPreviewData.append("initial_stock_as_of", initialStockAsOf);
+      stockPreviewData.set('valuation_policy',normalizeMoney?'HALF_UP_BATCH_V1':'STRICT');
       isiPilihanTujuan(stockPreviewData);
       if (token !== generation.current) return;
       const stockPreview = await previewSaldoAwalAccurate(stockPreviewData);
@@ -455,6 +458,8 @@ export function AccurateImportForm({
           Wajib dipilih. Dipakai hanya bila Per Tanggal di file kosong; bila file berisi tanggal berbeda, impor akan diblokir.
         </span>
       </label>}
+
+      {!skipInitialStock&&<label style={{display:'block',marginTop:10,fontSize:11}}><input type="checkbox" aria-label="Bulatkan nilai uang ke 2 desimal" checked={normalizeMoney} onChange={event=>{invalidateRequest();setNormalizeMoney(event.target.checked);setOneClickStockState(null);setOneClickStatus('');setLocalError('');}}/> Bulatkan total nilai uang ke 2 desimal (HALF_UP). Jumlah stok tidak dibulatkan. Nilai sumber dan selisih ditampilkan sebelum review; file tidak perlu diedit.</label>}
 
       {(localError || (state && !state.ok)) && (
         <div className="p2ban" style={{ marginTop: 12, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>

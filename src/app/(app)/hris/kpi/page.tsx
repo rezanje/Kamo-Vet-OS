@@ -1,3 +1,4 @@
+import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
@@ -170,7 +171,7 @@ export default async function KpiPage({
             </div>
             <div>
               <label className="flab">Skor (0–100) *</label>
-              <input
+              <NumberInput
                 className="fi"
                 name="skor"
                 type="number"
@@ -183,7 +184,7 @@ export default async function KpiPage({
             </div>
             <div>
               <label className="flab">Target</label>
-              <input
+              <NumberInput
                 className="fi"
                 name="target"
                 type="number"
@@ -193,7 +194,7 @@ export default async function KpiPage({
             </div>
             <div>
               <label className="flab">Realisasi</label>
-              <input
+              <NumberInput
                 className="fi"
                 name="realisasi"
                 type="number"

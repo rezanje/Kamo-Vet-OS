@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { xlsxSourceNumbers } from "./xlsx-source-numbers";
+import {StockDecimal,stockNumberText} from './initial-stock-decimal';
 
 export type ReconcileInput = {
   sourceQty: number;
@@ -45,6 +46,7 @@ export type SaldoAwalMasterItem = {
   code: string;
   unit: string;
   itemType: string;
+  isActive?: boolean;
   trackExpiry: boolean;
   units: { unit: string; factor: number }[];
 };
@@ -76,6 +78,8 @@ export type ResolvedSaldoAwal = SaldoAwalDraft & {
   baseQty: number;
   baseUnitCost: number;
   value: number;
+  baseQtyExact?:string;
+  valueExact?:string;
   warehouseId: string;
   sourceRows?: number[];
   sourceValues?: { qty: string; unit_cost: string; factor: string; unit: string }[];
@@ -84,9 +88,7 @@ export type ResolvedSaldoAwal = SaldoAwalDraft & {
 };
 
 export function toBaseStock(input: { qty: number; factor: number; unitCost: number }) {
-  const baseQty = input.qty * input.factor;
-  const baseUnitCost = input.unitCost / input.factor;
-  return { baseQty, baseUnitCost, value: baseQty * baseUnitCost };
+  return {baseQty:new StockDecimal(input.qty).times(input.factor).toNumber(),baseUnitCost:new StockDecimal(input.unitCost).div(input.factor).toNumber(),value:new StockDecimal(input.qty).times(input.unitCost).toNumber()};
 }
 
 export function reconcileInitialStock(value: ReconcileInput) {
@@ -290,7 +292,7 @@ function numberValue(value: ExcelJS.CellValue | undefined) {
   if (value && typeof value === "object" && "result" in value) {
     return numberValue((value as { result?: ExcelJS.CellValue }).result);
   }
-  const text = cellText(value).replace(/\./g, "").replace(/,/g, ".");
+  const text = stockNumberText(cellText(value));
   return Number(text);
 }
 
@@ -299,7 +301,7 @@ function sourceNumberText(value: ExcelJS.CellValue | undefined, xml?: string): s
   if (xml !== undefined) return xml;
   if (value && typeof value === "object" && "result" in value) return sourceNumberText((value as {result?:ExcelJS.CellValue}).result);
   if (typeof value === "number") return String(value);
-  return cellText(value).replace(/\./g, "").replace(/,/g, ".");
+  return stockNumberText(cellText(value));
 }
 
 /**
@@ -355,10 +357,12 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     const rawQtyCell = row.getCell(columns.qty!).value;
     const qtyMasihRumus = formulaTanpaNilai(rawQtyCell);
     const rawQty = numberValue(rawQtyCell);
+    const qtySource=sourceNumberText(rawQtyCell,numericSources.get(row.getCell(columns.qty!).address));
+    const quantityUnderflow=rawQty===0&&qtySource!==''&&new StockDecimal(qtySource).isFinite()&&!new StockDecimal(qtySource).isZero();
     // Pada file gabungan, saldo nol tidak pernah diposting. Lewati sebelum
     // menilai HPP/satuan/tanggal agar sisa pembulatan sumber tidak mengunci
     // seluruh impor master dan saldo yang benar-benar ada.
-    if (isCombinedItemWorkbook && !qtyMasihRumus && Number.isFinite(rawQty) && rawQty === 0) continue;
+    if (isCombinedItemWorkbook && !qtyMasihRumus && Number.isFinite(rawQty) && rawQty === 0&&!quantityUnderflow) continue;
     const balanceUnit = columns.balanceUnit ? cellText(row.getCell(columns.balanceUnit).value) : "";
     const masterUnit = columns.masterUnit ? cellText(row.getCell(columns.masterUnit).value) : "";
     const unit = balanceUnit || masterUnit;
@@ -368,6 +372,8 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     // Keep it invalid through resolution rather than inventing a zero opening.
     const hppKosong = cellText(unitCostCell) === "";
     const unitCost = hppKosong ? Number.NaN : numberValue(unitCostCell);
+    const costSource=sourceNumberText(unitCostCell,numericSources.get(row.getCell(columns.unitCost!).address));
+    const costUnderflow=unitCost===0&&costSource!==''&&new StockDecimal(costSource).isFinite()&&!new StockDecimal(costSource).isZero();
     const batchNo = columns.batchNo ? cellText(row.getCell(columns.batchNo).value) || null : null;
     const expDate = columns.expDate ? excelDate(row.getCell(columns.expDate).value) : null;
     const branchName = columns.branchName ? cellText(row.getCell(columns.branchName).value) || null : null;
@@ -378,15 +384,18 @@ export async function bacaWorkbookSaldoAwal(bytes: Uint8Array): Promise<SaldoAwa
     if (!itemCode && !unit && !Number.isFinite(rawQty) && !Number.isFinite(unitCost)) continue;
     if (!itemCode) errors.push(`Baris ${rowNo}: Kode Barang wajib diisi`);
     if (qtyMasihRumus) rumusQtyTanpaNilai.push(rowNo);
+    else if(quantityUnderflow)errors.push(`Baris ${rowNo}: Kuantitas terlalu kecil untuk diproses; nilainya tidak dianggap stok nol`);
     else if (!Number.isFinite(rawQty) || rawQty < 0) errors.push(`Baris ${rowNo}: Kuantitas harus angka nol atau lebih`);
     if (!unit) errors.push(`Baris ${rowNo}: Satuan wajib diisi`);
     if (hppMasihRumus) rumusHppTanpaNilai.push(rowNo);
     else if (hppKosong) errors.push(`Baris ${rowNo}: HPP wajib diisi; isi 0 hanya jika nilai sumber memang nol`);
+    else if(costUnderflow)errors.push(`Baris ${rowNo}: HPP terlalu kecil untuk diproses; nilainya tidak dianggap nol`);
     else if (!Number.isFinite(unitCost) || unitCost < 0) errors.push(`Baris ${rowNo}: HPP harus angka nol atau lebih`);
     if (columns.expDate && row.getCell(columns.expDate).value != null && !expDate) {
       errors.push(`Baris ${rowNo}: Tanggal kedaluwarsa tidak valid`);
     }
-    rows.push({ row: rowNo, itemCode, qty: rawQty, unit, unitCost, sourceQty: sourceNumberText(rawQtyCell, numericSources.get(row.getCell(columns.qty!).address)), sourceUnitCost: sourceNumberText(unitCostCell, numericSources.get(row.getCell(columns.unitCost!).address)), batchNo, expDate, branchName, warehouseName, asOf });
+    if(qtySource.length>80||costSource.length>80)errors.push(`Baris ${rowNo}: Presisi angka sumber melebihi batas 80 karakter`);
+    rows.push({ row: rowNo, itemCode, qty: rawQty, unit, unitCost, sourceQty:qtySource, sourceUnitCost:costSource, batchNo, expDate, branchName, warehouseName, asOf });
   }
   const rentang = (baris: number[]) => `${baris.length} baris (${baris.slice(0, 3).join(", ")}${baris.length > 3 ? ", …" : ""})`;
   if (rumusQtyTanpaNilai.length || rumusHppTanpaNilai.length) {
@@ -410,6 +419,7 @@ export function resolveSaldoAwalRows(
     let factor = 1;
     if (!item) reason = "Kode barang tidak ditemukan";
     else if (item.itemType !== "Persediaan") reason = "Jasa atau non-persediaan dilewati";
+    else if (item.isActive === false) reason = "Barang tidak aktif; periksa status di master sebelum mengimpor saldo";
     else if (!item.unit) reason = "Satuan dasar barang belum tersedia";
     else {
       const sourceUnit = row.unit.trim().toLowerCase();
@@ -423,8 +433,10 @@ export function resolveSaldoAwalRows(
     }
     if (!reason && item?.trackExpiry && row.qty > 0 && !row.expDate) reason = "Tanggal kedaluwarsa wajib untuk barang bertanggal";
     if (!reason && row.expDate && row.expDate < "1900-01-01") reason = "Tanggal kedaluwarsa tidak valid";
-    const converted = toBaseStock({ qty: row.qty, factor, unitCost: row.unitCost });
-    const skipped = !reason && converted.baseQty === 0;
+    const exactQty=new StockDecimal(row.sourceQty||row.qty).times(factor);
+    const exactValue=new StockDecimal(row.sourceQty||row.qty).times(row.sourceUnitCost||row.unitCost);
+    const converted={baseQty:exactQty.toNumber(),baseUnitCost:new StockDecimal(row.sourceUnitCost||row.unitCost).div(factor).toNumber(),value:exactValue.toNumber()};
+    const skipped = !reason && exactQty.isZero();
     return {
       ...row,
       itemId: item?.id ?? "",
@@ -432,6 +444,7 @@ export function resolveSaldoAwalRows(
       baseQty: converted.baseQty,
       baseUnitCost: converted.baseUnitCost,
       value: converted.value,
+      baseQtyExact:exactQty.toFixed(),valueExact:exactValue.toFixed(),
       warehouseId,
       status: reason ? (item && item.itemType !== "Persediaan" ? "skipped" : "rejected") : skipped ? "skipped" : "valid",
       reason: reason ?? (skipped ? "Saldo nol dilewati" : null),
@@ -462,12 +475,14 @@ export function resolveSaldoAwalRows(
       }));
     }
     const first = group[0];
-    const baseQty = group.reduce((total, row) => total + row.baseQty, 0);
-    const value = group.reduce((total, row) => total + row.value, 0);
+    const exactQty=group.reduce((total,row)=>total.plus(row.baseQtyExact??row.baseQty),new StockDecimal(0));
+    const exactValue=group.reduce((total,row)=>total.plus(row.valueExact??row.value),new StockDecimal(0));
+    const baseQty=exactQty.toNumber(),value=exactValue.toNumber();
     return [{
       ...first,
       baseQty,
       value,
+      baseQtyExact:exactQty.toFixed(),valueExact:exactValue.toFixed(),
       baseUnitCost: baseQty > 0 ? value / baseQty : firstCost,
       sourceRows,
       sourceValues: group.flatMap(row => row.sourceValues ?? []),

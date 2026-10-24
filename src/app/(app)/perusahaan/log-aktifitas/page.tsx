@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { SecHeader } from '@/components/SecHeader';
 import { ACTIVITY_ACTIONS, ACTIVITY_ENTITIES, ACTIVITY_MODULES, ACTIVITY_PAGE_SIZE, ACTIVITY_PATH, activityFilters, activityHref, activityObjectHref, type ActivityParams, type ActivityRow } from '@/lib/activity-log';
+import {activityFieldLabel,activityValue,activitySourceKey,activitySourceLinks} from '@/lib/activity-presentation';
+import {allowedBranchIds} from '@/lib/branch-access';
 
 const formatTime = (s: string) => new Date(s).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'medium' }) + ' WIB';
-const value = (v: unknown) => v === undefined ? '—' : v === null ? 'kosong' : typeof v === 'boolean' ? v ? 'Ya' : 'Tidak' : String(v);
 
 export default async function ActivityLogPage({ searchParams }: { searchParams: Promise<ActivityParams> }) {
   const filters = activityFilters(await searchParams);
@@ -32,6 +33,7 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
   const more = result.length > ACTIVITY_PAGE_SIZE;
   const rows = result.slice(0, ACTIVITY_PAGE_SIZE);
   if (filters.after) rows.reverse();
+  const sourceLinks=error?{links:new Map<string,string>(),unavailable:false}:await activitySourceLinks(db,rows,await allowedBranchIds(db,user!.id));
   const hasNewer = !!filters.before || (!!filters.after && more);
   const hasOlder = !!filters.after || (!filters.after && more);
 
@@ -53,13 +55,14 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
         <button className="btn-def" type="submit">Terapkan</button><Link className="back-btn" href={ACTIVITY_PATH}>Reset</Link>
       </form>
       {error ? <div className="p2ban" role="alert">Riwayat belum dapat dimuat. Coba muat ulang atau hubungi admin untuk memeriksa kesiapan fitur.</div> : <>
+        {sourceLinks.unavailable&&<p role="status">Tautan transaksi asal belum dapat diperiksa. Riwayat tetap ditampilkan; coba muat ulang untuk memeriksa tautan.</p>}
         <div style={{ overflowX: 'auto' }}><table className="tbl" style={{ minWidth: 760 }}>
           <thead><tr><th>Waktu / pelaku</th><th>Modul / objek</th><th>Aksi</th><th>Perubahan</th></tr></thead>
           <tbody>{rows.map(row => <tr key={row.id}>
             <td>{formatTime(row.occurred_at)}<br /><b>{row.actor_name}</b><br /><small>{row.actor_id ?? 'Otomatis / database'}</small></td>
-            <td>{ACTIVITY_MODULES[row.module_id] ?? row.module_id}<br />{ACTIVITY_ENTITIES[row.entity] ?? row.entity}<br /><Link href={activityObjectHref(row.entity, row.entity_id)}>{row.object_label}</Link><br /><small style={{ overflowWrap: 'anywhere' }}>{row.entity_id}</small><br /><small>Sumber: {ACTIVITY_ENTITIES[row.row_entity] ?? row.row_entity}</small><br /><Link style={{ overflowWrap: 'anywhere', fontSize: 11 }} href={activityObjectHref(row.row_entity, row.row_id)}>{row.row_id}</Link></td>
+            <td>{ACTIVITY_MODULES[row.module_id] ?? 'Modul lainnya'}<br />{ACTIVITY_ENTITIES[row.entity] ?? 'Objek lainnya'}<br /><Link href={activityObjectHref(row.entity, row.entity_id)}>{row.object_label}</Link><br /><small style={{ overflowWrap: 'anywhere' }}>{row.entity_id}</small><br /><small>Sumber: {ACTIVITY_ENTITIES[row.row_entity] ?? 'Objek lainnya'}</small><br /><Link style={{ overflowWrap: 'anywhere', fontSize: 11 }} href={activityObjectHref(row.row_entity, row.row_id)}>{row.row_id}</Link>{row.action!=='delete'&&sourceLinks.links.has(activitySourceKey(row.entity,row.entity_id))&&<><br /><Link href={sourceLinks.links.get(activitySourceKey(row.entity,row.entity_id))!}>Buka transaksi asal</Link></>}</td>
             <td>{ACTIVITY_ACTIONS[row.action] ?? row.action}</td>
-            <td>{row.changed_fields.length === 1 && row.changed_fields[0] === 'metadata' ? <span>Aktivitas tercatat; rincian isi disamarkan.</span> : <details><summary>{row.changed_fields.length} bagian berubah</summary><ul style={{ paddingLeft: 16 }}>{row.changed_fields.map(field => <li key={field}><code>{field}</code>: {Object.hasOwn(row.before_state, field) || Object.hasOwn(row.after_state, field) ? <>{value(row.before_state[field])} → {value(row.after_state[field])}</> : 'nilai disamarkan'}</li>)}</ul></details>}</td>
+            <td>{row.changed_fields.length === 1 && row.changed_fields[0] === 'metadata' ? <span>Aktivitas tercatat; rincian isi disamarkan.</span> : <details><summary>{row.changed_fields.length} bagian berubah</summary><ul style={{ paddingLeft: 16 }}>{row.changed_fields.map(field => <li key={field}><b>{activityFieldLabel(field)}</b>{Object.hasOwn(row.before_state, field) || Object.hasOwn(row.after_state, field) ? <><div>Sebelum: {activityValue(field,row.before_state[field])}</div><div>Sesudah: {activityValue(field,row.after_state[field])}</div></> : <div>Nilai disamarkan</div>}</li>)}</ul></details>}</td>
           </tr>)}{rows.length === 0 && <tr><td colSpan={4}>Belum ada aktivitas yang dapat ditampilkan untuk filter dan akses ini.</td></tr>}</tbody>
         </table></div>
         <nav aria-label="Halaman aktivitas" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>

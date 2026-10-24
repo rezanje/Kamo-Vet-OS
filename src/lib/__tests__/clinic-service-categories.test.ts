@@ -29,7 +29,7 @@ it("uses service type for categories that are absent, missing, or cyclic without
   expect(splitClinicItems(skus, categories, new Set()).jasa).toEqual(skus);
 });
 
-it("lets explicit clinic categories and their nearest ancestors override the fallback", () => {
+it("keeps dedicated service/action categories while an Obat label cannot turn a service into inventory", () => {
   const categories = [
     { id: "service", name: " JASA " }, { id: "action", name: "Tindakan", parent_id: "service" },
     { id: "surgery", name: "Operasi", parent_id: "action" }, { id: "medicine", name: "Obat" },
@@ -39,18 +39,42 @@ it("lets explicit clinic categories and their nearest ancestors override the fal
   const action = item("surgery", "surgery");
   const vaccine = item("vaccine", "vaccine");
   const groups = splitClinicItems([service, action, vaccine], categories, new Set());
-  expect(groups.jasa).toEqual([service]);
+  expect(groups.jasa).toEqual([service, vaccine]);
   expect(groups.tindakan).toEqual([action]);
-  expect(groups.obat).toEqual([vaccine]);
+  expect(groups.obat).toEqual([]);
 });
 
-it("keeps ordinary stock, compounds, and ingredients out of fallback service results", () => {
+it("allows inventory marked as a compound ingredient to be prescribed directly as well", () => {
   const stock = item("stock", null, "Persediaan");
   const compound = item("compound", null, "Persediaan");
   const ingredient = { ...item("ingredient", null, "Persediaan"), is_compound_material: true };
   const groups = splitClinicItems([stock, compound, ingredient], [], new Set([compound.id]));
   expect(groups.jasa).toEqual([]);
-  expect(groups.obat).toEqual([stock]);
+  expect(groups.obat).toEqual([stock, ingredient]);
   expect(groups.racikan).toEqual([compound]);
   expect(groups.bahan).toEqual([ingredient]);
+});
+
+it("requires inventory type regardless of medicine category names, including missing or cyclic categories", () => {
+  const categories = [
+    { id: "medicine", name: "OBAT & VITAMIN" }, { id: "worm", name: "OBAT CACING", parent_id: "medicine" },
+    { id: "literal", name: "Obat" }, { id: "a", name: "A", parent_id: "b" }, { id: "b", name: "B", parent_id: "a" },
+  ];
+  const inventory = [item("ordinary", "worm", "Persediaan"), { ...item("ingredient", "worm", "Persediaan"), is_compound_material: true },
+    item("missing", "missing", "Persediaan"), item("cyclic", "a", "Persediaan")];
+  const excluded = [item("service", "literal"), item("untracked", "literal", "Non-Persediaan"), item("group", "worm", "Grup"), item("unknown", null, "")];
+  const groups = splitClinicItems([...inventory, ...excluded], categories, new Set());
+  expect(groups.obat).toEqual(inventory);
+  expect(groups.jasa.map(row => row.id)).toEqual(["service"]);
+});
+
+it("keeps finished compound SKUs exclusively in Racikan even under a Tindakan ancestor", () => {
+  const categories = [{ id: "actions", name: "TINDAKAN" }, { id: "compound", name: "OBAT RACIK", parent_id: "actions" }];
+  const compound = item("compound", "compound", "Persediaan");
+  const action = item("action", "actions", "Persediaan");
+  const groups = splitClinicItems([compound, action], categories, new Set([compound.id]));
+  expect(groups.racikan).toEqual([compound]);
+  expect(groups.tindakan).toEqual([action]);
+  expect(groups.obat).toEqual([]);
+  expect(groups.jasa).toEqual([]);
 });

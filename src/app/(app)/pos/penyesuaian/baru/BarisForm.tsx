@@ -1,4 +1,6 @@
 "use client";
+
+import { NumberInput } from "@/components/NumberInput";
 import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 import { draftRecord, draftString } from "@/components/TransactionDraft";
 
@@ -67,7 +69,7 @@ export function BarisForm({ barang, scope }: { barang: BarangStok[]; scope:strin
                   <td style={{ fontSize: 11.5 }}>{b.nama}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>{fmt(b.qty)}</td>
                   <td>
-                    <input className="fi" type="number" min={0} step="any" placeholder="—"
+                    <NumberInput className="fi" type="number" min={0} step="any" placeholder="—"
                       value={v ?? ""} style={{ fontSize: 11.5, padding: "4px 8px", textAlign: "right" }}
                       onChange={(e) => setIsi((s) => ({ ...s, [b.item_id]: e.target.value }))} />
                   </td>

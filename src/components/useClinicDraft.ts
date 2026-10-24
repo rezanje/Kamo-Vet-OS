@@ -69,6 +69,7 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
               if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)
                 && typeof draft.fields[control.name] === "string" && !(control instanceof HTMLInputElement && ["hidden", "file"].includes(control.type))) {
                 control.value = draft.fields[control.name];
+                control.dispatchEvent(new Event("vetos:numeric-sync"));
               }
             }
             lastSnapshot.current = JSON.stringify(draft.snapshot);

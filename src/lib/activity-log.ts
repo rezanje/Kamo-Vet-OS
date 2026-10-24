@@ -65,6 +65,8 @@ export const ACTIVITY_ENTITIES: Record<string, string> = {
   po_payments: "Pembayaran Pesanan Pembelian",
   sale_payments: "Pembayaran POS",
   sale_payment_refunds: "Pengembalian Pembayaran POS",
+  sales_refund_requests: "Permintaan pengembalian dana penjualan",
+  sales_refund_payouts: "Bukti pengembalian dana penjualan",
   sales_invoice_delivery_allocations: "Alokasi Pengiriman Faktur Penjualan",
   purchase_invoice_layer_proofs: "Bukti Lapisan Faktur Pembelian",
   clinic_compound_sales: "Penjualan Racikan Klinik",
