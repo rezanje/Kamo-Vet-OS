@@ -18,6 +18,11 @@ it('requires a file/date and sends explicit stock-only strict mode without inven
  expect(host.textContent).toContain('0.333333');expect(host.textContent).toContain('-0.003333');expect(host.textContent).toContain('belum diposting');expect(host.querySelector('a')?.getAttribute('href')).toContain('run_id=fiction-run');
 });
 it('requires explicit monetary normalization selection',async()=>{await file();await date('2026-01-01');await act(async()=>host.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());await act(async()=>button().click());expect(action.mock.calls[0][0].get('valuation_policy')).toBe('HALF_UP_BATCH_V1');});
+it('shows the full quantity and monetary delta even when strict preparation requires a choice',async()=>{
+ action.mockResolvedValue({...prepared,ok:false,run_id:null,valuation:undefined,message:'Pilih pembulatan nilai uang',decimal_preview:{quantity:'0.1000000000000000001',source_value:'1.005',rounded_value:'1.01',rounding_delta:'0.005'}});
+ await file();await date('2026-01-01');await act(async()=>button().click());
+ expect(host.textContent).toContain('0,1000000000000000001');expect(host.textContent).toContain('1,005');expect(host.textContent).toContain('+0,005');expect(host.querySelector('a')).toBeNull();
+});
 it('latches two immediate preparation clicks into one request',async()=>{await file();await date('2026-01-01');await act(async()=>{button().click();button().click();});expect(action).toHaveBeenCalledTimes(1);});
 it('ignores a saved response belonging to an old date',async()=>{let resolve!:(v:unknown)=>void;action.mockReturnValue(new Promise(r=>resolve=r));await file();await date('2026-01-01');await act(async()=>button().click());await date('2026-01-02');await act(async()=>resolve(prepared));expect(host.querySelector('a')).toBeNull();});
 it('never calls a lost response success and tells users how to recover',async()=>{action.mockRejectedValue(new Error('response lost'));await file();await date('2026-01-01');await act(async()=>button().click());expect(host.textContent).toContain('belum dapat dipastikan');expect(host.textContent).toContain('muat ulang');expect(host.querySelector('a')).toBeNull();});

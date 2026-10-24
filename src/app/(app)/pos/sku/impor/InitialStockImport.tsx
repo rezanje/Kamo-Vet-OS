@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect,useRef,useState, useTransition } from "react";
 import Link from "next/link";
+import {formatImportDecimal} from '@/lib/initial-stock-decimal';
+import {InitialStockDecimalPreview} from './InitialStockDecimalPreview';
 import {
   previewSaldoAwalAccurate,
   type InitialStockState,
 } from "./actions";
 
-const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const qty = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 });
 
 export function InitialStockImport({
@@ -21,12 +22,12 @@ export function InitialStockImport({
   presetState?: InitialStockState | null;
   onPresetStateChange?: (state: InitialStockState) => void;
 }) {
-  const [state, setState] = useState<InitialStockState | null>(null);
+  const [saved, setSaved] = useState<{result:InitialStockState;file:File;master:string}|null>(null);
   const [localError, setLocalError] = useState("");
   const [rowFilter, setRowFilter] = useState<"auto" | "all" | "valid" | "skipped" | "rejected">("auto");
   const [pending, startTransition] = useTransition();
-  const displayedState = presetState ?? state;
-  const activeFilter = rowFilter === "auto" ? (displayedState?.ok ? "all" : "rejected") : rowFilter;
+  const displayedState = presetState ?? (saved?.file===sourceFile&&saved?.master===masterRunId?saved?.result:null);
+  const activeFilter = rowFilter === "auto" ? (displayedState?.rows.some(row=>row.status==='rejected') ? "rejected" : "all") : rowFilter;
   const validCount = displayedState?.rows.filter((row) => row.status === "valid").length ?? 0;
   const skippedCount = displayedState?.rows.filter((row) => row.status === "skipped").length ?? 0;
   const rejectedRows = displayedState?.rows.filter((row) => row.status === "rejected") ?? [];
@@ -35,21 +36,34 @@ export function InitialStockImport({
   const reasons = [...new Map(rejectedRows.map((row) => [row.reason ?? "Perlu klarifikasi", 0]))]
     .map(([reason]) => ({ reason, count: rejectedRows.filter((row) => row.reason === reason).length }));
   const showManualControls = !presetState;
+  const [normalizeMoney,setNormalizeMoney]=useState(false);
+  const [asOf,setAsOf]=useState('');
+  const generation=useRef(0),request=useRef<number|null>(null);
+  const invalidate=()=>{generation.current++;request.current=null;setSaved(null);setLocalError('');};
+  useEffect(()=>{const activeGeneration=generation;activeGeneration.current++;request.current=null;return()=>{activeGeneration.current++;};},[sourceFile,masterRunId]);
 
   const run = () => {
+    if(request.current!==null)return;
     if (!sourceFile || !masterRunId) {
       setLocalError("Konfirmasi Barang & Jasa wajib selesai dulu.");
       return;
     }
     setLocalError("");
+    const token=generation.current;request.current=token;
     startTransition(async () => {
+      try{
       const data = new FormData();
       data.append("initial_stock_file", sourceFile);
       data.append("master_run_id", masterRunId);
+      data.set('initial_stock_as_of',asOf);
+      data.set('valuation_policy',normalizeMoney?'HALF_UP_BATCH_V1':'STRICT');
       const result = await previewSaldoAwalAccurate(data);
-      setRowFilter(result.ok ? "all" : "rejected");
-      setState(result);
+      if(token!==generation.current)return;
+      setRowFilter(result.rows.some(row=>row.status==='rejected') ? "rejected" : "all");
+      setSaved({result,file:sourceFile,master:masterRunId});
       onPresetStateChange?.(result);
+      }catch{if(token===generation.current)setLocalError('Hasil persiapan belum dapat dipastikan. Muat ulang untuk memeriksa batch tersimpan; stok dan jurnal belum dinyatakan masuk.');}
+      finally{if(token===generation.current)request.current=null;}
     });
   };
 
@@ -58,17 +72,19 @@ export function InitialStockImport({
       {showManualControls && <>
         <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Saldo Stok Awal</div>
         <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3, lineHeight: 1.55 }}>
-          Memakai file yang sama. Cabang, gudang, dan tanggal dibaca otomatis dari file.
+          Memakai file yang sama. Periksa tujuan dan pilih tanggal posisi saldo awal secara eksplisit.
         </div>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
           <span style={{ fontSize: 11, color: sourceFile && masterRunId ? "#166534" : "var(--tm)" }}>
             <i className="ti ti-file-spreadsheet" /> {sourceFile && masterRunId ? sourceFile.name : "Pilih dan cek file impor dulu"}
           </span>
-          <button type="button" className="btn-acc" disabled={pending || !sourceFile || !masterRunId} onClick={run}>
+          <button type="button" className="btn-acc" disabled={pending || !sourceFile || !masterRunId||!asOf} onClick={run}>
             <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek saldo"}
           </button>
         </div>
+        <label>Tanggal posisi saldo awal <input type="date" required value={asOf} onChange={e=>{invalidate();setAsOf(e.target.value);}}/></label>
+        <label style={{display:'block'}}><input type="checkbox" aria-label="Bulatkan nilai uang ke 2 desimal" checked={normalizeMoney} onChange={e=>{invalidate();setNormalizeMoney(e.target.checked);}}/> Bulatkan total nilai uang ke 2 desimal (HALF_UP). Jumlah stok tetap presisi; file tidak perlu diedit.</label>
       </>}
 
       {localError && (
@@ -83,9 +99,10 @@ export function InitialStockImport({
             <span className="badge g">Siap {validCount}</span>
             <span className="badge y">Dilewati {skippedCount}</span>
             <span className="badge r">Perlu klarifikasi {rejectedCount}</span>
-            <span className="badge b">Qty dasar {qty.format(displayedState.source_qty)}</span>
-            <span className="badge y">Nilai {rupiah.format(displayedState.source_value)}</span>
+            <span className="badge b">Qty dasar {formatImportDecimal(displayedState.decimal_preview?.quantity??displayedState.source_qty)}</span>
+            <span className="badge y">Nilai Rp {formatImportDecimal(displayedState.decimal_preview?.source_value??displayedState.source_value)}</span>
           </div>
+          <InitialStockDecimalPreview preview={displayedState.decimal_preview}/>
           {rejectedCount > 0 ? (
             <div className="p2ban" style={{ marginTop: 10, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
               <b>{rejectedCount} baris tidak masuk — {validCount} saldo aman tetap bisa diposting.</b>
@@ -94,7 +111,7 @@ export function InitialStockImport({
             </div>
           ) : (
             <div className="p2ban" style={{ marginTop: 10, background: "#f0fdf4", border: ".5px solid #bbf7d0", color: "#166534" }}>
-              Semua saldo yang akan masuk sudah siap. {skippedCount} baris jasa atau saldo nol dilewati dan tidak menghalangi posting.
+              {displayedState.ok ? "Baris saldo sudah diperiksa; lanjutkan peninjauan batch sebelum posting." : displayedState.message} {skippedCount} baris jasa atau saldo nol dilewati.
             </div>
           )}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
@@ -113,7 +130,7 @@ export function InitialStockImport({
               <tbody>{visibleRows.map((row) => (
                 <tr key={`${row.row}-${row.itemCode}`}>
                   <td>{row.sourceRows?.join(", ") ?? row.row}</td><td>{row.itemCode}{row.itemName ? ` — ${row.itemName}` : ""}</td><td>{row.unit}</td>
-                  <td>{qty.format(row.baseQty)}</td>
+                  <td>{formatImportDecimal(row.baseQtyExact??row.baseQty)}</td>
                   <td><span className={`badge ${row.status === "valid" ? "g" : row.status === "skipped" ? "y" : "r"}`}>{row.status === "valid" ? "Siap" : row.status === "skipped" ? "Dilewati" : "Klarifikasi"}</span></td>
                   <td style={{ color: row.status === "rejected" ? "#b91c1c" : "var(--tm)" }}>{row.reason ?? "Siap"}</td>
                 </tr>

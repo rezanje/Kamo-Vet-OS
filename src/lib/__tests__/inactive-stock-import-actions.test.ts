@@ -32,11 +32,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 
 import { preflightSaldoAwalSekali, previewSaldoAwalAccurate } from "@/app/(app)/pos/sku/impor/actions";
 
-async function form(disableInFile = false) {
+async function form(disableInFile = false, decimal = false) {
   const book = new ExcelJS.Workbook(), sheet = book.addWorksheet("Barang & Jasa");
   sheet.addRow(["Kategori Barang", "Kode Barang", "Nama Barang", "Jenis Barang", "Satuan", "Non Aktif", "Cabang Saldo", "Gudang Saldo Awal", "Kuantitas Saldo Awal", "Satuan Saldo Awal", "Nilai Satuan", "Per Tanggal"]);
   for (const [code, type, disabled] of [["FIX-A", "INV", false], ["FIX-I", "INV", disableInFile], ["FIX-S", "SVC", false]]) {
-    sheet.addRow(["Fiction", code, "Fiction " + code, type, "PCS", disabled ? "Ya" : "Tidak", "FB", "FW", 1, "PCS", 10, null]);
+    sheet.addRow(["Fiction", code, "Fiction " + code, type, "PCS", disabled ? "Ya" : "Tidak", "FB", "FW", decimal&&code==="FIX-A"?"0.1000000000000000001":1, "PCS", decimal&&code==="FIX-A"?"10.05":10, null]);
   }
   const result = new FormData();
   result.set("initial_stock_file", new File([Buffer.from(await book.xlsx.writeBuffer())], "fiction-inactive.xlsx"));
@@ -64,4 +64,22 @@ it("projects an explicitly inactive source master as a clarification before stoc
   expect(result.rows.find(row => row.itemCode === "FIX-I")).toMatchObject({ status: "rejected", reason: expect.stringMatching(/tidak aktif/i) });
   expect(result.rows.find(row => row.itemCode === "FIX-A")?.status).toBe("valid");
   expect(fixture.rpc).not.toHaveBeenCalled();
+});
+
+it("passes exact source quantities and explicit normalization to preparation, with stable retry identity",async()=>{
+ const data=await form(false,true);data.set('valuation_policy','HALF_UP_BATCH_V1');
+ await previewSaldoAwalAccurate(data);await previewSaldoAwalAccurate(data);
+ expect(fixture.rpc.mock.calls.map(call=>call[0])).toEqual(['prepare_accurate_initial_stock','prepare_accurate_initial_stock']);
+ const first=fixture.rpc.mock.calls[0][1],second=fixture.rpc.mock.calls[1][1];
+ expect(first.p_policy).toBe('HALF_UP_BATCH_V1');expect(second.p_source_hash).toBe(first.p_source_hash);
+ expect(first.p_rows[0].payload).toMatchObject({base_qty:'0.1000000000000000001',source_values:[{qty:'0.1000000000000000001',unit_cost:'10.05',factor:'1',unit:'PCS'}]});
+ data.set('valuation_policy','STRICT');await previewSaldoAwalAccurate(data);
+ expect(fixture.rpc.mock.calls[2][1].p_source_hash).not.toBe(first.p_source_hash);
+});
+it("retains exact preview evidence when the database rejects strict monetary precision",async()=>{
+ fixture.rpc.mockResolvedValue({data:null,error:{message:'Nilai sumber belum tepat dua desimal. Pilih kebijakan normalisasi.'}});
+ const result=await previewSaldoAwalAccurate(await form(false,true));
+ expect(result.ok).toBe(false);expect(result.run_id).toBeNull();expect(result.message).toMatch(/tanpa mengedit file/);
+ expect(result.decimal_preview).toMatchObject({quantity:'0.1000000000000000001',source_value:'1.005000000000000001005',rounded_value:'1.01',rounding_delta:'0.004999999999999998995'});
+ expect(fixture.rpc.mock.calls.map(call=>call[0])).toEqual(['prepare_accurate_initial_stock']);
 });
