@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { readCompleteList, ListLoadError } from "@/lib/checked-list";
 import { HitungForm, type BarisHitung } from "./HitungForm";
 
 // Penyedia data layar hitung. Yang dikirim ke peramban hanya identitas barang dan
@@ -7,45 +8,45 @@ import { HitungForm, type BarisHitung } from "./HitungForm";
 export async function DaftarHitung({ orderId, warehouseId }: { orderId: string; warehouseId: string }) {
   const supabase = await createClient();
 
-  const { data: lingkupRows } = await supabase
-    .from("opname_order_items").select("item_id").eq("order_id", orderId);
-  const lingkup = (lingkupRows ?? []).map((r) => r.item_id as string);
-
-  let q = supabase
-    .from("stock")
-    .select("item_id, items(code, name, unit, sell_price, item_categories(name))")
-    .eq("warehouse_id", warehouseId);
-  if (lingkup.length > 0) q = q.in("item_id", lingkup);
-
-  const [{ data: stokRows }, { data: kunciRows }] = await Promise.all([
-    q,
-    supabase.from("opname_counts").select("item_id, qty_fisik").eq("order_id", orderId),
-  ]);
-
-  type StokRow = {
-    item_id: string;
-    items: {
-      code: string; name: string; unit: string | null; sell_price: number;
-      item_categories: { name: string } | { name: string }[] | null;
-    } | null;
+  type CountItem = {
+    code: string; name: string; unit: string | null; sell_price: number;
+    item_categories: { name: string } | { name: string }[] | null;
   };
+  type CountSource = { id: string; item_id: string; items: CountItem | CountItem[] | null };
 
-  const rows: BarisHitung[] = ((stokRows ?? []) as unknown as StokRow[])
-    .filter((s) => s.items)
+  const lingkupRows = await readCompleteList<CountSource>((from, to) => supabase
+    .from("opname_order_items")
+    .select("id,item_id,items(code,name,unit,sell_price,item_categories(name))", { count: "exact" })
+    .eq("order_id", orderId).order("id").range(from, to), "Lingkup opname");
+  // A scoped zero-stock SKU may have no stock row yet; read its item from the
+  // order itself. Only an unrestricted count uses the warehouse stock list.
+  const sourceRows = lingkupRows.length ? lingkupRows : await readCompleteList<CountSource>((from, to) => supabase
+    .from("stock")
+    .select("id,item_id,items(code,name,unit,sell_price,item_categories(name))", { count: "exact" })
+    .eq("warehouse_id", warehouseId).order("id").range(from, to), "Stok gudang opname");
+  if (sourceRows.some((row) => !row.items || (Array.isArray(row.items) && row.items.length !== 1))) {
+    throw new ListLoadError("Barang dalam lingkup opname belum dapat dimuat lengkap. Coba muat ulang.");
+  }
+  const kunciRows = await readCompleteList<{ id: string; item_id: string; qty_fisik: number }>((from, to) => supabase
+    .from("opname_counts").select("id,item_id,qty_fisik", { count: "exact" })
+    .eq("order_id", orderId).order("id").range(from, to), "Hitungan terkunci");
+
+  const rows: BarisHitung[] = sourceRows
     .map((s) => {
-      const kat = Array.isArray(s.items!.item_categories) ? s.items!.item_categories[0] : s.items!.item_categories;
+      const item = Array.isArray(s.items) ? s.items[0] : s.items!;
+      const kat = Array.isArray(item.item_categories) ? item.item_categories[0] : item.item_categories;
       return {
         item_id: s.item_id,
-        code: s.items!.code,
-        name: s.items!.name,
-        unit: s.items!.unit ?? "",
+        code: item.code,
+        name: item.name,
+        unit: item.unit ?? "",
         kategori: kat?.name ?? "Tanpa kategori",
-        sell_price: Number(s.items!.sell_price) || 0,
+        sell_price: Number(item.sell_price) || 0,
       };
     });
 
   const terkunci = Object.fromEntries(
-    ((kunciRows ?? []) as { item_id: string; qty_fisik: number }[]).map((r) => [r.item_id, Number(r.qty_fisik)]),
+    kunciRows.map((r) => [r.item_id, Number(r.qty_fisik)]),
   );
 
   return <HitungForm key={orderId} orderId={orderId} rows={rows} terkunci={terkunci} />;

@@ -63,7 +63,7 @@ export function LingkupPicker({ items, scope }: { items: ItemPilihan[]; scope:st
 
       <div style={{ display: "flex", gap: 6, marginBottom: parsial ? 8 : 0, flexWrap: "wrap" }}>
         {([
-          { v: "auto", label: `${TERLARIS + ACAK} barang otomatis`, desc: `${TERLARIS} terlaris + ${ACAK} acak` },
+          { v: "auto", label: `${TERLARIS + ACAK} pilihan awal otomatis`, desc: `${TERLARIS} terlaris + ${ACAK} acak; varian satu keluarga ikut` },
           { v: "penuh", label: "Seluruh gudang", desc: "Semua barang dihitung" },
           { v: "parsial", label: "Pilih sendiri", desc: "Sisanya tidak tersentuh" },
         ] as { v: Mode; label: string; desc: string }[]).map((o) => (
@@ -80,7 +80,7 @@ export function LingkupPicker({ items, scope }: { items: ItemPilihan[]; scope:st
 
       {mode === "auto" && (
         <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 6 }}>
-          Daftar disusun sistem saat tombol mulai ditekan — petugas tidak bisa memilih barang yang dihitung.
+          Daftar disusun sistem saat tombol mulai ditekan. Semua anggota keluarga varian terdaftar ikut dihitung, termasuk stok nol, sehingga jumlah akhir dapat melebihi 30 SKU.
         </div>
       )}
 

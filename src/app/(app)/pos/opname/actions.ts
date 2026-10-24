@@ -8,6 +8,7 @@ import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
 import { getOpenShift } from "@/lib/shift";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -98,6 +99,28 @@ export async function buatPerintah(formData: FormData) {
     if (autoErr) fail("Gagal menyusun daftar barang otomatis.");
     lingkup = ((auto ?? []) as { item_id: string }[]).map((r) => r.item_id);
     if (lingkup.length === 0) fail("Gudang ini belum punya barang ber-stok untuk dihitung.");
+    try {
+      const selectedMembers = await readCompleteList<{ id: string; family_id: string }>(
+        (from, to) => supabase.from("item_variant_members")
+          .select("id:item_id,family_id", { count: "exact" }).in("item_id", lingkup)
+          .order("item_id").range(from, to), "Keluarga varian opname",
+      );
+      const familyIds = [...new Set(selectedMembers.map((row) => row.family_id))];
+      if (familyIds.length) {
+        type Member = { id: string; items: { item_type: string; is_active: boolean } | { item_type: string; is_active: boolean }[] | null };
+        const members = await readCompleteList<Member>(
+          (from, to) => supabase.from("item_variant_members")
+            .select("id:item_id,items(item_type,is_active)", { count: "exact" }).in("family_id", familyIds)
+            .order("item_id").range(from, to), "Anggota varian opname",
+        );
+        lingkup = [...new Set([...lingkup, ...members.filter((row) => {
+          const item = Array.isArray(row.items) ? row.items[0] : row.items;
+          return item?.item_type === "Persediaan" && item.is_active;
+        }).map((row) => row.id)])];
+      }
+    } catch {
+      fail("Gagal memuat daftar varian lengkap. Perintah opname belum dibuat; coba lagi.");
+    }
   }
 
   const no_opname = await nextNo(supabase, "opname_orders", "OPO");
