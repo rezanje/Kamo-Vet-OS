@@ -5,6 +5,7 @@ import { Donut, LineChart, CashFlowChart } from "@/components/Charts";
 import { bacaSudut, LABEL_SUDUT, SUDUT, type Sudut } from "@/lib/dashboard-peran";
 import { hariIniWIB } from "@/lib/tanggal";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
+import { queueDayBounds } from "@/lib/queue";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const rpJt = (n: number) => {
@@ -205,18 +206,22 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
   const awalBulan = `${hariIni.slice(0, 8)}01`;
 
   if (sudut === "operasional") {
+    const hari = queueDayBounds(hariIni)!;
     const [
-      { data: visits }, { count: menunggu }, { data: sales }, { data: stok },
+      { count: kunjungan, error: kunjunganError },
+      { count: grooming, error: groomingError },
+      { count: menunggu }, { data: sales }, { data: stok },
     ] = await Promise.all([
-      supabase.from("visits").select("poli").gte("created_at", mulai).lte("created_at", akhir),
+      supabase.from("visits").select("id", { count: "exact", head: true })
+        .gte("created_at", hari.from).lt("created_at", hari.until),
+      supabase.from("visits").select("id", { count: "exact", head: true })
+        .ilike("poli", "%grooming%").gte("created_at", hari.from).lt("created_at", hari.until),
       supabase.from("visits").select("*", { count: "exact", head: true })
         .eq("status", "Menunggu").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),
     ]);
 
-    const kunjungan = (visits ?? []) as { poli: string | null }[];
-    const grooming = kunjungan.filter((v) => (v.poli ?? "").toLowerCase().includes("grooming")).length;
     const struk = (sales ?? []).filter(isCompletedSale) as { total: number }[];
     const omzet = struk.reduce((a, s) => a + Number(s.total), 0);
     type StokRow = { qty: number; items: { name: string; min_stock: number } | { name: string; min_stock: number }[] | null };
@@ -228,14 +233,18 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
     return (
       <>
         <div className="pg-hd">Dashboard</div>
-        <div className="pg-sub">Operasional hari ini · {hariIni}</div>
+        <div className="pg-sub">Operasional hari ini · {hariIni} WIB</div>
         <PilihSudut aktif={sudut} />
 
         <div className="kgrid">
-          <Kpi label="Kunjungan klinik hari ini" value={`${kunjungan.length}`} tone="b" />
-          <Kpi label="Grooming hari ini" value={`${grooming}`} tone="g" />
+          <Kpi label="Kunjungan klinik hari ini" value={kunjunganError || kunjungan == null ? "—" : `${kunjungan}`} tone="b" />
+          <Kpi label="Grooming hari ini" value={groomingError || grooming == null ? "—" : `${grooming}`} tone="g" />
           <Kpi label="Sedang menunggu antrian" value={`${menunggu ?? 0}`} tone={(menunggu ?? 0) > 0 ? "o" : "g"} />
           <Kpi label="Transaksi kasir hari ini" value={`${struk.length}`} tone="b" />
+        </div>
+        <div style={{ fontSize: 10.5, color: "var(--tm)", margin: "-5px 0 13px" }}>
+          Grooming menghitung kunjungan terdaftar hari ini, semua status, sesuai cabang yang boleh diakses.
+          {(kunjunganError || groomingError) && " Sebagian angka klinik belum dapat dibaca."}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11, marginBottom: 13 }}>

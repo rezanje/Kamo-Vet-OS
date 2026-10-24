@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { g
       : [];
     const result = () => ({ data: data(), error: null, count: data().length });
     const q = { select: () => q, eq: (key: string, value: unknown) => { filters[key] = value; return q; },
-      is: () => q, in: () => q, order: () => q, limit: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q,
+      is: () => q, in: () => q, order: () => q, limit: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q, ilike: () => q,
       range: async () => result(), maybeSingle: async () => ({ data: table === "profiles" ? { role: "ADMIN" } : data()[0] ?? null, error: null }),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve) };
     return q;
