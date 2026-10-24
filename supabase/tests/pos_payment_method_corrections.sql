@@ -70,6 +70,12 @@ select pg_temp.assert_ok((select count(*)=1 from sale_items where sale_id='e8700
 select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000001',0,'j02-correct-one','Kasir salah pilih metode',0,100000);
 select pg_temp.assert_ok((select count(*)=1 from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000001'),
  'same retry key does not create a second correction');
+select pg_temp.reject($q$select cancel_posted_sale('e8700000-0000-4000-8000-000000000001',1,'j02-cancel-after','Struk perlu dibatalkan')$q$,
+ 'old cancellation cannot reverse only the original cash ledger','Koreksi metode pembayaran perlu rekonsiliasi sebelum pembatalan');
+select pg_temp.assert_ok((select voided_at is null from sales where id='e8700000-0000-4000-8000-000000000001')
+ and (select count(*)=2 from journal_entries where source_ref=(select id::text from sale_payment_corrections
+  where sale_id='e8700000-0000-4000-8000-000000000001')),
+ 'rejected cancellation rolls back all its attempted writes');
 select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000001',0,'j02-correct-one','Alasan berbeda',0,100000)$q$,
  'changed retry payload');
 select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000001',0,'j02-stale','Kasir salah pilih metode',50000,50000)$q$,

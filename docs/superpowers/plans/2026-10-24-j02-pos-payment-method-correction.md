@@ -16,6 +16,7 @@
 - Preserve sale identity, items, stock, total, tax, fees, points, and unrelated journal effects.
 - Correct only Tunai/Transfer amounts; preserve other payment methods and fee snapshots. Block cash-change and nonzero cash/transfer merchant fee cases pending reconciliation.
 - Block closed source/correction periods, reconciled affected accounts, closed shift, existing return/refund, stale revision, and incomplete or ambiguous source journals.
+- Block cancellation after a payment correction until the old cancellation workflow can reverse the correction chain; its current implementation reverses the original sale journal only.
 - No broad role grant. Only active OWNER with source-branch access may correct, using a retry key and required reason.
 - A migration that alters immutable guards and grants a new RPC needs separate action-time authorization before application to hosted data.
 - Keep Checklist G/H separate; unit and isolated SQL tests are not business simulation.

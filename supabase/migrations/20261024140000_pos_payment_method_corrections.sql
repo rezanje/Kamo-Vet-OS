@@ -35,6 +35,22 @@ create policy sale_payment_corrections_owner_read on public.sale_payment_correct
  and public.user_can_access_branch(branch_id)
 );
 
+-- The deployed cancellation RPC reverses the original sale journal only.
+-- After a payment correction that would leave the replacement posting live.
+-- Fail closed until cancellation can reconcile the complete correction chain.
+create function public.guard_corrected_sale_cancellation() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if new.voided_at is distinct from old.voided_at
+  and exists(select 1 from public.sale_payment_corrections where sale_id=old.id) then
+  raise exception 'Koreksi metode pembayaran perlu rekonsiliasi sebelum pembatalan';
+ end if;
+ return new;
+end $$;
+revoke all on function public.guard_corrected_sale_cancellation() from public,anon,authenticated,service_role;
+create trigger pos_sale_corrected_cancel_guard before update on public.sales for each row
+ execute function public.guard_corrected_sale_cancellation();
+
 create table public.sale_payment_correction_requests (
  actor_id uuid not null references public.profiles(id) on delete restrict,
  request_key text not null,

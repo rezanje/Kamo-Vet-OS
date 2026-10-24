@@ -211,7 +211,9 @@ export default async function PenjualanDetailPage({
         {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
           revision={sale.revision} cash={cash} transfer={transfer}
           fixed={payments.filter(part => part.method !== "Tunai" && part.method !== "Transfer")} />}
-        <SaleCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />
+        {correctionError ? <p>Riwayat koreksi belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>
+          : corrections.length > 0 ? <p>Pembatalan penjualan yang sudah dikoreksi memerlukan rekonsiliasi seluruh jurnal koreksi. Hubungi finance sebelum membatalkan.</p>
+          : <SaleCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />}
       </details>}
       <DokumenPanel modul="penjualan" refId={sale.id} kembali={`/penjualan/${sale.id}`} />
     </>
