@@ -133,6 +133,7 @@ export type AccurateImportState = {
   hierarchy_count: number;
   rows: AccuratePreviewRow[];
   total_rows: number;
+  category_change_count: number;
   summary: Record<AccuratePreviewStatus, number>;
   new_masters: {
     categories: string[];
@@ -211,6 +212,7 @@ function stateError(message: string): AccurateImportState {
     hierarchy_count: 0,
     rows: [],
     total_rows: 0,
+    category_change_count: 0,
     summary: emptySummary(),
     new_masters: { categories: [], brands: [], units: [], suppliers: [] },
     run_id: null,
@@ -533,6 +535,7 @@ function invalidMasterInput(parsed: Awaited<ReturnType<typeof bacaUploads>>["par
     ...stateError(`Tidak ada barang/jasa yang siap diimpor. ${parsed.rejected.length} baris ditolak, ${parsed.skipped.length} dilewati. ${reasons.length ? reasons.join(" ") : "Isi baris master dan kolom wajib pada file, lalu jalankan Cek perubahan lagi."}`),
     rows: ringkasPreviewAccurate(rows),
     total_rows: rows.length,
+    category_change_count: 0,
     summary: summarize(rows),
   };
 }
@@ -587,6 +590,7 @@ export async function previewImporAccurate(formData: FormData): Promise<Accurate
       hierarchy_count: hierarchyCount,
       rows: ringkasPreviewAccurate(rows),
       total_rows: rows.length,
+      category_change_count: rows.filter((row) => row.status === "Update" && row.changed_fields.includes("category_name")).length,
       summary,
       new_masters: newMasters(parsed.rows, master, categories),
       run_id: importRun.id,
@@ -931,6 +935,7 @@ export async function konfirmasiImporAccurate(formData: FormData): Promise<Accur
       hierarchy_count: categories.filter((row) => row.parent_name).length,
       rows: ringkasPreviewAccurate(rows),
       total_rows: rows.length,
+      category_change_count: rows.filter((row) => row.status === "Update" && row.changed_fields.includes("category_name")).length,
       summary,
       new_masters: { categories: [], brands: [], units: [], suppliers: [] },
       run_id: runId,

@@ -337,6 +337,19 @@ describe("buatPreviewAccurate", () => {
 });
 
 describe("ringkasPreviewAccurate", () => {
+  it("menampilkan perubahan kategori yang muncul sesudah batas sampel", () => {
+    const rows = Array.from({ length: 205 }, (_, index) => ({
+      row_no: index + 1,
+      status: "Update" as const,
+      changed_fields: index === 204 ? ["category_name"] : ["sell_price"],
+    }));
+
+    const hasil = ringkasPreviewAccurate(rows, 200);
+
+    expect(hasil).toHaveLength(200);
+    expect(hasil.some((row) => row.row_no === 205)).toBe(true);
+  });
+
   it("membatasi data tampilan tanpa menyembunyikan baris yang perlu perhatian", () => {
     const hasil = ringkasPreviewAccurate([
       { row_no: 1, status: "Baru" as const },

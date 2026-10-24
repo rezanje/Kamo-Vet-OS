@@ -660,7 +660,7 @@ export function buatPreviewAccurate(
  * Baris yang perlu perhatian selalu didahulukan supaya tidak tersembunyi oleh
  * ribuan data normal di awal file.
  */
-export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_no" | "status">>(
+export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_no" | "status"> & Partial<Pick<AccuratePreviewRow, "changed_fields">>>(
   rows: T[],
   batas = 200,
 ): T[] {
@@ -668,8 +668,10 @@ export function ringkasPreviewAccurate<T extends Pick<AccuratePreviewRow, "row_n
   if (rows.length <= batas) return rows;
 
   const perluPerhatian = rows.filter((row) => row.status === "Dilewati" || row.status === "Ditolak");
-  const sampelLain = rows.filter((row) => row.status !== "Dilewati" && row.status !== "Ditolak");
-  return [...perluPerhatian.slice(0, batas), ...sampelLain.slice(0, Math.max(0, batas - perluPerhatian.length))]
+  const perubahanKategori = rows.filter((row) => row.status === "Update" && row.changed_fields?.includes("category_name"));
+  const sampelLain = rows.filter((row) => row.status !== "Dilewati" && row.status !== "Ditolak"
+    && !(row.status === "Update" && row.changed_fields?.includes("category_name")));
+  return [...perluPerhatian, ...perubahanKategori, ...sampelLain].slice(0, batas)
     .sort((a, b) => a.row_no - b.row_no);
 }
 

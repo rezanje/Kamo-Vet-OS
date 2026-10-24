@@ -129,6 +129,11 @@ it("changes the category on the existing item even when its stored code has spac
   expect(state.items).toHaveLength(1);
   expect(state.items[0]).toMatchObject({ id: "existing", category_id: "new" });
 });
+it("counts every category change in the master preview", async () => {
+  const result = await previewImporAccurate(await input([["A-1", "Barang", "INV", "BARU", "", "PCS"]]));
+  expect(result.ok).toBe(true);
+  expect(result.category_change_count).toBe(1);
+});
 it("reuses existing categories across a file with repeated child names", async () => {
   state.items[0].code = "A-1";
   state.categories = [
