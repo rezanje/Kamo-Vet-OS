@@ -53,10 +53,19 @@ it("shows the full all-branch grooming count when visit rows exceed the API page
   expect(html).toContain("1400");
   expect(html).toContain("semua status");
   expect(html).toContain("WIB");
-  expect(calls.some((call) => call.table === "visits" && call.count && call.head && call.filters.some(([op, field]) => op === "ilike" && field === "poli"))).toBe(true);
+  const groomingQuery = calls.find((call) => call.table === "visits" && call.count && call.head && call.filters.some(([op, field]) => op === "ilike" && field === "poli"));
+  expect(groomingQuery).toBeDefined();
+  expect(groomingQuery?.filters.some(([op, field]) => op === "eq" && field === "status")).toBe(false);
+  expect(groomingQuery?.filters.some(([, field]) => field === "branch_id")).toBe(false);
+  const from = groomingQuery?.filters.find(([op, field]) => op === "gte" && field === "created_at")?.[2];
+  const until = groomingQuery?.filters.find(([op, field]) => op === "lt" && field === "created_at")?.[2];
+  expect(new Date(String(until)).getTime() - new Date(String(from)).getTime()).toBe(86_400_000);
+  expect(new Date(String(from)).getUTCHours()).toBe(17); // WIB midnight
+  const waitingQuery = calls.find((call) => call.table === "visits" && call.filters.some(([op, field, value]) => op === "eq" && field === "status" && value === "Menunggu"));
+  expect(waitingQuery?.filters.some(([op, field]) => op === "lt" && field === "created_at")).toBe(true);
 });
 
-it("shows only the visit count returned under a branch-limited account", async () => {
+it("renders the branch-scoped count returned by the authenticated client", async () => {
   fixture.role = "STAFF"; fixture.visits = 4; fixture.grooming = 3;
   try {
     const html = await renderOperationalDashboard();

@@ -217,7 +217,7 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
       supabase.from("visits").select("id", { count: "exact", head: true })
         .ilike("poli", "%grooming%").gte("created_at", hari.from).lt("created_at", hari.until),
       supabase.from("visits").select("*", { count: "exact", head: true })
-        .eq("status", "Menunggu").gte("created_at", mulai).lte("created_at", akhir),
+        .eq("status", "Menunggu").gte("created_at", hari.from).lt("created_at", hari.until),
       supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),
     ]);
