@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { nilaiBaris } from "@/lib/tagihan-klinik";
 import { lineDiscount } from "@/lib/pos-calc";
+import { PosDecimal } from "@/lib/pos-money";
 import { jenisBarisKlinik, kunciRacikan, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
@@ -35,6 +36,7 @@ type SaleItem = {
   item_discount_value: number | null; promo_discount: number | null;
   sales: Rel<SaleCompletion & {
     id: string; no_struk: string | null; created_at: string; channel: string | null;
+    total: number; merchant_fee_total: number | null;
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
   }>;
 };
@@ -81,12 +83,44 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         }) : Promise.resolve([] as InvoiceItem[]),
         bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("sale_items")
-            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, no_struk, created_at, channel, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
+            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
             .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
             .order("id").range(awal, ujung);
           return { data: data as unknown as SaleItem[] | null, error, count };
         }) : Promise.resolve([] as SaleItem[]),
       ]);
+
+      // Alokasikan selisih neto struk POS setelah diskon baris. Nilai struk
+      // tersimpan adalah sumber kebenaran; fee merchant bukan pendapatan item.
+      const posLines = new Map<string, SaleItem[]>();
+      for (const item of saleItems) {
+        const sale = one(item.sales);
+        if (!sale || sale.channel || !isCompletedSale(sale)) continue;
+        if (!posLines.has(sale.id)) posLines.set(sale.id, []);
+        posLines.get(sale.id)!.push(item);
+      }
+      const netoPos = new Map<string, number>();
+      for (const items of posLines.values()) {
+        const sale = one(items[0].sales)!;
+        const cents = (value: number) => {
+          const result = new PosDecimal(value).times(100).toDecimalPlaces(0).toNumber();
+          if (!Number.isSafeInteger(result)) throw new Error("Nilai struk tidak valid untuk laporan per item.");
+          return result;
+        };
+        const bases = items.map(item => new PosDecimal(item.qty).times(item.harga).minus(lineDiscount(item)));
+        const baseTotal = bases.reduce((sum, value) => sum.plus(value), new PosDecimal(0));
+        const target = cents(new PosDecimal(sale.total).minus(sale.merchant_fee_total ?? 0).toNumber());
+        if (target < 0 || new PosDecimal(target).div(100).gt(baseTotal.toDecimalPlaces(2)) || bases.some(value => value.isNegative())) {
+          throw new Error("Nilai struk tidak cocok dengan baris untuk laporan per item.");
+        }
+        let cumulative = new PosDecimal(0), allocated = 0;
+        items.forEach((item, index) => {
+          cumulative = cumulative.plus(bases[index]);
+          const next = baseTotal.isZero() ? 0 : new PosDecimal(target).times(cumulative).div(baseTotal).toDecimalPlaces(0).toNumber();
+          netoPos.set(item.id, (next - allocated) / 100);
+          allocated = next;
+        });
+      }
 
       // Invoice menyimpan nama racikan sebagai baris obat biasa. Cocokkan nama
       // dengan resep di kunjungan sama agar racikan terpisah dari obat ketikan.
@@ -140,13 +174,15 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
           qty, harga, item_discount_type: item.item_discount_type,
           item_discount_value: item.item_discount_value, promo_discount: item.promo_discount,
         });
+        const nilai = itemKanal === "POS" ? netoPos.get(item.id) : qty * harga - diskon;
+        if (nilai == null) throw new Error("Alokasi nilai baris POS tidak tersedia.");
         rows.push({
           id: `kasir-${item.id}`, waktu: sale.created_at, dokumen: sale.no_struk ?? "—",
           href: `/penjualan/${sale.id}`, kanal: itemKanal, jenis: "Barang",
           cabang: one(sale.branches)?.name ?? "—", pelanggan: one(sale.customers)?.name ?? "—",
           hewan: "—", nama: item.nama,
           pelaksana: item.service_performers ? servicePerformerNames(item.service_performers).join(" · ") : "—",
-          qty, harga, diskon, nilai: qty * harga - diskon, status: "—",
+          qty, harga, diskon: new PosDecimal(qty).times(harga).minus(nilai).toNumber(), nilai, status: "—",
         });
       }
     } catch (error) {

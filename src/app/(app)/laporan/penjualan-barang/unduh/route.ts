@@ -34,12 +34,14 @@ export async function GET(request: Request) {
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
   };
-  const columns = ["Waktu WIB", "No. dokumen", "Sumber", "Jenis", "Cabang", "Pelanggan", "Pasien", "Barang / layanan", "Pelaksana tersimpan", "Qty", "Harga", "Diskon item", "Nilai baris", "Status"];
+  const columns = ["Waktu WIB", "No. dokumen", "Sumber", "Jenis", "Cabang", "Pelanggan", "Pasien", "Barang / layanan", "Pelaksana tersimpan", "Qty", "Harga", kanal === "POS" ? "Potongan / pembulatan" : "Diskon item", "Nilai baris", "Status"];
   const data = rows.map(row => [waktuWIB(row.waktu), row.dokumen, row.kanal, row.jenis, row.cabang, row.pelanggan, row.hewan, row.nama, row.pelaksana, row.qty, row.harga, row.diskon, row.nilai, row.status]);
-  const context = "Nilai setelah diskon item. Diskon tingkat nota, retur kasir, dan pajak tidak dibagi ke tiap baris; total dapat berbeda dari pembayaran. Racikan dicocokkan dengan resep pada kunjungan yang sama.";
+  const context = kanal === "POS"
+    ? "Neto POS dibagi ke tiap barang dari total struk sebelum fee merchant, termasuk diskon nota, voucher, poin, dan pembulatan. Selisih pembulatan bisa negatif. Retur belum dialokasikan ke baris."
+    : "Nilai setelah diskon item. Diskon tingkat nota, retur, dan pajak belum dibagi ke tiap baris; total dapat berbeda dari pembayaran. Racikan dicocokkan dengan resep pada kunjungan yang sama.";
   const metadata: (string | number)[][] = [["Rincian penjualan per barang"], ["Dari tanggal WIB", dari], ["Sampai tanggal WIB", sampai],
     ["Sumber", kanal], ["Jenis", jenis], ["Cari", q], ["Baris penjualan", rows.length], ["Jumlah terjual", qtyTotal],
-    ["Nilai setelah diskon item (Rp)", nilaiTotal], ["Keterangan", context]];
+    [kanal === "POS" ? "Neto barang sebelum retur dan fee (Rp)" : "Nilai setelah diskon item (Rp)", nilaiTotal], ["Keterangan", context]];
   const filename = `penjualan-barang-${dari}-${sampai}`;
   if (params.get("format") === "xlsx") {
     const book = new ExcelJS.Workbook();

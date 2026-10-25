@@ -5,7 +5,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 import { ambilPenjualanBarang } from "../../app/(app)/laporan/penjualan-barang/data";
 
 const source = Array.from({ length: 1201 }, (_, index) => ({ id: String(index), nama: "Obat", qty: 2, harga: 100, item_discount_type: "nominal", item_discount_value: 10, promo_discount: 0,
-  sales: { id: `s${index}`, no_struk: `STRUK-${index}`, created_at: "2026-10-04T05:00:00Z", channel: null, branches: { name: "Kasir A" }, customers: { name: "Pemilik" } },
+  sales: { id: `s${index}`, no_struk: `STRUK-${index}`, created_at: "2026-10-04T05:00:00Z", channel: null, total: 190, merchant_fee_total: 0, branches: { name: "Kasir A" }, customers: { name: "Pemilik" } },
 }));
 const filters = { dari: "2026-10-01", sampai: "2026-10-04", kanal: "POS" as const, jenis: "Barang", q: "Obat" };
 
@@ -18,6 +18,72 @@ it("reads every source page before computing selected quantities and totals", as
   expect(result.rows.some(row => row.dokumen === "STRUK-1200")).toBe(true);
   expect(result.qtyTotal).toBe(2402);
   expect(result.nilaiTotal).toBe(1201 * 190);
+});
+
+it("allocates saved POS receipt discounts to every item before filtering the report", async () => {
+  const sale = { id: "sale", no_struk: "STRUK", created_at: "2026-10-04T05:00:00Z", channel: null,
+    subtotal: 300, discount: 180, total: 120, merchant_fee_total: 0,
+    branches: { name: "Kasir A" }, customers: { name: "Pemilik" } };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: [
+    { id: "a", nama: "Vaksin", qty: 1, harga: 100, item_discount_type: null, item_discount_value: 0, promo_discount: 0, sales: sale },
+    { id: "b", nama: "Obat", qty: 1, harga: 200, item_discount_type: "nominal", item_discount_value: 60, promo_discount: 0, sales: sale },
+  ] } }).client);
+  const all = await ambilPenjualanBarang({ ...filters, q: "" });
+  expect(all.pesanError).toBe("");
+  expect(all.rows.map(row => [row.nama, row.nilai, row.diskon])).toEqual([
+    ["Vaksin", 50, 50], ["Obat", 70, 130],
+  ]);
+  expect(all.nilaiTotal).toBe(120);
+  const filtered = await ambilPenjualanBarang({ ...filters, q: "Vaksin" });
+  expect(filtered.nilaiTotal).toBe(50);
+});
+
+it("keeps a fully discounted POS receipt at zero per item", async () => {
+  const sale = { id: "free", no_struk: "FREE", created_at: "2026-10-04T05:00:00Z", channel: null,
+    subtotal: 200, discount: 200, total: 0, merchant_fee_total: 0 };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: [
+    { id: "a", nama: "Obat A", qty: 1, harga: 100, sales: sale },
+    { id: "b", nama: "Obat B", qty: 1, harga: 100, sales: sale },
+  ] } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, q: "" });
+  expect(result.rows.map(row => row.nilai)).toEqual([0, 0]);
+  expect(result.nilaiTotal).toBe(0);
+});
+
+it("keeps merchant fees out of item revenue and allocates the last cent exactly", async () => {
+  const sale = { id: "cents", no_struk: "CENTS", created_at: "2026-10-04T05:00:00Z", channel: null,
+    subtotal: 0.03, discount: 0.01, total: 0.03, merchant_fee_total: 0.01 };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: ["a", "b", "c"].map(id => ({
+    id, nama: `Obat ${id}`, qty: 1, harga: 0.01, sales: sale,
+  })) } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, q: "" });
+  expect(result.pesanError).toBe("");
+  expect(result.rows.map(row => row.nilai)).toEqual([0.01, 0, 0.01]);
+  expect(result.nilaiTotal).toBe(0.02);
+});
+
+it("reconciles fractional-quantity lines that round only at the receipt total", async () => {
+  const sale = { id: "fraction", no_struk: "FRACTION", created_at: "2026-10-04T05:00:00Z", channel: null,
+    subtotal: 0.01, discount: 0, total: 0.01, merchant_fee_total: 0 };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: ["a", "b"].map(id => ({
+    id, nama: `Obat ${id}`, qty: 0.001, harga: 4, sales: sale,
+  })) } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, q: "" });
+  expect(result.pesanError).toBe("");
+  expect(result.rows.map(row => row.nilai)).toEqual([0.01, 0]);
+  expect(result.nilaiTotal).toBe(0.01);
+});
+
+it("does not publish item totals when the saved receipt exceeds its source lines", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: [{ id: "a", nama: "Obat", qty: 1, harga: 100,
+    sales: { id: "broken", no_struk: "BROKEN", created_at: "2026-10-04T05:00:00Z", channel: null, total: 200, merchant_fee_total: 0 },
+  }] } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, q: "" });
+  expect(result.pesanError).not.toBe("");
+  expect(result.rows).toEqual([]);
+  expect(result.nilaiTotal).toBe(0);
+  vi.restoreAllMocks();
 });
 
 it("rejects a silently capped source rather than exporting partial detail with totals", async () => {

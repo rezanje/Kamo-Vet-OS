@@ -9,7 +9,7 @@ import { downloadHppReport } from "../hpp-reports-download";
 const count = 5201;
 const id = (index: number) => String(index).padStart(5, "0");
 const saleItems = Array.from({ length: count }, (_, index) => ({ id: id(index), nama: `Obat ${id(index)}`, qty: 1, harga: 100, item_discount_type: null, item_discount_value: 0, promo_discount: 0,
-  sales: { id: `sale-${id(index)}`, no_struk: `STRUK-${id(index)}`, created_at: "2026-10-04T05:00:00Z", channel: null, branches: { name: "Kasir A" }, customers: { name: "Pemilik" } },
+  sales: { id: `sale-${id(index)}`, no_struk: `STRUK-${id(index)}`, created_at: "2026-10-04T05:00:00Z", channel: null, total: 100, merchant_fee_total: 0, branches: { name: "Kasir A" }, customers: { name: "Pemilik" } },
 }));
 const inventory = {
   stock: Array.from({ length: count }, (_, index) => ({ id: `stock-${id(index)}`, warehouse_id: "w1", item_id: `item-${id(index)}`, qty: 1 })),
