@@ -35,6 +35,7 @@ export function buildReportCatalog(role:string,rules:AturanTersimpan):CatalogRep
   if(['OWNER','FINANCE'].includes(role)){
     add({label:'Nilai Persediaan FIFO',href:'/laporan/nilai-persediaan',icon:'ti-package',bg:'#f0fdf4',fg:'#15803d'},'Persediaan');
     add({label:'HPP & Margin Racikan',href:'/laporan/margin-racikan',icon:'ti-flask',bg:'#f0fdf4',fg:'#15803d'},'Persediaan');
+    add({label:'Hasil Stok Opname',href:'/laporan/hasil-opname',icon:'ti-clipboard-check',bg:'#f0fdf4',fg:'#15803d'},'Persediaan');
   }
   return [...rows.values()].map(row=>row.href&&!bolehBukaPath(role,row.href,rules)?{...row,href:undefined,status:'restricted'}:row);
 }
