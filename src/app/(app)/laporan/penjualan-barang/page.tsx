@@ -53,7 +53,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
       ringkasan={!pesanError ? <KartuAngka items={[
         { label: "Baris penjualan", nilai: terpilih.length.toLocaleString("id-ID") },
         { label: "Jumlah terjual", nilai: qtyTotal.toLocaleString("id-ID", { maximumFractionDigits: 2 }) },
-        { label: kanal === "POS" ? "Neto barang sebelum retur dan fee" : "Nilai setelah diskon item", nilai: rupiah(nilaiTotal), warna: "#15803d" },
+        { label: kanal === "POS" ? "Neto barang sebelum retur dan fee" : kanal === "Klinik" ? "Neto baris sebelum pajak" : "Nilai setelah diskon item", nilai: rupiah(nilaiTotal), warna: "#15803d" },
       ]} /> : undefined}
     >
       {pesanError ? <div className="p2ban" style={{ color: "#b91c1c" }}>{pesanError}</div> : <>
@@ -69,7 +69,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
             <thead><tr>
               <th>Waktu</th><th>No. dokumen</th><th>Cabang</th><th>Pelanggan / pasien</th><th>Barang / layanan</th><th>Pelaksana tersimpan</th>
               <th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th>
-              <th style={{ textAlign: "right" }}>{kanal === "POS" ? "Potongan / pembulatan" : "Diskon item"}</th><th style={{ textAlign: "right" }}>Nilai baris</th>
+              <th style={{ textAlign: "right" }}>{kanal === "Online" ? "Diskon item" : "Potongan / pembulatan"}</th><th style={{ textAlign: "right" }}>Nilai baris</th>
             </tr></thead>
             <tbody>
               {terlihat.map((row) => <tr key={row.id}>
@@ -96,7 +96,9 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
           <div style={{ fontSize: 10, color: "var(--td)", marginTop: 12 }}>
             {kanal === "POS"
               ? "Neto POS dibagi ke tiap barang dari total struk sebelum fee merchant, termasuk diskon nota, voucher, poin, dan pembulatan. Selisih pembulatan bisa bernilai negatif. Retur kasir belum dialokasikan ke baris; total setelah retur dapat berbeda."
-              : "Nilai baris sudah memperhitungkan diskon per barang. Diskon tingkat nota, retur, dan pajak belum dibagi ke tiap baris; total bisa berbeda dari pembayaran."}
+              : kanal === "Klinik"
+                ? "Neto invoice klinik dibagi ke tiap baris setelah diskon invoice, termasuk promo, voucher, poin, dan pembulatan; pajak dan pembayaran DP tidak masuk nilai baris. Selisih pembulatan bisa bernilai negatif."
+                : "Nilai baris sudah memperhitungkan diskon per barang. Diskon tingkat nota, retur, dan pajak belum dibagi ke tiap baris; total bisa berbeda dari pembayaran."}
             {" "}Racikan dicocokkan dengan resep pada kunjungan yang sama.
           </div>
         </div>

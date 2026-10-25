@@ -2,7 +2,6 @@ import { readReportRows } from "@/lib/hpp-reports-server";
 import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
-import { nilaiBaris } from "@/lib/tagihan-klinik";
 import { lineDiscount } from "@/lib/pos-calc";
 import { PosDecimal } from "@/lib/pos-money";
 import { jenisBarisKlinik, kunciRacikan, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
@@ -26,6 +25,7 @@ type InvoiceItem = {
   service_performers: ServicePerformersSnapshot | null;
   invoices: Rel<{
     id: string; visit_id: string; invoice_no: string | null; created_at: string; paid_status: string;
+    subtotal: number; discount: number;
     visits: Rel<HubunganVisit>;
   }>;
 };
@@ -58,6 +58,24 @@ export function tanggalValid(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function alokasiNetoBaris(bases: InstanceType<typeof PosDecimal>[], target: InstanceType<typeof PosDecimal>): number[] {
+  const targetCents = target.times(100).toDecimalPlaces(0).toNumber();
+  const baseTotal = bases.reduce((sum, value) => sum.plus(value), new PosDecimal(0));
+  if (!Number.isSafeInteger(targetCents) || targetCents < 0
+    || new PosDecimal(targetCents).div(100).gt(baseTotal.toDecimalPlaces(2))
+    || bases.some(value => value.isNegative())) {
+    throw new Error("Nilai dokumen tidak cocok dengan baris untuk laporan per item.");
+  }
+  let cumulative = new PosDecimal(0), allocated = 0;
+  return bases.map(base => {
+    cumulative = cumulative.plus(base);
+    const next = baseTotal.isZero() ? 0 : new PosDecimal(targetCents).times(cumulative).div(baseTotal).toDecimalPlaces(0).toNumber();
+    const net = (next - allocated) / 100;
+    allocated = next;
+    return net;
+  });
+}
+
 
 export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
   dari: string; sampai: string; kanal: "POS" | "Online" | "Klinik";
@@ -75,7 +93,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       const [invoiceItems, saleItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
+            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
             .is("invoices.voided_at", null)
             .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
             .order("id").range(awal, ujung);
@@ -90,6 +108,44 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         }) : Promise.resolve([] as SaleItem[]),
       ]);
 
+      const clinicLines = new Map<string, InvoiceItem[]>();
+      for (const item of invoiceItems) {
+        const invoice = one(item.invoices);
+        if (!invoice?.id) throw new Error("Invoice sumber baris laporan tidak dapat diverifikasi.");
+        if (!clinicLines.has(invoice.id)) clinicLines.set(invoice.id, []);
+        clinicLines.get(invoice.id)!.push(item);
+      }
+      const demoFees = new Map<string, number>();
+      for (const batch of potong([...clinicLines.keys()])) {
+        const snapshots = await readReportRows<{ invoice_id: string; fee_amount: number; fee_bearer: string }>(async (from, to) => {
+          const { data, error, count } = await supabase.from("clinic_demo_invoice_snapshots")
+            .select("invoice_id,fee_amount,fee_bearer", { count: "exact" }).in("invoice_id", batch)
+            .order("invoice_id").range(from, to);
+          return { data, error, count };
+        }, row => row.invoice_id);
+        for (const snapshot of snapshots) {
+          if (snapshot.fee_bearer === "customer" && Number(snapshot.fee_amount) > 0) {
+            demoFees.set(snapshot.invoice_id, Number(snapshot.fee_amount));
+          }
+        }
+      }
+      const netoKlinik = new Map<string, number>();
+      for (const items of clinicLines.values()) {
+        const invoice = one(items[0].invoices)!;
+        const fee = demoFees.get(invoice.id) ?? 0;
+        const feeItems = fee ? items.filter(item => item.deskripsi === "Admin pembayaran DEMO" && !item.item_id
+          && Number(item.qty) === 1 && Number(item.harga) === fee && Number(item.diskon_persen || 0) === 0) : [];
+        if (fee && feeItems.length !== 1) throw new Error("Baris biaya admin DEMO tidak cocok dengan snapshot invoice.");
+        const ordinary = fee ? items.filter(item => item.id !== feeItems[0].id) : items;
+        const bases = ordinary.map(item => {
+          const percent = Math.min(100, Math.max(0, Number(item.diskon_persen) || 0));
+          return new PosDecimal(item.qty).times(item.harga).times(new PosDecimal(1).minus(new PosDecimal(percent).div(100)));
+        });
+        const net = alokasiNetoBaris(bases, new PosDecimal(invoice.subtotal).minus(invoice.discount).minus(fee));
+        ordinary.forEach((item, index) => netoKlinik.set(item.id, net[index]));
+        if (fee) netoKlinik.set(feeItems[0].id, fee);
+      }
+
       // Alokasikan selisih neto struk POS setelah diskon baris. Nilai struk
       // tersimpan adalah sumber kebenaran; fee merchant bukan pendapatan item.
       const posLines = new Map<string, SaleItem[]>();
@@ -102,24 +158,9 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       const netoPos = new Map<string, number>();
       for (const items of posLines.values()) {
         const sale = one(items[0].sales)!;
-        const cents = (value: number) => {
-          const result = new PosDecimal(value).times(100).toDecimalPlaces(0).toNumber();
-          if (!Number.isSafeInteger(result)) throw new Error("Nilai struk tidak valid untuk laporan per item.");
-          return result;
-        };
         const bases = items.map(item => new PosDecimal(item.qty).times(item.harga).minus(lineDiscount(item)));
-        const baseTotal = bases.reduce((sum, value) => sum.plus(value), new PosDecimal(0));
-        const target = cents(new PosDecimal(sale.total).minus(sale.merchant_fee_total ?? 0).toNumber());
-        if (target < 0 || new PosDecimal(target).div(100).gt(baseTotal.toDecimalPlaces(2)) || bases.some(value => value.isNegative())) {
-          throw new Error("Nilai struk tidak cocok dengan baris untuk laporan per item.");
-        }
-        let cumulative = new PosDecimal(0), allocated = 0;
-        items.forEach((item, index) => {
-          cumulative = cumulative.plus(bases[index]);
-          const next = baseTotal.isZero() ? 0 : new PosDecimal(target).times(cumulative).div(baseTotal).toDecimalPlaces(0).toNumber();
-          netoPos.set(item.id, (next - allocated) / 100);
-          allocated = next;
-        });
+        const net = alokasiNetoBaris(bases, new PosDecimal(sale.total).minus(sale.merchant_fee_total ?? 0));
+        items.forEach((item, index) => netoPos.set(item.id, net[index]));
       }
 
       // Invoice menyimpan nama racikan sebagai baris obat biasa. Cocokkan nama
@@ -148,7 +189,8 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         const invoice = one(item.invoices);
         if (!invoice?.id) throw new Error("Invoice sumber baris laporan tidak dapat diverifikasi.");
         const visit = one(invoice.visits);
-        const nilai = nilaiBaris(item);
+        const nilai = netoKlinik.get(item.id);
+        if (nilai == null) throw new Error("Alokasi nilai baris invoice klinik tidak tersedia.");
         const jenis = jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
         rows.push({
           id: `klinik-${item.id}`, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",

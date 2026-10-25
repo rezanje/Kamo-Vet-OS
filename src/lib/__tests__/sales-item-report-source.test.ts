@@ -114,9 +114,9 @@ it("opens the exact saved clinic invoice for each report line in a visit with mu
   mocks.createClient.mockResolvedValue(clientFixture({ tables: {
     invoice_items: [
       { id: "first-line", deskripsi: "Konsultasi", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null,
-        invoices: { id: "first-invoice", visit_id: "visit", invoice_no: "INV-1", created_at: "2026-10-04T05:00:00Z", paid_status: "Lunas", voided_at: null, visits: {} } },
+        invoices: { id: "first-invoice", visit_id: "visit", invoice_no: "INV-1", created_at: "2026-10-04T05:00:00Z", subtotal: 100, discount: 0, paid_status: "Lunas", voided_at: null, visits: {} } },
       { id: "second-line", deskripsi: "Konsultasi", qty: 1, harga: 200, diskon_persen: 0, jenis: "jasa", item_id: null,
-        invoices: { id: "second-invoice", visit_id: "visit", invoice_no: "INV-2", created_at: "2026-10-04T06:00:00Z", paid_status: "Belum Lunas", voided_at: null, visits: {} } },
+        invoices: { id: "second-invoice", visit_id: "visit", invoice_no: "INV-2", created_at: "2026-10-04T06:00:00Z", subtotal: 200, discount: 0, paid_status: "Belum Lunas", voided_at: null, visits: {} } },
     ], medical_records: [],
   } }).client);
   const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "Konsultasi" });
@@ -125,6 +125,61 @@ it("opens the exact saved clinic invoice for each report line in a visit with mu
     ["INV-2", "/klinik/pembayaran/visit/invoice?invoice_id=second-invoice"],
     ["INV-1", "/klinik/pembayaran/visit/invoice?invoice_id=first-invoice"],
   ]);
+});
+
+it("allocates clinic invoice discounts over its posted item lines before filtering", async () => {
+  const invoice = { id: "clinic-invoice", visit_id: "visit", invoice_no: "INV-NET", created_at: "2026-10-04T05:00:00Z",
+    paid_status: "Lunas", voided_at: null, subtotal: 200, discount: 100, tax: 11, total: 111, visits: {} };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { invoice_items: [
+    { id: "a", deskripsi: "Konsultasi", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null, invoices: invoice },
+    { id: "b", deskripsi: "Tindakan", qty: 1, harga: 200, diskon_persen: 50, jenis: "jasa", item_id: null, invoices: invoice },
+  ], medical_records: [] } }).client);
+  const all = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "" });
+  expect(all.pesanError).toBe("");
+  expect(all.rows.map(row => [row.nama, row.nilai, row.diskon])).toEqual([
+    ["Konsultasi", 50, 50], ["Tindakan", 50, 150],
+  ]);
+  expect(all.nilaiTotal).toBe(100);
+  expect((await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "Konsultasi" })).nilaiTotal).toBe(50);
+});
+
+it("keeps every item of a fully discounted clinic invoice at zero before tax", async () => {
+  const invoice = { id: "free-clinic", visit_id: "visit", invoice_no: "INV-FREE", created_at: "2026-10-04T05:00:00Z",
+    paid_status: "Lunas", voided_at: null, subtotal: 200, discount: 200, total: 0, visits: {} };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { invoice_items: ["a", "b"].map(id => ({
+    id, deskripsi: `Tindakan ${id}`, qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null, invoices: invoice,
+  })), medical_records: [] } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "" });
+  expect(result.pesanError).toBe("");
+  expect(result.rows.map(row => row.nilai)).toEqual([0, 0]);
+  expect(result.nilaiTotal).toBe(0);
+});
+
+it("uses exact clinic line decimals when an aggregate half-cent rounds up", async () => {
+  const invoice = { id: "half-cent", visit_id: "visit", invoice_no: "INV-CENTS", created_at: "2026-10-04T05:00:00Z",
+    paid_status: "Lunas", voided_at: null, subtotal: 0.04, discount: 0, total: 0.04, visits: {} };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { invoice_items: [{
+    id: "a", deskripsi: "Jasa kecil", qty: 1, harga: 0.05, diskon_persen: 30, jenis: "jasa", item_id: null, invoices: invoice,
+  }], medical_records: [] } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "" });
+  expect(result.pesanError).toBe("");
+  expect(result.nilaiTotal).toBe(0.04);
+});
+
+it("keeps the customer-paid DEMO admin fee whole while discounting only clinical lines", async () => {
+  const invoice = { id: "demo-invoice", visit_id: "visit", invoice_no: "INV-DEMO", created_at: "2026-10-04T05:00:00Z",
+    paid_status: "Lunas", voided_at: null, subtotal: 110, discount: 50, total: 60, visits: {} };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: {
+    invoice_items: [
+      { id: "service", deskripsi: "Vaksin", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null, invoices: invoice },
+      { id: "fee", deskripsi: "Admin pembayaran DEMO", qty: 1, harga: 10, diskon_persen: 0, jenis: "jasa", item_id: null, invoices: invoice },
+    ],
+    clinic_demo_invoice_snapshots: [{ invoice_id: "demo-invoice", fee_amount: 10, fee_bearer: "customer" }], medical_records: [],
+  } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "" });
+  expect(result.pesanError).toBe("");
+  expect(result.rows.map(row => [row.nama, row.nilai])).toEqual([["Admin pembayaran DEMO", 10], ["Vaksin", 50]]);
+  expect(result.nilaiTotal).toBe(60);
 });
 
 it("does not publish partial clinic totals if an invoice source ID is unavailable", async () => {
@@ -144,7 +199,7 @@ it("does not publish partial clinic totals if an invoice source ID is unavailabl
 it("reads saved compound recipe IDs and classifies posted racikan independently of invoice label", async () => {
   const { client, records } = clientFixture({ tables: {
     invoice_items: [{ id: "line", compound_recipe_id: "recipe", deskripsi: "Label invoice berbeda", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null,
-      invoices: { id: "invoice", visit_id: "visit", invoice_no: "INV", created_at: "2026-10-04T05:00:00Z", paid_status: "Lunas", voided_at: null, visits: {} } }],
+      invoices: { id: "invoice", visit_id: "visit", invoice_no: "INV", created_at: "2026-10-04T05:00:00Z", subtotal: 100, discount: 0, paid_status: "Lunas", voided_at: null, visits: {} } }],
     medical_records: [],
   } });
   mocks.createClient.mockResolvedValue(client);
