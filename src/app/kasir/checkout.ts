@@ -26,6 +26,8 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
+import { readCompleteList } from "@/lib/checked-list";
+import { cashierPriceFloorIssue, cashierStockCostEvents, quoteCashierLineCosts } from "@/lib/cashier-price-floor";
 import {
   expandBarisGrup,
   kebutuhanStokCheckout,
@@ -101,9 +103,10 @@ export async function checkoutKasir(formData: FormData) {
   // (migrasi 0073), jadi layar kasir yang sudah lama terbuka tidak boleh menentukan
   // harga sendiri. Baris tanpa item_id (ketikan manual) tetap pakai harga yang diisi.
   const cartIds = [...new Set(rows.map((l) => l.item_id).filter(Boolean))];
+  const masterBuyPrices = new Map<string, number>();
   if (cartIds.length > 0) {
     const [{ data: itemsHarga }, hargaMap, unitMap] = await Promise.all([
-      supabase.from("items").select("id, nama:name, unit, item_type, tindakan_kategori, sell_price, min_sell_qty, is_active").in("id", cartIds),
+      supabase.from("items").select("id, nama:name, unit, item_type, tindakan_kategori, sell_price, buy_price, min_sell_qty, is_active").in("id", cartIds),
       loadHargaCabang(supabase, branchId, cartIds),
       // Faktor satuan WAJIB dari master: faktor palsu dari klien = stok terpotong
       // lebih sedikit daripada barang yang benar-benar keluar dari rak.
@@ -112,12 +115,13 @@ export async function checkoutKasir(formData: FormData) {
     type ItemHarga = {
       id: string; nama: string; unit: string; item_type: JenisKomponen;
       tindakan_kategori: string | null;
-      sell_price: number; min_sell_qty: number; is_active: boolean;
+      sell_price: number; buy_price: number; min_sell_qty: number; is_active: boolean;
     };
     const pusat = new Map(
       ((itemsHarga ?? []) as ItemHarga[])
         .map((i) => [i.id, i]),
     );
+    for (const item of pusat.values()) masterBuyPrices.set(item.id, Number(item.buy_price));
     const groupIds = [...new Set(rows
       .map((line) => line.item_id ? pusat.get(line.item_id) : undefined)
       .filter((item): item is ItemHarga => item?.item_type === "Grup")
@@ -373,6 +377,50 @@ export async function checkoutKasir(formData: FormData) {
   if (whErr) redirect(`${failureUrl}${encodeURIComponent(`Gagal membaca gudang: ${whErr.message}`)}`);
   if (kebutuhanStok.length > 0 && !wh) {
     redirect(`${failureUrl}${encodeURIComponent("Cabang belum punya gudang aktif untuk memotong stok")}`);
+  }
+  // FIFO is the accounting HPP. items.buy_price is only the PO reference
+  // price, so the cashier guard reads current warehouse layers before creating
+  // any sale or issuing stock. Transaction discounts are apportioned to lines.
+  const inventoryRows = rows.filter(row => row.item_type === "Persediaan" && row.item_id);
+  if (inventoryRows.length > 0 && wh) {
+    const stockEvents = cashierStockCostEvents(rows.map(row => ({
+      item_id: row.item_id, item_type: row.item_type, qty: row.qty, faktor: row.faktor, group_components: row.group_components,
+    })));
+    const inventoryIds = [...new Set(stockEvents.map(event => event.item_id))];
+    type Layer = { id: string; item_id: string; qty_left: number; unit_cost: number; exp_date: string | null; tanggal: string; created_at: string };
+    let layers: Layer[];
+    let knownMoves: { item_id: string; unit_cost: number }[];
+    try {
+      layers = await readCompleteList<Layer>((from, to) => supabase.from("stock_layers")
+        .select("id,item_id,qty_left,unit_cost,exp_date,tanggal,created_at", { count: "exact" })
+        .eq("warehouse_id", wh.id).in("item_id", inventoryIds).order("id").range(from, to),
+      "Lapisan HPP kasir", { maxRows: null });
+      const costReads = await Promise.all(inventoryIds.map(async itemId => {
+        const { data, error } = await supabase.from("stock_moves")
+          .select("item_id,unit_cost").eq("warehouse_id", wh.id).eq("item_id", itemId)
+          .gt("qty", 0).gt("unit_cost", 0).lte("tanggal", hariIniWIB())
+          .not("source", "in", '("sale-void","purchase-invoice-void")')
+          .order("unit_cost", { ascending: false }).limit(1);
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      }));
+      knownMoves = costReads.flat();
+    } catch {
+      redirect(`${failureUrl}${encodeURIComponent("HPP aktif belum dapat dibaca lengkap. Muat ulang sebelum membayar.")}`);
+    }
+    const sortLayers = (a: Layer, b: Layer) =>
+      (a.exp_date == null && b.exp_date != null ? 1 : a.exp_date != null && b.exp_date == null ? -1 : a.exp_date && b.exp_date ? a.exp_date.localeCompare(b.exp_date) : 0)
+      || a.tanggal.localeCompare(b.tanggal) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
+    const knownCosts = new Map(inventoryIds.map(itemId => [itemId, Math.max(Number(masterBuyPrices.get(itemId)) || 0,
+      ...layers.filter(layer => layer.item_id === itemId).map(layer => Number(layer.unit_cost)),
+      ...knownMoves.filter(move => move.item_id === itemId).map(move => Number(move.unit_cost)))]));
+    const eventCosts = quoteCashierLineCosts(stockEvents, layers.filter(layer => Number(layer.qty_left) > 0).sort(sortLayers), knownCosts);
+    const lineCosts: (number | null)[] = rows.map(() => null);
+    stockEvents.forEach((event, index) => {
+      if (event.pricedLineIndex !== null) lineCosts[event.pricedLineIndex] = eventCosts[index];
+    });
+    const priceIssue = cashierPriceFloorIssue(rows.map(row => ({ ...row, item_type: row.item_type })), total, lineCosts);
+    if (priceIssue) redirect(`${failureUrl}${encodeURIComponent(priceIssue)}`);
   }
   // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
   const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {

@@ -187,9 +187,6 @@ export default async function KasirPage({
       diskonDefault: Number(i.default_discount) || 0,
       substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
       tiers: tierMap.get(i.id) ?? [],
-      // Modal dikirim HANYA sebagai bahan peringatan "jual di bawah modal";
-      // layar kasir tidak pernah menampilkan angkanya.
-      modal: i.item_type === "Grup" ? 0 : Number(i.buy_price) || 0,
       // Hanya kirim kalau benar-benar berjenjang — barang bersatuan tunggal tidak
       // perlu dropdown yang isinya satu pilihan.
       satuan: i.item_type !== "Grup" && satuan.length > 1 ? satuan : undefined,

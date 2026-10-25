@@ -5,6 +5,7 @@ import { NumberInput } from "@/components/NumberInput";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { checkoutKasir } from "./checkout";
+import { cashierPriceFloorIssue } from "@/lib/cashier-price-floor";
 import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
@@ -45,9 +46,6 @@ export type ItemRow = {
   satuan?: ItemUnit[];
   /** Harga jual bertingkat menurut jumlah beli (meeting 14 Agustus). */
   tiers?: Tingkat[];
-  /** Modal per satuan dasar — dipakai HANYA untuk peringatan jual di bawah modal;
-   *  angkanya tidak pernah ditampilkan ke kasir. */
-  modal?: number;
   /** Resep tetap Grup; harga tetap hanya berada di baris induk. */
   groupComponents?: GroupComponentRow[];
 };
@@ -77,9 +75,8 @@ type CartLine = {
   /** Harga normal per satuan baris — dipakai saat qty turun di bawah tingkat lagi. */
   hargaNormal?: number;
   tiers?: Tingkat[];
-  /** Stok saat barang dimasukkan & modal per satuan dasar — bahan peringatan. */
+  /** Stok saat barang dimasukkan — bahan peringatan. */
   stok?: number | null;
-  modal?: number;
   groupComponents?: GroupComponentRow[];
 };
 
@@ -180,7 +177,6 @@ export function KasirClient({
           opsiSatuan: item.satuan,
           tiers: item.tiers ?? [],
           stok: item.stok,
-          modal: Number(item.modal) || 0,
           groupComponents: item.groupComponents,
         } as CartLine];
       }));
@@ -260,7 +256,7 @@ export function KasirClient({
         minJual: Math.max(1, Number(it.minJual) || 0),
         satuan: dasar?.unit, faktor: dasar?.factor ?? 1, opsiSatuan: it.satuan,
         tiers: it.tiers ?? [],
-        stok: it.stok, modal: Number(it.modal) || 0,
+        stok: it.stok,
         groupComponents: it.groupComponents,
       };
       const k = kunciBaris(baris);
@@ -322,9 +318,8 @@ export function KasirClient({
     [cart, promoPerItem],
   );
 
-  // Peringatan kasir (permintaan Pak Andri, meeting 14 Agustus). Dua-duanya
-  // MENGINGATKAN saja — transaksi tetap boleh dilanjutkan, karena stok sistem bisa
-  // tertinggal dari rak dan diskon di bawah modal kadang memang keputusan owner.
+  // Stok sistem tetap ditampilkan sebagai peringatan operasional. Harga jual
+  // diverifikasi terhadap HPP FIFO aktif oleh server saat kasir membayar.
   const peringatan = useMemo(() => {
     const stokKurang = cartHitung.filter((l) => {
       if (l.stok == null) return false;
@@ -332,14 +327,7 @@ export function KasirClient({
       if (!Number.isFinite(stok)) return false;
       return l.qty * (Number(l.faktor) || 1) > stok;
     });
-    const dibawahModal = cartHitung.filter((l) => {
-      const modal = Number(l.modal) || 0;
-      if (modal <= 0) return false;
-      const faktor = Number(l.faktor) || 1;
-      const bersih = (l.qty * l.harga - lineDiscount(l)) / Math.max(1, l.qty * faktor);
-      return bersih < modal;
-    });
-    return { stokKurang, dibawahModal };
+    return { stokKurang };
   }, [cartHitung]);
 
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lihat lib/pos-calc).
@@ -378,6 +366,7 @@ export function KasirClient({
   const maxPoin = cust ? Math.min(cust.points, Math.floor(totals.total)) : 0;
   const poinUsed = Math.min(poin, maxPoin);
   const total = roundPosMoney(computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, poinUsed).total);
+  const zeroPriceIssue = cashierPriceFloorIssue(cartHitung, total, cartHitung.map(() => 0));
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
   let paymentValid = true;
@@ -393,7 +382,7 @@ export function KasirClient({
   // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
-  const canPay = cart.length > 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0;
+  const canPay = cart.length > 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0 && !zeroPriceIssue;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
@@ -717,7 +706,7 @@ export function KasirClient({
               <button className="btn-def" type="button" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
               <p style={{ fontSize: 10 }}>Hanya baris kosong diisi. Pilihan per baris tetap. Jasa baru belum ditetapkan; pilih per baris atau isi lagi.</p>
             </div>}
-            {/* Peringatan, bukan larangan (permintaan Pak Andri, meeting 14 Agustus). */}
+            {/* Stok kurang tetap peringatan; aturan harga Persediaan diterapkan oleh server. */}
             {peringatan.stokKurang.length > 0 && (
               <div style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>
                 <i className="ti ti-alert-triangle" /> Stok sistem tidak cukup untuk{" "}
@@ -725,12 +714,8 @@ export function KasirClient({
                 catat selisihnya lewat Stok Opname.
               </div>
             )}
-            {peringatan.dibawahModal.length > 0 && (
-              <div style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>
-                <i className="ti ti-alert-circle" /> Harga setelah diskon di bawah modal:{" "}
-                {peringatan.dibawahModal.map((l) => l.nama).join(", ")}. Transaksi tetap bisa dilanjut.
-              </div>
-            )}
+            {cart.some(line => line.item_type === "Persediaan") && <div className="p2ban" role="status">Harga neto barang Persediaan nol atau di bawah HPP FIFO aktif akan ditolak saat bayar. Jasa gratis tetap diperbolehkan.</div>}
+            {zeroPriceIssue && <div role="alert" style={{ color: "#b91c1c" }}>{zeroPriceIssue}</div>}
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />
             {itemDiscTotal > 0 && <Row k="Pot. per item" v={`- ${rp(itemDiscTotal)}`} red />}
