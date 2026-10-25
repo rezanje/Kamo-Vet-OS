@@ -20,7 +20,8 @@ def races(db):
  ('d6400000-0000-4000-8000-000000000011','PO.RACE.RR','d6300000-0000-4000-8000-000000000001','Draft',100.55),
  ('d6400000-0000-4000-8000-000000000012','PO.RACE.RETRY','d6300000-0000-4000-8000-000000000001','Draft',100),
  ('d6400000-0000-4000-8000-000000000013','PO.RACE.VOID','d6300000-0000-4000-8000-000000000001','Draft',100),
- ('d6400000-0000-4000-8000-000000000014','PO.RACE.RECOVERY','d6300000-0000-4000-8000-000000000001','Draft',100);""")
+ ('d6400000-0000-4000-8000-000000000014','PO.RACE.RECOVERY','d6300000-0000-4000-8000-000000000001','Draft',100),
+ ('d6400000-0000-4000-8000-000000000015','PO.RACE.PARTIAL','d6300000-0000-4000-8000-000000000001','Dipesan',100);""")
  def pay(key,po,amount=60):return f"select pay_purchase_advance_atomic('{key}','UM.RACE.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-0000000000{po}',current_date,{amount},'Transfer','d6700000-0000-4000-8000-000000000001',null);"
  active=[]
  def start(source):
@@ -33,6 +34,11 @@ def races(db):
   raise RuntimeError('Missing concurrency barrier '+marker)
  def finish(p):p.wait(timeout=15);return p.returncode,p.stdout.read(),p.stderr.read()
  try:
+  first=start("begin;select id from purchase_orders where id='d6400000-0000-4000-8000-000000000015' for update;insert into goods_receipts(no_terima,po_id)values('TB.RACE.PARTIAL','d6400000-0000-4000-8000-000000000015');select pg_sleep(1) /* dp-partial-receipt-holder */;commit;")
+  wait('dp-partial-receipt-holder');second=start('/* dp-partial-receipt-waiter */'+pay('after-partial-receipt','15',20));wait('dp-partial-receipt-waiter',True)
+  a=finish(first);b=finish(second)
+  if a[0] or b[0]==0 or 'penerimaan pertama' not in b[2] or db.sql("select count(*) from purchase_advances where po_id='d6400000-0000-4000-8000-000000000015';")!='0':raise AssertionError('partial receipt vs new advance race '+str((a,b)))
+  print('PASS concurrent partial receipt blocks new advance',flush=True)
   for iso,po in [('read committed','10'),('repeatable read','11')]:
    first=start(f'begin isolation level {iso};'+pay('first-'+po,po,'60.40')+f"select pg_sleep(1) /* dp-holder-{po} */;commit;")
    wait('dp-holder-'+po)

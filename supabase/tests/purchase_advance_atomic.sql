@@ -152,6 +152,25 @@ do $$declare adv uuid;pay jsonb;failed boolean:=false;begin
  if (select terpakai from purchase_advances where id=adv)<>0 then raise exception 'reversed allocation not reconciled';end if;
 end$$;
 reset role;
+-- A receipt document closes new-DP eligibility even while PO status is Dipesan.
+insert into purchase_orders(id,no_po,supplier_id,branch_id,status,total) values
+ ('d6400000-0000-4000-8000-000000000006','PO.QA.PARTIAL','d6300000-0000-4000-8000-000000000001','d6100000-0000-4000-8000-000000000001','Dipesan',100);
+set local role authenticated;
+select pay_purchase_advance_atomic('before-first-receipt','UM.QA.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000006',current_date,20,'Transfer','d6700000-0000-4000-8000-000000000001',null);
+reset role;
+insert into goods_receipts(no_terima,po_id,tanggal) values('TB.QA.PARTIAL','d6400000-0000-4000-8000-000000000006',current_date);
+set local role authenticated;
+do $$declare prior jsonb;failed boolean:=false;begin
+ prior:=get_purchase_advance_result('before-first-receipt');
+ if pay_purchase_advance_atomic('before-first-receipt','UM.CHANGED.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000006',current_date,20,'Transfer','d6700000-0000-4000-8000-000000000001',null) is distinct from prior then raise exception 'prior DP retry was lost after receipt';end if;
+ begin perform pay_purchase_advance_atomic('after-first-receipt','UM.QA.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000006',current_date,1,'Transfer','d6700000-0000-4000-8000-000000000001',null);exception when sqlstate '55000' then failed:=true;end;
+ if not failed then raise exception 'partial receipt accepted a new DP';end if;
+ if (select status from purchase_orders where id='d6400000-0000-4000-8000-000000000006') <> 'Dipesan' then raise exception 'fixture did not preserve partial PO status';end if;
+end$$;
+reset role;
+do $$begin
+ if exists(select 1 from purchase_advance_requests where request_key='after-first-receipt') then raise exception 'rejected partial-receipt DP persisted a request';end if;
+end$$;
 update accounting_locks set closed_until=current_date where id;
 update purchase_orders set status='Diterima' where id='d6400000-0000-4000-8000-000000000001';
 set local role authenticated;
