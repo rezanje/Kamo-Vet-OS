@@ -15,6 +15,7 @@ export const waktuWIB = (value: string) => new Date(value).toLocaleString("id-ID
 });
 
 type HubunganVisit = {
+  branch_id: string | null;
   branches: Rel<{ name: string }>;
   customers: Rel<{ name: string }>;
   pets: Rel<{ name: string }>;
@@ -35,14 +36,14 @@ type SaleItem = {
   item_discount_type: "nominal" | "percent" | null;
   item_discount_value: number | null; promo_discount: number | null;
   sales: Rel<SaleCompletion & {
-    id: string; no_struk: string | null; created_at: string; channel: string | null;
+    id: string; branch_id: string | null; no_struk: string | null; created_at: string; channel: string | null;
     total: number; merchant_fee_total: number | null;
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
   }>;
 };
 export type Baris = {
   id: string; waktu: string; dokumen: string; href: string; kanal: "POS" | "Online" | "Klinik";
-  jenis: JenisBarisPenjualan; cabang: string; pelanggan: string; hewan: string;
+  jenis: JenisBarisPenjualan; cabang: string; cabangId: string | null; pelanggan: string; hewan: string;
   nama: string; pelaksana: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
 };
 
@@ -77,10 +78,10 @@ function alokasiNetoBaris(bases: InstanceType<typeof PosDecimal>[], target: Inst
 }
 
 
-export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
+export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "" }: {
   dari: string; sampai: string; kanal: "POS" | "Online" | "Klinik";
-  jenis: string; q: string;
-}): Promise<{ rows: Baris[]; pesanError: string; nilaiTotal: number; qtyTotal: number }> {
+  jenis: string; q: string; cabangId?: string;
+}): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pesanError: string; nilaiTotal: number; qtyTotal: number }> {
   const tanggalSalah = !tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai;
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
   const rows: Baris[] = [];
@@ -93,7 +94,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
       const [invoiceItems, saleItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits(branches(name), customers(name), pets(name)))", { count: "exact" })
+            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits(branch_id, branches(name), customers(name), pets(name)))", { count: "exact" })
             .is("invoices.voided_at", null)
             .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
             .order("id").range(awal, ujung);
@@ -101,7 +102,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         }) : Promise.resolve([] as InvoiceItem[]),
         bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("sale_items")
-            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
+            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
             .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
             .order("id").range(awal, ujung);
           return { data: data as unknown as SaleItem[] | null, error, count };
@@ -201,6 +202,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
           href: `/klinik/pembayaran/${invoice.visit_id}/invoice?invoice_id=${encodeURIComponent(invoice.id)}`, kanal: "Klinik",
           jenis,
           cabang: one(visit?.branches ?? null)?.name ?? "—",
+          cabangId: visit?.branch_id ?? null,
           pelanggan: one(visit?.customers ?? null)?.name ?? "—",
           hewan: one(visit?.pets ?? null)?.name ?? "—",
           nama: item.deskripsi, pelaksana: jenis === "Jasa" ? servicePerformerNames(item.service_performers).join(" · ") : "—",
@@ -226,6 +228,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
           id: `kasir-${item.id}`, waktu: sale.created_at, dokumen: sale.no_struk ?? "—",
           href: `/penjualan/${sale.id}`, kanal: itemKanal, jenis: "Barang",
           cabang: one(sale.branches)?.name ?? "—", pelanggan: one(sale.customers)?.name ?? "—",
+          cabangId: sale.branch_id ?? null,
           hewan: "—", nama: item.nama,
           pelaksana: item.service_performers ? servicePerformerNames(item.service_performers).join(" · ") : "—",
           qty, harga, diskon: new PosDecimal(qty).times(harga).minus(nilai).toNumber(), nilai, status: "—",
@@ -239,11 +242,14 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
   }
 
   const cari = q.toLocaleLowerCase("id-ID");
+  const cabangOptions = pesanError ? [] : [...new Map(rows.filter(row => row.cabangId)
+    .map(row => [row.cabangId!, { id: row.cabangId!, name: row.cabang }] as const)).values()]
+    .sort((a, b) => a.name.localeCompare(b.name, "id") || a.id.localeCompare(b.id));
   const terpilih = pesanError ? [] : rows.filter((row) =>
-    row.jenis === jenis && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
+    row.jenis === jenis && (!cabangId || row.cabangId === cabangId) && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
       .some((value) => value.toLocaleLowerCase("id-ID").includes(cari))),
   ).sort((a, b) => b.waktu.localeCompare(a.waktu) || a.id.localeCompare(b.id));
   const nilaiTotal = terpilih.reduce((sum, row) => sum + row.nilai, 0);
   const qtyTotal = terpilih.reduce((sum, row) => sum + row.qty, 0);
-  return { rows: terpilih, pesanError, nilaiTotal, qtyTotal };
+  return { rows: terpilih, cabangOptions, pesanError, nilaiTotal, qtyTotal };
 }

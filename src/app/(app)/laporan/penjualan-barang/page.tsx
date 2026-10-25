@@ -7,7 +7,7 @@ const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID"
 const UKURAN_HALAMAN_TAMPILAN = 100;
 
 export default async function LaporanPenjualanBarangPage({ searchParams }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; halaman?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; halaman?: string }>;
 }) {
   const sp = await searchParams;
   const hariIni = hariIniWIB();
@@ -16,19 +16,20 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const kanal = ["POS", "Online", "Klinik"].includes(sp.kanal ?? "") ? sp.kanal! : "Klinik";
   const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan", "Biaya Admin"].includes(sp.jenis ?? "") ? sp.jenis! : kanal === "Klinik" ? "Racikan" : "Barang";
   const q = (sp.q ?? "").trim().slice(0, 120);
+  const cabangId = (sp.cabang_id ?? "").slice(0, 80);
   const halamanDiminta = Number(sp.halaman);
   const halaman = Number.isSafeInteger(halamanDiminta) && halamanDiminta > 0 ? halamanDiminta : 1;
-  const { rows: terpilih, pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({
-    dari, sampai, kanal: kanal as "POS" | "Online" | "Klinik", jenis, q,
+  const { rows: terpilih, cabangOptions, pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({
+    dari, sampai, kanal: kanal as "POS" | "Online" | "Klinik", jenis, q, cabangId,
   });
   const banyakHalaman = Math.max(1, Math.ceil(terpilih.length / UKURAN_HALAMAN_TAMPILAN));
   const halamanAktif = Math.min(halaman, banyakHalaman);
   const terlihat = terpilih.slice((halamanAktif - 1) * UKURAN_HALAMAN_TAMPILAN, halamanAktif * UKURAN_HALAMAN_TAMPILAN);
   const tautanHalaman = (nomor: number) => {
-    const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, halaman: String(nomor) });
+    const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, halaman: String(nomor) });
     return `/laporan/penjualan-barang?${params}`;
   };
-  const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q });
+  const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId });
 
   return (
     <LaporanPage
@@ -40,6 +41,11 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
         <div><label className="flab">Sampai tanggal</label><input className="fi" type="date" name="sampai" defaultValue={sampai} /></div>
         <div><label className="flab">Sumber</label><select className="fi" name="kanal" defaultValue={kanal}>
           <option value="Klinik">Klinik</option><option value="POS">Kasir</option><option value="Online">Online</option>
+        </select></div>
+        <div><label className="flab">Cabang</label><select className="fi" name="cabang_id" defaultValue={cabangId}>
+          <option value="">Semua cabang yang dapat diakses</option>
+          {cabangId && !cabangOptions.some(branch => branch.id === cabangId) && <option value={cabangId}>Cabang tidak ada pada data · {cabangId.slice(0, 8)}</option>}
+          {cabangOptions.map(branch => <option key={branch.id} value={branch.id}>{branch.name} · {branch.id.slice(0, 8)}</option>)}
         </select></div>
         <div><label className="flab">Jenis</label><select className="fi" name="jenis" defaultValue={jenis}>
           {kanal === "Klinik" ? <>
