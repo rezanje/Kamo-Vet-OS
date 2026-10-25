@@ -10,6 +10,12 @@ describe('private report configurations',()=>{
   expect(href).toContain('cabang_id=20000000-0000-4000-8000-000000000002');
   expect(readReportPresets(JSON.stringify([{id:'one',name:'Klinik cabang',href,savedAt:'2026-10-24T00:00:00Z'}]))[0].href).toBe(href);
  });
+ it('reopens an opname result with its period, branch, source order and value view',()=>{
+  const href=reportPresetHref('/laporan/hasil-opname','dari=2026-10-01&sampai=2026-10-31&cabang=branch-a&order=order-a&dasar=jual&arah=kurang&halaman=3');
+  expect(href).toBe('/laporan/hasil-opname?dari=2026-10-01&sampai=2026-10-31&cabang=branch-a&order=order-a&dasar=jual&arah=kurang');
+  expect(readReportPresets(JSON.stringify([{id:'one',name:'Opname Oktober',href,savedAt:'2026-10-25T00:00:00Z'}]))[0].href).toBe(href);
+  expect(reportPresetHref('/laporan/promo','order=order-a&dasar=jual&arah=kurang')).toBe('/laporan/promo');
+ });
  it('rejects external, executable, download and non-report destinations',()=>{
   for(const path of ['https://bad.test/laporan/promo','//bad.test','javascript:alert(1)','/laporan/promo/unduh','/pengaturan/reset','/laporan/../pengaturan','/laporan/%2e%2e/promo']) expect(()=>reportPresetHref(path,'')).toThrow();
  });
