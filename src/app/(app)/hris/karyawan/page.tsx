@@ -11,6 +11,7 @@ import { simpanKaryawan } from "./actions";
 import { PenugasanCabangForm } from "./PenugasanCabangForm";
 import { hariIniWIB } from "@/lib/tanggal";
 import { tampilkanKaryawan } from "@/lib/karyawan-master";
+import { branchDisplayName } from "@/lib/branch-display";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -39,7 +40,7 @@ export default async function KaryawanPage({
 
   const { data: branches } = await supabase
     .from("branches")
-    .select("id, name")
+    .select("id, code, name, type")
     .eq("is_active", true)
     .order("name");
 
@@ -58,9 +59,11 @@ export default async function KaryawanPage({
       .order("role")
       .order("effective_date"),
   ]);
+  const branchCatalog = branches ?? [];
+  const displayBranches = branchCatalog.map(branch => ({ ...branch, name: branchDisplayName(branch, branchCatalog) }));
   const rows = tampilkanKaryawan(
     visibleMasters((rowsRaw ?? []) as unknown as EmployeeRow[], view, row => row.status === "Aktif"),
-    (branches ?? []) as { id: string; name: string }[],
+    displayBranches,
     (assignmentsRaw ?? []) as { employee_id: string; branch_id: string; role: "PRIMARY" | "SECONDARY"; effective_date: string }[],
   );
 
@@ -128,7 +131,7 @@ export default async function KaryawanPage({
               <label className="flab">Cabang</label>
               <select className="fi" name="branch_id">
                 <option value="">Pilih cabang (opsional)</option>
-                {(branches ?? []).map((b) => (
+                {displayBranches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
@@ -171,7 +174,7 @@ export default async function KaryawanPage({
           <SecHeader num="02" title="PENUGASAN LINTAS CABANG" desc="Satu dokter atau tenaga medis bisa dijadwalkan di beberapa cabang." />
           <PenugasanCabangForm
             employees={((rowsRaw ?? []) as unknown as EmployeeRow[]).filter(row => row.status === "Aktif" && !row.trashed_at)}
-            branches={branches ?? []}
+            branches={displayBranches}
             today={hariIniWIB()}
           />
         </div>

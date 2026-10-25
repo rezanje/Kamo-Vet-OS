@@ -1,4 +1,5 @@
 import { roleCapabilities, type RoleCapabilities } from "@/lib/role-capabilities";
+import { branchDisplayName } from "@/lib/branch-display";
 import { allowedBranchIds } from "@/lib/branch-access";
 import Link from "next/link";
 import { SecHeader } from "@/components/SecHeader";
@@ -12,7 +13,7 @@ type ProfileRow = {
   is_active: boolean;
 };
 
-type UB = { user_id: string; branches: { name: string } | null };
+type UB = { user_id: string; branches: { code: string; name: string; type: string } | null };
 type Emp = { nik: string | null; status: string; id: string; nama: string; jabatan: string | null; profile_id: string | null };
 
 const ROLE_BADGE: Record<string, string> = { OWNER: "r", ADMIN: "b", FINANCE: "o", DOCTOR: "g", STAFF: "x" };
@@ -31,18 +32,19 @@ export default async function PenggunaPage({
   const allowed = await allowedBranchIds(supabase, user!.id);
   const [{ data: profiles }, { data: ubs }, { data: branches }, { data: employees }, { data: capabilityRows }] = await Promise.all([
     supabase.from("profiles").select("id, full_name, role, is_active").order("full_name"),
-    supabase.from("user_branches").select("user_id, branches(name)"),
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("user_branches").select("user_id, branches(code,name,type)"),
+    supabase.from("branches").select("id, code, name, type, is_active").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, nik, nama, jabatan, profile_id, status").order("nama"),
     supabase.from("role_capabilities").select("role, all_branches, create_accounts"),
   ]);
 
   const capabilityMap = new Map((capabilityRows ?? []).map((r: RoleCapabilities & { role: string }) => [r.role, r]));
+  const branchCatalog = branches ?? [];
   const rows = (profiles ?? []) as unknown as ProfileRow[];
   const ubMap = new Map<string, string[]>();
   for (const u of (ubs ?? []) as unknown as UB[]) {
     const arr = ubMap.get(u.user_id) ?? [];
-    if (u.branches?.name) arr.push(u.branches.name);
+    if (u.branches?.name) arr.push(branchDisplayName(u.branches, branchCatalog));
     ubMap.set(u.user_id, arr);
   }
   const emps = (employees ?? []) as unknown as Emp[];
@@ -161,9 +163,9 @@ export default async function PenggunaPage({
           <div style={{ marginTop: 12 }}>
             <div className="flab" style={{ marginBottom: 6 }}>Penugasan akun (wajib untuk STAFF/DOCTOR; akses semua cabang diatur Super Admin di Akses Grup)</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {(branches ?? []).filter(b => allowed === null || allowed.includes(b.id)).map((b) => (
+              {branchCatalog.filter(b => b.is_active && (allowed === null || allowed.includes(b.id))).map((b) => (
                 <label key={b.id} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, border: ".5px solid var(--bd)", borderRadius: 6, padding: "5px 9px", cursor: "pointer" }}>
-                  <input type="checkbox" name="branch_ids" value={b.id} /> {b.name}
+                  <input type="checkbox" name="branch_ids" value={b.id} /> {branchDisplayName(b, branchCatalog)}
                 </label>
               ))}
             </div>

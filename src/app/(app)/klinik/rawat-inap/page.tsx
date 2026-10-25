@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { availableOperationalBranches } from "@/lib/operational-branch";
+import { branchDisplayName } from "@/lib/branch-display";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL } from "@/lib/inpatient";
@@ -41,6 +42,7 @@ export default async function RawatInapPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const branches = await availableOperationalBranches(supabase, user.id, "klinik");
+  const { data: labelCatalog } = await supabase.from("branches").select("code,name,type").eq("is_active", true);
   const branchIds = branches.map(b => b.id);
 
   let query = supabase
@@ -99,9 +101,9 @@ export default async function RawatInapPage({
           <input type="hidden" name="filter" value={filter} />
           <div>
             <label style={{ fontSize: 10, color: "var(--tm)", display: "block", marginBottom: 3 }}>Pilih Cabang</label>
-            <select className="fi" name="branch" defaultValue={branch} style={{ width: 200, fontSize: 11.5 }}>
+            <select className="fi" name="branch" defaultValue={branch} style={{ width: "min(100%, 260px)", fontSize: 11.5 }}>
               <option value="">Semua Cabang</option>
-              {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{branchDisplayName(b, labelCatalog ?? [])}</option>)}
             </select>
           </div>
           <button type="submit" className="btn-acc" style={{ padding: "7px 14px", fontSize: 11.5, background: "var(--posb)" }}>

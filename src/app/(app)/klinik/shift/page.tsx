@@ -1,4 +1,5 @@
 import { NumberInput } from "@/components/NumberInput";
+import { branchDisplayName } from "@/lib/branch-display";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -22,6 +23,9 @@ export default async function KlinikShiftPage({
 
   const activeBranch = await requireOperationalBranch(supabase, user.id, "klinik");
   const shift = await getOpenShift(supabase as never, user.id, "klinik");
+  const { data: labelCatalog } = await supabase.from("branches").select("id,code,name,type").eq("is_active", true);
+  const shiftBranch = labelCatalog?.find(branch => branch.id === shift?.branch_id);
+  const shiftBranchName = shiftBranch ? branchDisplayName(shiftBranch, labelCatalog ?? []) : shift?.branchName;
 
   if (shift) {
     // Kasir buta: hanya input kas fisik, tanpa breakdown/ekspektasi (spec 2026-07-17).
@@ -36,7 +40,7 @@ export default async function KlinikShiftPage({
         <div className="skl-hero-head">
           <div className="skl-welcome" style={{ fontSize: 24 }}>Shift Klinik Berjalan</div>
           <div style={{ fontSize: 12, color: "var(--tm)", marginTop: 4 }}>
-            {shift.branchName} · dibuka {new Date(shift.opened_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+            {shiftBranchName} · dibuka {new Date(shift.opened_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
           </div>
         </div>
         {error && (
@@ -112,7 +116,7 @@ export default async function KlinikShiftPage({
           <label className="flab">Cabang klinik *</label>
           <select className="fi" name="branchId" required defaultValue={activeBranch.id}>
             <option value="" disabled>Pilih cabang tempat kamu bertugas</option>
-            {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{branchDisplayName(b, labelCatalog ?? [])}</option>)}
           </select>
           {(branches ?? []).length === 0 && (
             <div style={{ fontSize: 10.5, color: "#b91c1c", marginTop: 4 }}>

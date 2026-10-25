@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const id = "a0000000-0000-4000-8000-000000000001", active = "a0000000-0000-4000-8000-000000000002", old = "a0000000-0000-4000-8000-000000000003", unknown = "a0000000-0000-4000-8000-000000000004", outside = "a0000000-0000-4000-8000-000000000005";
+const id = "a0000000-0000-4000-8000-000000000001", active = "a0000000-0000-4000-8000-000000000002", old = "a0000000-0000-4000-8000-000000000003", unknown = "a0000000-0000-4000-8000-000000000004", outside = "a0000000-0000-4000-8000-000000000005", clinic = "a0000000-0000-4000-8000-000000000006", petshop = "a0000000-0000-4000-8000-000000000007";
 const state = vi.hoisted(() => ({ rpc: vi.fn(), error: "", allowed: null as string[] | null, requests: [] as string[] }));
 vi.mock("@/lib/branch-access", () => ({ allowedBranchIds: async () => state.allowed }));
 vi.mock("@/app/(app)/pengaturan/pengguna/actions", () => ({ simpanEditPengguna: vi.fn() }));
@@ -15,6 +15,8 @@ vi.mock("@/lib/master-guard", () => ({ assertMasterAdmin: async () => ({
       then(resolve: (value: unknown) => unknown) {
         let rows = table === "branches" ? [
           { id: active, name: "Cabang aktif", is_active: true }, { id: old, name: "Cabang lama", is_active: false }, { id: outside, name: "Di luar lingkup", is_active: true },
+          { id: clinic, code: "VET_CIAW", name: "Nama klinik lama", type: "KLINIK", is_active: true },
+          { id: petshop, code: "CIAW", name: "Kamo Petshop Ciawi", type: "PETSHOP", is_active: true },
         ] : [];
         if (isActive !== undefined) rows = rows.filter((row) => row.is_active === isActive);
         if (ids) rows = rows.filter((row) => ids!.includes(row.id));
@@ -33,6 +35,14 @@ it("loads the exact target and current login name, preserving old/unknown branch
   await render(); expect(state.rpc).toHaveBeenCalledExactlyOnceWith("get_user_account_for_edit", { p_profile_id: id });
   const data = new FormData(host.querySelector("form")!); expect(data.get("profile_id")).toBe(id); expect(data.get("full_name")).toBe("Nama akun login"); expect(data.getAll("branch_ids")).toEqual([old, unknown]);
   expect(host.textContent).toContain("Cabang lama"); expect(host.textContent).toContain("tidak tersedia"); expect(host.textContent).not.toContain("Di luar lingkup"); expect(host.textContent).toContain("HRIS"); expect(host.querySelector('a[href="/pengaturan/pengguna"]')).not.toBeNull();
+});
+it("uses the paired POS label on the editor without changing the submitted clinic ID", async () => {
+  state.allowed = null;
+  state.rpc.mockResolvedValue({ data: { ...snapshot, branch_ids: [clinic] }, error: null });
+  await render();
+  expect(host.textContent).toContain("Kamo Petshop Ciawi · Vet");
+  expect(host.textContent).not.toContain("Nama klinik lama");
+  expect(new FormData(host.querySelector("form")!).getAll("branch_ids")).toEqual([clinic]);
 });
 it("does not load data for an invalid target ID", async () => { await render("invalid"); expect(state.rpc).not.toHaveBeenCalled(); expect(host.querySelector("form")).toBeNull(); });
 it("fails closed for missing, denied or invalid snapshot reads", async () => { state.rpc.mockResolvedValue({ data: null, error: { message: "PRIVATE_DETAIL" } }); await render(); expect(host.querySelector("form")).toBeNull(); expect(host.textContent).not.toContain("PRIVATE"); state.rpc.mockResolvedValue({ data: { ...snapshot, profile_id: outside }, error: null }); await render(); expect(host.querySelector("form")).toBeNull(); });

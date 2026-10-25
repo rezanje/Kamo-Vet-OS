@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { availableOperationalBranches } from "@/lib/operational-branch";
+import { branchDisplayName } from "@/lib/branch-display";
 import { bolehBukaPath } from "@/lib/akses";
 import { getOpenShift } from "@/lib/shift";
 import { pilihCabang } from "./actions";
@@ -24,21 +25,26 @@ export default async function BranchSelectionPage({ searchParams }: { searchPara
   let loadError = "";
   try { branches = await availableOperationalBranches(client, user.id, mode); }
   catch { loadError = "Cabang gagal dimuat. Muat ulang untuk mencoba lagi."; }
+  const { data: labelCatalog } = mode === "klinik"
+    ? await client.from("branches").select("code,name,type").eq("is_active", true)
+    : { data: null };
   const canViewAll = mode === "klinik" && await allowedBranchIds(client, user.id) === null;
   const shift = await getOpenShift(client, user.id, mode);
+  const shiftBranch = branches.find(branch => branch.id === shift?.branch_id);
+  const shiftName = shiftBranch && mode === "klinik" ? branchDisplayName(shiftBranch, labelCatalog ?? []) : shift?.branchName;
   return <main className="pshop-wrap" style={{ minHeight: "100vh", borderRadius: 0 }}>
     <div className="card pshop-card" style={{ width: "100%", maxWidth: 480, padding: 24 }}>
       <h1 style={{ fontSize: 22 }}>Pilih cabang {mode === "klinik" ? "klinik" : "petshop"}</h1>
       <p style={{ color: "var(--tm)" }}>Cabang ini menjadi tempat kerja aktif. Data dan tindakan operasional mengikuti cabang yang dipilih.</p>
       {(error || loadError) && <p role="alert" style={{ color: "#b91c1c" }}>{error || loadError}</p>}
-      {shift && <p role="status">Shift berjalan di {shift.branchName}. Tutup shift sebelum pindah cabang.</p>}
+      {shift && <p role="status">Shift berjalan di {shiftName}. Tutup shift sebelum pindah cabang.</p>}
       {branches.length ? <form action={pilihCabang}>
         <input type="hidden" name="mode" value={mode} />
         <label htmlFor="branchId" className="flab">Cabang aktif *</label>
         <select id="branchId" className="fi" name="branchId" required defaultValue={shift?.branch_id ?? ""}>
           <option value="" disabled>Pilih cabang tempat bertugas</option>
           {canViewAll && <option value={ALL_BRANCHES} disabled={!!shift}>Semua cabang</option>}
-          {branches.map(branch => <option key={branch.id} value={branch.id} disabled={!!shift && shift.branch_id !== branch.id}>{branch.code} · {branch.name}</option>)}
+          {branches.map(branch => <option key={branch.id} value={branch.id} disabled={!!shift && shift.branch_id !== branch.id}>{branch.code} · {mode === "klinik" ? branchDisplayName(branch, labelCatalog ?? []) : branch.name}</option>)}
         </select>
         <SubmitButton className="btn-acc" pendingText="Memilih cabang…">Lanjutkan</SubmitButton>
       </form> : !loadError && <p role="status">Belum ada cabang aktif yang dapat diakses. Hubungi admin untuk penugasan cabang.</p>}
