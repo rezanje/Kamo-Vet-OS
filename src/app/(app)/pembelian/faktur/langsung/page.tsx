@@ -5,6 +5,7 @@ import { readCompleteList } from "@/lib/checked-list";
 import { FakturLangsungForm, type DirectInvoiceInitial } from "./FakturLangsungForm";
 
 // Faktur Pembelian Langsung — beli barang tanpa PO, barang masuk di dokumen yang sama.
+type SourceLine = { id: string; item_id: string | null; qty: number; harga: number; satuan: string | null; faktor: number; exp_date: string | null };
 
 export default async function FakturLangsungPage({
   searchParams,
@@ -16,6 +17,7 @@ export default async function FakturLangsungPage({
   const { data: { user } } = await supabase.auth.getUser();
 
   let initial: DirectInvoiceInitial | undefined;
+  let sourceLines: SourceLine[] = [];
   if (replace_invoice) {
     const { data: source, error: sourceError } = await supabase.from("purchase_invoices")
       .select("id,supplier_id,warehouse_id,tanggal,jatuh_tempo,no_faktur_pemasok,surat_jalan,keterangan")
@@ -23,20 +25,28 @@ export default async function FakturLangsungPage({
     if (sourceError || !source) return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca. Kembali ke riwayat faktur.</div>;
     try {
       const [lines, attachments] = await Promise.all([
-        readCompleteList<{ id: string; item_id: string | null; qty: number; harga: number; satuan: string | null; exp_date: string | null }>((from, to) =>
-          supabase.from("purchase_invoice_items").select("id,item_id,qty,harga,satuan,exp_date", { count: "exact" })
+        readCompleteList<SourceLine>((from, to) =>
+          supabase.from("purchase_invoice_items").select("id,item_id,qty,harga,satuan,faktor,exp_date", { count: "exact" })
             .eq("invoice_id", source.id).order("id").range(from, to), "Baris faktur sumber"),
         readCompleteList<{ id: string; path: string; nama: string; mime: string | null; ukuran: number | null }>((from, to) =>
           supabase.from("document_attachments").select("id,path,nama,mime,ukuran", { count: "exact" })
             .eq("modul", "pembelian").eq("ref_id", source.id).order("id").range(from, to), "Lampiran faktur sumber"),
       ]);
-      initial = { ...source, purchase_invoice_items: lines, lampiran: attachments } as DirectInvoiceInitial;
+      sourceLines = lines;
+      initial = { ...source, purchase_invoice_items: lines.map(line => ({
+        item_id: line.item_id, qty: line.qty, harga: line.harga, satuan: line.satuan, exp_date: line.exp_date,
+      })), lampiran: attachments } as DirectInvoiceInitial;
     } catch {
       return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca lengkap. Kembali ke riwayat faktur.</div>;
     }
     if (initial.purchase_invoice_items.length > 500) return <div role="alert" className="p2ban">Faktur sumber melebihi batas 500 baris. Faktur pengganti belum dapat disiapkan otomatis.</div>;
     if (initial.lampiran.length > 100) return <div role="alert" className="p2ban">Faktur sumber melebihi batas 100 lampiran. Faktur pengganti belum dapat disiapkan otomatis.</div>;
     if (!initial.purchase_invoice_items.length || initial.purchase_invoice_items.some(line => !line.item_id)) return <div role="alert" className="p2ban">Barang sumber tidak tersedia untuk faktur pengganti. Periksa faktur asal sebelum melanjutkan.</div>;
+    if (initial.lampiran.some(file => !file.path?.startsWith("pembelian/") || file.path.includes("..") || file.path.length > 500
+      || !file.nama || file.nama.length > 200 || (file.mime != null && file.mime.length > 120)
+      || (file.ukuran != null && (!Number.isFinite(Number(file.ukuran)) || Number(file.ukuran) <= 0 || Number(file.ukuran) > 10485760)))) {
+      return <div role="alert" className="p2ban">Referensi lampiran sumber tidak valid untuk faktur pengganti. Periksa faktur asal sebelum melanjutkan.</div>;
+    }
   }
 
   const [suppliers, warehouses, items] = await Promise.all([
@@ -61,9 +71,13 @@ export default async function FakturLangsungPage({
   }
   if (initial) {
     const selectable = new Set(daftar.map(item => item.id));
-    if (initial.purchase_invoice_items.some(line => !selectable.has(line.item_id)
-      || !!line.satuan && !(unitMap.get(line.item_id) ?? []).some(unit => unit.unit === line.satuan))) {
-      return <div role="alert" className="p2ban">Barang atau satuan sumber tidak tersedia untuk faktur pengganti. Periksa master barang sebelum melanjutkan.</div>;
+    if (sourceLines.some(line => {
+      const options = unitMap.get(line.item_id ?? "") ?? [];
+      const unit = line.satuan ? options.find(option => option.unit === line.satuan) : options[0];
+      return !line.item_id || !selectable.has(line.item_id) || !unit || !Number.isFinite(Number(line.faktor))
+        || Number(line.faktor) !== Number(unit.factor);
+    })) {
+      return <div role="alert" className="p2ban">Barang, satuan, atau faktor stok sumber tidak tersedia untuk faktur pengganti. Periksa master barang sebelum melanjutkan.</div>;
     }
   }
 

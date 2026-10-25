@@ -5,9 +5,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   failLaterPage: false, invoiceItemReads: 0, sourceLineCount: 1001,
   sourceAttachmentCount: 1, missingItem: false, activeItem: true, unitAvailable: true,
+  factorChanged: false, attachmentPath: "pembelian/nota.png", attachmentName: "Nota",
+  attachmentMime: "image/png", attachmentSize: 10,
 }));
 const sourceId = "11111111-1111-4111-8111-111111111111";
-const sourceItem = { item_id: "item", qty: 1, harga: 100, satuan: "pcs", exp_date: null };
+const sourceItem = { item_id: "item", qty: 1, harga: 100, satuan: "pcs", faktor: 1, exp_date: null };
 const source = {
   id: sourceId, supplier_id: "supplier", warehouse_id: "warehouse", tanggal: "2026-10-01",
   jatuh_tempo: "2026-10-31", no_faktur_pemasok: "SUP-1", surat_jalan: null,
@@ -36,9 +38,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       then: (resolve: (result: unknown) => unknown) => {
         if (table === "purchase_invoice_items") state.invoiceItemReads++;
         const rows = table === "purchase_invoice_items"
-          ? Array.from({ length: state.sourceLineCount }, (_, index) => ({ id: `line-${index}`, ...sourceItem, item_id: state.missingItem && index === 0 ? null : "item" }))
+          ? Array.from({ length: state.sourceLineCount }, (_, index) => ({ id: `line-${index}`, ...sourceItem,
+            item_id: state.missingItem && index === 0 ? null : "item", faktor: state.factorChanged && index === 0 ? 2 : 1 }))
           : table === "document_attachments"
-            ? Array.from({ length: state.sourceAttachmentCount }, (_, index) => ({ id: `attachment-${index}`, path: `private/${index}`, nama: "Nota", mime: "image/png", ukuran: 10 }))
+            ? Array.from({ length: state.sourceAttachmentCount }, (_, index) => ({ id: `attachment-${index}`,
+              path: state.attachmentPath, nama: state.attachmentName, mime: state.attachmentMime, ukuran: state.attachmentSize }))
             : table === "items" && state.activeItem
               ? [{ id: "item", code: "SKU-1", name: "Barang", buy_price: 100, unit: "pcs", track_expiry: false }]
             : [];
@@ -57,6 +61,8 @@ beforeEach(() => {
   state.failLaterPage = false; state.invoiceItemReads = 0;
   state.sourceLineCount = 1001; state.sourceAttachmentCount = 1;
   state.missingItem = false; state.activeItem = true; state.unitAvailable = true;
+  state.factorChanged = false; state.attachmentPath = "pembelian/nota.png";
+  state.attachmentName = "Nota"; state.attachmentMime = "image/png"; state.attachmentSize = 10;
 });
 
 it("reads all 1,001 source lines but blocks a replacement above the 500-line posting limit", async () => {
@@ -104,5 +110,30 @@ it.each([
   Object.assign(state, change);
   const html = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
   expect(html).toContain("tidak tersedia untuk faktur pengganti");
+  expect(html).not.toContain("data-items=");
+});
+
+it("blocks a changed unit factor before stock quantity can drift", async () => {
+  state.sourceLineCount = 1;
+  state.factorChanged = true;
+  const html = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
+  expect(html).toContain("faktor stok sumber tidak tersedia");
+  expect(html).not.toContain("data-items=");
+});
+
+it.each([
+  ["wrong folder", { attachmentPath: "private/nota.png" }],
+  ["parent path", { attachmentPath: "pembelian/../nota.png" }],
+  ["long path", { attachmentPath: `pembelian/${"x".repeat(491)}` }],
+  ["blank name", { attachmentName: "" }],
+  ["long name", { attachmentName: "x".repeat(201) }],
+  ["long MIME", { attachmentMime: "x".repeat(121) }],
+  ["zero size", { attachmentSize: 0 }],
+  ["oversize", { attachmentSize: 10485761 }],
+])("blocks %s attachment metadata rejected by the posting RPC", async (_label, change) => {
+  state.sourceLineCount = 1;
+  Object.assign(state, change);
+  const html = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
+  expect(html).toContain("Referensi lampiran sumber tidak valid");
   expect(html).not.toContain("data-items=");
 });
