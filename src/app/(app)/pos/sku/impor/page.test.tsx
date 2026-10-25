@@ -5,6 +5,8 @@ import { expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   calls: [] as Array<{ kind: string | null; owner: string | null }>,
   masterError: false,
+  masterStatus: "previewed",
+  rejected: 0,
 }));
 
 vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
@@ -32,7 +34,8 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
         fixture.calls.push(filter);
         if (filter.kind === "master_accurate") return fixture.masterError
           ? { data: null, error: { message: "fixture read error" } }
-          : { data: [{ id: "saved-master-run", source_name: "sample.xlsx", status: "previewed", summary: {
+          : { data: [{ id: "saved-master-run", source_name: "sample.xlsx", status: fixture.masterStatus, summary: {
+            Ditolak: fixture.rejected,
             progress: { phase: "mengimpor", completed: 40, total: 100, percentage: 40 },
           } }], error: null };
         return { data: [], error: null };
@@ -57,4 +60,17 @@ it("passes through master-run read failures instead of presenting an empty list"
   fixture.masterError = true;
   const html = renderToStaticMarkup(await ImporBarangPage({ searchParams: Promise.resolve({}) }));
   expect(html).toContain("fixture read error");
+});
+
+it("keeps rejected master rows visible when a saved run has posted", async () => {
+  fixture.masterError = false;
+  fixture.masterStatus = "posted";
+  fixture.rejected = 3;
+  try {
+    const html = renderToStaticMarkup(await ImporBarangPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain('&quot;rejectedCount&quot;:3');
+  } finally {
+    fixture.masterStatus = "previewed";
+    fixture.rejected = 0;
+  }
 });

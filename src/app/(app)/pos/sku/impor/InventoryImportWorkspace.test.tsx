@@ -78,3 +78,16 @@ it("discloses a failed master-batch read instead of claiming there are no saved 
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("fixture read error");
   expect(host.textContent).not.toContain("Belum ada batch master");
 });
+
+it("labels a posted master batch with rejected rows as partial completion", () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[{
+    id: "saved-master-run", source_name: "sample.xlsx", status: "posted", rejectedCount: 3,
+    progress: { phase: "selesai", completed: 100, total: 100, percentage: 100 },
+  }]} masterError={null} recovered={null} initialReceipt={null} />));
+  expect(host.textContent).toContain("selesai sebagian");
+  expect(host.textContent).toContain("3 baris ditolak");
+  expect(host.textContent).not.toContain("Master tercatat selesai;");
+});

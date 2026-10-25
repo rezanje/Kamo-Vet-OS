@@ -47,6 +47,9 @@ export default async function ImporBarangPage({
         id: run.id,
         source_name: run.source_name,
         status: run.status,
+        rejectedCount: run.summary && typeof run.summary === "object" && !Array.isArray(run.summary)
+          && "Ditolak" in run.summary && Number.isSafeInteger(run.summary.Ditolak) && run.summary.Ditolak >= 0
+          ? run.summary.Ditolak : null,
         progress: run.summary && typeof run.summary === "object" && !Array.isArray(run.summary) && "progress" in run.summary
           ? bacaProgresDariRingkasan(run.summary) : null,
       }));

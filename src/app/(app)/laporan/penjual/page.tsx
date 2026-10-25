@@ -181,7 +181,7 @@ export default async function PenjualPage({
             <tbody>
               {penjualRows.map((r) => (
                 <tr key={r.employeeId}>
-                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.nama}</td>
+                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{labelPenjual(r.employeeId)}</td>
                   {SUMBER.map((s) => (
                     <td key={s} style={{ textAlign: "right", fontSize: 11, color: r.perSumber[s] ? "var(--tm)" : "var(--td)" }}>
                       {r.perSumber[s] ? rp(r.perSumber[s]) : "—"}
@@ -213,7 +213,7 @@ export default async function PenjualPage({
       {penjualRows.map((r) => (
         <details key={r.employeeId} className="crm-sec" style={{ marginBottom: 10 }}>
           <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span>Barang yang dijual {r.nama}</span>
+            <span>Barang yang dijual {labelPenjual(r.employeeId)}</span>
             <span style={{ fontWeight: 600, color: "var(--tm)" }}>
               {r.perBarang.size} jenis · {rp(r.omzet)}
             </span>
