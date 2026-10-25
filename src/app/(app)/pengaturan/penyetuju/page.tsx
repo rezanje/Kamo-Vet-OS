@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { TabelKosong } from "@/components/LaporanPage";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
+import { readListPage } from "@/lib/checked-list";
 import { JENIS_PERSETUJUAN, PERAN_PENYETUJU, labelJenis } from "@/lib/persetujuan";
 import {
   hapusAturanPersetujuan, setujuiPengajuan, tambahAturanPersetujuan, tolakPengajuan, ubahStatusAturan,
@@ -21,13 +23,21 @@ const waktu = (iso: string) =>
 const WARNA_STATUS: Record<string, string> = {
   menunggu: "#b45309", disetujui: "#15803d", ditolak: "#b91c1c", terpakai: "var(--td)",
 };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REQUEST_SELECT = "id, jenis, ref_id, no_dokumen, nilai, keterangan, penyetuju_role, status, diajukan_oleh, diajukan_at, diputus_at, catatan";
+
+type Req = {
+  id: string; jenis: string; ref_id: string; no_dokumen: string | null; nilai: number; keterangan: string | null;
+  penyetuju_role: string; status: string; diajukan_oleh: string | null; diajukan_at: string;
+  diputus_at: string | null; catatan: string | null;
+};
 
 export default async function PenyetujuPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; hal?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, hal } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
@@ -36,30 +46,31 @@ export default async function PenyetujuPage({
   const peranSaya = String(me.role);
   const bolehAtur = ["OWNER", "ADMIN"].includes(peranSaya);
 
-  const [{ data: rulesRaw }, { data: reqRaw }, { data: profiles }] = await Promise.all([
+  const [{ data: rulesRaw }, { data: historyRaw, error: historyError }, { data: profiles }] = await Promise.all([
     supabase.from("approval_rules")
       .select("id, jenis, min_nilai, penyetuju_role, is_active")
       .order("jenis").order("min_nilai"),
     supabase.from("approval_requests")
-      .select("id, jenis, ref_id, no_dokumen, nilai, keterangan, penyetuju_role, status, diajukan_oleh, diajukan_at, diputus_at, catatan")
+      .select(REQUEST_SELECT).neq("status", "menunggu")
       .order("diajukan_at", { ascending: false }).limit(50),
     supabase.from("profiles").select("id, full_name"),
   ]);
 
-  type Rule = { id: string; jenis: string; min_nilai: number; penyetuju_role: string; is_active: boolean };
-  type Req = {
-    id: string; jenis: string; no_dokumen: string | null; nilai: number; keterangan: string | null;
-    penyetuju_role: string; status: string; diajukan_oleh: string | null; diajukan_at: string;
-    diputus_at: string | null; catatan: string | null;
-  };
+  let pendingPage;
+  let pendingError: unknown;
+  try {
+    pendingPage = await readListPage<Req>((from, to) => supabase.from("approval_requests")
+      .select(REQUEST_SELECT, { count: "exact" }).eq("status", "menunggu")
+      .order("diajukan_at", { ascending: false }).order("id").range(from, to), "Pengajuan menunggu", hal);
+  } catch (loadError) { pendingError = loadError; }
 
+  type Rule = { id: string; jenis: string; min_nilai: number; penyetuju_role: string; is_active: boolean };
   const aturan = (rulesRaw ?? []) as Rule[];
-  const pengajuan = (reqRaw ?? []) as Req[];
+  const menunggu = pendingPage?.rows ?? [];
+  const riwayat = (historyRaw ?? []) as Req[];
   const nama = new Map(((profiles ?? []) as { id: string; full_name: string | null }[])
     .map((p) => [p.id, p.full_name || "(tanpa nama)"]));
 
-  const menunggu = pengajuan.filter((r) => r.status === "menunggu");
-  const riwayat = pengajuan.filter((r) => r.status !== "menunggu");
   const bolehPutuskan = (r: Req) => peranSaya === "OWNER" || peranSaya === r.penyetuju_role;
 
   return (
@@ -84,9 +95,10 @@ export default async function PenyetujuPage({
       <div className="crm-sec">
         <SecHeader
           num="01"
-          title={`MENUNGGU PERSETUJUAN (${menunggu.length})`}
+          title={`MENUNGGU PERSETUJUAN (${pendingPage?.count ?? "—"})`}
           desc="Transaksi yang nilainya melewati batas dan ditahan sampai disetujui."
         />
+        {pendingError !== undefined && <ListLoadFailure error={pendingError} label="Pengajuan menunggu" />}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 940 }}>
             <thead>
@@ -105,6 +117,9 @@ export default async function PenyetujuPage({
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{labelJenis(r.jenis)}</td>
                   <td style={{ fontSize: 11 }}>
                     {r.keterangan ?? r.no_dokumen ?? "—"}
+                    {r.jenis === "bayar-faktur" && UUID.test(r.ref_id) && (
+                      <div><Link href={`/pembelian/faktur/${r.ref_id}`}>Buka faktur {r.no_dokumen ?? ""}</Link></div>
+                    )}
                     <div style={{ fontSize: 9.5, color: "var(--td)" }}>
                       oleh {r.diajukan_oleh ? nama.get(r.diajukan_oleh) ?? "(akun terhapus)" : "—"}
                     </div>
@@ -129,12 +144,13 @@ export default async function PenyetujuPage({
                   </td>
                 </tr>
               ))}
-              {menunggu.length === 0 && (
+              {pendingPage && menunggu.length === 0 && (
                 <TabelKosong kolom={6} pesan="Tidak ada transaksi yang menunggu persetujuan." />
               )}
             </tbody>
           </table>
         </div>
+        {pendingPage && <ListPagination path="/pengaturan/penyetuju" query={{}} total={pendingPage.count} pageInfo={pendingPage.pageInfo} />}
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.7 }}>
           Transaksi yang ditahan TIDAK tersimpan setengah jalan — tidak ada jurnal, tidak ada
           nomor bukti, tidak ada uang muka yang terpakai. Setelah disetujui, yang mengajukan
@@ -230,6 +246,7 @@ export default async function PenyetujuPage({
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader num="03" title="RIWAYAT KEPUTUSAN" desc="Pengajuan yang sudah diputuskan atau sudah dipakai." />
+        {(historyError || !Array.isArray(historyRaw)) && <ListLoadFailure error={historyError} label="Riwayat keputusan" />}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 860 }}>
             <thead>
@@ -255,7 +272,7 @@ export default async function PenyetujuPage({
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{r.catatan ?? "—"}</td>
                 </tr>
               ))}
-              {riwayat.length === 0 && <TabelKosong kolom={6} pesan="Belum ada keputusan." />}
+              {!historyError && Array.isArray(historyRaw) && riwayat.length === 0 && <TabelKosong kolom={6} pesan="Belum ada keputusan." />}
             </tbody>
           </table>
         </div>
