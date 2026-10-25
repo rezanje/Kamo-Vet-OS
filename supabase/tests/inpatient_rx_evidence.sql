@@ -22,6 +22,9 @@ select public.clinic_admit_inpatient('ca600000-0000-4000-8000-000000000004',
 insert into public.prescription_items(id,medical_record_id,nama_obat,qty,satuan,jenis)
 values ('ca910000-0000-4000-8000-000000000001',
   'ca700000-0000-4000-8000-000000000004','DEMO Obat Biasa',3,'tablet','obat');
+insert into public.prescription_items(id,medical_record_id,nama_obat,qty,satuan,jenis)
+values ('ca910000-0000-4000-8000-000000000002',
+  'ca700000-0000-4000-8000-000000000004','DEMO Obat Ruangan',2,'tablet','obat');
 
 do $$
 declare v_record uuid;v_handover uuid;v_administration uuid;v_failed boolean;
@@ -50,6 +53,11 @@ begin
   v_administration:=public.clinic_record_rx_evidence(v_record,
     'ca910000-0000-4000-8000-000000000001','administration',1,null,'DEMO dose','rx-evidence-demo-given-01');
   if v_administration is null then raise exception 'administration evidence missing';end if;
+  if public.clinic_record_rx_evidence(v_record,
+    'ca910000-0000-4000-8000-000000000002','administration',1,null,'DEMO ward stock',
+    'rx-evidence-demo-given-02') is null then
+    raise exception 'independent administration evidence missing';
+  end if;
   v_failed:=false;
   begin
     perform public.clinic_record_rx_evidence(v_record,
@@ -69,7 +77,6 @@ begin
       where id='ca700000-0000-4000-8000-000000000004';
   exception when others then v_failed:=sqlerrm like 'RX_EVIDENCE_LOCKED:%';end;
   if not v_failed then raise exception 'medical record moved after prescription evidence';end if;
-
   if not public.clinic_void_rx_evidence(v_administration,'DEMO salah catat') then
     raise exception 'administration void failed';end if;
   if (select voided_at from public.inpatient_rx_evidence where id=v_administration) is null
@@ -87,6 +94,29 @@ end $$;
 
 -- A different active user assigned only to the other branch cannot write this stay.
 reset role;
+-- Simulate a privileged maintenance write: source identity remains locked even
+-- when the ordinary client has no direct UPDATE grant on these parent tables.
+do $$
+declare v_failed boolean:=false;
+begin
+  begin
+    update public.inpatient_records set branch_id='ca200000-0000-4000-8000-000000000002'
+      where id=current_setting('test.k07_record_id')::uuid;
+  exception when others then
+    if sqlerrm not like 'RX_EVIDENCE_LOCKED:%' then raise;end if;
+    v_failed:=true;
+  end;
+  if not v_failed then raise exception 'inpatient stay moved after prescription evidence';end if;
+  v_failed:=false;
+  begin
+    update public.visits set branch_id='ca200000-0000-4000-8000-000000000002'
+      where id='ca600000-0000-4000-8000-000000000004';
+  exception when others then
+    if sqlerrm not like 'RX_EVIDENCE_LOCKED:%' then raise;end if;
+    v_failed:=true;
+  end;
+  if not v_failed then raise exception 'visit moved after prescription evidence';end if;
+end $$;
 insert into auth.users(id,raw_user_meta_data)
 values ('ca100000-0000-4000-8000-000000000009','{}');
 update public.profiles set role='STAFF' where id='ca100000-0000-4000-8000-000000000009';
@@ -102,9 +132,36 @@ declare v_record uuid;v_failed boolean:=false;
 begin
   -- Keep the exact ID saved by the authorized fixture; do not rely on a row hidden by RLS.
   v_record:=current_setting('test.k07_record_id')::uuid;
+  if (select count(*) from public.inpatient_rx_evidence
+      where inpatient_record_id=v_record)<>0 then
+    raise exception 'cross-branch actor read private evidence';
+  end if;
   begin
     perform public.clinic_record_rx_evidence(v_record,
       'ca910000-0000-4000-8000-000000000001','handover',1,null,null,'rx-evidence-other-branch');
   exception when others then v_failed:=sqlerrm like 'ACCESS_DENIED:%';end;
   if not v_failed then raise exception 'cross-branch actor recorded evidence';end if;
+end $$;
+
+-- A user assigned to the same branch still needs clinic module access to write.
+reset role;
+insert into auth.users(id,raw_user_meta_data)
+values ('ca100000-0000-4000-8000-000000000010','{}');
+update public.profiles set role='FINANCE' where id='ca100000-0000-4000-8000-000000000010';
+insert into public.user_branches(user_id,branch_id)
+values ('ca100000-0000-4000-8000-000000000010','ca200000-0000-4000-8000-000000000001');
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca100000-0000-4000-8000-000000000010"}',true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','ca100000-0000-4000-8000-000000000010',true);
+do $$
+declare v_failed boolean:=false;
+begin
+  begin
+    perform public.clinic_record_rx_evidence(current_setting('test.k07_record_id')::uuid,
+      'ca910000-0000-4000-8000-000000000001','handover',1,null,null,
+      'rx-evidence-finance-module');
+  exception when others then v_failed:=sqlerrm like 'ACCESS_DENIED:%';end;
+  if not v_failed then raise exception 'finance actor without clinic module recorded evidence';end if;
 end $$;

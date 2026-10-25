@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """K07 fictional PostgreSQL verification in a disposable, in-memory container."""
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import subprocess
 import sys
@@ -40,5 +41,26 @@ with InMemoryPostgres() as db:
     if not base.rstrip().endswith('rollback;'):
         raise RuntimeError('Inpatient fixture no longer ends with ROLLBACK; review setup')
     rx = (ROOT / 'supabase/tests/inpatient_rx_evidence.sql').read_text()
-    db.sql(base.rsplit('rollback;', 1)[0] + rx + '\nrollback;')
-    print('PASS K07 fictional handover, administration, retry, void, source integrity and cross-branch guards')
+    # Commit fictional rows only inside this disposable tmpfs database so two
+    # independent psql sessions can exercise the same request concurrently.
+    db.sql(base.rsplit('rollback;', 1)[0] + rx + '\ncommit;')
+    same_request = """begin;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca100000-0000-4000-8000-000000000001"}',true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','ca100000-0000-4000-8000-000000000001',true);
+select public.clinic_record_rx_evidence(
+  (select id from public.inpatient_records where visit_id='ca600000-0000-4000-8000-000000000004'),
+  'ca910000-0000-4000-8000-000000000001','handover',1,null,null,
+  'rx-evidence-concurrent-demo-01');
+commit;"""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        attempts = list(pool.map(db.sql, [same_request, same_request]))
+    returned = [attempt.splitlines()[-1] for attempt in attempts]
+    if len(set(returned)) != 1:
+        raise RuntimeError('Concurrent identical requests returned different evidence IDs')
+    count = db.sql("select count(*) from public.inpatient_rx_evidence where request_key='rx-evidence-concurrent-demo-01';")
+    if count != '1':
+        raise RuntimeError('Concurrent identical requests created duplicate evidence')
+    print('PASS K07 fictional handover, administration, concurrent retry, void, source integrity and cross-branch guards')
