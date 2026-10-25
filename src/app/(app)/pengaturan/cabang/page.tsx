@@ -3,7 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { simpanLokasiCabang } from "./actions";
+import { groomingDoctorRequired, isGroomingOutlet } from "@/lib/grooming-requirements";
+import { simpanAturanGroomingCabang, simpanLokasiCabang } from "./actions";
 
 // REAL data. branches = readable by all authenticated; warehouses = RLS-filtered
 // (STAFF sees only assigned-branch warehouses, OWNER/ADMIN see all).
@@ -18,9 +19,10 @@ export default async function CabangPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: branches }, { data: warehouses }] = await Promise.all([
+  const [{ data: branches }, { data: warehouses }, { data: groomingRules, error: groomingRulesError }] = await Promise.all([
     supabase.from("branches").select("id, code, name, type, is_active, lat, lng, radius_m").order("name"),
     supabase.from("warehouses").select("code, name, type, branches(name)").order("code"),
+    supabase.from("branch_grooming_rules").select("branch_id,doctor_required"),
   ]);
 
   const cabang = (branches ?? []) as {
@@ -28,6 +30,7 @@ export default async function CabangPage({
     lat: number | null; lng: number | null; radius_m: number;
   }[];
   const berlokasi = cabang.filter((b) => b.lat !== null && b.lng !== null).length;
+  const groomingByBranch = new Map((groomingRules ?? []).map(rule => [rule.branch_id, rule.doctor_required]));
 
   return (
     <>
@@ -46,7 +49,7 @@ export default async function CabangPage({
       )}
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Lokasi cabang tersimpan.
+          <i className="ti ti-circle-check" /> {success === "grooming" ? "Aturan grooming cabang tersimpan." : "Lokasi cabang tersimpan."}
         </div>
       )}
 
@@ -113,6 +116,23 @@ export default async function CabangPage({
           Cara ambil titik: buka Google Maps di lokasi cabang, tekan lama di titiknya, angka
           yang muncul (mis. <code>-6.5971, 106.7991</code>) disalin ke kolom lintang &amp; bujur.
         </div>
+      </div>
+
+      <div className="crm-sec">
+        <SecHeader num="02" title="PELAKSANA GROOMING PER CABANG" desc="Groomer selalu wajib. Cabang berklinik juga memerlukan dokter, kecuali diatur berbeda di sini." />
+        {groomingRulesError ? <p role="alert">Aturan grooming belum dapat dimuat. Muat ulang sebelum menyimpan.</p> : cabang.filter(branch => isGroomingOutlet(branch.type)).map(branch => (
+          <form key={branch.id} action={simpanAturanGroomingCabang} style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap", borderBottom: "1px solid var(--bd)", padding: "10px 0" }}>
+            <input type="hidden" name="id" value={branch.id} />
+            <div style={{ minWidth: 180, flex: "1 1 180px" }}><strong>{branch.name}</strong><div style={{ color: "var(--tm)" }}>{branch.code} · {branch.type}</div></div>
+            <label className="flab">Pelaksana wajib untuk Grooming
+              <select className="fi" name="doctor_required" defaultValue={groomingDoctorRequired(branch.type, groomingByBranch.get(branch.id)) ? "1" : "0"} disabled={!bolehKelola}>
+                <option value="1">Dokter dan groomer</option>
+                <option value="0">Groomer saja</option>
+              </select>
+            </label>
+            {bolehKelola && <button type="submit" className="btn-def">Simpan</button>}
+          </form>
+        ))}
       </div>
 
       <div className="grid2" style={{ alignItems: "start" }}>

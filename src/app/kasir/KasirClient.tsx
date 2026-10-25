@@ -37,6 +37,7 @@ export type GroupComponentRow = {
 
 export type ItemRow = {
   id: string; code: string; name: string; itemType: ItemType;
+  tindakanKategori?: string | null;
   harga: number; kategori: string; stok: number | null;
   // Aturan jual dari master barang (migrasi 0075).
   minJual?: number; diskonDefault?: number; substitusi?: string | null;
@@ -66,7 +67,7 @@ export type PromoRow = Promo & {
   auto_apply?: boolean;
 };
 type CartLine = {
-  row_key?: string; item_type?: ItemType; service_performers?: ServicePerformersInput | null;
+  row_key?: string; item_type?: ItemType; tindakanKategori?: string | null; service_performers?: ServicePerformersInput | null;
   item_id: string; nama: string; qty: number; harga: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
   minJual?: number;
@@ -98,6 +99,7 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 export function KasirClient({
   branchName, items, customers, vouchers, hariIni, draftContext, shiftId, promos = [], promoHitung = [],
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
+  groomingDoctorRequired = false, groomingApplies = true,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
@@ -105,6 +107,8 @@ export function KasirClient({
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
   salespeople?: PilihanPenjual[]; cashierName?: string;
+  groomingDoctorRequired?: boolean;
+  groomingApplies?: boolean;
   error?: string;
 }) {
   const [q, setQ] = useState("");
@@ -166,6 +170,7 @@ export function KasirClient({
           ...line,
           nama: item.name,
           item_type: item.itemType,
+          tindakanKategori: item.tindakanKategori,
           ...(item.itemType === "Jasa" ? { row_key: String(line.row_key || crypto.randomUUID()), service_performers: line.service_performers as ServicePerformersInput ?? emptyServicePerformers() } : { service_performers: null }),
           harga: unit?.sell_price ?? item.harga,
           hargaNormal: unit?.sell_price ?? item.harga,
@@ -248,6 +253,7 @@ export function KasirClient({
       const dasar = it.satuan?.[0];
       const baris: CartLine = {
         item_type: it.itemType,
+        tindakanKategori: it.tindakanKategori,
         ...(it.itemType === "Jasa" ? { row_key: crypto.randomUUID(), service_performers: emptyServicePerformers() } : {}),
         item_id: it.id, nama: it.name, qty: 0, harga: dasar?.sell_price ?? it.harga,
         hargaNormal: dasar?.sell_price ?? it.harga,
@@ -637,7 +643,9 @@ export function KasirClient({
                         <td style={{ fontSize: 10, color: "var(--tm)" }}>{i + 1}</td>
                         <td style={{ fontSize: 10.5 }}>
                           {l.nama}
-                          {l.item_type === "Jasa" && <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers} staff={salespeople} onChange={next => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, service_performers: next } : row))} />}
+                          {l.item_type === "Jasa" && <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers} staff={salespeople}
+                            grooming={groomingApplies && l.tindakanKategori === "Grooming"} doctorRequired={groomingDoctorRequired}
+                            onChange={next => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, service_performers: next } : row))} />}
                           <div style={{ fontSize: 9, color: "var(--td)" }}>
                             {rp(l.harga)}{l.satuan ? ` / ${l.satuan}` : ""}
                           </div>

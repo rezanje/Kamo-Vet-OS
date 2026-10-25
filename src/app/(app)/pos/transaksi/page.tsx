@@ -7,8 +7,9 @@ import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
 import { readCompleteList } from "@/lib/checked-list";
+import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "@/lib/grooming-requirements";
 
-type CatalogItem = { id: string; code: string; name: string; item_type: string; unit: string; sell_price: number; target_species: string };
+type CatalogItem = { id: string; code: string; name: string; item_type: string; tindakan_kategori: string | null; unit: string; sell_price: number; target_species: string };
 
 export default async function TransaksiPage({
   searchParams,
@@ -20,11 +21,15 @@ export default async function TransaksiPage({
 
   const { data: { user } } = await supabase.auth.getUser();
   const [items, { data: customers }, { data: branches }, allowedBranches] = await Promise.all([
-    readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, item_type, unit, sell_price, target_species", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang POS", { maxRows: null }),
+    readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, item_type, tindakan_kategori, unit, sell_price, target_species", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang POS", { maxRows: null }),
     supabase.from("customers").select("id, name, phone, points, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), pets(id, name, species)").order("name"),
-    supabase.from("branches").select("id, code, name").eq("is_active", true).order("name"),
+    supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"),
     user ? allowedBranchIds(supabase, user.id) : [],
   ]);
+  const rules = items.some(item => isGroomingService(item.item_type, item.tindakan_kategori))
+    ? await readCompleteList<{id:string;doctor_required:boolean}>((from,to)=>supabase.from("branch_grooming_rules")
+      .select("id:branch_id,doctor_required", {count:"exact"}).order("branch_id").range(from,to), "Aturan grooming cabang", {maxRows:null}) : [];
+  const ruleByBranch = new Map(rules.map(rule => [rule.id, rule.doctor_required]));
 
   // Satuan berjenjang: kasir pilih pcs/box saat menambah ke keranjang.
   const unitMap = await loadItemUnits(supabase, items.map((i) => i.id));
@@ -33,6 +38,7 @@ export default async function TransaksiPage({
     code: i.code as string,
     name: i.name as string,
     item_type: i.item_type,
+    tindakan_kategori: i.tindakan_kategori,
     sell_price: Number(i.sell_price),
     target_species: i.target_species as string,
     units: unitOptions({ unit: i.unit as string, sell_price: Number(i.sell_price) }, unitMap.get(i.id as string) ?? []),
@@ -109,6 +115,8 @@ export default async function TransaksiPage({
         customers={pelanggan}
         branches={branches ?? []}
         serviceStaffByBranch={Object.fromEntries(serviceStaffEntries)}
+        groomingDoctorByBranch={Object.fromEntries((branches ?? []).map(branch => [branch.id, groomingDoctorRequired(branch.type, ruleByBranch.get(branch.id))]))}
+        groomingAppliesByBranch={Object.fromEntries((branches ?? []).map(branch => [branch.id, isGroomingOutlet(branch.type)]))}
         hargaPerCabang={hargaPerCabang}
         promoPerCabang={Object.fromEntries(promoEntries)}
         aturanDiskon={Object.fromEntries(discountEntries)}

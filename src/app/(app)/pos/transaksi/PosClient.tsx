@@ -17,7 +17,7 @@ import { totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
 import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-promos";
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 
-export type Item = { id: string; code?: string; name: string; item_type?: string; sell_price: number; target_species: string; units: ItemUnit[] };
+export type Item = { id: string; code?: string; name: string; item_type?: string; tindakan_kategori?: string | null; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
 export type Cust = {
   id: string; name: string; phone: string; points: number; pets: Pet[];
@@ -26,7 +26,7 @@ export type Cust = {
 };
 type Branch = { id: string; code: string; name: string };
 type Line = {
-  row_key: string; item_type?: string; service_performers: ServicePerformersInput | null;
+  row_key: string; item_type?: string; tindakan_kategori?: string | null; service_performers: ServicePerformersInput | null;
   item_id: string; nama: string; qty: number; harga: number; target_species: string;
   satuan: string; faktor: number;
 };
@@ -42,8 +42,8 @@ const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satua
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {} }: {
-  items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; hargaPerCabang?: HargaPerCabang;
+export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {} }: {
+  items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
   promoPerCabang?: Record<string, PromoHitung[]>;
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
@@ -84,7 +84,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
           const price = hargaPerCabang[branch]?.[`${item.id}|${unit.unit}`] ?? unit.sell_price;
           const rowKey = line.row_key && !rowKeys.has(line.row_key) ? line.row_key : crypto.randomUUID();
           rowKeys.add(rowKey);
-          return [{ ...line, row_key: rowKey, item_type: item.item_type,
+          return [{ ...line, row_key: rowKey, item_type: item.item_type, tindakan_kategori: item.tindakan_kategori,
             service_performers: item.item_type === "Jasa" ? line.service_performers ?? emptyServicePerformers() : null,
             nama: item.name, target_species: item.target_species, harga: price, faktor: unit.factor }];
         });
@@ -173,7 +173,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
     setCart((c) => {
       const u = it.units[0];
       const baris: Line = {
-        row_key: crypto.randomUUID(), item_type: it.item_type,
+        row_key: crypto.randomUUID(), item_type: it.item_type, tindakan_kategori: it.tindakan_kategori,
         service_performers: it.item_type === "Jasa" ? emptyServicePerformers() : null,
         item_id: it.id, nama: it.name, qty: 1, harga: u.sell_price,
         target_species: it.target_species, satuan: u.unit, faktor: u.factor,
@@ -341,6 +341,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
                 <button type="button" aria-label={`Hapus ${l.nama}`} onClick={() => remove(k)} className="back-btn" style={{ color: "#b91c1c" }}><i className="ti ti-trash" /></button>
               </div>
               {l.item_type === "Jasa" && <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers}
+                grooming={groomingAppliesByBranch[branchId] && l.tindakan_kategori === "Grooming"} doctorRequired={groomingDoctorByBranch[branchId]}
                 staff={serviceStaffByBranch[branchId] ?? []} onChange={value => setCart(rows => rows.map(row => row.row_key === k ? { ...row, service_performers: value } : row))} />}
               </div>
             );

@@ -1,6 +1,8 @@
 import { readCompleteList } from "./checked-list";
 import { hariIniWIB } from "./tanggal";
 import { servicePerformerInput, serviceStaffSlots, type ServiceStaff } from "./service-performers";
+import { clinicalRoles } from "./clinical-staff";
+import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "./grooming-requirements";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadServiceStaff(client: any, branchId: string | null): Promise<ServiceStaff[]> {
@@ -34,19 +36,39 @@ export async function loggedInCashier(client: any, userId: string, _branchId: st
   return { employeeId: employee?.id as string | undefined ?? null, name: String(employee?.nama || profile?.full_name || "Akun kasir") };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function loadBranchGroomingPolicy(client: any, branchId: string) {
+  const [{ data: branch, error: branchError }, { data: rule, error: ruleError }] = await Promise.all([
+    client.from("branches").select("type").eq("id", branchId).maybeSingle(),
+    client.from("branch_grooming_rules").select("doctor_required").eq("branch_id", branchId).maybeSingle(),
+  ]);
+  if (branchError || ruleError || !branch?.type) throw Error("Aturan grooming cabang belum dapat diperiksa. Muat ulang.");
+  return { applies: isGroomingOutlet(branch.type), doctorRequired: groomingDoctorRequired(branch.type, rule?.doctor_required) };
+}
+
 /** Preflight before JS stock issues; database repeats it under locks on insert. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function validateServicePerformerRows(client: any, branchId: string, rows: { item_type?: string; service_performers?: unknown }[]) {
+export async function validateServicePerformerRows(client: any, branchId: string, rows: { item_type?: string; tindakan_kategori?: string | null; service_performers?: unknown }[]) {
   const normalized = rows.map(row => {
     const value = servicePerformerInput(row.service_performers);
     if (row.item_type !== "Jasa" && (value.doctor_id || value.staff_id)) throw Error("Pelaksana per baris hanya untuk item Jasa");
     return row.item_type === "Jasa" ? value : null;
   });
-  if (!normalized.some(value => value?.doctor_id || value?.staff_id)) return normalized;
+  const hasGrooming = rows.some(row => isGroomingService(row.item_type, row.tindakan_kategori));
+  if (!hasGrooming && !normalized.some(value => value?.doctor_id || value?.staff_id)) return normalized;
+  let doctorRequired = false;
+  const groomingPolicy = hasGrooming ? await loadBranchGroomingPolicy(client, branchId) : { applies: false, doctorRequired: false };
+  doctorRequired = groomingPolicy.doctorRequired;
+  if (!groomingPolicy.applies && !normalized.some(value => value?.doctor_id || value?.staff_id)) return normalized;
   const slots = serviceStaffSlots(await loadServiceStaff(client, branchId));
-  for (const value of normalized) {
+  for (const [index, value] of normalized.entries()) {
     if (value?.doctor_id && !slots.doctors.some(row => row.id === value.doctor_id)) throw Error("Dokter harus aktif dan ditugaskan di cabang transaksi");
     if (value?.staff_id && !slots.staff.some(row => row.id === value.staff_id)) throw Error("Non-dokter harus aktif dan ditugaskan di cabang transaksi");
+    if (groomingPolicy.applies && isGroomingService(rows[index].item_type, rows[index].tindakan_kategori)) {
+      if (!value?.staff_id || !slots.staff.some(row => row.id === value.staff_id && clinicalRoles(row.jabatan).includes("groomer")))
+        throw Error("Groomer aktif di cabang ini wajib dipilih untuk layanan Grooming");
+      if (doctorRequired && !value.doctor_id) throw Error("Dokter wajib dipilih untuk Grooming di cabang ini");
+    }
   }
   return normalized;
 }

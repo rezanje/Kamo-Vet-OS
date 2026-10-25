@@ -42,6 +42,7 @@ type CartLine = {
   promo_discount?: number | null;   // diisi server dari master, bukan dari klien
   satuan?: string; faktor?: number; // ditetapkan ulang dari master di bawah
   item_type?: JenisKomponen;         // ditetapkan ulang dari master di bawah
+  tindakan_kategori?: string | null; // ditetapkan ulang dari master untuk aturan Grooming
   group_components?: SnapshotKomponenGrup[];
 };
 
@@ -102,7 +103,7 @@ export async function checkoutKasir(formData: FormData) {
   const cartIds = [...new Set(rows.map((l) => l.item_id).filter(Boolean))];
   if (cartIds.length > 0) {
     const [{ data: itemsHarga }, hargaMap, unitMap] = await Promise.all([
-      supabase.from("items").select("id, nama:name, unit, item_type, sell_price, min_sell_qty, is_active").in("id", cartIds),
+      supabase.from("items").select("id, nama:name, unit, item_type, tindakan_kategori, sell_price, min_sell_qty, is_active").in("id", cartIds),
       loadHargaCabang(supabase, branchId, cartIds),
       // Faktor satuan WAJIB dari master: faktor palsu dari klien = stok terpotong
       // lebih sedikit daripada barang yang benar-benar keluar dari rak.
@@ -110,6 +111,7 @@ export async function checkoutKasir(formData: FormData) {
     ]);
     type ItemHarga = {
       id: string; nama: string; unit: string; item_type: JenisKomponen;
+      tindakan_kategori: string | null;
       sell_price: number; min_sell_qty: number; is_active: boolean;
     };
     const pusat = new Map(
@@ -182,6 +184,7 @@ export async function checkoutKasir(formData: FormData) {
       }
       l.nama = p.nama;
       l.item_type = p.item_type;
+      l.tindakan_kategori = p.tindakan_kategori;
       if (p.item_type === "Grup") {
         l.satuan = p.unit;
         l.faktor = 1;

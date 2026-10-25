@@ -1,4 +1,4 @@
-import { loadServiceStaff } from "@/lib/service-performers-server";
+import { loadBranchGroomingPolicy, loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -75,6 +75,8 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
     : "—";
   const tglMasuk = new Date(rec.admitted_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
+  const groomingPolicy = visit?.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
+  const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
   return (
     <>
       <div style={{ marginBottom: 4 }}>
@@ -95,6 +97,8 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
       <CatatanForm
         key={`${user?.id ?? ""}:${id}`}
         serviceStaff={serviceStaff}
+        groomingDoctorRequired={groomingDoctorRequired}
+        groomingApplies={groomingPolicy?.applies ?? false}
         recordId={id}
         requestKey={crypto.randomUUID()}
         draftUserId={user?.id ?? ""}
