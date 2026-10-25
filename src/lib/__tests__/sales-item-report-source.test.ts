@@ -86,6 +86,20 @@ it("does not publish item totals when the saved receipt exceeds its source lines
   vi.restoreAllMocks();
 });
 
+it("filters item revenue by saved branch ID even when branch names match", async () => {
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: ["b1", "b2"].map(branchId => ({
+    id: `line-${branchId}`, nama: "Obat", qty: 1, harga: 100,
+    sales: { id: `sale-${branchId}`, branch_id: branchId, no_struk: `STRUK-${branchId}`,
+      created_at: "2026-10-04T05:00:00Z", channel: null, total: 100, merchant_fee_total: 0,
+      branches: { name: "Cabang bernama sama" }, customers: { name: "Pemilik" } },
+  })) } }).client);
+  const result = await ambilPenjualanBarang({ ...filters, q: "", cabangId: "b2" });
+  expect(result.pesanError).toBe("");
+  expect(result.rows.map(row => row.dokumen)).toEqual(["STRUK-b2"]);
+  expect(result.nilaiTotal).toBe(100);
+  expect(result.cabangOptions).toEqual([{ id: "b1", name: "Cabang bernama sama" }, { id: "b2", name: "Cabang bernama sama" }]);
+});
+
 it("rejects a silently capped source rather than exporting partial detail with totals", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   mocks.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: source }, serverCap: 200 }).client);

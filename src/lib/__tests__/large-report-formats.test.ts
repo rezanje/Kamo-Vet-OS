@@ -27,7 +27,7 @@ it.each(["csv", "xlsx", "print"])("exports a complete item-sales cohort beyond 5
     const sheet = book.getWorksheet("Penjualan barang")!;
     expect(sheet.rowCount).toBe(count + 1);
     expect(sheet.getRow(count + 1).getCell(2).value).toBe("STRUK-05200");
-    expect(book.getWorksheet("Ringkasan dan filter")!.getRow(9).getCell(2).value).toBe(count * 100);
+    expect(book.getWorksheet("Ringkasan dan filter")!.getRow(10).getCell(2).value).toBe(count * 100);
   } else {
     const output = await response.text();
     expect(output).toContain("STRUK-00000");
@@ -36,6 +36,20 @@ it.each(["csv", "xlsx", "print"])("exports a complete item-sales cohort beyond 5
     expect(output).toContain("2026-10-01");
   }
 }, 15000);
+
+it("exports only the exact selected branch when names are identical", async () => {
+  const rows = ["b1", "b2"].map(branchId => ({ id: `line-${branchId}`, nama: "Obat", qty: 1, harga: 100,
+    sales: { id: `sale-${branchId}`, branch_id: branchId, no_struk: `STRUK-${branchId}`,
+      created_at: "2026-10-04T05:00:00Z", channel: null, total: 100, merchant_fee_total: 0,
+      branches: { name: "Nama sama" }, customers: { name: "Pemilik" } } }));
+  mock.createClient.mockResolvedValue(clientFixture({ tables: { sale_items: rows } }).client);
+  const response = await itemDownload(new Request("https://example.test/unduh?dari=2026-10-01&sampai=2026-10-04&kanal=POS&jenis=Barang&cabang_id=b2&format=csv"));
+  expect(response.status).toBe(200);
+  const csv = await response.text();
+  expect(csv).toContain("STRUK-b2");
+  expect(csv).not.toContain("STRUK-b1");
+  expect(csv).toContain("Nama sama · b2");
+});
 
 it.each(["csv", "xlsx", "print"])("exports the complete FIFO cohort beyond 5000 as %s without filling unknown costs", async format => {
   const { client } = clientFixture({ tables: inventory });
