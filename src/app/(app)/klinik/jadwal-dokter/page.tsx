@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { hariIniWIB } from "@/lib/tanggal";
 import { jamRingkas } from "@/lib/shift-master";
 import { isTenagaMedis, rentangTujuhHari, jumlahJaga, type BarisJadwal } from "@/lib/jadwal-dokter";
+import { branchDisplayName } from "@/lib/branch-display";
 
 export default async function JadwalDokterPage({
   searchParams,
@@ -18,12 +19,12 @@ export default async function JadwalDokterPage({
   const hari = rentangTujuhHari(mulai);
 
   const [{ data: branchData }, { data: allEmp }, { data: shiftData }, { data: assignmentData }] = await Promise.all([
-    supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif").order("nama"),
     supabase.from("work_shifts").select("id, nama, is_libur, jam_masuk, jam_pulang").eq("is_active", true),
     supabase.from("employee_branch_assignments").select("employee_id, branch_id"),
   ]);
-  const branches = (branchData ?? []) as { id: string; name: string }[];
+  const branches = branchData ?? [];
 
   type Emp = { id: string; nama: string; jabatan: string | null; branch_id: string | null };
   const semuaMedis = ((allEmp ?? []) as Emp[]).filter(isTenagaMedis);
@@ -61,7 +62,8 @@ export default async function JadwalDokterPage({
     if (b) b.perHari[j.tanggal] = shiftById.get(j.shift_id) ?? null;
   }
 
-  const namaCabang = branches.find((b) => b.id === cabang)?.name ?? "—";
+  const selectedBranch = branches.find((b) => b.id === cabang);
+  const namaCabang = selectedBranch ? branchDisplayName(selectedBranch, branches) : "—";
   const jagaHariIni = jumlahJaga(baris, hariIni);
 
   return (
@@ -77,9 +79,9 @@ export default async function JadwalDokterPage({
           num="01" title="SIAPA YANG JAGA"
           desc={`${namaCabang} · ${medis.length} tenaga medis · hari ini ${jagaHariIni} orang masuk. Jadwalnya diatur di HRIS — di sini hanya dilihat.`}
           action={
-            <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <select className="fi" name="cabang" defaultValue={cabang} style={{ fontSize: 11, height: 30, width: 180 }}>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            <form method="get" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <select className="fi" name="cabang" defaultValue={cabang} style={{ fontSize: 11, height: 30, width: "min(100%, 260px)" }}>
+                {branches.map((b) => <option key={b.id} value={b.id}>{branchDisplayName(b, branches)}</option>)}
               </select>
               <input className="fi" type="date" name="mulai" defaultValue={mulai} style={{ fontSize: 11, height: 30, width: 140 }} />
               <button type="submit" className="btn-def" style={{ height: 30, fontSize: 11 }}>Tampilkan</button>

@@ -7,6 +7,7 @@ import { getOpenShift } from "@/lib/shift";
 import { daftarDokter } from "@/lib/dokter";
 import { hariIniWIB } from "@/lib/tanggal";
 import { RegistrasiForm } from "./RegistrasiForm";
+import { branchDisplayName } from "@/lib/branch-display";
 
 export default async function RegistrasiPage({
   searchParams,
@@ -32,6 +33,11 @@ export default async function RegistrasiPage({
   const { data: branches } = shift
     ? { data: [{ id: shift.branch_id, code: "", name: shift.branchName }] }
     : { data: [activeBranch] };
+  const { data: labelCatalog } = await supabase.from("branches").select("id,code,name,type").eq("is_active", true);
+  const displayBranches = (branches ?? []).map(branch => {
+    const master = labelCatalog?.find(row => row.id === branch.id);
+    return { id: branch.id, name: master ? branchDisplayName(master, labelCatalog ?? []) : branch.name };
+  });
 
   // Ditandai siapa yang memang jaga hari ini — pendaftaran sering menugaskan
   // dokter yang ternyata libur, dan baru ketahuan saat pasien sudah menunggu.
@@ -75,7 +81,7 @@ export default async function RegistrasiPage({
         </div>
       )}
 
-      <RegistrasiForm key={registrationDraftScope} draftScope={registrationDraftScope} branches={branches ?? []} dokter={dokter} lockBranch={!!shift} awal={awal} />
+      <RegistrasiForm key={registrationDraftScope} draftScope={registrationDraftScope} branches={displayBranches} dokter={dokter} lockBranch={!!shift} awal={awal} />
     </>
   );
 }

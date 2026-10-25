@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { branchDisplayName } from "@/lib/branch-display";
 import Link from "next/link";
 import { SecHeader } from "@/components/SecHeader";
 import { assertMasterAdmin } from "@/lib/master-guard";
@@ -15,7 +16,7 @@ type Audit = { id: string; actor_id: string; created_at: string; old_role: strin
 async function branchOptions(client: Client, actorId: string, snapshot: UserAccountEditSnapshot) {
   const allowed = await allowedBranchIds(client, actorId);
   const active = await readCompleteList<UserAccountEditBranch>((from, to) => {
-    let query = client.from("branches").select("id, name, is_active", { count: "exact" }).eq("is_active", true);
+    let query = client.from("branches").select("id, code, name, type, is_active", { count: "exact" }).eq("is_active", true);
     if (allowed !== null) query = query.in("id", allowed);
     return query.order("name").order("id").range(from, to);
   }, "Pilihan cabang akun", { maxRows: null });
@@ -23,13 +24,13 @@ async function branchOptions(client: Client, actorId: string, snapshot: UserAcco
   for (let offset = 0; offset < missing.length; offset += 200) {
     const ids = missing.slice(offset, offset + 200);
     const old = await readCompleteList<UserAccountEditBranch>((from, to) => client.from("branches")
-      .select("id, name, is_active", { count: "exact" }).in("id", ids).order("id").range(from, to), "Penugasan cabang lama", { maxRows: null });
+      .select("id, code, name, type, is_active", { count: "exact" }).in("id", ids).order("id").range(from, to), "Penugasan cabang lama", { maxRows: null });
     for (const id of ids) {
       const row = old.find((branch) => branch.id === id);
       active.push(row ? { ...row, legacy: true } : { id, name: `Cabang lama tidak tersedia · ${id}`, is_active: false, legacy: true });
     }
   }
-  return active;
+  return active.map(branch => ({ ...branch, name: branchDisplayName(branch, active) }));
 }
 
 async function history(client: Client, profileId: string): Promise<Audit[] | null> {

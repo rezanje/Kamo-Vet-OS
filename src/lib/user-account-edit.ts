@@ -9,7 +9,7 @@ export type UserAccountEditSnapshot = {
   self: boolean;
 };
 
-export type UserAccountEditBranch = { id: string; name: string; is_active: boolean; legacy?: boolean };
+export type UserAccountEditBranch = { id: string; name: string; is_active: boolean; code?: string; type?: string; legacy?: boolean };
 
 export function isAccountEditId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);

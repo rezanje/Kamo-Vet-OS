@@ -13,6 +13,7 @@ import { estimatedWaitMinutes, queueDayBounds } from "@/lib/queue";
 import { hariIniWIB } from "@/lib/tanggal";
 import { UlasanBadge } from "@/components/UlasanBadge";
 import { serviceDurations } from "@/lib/operasional-klinik";
+import { branchDisplayName } from "@/lib/branch-display";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -63,6 +64,8 @@ export default async function AntrianPage({
   const branches = allMode ? await availableOperationalBranches(supabase, user.id, "klinik") : [];
   const selected = branches.find(b => b.id === cabang);
   const branch = allAccess ? selected ?? allAccess : await requireOperationalBranch(supabase, user.id, "klinik");
+  const { data: labelCatalog } = await supabase.from("branches").select("code,name,type").eq("is_active", true);
+  const branchLabel = branch.id === ALL_BRANCHES ? branch.name : branchDisplayName(branch, labelCatalog ?? []);
   const scopeIds = allAccess ? selected ? [selected.id] : branches.map(b => b.id) : [branch.id];
 
   // Keep historical views within the authenticated operational branch.
@@ -160,7 +163,7 @@ export default async function AntrianPage({
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 9.5, color: "var(--td)" }}>
-          <i className="ti ti-broadcast" /> Pembaruan otomatis · cabang {branch.name}
+          <i className="ti ti-broadcast" /> Pembaruan otomatis · cabang {branchLabel}
         </span>
       </div>
 
@@ -268,8 +271,8 @@ export default async function AntrianPage({
               <label className="flab">Cabang</label>
               {allMode ? <select className="fi" name="cabang" defaultValue={selected?.id ?? ""} aria-label="Filter cabang">
                 <option value="">Semua cabang</option>
-                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select> : <input className="fi" value={branch.name} readOnly aria-label="Cabang aktif" />}
+                {branches.map(b => <option key={b.id} value={b.id}>{branchDisplayName(b, labelCatalog ?? [])}</option>)}
+              </select> : <input className="fi" value={branchLabel} readOnly aria-label="Cabang aktif" />}
             </div>
             <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
             {hariDipilih !== hariIniWIB() && (
@@ -390,7 +393,7 @@ export default async function AntrianPage({
                 })}
                 {(visits ?? []).length === 0 && (
                   <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                    Tidak ada pasien untuk filter ini di {branch.name}, tanggal {hariDipilih}.
+                    Tidak ada pasien untuk filter ini di {branchLabel}, tanggal {hariDipilih}.
                     {filter === "selesai" ? " Pasien baru ada di tab Menunggu atau Aktif." : ""}
                   </td></tr>
                 )}

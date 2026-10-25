@@ -1,4 +1,5 @@
 import { NumberInput } from "@/components/NumberInput";
+import { branchDisplayName } from "@/lib/branch-display";
 import Link from "next/link";
 import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { notFound, redirect } from "next/navigation";
@@ -25,12 +26,14 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("nama"),
     supabase.from("employee_salary_components").select("id, component_id, nominal").eq("employee_id", id),
-    supabase.from("branches").select("id, name"),
+    supabase.from("branches").select("id, code, name, type"),
   ]);
   if (empResult.error) throw new Error("Profil karyawan gagal dimuat");
   const employee = empResult.data;
   if (employee?.trashed_at) redirect("/hris/karyawan?view=trash");
   if (!employee) notFound();
+  const primaryBranch = branchesResult.data?.find(branch => branch.id === employee.branch_id);
+  const primaryBranchName = primaryBranch ? branchDisplayName(primaryBranch, branchesResult.data ?? []) : "Belum ditentukan";
   const detail = detailResult.data;
   const fields = detail?.fields && typeof detail.fields === "object" && !Array.isArray(detail.fields)
     ? detail.fields as Record<string, string> : {};
@@ -63,7 +66,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
         {inputs.map(([key, label]) => <div key={key}><dt className="flab">{label.replace(" *", "")}</dt><dd style={{ margin: 0 }}>{key === "gaji_pokok" ? rp(employee.gaji_pokok) : employee[key] || "—"}</dd></div>)}
         <div><dt className="flab">Status</dt><dd style={{ margin: 0 }}>{employee.status}</dd></div>
       </dl>}
-      <p>Cabang utama: {branchesResult.error ? "Gagal dimuat" : branchesResult.data?.find(b => b.id === employee.branch_id)?.name ?? "Belum ditentukan"}. <Link href="/hris/karyawan">Kelola penugasan cabang</Link></p>
+      <p>Cabang utama: {branchesResult.error ? "Gagal dimuat" : primaryBranchName}. <Link href="/hris/karyawan">Kelola penugasan cabang</Link></p>
     </div>
     <div className="crm-sec">
       <SecHeader num="02" title="BENEFIT & KOMPONEN GAJI" desc="Gaji pokok, tunjangan, insentif tetap, dan potongan yang berlaku untuk karyawan ini." action={<Link className="btn-def" href={`/hris/komponen-gaji?emp=${id}`}>Master Komponen</Link>} />

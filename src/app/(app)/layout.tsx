@@ -17,6 +17,7 @@ import { getOpenShift } from "@/lib/shift";
 import { NavigationFeedback } from "@/components/NavigationFeedback";
 import { ReleaseNotice } from "@/components/ReleaseNotice";
 import { ActiveBranch } from "@/components/ActiveBranch";
+import { branchDisplayName } from "@/lib/branch-display";
 
 export default async function AppLayout({
   children,
@@ -45,7 +46,7 @@ export default async function AppLayout({
   // Aturan Akses Grup dibaca sekali di sini supaya sidebar menampilkan modul yang
   // benar-benar bisa dibuka — daftar yang sama dipakai middleware.
   const [{ data: branches }, { data: aksesModul }] = await Promise.all([
-    supabase.from("branches").select("code, name").eq("is_active", true).order("name"),
+    supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"),
     supabase.from("role_modules").select("role, module_id"),
   ]);
 
@@ -53,7 +54,9 @@ export default async function AppLayout({
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
   const isStaff = profile?.role === "STAFF";
   const staffBranch = isStaff ? await getOpenShift(supabase as never, user.id, "klinik") : null;
-  const activeBranch = await ActiveBranch();
+  const activeBranch = await ActiveBranch({ catalog: branches ?? [] });
+  const staffBranchMaster = branches?.find(branch => branch.id === staffBranch?.branch_id);
+  const staffBranchName = staffBranchMaster ? branchDisplayName(staffBranchMaster, branches ?? []) : staffBranch?.branchName ?? "—";
   const canCreateAccount = (await loadRoleCapabilities(supabase, profile?.role ?? "")).create_accounts;
 
   const canReadActivity = !!profile?.is_active && ["OWNER", "ADMIN"].includes(profile.role)
@@ -74,7 +77,7 @@ export default async function AppLayout({
       <div className="main">
         <ReleaseNotice version={process.env.VERCEL_GIT_COMMIT_SHA ?? "local"} />
         {isStaff ? (
-          <KlinikTopbar fullName={profile?.full_name ?? "Staff"} branchName={staffBranch?.branchName ?? "—"} />
+          <KlinikTopbar fullName={profile?.full_name ?? "Staff"} branchName={staffBranchName} />
         ) : (
           <>
             <PageTabs />
