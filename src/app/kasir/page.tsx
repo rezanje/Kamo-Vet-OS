@@ -17,6 +17,7 @@ import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } fro
 import { loadBranchGroomingPolicy } from "@/lib/service-performers-server";
 import { isGroomingService } from "@/lib/grooming-requirements";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -45,7 +46,7 @@ export default async function KasirPage({
   }
   const replacementDraft = replacement ? saleReplacementDraft(replacement) : undefined;
 
-  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, { data: promos }] = await Promise.all([
+  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, promos] = await Promise.all([
     loadKasirItems(supabase),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
@@ -61,9 +62,9 @@ export default async function KasirPage({
     supabase.from("vouchers")
       .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
       .eq("is_active", true),
-    supabase.from("promos")
-      .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
-      .eq("is_active", true),
+    readCompleteList<PromoFull>((from,to)=>supabase.from("promos")
+      .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value",{count:"exact"})
+      .eq("is_active", true).order("id").range(from,to),"Promo aktif kasir",{maxRows:null}),
   ]);
   const groomingPolicy = itemsRaw.some(item => isGroomingService(item.item_type, item.tindakan_kategori))
     ? await loadBranchGroomingPolicy(supabase, shift.branch_id) : { applies: false, doctorRequired: false };
@@ -73,20 +74,27 @@ export default async function KasirPage({
   if (replacement && replacement.sale_items.some(row => !itemsRaw.some(item => item.id === row.item_id))) {
     redirect(`/penjualan/${replacement.id}?error=${encodeURIComponent("Sebagian barang sumber tidak tersedia di katalog aktif. Aktifkan atau tentukan barang pengganti sebelum membuat transaksi baru.")}`);
   }
-  const promosActive = ((promos ?? []) as unknown as PromoFull[]).filter((p) => promoActiveFor(p, shift.branch_id, wibToday));
+  const promosActive = promos.filter((p) => promoActiveFor(p, shift.branch_id, wibToday));
 
   // Barang yang kena tiap promo (migrasi 0079). Promo tanpa baris di sini
   // berlaku untuk semua barang — lihat lib/promo-hitung.
-  const { data: promoItemRows } = promosActive.length
-    ? await supabase.from("promo_items").select("promo_id, item_id").in("promo_id", promosActive.map((p) => p.id))
-    : { data: [] };
+  const promoItemRows: {promo_id:string;item_id:string}[]=[];
+  for(let offset=0;offset<promosActive.length;offset+=200) {
+    const ids=promosActive.slice(offset,offset+200).map(p=>p.id);
+    promoItemRows.push(...await readCompleteList<{id:string;promo_id:string;item_id:string}>(async(from,to)=>{
+      const result=await supabase.from("promo_items").select("promo_id,item_id",{count:"exact"})
+        .in("promo_id",ids).order("promo_id").order("item_id").range(from,to);
+      return {...result,data:result.data?.map(row=>({...row,id:`${row.promo_id}:${row.item_id}`}))??null};
+    },"Target promo kasir",{maxRows:null}));
+  }
   const itemsPerPromo = new Map<string, string[]>();
-  for (const r of (promoItemRows ?? []) as { promo_id: string; item_id: string }[]) {
+  for (const r of promoItemRows) {
     itemsPerPromo.set(r.promo_id, [...(itemsPerPromo.get(r.promo_id) ?? []), r.item_id]);
   }
   const promoHitung: PromoHitung[] = promosActive.map((p) => ({
     id: p.id, name: p.name,
     itemIds: itemsPerPromo.get(p.id) ?? [],
+    unit: typeof p.rule?.unit === "string" ? p.rule.unit : null,
     minQty: p.min_qty == null ? null : Number(p.min_qty),
     maxQty: p.max_qty == null ? null : Number(p.max_qty),
     kelipatan: !!p.kelipatan,

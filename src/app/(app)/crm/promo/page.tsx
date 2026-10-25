@@ -27,8 +27,9 @@ function ringkasBarang(nama: string[] | undefined): string {
 function ringkasAturan(p: PromoRow): string {
   const bagian: string[] = [];
   if (p.discount_type && p.discount_value) {
-    bagian.push(p.discount_type === "percent" ? `${p.discount_value}%` : `${rp(p.discount_value)}/pcs`);
+    bagian.push(p.discount_type === "percent" ? `${p.discount_value}%` : `${rp(p.discount_value)}/${p.rule?.unit ?? "satuan"}`);
   }
+  if (p.rule?.unit) bagian.push(`satuan ${p.rule.unit}`);
   if (p.min_qty) bagian.push(`min ${p.min_qty}`);
   if (p.max_qty) bagian.push(`maks ${p.max_qty}`);
   if (p.kelipatan) bagian.push("kelipatan");
@@ -104,6 +105,8 @@ export default async function PromoAdminPage({
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : "Promo baru dibuat."}</div>}
+
+      {canEdit&&<div style={{marginBottom:12}}><Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo dari Excel</Link></div>}
 
       <div className="crm-sec">
         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
