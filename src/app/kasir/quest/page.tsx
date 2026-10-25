@@ -232,7 +232,7 @@ export default async function QuestPage({
                         <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: done ? "linear-gradient(90deg,#34d399,#16a34a)" : "linear-gradient(90deg,var(--posb),var(--posb))" }} />
                       </div>
                       <div style={{ fontSize: 9.5, color: "var(--tm)", marginTop: 3 }}>
-                        {isAmount ? `${rp(cur)} / ${rp(target)}` : `${cur} / ${target}`}
+                        {isAmount ? `${rp(cur)} / ${rp(target)}` : `${cur} / ${target}${def.target_kind === "new_customer" ? " customer" : ""}`}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", minWidth: 74 }}>
