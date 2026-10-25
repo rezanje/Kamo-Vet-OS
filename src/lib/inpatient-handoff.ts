@@ -7,12 +7,12 @@ export type HandoffPrescription={service_performers?:ServicePerformersSnapshot|n
 export type HandoffRecipe={id:string;medical_record_id:string;recipe_name:string;total_volume:string;dosage_form:string;dosage_instruction:string;status:string;created_at:string};
 export type HandoffInvoice={id:string;invoice_no:string|null;paid_status:string;voided_at:string|null;created_at:string};
 export type HandoffInvoiceLine={id:string;invoice_id:string;prescription_item_id:string|null;compound_recipe_id:string|null;qty:number};
-export type InpatientHandoff={doctor:string|null;records:HandoffRecord[];prescriptions:HandoffPrescription[];recipes:HandoffRecipe[];invoices:HandoffInvoice[];invoiceLines:HandoffInvoiceLine[]};
+export type InpatientHandoff={doctor:string|null;complaint:string|null;records:HandoffRecord[];prescriptions:HandoffPrescription[];recipes:HandoffRecipe[];invoices:HandoffInvoice[];invoiceLines:HandoffInvoiceLine[]};
 
 /** Same session/RLS, explicit visit/branch and source IDs only. No writes or inference by name. */
 export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string):Promise<InpatientHandoff|null>{
  try{
-  const visit=await db.from('visits').select('id,dokter').eq('id',visitId).eq('branch_id',branchId).maybeSingle();
+  const visit=await db.from('visits').select('id,dokter,keluhan').eq('id',visitId).eq('branch_id',branchId).maybeSingle();
   if(visit.error||!visit.data)return null;
   const [records,invoices]=await Promise.all([
    readCompleteList<HandoffRecord>((from,to)=>db.from('medical_records').select('id,visit_id,created_at,anamnesis,diagnosis,catatan_resep',{count:'exact'}).eq('visit_id',visitId).order('created_at').order('id').range(from,to),'Rekam medis handoff',{maxRows:null}),
@@ -31,6 +31,6 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
    const ids=invoices.slice(offset,offset+200).map(row=>row.id);
    invoiceLines.push(...await readCompleteList<HandoffInvoiceLine>((from,to)=>db.from('invoice_items').select('id,invoice_id,prescription_item_id,compound_recipe_id,qty',{count:'exact'}).in('invoice_id',ids).order('id').range(from,to),'Tautan tagihan handoff',{maxRows:null}));
   }
-  return {doctor:visit.data.dokter,records,prescriptions,recipes,invoices,invoiceLines};
+  return {doctor:visit.data.dokter,complaint:visit.data.keluhan,records,prescriptions,recipes,invoices,invoiceLines};
  }catch{return null;}
 }
