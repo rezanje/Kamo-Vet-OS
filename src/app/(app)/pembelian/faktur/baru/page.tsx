@@ -3,6 +3,7 @@ import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
 import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
+import { loadUnitOptions } from "@/lib/satuan";
 import { FakturForm, type PoOption, type PoInvoiceInitial } from "./FakturForm";
 
 type Rel<T> = T | T[] | null;
@@ -29,6 +30,7 @@ type InvoiceRow = {
 type PoHeader = Omit<PoRow, "purchase_order_items">;
 type PoItem = NonNullable<PoRow["purchase_order_items"]>[number] & { po_id: string };
 type InvoiceItem = NonNullable<InvoiceRow["purchase_invoice_items"]>[number] & { id: string; invoice_id: string };
+type SourceLine = { id: string; po_item_id: string | null; item_id: string | null; qty: number; harga: number; satuan: string | null; faktor: number | null };
 
 export default async function FakturBaruPage({
   searchParams,
@@ -42,10 +44,29 @@ export default async function FakturBaruPage({
   const userId = user?.id ?? "";
 
   let initial: PoInvoiceInitial | undefined;
+  let sourceLines: SourceLine[] = [];
   if (replace_invoice) {
-    const { data: source, error: sourceError } = await supabase.from("purchase_invoices").select("id,po_id,tanggal,jatuh_tempo,no_faktur_pemasok,keterangan,purchase_invoice_items(po_item_id,qty,harga)").eq("id", replace_invoice).not("po_id", "is", null).not("voided_at", "is", null).maybeSingle();
+    const { data: source, error: sourceError } = await supabase.from("purchase_invoices")
+      .select("id,po_id,tanggal,jatuh_tempo,no_faktur_pemasok,keterangan")
+      .eq("id", replace_invoice).not("po_id", "is", null).not("voided_at", "is", null).maybeSingle();
     if (sourceError || !source) return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca. Kembali ke riwayat faktur.</div>;
-    initial = source as PoInvoiceInitial;
+    try {
+      sourceLines = await readCompleteList<SourceLine>((from, to) => supabase.from("purchase_invoice_items")
+        .select("id,po_item_id,item_id,qty,harga,satuan,faktor", { count: "exact" })
+        .eq("invoice_id", source.id).order("id").range(from, to), "Baris faktur sumber", { maxRows: null });
+    } catch {
+      return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca lengkap. Kembali ke riwayat faktur.</div>;
+    }
+    const linked = sourceLines.map(line => line.po_item_id);
+    if (!sourceLines.length || sourceLines.some(line => !line.po_item_id || !line.item_id
+      || !Number.isFinite(Number(line.qty)) || Number(line.qty) <= 0
+      || !Number.isFinite(Number(line.harga)) || Number(line.harga) < 0)
+      || new Set(linked).size !== linked.length) {
+      return <div role="alert" className="p2ban">Rincian faktur sumber tidak dapat disiapkan otomatis. Periksa baris dan tautan PO pada faktur asal.</div>;
+    }
+    initial = { ...source, purchase_invoice_items: sourceLines.map(line => ({
+      po_item_id: line.po_item_id, qty: line.qty, harga: line.harga,
+    })) } as PoInvoiceInitial;
   }
 
   let poPage: Awaited<ReturnType<typeof readListPage<PoHeader>>> | undefined;
@@ -133,6 +154,23 @@ export default async function FakturBaruPage({
       }),
     };
   }).filter((o) => o.items.length > 0);
+
+  if (initial) {
+    if (loadError || !options.some(option => option.id === initial.po_id)) return <div role="alert" className="p2ban">PO sumber faktur tidak dapat disiapkan otomatis. Muat ulang atau periksa PO asal.</div>;
+    let sourceUnits;
+    try { sourceUnits = await loadUnitOptions(supabase, sourceLines.map(line => line.item_id as string)); }
+    catch { return <div role="alert" className="p2ban">Barang atau satuan faktur sumber tidak dapat disiapkan otomatis. Periksa master barang.</div>; }
+    const available = new Map(options.find(option => option.id === initial.po_id)?.items.map(item => [item.po_item_id, item]));
+    if (sourceLines.some(line => {
+      const item = available.get(line.po_item_id as string);
+      const units = sourceUnits.get(line.item_id as string) ?? [];
+      const unit = line.satuan ? units.find(option => option.unit === line.satuan) : units[0];
+      return !item || item.blockedReason || item.item_id !== line.item_id || !unit
+        || line.satuan != null && line.satuan !== "" && line.satuan !== item.satuan
+        || !Number.isFinite(Number(line.faktor)) || Number(line.faktor) !== item.faktor
+        || Number(line.faktor) !== Number(unit.factor) || Number(line.qty) > item.sisa;
+    })) return <div role="alert" className="p2ban">Baris, satuan, atau sisa PO faktur sumber tidak dapat disiapkan otomatis. Periksa PO dan master barang.</div>;
+  }
 
   return (
     <>
