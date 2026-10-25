@@ -10,10 +10,19 @@ vi.mock("@/app/(app)/pembelian/[id]/POCorrectionForm", () => ({ POEditForm: () =
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
   from: (table: string) => {
+    const advances = actor.fractional ? [{id:"dp-a",no_um:"A",status:"aktif",jumlah:0.1},{id:"dp-b",no_um:"B",status:"aktif",jumlah:0.2}]
+      : actor.advance ? [{id:"advance",no_um:"FICT-DP",status:"aktif",jumlah:40,terpakai:0}] : [];
+    const items = actor.advance ? [{id:"line",nama:"Barang",qty:2,harga_beli:50,qty_terima:0}]
+      : actor.received ? [{id:"line",item_id:null,nama:"Barang",qty:2,harga_beli:100,qty_terima:1}] : [];
     const data = table === "profiles" ? { role: actor.role, is_active: actor.active }
-      : table === "purchase_orders" ? { id: "po", status: actor.status, revision: 0, tanggal: "2026-10-21", total: 100, branch_id: "branch", to_warehouse_id: "warehouse", purchase_advances: actor.fractional ? [{id:"dp-a",no_um:"A",status:"aktif",jumlah:0.1},{id:"dp-b",no_um:"B",status:"aktif",jumlah:0.2}] : actor.advance ? [{id:"advance",no_um:"FICT-DP",status:"aktif",jumlah:40,terpakai:0}] : [], purchase_order_items: actor.advance ? [{id:"line",nama:"Barang",qty:2,harga_beli:50,qty_terima:0}] : actor.received ? [{ id: "line", item_id: null, nama: "Barang", qty: 2, harga_beli: 100, qty_terima: 1 }] : [] } : table === "purchase_invoices" && actor.received ? [{ id: "invoice", no_faktur: "INV-1", voided_at: null }] : [];
-    const query = { select: () => query, eq: () => query, order: () => query, maybeSingle: async () => ({ data }),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data }).then(resolve) };
+      : table === "purchase_orders" ? { id: "po", status: actor.status, revision: 0, tanggal: "2026-10-21", total: 100, branch_id: "branch", to_warehouse_id: "warehouse" }
+      : table === "purchase_order_items" ? items
+      : table === "purchase_advances" ? advances
+      : table === "purchase_invoices" && actor.received ? [{ id: "invoice", no_faktur: "INV-1", voided_at: null }] : [];
+    let from = 0, to = Infinity;
+    const query = { select: () => query, eq: () => query, order: () => query, range: (start:number,end:number) => { from=start;to=end;return query; },
+      maybeSingle: async () => ({ data, error:null }),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data:Array.isArray(data)?data.slice(from,to+1):data, count:Array.isArray(data)?data.length:null, error:null }).then(resolve) };
     return query;
   },
 }) }));
