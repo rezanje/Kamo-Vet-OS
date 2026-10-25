@@ -19,7 +19,7 @@ const payment=(n:number,extra={})=>({id:id(n),tanggal:'2026-10-22',amount:10,met
 beforeEach(()=>{
  m.calls=[];m.rootMissing=false;m.relatedError=false;m.denied=false;m.replacementVisible=false;m.salesLegacy=false;m.salesCorrected=false;
  m.from.mockImplementation((table:string)=>{
- const filters:Record<string,unknown>={};let single=false;
+ const filters:Record<string,unknown>={};let single=false;let rangeFrom:number|undefined,rangeTo:number|undefined;
  const q:Record<string,unknown>={then:(resolve:(x:unknown)=>void)=>{
   let data:unknown=[];let error:unknown=null;
   if(table==='profiles')data={role:'ADMIN',is_active:true};
@@ -31,13 +31,16 @@ beforeEach(()=>{
    if(m.rootMissing&&single&&filters.id===id(10))data=null;
    if(m.relatedError&&!single){data=null;error={message:'PRIVATE database detail'}}
   }
+  if(table==='purchase_invoice_items')data=[];
+  if(table==='purchase_invoice_payments')data=[payment(11,{voided_at:'2026-10-22'}),payment(12,{reversal_of:id(11),amount:-10}),payment(13,{replaces_payment_id:id(11),advance_id:id(4),advance:m.denied?null:{id:id(4),no_um:'DP-ONE',status:'aktif'},payment_order_id:id(30),payment_order:m.denied?null:{id:id(30),no_pp:'PP-ONE',status:'dibayar'}})];
   if(table==='sales_invoices')data=single&&m.rootMissing?null:single?{id:id(40),no_faktur:'SI-1',order_id:id(50),replaces_invoice_id:m.salesLegacy?id(90):m.salesCorrected?id(45):null,total:100,carried_paid:0,revision:0,status:'aktif',tanggal:'2026-10-22',jatuh_tempo:'2026-11-22',customers:null}: [{id:id(40),no_faktur:'SI-1',total:100,carried_paid:0,status:'aktif',replaces_invoice_id:m.salesLegacy?id(90):m.salesCorrected?id(45):null,sales_receipts:[{id:id(41),no_terima:'SPLIT-CASH',tanggal:'2026-10-22',jumlah:20,metode:'Tunai',advance_id:null},{id:id(42),no_terima:'SPLIT-DP',tanggal:'2026-10-22',jumlah:30,metode:'Transfer',dari_uang_muka:10,advance_id:id(43),advance:m.denied?null:{id:id(43),no_um:'SALES-DP',status:'aktif'}}]}];
   if(table==='sales_invoices'&&!single&&m.salesCorrected)data=[...(data as unknown[]),{id:id(45),no_faktur:'SI-ORIGINAL',status:'batal',carried_paid:0,replaces_invoice_id:null,sales_receipts:[{id:id(46),no_terima:'OLD-RECEIPT',tanggal:'2026-10-21',jumlah:30,metode:'Transfer'}]}];
   if(table==='sales_receipts')data=[{id:id(41),invoice_id:id(40),no_terima:'SPLIT-CASH',tanggal:'2026-10-22',jumlah:20,metode:'Tunai',advance_id:null},{id:id(42),invoice_id:id(40),no_terima:'SPLIT-DP',tanggal:'2026-10-22',jumlah:30,metode:'Transfer',dari_uang_muka:10,advance_id:id(43),advance:m.denied?null:{id:id(43),no_um:'SALES-DP',status:'aktif'}},...(m.salesCorrected?[{id:id(46),invoice_id:id(45),no_terima:'OLD-RECEIPT',tanggal:'2026-10-21',jumlah:30,metode:'Transfer'}]:[])].filter(r=>Array.isArray(filters.invoice_id)&&filters.invoice_id.includes(r.invoice_id));
   if(table==='company_settings')data={ppn_rate:11};
-  resolve({data,error,count:Array.isArray(data)?data.length:null});
+  const count=Array.isArray(data)?data.length:null;
+  resolve({data:Array.isArray(data)&&rangeFrom!==undefined?data.slice(rangeFrom,(rangeTo??rangeFrom)+1):data,error,count});
  }};
- for(const name of ['select','eq','in','order','range','maybeSingle'])q[name]=(...args:unknown[])=>{m.calls.push([table,name,...args]);if(name==='eq'||name==='in')filters[String(args[0])]=args[1];if(name==='maybeSingle')single=true;return q};return q;
+ for(const name of ['select','eq','in','order','range','maybeSingle'])q[name]=(...args:unknown[])=>{m.calls.push([table,name,...args]);if(name==='eq'||name==='in')filters[String(args[0])]=args[1];if(name==='range'){rangeFrom=Number(args[0]);rangeTo=Number(args[1]);}if(name==='maybeSingle')single=true;return q};return q;
  });
 });
 it('opens every stored receipt and DP from its PO without searching',async()=>{

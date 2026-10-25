@@ -22,7 +22,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       profiles: { role: "OWNER", is_active: true },
     };
     let filter = "";
-    const query = { select: () => query, eq: (column: string) => { filter = column; return query; }, order: () => query, maybeSingle: async () => ({ data: table === "purchase_invoices" && filter === "replaces_invoice_id" ? null : single[table] ?? null, error: null }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
+    let from = 0, to = 999;
+    const query = { select: () => query, eq: (column: string) => { filter = column; return query; }, order: () => query,
+      range: (start: number, end: number) => { from = start; to = end; return query; },
+      maybeSingle: async () => ({ data: table === "purchase_invoices" && filter === "replaces_invoice_id" ? null : single[table] ?? null, error: null }),
+      then: (resolve: (value: unknown) => unknown) => { const rows = table === "purchase_invoice_payments" ? payments : []; return Promise.resolve({ data: rows.slice(from, to + 1), count: rows.length, error: null }).then(resolve); } };
     return query;
   },
 }) }));
