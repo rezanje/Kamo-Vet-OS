@@ -71,11 +71,12 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
 
   let replacement: (PurchasePaymentDefaults & { invoice_id: string }) | undefined;
   if (replace_payment) {
-    const [{ data: profile }, { data: source }] = await Promise.all([
+    const [{ data: profile }, { data: source }, { data: existingReplacement, error: replacementReadError }] = await Promise.all([
       supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
       supabase.from("purchase_invoice_payments").select("id,invoice_id,amount,metode,advance_id,voided_at,reversal_of,payment_order_id").eq("id", replace_payment).maybeSingle(),
+      supabase.from("purchase_invoice_payments").select("id").eq("replaces_payment_id", replace_payment).maybeSingle(),
     ]);
-    if (profile?.role === "OWNER" && profile.is_active && source?.voided_at && !source.reversal_of && !source.payment_order_id
+    if (!replacementReadError && !existingReplacement && profile?.role === "OWNER" && profile.is_active && source?.voided_at && !source.reversal_of && !source.payment_order_id
       && rows.some(row => row.id === source.invoice_id) && ["Transfer", "Tunai", "Debit"].includes(source.metode)) {
       replacement = { id: source.id, invoice_id: source.invoice_id, amount: Number(source.amount), metode: source.metode, advance_id: source.advance_id };
     }
