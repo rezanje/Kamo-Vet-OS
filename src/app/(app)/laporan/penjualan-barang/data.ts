@@ -130,6 +130,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         }
       }
       const netoKlinik = new Map<string, number>();
+      const feeLineIds = new Set<string>();
       for (const items of clinicLines.values()) {
         const invoice = one(items[0].invoices)!;
         const fee = demoFees.get(invoice.id) ?? 0;
@@ -143,7 +144,10 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         });
         const net = alokasiNetoBaris(bases, new PosDecimal(invoice.subtotal).minus(invoice.discount).minus(fee));
         ordinary.forEach((item, index) => netoKlinik.set(item.id, net[index]));
-        if (fee) netoKlinik.set(feeItems[0].id, fee);
+        if (fee) {
+          netoKlinik.set(feeItems[0].id, fee);
+          feeLineIds.add(feeItems[0].id);
+        }
       }
 
       // Alokasikan selisih neto struk POS setelah diskon baris. Nilai struk
@@ -191,7 +195,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q }: {
         const visit = one(invoice.visits);
         const nilai = netoKlinik.get(item.id);
         if (nilai == null) throw new Error("Alokasi nilai baris invoice klinik tidak tersedia.");
-        const jenis = jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
+        const jenis = feeLineIds.has(item.id) ? "Biaya Admin" : jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
         rows.push({
           id: `klinik-${item.id}`, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",
           href: `/klinik/pembayaran/${invoice.visit_id}/invoice?invoice_id=${encodeURIComponent(invoice.id)}`, kanal: "Klinik",

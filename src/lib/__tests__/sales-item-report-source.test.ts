@@ -178,8 +178,11 @@ it("keeps the customer-paid DEMO admin fee whole while discounting only clinical
   } }).client);
   const result = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Jasa", q: "" });
   expect(result.pesanError).toBe("");
-  expect(result.rows.map(row => [row.nama, row.nilai])).toEqual([["Admin pembayaran DEMO", 10], ["Vaksin", 50]]);
-  expect(result.nilaiTotal).toBe(60);
+  expect(result.rows.map(row => [row.nama, row.nilai])).toEqual([["Vaksin", 50]]);
+  expect(result.nilaiTotal).toBe(50);
+  const admin = await ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis: "Biaya Admin", q: "" });
+  expect(admin.rows.map(row => [row.nama, row.nilai, row.pelaksana])).toEqual([["Admin pembayaran DEMO", 10, "—"]]);
+  expect(admin.nilaiTotal).toBe(10);
 });
 
 it("does not publish partial clinic totals if an invoice source ID is unavailable", async () => {

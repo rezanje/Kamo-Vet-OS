@@ -14,7 +14,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const dari = sp.dari || `${hariIni.slice(0, 8)}01`;
   const sampai = sp.sampai || hariIni;
   const kanal = ["POS", "Online", "Klinik"].includes(sp.kanal ?? "") ? sp.kanal! : "Klinik";
-  const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan"].includes(sp.jenis ?? "") ? sp.jenis! : kanal === "Klinik" ? "Racikan" : "Barang";
+  const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan", "Biaya Admin"].includes(sp.jenis ?? "") ? sp.jenis! : kanal === "Klinik" ? "Racikan" : "Barang";
   const q = (sp.q ?? "").trim().slice(0, 120);
   const halamanDiminta = Number(sp.halaman);
   const halaman = Number.isSafeInteger(halamanDiminta) && halamanDiminta > 0 ? halamanDiminta : 1;
@@ -44,7 +44,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
         <div><label className="flab">Jenis</label><select className="fi" name="jenis" defaultValue={jenis}>
           {kanal === "Klinik" ? <>
             <option value="Racikan">Racikan</option><option value="Obat">Obat lain</option>
-            <option value="Jasa">Jasa/tindakan</option>
+            <option value="Jasa">Jasa/tindakan</option><option value="Biaya Admin">Biaya admin DEMO</option>
           </> : <option value="Barang">Barang kasir/online</option>}
         </select></div>
         <div><label className="flab">Cari nama / invoice / pelanggan / pelaksana</label><input className="fi" name="q" defaultValue={q} placeholder="Mis. puyer" style={{ minWidth: 190 }} /></div>
