@@ -90,6 +90,28 @@ it("shows full source value and deterministic residual before posting confirmati
  actions.previewInventoryAccounting.mockResolvedValue({ok:true,report:{...report,evidence:{summary:{valuation:{policy:'HALF_UP_BATCH_V1',source_value:'150000.003333',posted_value:'150000.00',residual:'-0.003333',allocated_source_row:2}}}}});
  await preview();expect(container.querySelector('[aria-label="Bukti normalisasi"]')?.textContent).toContain('150000.003333');expect(container.querySelector('[aria-label="Bukti normalisasi"]')?.textContent).toContain('-0.003333');
 });
+it("shows source quantity and value by item and warehouse without claiming unposted stock matches", async () => {
+  actions.previewInventoryAccounting.mockResolvedValue({ ok: true, report: { ...report, evidence: {
+    rows: [{ status: "valid", code: "SKU-FIKTIF", payload: { item_id: "item-a", warehouse_id: "warehouse-a", base_qty: "2", base_unit_cost: "100" } }],
+    source_layers: [], source_moves: [],
+  }, selected_rows: 1 } });
+  await preview();
+  const section = container.querySelector('[aria-label="Rekonsiliasi per barang dan gudang"]')!;
+  expect(section.textContent).toContain("SKU-FIKTIF");
+  expect(section.textContent).toContain("warehouse-a");
+  expect(section.textContent).toContain("Menunggu posting");
+  expect(section.textContent).not.toContain("Cocok");
+});
+it("makes a posted per-item difference visible without offering a second posting", async () => {
+  actions.previewInventoryAccounting.mockResolvedValue({ ok: true, report: { ...report, status: "posted", can_post: false, selected_rows: 1, evidence: {
+    rows: [{ status: "posted", code: "SKU-FIKTIF", payload: { item_id: "item-a", warehouse_id: "warehouse-a", base_qty: "2", base_unit_cost: "100" } }],
+    source_layers: [{ item_id: "item-a", warehouse_id: "warehouse-a", qty_in: "1", unit_cost: "100" }],
+    source_moves: [{ item_id: "item-a", warehouse_id: "warehouse-a", qty: "2", unit_cost: "100" }],
+  } } });
+  await preview();
+  expect(container.querySelector('[aria-label="Rekonsiliasi per barang dan gudang"]')?.textContent).toContain("Selisih");
+  expect(button("Posting stok + jurnal cabang")).toBeUndefined();
+});
 it("ignores a report response after its equity selection changes",async()=>{
  let resolve!:(v:unknown)=>void;actions.previewInventoryAccounting.mockReturnValue(new Promise(r=>resolve=r));
  await select('Akun ekuitas',equityId);await act(async()=>button('Preview / laporan tanpa posting').click());

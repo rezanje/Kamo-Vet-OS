@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { postInventoryAccounting, previewInventoryAccounting } from "./actions";
 import type { InventoryAccountingAccount, InventoryAccountingBatch, InventoryAccountingReceipt, InventoryAccountingReport } from "./types";
+import { inventoryBasisRows } from "@/lib/accurate-inventory-basis";
 
 const money = (value: number | string) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
 
@@ -62,6 +63,7 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
   // Keep a request whose outcome may be uncertain unchanged until a read or exact retry resolves it.
   const freezeRequest = pending || uncertain;
   const valuation = (report?.evidence as {summary?:{valuation?:{policy:string;source_value:string;posted_value:string;residual:string;allocated_source_row:number|null}}}|undefined)?.summary?.valuation;
+  const basis = report ? inventoryBasisRows(report) : null;
 
   return <div style={{ display: "grid", gap: 12 }}>
     <label style={{ display: "grid", gap: 5 }}>Batch Accurate
@@ -93,6 +95,14 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
         <dt>Kredit ekuitas</dt><dd style={{ margin: 0 }}>{report.equity_account ? `${report.equity_account.code} — ${report.equity_account.name}` : "Akun belum valid"} · {money(report.original_value)}</dd>
       </dl>
       {valuation && <section aria-label="Bukti normalisasi"><strong>Dasar valuasi: {valuation.policy}</strong><p>Nilai sumber presisi penuh: Rp {valuation.source_value}. Nilai posting: Rp {valuation.posted_value}. Residu: Rp {valuation.residual}. Baris alokasi: {valuation.allocated_source_row ?? "tidak ada"}.</p><p>Target dihitung dari sumber; bukan nilai kontrol Accurate yang diasumsikan. Cocokkan kebijakan dan residu sebelum konfirmasi.</p></section>}
+      <section aria-label="Rekonsiliasi per barang dan gudang" style={{ overflowX: "auto" }}>
+        <h3 style={{ fontSize: 14 }}>Dasar stok per barang dan gudang</h3>
+        <p>{report.status === "posted" ? "Bandingkan baris sumber dengan layer dan kartu stok saat posting. Stok hari ini bisa berkurang karena pemakaian." : "Baris sumber siap ditinjau; layer dan kartu stok baru ada setelah posting."}</p>
+        {!basis?.complete && <p role="status">Bukti rincian belum lengkap. Hasil ini tidak dapat dinyatakan cocok.</p>}
+        {basis?.rows.length ? <table style={{ minWidth: 700, width: "100%", fontSize: 12 }}><thead><tr><th>Barang</th><th>Gudang</th><th>Sumber qty / nilai</th><th>Layer qty / nilai</th><th>Kartu qty / nilai</th><th>Hasil</th></tr></thead><tbody>
+          {basis.rows.map(row => <tr key={`${row.warehouseId}:${row.itemId}`}><td>{row.code}</td><td>{row.warehouseId}</td><td>{row.sourceQty} / {money(row.sourceValue)}</td><td>{row.layerQty} / {money(row.layerValue)}</td><td>{row.moveQty} / {money(row.moveValue)}</td><td>{row.status === "match" ? "Cocok" : row.status === "mismatch" ? "Selisih" : "Menunggu posting"}</td></tr>)}
+        </tbody></table> : null}
+      </section>
       {report.blockers.length > 0 && <div role="status"><strong>Keputusan / pemeriksaan diperlukan</strong><ul>{report.blockers.map((blocker, index) => <li key={`${index}-${blocker}`}>{blocker}</li>)}</ul></div>}
       {report.status !== "previewed" && !receipt && <p>Batch ini hanya dapat ditinjau. Tidak ada tindakan perbaikan historis yang akan dijalankan dari laporan ini.</p>}
       <button type="button" className="btn-def" onClick={download}>Unduh laporan JSON</button>
