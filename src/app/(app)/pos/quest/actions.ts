@@ -9,8 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 async function requireManager() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  const { data: me } = await supabase.from("profiles").select("role, is_active").eq("id", user?.id ?? "").maybeSingle();
+  if (!me?.is_active || !["OWNER", "ADMIN"].includes(me.role)) {
     redirect(`/pos/quest?error=${encodeURIComponent("Hanya owner/manajer yang bisa mengubah konfigurasi quest")}`);
   }
   return { supabase, userId: user!.id };
@@ -30,11 +30,12 @@ export async function createQuestDef(formData: FormData) {
     redirect(`/pos/quest?error=${encodeURIComponent("Lengkapi judul, target, dan poin reward")}`);
   }
 
-  await supabase.from("staff_quest_definitions").insert({
+  const { data: saved, error } = await supabase.from("staff_quest_definitions").insert({
     title, quest_type: questType, target_kind: targetKind,
     target_ref_id: targetKind === "total_sales_amount" ? null : targetRefId,
     target_value: targetValue, points_reward: pointsReward, branch_id: branchId, created_by: userId,
-  });
+  }).select("id").single();
+  if (error || !saved) redirect(`/pos/quest?error=${encodeURIComponent("Quest gagal disimpan. Muat ulang dan coba lagi.")}`);
   revalidatePath("/pos/quest");
   redirect("/pos/quest?success=quest");
 }
@@ -43,7 +44,9 @@ export async function toggleQuestDef(formData: FormData) {
   const { supabase } = await requireManager();
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "1";
-  await supabase.from("staff_quest_definitions").update({ is_active: active }).eq("id", id);
+  const { data: saved, error } = await supabase.from("staff_quest_definitions")
+    .update({ is_active: active }).eq("id", id).select("id").maybeSingle();
+  if (error || !saved) redirect(`/pos/quest?error=${encodeURIComponent("Status quest gagal diubah. Muat ulang dan coba lagi.")}`);
   revalidatePath("/pos/quest");
   redirect("/pos/quest");
 }
@@ -55,7 +58,9 @@ export async function createReward(formData: FormData) {
   const cost = Number(formData.get("points_cost")) || 0;
   if (!name || cost <= 0) redirect(`/pos/quest?error=${encodeURIComponent("Lengkapi nama reward dan poin")}`);
 
-  await supabase.from("staff_reward_catalog").insert({ reward_name: name, reward_type: type, points_cost: cost });
+  const { data: saved, error } = await supabase.from("staff_reward_catalog")
+    .insert({ reward_name: name, reward_type: type, points_cost: cost }).select("id").single();
+  if (error || !saved) redirect(`/pos/quest?error=${encodeURIComponent("Reward gagal disimpan. Muat ulang dan coba lagi.")}`);
   revalidatePath("/pos/quest");
   redirect("/pos/quest?success=reward");
 }
@@ -64,7 +69,9 @@ export async function toggleReward(formData: FormData) {
   const { supabase } = await requireManager();
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "1";
-  await supabase.from("staff_reward_catalog").update({ is_active: active }).eq("id", id);
+  const { data: saved, error } = await supabase.from("staff_reward_catalog")
+    .update({ is_active: active }).eq("id", id).select("id").maybeSingle();
+  if (error || !saved) redirect(`/pos/quest?error=${encodeURIComponent("Status reward gagal diubah. Muat ulang dan coba lagi.")}`);
   revalidatePath("/pos/quest");
   redirect("/pos/quest");
 }
@@ -73,10 +80,11 @@ export async function toggleReward(formData: FormData) {
 export async function fulfillRedemption(formData: FormData) {
   const { supabase, userId } = await requireManager();
   const id = String(formData.get("id") ?? "");
-  await supabase
+  const { data: saved, error } = await supabase
     .from("staff_reward_redemptions")
     .update({ status: "fulfilled", fulfilled_by: userId, fulfilled_at: new Date().toISOString() })
-    .eq("id", id).eq("status", "pending_fulfillment");
+    .eq("id", id).eq("status", "pending_fulfillment").select("id").maybeSingle();
+  if (error || !saved) redirect(`/pos/quest?error=${encodeURIComponent("Penyerahan reward gagal dicatat. Muat ulang dan coba lagi.")}`);
   revalidatePath("/pos/quest");
   redirect("/pos/quest?success=fulfill");
 }

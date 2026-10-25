@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTAINER = 'vetos-employee-context-test-' + uuid.uuid4().hex[:8]
+MODE = sys.argv[1:]
 
 def sql(source, check=True, tuples=False):
     args = ['docker', 'exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1']
@@ -54,12 +55,24 @@ insert into employees(nama,profile_id) values ('Fictional duplicate one','ed1000
             if duplicate.returncode == 0 or 'HRIS_LINK_DUPLICATES' not in duplicate.stderr:
                 raise RuntimeError('Duplicate-link rollout did not fail safely')
             print('Duplicate-link migration preflight: fails safely without committing changes.')
+        if migration.name.endswith('_quest_config_write_guard.sql') and MODE == ['--quest-config-only']:
+            drift_cases = [
+                'alter table public.staff_quest_definitions disable row level security;',
+                'alter policy src_all on public.staff_reward_catalog using (false) with check (false);',
+                'create policy extra_settings on public.quest_settings for select to authenticated using (true);',
+                'revoke truncate on public.quest_settings from authenticated;',
+            ]
+            for change in drift_cases:
+                failed = sql('begin;\n' + change + '\n' + migration.read_text(), check=False)
+                if failed.returncode == 0 or 'QUEST_CONFIG_POLICY_CHANGED' not in failed.stderr:
+                    raise RuntimeError(f'Quest configuration failed to reject policy drift: {failed.stderr}')
+            print('Four configuration policy/RLS/grant drift cases rejected atomically.')
         try:
             sql('begin;\n' + migration.read_text() + '\ncommit;')
         except RuntimeError as error:
             raise RuntimeError(migration.name + ': ' + str(error)) from error
     print(f'Applied {len(migrations)} repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.')
-    if sys.argv[1:] == ['--sales-return-only']:
+    if MODE == ['--sales-return-only']:
         return_migration = next(path for path in migrations if path.name.endswith('_sales_return_branch_isolation.sql'))
         drift_cases = [
             ('alter table public.sales disable row level security;', 'RETURN_RLS_DISABLED'),
@@ -74,7 +87,7 @@ insert into employees(nama,profile_id) values ('Fictional duplicate one','ed1000
             if failed.returncode == 0 or expected not in failed.stderr:
                 raise RuntimeError(f'Return isolation failed to reject policy drift {change}: {failed.stderr}')
         print('Six disabled or drifted RLS/policy baselines rejected atomically.')
-    tests = ['sales_return_branch_isolation.sql'] if sys.argv[1:] == ['--sales-return-only'] else ['employee_account_operational_context.sql', 'inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql', 'clinic_inpatient_action_category.sql']
+    tests = ['sales_return_branch_isolation.sql'] if MODE == ['--sales-return-only'] else ['quest_config_write_guard.sql'] if MODE == ['--quest-config-only'] else ['employee_account_operational_context.sql', 'inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql', 'clinic_inpatient_action_category.sql']
     for name in tests:
         sql((ROOT / 'supabase/tests' / name).read_text())
         print(name + ': passed.')
