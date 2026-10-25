@@ -7,7 +7,8 @@ import type {InitialStockState} from "./actions";
 import type {ProgresImpor} from "@/lib/impor-accurate-batch";
 export type RecoverableStockBatch={id:string;source_name:string;status:string;as_of_date:string|null};
 export type RecoverableMasterBatch={id:string;source_name:string;status:string;progress:ProgresImpor|null;rejectedCount?:number|null};
-export function InventoryImportWorkspace({batches,masterBatches,masterError,recovered,initialReceipt}:{batches:RecoverableStockBatch[];masterBatches:RecoverableMasterBatch[];masterError:string|null;recovered:InitialStockState|null;initialReceipt:{stockCount:number;problemCount:number}|null}){
+export type RejectedMasterRows={runId:string;sourceName:string;page:number;rows:{source_row:number;source_code:string|null;source:string|null;reason:string|null}[];hasNext:boolean;error:string|null};
+export function InventoryImportWorkspace({batches,masterBatches,masterError,masterReview,recovered,initialReceipt}:{batches:RecoverableStockBatch[];masterBatches:RecoverableMasterBatch[];masterError:string|null;masterReview?:RejectedMasterRows|null;recovered:InitialStockState|null;initialReceipt:{stockCount:number;problemCount:number}|null}){
  const [mode,setMode]=useState('');
  return <>
   <section className="crm-sec" aria-label="Status batch master Accurate tersimpan">
@@ -16,7 +17,16 @@ export function InventoryImportWorkspace({batches,masterBatches,masterError,reco
    {masterError?<p role="alert">Daftar batch master belum dapat dimuat: {masterError}</p>:masterBatches.length ? masterBatches.map(b=><div key={b.id}>
     <strong>{b.source_name}</strong> · {b.status==='posted'?(b.rejectedCount===null||b.rejectedCount===undefined?'Proses tersimpan; hasil baris belum dapat dipastikan':b.rejectedCount>0?`Master selesai sebagian; ${b.rejectedCount} baris ditolak untuk diperbaiki; saldo awal ditinjau terpisah`:'Master tercatat selesai; saldo awal ditinjau terpisah'):b.status==='failed'?'Proses gagal':'Pemeriksaan atau impor belum terkonfirmasi selesai'} · {b.id.slice(0,8)}
     {b.progress&&<span> · Catatan terakhir: {b.progress.completed}/{b.progress.total} ({b.progress.percentage}%), fase {b.progress.phase}</span>}
+    {b.rejectedCount!==null&&b.rejectedCount!==undefined&&b.rejectedCount>0&&<> · <Link href={`/pos/sku/impor?master_run_id=${encodeURIComponent(b.id)}`}>Lihat baris ditolak</Link></>}
    </div>):<p>Belum ada batch master tersimpan untuk akun ini.</p>}
+   {masterReview&&<div aria-label="Baris master ditolak" style={{marginTop:12}}>
+    <h3 style={{fontSize:14}}>Baris ditolak: {masterReview.sourceName}</h3>
+    {masterReview.error?<p role="alert">{masterReview.error}</p>:<>
+     {masterReview.rows.length?<div style={{overflowX:"auto"}}><table><thead><tr><th>File sumber</th><th>Baris sumber</th><th>Kode SKU</th><th>Alasan</th></tr></thead><tbody>{masterReview.rows.map((row,index)=><tr key={`${row.source_row}-${index}`}><td>{row.source||"Tidak tercatat pada batch lama"}</td><td>{row.source_row}</td><td>{row.source_code||"—"}</td><td>{row.reason||"Alasan tidak tersimpan; periksa ulang file sumber."}</td></tr>)}</tbody></table></div>:<p>Tidak ada baris ditolak pada halaman ini.</p>}
+     {masterReview.page>1&&<Link href={`/pos/sku/impor?master_run_id=${encodeURIComponent(masterReview.runId)}&master_page=${masterReview.page-1}`}>Halaman sebelumnya</Link>}
+     {masterReview.hasNext&&<> · <Link href={`/pos/sku/impor?master_run_id=${encodeURIComponent(masterReview.runId)}&master_page=${masterReview.page+1}`}>Halaman berikutnya</Link></>}
+    </>}
+   </div>}
    <p>Periksa hasil batch sebelum mencoba impor ulang bila status belum pasti.</p>
   </section>
   <section className="crm-sec" aria-label="Batch saldo tersimpan">
