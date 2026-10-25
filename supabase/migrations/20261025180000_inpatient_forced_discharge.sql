@@ -7,6 +7,23 @@ alter table public.consent_templates drop constraint consent_templates_kategori_
 alter table public.consent_templates add constraint consent_templates_kategori_check
   check (kategori in ('Umum','Konsultasi','Vaksinasi','Operasi','Grooming','Rawat Inap','Lab','Pulang Paksa'));
 
+-- Existing authenticated UPDATE access to inpatient_records must not bypass the
+-- signed-form/discharge-fee RPC by changing status or discharge time directly.
+create function public.guard_inpatient_condition_updates() returns trigger
+language plpgsql security invoker set search_path = '' as $$
+begin
+  if current_user = 'authenticated' and (
+    new.condition_status is distinct from old.condition_status or
+    new.discharged_at is distinct from old.discharged_at
+  ) then
+    raise exception using errcode='P0001', message='INPATIENT_ATOMIC_REQUIRED: ubah kondisi melalui aksi rawat inap';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_inpatient_condition_updates() from public,anon,authenticated,service_role;
+create trigger guard_inpatient_condition_updates before update of condition_status, discharged_at
+  on public.inpatient_records for each row execute function public.guard_inpatient_condition_updates();
+
 create or replace function public.clinic_change_inpatient_condition(
   p_inpatient_id uuid, p_new_status text, p_notes text
 ) returns boolean language plpgsql security definer set search_path = '' as $function$

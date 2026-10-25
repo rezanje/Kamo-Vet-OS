@@ -99,6 +99,11 @@ do $$ declare v_id uuid;v_failed boolean;
 begin
   select id into v_id from public.inpatient_records where visit_id='ca600000-0000-4000-8000-000000000001';
   v_failed:=false;
+  begin update public.inpatient_records set condition_status='pulang_paksa',discharged_at=now() where id=v_id;
+  exception when insufficient_privilege then v_failed:=true;
+    when sqlstate 'P0001' then v_failed:=sqlerrm like 'INPATIENT_ATOMIC_REQUIRED:%';end;
+  if not v_failed then raise exception 'direct status update bypassed signed consent';end if;
+  v_failed:=false;
   begin perform public.clinic_change_inpatient_condition(v_id,'pulang_paksa','DEMO');
   exception when sqlstate 'P0001' then
     if sqlerrm not like 'CONSENT_REQUIRED:%' then raise exception 'unexpected forced discharge error: %',sqlerrm;end if;

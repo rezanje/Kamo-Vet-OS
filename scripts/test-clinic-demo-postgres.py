@@ -4,11 +4,14 @@ Requires Docker and the postgres:16 image. Auth/storage are test-only shims.
 """
 from pathlib import Path
 import subprocess
+import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[1]
+if sys.argv[1:] not in ([], ['--inpatient-only']):
+    raise SystemExit('Only --inpatient-only is supported')
 CONTAINER = 'vetos-clinic-demo-test-' + uuid.uuid4().hex[:8]
 
 def sql(source, check=True, tuples=False):
@@ -50,9 +53,12 @@ alter default privileges in schema public grant all on sequences to authenticate
         except RuntimeError as error:
             raise RuntimeError(migration.name + ': ' + str(error)) from error
     print(f'Applied {len(migrations)} repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.')
-    for name in ['inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql', 'clinic_inpatient_action_category.sql']:
+    names = ['inpatient_consent.sql'] if sys.argv[1:] == ['--inpatient-only'] else ['inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql', 'clinic_inpatient_action_category.sql']
+    for name in names:
         sql((ROOT / 'supabase/tests' / name).read_text())
         print(name + ': passed with real FIFO and prescription triggers.')
+    if sys.argv[1:] == ['--inpatient-only']:
+        raise SystemExit(0)
     # Commit test-only CA fixtures inside this disposable container, then race
     # signing against both visit identity changes and a second conditional sign.
     fixture = (ROOT / 'supabase/tests/inpatient_consent.sql').read_text()
