@@ -113,6 +113,11 @@ export default async function RekamMedisPage({
   const correctionCheck = menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed && !correctionDataFailed
     ? await supabase.rpc("clinic_can_correct_record", { p_record_id: mrId }) : { data: false, error: null };
   const canCorrect = correctionCheck.data === true && !correctionCheck.error;
+  const invoiceCheck = menungguBayar && mrId
+    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle()
+    : { data: null, error: null };
+  const canAddRacikan = !!(menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed
+    && !correctionDataFailed && !invoiceCheck.error && !invoiceCheck.data);
   const editing = !!edit && edit === mrId && canCorrect;
   const correction: ClinicalCorrection | undefined = editing && record && mrId ? {
     recordId: mrId, revision: record.clinical_revision ?? 0,
@@ -453,7 +458,7 @@ export default async function RekamMedisPage({
                 </tbody>
               </table>
             )}
-            {mrId && (
+            {mrId && canAddRacikan && (
               <div style={{ marginTop: 10 }}>
                 <RacikanInline key={`${visit.id}:${mrId}`} visitId={visit.id} medicalRecordId={mrId} bahanItems={bahanItems} bolehManual={bolehManual} />
               </div>

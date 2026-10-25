@@ -12,3 +12,19 @@ it('opens the original form with exact persisted source and downstream snapshots
 it.each(['rpc','medical_records','prescription_items','compounding_recipes'])('fails closed when %s cannot be checked',async table=>{state.failed=table;expect((await page('record')).some(x=>x.props.correction)).toBe(false)});
 it('rejects an unauthorized or stale record query without opening another form',async()=>{state.allowed=false;expect((await page('record')).some(x=>x.props.correction)).toBe(false);state.allowed=true;expect((await page('foreign-record')).some(x=>x.props.correction)).toBe(false)});
 it('keeps a paid visit read-only even if readiness response is unexpectedly true',async()=>{state.tables.visits[0].status='Selesai';state.tables.visits[0].checked_out_at='2026-10-24T03:00:00Z';expect((await page('record')).some(x=>x.props.correction)).toBe(false)});
+it('offers late racikan only while the same saved record is eligible and unpaid',async()=>{
+  expect((await page()).some(x=>x.props.medicalRecordId==='record')).toBe(true);
+  // Clinical-note correction needs a submission key; legacy unpaid racikan
+  // still works when there is no invoice.
+  state.allowed=false;
+  expect((await page()).some(x=>x.props.medicalRecordId==='record')).toBe(true);
+  state.allowed=true;
+  state.tables.invoices=[{id:'invoice',visit_id:'visit'}];
+  expect((await page()).some(x=>x.props.medicalRecordId==='record')).toBe(false);
+  state.tables.invoices=[];
+  state.failed='invoices';
+  expect((await page()).some(x=>x.props.medicalRecordId==='record')).toBe(false);
+  state.failed='';
+  state.tables.visits[0].status='Selesai';
+  expect((await page()).some(x=>x.props.medicalRecordId==='record')).toBe(false);
+});

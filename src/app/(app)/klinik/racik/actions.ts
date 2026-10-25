@@ -53,6 +53,9 @@ export async function addRacikan(formData: FormData) {
   const requestKey = String(formData.get("requestKey") ?? "").trim();
   const back = `/klinik/rekam-medis/${visitId}`;
 
+  // The issue RPC locks the visit and rejects new work after invoice. Let exact
+  // request-key retries reach it so a lost response can still be acknowledged.
+
   const recipeName = String(formData.get("recipe_name") ?? "").trim();
   const form = String(formData.get("dosage_form") ?? "").trim() || null;
   const aturan = String(formData.get("aturan_pakai") ?? "").trim() || null;
