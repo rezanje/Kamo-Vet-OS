@@ -122,7 +122,12 @@ export default async function OpnameDetailPage({
           </div>
         </div>
       ) : order.status === "Selesai" ? (
-        <HasilView orderId={order.id} allowCorrections />
+        <>
+          <div style={{ marginBottom: 12 }}><Link href={`/laporan/hasil-opname?order=${encodeURIComponent(order.id)}&dari=${encodeURIComponent(order.tanggal_mulai)}`} className="btn">
+            Laporan hasil SO: modal FIFO / harga jual
+          </Link></div>
+          <HasilView orderId={order.id} allowCorrections />
+        </>
       ) : null}
     </>
   );
