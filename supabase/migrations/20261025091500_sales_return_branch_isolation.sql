@@ -1,12 +1,24 @@
 -- Historic demo policies still permit reads of every return row. Match each
 -- return to its visible sale under the caller's existing branch RLS.
 do $$ begin
+  if exists (
+    select 1 from (values ('sales'), ('sales_returns'), ('sales_return_items')) expected(name)
+    left join pg_class rel on rel.oid = to_regclass('public.' || expected.name)
+    where rel.oid is null or not rel.relrowsecurity
+  ) then
+    raise exception 'RETURN_RLS_DISABLED: sales and return tables must enforce RLS';
+  end if;
   if not exists (
     select 1 from pg_policies
     where schemaname = 'public' and tablename = 'sales'
       and policyname = 'operational_branch_isolation' and permissive = 'RESTRICTIVE'
+      and cmd = 'ALL' and 'authenticated' = any(roles)
+      and regexp_replace(qual, '\s+', '', 'g') in (
+        'user_can_access_branch(branch_id)', 'public.user_can_access_branch(branch_id)'
+      )
+      and with_check = qual
   ) then
-    raise exception 'SALES_BRANCH_POLICY_MISSING: return isolation needs the sale branch guard';
+    raise exception 'SALES_BRANCH_POLICY_CHANGED: return isolation needs the exact sale branch guard';
   end if;
   if not exists (
     select 1 from pg_policies
