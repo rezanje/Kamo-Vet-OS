@@ -97,9 +97,9 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
       {valuation && <section aria-label="Bukti normalisasi"><strong>Dasar valuasi: {valuation.policy}</strong><p>Nilai sumber presisi penuh: Rp {valuation.source_value}. Nilai posting: Rp {valuation.posted_value}. Residu: Rp {valuation.residual}. Baris alokasi: {valuation.allocated_source_row ?? "tidak ada"}.</p><p>Target dihitung dari sumber; bukan nilai kontrol Accurate yang diasumsikan. Cocokkan kebijakan dan residu sebelum konfirmasi.</p></section>}
       <section aria-label="Rekonsiliasi per barang dan gudang" style={{ overflowX: "auto" }}>
         <h3 style={{ fontSize: 14 }}>Dasar stok per barang dan gudang</h3>
-        <p>{report.status === "posted" ? "Bandingkan baris sumber dengan layer dan kartu stok saat posting. Stok hari ini bisa berkurang karena pemakaian." : "Baris sumber siap ditinjau; layer dan kartu stok baru ada setelah posting."}</p>
+        <p>{report.status === "posted" ? "Bandingkan baris batch dengan layer dan kartu stok saat posting. Stok hari ini bisa berkurang karena pemakaian." : "Baris batch siap ditinjau; layer dan kartu stok baru ada setelah posting."} Nilai batch mengikuti normalisasi impor, bukan total kontrol Accurate eksternal.</p>
         {!basis?.complete && <p role="status">Bukti rincian belum lengkap. Hasil ini tidak dapat dinyatakan cocok.</p>}
-        {basis?.rows.length ? <table style={{ minWidth: 700, width: "100%", fontSize: 12 }}><thead><tr><th>Barang</th><th>Gudang</th><th>Sumber qty / nilai</th><th>Layer qty / nilai</th><th>Kartu qty / nilai</th><th>Hasil</th></tr></thead><tbody>
+        {basis?.rows.length ? <table style={{ minWidth: 700, width: "100%", fontSize: 12 }}><thead><tr><th>Barang</th><th>Gudang</th><th>Batch qty / nilai</th><th>Layer qty / nilai</th><th>Kartu qty / nilai</th><th>Hasil</th></tr></thead><tbody>
           {basis.rows.map(row => <tr key={`${row.warehouseId}:${row.itemId}`}><td>{row.code}</td><td>{row.warehouseId}</td><td>{row.sourceQty} / {money(row.sourceValue)}</td><td>{row.layerQty} / {money(row.layerValue)}</td><td>{row.moveQty} / {money(row.moveValue)}</td><td>{row.status === "match" ? "Cocok" : row.status === "mismatch" ? "Selisih" : "Menunggu posting"}</td></tr>)}
         </tbody></table> : null}
       </section>
