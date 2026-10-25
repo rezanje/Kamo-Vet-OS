@@ -35,18 +35,21 @@ export default async function UangMukaPage({
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
-  let daftar:UM[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[];
+  let daftar:UM[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[],receipts:{id:string;po_id:string}[]=[];
   let loadError="";
   const rekening=await loadRekeningAktif(supabase);
   try {
-    [daftar,pemasok,po] = await Promise.all([
+    [daftar,pemasok,po,receipts] = await Promise.all([
       readCompleteList<UM>((from,to)=>supabase.from("purchase_advances")
         .select("id,po_id,no_um,tanggal,jumlah,terpakai,metode,catatan,status,suppliers(nama),purchase_orders(no_po)",{count:"exact"})
         .order("tanggal",{ascending:false}).order("id").range(from,to),"Daftar uang muka",{maxRows:null}),
       readCompleteList<{id:string;nama:string}>((from,to)=>supabase.from("suppliers").select("id,nama",{count:"exact"}).eq("is_active",true).order("nama").order("id").range(from,to),"Pemasok uang muka",{maxRows:null}),
       readCompleteList<AdvancePO>((from,to)=>supabase.from("purchase_orders").select("id,no_po,supplier_id,status,total",{count:"exact"}).order("tanggal",{ascending:false}).order("id").range(from,to),"PO uang muka",{maxRows:null}),
+      readCompleteList<{id:string;po_id:string}>((from,to)=>supabase.from("goods_receipts").select("id,po_id",{count:"exact"}).order("id").range(from,to),"Penerimaan PO uang muka",{maxRows:null}),
     ]);
   }catch(error){if(!(error instanceof ListLoadError))throw error;loadError=error.message;}
+  const receivedPOs = new Set(receipts.map(row=>row.po_id));
+  po = po.map(row=>({...row,hasReceipt:receivedPOs.has(row.id)}));
 
   const aktif = daftar.filter((u) => u.status === "aktif");
   const totalSisa = aktif.reduce((a, u) => a + (Number(u.jumlah) - Number(u.terpakai)), 0);
