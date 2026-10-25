@@ -53,9 +53,8 @@ export default async function RekamMedisPage({
   const { visitId } = await params;
   const { error, racikan, success, edit } = await searchParams;
   const supabase = await createClient();
-  const { data: { user: draftUser } } = await supabase.auth.getUser();
-  const draftUserId = draftUser?.id ?? "";
   const { data: { user } } = await supabase.auth.getUser();
+  const draftUserId = user?.id ?? "";
 
   const { data: visit } = await supabase
     .from("visits")
@@ -72,7 +71,7 @@ export default async function RekamMedisPage({
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
   const serviceStaff = recorded ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
   const dokterOpsi = recorded ? [] : await daftarDokter(supabase, { branchId: visit.branch_id });
-  const providerOpsi = recorded ? [] : performersForService(await daftarDokter(supabase,{branchId:visit.branch_id}),visit.poli);
+  const providerOpsi = recorded ? [] : performersForService(dokterOpsi, visit.poli);
 
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: (Omit<ClinicalCorrection, "recordId" | "revision" | "prescriptions"> & { id: string; clinical_revision?: number }) | null = null;
