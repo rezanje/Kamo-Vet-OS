@@ -4,6 +4,7 @@ import { documentAnchor } from "@/lib/related-document-routes";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { readCompleteList } from "@/lib/checked-list";
 import { SecHeader } from "@/components/SecHeader";
 import { InvoiceCorrectionForm } from "./InvoiceCorrectionForm";
 import { PaymentCorrectionForm } from "./PaymentCorrectionForm";
@@ -12,6 +13,7 @@ const rp = (value: number) => `Rp ${Number(value).toLocaleString("id-ID")}`;
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>) => Array.isArray(value) ? value[0] ?? null : value;
 type Payment = { advance_id: string | null; advance: Rel<{id: string; no_um: string; status: string}>; payment_order: Rel<{id: string; no_pp: string; status: string}>; replaces_payment_id: string | null; id: string; tanggal: string; amount: number; metode: string; catatan: string | null; dari_uang_muka: number; payment_order_id: string | null; reversal_of: string | null; voided_at: string | null; revision: number; journal_id: string | null };
+type InvoiceItem = { id: string; nama: string; qty: number; satuan: string | null; harga: number };
 
 export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ success?: string; error?: string; from?: string }>;
@@ -20,11 +22,20 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const [{ data: invoice, error }, { data: profile }] = await Promise.all([
-    supabase.from("purchase_invoices").select("id,revision,voided_at,void_reason,replaces_invoice_id,no_faktur,no_faktur_pemasok,tanggal,jatuh_tempo,total,po_id,keterangan,purchase_orders(id,no_po,status),purchase_invoice_items(id,nama,qty,harga,satuan),purchase_invoice_payments(id,tanggal,amount,metode,catatan,dari_uang_muka,advance_id,advance:purchase_advances!advance_id(id,no_um,status),payment_order_id,payment_order:payment_orders!payment_order_id(id,no_pp,status),replaces_payment_id,reversal_of,voided_at,revision,journal_id)").eq("id", id).maybeSingle(),
+    supabase.from("purchase_invoices").select("id,revision,voided_at,void_reason,replaces_invoice_id,no_faktur,no_faktur_pemasok,tanggal,jatuh_tempo,total,po_id,keterangan,purchase_orders(id,no_po,status)").eq("id", id).maybeSingle(),
     supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
   ]);
   if (error) throw new Error("Faktur dan riwayat pembayaran belum dapat dimuat.");
   if (!invoice) notFound();
+  // Embedded relations may stop at the API row limit without reporting a partial result.
+  // Verify every page before displaying a payment total or offering correction controls.
+  const [items, payments] = await Promise.all([
+    readCompleteList<InvoiceItem>((from, to) => supabase.from("purchase_invoice_items")
+      .select("id,nama,qty,satuan,harga", { count: "exact" }).eq("invoice_id", id).order("id").range(from, to), "Baris faktur pembelian", { maxRows: null }),
+    readCompleteList<Payment>((from, to) => supabase.from("purchase_invoice_payments")
+      .select("id,tanggal,amount,metode,catatan,dari_uang_muka,advance_id,advance:purchase_advances!advance_id(id,no_um,status),payment_order_id,payment_order:payment_orders!payment_order_id(id,no_pp,status),replaces_payment_id,reversal_of,voided_at,revision,journal_id", { count: "exact" })
+      .eq("invoice_id", id).order("tanggal").order("id").range(from, to), "Riwayat pembayaran faktur pembelian", { maxRows: null }),
+  ]);
   const po = one(invoice.purchase_orders);
   const [replacementResult, originalResult, receipts, returns] = await Promise.all([
     supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('replaces_invoice_id',id).maybeSingle(),
@@ -35,7 +46,6 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   const replacement = replacementResult.data;
   const replacementError = replacementResult.error;
   const original = originalResult.data;
-  const payments = (invoice.purchase_invoice_payments ?? []) as Payment[];
   const related: RelatedDocument[] = [
     ...(po ? [{kind:'purchase-order' as const,id:po.id,label:`PO ${po.no_po ?? 'tanpa nomor'}`,status:po.status}] : []),
     ...(original ? [{kind:'purchase-invoice' as const,id:original.id,label:`Faktur asal ${original.no_faktur}`,status:original.voided_at?'Dibatalkan':'Aktif'}] : []),
@@ -63,7 +73,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
       <p>{invoice.no_faktur_pemasok && `Nomor pemasok: ${invoice.no_faktur_pemasok}. `}{invoice.keterangan}</p>
       {invoice.po_id && !po && <p>PO terkait tidak tersedia atau tidak dapat diakses.</p>}
       <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Barang</th><th>Jumlah</th><th>Harga</th></tr></thead><tbody>
-        {(invoice.purchase_invoice_items ?? []).map((line: { id: string; nama: string; qty: number; satuan: string | null; harga: number }) => <tr key={line.id}><td>{line.nama}</td><td>{line.qty} {line.satuan}</td><td>{rp(line.harga)}</td></tr>)}
+        {items.map(line => <tr key={line.id}><td>{line.nama}</td><td>{line.qty} {line.satuan}</td><td>{rp(line.harga)}</td></tr>)}
       </tbody></table></div>
       {!invoice.voided_at && <Link className="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</Link>}
       {owner && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} />}
