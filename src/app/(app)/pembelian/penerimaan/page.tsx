@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
+import { readCompleteList, readListPage } from "@/lib/checked-list";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -14,23 +16,33 @@ type Dok = {
   tanggal: string;
   surat_jalan: string | null;
   purchase_orders: Rel<{ no_po: string | null; suppliers: Rel<{ nama: string }> }>;
-  goods_receipt_items: { qty_terima: number; qty_rusak: number; harga: number }[] | null;
 };
 
-export default async function PenerimaanPage() {
+export default async function PenerimaanPage({ searchParams }: { searchParams: Promise<{ hal?: string }> }) {
+  const { hal } = await searchParams;
   const supabase = await createClient();
-
-  const { data } = await supabase
-    .from("goods_receipts")
-    .select("id, no_terima, tanggal, surat_jalan, purchase_orders(no_po, suppliers(nama)), goods_receipt_items(qty_terima, qty_rusak, harga)")
-    .order("tanggal", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  const dok = (data ?? []) as unknown as Dok[];
-
-  const nilai = (d: Dok) => (d.goods_receipt_items ?? []).reduce((a, i) => a + Number(i.qty_terima) * Number(i.harga), 0);
-  const rusak = (d: Dok) => (d.goods_receipt_items ?? []).reduce((a, i) => a + Number(i.qty_rusak), 0);
+  let receiptPage: Awaited<ReturnType<typeof readListPage<Dok>>> | undefined;
+  let loadError: unknown;
+  const totals = new Map<string, { nilai: number; rusak: number }>();
+  try {
+    receiptPage = await readListPage<Dok>((from, to) => supabase.from("goods_receipts")
+      .select("id, no_terima, tanggal, surat_jalan, purchase_orders(no_po, suppliers(nama))", { count: "exact" })
+      .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).order("id")
+      .range(from, to), "Daftar penerimaan barang", hal);
+    const ids = receiptPage.rows.map(receipt => receipt.id);
+    if (ids.length) {
+      const items = await readCompleteList<{ id: string; receipt_id: string; qty_terima: number; qty_rusak: number; harga: number }>((from, to) => supabase
+        .from("goods_receipt_items").select("id, receipt_id, qty_terima, qty_rusak, harga", { count: "exact" })
+        .in("receipt_id", ids).order("id").range(from, to), "Baris penerimaan barang", { maxRows: null });
+      for (const item of items) {
+        const current = totals.get(item.receipt_id) ?? { nilai: 0, rusak: 0 };
+        current.nilai += Number(item.qty_terima) * Number(item.harga);
+        current.rusak += Number(item.qty_rusak);
+        totals.set(item.receipt_id, current);
+      }
+    }
+  } catch (cause) { loadError = cause; }
+  const dok = loadError === undefined ? receiptPage?.rows ?? [] : [];
 
   return (
     <>
@@ -46,7 +58,8 @@ export default async function PenerimaanPage() {
           desc="Satu dokumen per kiriman. Kiriman bertahap dari satu PO tercatat terpisah."
         />
 
-        <div style={{ overflowX: "auto" }}>
+        {loadError !== undefined && <ListLoadFailure error={loadError} label="Daftar penerimaan barang" />}
+        {loadError === undefined && <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
               <tr>
@@ -62,7 +75,8 @@ export default async function PenerimaanPage() {
             <tbody>
               {dok.map((d) => {
                 const po = one(d.purchase_orders);
-                const rsk = rusak(d);
+                const summary = totals.get(d.id) ?? { nilai: 0, rusak: 0 };
+                const rsk = summary.rusak;
                 return (
                   <tr key={d.id}>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>
@@ -77,7 +91,7 @@ export default async function PenerimaanPage() {
                     <td style={{ fontSize: 10.5 }}>
                       {rsk > 0 ? <span className="bge r">{rsk} unit</span> : <span style={{ color: "var(--td)" }}>—</span>}
                     </td>
-                    <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(nilai(d))}</td>
+                    <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(summary.nilai)}</td>
                   </tr>
                 );
               })}
@@ -88,7 +102,8 @@ export default async function PenerimaanPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
+        {receiptPage && loadError === undefined && <ListPagination path="/pembelian/penerimaan" query={{}} total={receiptPage.count} pageInfo={receiptPage.pageInfo} />}
       </div>
     </>
   );

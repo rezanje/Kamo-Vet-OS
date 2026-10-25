@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
+import { readCompleteList, readListPage } from "@/lib/checked-list";
+
+type Rel<T> = T | T[] | null;
+const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? (value[0] ?? null) : value;
 
 type Row = {
   id: string;
@@ -9,8 +14,7 @@ type Row = {
   keterangan: string | null;
   total: number;
   voided_at: string | null;
-  purchase_orders: { no_po: string | null; suppliers: { nama: string } | null } | null;
-  purchase_return_items: { id: string }[] | null;
+  purchase_orders: Rel<{ no_po: string | null; suppliers: Rel<{ nama: string }> }>;
 };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -20,17 +24,27 @@ const fmtD = (d: string) =>
 export default async function ReturBeliPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; hal?: string }>;
 }) {
-  const { success, error } = await searchParams;
+  const { success, error, hal } = await searchParams;
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from("purchase_returns")
-    .select("id, no_retur, tanggal, keterangan, total, voided_at, purchase_orders(no_po, suppliers(nama)), purchase_return_items(id)")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  const rows = (data ?? []) as unknown as Row[];
+  let returnPage: Awaited<ReturnType<typeof readListPage<Row>>> | undefined;
+  let loadError: unknown;
+  const itemCounts = new Map<string, number>();
+  try {
+    returnPage = await readListPage<Row>((from, to) => supabase.from("purchase_returns")
+      .select("id, no_retur, tanggal, keterangan, total, voided_at, purchase_orders(no_po, suppliers(nama))", { count: "exact" })
+      .order("created_at", { ascending: false }).order("id").range(from, to), "Daftar retur pembelian", hal);
+    const ids = returnPage.rows.map(row => row.id);
+    if (ids.length) {
+      const items = await readCompleteList<{ id: string; return_id: string }>((from, to) => supabase
+        .from("purchase_return_items").select("id, return_id", { count: "exact" })
+        .in("return_id", ids).order("id").range(from, to), "Baris retur pembelian", { maxRows: null });
+      for (const item of items) itemCounts.set(item.return_id, (itemCounts.get(item.return_id) ?? 0) + 1);
+    }
+  } catch (cause) { loadError = cause; }
+  const rows = loadError ? [] : returnPage?.rows ?? [];
 
   return (
     <>
@@ -64,7 +78,8 @@ export default async function ReturBeliPage({
             </Link>
           }
         />
-        <div style={{ overflowX: "auto" }}>
+        {loadError !== undefined && <ListLoadFailure error={loadError} label="Daftar retur pembelian" />}
+        {!loadError && <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
             <thead>
               <tr>
@@ -82,9 +97,9 @@ export default async function ReturBeliPage({
                 <tr key={r.id}>
                   <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/pembelian/retur/${r.id}`}>{r.no_retur}</Link>{r.voided_at && " · Dibatalkan / diganti"}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtD(r.tanggal)}</td>
-                  <td style={{ fontSize: 11.5 }}>{r.purchase_orders?.no_po ?? "—"}</td>
-                  <td style={{ fontSize: 11.5 }}>{r.purchase_orders?.suppliers?.nama ?? "—"}</td>
-                  <td style={{ textAlign: "center", fontSize: 11.5 }}>{r.purchase_return_items?.length ?? 0}</td>
+                  <td style={{ fontSize: 11.5 }}>{one(r.purchase_orders)?.no_po ?? "—"}</td>
+                  <td style={{ fontSize: 11.5 }}>{one(one(r.purchase_orders)?.suppliers ?? null)?.nama ?? "—"}</td>
+                  <td style={{ textAlign: "center", fontSize: 11.5 }}>{itemCounts.get(r.id) ?? 0}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? ""}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(Number(r.total))}</td>
                 </tr>
@@ -98,7 +113,8 @@ export default async function ReturBeliPage({
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
+        {returnPage && !loadError && <ListPagination path="/pembelian/retur" query={{}} total={returnPage.count} pageInfo={returnPage.pageInfo} />}
       </div>
     </>
   );
