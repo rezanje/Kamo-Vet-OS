@@ -76,8 +76,13 @@ begin
     or (select count(*) from public.inpatient_rx_evidence where prescription_item_id='ca910000-0000-4000-8000-000000000001')<>2 then
     raise exception 'void erased evidence or failed to retain audit row';
   end if;
-  if not public.clinic_void_rx_evidence(v_administration,'DEMO replay') then
-    raise exception 'void retry failed';end if;
+  if not public.clinic_void_rx_evidence(v_administration,'DEMO salah catat') then
+    raise exception 'identical void retry failed';end if;
+  v_failed:=false;
+  begin
+    perform public.clinic_void_rx_evidence(v_administration,'DEMO alasan berubah');
+  exception when others then v_failed:=sqlerrm like 'IDEMPOTENCY_CONFLICT:%';end;
+  if not v_failed then raise exception 'different void reason was acknowledged as a retry';end if;
 end $$;
 
 -- A different active user assigned only to the other branch cannot write this stay.
