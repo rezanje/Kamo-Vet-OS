@@ -17,12 +17,23 @@ export default async function FakturLangsungPage({
 
   let initial: DirectInvoiceInitial | undefined;
   if (replace_invoice) {
-    const [{ data: source, error: sourceError }, { data: attachments, error: attachmentError }] = await Promise.all([
-      supabase.from("purchase_invoices").select("id,supplier_id,warehouse_id,tanggal,jatuh_tempo,no_faktur_pemasok,surat_jalan,keterangan,purchase_invoice_items(item_id,qty,harga,satuan,exp_date)").eq("id", replace_invoice).is("po_id", null).not("voided_at", "is", null).maybeSingle(),
-      supabase.from("document_attachments").select("path,nama,mime,ukuran").eq("modul", "pembelian").eq("ref_id", replace_invoice),
-    ]);
-    if (sourceError || attachmentError || !source) return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca. Kembali ke riwayat faktur.</div>;
-    initial = { ...source, lampiran: attachments ?? [] } as DirectInvoiceInitial;
+    const { data: source, error: sourceError } = await supabase.from("purchase_invoices")
+      .select("id,supplier_id,warehouse_id,tanggal,jatuh_tempo,no_faktur_pemasok,surat_jalan,keterangan")
+      .eq("id", replace_invoice).is("po_id", null).not("voided_at", "is", null).maybeSingle();
+    if (sourceError || !source) return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca. Kembali ke riwayat faktur.</div>;
+    try {
+      const [lines, attachments] = await Promise.all([
+        readCompleteList<{ id: string; item_id: string; qty: number; harga: number; satuan: string; exp_date: string | null }>((from, to) =>
+          supabase.from("purchase_invoice_items").select("id,item_id,qty,harga,satuan,exp_date", { count: "exact" })
+            .eq("invoice_id", source.id).order("id").range(from, to), "Baris faktur sumber"),
+        readCompleteList<{ id: string; path: string; nama: string; mime: string | null; ukuran: number | null }>((from, to) =>
+          supabase.from("document_attachments").select("id,path,nama,mime,ukuran", { count: "exact" })
+            .eq("modul", "pembelian").eq("ref_id", source.id).order("id").range(from, to), "Lampiran faktur sumber"),
+      ]);
+      initial = { ...source, purchase_invoice_items: lines, lampiran: attachments } as DirectInvoiceInitial;
+    } catch {
+      return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca lengkap. Kembali ke riwayat faktur.</div>;
+    }
   }
 
   const [suppliers, warehouses, items] = await Promise.all([
