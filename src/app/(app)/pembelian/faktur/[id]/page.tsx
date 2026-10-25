@@ -78,6 +78,11 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
       {!invoice.voided_at && <Link className="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</Link>}
       {owner && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} />}
     </section>
+    {!owner && <section className="crm-sec" aria-label="Panduan minta koreksi faktur">
+      <h2 style={{ fontSize: 14, marginBottom: 8 }}>Minta koreksi {invoice.no_faktur}</h2>
+      <p>Catat nomor faktur, barang, satuan, harga atau pembayaran yang salah, nilai yang seharusnya, dan bukti pendukung. Sampaikan kepada Super Admin melalui jalur komunikasi tim agar ia dapat memeriksa faktur dan transaksi terkait sebelum melakukan koreksi resmi.</p>
+      <p style={{ color: "var(--tm)", fontSize: 11 }}>Halaman ini hanya memberi panduan; permintaan belum dikirim atau dicatat oleh aplikasi.</p>
+    </section>}
     <RelatedDocuments documents={related} from={`/pembelian/faktur/${id}`} error={!!receipts.error || !!returns.error || !!replacementError || !!originalResult.error} note={invoice.po_id ? "Penerimaan dan retur dikelompokkan melalui PO yang sama; alokasi langsung ke faktur ini tidak tersimpan." : "Faktur ini tidak memiliki relasi PO tersimpan. Penerimaan dan retur tidak ditebak dari nomor dokumen."} />
     <section className="crm-sec">
       <SecHeader num="02" title="RIWAYAT PEMBAYARAN" desc="Pembatalan mempertahankan pembayaran asli dan mencatat pembaliknya. Faktur dan barang tetap tercatat." />
