@@ -14,6 +14,8 @@ select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','fa100000-0000-4000-8000-000000000001',true);
 insert into private_report_presets(id,name,href,saved_at) values('fa200000-0000-4000-8000-000000000001','Vaksin A','/laporan/promo?dari=2026-10-01&dokter=fixture','2000-01-01');
 select pg_temp.assert_ok((select user_id=auth.uid() and saved_at>'2026-01-01' from private_report_presets where id='fa200000-0000-4000-8000-000000000001'),'owner and time server derived');
+update private_report_presets set href='/laporan/penjualan-rinci?dari=2026-10-01&cabang_id=20000000-0000-4000-8000-000000000002' where id='fa200000-0000-4000-8000-000000000001';
+select pg_temp.assert_ok((select href like '%cabang_id=20000000-0000-4000-8000-000000000002' from private_report_presets where id='fa200000-0000-4000-8000-000000000001'),'branch UUID filter survives private preset save');
 do $$begin
  begin insert into private_report_presets(user_id,name,href) values('fa100000-0000-4000-8000-000000000002','spoof','/laporan/promo');raise exception 'Expected spoof denied';exception when insufficient_privilege then null;end;
  begin insert into private_report_presets(name,href) values('external','https://evil.test');raise exception 'Expected external denied';exception when check_violation then null;end;
