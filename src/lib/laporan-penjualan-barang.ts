@@ -1,4 +1,4 @@
-export type JenisBarisPenjualan = "Barang" | "Obat" | "Jasa" | "Racikan";
+export type JenisBarisPenjualan = "Barang" | "Obat" | "Jasa" | "Racikan" | "Biaya Admin";
 
 export function kunciRacikan(visitId: string, nama: string): string {
   return `${visitId}::${nama.trim().toLocaleLowerCase("id-ID").replace(/\s+/g, " ")}`;

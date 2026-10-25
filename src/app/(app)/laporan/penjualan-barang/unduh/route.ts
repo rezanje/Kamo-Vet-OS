@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   const kanalInput = params.get("kanal");
   const kanal = kanalInput === "POS" || kanalInput === "Online" ? kanalInput : "Klinik";
   const jenisInput = params.get("jenis");
-  const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan"].includes(jenisInput ?? "") ? jenisInput! : kanal === "Klinik" ? "Racikan" : "Barang";
+  const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan", "Biaya Admin"].includes(jenisInput ?? "") ? jenisInput! : kanal === "Klinik" ? "Racikan" : "Barang";
   const q = (params.get("q") ?? "").trim().slice(0, 120);
   const { rows, pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({ dari, sampai, kanal, jenis, q });
   if (pesanError) return NextResponse.json({ error: pesanError }, { status: 400 });
