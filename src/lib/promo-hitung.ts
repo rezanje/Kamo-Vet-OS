@@ -19,6 +19,7 @@ export type PromoHitung = {
   id: string;
   name: string;
   itemIds: string[];                     // kosong = semua barang
+  unit?: string | null;                    // impor Excel dapat membatasi satuan
   minQty: number | null;
   maxQty: number | null;
   kelipatan: boolean;
@@ -28,7 +29,7 @@ export type PromoHitung = {
   minSubtotal?: number | null;           // syarat nilai belanja (dari rule lama)
 };
 
-export type BarisKeranjang = { item_id: string; qty: number; harga: number };
+export type BarisKeranjang = { item_id: string; qty: number; harga: number; satuan?: string | null };
 
 export type PotonganBaris = {
   item_id: string;
@@ -67,8 +68,8 @@ export function potonganBaris(baris: BarisKeranjang, p: PromoHitung): number {
   return Math.min(kotor, Math.round(harga * (Number(baris.qty) || 0)));
 }
 
-function kenaPromo(p: PromoHitung, itemId: string): boolean {
-  return p.itemIds.length === 0 || p.itemIds.includes(itemId);
+function kenaPromo(p: PromoHitung, itemId: string, unit?: string | null): boolean {
+  return (!p.unit || p.unit === unit) && (p.itemIds.length === 0 || p.itemIds.includes(itemId));
 }
 
 // Potongan promo untuk seluruh keranjang.
@@ -90,7 +91,7 @@ export function hitungPromoKeranjang(promos: PromoHitung[], cart: BarisKeranjang
   for (const baris of cart) {
     let terbaik: PotonganBaris | null = null;
     for (const p of aktif) {
-      if (!kenaPromo(p, baris.item_id)) continue;
+      if (!kenaPromo(p, baris.item_id, baris.satuan)) continue;
       const potongan = potonganBaris(baris, p);
       if (potongan <= 0) continue;
       if (!terbaik || potongan > terbaik.potongan) {
@@ -120,7 +121,7 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string): Pro
   const wibToday = hariIniWIB();
 
   type Row = {
-    id: string; name: string; rule: { min_subtotal?: number } | null;
+    id: string; name: string; rule: { min_subtotal?: number; unit?: string } | null;
     branch_ids: string[] | null; valid_from: string | null; valid_until: string | null;
     min_qty: number | null; max_qty: number | null; kelipatan: boolean; auto_apply: boolean;
     discount_type: "percent" | "nominal" | null; discount_value: number | null;
@@ -158,6 +159,7 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string): Pro
   return aktif.map((p) => ({
     id: p.id, name: p.name,
     itemIds: perPromo.get(p.id) ?? [],
+    unit: typeof p.rule?.unit === "string" ? p.rule.unit : null,
     minQty: p.min_qty == null ? null : Number(p.min_qty),
     maxQty: p.max_qty == null ? null : Number(p.max_qty),
     kelipatan: !!p.kelipatan,

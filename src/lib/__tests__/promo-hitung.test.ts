@@ -64,6 +64,15 @@ describe("potonganBaris", () => {
 });
 
 describe("hitungPromoKeranjang", () => {
+  it("limits an imported SKU promotion to its selected sale unit", () => {
+    const rule = promo({ itemIds: ["sku"], unit: "DUS", discountType: "nominal", discountValue: 2000 });
+    const results = hitungPromoKeranjang([rule], [
+      { item_id: "sku", satuan: "PCS", qty: 1, harga: 10000 },
+      { item_id: "sku", satuan: "DUS", qty: 1, harga: 100000 },
+    ]);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ item_id: "sku", potongan: 2000 });
+  });
   const cart = [
     { item_id: "rc", qty: 2, harga: 100_000 },
     { item_id: "pedigree", qty: 1, harga: 50_000 },

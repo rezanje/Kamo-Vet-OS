@@ -7,6 +7,7 @@ export type PromoRule = {
   suggest?: string;
   discount_type?: string;
   discount_value?: number;
+  unit?: string;
 };
 
 export type PromoRow = {

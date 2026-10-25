@@ -65,7 +65,10 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
             </div>
           </div>
 
-          <PromoTargets userId={userId} items={items} branches={branches} categories={categories} initialItemIds={itemIds} initialBranchIds={promo?.branch_ids ?? []} scope={scope}/>
+          {promo?.rule?.unit&&<div style={{gridColumn:"1 / -1",padding:10,border:"1px solid var(--bd)",borderRadius:7}}>
+            <strong>Target impor Excel: {items.find(item=>item.id===itemIds?.[0])?.name??"Barang terpilih"} / {promo.rule.unit}</strong>
+          </div>}
+          <PromoTargets userId={userId} items={items} branches={branches} categories={categories} initialItemIds={itemIds} initialBranchIds={promo?.branch_ids ?? []} scope={scope} lockItems={!!promo?.rule?.unit}/>
 
           {/* ── Potong otomatis ─────────────────────────────────────────── */}
           <div style={{ gridColumn: "1 / -1", background: "#f8fafc", border: ".5px solid var(--bd)", borderRadius: 7, padding: "9px 11px" }}>
