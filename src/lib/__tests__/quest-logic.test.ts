@@ -96,6 +96,12 @@ describe("monthlyLeaderboard", () => {
       { staff_id: "s2", points: 80 },
     ]);
   });
+  it("uses the WIB month at a UTC month boundary", () => {
+    expect(monthlyLeaderboard([
+      { staff_id: "s1", points_delta: 10, source_type: "quest_completion", created_at: "2026-09-30T18:00:00Z" },
+      { staff_id: "s1", points_delta: 20, source_type: "quest_completion", created_at: "2026-10-31T18:00:00Z" },
+    ], "2026-10")).toEqual([{ staff_id: "s1", points: 10 }]);
+  });
 });
 
 describe("canRedeem", () => {

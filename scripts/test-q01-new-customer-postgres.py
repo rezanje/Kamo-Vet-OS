@@ -31,10 +31,7 @@ insert into public.sales(id,branch_id,customer_id,no_struk,subtotal,total,bayar,
  select '{sale_id}','{branch}',id,'{ref}',100,100,100,'{cashier}','{shift}',created_at+interval '1 minute'
  from public.customers where id='a5500000-0000-4000-8000-000000000006';
 update public.sales set payments_finalized_at=(select created_at+interval '{paid_minutes} minutes'
- from public.customers where id='a5500000-0000-4000-8000-000000000006') where id='{sale_id}';
-set local role authenticated;
-select set_config('request.jwt.claims','{{"role":"authenticated","sub":"{cashier}"}}',true);
-select public.apply_sale_staff_effects('{sale_id}') /* {marker} */;
+ from public.customers where id='a5500000-0000-4000-8000-000000000006') where id='{sale_id}' /* {marker} */;
 """
         if hold:
             statements += "select pg_sleep(2) /* q01-holder */;\n"
@@ -74,22 +71,37 @@ select public.apply_sale_staff_effects('{sale_id}') /* {marker} */;
         output, error = process.stdout.read(), process.stderr.read()
         if process.returncode:
             raise RuntimeError((output + error)[-3500:])
+    # Payment commits A then B, even though B has a backdated test timestamp.
+    # The delayed B hook runs first; it must not steal A's first-sale claim.
+    for sale_id, cashier in (
+        ('a6600000-0000-4000-8000-000000000005','a1100000-0000-4000-8000-000000000002'),
+        ('a6600000-0000-4000-8000-000000000004','a1100000-0000-4000-8000-000000000001'),
+    ):
+        sql(f"""begin;set local role authenticated;
+select set_config('request.jwt.claims','{{"role":"authenticated","sub":"{cashier}"}}',true);
+select public.apply_sale_staff_effects('{sale_id}');commit;""")
     count = subprocess.run(['docker', 'exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'],
-                           input="""select coalesce(sum(current_value),0) from public.staff_quest_progress
-where quest_definition_id='a4400000-0000-4000-8000-000000000001'
- and period_key=to_char(now() at time zone 'Asia/Jakarta','YYYY-MM-DD');""",
+                           input="""select count(*) from public.sale_staff_effects e,
+ jsonb_array_elements(e.after_value->'progress') progress
+ where e.sale_id in('a6600000-0000-4000-8000-000000000004'::uuid,
+  'a6600000-0000-4000-8000-000000000005'::uuid)
+ and progress->>'quest_definition_id'='a4400000-0000-4000-8000-000000000001';""",
                            text=True, capture_output=True, check=True).stdout.strip()
     if count != '1':
         raise RuntimeError('Concurrent same-phone branches awarded more than one customer: ' + count)
     winner = subprocess.run(['docker', 'exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'],
-                            input="""select exists(select 1 from public.staff_quest_progress p
- where p.quest_definition_id='a4400000-0000-4000-8000-000000000001'
-  and p.staff_id='a1100000-0000-4000-8000-000000000001' and p.current_value=1)
- and not exists(select 1 from public.staff_quest_progress p
- where p.quest_definition_id='a4400000-0000-4000-8000-000000000001'
-  and p.staff_id='a1100000-0000-4000-8000-000000000002')
- and exists(select 1 from public.staff_points_ledger l
- where l.source_id='a4400000-0000-4000-8000-000000000001'
+                            input="""select exists(select 1 from public.sale_staff_effects e,
+ jsonb_array_elements(e.after_value->'progress') progress
+ where e.sale_id='a6600000-0000-4000-8000-000000000004'
+  and progress->>'quest_definition_id'='a4400000-0000-4000-8000-000000000001')
+ and not exists(select 1 from public.sale_staff_effects e,
+ jsonb_array_elements(e.after_value->'progress') progress
+ where e.sale_id='a6600000-0000-4000-8000-000000000005'
+  and progress->>'quest_definition_id'='a4400000-0000-4000-8000-000000000001')
+ and exists(select 1 from public.sale_staff_effects e
+ join public.staff_points_ledger l on l.id=any(e.ledger_ids)
+ where e.sale_id='a6600000-0000-4000-8000-000000000004'
+  and l.source_id='a4400000-0000-4000-8000-000000000001'
   and l.staff_id='a1100000-0000-4000-8000-000000000001'
   and l.branch_id='a2200000-0000-4000-8000-000000000001' and l.points_delta=10);""",
                             text=True, capture_output=True, check=True).stdout.strip()
@@ -101,7 +113,7 @@ try:
     subprocess.run(['docker', 'run', '-d', '--name', CONTAINER,
                     '-e', 'POSTGRES_PASSWORD=fictional-quest-test', 'postgres:16'],
                    check=True, capture_output=True)
-    for _ in range(100):
+    for _ in range(300):
         logs = subprocess.run(['docker', 'logs', CONTAINER], text=True, capture_output=True)
         if 'PostgreSQL init process complete' in logs.stdout and subprocess.run(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres'],
                           capture_output=True).returncode == 0:

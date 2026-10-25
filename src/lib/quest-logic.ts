@@ -92,7 +92,7 @@ export function monthlyLeaderboard(
   const sums = new Map<string, number>();
   for (const l of ledger) {
     if (l.source_type !== "quest_completion") continue;
-    if (!l.created_at.startsWith(month)) continue;
+    if (periodKey("monthly", new Date(l.created_at)) !== month) continue;
     sums.set(l.staff_id, (sums.get(l.staff_id) ?? 0) + l.points_delta);
   }
   return [...sums.entries()]

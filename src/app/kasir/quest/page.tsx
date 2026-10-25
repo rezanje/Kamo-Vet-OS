@@ -27,7 +27,7 @@ export default async function QuestPage({
   const now = new Date();
   const dailyKey = periodKey("daily", now);
   const monthlyKey = periodKey("monthly", now);
-  const monthStart = `${monthlyKey}-01T00:00:00Z`;
+  const monthStart = new Date(`${monthlyKey}-01T00:00:00+07:00`).toISOString();
 
   const [{ data: defs }, { data: progress }, { data: sp }, { data: streak }, { data: rewards },
     { data: redemptions }, { data: monthLedger }, { data: cfg }] = await Promise.all([
