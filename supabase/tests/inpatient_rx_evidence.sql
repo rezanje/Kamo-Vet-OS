@@ -94,6 +94,18 @@ end $$;
 
 -- A different active user assigned only to the other branch cannot write this stay.
 reset role;
+do $$
+begin
+  if has_table_privilege('authenticated','public.inpatient_rx_evidence','INSERT')
+    or has_table_privilege('service_role','public.inpatient_rx_evidence','UPDATE')
+    or has_table_privilege('authenticated','public.inpatient_rx_evidence_settings','UPDATE')
+    or has_function_privilege('anon',
+      'public.clinic_record_rx_evidence(uuid,uuid,text,numeric,timestamptz,text,text)','EXECUTE')
+    or not has_function_privilege('authenticated',
+      'public.clinic_record_rx_evidence(uuid,uuid,text,numeric,timestamptz,text,text)','EXECUTE') then
+    raise exception 'inpatient evidence grants differ from the reviewed RPC-only contract';
+  end if;
+end $$;
 -- Simulate a privileged maintenance write: source identity remains locked even
 -- when the ordinary client has no direct UPDATE grant on these parent tables.
 do $$
