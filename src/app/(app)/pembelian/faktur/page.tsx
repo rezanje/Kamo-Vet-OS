@@ -2,7 +2,12 @@ import { PurchaseRecoveryComplete } from "@/components/PurchaseRequestKey";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
+import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { hariIniWIB } from "@/lib/tanggal";
+
+type Rel<T> = T | T[] | null;
+const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? (value[0] ?? null) : value;
 
 type Row = {
   id: string;
@@ -13,9 +18,8 @@ type Row = {
   tanggal: string;
   jatuh_tempo: string;
   total: number;
-  suppliers: { nama: string } | null;
-  purchase_orders: { no_po: string | null } | null;
-  purchase_invoice_payments: { amount: number }[] | null;
+  suppliers: Rel<{ nama: string }>;
+  purchase_orders: Rel<{ no_po: string | null }>;
 };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -25,19 +29,29 @@ const fmtD = (d: string) =>
 export default async function FakturBeliPage({
   searchParams,
 }: {
-  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string }>;
+  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string; hal?: string }>;
 }) {
-  const { request_done, request_scope, success, error } = await searchParams;
+  const { request_done, request_scope, success, error, hal } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
 
-  const { data } = await supabase
-    .from("purchase_invoices")
-    .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  const rows = (data ?? []) as unknown as Row[];
+  let invoicePage: Awaited<ReturnType<typeof readListPage<Row>>> | undefined;
+  let loadError: unknown;
+  const paidByInvoice = new Map<string, number>();
+  try {
+    invoicePage = await readListPage<Row>((from, to) => supabase.from("purchase_invoices")
+      .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po)", { count: "exact" })
+      .order("created_at", { ascending: false }).order("id").range(from, to), "Daftar faktur pembelian", hal);
+    const ids = invoicePage.rows.map(row => row.id);
+    if (ids.length) {
+      const payments = await readCompleteList<{ id: string; invoice_id: string; amount: number }>((from, to) => supabase
+        .from("purchase_invoice_payments").select("id, invoice_id, amount", { count: "exact" })
+        .in("invoice_id", ids).order("id").range(from, to), "Pembayaran faktur pembelian", { maxRows: null });
+      for (const payment of payments) paidByInvoice.set(payment.invoice_id, (paidByInvoice.get(payment.invoice_id) ?? 0) + Number(payment.amount));
+    }
+  } catch (cause) { loadError = cause; }
+  const rows = loadError ? [] : invoicePage?.rows ?? [];
   const today = hariIniWIB();
 
   return (
@@ -73,7 +87,8 @@ export default async function FakturBeliPage({
             </Link>
           }
         />
-        <div style={{ overflowX: "auto" }}>
+        {loadError !== undefined && <ListLoadFailure error={loadError} label="Daftar faktur pembelian" />}
+        {!loadError && <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 880 }}>
             <thead>
               <tr>
@@ -89,7 +104,7 @@ export default async function FakturBeliPage({
             </thead>
             <tbody>
               {rows.map((r) => {
-                const dibayar = (r.purchase_invoice_payments ?? []).reduce((a, p) => a + Number(p.amount), 0);
+                const dibayar = paidByInvoice.get(r.id) ?? 0;
                 const sisa = r.voided_at ? 0 : Math.max(0, Number(r.total) - dibayar);
                 const telat = sisa > 0 && r.jatuh_tempo < today;
                 return (
@@ -103,8 +118,8 @@ export default async function FakturBeliPage({
                     <td style={{ fontSize: 11, color: telat ? "#b91c1c" : "var(--tm)", fontWeight: telat ? 700 : 400 }}>
                       {fmtD(r.jatuh_tempo)}{telat ? " !" : ""}
                     </td>
-                    <td style={{ fontSize: 11.5 }}>{r.suppliers?.nama ?? "—"}</td>
-                    <td style={{ fontSize: 11.5 }}>{r.purchase_orders?.no_po ?? "—"}</td>
+                    <td style={{ fontSize: 11.5 }}>{one(r.suppliers)?.nama ?? "—"}</td>
+                    <td style={{ fontSize: 11.5 }}>{one(r.purchase_orders)?.no_po ?? "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(r.total))}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: sisa > 0 ? "#b91c1c" : "#15803d" }}>
                       {sisa > 0 ? rp(sisa) : "Lunas"}
@@ -121,7 +136,8 @@ export default async function FakturBeliPage({
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
+        {invoicePage && !loadError && <ListPagination path="/pembelian/faktur" query={{ request_done: request_done ?? "", request_scope: request_scope ?? "" }} total={invoicePage.count} pageInfo={invoicePage.pageInfo} />}
       </div>
     </>
   );
