@@ -59,32 +59,29 @@ export default async function RawatInapDetailPage({
       branches(name), visits(id, poli, keluhan, created_at, pets(name, species, breed, dob, weight, photo_url), customers(name, phone, address))`)
     .eq("id", id).maybeSingle();
   if (!rec || !canUseBranch(allowedBranches,String(rec.branch_id))) notFound();
-  const handoff = await loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id));
 
   const visit = one(rec.visits as Rel<{ id: string; poli: string; keluhan: string | null; created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null; dob: string | null; weight: number | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
   const branch = one(rec.branches as Rel<{ name: string }>);
 
-  // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
-  // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
-  const { data: consentRows } = await supabase
-    .from("consents").select("status").eq("visit_id", rec.visit_id as string);
-  const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
-
-  const [{ data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }] = await Promise.all([
+  // Reads below depend only on the parent that already passed the branch guard, so they run together.
+  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }] = await Promise.all([
+    loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
+    // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
+    // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
+    supabase.from("consents").select("status").eq("visit_id", rec.visit_id as string),
     supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, paramedic_name, created_at, updated_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
     supabase.from("inpatient_status_log").select("previous_status, new_status, notes, changed_at, profiles(full_name)")
       .eq("inpatient_record_id", id).order("changed_at", { ascending: false }),
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      return supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-    })(),
+    // Same signed-in user as the guard above; no second auth read.
+    supabase.from("profiles").select("role").eq("id", draftUserId).maybeSingle(),
     // Tanpa jasa berkategori Rawat Inap, lama menginap tidak punya tarif dan
     // tagihannya tidak bisa terbentuk sendiri saat pasien pulang.
     supabase.from("items").select("id").eq("tindakan_kategori", "Rawat Inap").eq("is_active", true).limit(1).maybeSingle(),
   ]);
+  const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
 
   // Bentuk laporan untuk papan pemantauan. Tanggalnya memakai log_date (tanggal
   // yang ditulis dokter), bukan waktu simpan — laporan bisa diisi menyusul.
@@ -112,7 +109,7 @@ export default async function RawatInapDetailPage({
   }));
 
   const cond = rec.condition_status as Condition;
-  const isDoctor = me?.data?.role === "DOCTOR";
+  const isDoctor = me?.role === "DOCTOR";
   const active = !rec.discharged_at;
   const age = petAge(pet?.dob);
   const box = COND_BOX[cond] ?? COND_BOX.stabil;
