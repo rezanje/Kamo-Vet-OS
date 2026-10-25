@@ -91,7 +91,7 @@ export default async function PersetujuanPage({
                       <select className="fi" name={`template__${kat}`} defaultValue={a?.template_id ?? ""}
                         disabled={!bolehKelola} style={{ fontSize: 11, padding: "4px 8px", maxWidth: 280 }}>
                         <option value="">— dokter pilih sendiri —</option>
-                        {rows.filter((t) => t.is_active).map((t) => (
+                        {rows.filter((t) => t.is_active && t.kategori !== "Pulang Paksa").map((t) => (
                           <option key={t.id} value={t.id}>{t.nama}</option>
                         ))}
                       </select>

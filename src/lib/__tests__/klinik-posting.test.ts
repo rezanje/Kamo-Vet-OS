@@ -58,6 +58,12 @@ describe("parseClinicPostingError", () => {
 });
 
 describe("parseClinicRecordError", () => {
+  it("explains the separate forced-discharge signature and closed admission guards", () => {
+    expect(parseClinicRecordError({ code: "P0001", message: "CONSENT_REQUIRED: tandatangani form Pulang Paksa yang berlaku untuk cabang pasien" }))
+      .toMatch(/Pulang Paksa/);
+    expect(parseClinicRecordError({ code: "P0001", message: "INPATIENT_CLOSED: pasien sudah keluar" }))
+      .toMatch(/sudah keluar/);
+  });
   it("explains failed initial exams without exposing raw database details", () => {
     expect(parseClinicRecordError({ code: "P0001", message: "RECORD_INVALID: kunjungan belum siap" }))
       .toMatch(/Kunjungan belum siap/);

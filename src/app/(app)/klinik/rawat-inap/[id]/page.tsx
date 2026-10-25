@@ -17,13 +17,14 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-const COND_BADGE: Record<string, string> = { stabil: "g", kritis: "r", sembuh: "b", rip: "r" };
+const COND_BADGE: Record<string, string> = { stabil: "g", kritis: "r", sembuh: "b", rip: "r", pulang_paksa: "o" };
 // warna box KONDISI besar (referensi): stabil hijau, kritis merah, sembuh biru, rip merah.
 const COND_BOX: Record<string, { fg: string; bg: string; bd: string }> = {
   stabil: { fg: "#15803d", bg: "#f0fdf4", bd: "#bbf7d0" },
   kritis: { fg: "#b91c1c", bg: "#fef2f2", bd: "#fca5a5" },
   sembuh: { fg: "var(--posb)", bg: "#eff6ff", bd: "#bfdbfe" },
   rip: { fg: "#b91c1c", bg: "#fef2f2", bd: "#fca5a5" },
+  pulang_paksa: { fg: "#92400e", bg: "#fffbeb", bd: "#fcd34d" },
 };
 
 function petAge(dob: string | null | undefined): string | null {
@@ -70,7 +71,7 @@ export default async function RawatInapDetailPage({
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
-    supabase.from("consents").select("status").eq("visit_id", rec.visit_id as string),
+    supabase.from("consents").select("status, kategori, signed_at").eq("visit_id", rec.visit_id as string),
     supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, paramedic_name, created_at, updated_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
     supabase.from("inpatient_status_log").select("previous_status, new_status, notes, changed_at, profiles(full_name)")
@@ -82,6 +83,7 @@ export default async function RawatInapDetailPage({
     supabase.from("items").select("id").eq("tindakan_kategori", "Rawat Inap").eq("is_active", true).limit(1).maybeSingle(),
   ]);
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
+  const paksaConsentSigned = (consentRows ?? []).some((c) => c.status === "sudah_ttd" && c.kategori === "Pulang Paksa" && !!c.signed_at && new Date(c.signed_at).getTime() >= new Date(rec.admitted_at).getTime());
 
   // Bentuk laporan untuk papan pemantauan. Tanggalnya memakai log_date (tanggal
   // yang ditulis dokter), bukan waktu simpan — laporan bisa diisi menyusul.
@@ -228,17 +230,17 @@ export default async function RawatInapDetailPage({
         </div>
       </div>
 
-      {/* Ubah kondisi — 4 status (§3), RIP hanya dokter (server-side check juga). */}
+      {/* Ubah kondisi — pengaman form Pulang Paksa tetap ditegakkan atomik di database. */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
           <i className="ti ti-heart-rate-monitor" /> UBAH KONDISI PASIEN
         </div>
-        <TransactionForm userId={draftUserId} scope={`inpatient-condition:${id}`} action={changeCondition} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        {cond !== "pulang_paksa" && <TransactionForm userId={draftUserId} scope={`inpatient-condition:${id}`} action={changeCondition} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
           <input type="hidden" name="recordId" value={rec.id} />
           <div>
             <label className="flab">Kondisi baru</label>
-            <div style={{ display: "flex", gap: 5 }}>
-              {(["stabil", "kritis", "sembuh", "rip"] as const).map((s) => (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {(["stabil", "kritis", "sembuh", "rip", "pulang_paksa"] as const).map((s) => (
                 <label key={s} className="back-btn" style={{
                   padding: "6px 13px", borderRadius: 7, border: ".5px solid var(--bd)", cursor: "pointer", fontSize: 11,
                   background: s === cond ? "var(--sb)" : "#fff", color: s === cond ? "#fff" : s === "rip" ? "#b91c1c" : "var(--tm)",
@@ -254,10 +256,17 @@ export default async function RawatInapDetailPage({
             <input className="fi" name="notes" placeholder="mis. respon terapi baik / henti jantung" />
           </div>
           <SubmitButton className="btn-acc" icon="ti-check" pendingText="Menyimpan…">Simpan Kondisi</SubmitButton>
-        </TransactionForm>
+        </TransactionForm>}
+        {cond === "pulang_paksa" && <div style={{ fontSize: 12 }}>Status kepulangan sudah tercatat. Koreksi selanjutnya perlu proses terpisah.</div>}
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
-          Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · sembuh → lanjut pembayaran; RIP → invoice tetap terbit (tidak diblokir).
+          Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · Pulang Paksa memerlukan form khusus yang ditandatangani setelah pasien masuk · setiap status pulang tetap membuat biaya rawat inap.
         </div>
+        {!paksaConsentSigned && active && visit && (
+          <div className="p2ban" style={{ marginTop: 10, justifyContent: "space-between" }}>
+            <span>Untuk Pulang Paksa, buat dan tandatangani form khusus kategori Pulang Paksa lebih dulu.</span>
+            <Link href={`/klinik/rekam-medis/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Buka Form</Link>
+          </div>
+        )}
         {cond === "sembuh" && visit && (
           <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d", marginTop: 10, justifyContent: "space-between" }}>
             <span><i className="ti ti-paw" /> Boleh pulang — lanjutkan ke pembayaran.</span>
@@ -277,6 +286,12 @@ export default async function RawatInapDetailPage({
                 Buat Invoice <i className="ti ti-arrow-right" />
               </Link>
             </span>
+          </div>
+        )}
+        {cond === "pulang_paksa" && visit && (
+          <div className="p2ban" style={{ marginTop: 10, justifyContent: "space-between" }}>
+            <span>Pulang Paksa tercatat dengan form bertanda tangan; biaya rawat inap tetap masuk tagihan.</span>
+            <Link href={`/klinik/pembayaran/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Buat Invoice</Link>
           </div>
         )}
       </div>

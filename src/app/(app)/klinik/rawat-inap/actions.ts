@@ -169,7 +169,7 @@ export async function addDailyLogPos(formData: FormData) {
     }),
     request_key: r.key ?? "",
   });
-  if (newStatus && !["stabil", "kritis", "sembuh", "rip"].includes(newStatus)) {
+  if (newStatus && !["stabil", "kritis", "sembuh", "rip", "pulang_paksa"].includes(newStatus)) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Status kondisi tidak valid")}`);
   }
   if (newStatus && newStatus !== rec!.condition_status) {
@@ -195,7 +195,7 @@ export async function addDailyLogPos(formData: FormData) {
   return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log` };
 }
 
-// Ubah kondisi (stabil/kritis/sembuh/rip) — rip hanya dokter, wajib tercatat di status log.
+// Ubah kondisi — perubahan status wajib tercatat di status log.
 export async function changeCondition(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -203,7 +203,7 @@ export async function changeCondition(formData: FormData) {
   const newStatus = String(formData.get("new_status") ?? "") as Condition;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const back = `/klinik/rawat-inap/${recordId}`;
-  if (!recordId || !["stabil", "kritis", "sembuh", "rip"].includes(newStatus)) {
+  if (!recordId || !["stabil", "kritis", "sembuh", "rip", "pulang_paksa"].includes(newStatus)) {
     redirect(`${back}?error=${encodeURIComponent("Status tidak valid")}`);
   }
 
