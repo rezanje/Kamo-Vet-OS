@@ -23,7 +23,7 @@ export default async function FakturLangsungPage({
     if (sourceError || !source) return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca. Kembali ke riwayat faktur.</div>;
     try {
       const [lines, attachments] = await Promise.all([
-        readCompleteList<{ id: string; item_id: string; qty: number; harga: number; satuan: string; exp_date: string | null }>((from, to) =>
+        readCompleteList<{ id: string; item_id: string | null; qty: number; harga: number; satuan: string | null; exp_date: string | null }>((from, to) =>
           supabase.from("purchase_invoice_items").select("id,item_id,qty,harga,satuan,exp_date", { count: "exact" })
             .eq("invoice_id", source.id).order("id").range(from, to), "Baris faktur sumber"),
         readCompleteList<{ id: string; path: string; nama: string; mime: string | null; ukuran: number | null }>((from, to) =>
@@ -34,6 +34,9 @@ export default async function FakturLangsungPage({
     } catch {
       return <div role="alert" className="p2ban">Faktur sumber pembatalan belum dapat dibaca lengkap. Kembali ke riwayat faktur.</div>;
     }
+    if (initial.purchase_invoice_items.length > 500) return <div role="alert" className="p2ban">Faktur sumber melebihi batas 500 baris. Faktur pengganti belum dapat disiapkan otomatis.</div>;
+    if (initial.lampiran.length > 100) return <div role="alert" className="p2ban">Faktur sumber melebihi batas 100 lampiran. Faktur pengganti belum dapat disiapkan otomatis.</div>;
+    if (!initial.purchase_invoice_items.length || initial.purchase_invoice_items.some(line => !line.item_id)) return <div role="alert" className="p2ban">Barang sumber tidak tersedia untuk faktur pengganti. Periksa faktur asal sebelum melanjutkan.</div>;
   }
 
   const [suppliers, warehouses, items] = await Promise.all([
@@ -50,7 +53,19 @@ export default async function FakturLangsungPage({
   ]);
 
   const daftar = items ?? [];
-  const unitMap = await loadUnitOptions(supabase, daftar.map((i) => i.id));
+  let unitMap;
+  try { unitMap = await loadUnitOptions(supabase, daftar.map((i) => i.id)); }
+  catch (cause) {
+    if (initial) return <div role="alert" className="p2ban">Satuan barang tidak tersedia untuk faktur pengganti. Muat ulang atau periksa master barang.</div>;
+    throw cause;
+  }
+  if (initial) {
+    const selectable = new Set(daftar.map(item => item.id));
+    if (initial.purchase_invoice_items.some(line => !selectable.has(line.item_id)
+      || !!line.satuan && !(unitMap.get(line.item_id) ?? []).some(unit => unit.unit === line.satuan))) {
+      return <div role="alert" className="p2ban">Barang atau satuan sumber tidak tersedia untuk faktur pengganti. Periksa master barang sebelum melanjutkan.</div>;
+    }
+  }
 
   type Rel<T> = T | T[] | null;
   const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);

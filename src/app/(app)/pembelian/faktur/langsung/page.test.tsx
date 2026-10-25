@@ -2,7 +2,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ failLaterPage: false, invoiceItemReads: 0 }));
+const state = vi.hoisted(() => ({
+  failLaterPage: false, invoiceItemReads: 0, sourceLineCount: 1001,
+  sourceAttachmentCount: 1, missingItem: false, activeItem: true, unitAvailable: true,
+}));
 const sourceId = "11111111-1111-4111-8111-111111111111";
 const sourceItem = { item_id: "item", qty: 1, harga: 100, satuan: "pcs", exp_date: null };
 const source = {
@@ -12,7 +15,7 @@ const source = {
 };
 
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));
-vi.mock("@/lib/satuan", () => ({ loadUnitOptions: async () => new Map() }));
+vi.mock("@/lib/satuan", () => ({ loadUnitOptions: async () => new Map([["item", [{ unit: state.unitAvailable ? "pcs" : "box", factor: 1, buy_price: 100 }]]]) }));
 vi.mock("@/app/(app)/pembelian/faktur/langsung/FakturLangsungForm", () => ({
   FakturLangsungForm: ({ initial }: { initial?: { purchase_invoice_items: unknown[]; lampiran: unknown[] } }) =>
     <div data-items={initial?.purchase_invoice_items.length} data-attachments={initial?.lampiran.length} />,
@@ -33,9 +36,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       then: (resolve: (result: unknown) => unknown) => {
         if (table === "purchase_invoice_items") state.invoiceItemReads++;
         const rows = table === "purchase_invoice_items"
-          ? Array.from({ length: 1001 }, (_, index) => ({ id: `line-${index}`, ...sourceItem }))
+          ? Array.from({ length: state.sourceLineCount }, (_, index) => ({ id: `line-${index}`, ...sourceItem, item_id: state.missingItem && index === 0 ? null : "item" }))
           : table === "document_attachments"
-            ? [{ id: "attachment", path: "private/path", nama: "Nota", mime: "image/png", ukuran: 10 }]
+            ? Array.from({ length: state.sourceAttachmentCount }, (_, index) => ({ id: `attachment-${index}`, path: `private/${index}`, nama: "Nota", mime: "image/png", ukuran: 10 }))
+            : table === "items" && state.activeItem
+              ? [{ id: "item", code: "SKU-1", name: "Barang", buy_price: 100, unit: "pcs", track_expiry: false }]
             : [];
         const failed = table === "purchase_invoice_items" && state.failLaterPage && start >= 500;
         return Promise.resolve({ data: failed ? null : rows.slice(start, end + 1), count: rows.length,
@@ -48,18 +53,56 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 
 import FakturLangsungPage from "./page";
 
-beforeEach(() => { state.failLaterPage = false; state.invoiceItemReads = 0; });
+beforeEach(() => {
+  state.failLaterPage = false; state.invoiceItemReads = 0;
+  state.sourceLineCount = 1001; state.sourceAttachmentCount = 1;
+  state.missingItem = false; state.activeItem = true; state.unitAvailable = true;
+});
 
-it("prefills all 1,001 source lines and attachments before replacement", async () => {
+it("reads all 1,001 source lines but blocks a replacement above the 500-line posting limit", async () => {
   const html = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
-  expect(html).toContain('data-items="1001"');
-  expect(html).toContain('data-attachments="1"');
+  expect(html).toContain("batas 500 baris");
+  expect(html).not.toContain("data-items=");
   expect(state.invoiceItemReads).toBe(3);
+});
+
+it("permits 500 source lines and blocks the 501st", async () => {
+  state.sourceLineCount = 500;
+  const allowed = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
+  expect(allowed).toContain('data-items="500"');
+  expect(allowed).toContain('data-attachments="1"');
+  state.sourceLineCount = 501;
+  const blocked = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
+  expect(blocked).toContain("batas 500 baris");
+  expect(blocked).not.toContain("data-items=");
+});
+
+it("blocks 101 source attachments but permits 100", async () => {
+  state.sourceLineCount = 1;
+  state.sourceAttachmentCount = 100;
+  const allowed = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
+  expect(allowed).toContain('data-attachments="100"');
+  state.sourceAttachmentCount = 101;
+  const blocked = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
+  expect(blocked).toContain("batas 100 lampiran");
+  expect(blocked).not.toContain("data-items=");
 });
 
 it("hides the replacement form if a later source page cannot be read", async () => {
   state.failLaterPage = true;
   const html = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
-  expect(html).toContain("Faktur sumber pembatalan belum dapat dibaca");
+  expect(html).toContain("Faktur sumber pembatalan belum dapat dibaca lengkap");
+  expect(html).not.toContain("data-items=");
+});
+
+it.each([
+  ["missing SKU", { missingItem: true }],
+  ["inactive SKU", { activeItem: false }],
+  ["removed unit", { unitAvailable: false }],
+])("blocks a %s before prefill", async (_label, change) => {
+  state.sourceLineCount = 1;
+  Object.assign(state, change);
+  const html = renderToStaticMarkup(await FakturLangsungPage({ searchParams: Promise.resolve({ replace_invoice: sourceId }) }));
+  expect(html).toContain("tidak tersedia untuk faktur pengganti");
   expect(html).not.toContain("data-items=");
 });
