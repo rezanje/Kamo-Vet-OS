@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { ImporForm } from "./ImporForm";
-import { InventoryImportWorkspace, type RecoverableMasterBatch, type RecoverableStockBatch } from "./InventoryImportWorkspace";
+import { InventoryImportWorkspace, type RecoverableMasterBatch, type RecoverableStockBatch, type RejectedMasterRows } from "./InventoryImportWorkspace";
 import { recoverInitialStock } from "./actions";
 import { createClient } from "@/lib/supabase/server";
 import { GroupComponentImport } from "./GroupComponentImport";
@@ -12,13 +12,15 @@ export default async function ImporBarangPage({
 }: {
   searchParams: Promise<{
     run_id?: string;
+    master_run_id?: string;
+    master_page?: string;
     error?: string;
     import_success?: string;
     stock_count?: string;
     problem_count?: string;
   }>;
 }) {
-  const { error, run_id, import_success, stock_count, problem_count } = await searchParams;
+  const { error, run_id, master_run_id, master_page, import_success, stock_count, problem_count } = await searchParams;
   const boleh = await bolehKelolaMaster();
   const initialReceipt = import_success === "1"
     ? {
@@ -31,6 +33,7 @@ export default async function ImporBarangPage({
   let masterBatches: RecoverableMasterBatch[] = [];
   let recoveryError: string | null = null;
   let masterError: string | null = null;
+  let masterReview: RejectedMasterRows | null = null;
   if (boleh) {
     const db = await createClient(); const {data:{user}} = await db.auth.getUser();
     if (user) {
@@ -53,6 +56,31 @@ export default async function ImporBarangPage({
         progress: run.summary && typeof run.summary === "object" && !Array.isArray(run.summary) && "progress" in run.summary
           ? bacaProgresDariRingkasan(run.summary) : null,
       }));
+      if (master_run_id) {
+        const selected = masterBatches.find(batch => batch.id === master_run_id);
+        const rawPage = Number(master_page ?? 1);
+        const page = Number.isSafeInteger(rawPage) && rawPage > 0 && rawPage < 100000 ? rawPage : 1;
+        masterReview = {runId: master_run_id, sourceName: selected?.source_name ?? "Batch master", page, rows: [], hasNext: false, error: null};
+        if (!selected) masterReview.error = "Batch master tidak dapat diakses dari daftar akun ini.";
+        else if (!selected.rejectedCount || page > Math.ceil(selected.rejectedCount / 50)) masterReview.error = "Halaman baris ditolak tidak tersedia untuk batch ini.";
+        else {
+          const start = (page - 1) * 50;
+          const result = await db.from("import_run_rows").select("id,source_row,source_code,reason,payload")
+            .eq("run_id", master_run_id).eq("status", "rejected")
+            .order("source_row", {ascending:true}).order("id", {ascending:true}).range(start, start + 50);
+          if (result.error) masterReview.error = "Rincian baris ditolak belum dapat dimuat. Coba lagi setelah memeriksa status batch.";
+          else if ((result.data ?? []).length !== Math.min(50, selected.rejectedCount - start) + (start + 50 < selected.rejectedCount ? 1 : 0))
+            masterReview.error = "Jumlah rincian baris ditolak tidak cocok dengan status batch. Periksa batch sebelum melanjutkan.";
+          else {
+            masterReview.rows = (result.data ?? []).slice(0, 50).map(row => ({
+              source_row:row.source_row,source_code:row.source_code,reason:row.reason,
+              source:row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) && typeof row.payload.source === "string"
+                ? row.payload.source : null,
+            }));
+            masterReview.hasNext = start + 50 < selected.rejectedCount;
+          }
+        }
+      }
     }
   }
   const recovered = boleh && run_id ? await recoverInitialStock(run_id) : null;
@@ -85,7 +113,7 @@ export default async function ImporBarangPage({
       ) : (
         <>
           {recoveryError && <p role="alert">Daftar batch belum dapat dimuat: {recoveryError}</p>}
-          <InventoryImportWorkspace batches={batches} masterBatches={masterBatches} masterError={masterError} recovered={recovered} initialReceipt={initialReceipt} />
+          <InventoryImportWorkspace batches={batches} masterBatches={masterBatches} masterError={masterError} masterReview={masterReview} recovered={recovered} initialReceipt={initialReceipt} />
           <GroupComponentImport />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>

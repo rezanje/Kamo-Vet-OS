@@ -90,4 +90,24 @@ it("labels a posted master batch with rejected rows as partial completion", () =
   expect(host.textContent).toContain("selesai sebagian");
   expect(host.textContent).toContain("3 baris ditolak");
   expect(host.textContent).not.toContain("Master tercatat selesai;");
+  expect(host.querySelector('a[href="/pos/sku/impor?master_run_id=saved-master-run"]')).not.toBeNull();
+});
+
+it("shows saved per-row failures with bounded navigation and no import retry", () => {
+  const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[]}
+    masterError={null} recovered={null} initialReceipt={null}
+    masterReview={{runId:"saved-master-run",sourceName:"sample.xlsx",page:2,hasNext:true,error:null,
+      rows:[{source_row:78,source_code:"SKU-78",source:"fixture-A.xlsx:78",reason:"Satuan tidak cocok"},
+        {source_row:78,source_code:"SKU-78",source:"fixture-B.xlsx:78",reason:"Kategori tidak cocok"},
+        {source_row:79,source_code:"SKU-79",source:null,reason:"Data lama"}]}} />));
+  expect(host.textContent).toContain("Baris ditolak: sample.xlsx");
+  expect(host.textContent).toContain("SKU-78");
+  expect(host.textContent).toContain("Satuan tidak cocok");
+  expect(host.textContent).toContain("fixture-A.xlsx:78");
+  expect(host.textContent).toContain("fixture-B.xlsx:78");
+  expect(host.textContent).toContain("Tidak tercatat pada batch lama");
+  expect(host.querySelector('a[href="/pos/sku/impor?master_run_id=saved-master-run&master_page=1"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/pos/sku/impor?master_run_id=saved-master-run&master_page=3"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="master-import"]')).toBeNull();
 });
