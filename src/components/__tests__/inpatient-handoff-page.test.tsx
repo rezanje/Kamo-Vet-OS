@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
-const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
+import { handoffSourceStatus, type InpatientHandoff } from '@/lib/inpatient-handoff';
+const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('@/lib/branch-access',()=>({allowedBranchIds:async()=>s.allowed,canUseBranch:(allowed:string[]|null,id:string)=>allowed===null||allowed.includes(id)}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/PapanPemantauan',()=>({PapanPemantauan:()=> <div>DAILY MONITORING</div>}));
@@ -18,12 +19,14 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
   if(table==='compounding_recipes')data=[{id:'recipe-a',medical_record_id:'mr-a',recipe_name:'Fictional mixture',total_volume:'30 ml',dosage_form:'sirup',dosage_instruction:'Fictional mixture instructions',status:'handed_over',created_at:'2026-10-22T09:10:00Z'}];
   if(table==='invoices')data=[{id:'invoice-paid',visit_id:'visit-a',invoice_no:'INV.PAID',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22T09:30:00Z'},{id:'invoice-void',visit_id:'visit-a',invoice_no:'INV.OLD',paid_status:'Lunas',voided_at:'2026-10-22T10:00:00Z',created_at:'2026-10-22T09:00:00Z'}];
   if(table==='invoice_items')data=[{id:'line-paid',invoice_id:'invoice-paid',prescription_item_id:'rx-a',compound_recipe_id:null,qty:1},{id:'line-void',invoice_id:'invoice-void',prescription_item_id:null,compound_recipe_id:'recipe-a',qty:1}];
+  if(s.duplicateInvoice&&table==='invoices')data=[{id:'invoice-paid',visit_id:'visit-a',invoice_no:'INV.PAID',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22T09:30:00Z'},{id:'invoice-dp',visit_id:'visit-a',invoice_no:'INV.DP',paid_status:'DP',voided_at:null,created_at:'2026-10-22T11:30:00Z'}];
+  if(s.duplicateInvoice&&table==='invoice_items')data=[{id:'line-paid',invoice_id:'invoice-paid',prescription_item_id:'rx-a',compound_recipe_id:null,qty:1},{id:'line-dp',invoice_id:'invoice-dp',prescription_item_id:'rx-a',compound_recipe_id:null,qty:1}];
   if(table==='prescription_items'&&s.longRx)data=Array.from({length:1205},(_,i)=>({id:'rx-'+i,medical_record_id:'mr-a',nama_obat:'Fictional long '+i,qty:1,satuan:'tablet',jenis:'obat',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22T09:00:00Z'}));
   const rows=Array.isArray(data)?data:[];return Promise.resolve({data:single?(Array.isArray(data)?data[0]??null:data):Array.isArray(data)?data.slice(request.from??0,request.to===undefined?undefined:request.to+1):data,count:rows.length,error:table===s.broken?{message:'private read failure'}:null}).then(done);
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/rawat-inap/[id]/page';
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.broken='';s.authReads=0;s.reads=[]});
+beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.broken='';s.authReads=0;s.reads=[]});
 it('shows consultation, prescriptions and compound status before daily visit notes with explicit source links',async()=>{
  const html=await render();expect(html).toContain('Ringkasan konsultasi dan resep');expect(html).toContain('Keluhan awal kunjungan');expect(html).toContain('Fictional complaint');expect(html).toContain('Fictional consultation note');expect(html).toContain('Fictional tablet');expect(html).toContain('Fictional mixture instructions');expect(html).toContain('Drh Konsultasi');
  expect(html.indexOf('Ringkasan konsultasi dan resep')).toBeLessThan(html.indexOf('DAILY MONITORING'));expect(html).toContain('/klinik/rekam-medis/visit-a');expect(html).toContain('/klinik/racik/recipe-a');
@@ -54,4 +57,43 @@ it('starts no consent, log, role or tariff read before the parent passes the bra
 });
 it('still renders the page when the handoff summary fails while the other reads succeed',async()=>{
  s.broken='medical_records';const html=await render();expect(html).toContain('Ringkasan belum dapat dimuat lengkap');expect(html).toContain('DAILY MONITORING');expect(s.authReads).toBe(1);
+});
+
+it('keeps source billing, invoice payment, pharmacy handover and administration distinct in the existing panel',async()=>{
+ const html=await render();
+ expect(html).toContain('Status sumber per baris');
+ expect(html).toContain('Faktur lunas; pembayaran belum dialokasikan per baris');
+ expect(html).toContain('Belum ada bukti pemberian per resep');
+ expect(html).toContain('Hanya pada faktur dibatalkan');
+ expect(html).toContain('Penyerahan obat biasa belum memiliki bukti per resep');
+ expect(html.match(/data-inpatient-handoff/g)).toHaveLength(1);
+});
+
+it('warns when an exact prescription source is on two active invoices without claiming a second charge was prevented',()=>{
+ const data:InpatientHandoff={doctor:null,complaint:null,records:[],recipes:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional',qty:1,satuan:'tab',jenis:'obat',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22'}],invoices:[{id:'i1',invoice_no:'A',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22'},{id:'i2',invoice_no:'B',paid_status:'DP',voided_at:null,created_at:'2026-10-22'}],invoiceLines:[{id:'l1',invoice_id:'i1',prescription_item_id:'rx',compound_recipe_id:null,qty:1},{id:'l2',invoice_id:'i2',prescription_item_id:'rx',compound_recipe_id:null,qty:1}]};
+ const [row]=handoffSourceStatus(data).rows;
+ expect(row.duplicateActiveInvoices).toBe(true);
+ expect(row.billing).toContain('A · qty faktur 1; B · qty faktur 1');
+ expect(row.payment).toContain('Faktur DP: pembayaran belum dialokasikan per baris');
+});
+it('shows the duplicate active invoice warning inside the existing handoff panel',async()=>{
+ s.duplicateInvoice=true;
+ const html=await render();
+ expect(html).toContain('INV.PAID · qty faktur 1; INV.DP · qty faktur 1');
+ expect(html).toContain('Tertaut ke lebih dari satu faktur aktif. Periksa sebelum menagih ulang.');
+ expect(html).toContain('Faktur DP: pembayaran belum dialokasikan per baris');
+});
+it('shows explicit gaps for a verified empty source without inferring paid inpatient days',()=>{
+ const empty:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[],recipes:[],invoices:[],invoiceLines:[]};
+ const status=handoffSourceStatus(empty);
+ expect(status.rows).toEqual([]);
+ expect(status.gaps).toContain('Lama inap terbayar tidak dihitung: tagihan belum menyimpan tanggal cakupan rawat inap.');
+ expect(status.gaps.some(gap=>gap.includes('baris resep/racikan belum punya tautan'))).toBe(false);
+});
+it('keeps a linked compound available in its recipe card without counting one missing bill twice',()=>{
+ const linked:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional compound',qty:1,satuan:'btl',jenis:'obat',aturan_pakai:null,compound_recipe_id:'recipe',created_at:'2026-10-22'}],recipes:[{id:'recipe',medical_record_id:'mr',recipe_name:'Fictional recipe',total_volume:'30 ml',dosage_form:'sirup',dosage_instruction:'Fictional instruction',status:'handed_over',created_at:'2026-10-22'}],invoices:[],invoiceLines:[]};
+ const status=handoffSourceStatus(linked);
+ expect(status.rows.map(row=>row.key)).toEqual(['rx:rx','recipe:recipe']);
+ expect(status.rows[1].handover).toBe('Diserahkan oleh farmasi');
+ expect(status.gaps.filter(gap=>gap.includes('baris resep/racikan belum punya tautan'))).toEqual(['1 baris resep/racikan belum punya tautan tagihan per baris dan tidak dipasangkan berdasarkan nama.']);
 });

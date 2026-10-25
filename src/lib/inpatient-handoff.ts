@@ -9,6 +9,49 @@ export type HandoffInvoice={id:string;invoice_no:string|null;paid_status:string;
 export type HandoffInvoiceLine={id:string;invoice_id:string;prescription_item_id:string|null;compound_recipe_id:string|null;qty:number};
 export type InpatientHandoff={doctor:string|null;complaint:string|null;records:HandoffRecord[];prescriptions:HandoffPrescription[];recipes:HandoffRecipe[];invoices:HandoffInvoice[];invoiceLines:HandoffInvoiceLine[]};
 
+export type HandoffSourceRow={key:string;name:string;kind:string;prescribed:string;billing:string;payment:string;handover:string;administration:string;duplicateActiveInvoices:boolean};
+export type HandoffSourceStatus={rows:HandoffSourceRow[];gaps:string[]};
+const paymentStatus:Record<string,string>={
+ 'Lunas':'Faktur lunas; pembayaran belum dialokasikan per baris',
+ 'DP':'Faktur DP: pembayaran belum dialokasikan per baris',
+ 'Belum Lunas':'Faktur belum lunas',
+};
+const pharmacyStatus:Record<string,string>={pending:'Menunggu diracik',ready:'Siap diserahkan',handed_over:'Diserahkan oleh farmasi',void:'Racikan dibatalkan'};
+
+/** Read-only source status. Invoice payment belongs to the whole invoice, never to one line. */
+export function handoffSourceStatus(data:InpatientHandoff):HandoffSourceStatus{
+ const invoiceById=new Map(data.invoices.map(invoice=>[invoice.id,invoice]));
+ const recipeById=new Map(data.recipes.map(recipe=>[recipe.id,recipe]));
+ const linkedRecipes=new Set(data.prescriptions.map(row=>row.compound_recipe_id).filter((id):id is string=>Boolean(id)));
+ const sourceRow=(key:string,name:string,kind:string,prescribed:string,prescriptionId:string|null,recipeId:string|null):HandoffSourceRow=>{
+  const linkedLines=data.invoiceLines.filter(line=>(prescriptionId!==null&&line.prescription_item_id===prescriptionId)||(recipeId!==null&&line.compound_recipe_id===recipeId));
+  const active=linkedLines.flatMap(line=>{const invoice=invoiceById.get(line.invoice_id);return invoice&&!invoice.voided_at?[{line,invoice}]:[];});
+  const billing=active.length
+   ?`Ditagih: ${active.map(({line,invoice})=>`${invoice.invoice_no??'Nomor faktur tidak tersedia'} · qty faktur ${line.qty}`).join('; ')}`
+   :!linkedLines.length?'Belum ada tautan tagihan per baris'
+   :linkedLines.some(line=>!invoiceById.has(line.invoice_id))?'Faktur tautan tidak tersedia':'Hanya pada faktur dibatalkan';
+  const payment=active.length?[...new Set(active.map(({invoice})=>paymentStatus[invoice.paid_status]??`Status faktur tidak dikenali: ${invoice.paid_status||'kosong'}`))].join(' · '):'Tidak dapat dinilai tanpa faktur aktif';
+  const recipe=recipeId?recipeById.get(recipeId):undefined;
+  const handover=recipeId?(recipe?pharmacyStatus[recipe.status]??'Status racikan tidak dikenali':'Racikan tidak tersedia pada ringkasan'):kind==='jasa'?'Tidak berlaku untuk jasa':'Belum ada bukti penyerahan per baris';
+  const administration=kind==='jasa'?'Belum ada bukti pelaksanaan per baris':'Belum ada bukti pemberian per resep';
+  return {key,name,kind,prescribed,billing,payment,handover,administration,duplicateActiveInvoices:new Set(active.map(({invoice})=>invoice.id)).size>1};
+ };
+ const rows=[
+  ...data.prescriptions.map(p=>sourceRow(`rx:${p.id}`,p.nama_obat,p.jenis,`${p.qty} ${p.satuan??''}`.trim(),p.id,p.compound_recipe_id)),
+  ...data.recipes.map(recipe=>sourceRow(`recipe:${recipe.id}`,recipe.recipe_name,'racikan',`${recipe.total_volume} · ${recipe.dosage_form}`,null,recipe.id)),
+ ];
+ const unlinked=rows.filter(row=>row.billing==='Belum ada tautan tagihan per baris'&&(!row.key.startsWith('recipe:')||!linkedRecipes.has(row.key.slice(7)))).length;
+ const freeLines=data.invoiceLines.filter(line=>!line.prescription_item_id&&!line.compound_recipe_id).length;
+ return {rows,gaps:[
+  'Pemberian obat biasa: belum ada relasi tersimpan dari baris resep ke bukti pemberian. Catatan dosis berprotokol ada di Obat Khusus.',
+  'Penyerahan obat non-racikan: belum ada status penyerahan per baris resep.',
+  'Status bayar tersimpan per faktur, bukan per baris; faktur DP tidak dialokasikan ke obat/tindakan tertentu.',
+  'Lama inap terbayar tidak dihitung: tagihan belum menyimpan tanggal cakupan rawat inap.',
+  ...(unlinked?[`${unlinked} baris resep/racikan belum punya tautan tagihan per baris dan tidak dipasangkan berdasarkan nama.`]:[]),
+  ...(freeLines?[`${freeLines} baris faktur tanpa ID resep/racikan tidak dipasangkan ke baris mana pun.`]:[]),
+ ]};
+}
+
 /** Same session/RLS, explicit visit/branch and source IDs only. No writes or inference by name. */
 export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string):Promise<InpatientHandoff|null>{
  try{
