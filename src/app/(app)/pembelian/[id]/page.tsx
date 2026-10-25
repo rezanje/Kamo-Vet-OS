@@ -102,6 +102,7 @@ export default async function PODetailPage({
         {priceEditable && <a href="#edit-po-prices" className="btn-def">Koreksi harga PO</a>}
         {editable && <><a href="#edit-po" className="btn-def">Edit PO</a><a href="#cancel-po" className="btn-def" style={{ color: "#b91c1c" }}>Batalkan PO</a></>}
         {owner && ((hasChildren && !priceEditable) || po.status === "Diterima") && <a href="#purchase-correction" className="btn-def">Koreksi pembelian</a>}
+        {!owner && <a href="#request-purchase-correction" className="btn-def">Panduan minta koreksi</a>}
         {po.status !== "Diterima" && po.status !== "Batal" && (
           <Link href={`/pembelian/${po.id}/terima`} className="btn-acc" style={{ textDecoration: "none" }}>
             <i className="ti ti-package-import" /> Terima barang
@@ -199,6 +200,12 @@ export default async function PODetailPage({
           </div>
         </div>
       )}
+
+      {!owner && <section className="crm-sec" id="request-purchase-correction">
+        <h2 style={{ fontSize: 14, marginBottom: 8 }}>Minta koreksi {po.no_po ?? "PO ini"}</h2>
+        <p>Catat nomor PO, barang, satuan, jumlah atau harga yang salah, nilai yang seharusnya, dan bukti pendukung. Sampaikan kepada Super Admin melalui jalur komunikasi tim agar ia dapat meninjau dokumen serta transaksi terkait sebelum melakukan koreksi resmi.</p>
+        <p style={{ color: "var(--tm)", fontSize: 11 }}>Halaman ini hanya memberi panduan; permintaan belum dikirim atau dicatat oleh aplikasi.</p>
+      </section>}
 
       {((hasChildren && !priceEditable) || po.status === "Diterima") && <div className="crm-sec" id="purchase-correction">
         <SecHeader num="02" title="KOREKSI PEMBELIAN" desc="PO dengan transaksi turunan mempertahankan riwayat penerimaan, stok, dan pembukuan." />
