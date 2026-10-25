@@ -18,7 +18,10 @@ vi.mock("@/lib/satuan", async importOriginal => ({ ...await importOriginal<typeo
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "cashier" } } }) },
-  rpc: async (_name: string, values: { p_sale_id: string }) => ({ data: { sale_id: values.p_sale_id, finalized: true }, error: null }),
+  rpc: async (name: string, values: { p_sale_id: string }) => {
+    if (name === "cashier_post_stock_atomic") state.issues.push({ saleId: values.p_sale_id, stagedSnapshots: state.snapshots.length });
+    return { data: { sale_id: values.p_sale_id, finalized: true, ...(name === "cashier_post_stock_atomic" ? { checked: true } : {}) }, error: null };
+  },
   from(table: string) {
     let lookup = false; let costPatch:Record<string,unknown>|null=null; let targetId=""; let insertError=false;
     const group = { id: "group", code: "GRUP", name: "Paket", nama: "Paket", unit: "pcs", item_type: "Grup", sell_price: 1000, min_sell_qty: 1, is_active: true };
@@ -70,17 +73,16 @@ it("does not issue a receipt when a later group component page cannot be verifie
   expect(state.snapshots).toHaveLength(0);
 });
 
-it("captures the same future parent identity for every fractional group issue and saved snapshot", async () => {
+it("stages every fractional group snapshot under one parent before the atomic issue", async () => {
  state.stockComponents=true;
  await expect(checkoutKasir(form())).rejects.toThrow("/kasir/struk/sale");
- expect(state.issues).toHaveLength(2);expect(state.lines).toHaveLength(1);expect(state.snapshots).toHaveLength(2);
+ expect(state.issues).toEqual([{ saleId: "sale", stagedSnapshots: 2 }]);expect(state.lines).toHaveLength(1);expect(state.snapshots).toHaveLength(2);
  const id=state.lines[0].id;
  expect(id).toMatch(/^[0-9a-f-]{36}$/i);
- expect(state.issues.map(issue=>issue.saleLineId)).toEqual([id,id]);
  expect(state.snapshots.map(row=>row.sale_item_id)).toEqual([id,id]);
- expect(state.issues.map(issue=>issue.qty)).toEqual([0.111,0.111]);
- expect(state.snapshots.map(row=>row.hpp)).toEqual([13.70295,13.70295]);
- expect(state.lines[0].hpp).toBeCloseTo(27.40590,8);
+ expect(state.snapshots.map(row=>row.total_base_qty)).toEqual([0.111,0.111]);
+ expect(state.snapshots.map(row=>row.hpp)).toEqual([0,0]);
+ expect(state.lines[0].hpp).toBe(0);
 });
 
 it("validates a later service snapshot before any earlier group's physical stock issue",async()=>{

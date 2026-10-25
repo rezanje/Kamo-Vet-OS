@@ -15,15 +15,16 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
   rpc: async (name: string, values: { p_sale_id: string }) => {
     if (name === "refresh_customer_spending") { if(state.tierUnavailable) throw Error("derived statistics unavailable"); return {data:true,error:null}; }
-    if (name !== "finalize_pos_sale") throw Error(`Unexpected RPC ${name}`);
+    if (name !== "finalize_pos_sale" && name !== "cashier_post_stock_atomic") throw Error(`Unexpected RPC ${name}`);
     if (state.lostResponse) {
       state.prior = { id: "sale", no_struk: "POS-SPLIT-TEST", checkout_fingerprint: state.headers[0]?.checkout_fingerprint, payments_finalized_at: "2026-10-15T08:00:00Z" };
       return { data: null, error: { message: "Connection lost after commit" } };
     }
     if (state.finalizationError) return { data: null, error: { message: state.finalizationError } };
     state.finalized.push(values.p_sale_id);
+    if (name === "cashier_post_stock_atomic") state.items.forEach(item => { item.hpp = state.stockCost; });
     if(state.confirmation && state.prior)state.prior.payments_finalized_at="2026-10-15T08:00:00Z";
-    return { data: state.confirmation ? { sale_id: values.p_sale_id, journal_id: "journal", finalized: true } : null, error: null };
+    return { data: state.confirmation ? { sale_id: values.p_sale_id, journal_id: "journal", finalized: true, ...(name === "cashier_post_stock_atomic" ? { checked: true } : {}) } : null, error: null };
   },
   from(table: string) {
     let lookup = false;

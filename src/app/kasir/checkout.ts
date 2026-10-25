@@ -3,7 +3,6 @@
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { stockOut } from "@/lib/inventory";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
 import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
@@ -472,35 +471,7 @@ export async function checkoutKasir(formData: FormData) {
       }
     }
     for (const {r,id:saleLineId} of pendingRows) {
-      let lineHpp = 0;
       const snapshots = (r.group_components ?? []).map((snapshot) => ({ ...snapshot }));
-
-      if (wh && r.item_type === "Persediaan" && r.item_id) {
-        const { cost } = await stockOut(supabase, {
-          warehouseId: wh.id, itemId: r.item_id, qty: toBaseQty(r.qty, r.faktor ?? 1),
-          source: "sale", ref: noStruk, saleLineId,
-        });
-        lineHpp += cost;
-      }
-      if (wh && r.item_type === "Grup") {
-        for (const snapshot of snapshots) {
-          if (snapshot.item_type !== "Persediaan") continue;
-          const { cost } = await stockOut(supabase, {
-            warehouseId: wh.id,
-            itemId: snapshot.component_item_id,
-            qty: snapshot.total_base_qty,
-            source: "sale-group", saleLineId,
-            ref: noStruk,
-          });
-          snapshot.hpp = cost;
-          lineHpp += cost;
-        }
-      }
-
-      const { error: costError } = await supabase.from("sale_items").update({ hpp: r.item_id ? lineHpp : null }).eq("id",saleLineId);
-      if (costError) throw Error(costError.message);
-
-
       if (snapshots.length > 0) {
         const { error: snapshotErr } = await supabase.from("sale_item_group_components").insert(
           snapshots.map((snapshot) => ({ ...snapshot, sale_item_id: saleLineId })),
@@ -508,13 +479,23 @@ export async function checkoutKasir(formData: FormData) {
         if (snapshotErr) throw new Error(`Gagal simpan rincian Grup ${r.nama}: ${snapshotErr.message}`);
       }
     }
+    // One DB transaction issues FIFO stock, checks each inventory line against
+    // the actual cost and finalizes payment/HPP. No separate HTTP stock calls.
+    if (kebutuhanStok.length > 0) {
+      const { data: posted, error: postErr } = await supabase.rpc("cashier_post_stock_atomic", {
+        p_sale_id: sale.id, p_warehouse_id: wh!.id,
+      });
+      if (postErr || posted?.sale_id !== sale.id || posted?.finalized !== true || posted?.checked !== true) {
+        throw new Error(postErr?.message ?? "Stok dan harga neto kasir belum berhasil difinalkan");
+      }
+    }
   } catch (error) {
     checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
     console.error(`[checkout] gagal menyimpan ${noStruk}:`, error);
   }
   if (checkoutFailure) {
-    // Sale item/snapshot ikut terhapus lewat FK cascade. Mutasi stockOut masih JS
-    // nontransaksional; kegagalannya tidak disamarkan sebagai transaksi sukses.
+    // A failed atomic posting rolls back stock, journals, points and payment.
+    // Pending sale lines/snapshots are then removed by this FK cascade.
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
     redirect(`${failureUrl}${encodeURIComponent(checkoutFailure)}`);
@@ -522,7 +503,9 @@ export async function checkoutKasir(formData: FormData) {
 
   // Pembayaran dan HPP diposting bersama oleh database. Struk tidak boleh
   // dinyatakan selesai jika finalisasi pembukuannya gagal.
-  const { data: finalized, error: finalizationErr } = await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
+  const { data: finalized, error: finalizationErr } = kebutuhanStok.length > 0
+    ? { data: { sale_id: sale.id, finalized: true }, error: null }
+    : await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
   if (finalizationErr || finalized?.sale_id !== sale.id || finalized?.finalized !== true) {
     await resumePosCheckout(supabase, user.id, checkout, "cashier", sale.id, replacementId);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
