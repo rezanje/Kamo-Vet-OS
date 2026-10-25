@@ -11,6 +11,8 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster, bolehTransaksiKas } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
+import { readListPage } from "@/lib/checked-list";
 import { sisaFakturBayar } from "@/lib/perintah-bayar";
 import { batalkanPerintahBayar, bayarPerintahBayar, buatPerintahBayar, setujuiPerintahBayar } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -36,17 +38,14 @@ const LABEL: Record<string, string> = { draft: "Menunggu setuju", disetujui: "Si
 export default async function PerintahBayarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; supplier?: string; from?: string; order?: string; pending?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; supplier?: string; from?: string; order?: string; pending?: string; hal?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const [bolehAjukan, bolehSetuju] = await Promise.all([bolehTransaksiKas(), bolehKelolaMaster()]);
-  const orderQuery = supabase.from("payment_orders").select(ORDER_SELECT);
-
-  const [{ data: orderData }, { data: supData }, { data: invData }, { data: payData }, { data: antreData }, rekening] =
+  const [{ data: supData }, { data: invData }, { data: payData }, { data: antreData }, rekening] =
     await Promise.all([
-      (sp.pending === "1" ? orderQuery.eq("status", "draft") : orderQuery).order("created_at", { ascending: false }),
       supabase.from("suppliers").select("id, nama").order("nama"),
       supabase.from("purchase_invoices").select("id, no_faktur, tanggal, jatuh_tempo, total, supplier_id, suppliers(nama)").is("voided_at", null).order("jatuh_tempo"),
       supabase.from("purchase_invoice_payments").select("invoice_id, amount"),
@@ -54,9 +53,18 @@ export default async function PerintahBayarPage({
       loadRekeningAktif(supabase),
     ]);
 
-  let orders = (orderData ?? []) as unknown as Order[];
-  // The default list is capped by PostgREST. Include an explicitly linked older row.
-  if (sp.order && UUID.test(sp.order) && !orders.some((order) => order.id === sp.order)) {
+  let orderPage;
+  let orderError: unknown;
+  try {
+    orderPage = await readListPage<Order>((from, to) => {
+      let query = supabase.from("payment_orders").select(ORDER_SELECT, { count: "exact" });
+      if (sp.pending === "1") query = query.eq("status", "draft");
+      return query.order("created_at", { ascending: false }).order("id").range(from, to);
+    }, "Daftar perintah bayar", sp.hal);
+  } catch (error) { orderError = error; }
+  let orders = orderPage?.rows ?? [];
+  // Keep a document link usable when its order is outside the current list page.
+  if (orderPage && sp.order && UUID.test(sp.order) && !orders.some((order) => order.id === sp.order)) {
     const { data: selected } = await supabase.from("payment_orders")
       .select(ORDER_SELECT).eq("id", sp.order).maybeSingle();
     if (selected) orders = [selected as unknown as Order, ...orders];
@@ -164,6 +172,7 @@ export default async function PerintahBayarPage({
         <SecHeader num="02" title="DAFTAR PERINTAH BAYAR" desc="Uang baru keluar setelah disetujui dan dibayar." />
         {sp.pending === "1" && <p>Menampilkan perintah bayar yang menunggu persetujuan. <Link href="/pembelian/perintah-bayar">Lihat semua status</Link></p>}
 
+        {orderError !== undefined && <ListLoadFailure error={orderError} label="Daftar perintah bayar" />}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 900 }}>
             <thead>
@@ -229,7 +238,7 @@ export default async function PerintahBayarPage({
                   </td>
                 </tr>
               ))}
-              {orders.length === 0 && (
+              {orderPage && orders.length === 0 && (
                 <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
                   Belum ada perintah pembayaran.
                 </td></tr>
@@ -237,6 +246,7 @@ export default async function PerintahBayarPage({
             </tbody>
           </table>
         </div>
+        {orderPage && <ListPagination path="/pembelian/perintah-bayar" query={{ pending: sp.pending === "1" ? "1" : "" }} total={orderPage.count} pageInfo={orderPage.pageInfo} />}
       </div>
     </MasterPage>
   );
