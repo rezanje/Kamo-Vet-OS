@@ -46,6 +46,11 @@ select jsonb_build_object('sales',(select count(*) from public.clinic_compound_s
   'journals',(select count(*) from public.journal_entries));
 $$;
 grant execute on function pg_temp.binding_state() to authenticated;
+create function pg_temp.fixture_invoice() returns void language sql security definer set search_path='' as $$
+  insert into public.invoices(visit_id,invoice_no,paid_status)
+  values('fd000000-0000-4000-8000-000000000001','GUARD-EXISTING','Belum Lunas');
+$$;
+grant execute on function pg_temp.fixture_invoice() to authenticated;
 set local role authenticated;
 select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000001',true);
@@ -137,6 +142,56 @@ begin
     if sqlerrm not like 'FORMULA_SKU_MISMATCH:%' then raise; end if; failed:=true;
   end;
   if not failed or pg_temp.binding_state() is distinct from after_state then raise exception 'cleared binding changed state'; end if;
+
+  -- Same visit and SKU, but new work after checkout must not consume stock or
+  -- add a prescription. Exact retries of old work still return the old recipe.
+  perform public.bind_compound_formula_sale_item(formula_id,'fb000000-0000-4000-8000-000000000002');
+  update public.visits set status='Selesai',checked_out_at=now()
+    where id='fd000000-0000-4000-8000-000000000001';
+  before_state:=pg_temp.binding_state();
+  for i in 1..3 loop
+    failed:=false;
+    begin
+      if i=1 then
+        perform public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',
+          'fb000000-0000-4000-8000-000000000002',null,'paid-master',version_id,null);
+      elsif i=2 then
+        perform public.clinic_issue_official_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',
+          version_id,'paid-official',null);
+      else
+        perform public.clinic_issue_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',
+          '{"recipe_name":"Late","dosage_form":"puyer","ingredients":[{"item_id":"fb000000-0000-4000-8000-000000000001","quantity":1,"unit":"gram","unit_price":15}]}'::jsonb,
+          'paid-custom');
+      end if;
+    exception when sqlstate 'P0001' then
+      if sqlerrm not like 'RECIPE_POSTED:%' then raise; end if;
+      failed:=true;
+    end;
+    if not failed or pg_temp.binding_state() is distinct from before_state then
+      raise exception 'checked-out compound path % changed stock or billing',i;
+    end if;
+  end loop;
+  perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000002',true);
+  if public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',
+    'fb000000-0000-4000-8000-000000000002',null,'binding-valid',version_id,null) is distinct from issued
+    or pg_temp.binding_state() is distinct from before_state then raise exception 'posted exact retry lost idempotency'; end if;
+  perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000001',true);
+
+  -- A pending visit with any invoice, including one not yet paid, is also closed
+  -- to new racikan. The old invoice/stock state must remain byte-for-byte intact.
+  update public.visits set status='Pembayaran',checked_out_at=null
+    where id='fd000000-0000-4000-8000-000000000001';
+  perform pg_temp.fixture_invoice();
+  before_state:=pg_temp.binding_state();
+  failed:=false;
+  begin
+    perform public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',
+      'fb000000-0000-4000-8000-000000000002',null,'invoiced-master',version_id,null);
+  exception when sqlstate 'P0001' then
+    if sqlerrm not like 'RECIPE_POSTED:%' then raise; end if;
+    failed:=true;
+  end;
+  if not failed or pg_temp.binding_state() is distinct from before_state then raise exception 'invoiced visit accepted new racikan'; end if;
 end;
 $$;
 rollback;
