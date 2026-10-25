@@ -7,13 +7,20 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export default async function KasBankPage() {
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   // Satu query agregat untuk semua akun, lalu disaring ke kode milik rekening —
   // jangan query saldo per rekening (N+1).
-  const [{ data: rekData }, saldoAkun] = await Promise.all([
+  const [{ data: rekData }, saldoAkun, { data: profile, error: profileError }] = await Promise.all([
     supabase.from("cash_accounts").select("id, nama, jenis, coa_code").eq("is_active", true).order("jenis").order("nama"),
     getAccountBalances(supabase),
+    user ? supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
+  const canViewRefund = !profileError && profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
+  const pendingResult = canViewRefund
+    ? await supabase.rpc("get_sales_refund_requests", { p_sale_id: null, p_office: true, p_status: "pending", p_offset: 0 })
+    : null;
+  const hasPendingRefund = !pendingResult?.error && Array.isArray(pendingResult?.data) && pendingResult.data.length > 0;
 
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
   const rekening = (rekData ?? []) as { id: string; nama: string; jenis: string; coa_code: string }[];
@@ -48,7 +55,7 @@ export default async function KasBankPage() {
         </div>
       )}
 
-      <p><Link className="btn-def" href="/kas-bank/refund">Antrean refund transfer</Link></p>
+      {canViewRefund && <p><Link className="btn-def" href="/kas-bank/refund">Antrean refund transfer</Link>{hasPendingRefund && <span role="status" style={{ marginLeft: 10 }}>Ada refund transfer menunggu</span>}</p>}
       <TileGrid moduleId="kas-bank" />
     </>
   );
