@@ -159,6 +159,7 @@ alter default privileges in schema public grant all on sequences to authenticate
             raise RuntimeError(migration.name + ': ' + str(error)) from error
     sql((ROOT / 'supabase/tests/new_customer_quest.sql').read_text())
     concurrency_test()
-    print(f'Q01 fictional quest checks passed after {len(migrations)} migrations.')
+    sql((ROOT / 'supabase/tests/pos_split_payments.sql').read_text())
+    print(f'Q01 fictional quest and authenticated POS finalizer checks passed after {len(migrations)} migrations.')
 finally:
     subprocess.run(['docker', 'rm', '-f', CONTAINER], capture_output=True)
