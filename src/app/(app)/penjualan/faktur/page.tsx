@@ -1,5 +1,7 @@
 import { NumberInput } from "@/components/NumberInput";
 import {readCompleteList} from "@/lib/checked-list";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
+import { loadSalesChannelTrace } from "@/lib/sales-channel-trace";
 import {loadSalesInvoicePayments} from "@/lib/sales-invoice-payments-server";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
@@ -41,13 +43,16 @@ type FakturKlinik = {
 export default async function FakturJualPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; hal?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
   const today = hariIniWIB();
+  const strukPromise = loadSalesChannelTrace(supabase, user?.id ?? null, sp.hal)
+    .then(page => ({ page, error: null as unknown }))
+    .catch(error => ({ page: null, error }));
 
   type Advance={id:string;no_um:string;customer_id:string|null;jumlah:number;terpakai:number};
   type Credit={id:string;tanggal:string;customer_credit:number;sales_invoices:Rel<{id:string;no_faktur:string;customers:Rel<{name:string}>}>};
@@ -68,6 +73,7 @@ export default async function FakturJualPage({
   const {receipts,payments}=await loadSalesInvoicePayments(supabase,invData.map(row=>row.id),klinikData.map(row=>row.id));
   const faktur:Faktur[]=invData.map(row=>({...row,sales_receipts:receipts.get(row.id)??[]}));
   const fakturKlinik:FakturKlinik[]=klinikData.map(row=>({...row,invoice_payments:payments.get(row.id)??[]}));
+  const { page: strukPage, error: strukError } = await strukPromise;
 
   // Uang muka aktif per pelanggan, supaya DP yang sudah masuk tidak terlupa saat menagih.
   const umPerPelanggan = new Map<string, { id: string; no_um: string; sisa: number }[]>();
@@ -132,7 +138,7 @@ export default async function FakturJualPage({
       </div>}
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader
-          num="02" title="FAKTUR PENJUALAN RESELLER"
+          num={credits.length > 0 ? "03" : "02"} title="FAKTUR PENJUALAN RESELLER"
           desc={`Piutang berjalan ${rp(totalPiutang)} dari ${berjalan.length} faktur. Faktur diterbitkan dari halaman pesanan.`}
         />
 
@@ -240,6 +246,29 @@ export default async function FakturJualPage({
             </tbody>
           </table>
         </div>
+      </div>
+      <div className="crm-sec">
+        <SecHeader num={credits.length > 0 ? "04" : "03"} title="STRUK POS & ONLINE · BUKAN FAKTUR"
+          desc="Jejak kanal lain untuk ditelusuri pada dokumen asal. Koreksi harga, jumlah, atau penerimaan tidak dilakukan dari daftar ini." />
+        {strukError ? <ListLoadFailure error={strukError} label="Struk POS dan Online" /> : <>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ minWidth: 700 }}>
+              <thead><tr><th>No. struk</th><th>Kanal</th><th>Pelanggan</th><th>Cabang</th><th>Tanggal</th><th /></tr></thead>
+              <tbody>
+                {strukPage?.rows.map(struk => <tr key={struk.id}>
+                  <td style={{ fontWeight: 600 }}>{struk.no_struk ?? "Struk belum bernomor"}</td>
+                  <td>{struk.channel ?? "POS"}</td>
+                  <td>{one(struk.customers)?.name ?? "Pelanggan umum"}</td>
+                  <td>{one(struk.branches)?.name ?? "—"}</td>
+                  <td>{new Date(struk.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</td>
+                  <td><Link href={`/penjualan/${struk.id}`} className="btn-def">Buka struk asal</Link></td>
+                </tr>)}
+                {strukPage?.rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 18 }}>Belum ada struk POS atau Online yang dapat diakses.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {strukPage && <ListPagination path="/penjualan/faktur" query={{}} total={strukPage.count} pageInfo={strukPage.pageInfo} />}
+        </>}
       </div>
     </MasterPage>
   );
