@@ -63,6 +63,12 @@ begin
     update public.prescription_items set qty=1 where id='ca910000-0000-4000-8000-000000000001';
   exception when others then v_failed:=sqlerrm like 'RX_EVIDENCE_LOCKED:%';end;
   if not v_failed then raise exception 'prescription quantity changed after evidence';end if;
+  v_failed:=false;
+  begin
+    update public.medical_records set visit_id='ca600000-0000-4000-8000-000000000002'
+      where id='ca700000-0000-4000-8000-000000000004';
+  exception when others then v_failed:=sqlerrm like 'RX_EVIDENCE_LOCKED:%';end;
+  if not v_failed then raise exception 'medical record moved after prescription evidence';end if;
 
   if not public.clinic_void_rx_evidence(v_administration,'DEMO salah catat') then
     raise exception 'administration void failed';end if;
