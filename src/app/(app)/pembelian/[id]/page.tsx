@@ -11,6 +11,7 @@ import {POPriceCorrectionForm} from "./POPriceCorrectionForm";
 import { POShortCloseForm } from "./POShortCloseForm";
 import type { ReceiptClosure } from "@/lib/purchase-short-close";
 import { POEditForm, POCancelForm } from "./POCorrectionForm";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -34,14 +35,10 @@ type PO = {
   suppliers: Rel<{ nama: string }>;
   warehouses: Rel<{ name: string }>;
   branches: Rel<{ name: string }>;
-  goods_receipts?: { id: string; no_terima: string; tanggal: string }[] | null;
-  po_payments?: { id: string; tanggal: string; amount: number; metode: string }[] | null;
-  purchase_returns?: { id: string; no_retur: string; voided_at: string | null }[] | null;
-  purchase_advances?: { id: string; no_um: string; status: string; jumlah: number; terpakai: number }[] | null;
-  purchase_order_items: {
-    id: string; item_id: string | null; nama: string; qty: number; satuan: string | null; faktor: number;
-    qty_terima: number | null; qty_rusak?: number | null; harga_beli: number;
-  }[] | null;
+};
+type POItem = {
+  id: string; item_id: string | null; nama: string; qty: number; satuan: string | null; faktor: number;
+  qty_terima: number | null; qty_rusak?: number | null; harga_beli: number;
 };
 
 export default async function PODetailPage({
@@ -55,36 +52,40 @@ export default async function PODetailPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name), purchase_order_items(id, item_id, nama, qty, satuan, faktor, qty_terima, qty_rusak, harga_beli), goods_receipts(id,no_terima,tanggal), po_payments(id,tanggal,amount,metode), purchase_returns(id,no_retur,voided_at), purchase_advances(id,no_um,status,jumlah,terpakai)").eq("id", id).maybeSingle();
+  const { data, error: poError } = await supabase.from("purchase_orders").select("id, no_po, tanggal, status, total, revision, supplier_id, to_warehouse_id, branch_id, suppliers(nama), warehouses(name), branches(name)").eq("id", id).maybeSingle();
   const po = data as unknown as (PO & { branch_id: string }) | null;
   if (poError) throw new Error("PO dan transaksi terkait belum dapat dimuat. Coba muat ulang.");
   if (!po) notFound();
 
-  const [{ data: suppliers }, { data: warehouses }, { data: profile }, { data: invoices, error: invoiceError }, { data: closureData, error: closureError }] = await Promise.all([
+  const [{ data: suppliers }, { data: warehouses }, { data: profile }, items, invoices, receipts, payments, returns, advances, { data: closureData, error: closureError }] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name, branch_id").eq("branch_id", po.branch_id).eq("is_active", true).order("name"),
     supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
-    supabase.from("purchase_invoices").select("id,no_faktur,voided_at").eq("po_id", id).order("tanggal", { ascending: false }),
+    readCompleteList<POItem>((from,to)=>supabase.from("purchase_order_items").select("id,item_id,nama,qty,satuan,faktor,qty_terima,qty_rusak,harga_beli",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Baris PO",{maxRows:null}),
+    readCompleteList<{id:string;no_faktur:string;voided_at:string|null}>((from,to)=>supabase.from("purchase_invoices").select("id,no_faktur,voided_at",{count:"exact"}).eq("po_id",id).order("tanggal",{ascending:false}).order("id").range(from,to),"Faktur PO",{maxRows:null}),
+    readCompleteList<{id:string;no_terima:string;tanggal:string}>((from,to)=>supabase.from("goods_receipts").select("id,no_terima,tanggal",{count:"exact"}).eq("po_id",id).order("tanggal",{ascending:false}).order("id").range(from,to),"Penerimaan PO",{maxRows:null}),
+    readCompleteList<{id:string;tanggal:string;amount:number;metode:string}>((from,to)=>supabase.from("po_payments").select("id,tanggal,amount,metode",{count:"exact"}).eq("po_id",id).order("tanggal",{ascending:false}).order("id").range(from,to),"Pembayaran PO",{maxRows:null}),
+    readCompleteList<{id:string;no_retur:string;voided_at:string|null}>((from,to)=>supabase.from("purchase_returns").select("id,no_retur,voided_at",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Retur PO",{maxRows:null}),
+    readCompleteList<{id:string;no_um:string;status:string;jumlah:number;terpakai:number}>((from,to)=>supabase.from("purchase_advances").select("id,no_um,status,jumlah,terpakai",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Uang muka PO",{maxRows:null}),
     supabase.from("purchase_order_receipt_closures").select("po_id,actor_id,actor_name,closed_at,reason,lines").eq("po_id", id).maybeSingle(),
   ]);
 
-  const items = po.purchase_order_items ?? [];
   const closure = one(closureData as unknown as Rel<ReceiptClosure>);
   const partial = items.some(row => Number(row.qty_terima ?? 0) > 0) && items.some(row => Number(row.qty_terima ?? 0) < Number(row.qty));
   const owner = !!user && profile?.role === "OWNER" && profile.is_active;
-  const hasChildren = items.some(item => Number(item.qty_terima) > 0) || (po.goods_receipts?.length ?? 0) > 0
-    || (po.po_payments?.length ?? 0) > 0 || (po.purchase_returns?.length ?? 0) > 0 || (po.purchase_advances?.length ?? 0) > 0 || (invoices?.length ?? 0) > 0;
-  const editable = owner && !invoiceError && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
-  const priceEditable=owner&&!invoiceError&&!closureError&&!closure&&!editable&&!!po.purchase_advances?.length&&items.length>0&&items.length<=1000&&(po.status==='Draft'||po.status==='Dipesan')&&!items.some(row=>Number(row.qty_terima??0)!==0||Number(row.qty_rusak??0)!==0)&&!po.goods_receipts?.length&&!po.po_payments?.length&&!po.purchase_returns?.length&&!invoices?.length;
-  const activeAdvances=(po.purchase_advances??[]).filter(a=>a.status==='aktif').reduce((sum,a)=>sum.plus(Number(a.jumlah)),new PosDecimal(0)).toNumber();
+  const hasChildren = items.some(item => Number(item.qty_terima) > 0) || receipts.length > 0
+    || payments.length > 0 || returns.length > 0 || advances.length > 0 || invoices.length > 0;
+  const editable = owner && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
+  const priceEditable=owner&&!closureError&&!closure&&!editable&&!!advances.length&&items.length>0&&items.length<=1000&&(po.status==='Draft'||po.status==='Dipesan')&&!items.some(row=>Number(row.qty_terima??0)!==0||Number(row.qty_rusak??0)!==0)&&!receipts.length&&!payments.length&&!returns.length&&!invoices.length;
+  const activeAdvances=advances.filter(a=>a.status==='aktif').reduce((sum,a)=>sum.plus(Number(a.jumlah)),new PosDecimal(0)).toNumber();
   const units = editable ? Object.fromEntries(await loadUnitOptions(supabase, items.flatMap(item => item.item_id ? [item.item_id] : []), { includeInactive: true })) : {};
 
   const related: RelatedDocument[] = [
-    ...(po.goods_receipts ?? []).map(r => ({ kind: 'goods-receipt' as const, id: r.id, label: `Penerimaan ${r.no_terima}`, status: 'Dokumen tersimpan' })),
-    ...(invoices ?? []).map(r => ({ kind: 'purchase-invoice' as const, id: r.id, label: `Faktur ${r.no_faktur}`, status: r.voided_at ? 'Dibatalkan' : 'Aktif' })),
-    ...(po.po_payments ?? []).map(p => ({kind:'legacy-purchase-payment' as const,id:p.id,parentId:po.id,label:`Pembayaran PO ${p.tanggal} · ${rp(p.amount)}`,status:'Dokumen lama; alokasi faktur tidak tersimpan'})),
-    ...(po.purchase_returns ?? []).map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),
-    ...(po.purchase_advances ?? []).map(r => ({ kind: 'purchase-advance' as const, id: r.id, label: `Uang muka ${r.no_um}`, status: r.status })),
+    ...receipts.map(r => ({ kind: 'goods-receipt' as const, id: r.id, label: `Penerimaan ${r.no_terima}`, status: 'Dokumen tersimpan' })),
+    ...invoices.map(r => ({ kind: 'purchase-invoice' as const, id: r.id, label: `Faktur ${r.no_faktur}`, status: r.voided_at ? 'Dibatalkan' : 'Aktif' })),
+    ...payments.map(p => ({kind:'legacy-purchase-payment' as const,id:p.id,parentId:po.id,label:`Pembayaran PO ${p.tanggal} · ${rp(p.amount)}`,status:'Dokumen lama; alokasi faktur tidak tersimpan'})),
+    ...returns.map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),
+    ...advances.map(r => ({ kind: 'purchase-advance' as const, id: r.id, label: `Uang muka ${r.no_um}`, status: r.status })),
   ];
 
   return (
@@ -136,7 +137,7 @@ export default async function PODetailPage({
         </div>
       </div>
 
-      <RelatedDocuments documents={related} from={`/pembelian/${po.id}`} error={!!invoiceError} />
+      <RelatedDocuments documents={related} from={`/pembelian/${po.id}`} />
 
       <div className="crm-sec">
         <SecHeader num="01" title="DAFTAR ITEM" desc="Barang, satuan, jumlah dipesan & diterima." />
@@ -199,16 +200,16 @@ export default async function PODetailPage({
         </div>
       )}
 
-      {((hasChildren && !priceEditable) || po.status === "Diterima" || invoiceError) && <div className="crm-sec" id="purchase-correction">
+      {((hasChildren && !priceEditable) || po.status === "Diterima") && <div className="crm-sec" id="purchase-correction">
         <SecHeader num="02" title="KOREKSI PEMBELIAN" desc="PO dengan transaksi turunan mempertahankan riwayat penerimaan, stok, dan pembukuan." />
         <p style={{ fontSize: 11, color: "var(--tm)" }}>PO ini sudah memiliki transaksi turunan. Koreksi harga beli atau HPP melalui faktur pembelian. Untuk kesalahan jumlah atau satuan barang yang sudah diterima, periksa penerimaan dan stok bersama Super Admin sebelum membuat retur atau PO baru.</p>
-        {invoiceError ? <p role="alert" className="p2ban">Faktur terkait belum dapat dimuat. Muat ulang sebelum mengoreksi pembelian.</p> : (invoices ?? []).length > 0 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {(invoices ?? []).map(invoice => <Link key={invoice.id} className="btn-def" href={`/pembelian/faktur/${invoice.id}`}>{owner ? "Koreksi faktur" : "Lihat faktur"} {invoice.no_faktur}{invoice.voided_at ? " (dibatalkan)" : ""}</Link>)}
+        {invoices.length > 0 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {invoices.map(invoice => <Link key={invoice.id} className="btn-def" href={`/pembelian/faktur/${invoice.id}`}>{owner ? "Koreksi faktur" : "Lihat faktur"} {invoice.no_faktur}{invoice.voided_at ? " (dibatalkan)" : ""}</Link>)}
         </div> : <><p style={{ fontSize: 11, color: "var(--tm)" }}>Belum ada faktur untuk PO ini.</p>{po.status === "Diterima" && <Link className="btn-def" href="/pembelian/faktur/baru">Buat faktur dari PO</Link>}</>}
         {owner && <p style={{ fontSize: 11, color: "var(--tm)" }}>Di detail faktur, gunakan Batalkan faktur atau Batalkan &amp; siapkan pengganti. Pembayaran yang sudah ada harus dibalik terlebih dahulu.</p>}
       </div>}
 
-      {(po.po_payments?.length ?? 0) > 0 && <section className="crm-sec"><h2 style={{ fontSize: 14 }}>Pembayaran PO lama</h2><p>Alokasi ke faktur tidak tersimpan; pembayaran ini tidak dianggap pelunasan faktur tertentu.</p>{po.po_payments!.map(p => <article id={`legacy-payment-${p.id}`} key={p.id}><p>{p.tanggal} · {rp(p.amount)} · {p.metode}</p></article>)}</section>}
+      {payments.length > 0 && <section className="crm-sec"><h2 style={{ fontSize: 14 }}>Pembayaran PO lama</h2><p>Alokasi ke faktur tidak tersimpan; pembayaran ini tidak dianggap pelunasan faktur tertentu.</p>{payments.map(p => <article id={`legacy-payment-${p.id}`} key={p.id}><p>{p.tanggal} · {rp(p.amount)} · {p.metode}</p></article>)}</section>}
       <DokumenPanel modul="pembelian" refId={po.id} kembali={`/pembelian/${po.id}`} />
     </>
   );
