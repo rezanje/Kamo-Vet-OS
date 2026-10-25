@@ -51,7 +51,7 @@ export async function simpanRekamMedis(formData: FormData) {
   // Dokter dipilih dari daftar karyawan. Sebelumnya field ini dibaca dari form yang
   // tidak pernah mengirimnya, jadi setiap simpan rekam medis justru MENGHAPUS nama
   // dokter yang sudah diisi saat registrasi.
-  const { doctorId, nama: dokter } = await resolveDokter(supabase, String(formData.get("doctor_id") ?? "").trim() || null);
+  const selectedDoctorId = String(formData.get("doctor_id") ?? "").trim() || null;
   const beratRaw = formData.get("berat");
   const berat = beratRaw ? Number(beratRaw) : null;
   const suhuRaw = formData.get("suhu");
@@ -75,7 +75,11 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   const back = `/klinik/rekam-medis/${visitId}`;
-  const { data: clinicalVisit, error: clinicalVisitError } = await supabase.from("visits").select("poli").eq("id", visitId).maybeSingle();
+  // Kedua pemeriksaan hanya membaca data dan tidak saling bergantung.
+  const [{ doctorId, nama: dokter }, { data: clinicalVisit, error: clinicalVisitError }] = await Promise.all([
+    resolveDokter(supabase, selectedDoctorId),
+    supabase.from("visits").select("poli").eq("id", visitId).maybeSingle(),
+  ]);
   if (clinicalVisitError || !clinicalVisit) redirect(`${back}?error=${encodeURIComponent("Kunjungan tidak dapat dibaca. Muat ulang dan coba lagi.")}`);
   const clinicalError = validateClinicalCompletion(clinicalVisit.poli, doctorId, keluhan);
   if (clinicalError) redirect(`${back}?error=${encodeURIComponent(clinicalError)}`);

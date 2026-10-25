@@ -1,18 +1,28 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const fixture=vi.hoisted(()=>({error:null as unknown,revalidated:[] as string[],doctorId:"doctor" as string|null,service:"Poli Umum",calls:[] as {name:string,args:Record<string,unknown>}[]}));
+const fixture=vi.hoisted(()=>({error:null as unknown,revalidated:[] as string[],doctorId:"doctor" as string|null,doctorGate:null as Promise<void>|null,doctorStarted:false,visitReadStarted:false,service:"Poli Umum",calls:[] as {name:string,args:Record<string,unknown>}[]}));
 vi.mock('next/cache',()=>({revalidatePath:(href:string)=>fixture.revalidated.push(href)}));
 vi.mock('next/navigation',()=>({redirect:(href:string)=>{throw new Error(`REDIRECT ${href}`)}}));
-vi.mock('@/lib/dokter',()=>({resolveDokter:async()=>({doctorId:fixture.doctorId,nama:fixture.doctorId?'Drh. Fiction':null})}));
+vi.mock('@/lib/dokter',()=>({resolveDokter:async()=>{fixture.doctorStarted=true;if(fixture.doctorGate)await fixture.doctorGate;return {doctorId:fixture.doctorId,nama:fixture.doctorId?'Drh. Fiction':null}}}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:'user'}}})},
  rpc:async(name:string,args:Record<string,unknown>)=>{fixture.calls.push({name,args});return {data:null,error:fixture.error}},
  from(table:string){const q={select(){return q},eq(){return q},order(){return q},limit(){return q},in(){return q},range(){return q},
- maybeSingle:async()=>({data:table==='inpatient_records'?{condition_status:'stabil',visit_id:'visit',medical_record_id:'record'}:table==='visits'?{branch_id:'branch',poli:fixture.service,status:'Diperiksa',pets:{species:'Kucing'}}:{role:'OWNER'},error:null}),
+ maybeSingle:async()=>{if(table==='visits')fixture.visitReadStarted=true;return {data:table==='inpatient_records'?{condition_status:'stabil',visit_id:'visit',medical_record_id:'record'}:table==='visits'?{branch_id:'branch',poli:fixture.service,status:'Diperiksa',pets:{species:'Kucing'}}:{role:'OWNER'},error:null}},
  then(resolve:(value:unknown)=>void){return Promise.resolve({data:table==='items'?[{id:'action-sku',unit:'tindakan',sell_price:75000}]:[],error:null}).then(resolve)}};return q},
 })}));
 import { simpanRekamMedis } from '../../app/(app)/klinik/rekam-medis/[visitId]/actions';
 import { addDailyLogPos } from '../../app/(app)/klinik/rawat-inap/actions';
-beforeEach(()=>{fixture.error=null;fixture.calls=[];fixture.revalidated=[];fixture.doctorId='doctor';fixture.service='Poli Umum'});
+beforeEach(()=>{fixture.error=null;fixture.calls=[];fixture.revalidated=[];fixture.doctorId='doctor';fixture.doctorGate=null;fixture.doctorStarted=false;fixture.visitReadStarted=false;fixture.service='Poli Umum'});
+it('starts the independent visit read before doctor lookup completes',async()=>{
+ let releaseDoctor!:()=>void;
+ fixture.doctorGate=new Promise<void>(resolve=>{releaseDoctor=resolve});
+ const saving=simpanRekamMedis(form());
+ await vi.waitFor(()=>expect(fixture.doctorStarted).toBe(true));
+ const visitStartedBeforeDoctorFinished=fixture.visitReadStarted;
+ releaseDoctor();
+ expect(await saving).toMatchObject({saved:true});
+ expect(visitStartedBeforeDoctorFinished).toBe(true);
+});
 it.each([['initial', simpanRekamMedis, 'clinic_save_initial_record'], ['inpatient', addDailyLogPos, 'clinic_save_inpatient_log_with_status']] as const)('%s preserves catalog action identity, amount and consent category at save', async (_name, save, rpc) => {
  const data=form();
  data.set('resep', JSON.stringify([{ item_id:'action-sku', nama_obat:'Steril', qty:2, satuan:'tindakan', harga:75000, jenis:'jasa', kategori:'Operasi' }]));
