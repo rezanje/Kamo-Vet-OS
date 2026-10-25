@@ -1,12 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
-const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,broken:'',reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
+const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('@/lib/branch-access',()=>({allowedBranchIds:async()=>s.allowed,canUseBranch:(allowed:string[]|null,id:string)=>allowed===null||allowed.includes(id)}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/PapanPemantauan',()=>({PapanPemantauan:()=> <div>DAILY MONITORING</div>}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/ObatKhusus',()=>({ObatKhusus:()=> <div>DOSE PROTOCOL</div>}));
 vi.mock('@/app/(app)/klinik/rawat-inap/actions',()=>({changeCondition:async()=>{},sendRipWa:async()=>{}}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:s.user?{id:'actor'}:null}})},from(table:string){
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>{s.authReads++;return{data:{user:s.user?{id:'actor'}:null}}}},from(table:string){
  const request={table,eq:{},in:{}} as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number;to?:number};s.reads.push(request);let single=false;
  const q={select:()=>q,eq:(k:string,v:unknown)=>{request.eq[k]=v;return q},in:(k:string,v:unknown)=>{request.in[k]=v;return q},order:()=>q,limit:()=>q,is:()=>q,range:(from:number,to:number)=>{request.from=from;request.to=to;return q},maybeSingle:()=>{single=true;return q},then:(done:(v:unknown)=>unknown)=>{
   let data:unknown=[];
@@ -23,7 +23,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/rawat-inap/[id]/page';
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.broken='';s.reads=[]});
+beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.broken='';s.authReads=0;s.reads=[]});
 it('shows consultation, prescriptions and compound status before daily visit notes with explicit source links',async()=>{
  const html=await render();expect(html).toContain('Ringkasan konsultasi dan resep');expect(html).toContain('Keluhan awal kunjungan');expect(html).toContain('Fictional complaint');expect(html).toContain('Fictional consultation note');expect(html).toContain('Fictional tablet');expect(html).toContain('Fictional mixture instructions');expect(html).toContain('Drh Konsultasi');
  expect(html.indexOf('Ringkasan konsultasi dan resep')).toBeLessThan(html.indexOf('DAILY MONITORING'));expect(html).toContain('/klinik/rekam-medis/visit-a');expect(html).toContain('/klinik/racik/recipe-a');
@@ -41,3 +41,17 @@ it('shows an unavailable summary on child read errors instead of presenting empt
 
 it('does not invent an invoice-specific route that ignores the requested old document',async()=>{const html=await render();expect(html).not.toContain('?invoice=');expect(html).toContain('Buka pembayaran kunjungan')});
 it('loads every prescription beyond1000 using only the same visit record and exact invoice IDs',async()=>{s.longRx=true;const html=await render();expect(html).toContain('Fictional long 1204');expect(s.reads.some(r=>r.table==='prescription_items'&&r.from===1000)).toBe(true);expect(s.reads.filter(r=>r.table==='prescription_items').every(r=>JSON.stringify(r.in.medical_record_id)===JSON.stringify(['mr-a']))).toBe(true);expect(s.reads.find(r=>r.table==='medical_records')!.eq.visit_id).toBe('visit-a');expect(s.reads.find(r=>r.table==='visits')!.eq.branch_id).toBe('branch-a')});
+const CHILD_READS=['visits','consents','inpatient_daily_logs','inpatient_status_log','profiles','items'];
+it('reads the signed-in user once and loads the role for that same user',async()=>{
+ const html=await render();expect(s.authReads).toBe(1);expect(html).toContain('Ringkasan konsultasi dan resep');
+ expect(html).not.toContain('(akun ini bukan dokter)');
+ const profile=s.reads.filter(r=>r.table==='profiles');expect(profile).toHaveLength(1);expect(profile[0].eq.id).toBe('actor');
+ expect(s.reads.find(r=>r.table==='consents')!.eq.visit_id).toBe('visit-a');
+});
+it('starts no consent, log, role or tariff read before the parent passes the branch guard',async()=>{
+ s.allowed=['branch-b'];await expect(render()).rejects.toThrow('NOT_FOUND');expect(s.reads.map(r=>r.table)).toEqual(['inpatient_records']);expect(s.authReads).toBe(1);
+ s.allowed=['branch-a'];s.user=false;s.reads=[];s.authReads=0;await expect(render()).rejects.toThrow('NOT_FOUND');expect(s.reads.some(r=>CHILD_READS.includes(r.table))).toBe(false);expect(s.authReads).toBe(1);
+});
+it('still renders the page when the handoff summary fails while the other reads succeed',async()=>{
+ s.broken='medical_records';const html=await render();expect(html).toContain('Ringkasan belum dapat dimuat lengkap');expect(html).toContain('DAILY MONITORING');expect(s.authReads).toBe(1);
+});
