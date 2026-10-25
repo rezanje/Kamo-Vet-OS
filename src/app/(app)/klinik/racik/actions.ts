@@ -53,16 +53,8 @@ export async function addRacikan(formData: FormData) {
   const requestKey = String(formData.get("requestKey") ?? "").trim();
   const back = `/klinik/rekam-medis/${visitId}`;
 
-  const [recordCheck, visitCheck, invoiceCheck] = medicalRecordId && visitId ? await Promise.all([
-    supabase.from("medical_records").select("visit_id").eq("id", medicalRecordId).maybeSingle(),
-    supabase.from("visits").select("status,checked_out_at").eq("id", visitId).maybeSingle(),
-    supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
-  ]) : [{ data: null, error: null }, { data: null, error: null }, { data: null, error: null }];
-  if (recordCheck.error || recordCheck.data?.visit_id !== visitId
-    || visitCheck.error || visitCheck.data?.status !== "Pembayaran" || visitCheck.data?.checked_out_at
-    || invoiceCheck.error || invoiceCheck.data) {
-    return redirect(`${back}?error=${encodeURIComponent("Racikan baru hanya dapat ditambahkan sebelum invoice dibuat. Muat ulang rekam medis.")}`);
-  }
+  // The issue RPC locks the visit and rejects new work after invoice. Let exact
+  // request-key retries reach it so a lost response can still be acknowledged.
 
   const recipeName = String(formData.get("recipe_name") ?? "").trim();
   const form = String(formData.get("dosage_form") ?? "").trim() || null;
