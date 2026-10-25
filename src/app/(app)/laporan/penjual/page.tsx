@@ -54,6 +54,13 @@ export default async function PenjualPage({
   type Emp = { id: string; nama: string; profile_id: string | null; status: string | null };
   const karyawan = (empData ?? []) as Emp[];
   const namaEmp = new Map(karyawan.map((e) => [e.id, e.nama]));
+  const jumlahNama = new Map<string, number>();
+  for (const e of karyawan) jumlahNama.set(e.nama, (jumlahNama.get(e.nama) ?? 0) + 1);
+  const labelPenjual = (employeeId: string | null) => {
+    if (!employeeId) return "(tanpa penjual)";
+    const nama = namaEmp.get(employeeId) ?? "(karyawan terhapus)";
+    return (jumlahNama.get(nama) ?? 0) > 1 ? `${nama} (ID ${employeeId.slice(-8)})` : nama;
+  };
   const empPerProfile = new Map(karyawan.filter((e) => e.profile_id).map((e) => [e.profile_id as string, e.id]));
   const namaItem = new Map(((itemData ?? []) as { id: string; name: string; unit: string | null }[])
     .map((i) => [i.id, i]));
@@ -111,18 +118,18 @@ export default async function PenjualPage({
     return {
       ...f,
       empId,
-      penjual: empId ? namaEmp.get(empId) ?? "(karyawan terhapus)" : "(tanpa penjual)",
+      penjual: labelPenjual(empId),
       pelanggan: one(f.customers)?.name ?? "—",
       dibayar,
       sisa: Math.max(0, (Number(f.total) || 0) - dibayar),
     };
   }).sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.no_faktur.localeCompare(b.no_faktur));
 
-  type Outstanding = { penjual: string; faktur: number; nilai: number; lunas: number; belum: number; sisa: number };
+  type Outstanding = { employeeId: string | null; penjual: string; faktur: number; nilai: number; lunas: number; belum: number; sisa: number };
   const perPenjualFaktur = new Map<string, Outstanding>();
   for (const f of faktur) {
-    const kunci = f.penjual;
-    const row = perPenjualFaktur.get(kunci) ?? { penjual: kunci, faktur: 0, nilai: 0, lunas: 0, belum: 0, sisa: 0 };
+    const kunci = f.empId ?? "";
+    const row = perPenjualFaktur.get(kunci) ?? { employeeId: f.empId, penjual: f.penjual, faktur: 0, nilai: 0, lunas: 0, belum: 0, sisa: 0 };
     row.faktur++;
     row.nilai += Number(f.total) || 0;
     row.sisa += f.sisa;
@@ -174,7 +181,7 @@ export default async function PenjualPage({
             <tbody>
               {penjualRows.map((r) => (
                 <tr key={r.employeeId}>
-                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.nama}</td>
+                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>{labelPenjual(r.employeeId)}</td>
                   {SUMBER.map((s) => (
                     <td key={s} style={{ textAlign: "right", fontSize: 11, color: r.perSumber[s] ? "var(--tm)" : "var(--td)" }}>
                       {r.perSumber[s] ? rp(r.perSumber[s]) : "—"}
@@ -206,7 +213,7 @@ export default async function PenjualPage({
       {penjualRows.map((r) => (
         <details key={r.employeeId} className="crm-sec" style={{ marginBottom: 10 }}>
           <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span>Barang yang dijual {r.nama}</span>
+            <span>Barang yang dijual {labelPenjual(r.employeeId)}</span>
             <span style={{ fontWeight: 600, color: "var(--tm)" }}>
               {r.perBarang.size} jenis · {rp(r.omzet)}
             </span>
@@ -250,7 +257,7 @@ export default async function PenjualPage({
             </thead>
             <tbody>
               {fakturRows.map((r) => (
-                <tr key={r.penjual}>
+                <tr key={r.employeeId ?? "tanpa-penjual"}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.penjual}</td>
                   <td style={{ textAlign: "center", fontSize: 11 }}>{r.faktur}</td>
                   <td style={{ textAlign: "center", fontSize: 11, color: "#15803d" }}>{r.lunas}</td>

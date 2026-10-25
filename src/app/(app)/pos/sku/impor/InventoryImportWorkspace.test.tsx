@@ -24,7 +24,7 @@ it("requires an explicit import mode before showing a category-changing master u
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  act(() => root?.render(<InventoryImportWorkspace batches={[]} recovered={null} initialReceipt={null} />));
+  act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[]} masterError={null} recovered={null} initialReceipt={null} />));
 
   const mode = host.querySelector<HTMLSelectElement>('select[aria-label="Mode impor"]');
   expect(mode?.value).toBe("");
@@ -47,4 +47,47 @@ it("requires an explicit import mode before showing a category-changing master u
     }
   });
   expect(host.querySelector('[data-testid="master-import"]')).not.toBeNull();
+});
+
+it("shows the last saved master status after a new page mount without offering an automatic retry", () => {
+  const masterBatches = [{
+    id: "saved-master-run", source_name: "sample.xlsx", status: "previewed",
+    progress: { phase: "mengimpor" as const, completed: 40, total: 100, percentage: 40 },
+  }];
+  for (let visit = 0; visit < 2; visit += 1) {
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={masterBatches} masterError={null} recovered={null} initialReceipt={null} />));
+    expect(host.textContent).toContain("sample.xlsx");
+    expect(host.textContent).toContain("40/100");
+    expect(host.textContent).toContain("belum terkonfirmasi selesai");
+    expect(host.querySelector('[data-testid="master-import"]')).toBeNull();
+    expect(host.querySelector('a[href*="saved-master-run"]')).toBeNull();
+    act(() => root?.unmount());
+    root = null;
+    host.remove();
+  }
+});
+
+it("discloses a failed master-batch read instead of claiming there are no saved batches", () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[]} masterError="fixture read error" recovered={null} initialReceipt={null} />));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("fixture read error");
+  expect(host.textContent).not.toContain("Belum ada batch master");
+});
+
+it("labels a posted master batch with rejected rows as partial completion", () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[{
+    id: "saved-master-run", source_name: "sample.xlsx", status: "posted", rejectedCount: 3,
+    progress: { phase: "selesai", completed: 100, total: 100, percentage: 100 },
+  }]} masterError={null} recovered={null} initialReceipt={null} />));
+  expect(host.textContent).toContain("selesai sebagian");
+  expect(host.textContent).toContain("3 baris ditolak");
+  expect(host.textContent).not.toContain("Master tercatat selesai;");
 });

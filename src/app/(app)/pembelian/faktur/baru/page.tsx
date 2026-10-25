@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
+import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { FakturForm, type PoOption, type PoInvoiceInitial } from "./FakturForm";
@@ -11,7 +13,7 @@ type PoRow = {
   no_po: string | null;
   tanggal: string;
   purchase_order_receipt_closures?: Rel<{ po_id: string }>;
-  suppliers: { nama: string; termin_hari: number | null } | null;
+  suppliers: Rel<{ nama: string; termin_hari: number | null }>;
   purchase_order_items: {
     id: string; item_id: string | null; qty: number; qty_terima: number | null;
     harga_beli: number; nama: string; satuan: string | null; faktor: number | null;
@@ -20,16 +22,21 @@ type PoRow = {
 };
 
 type InvoiceRow = {
+  id: string;
   po_id: string | null;
   purchase_invoice_items: { po_item_id: string | null; item_id: string | null; qty: number; faktor: number | null }[] | null;
 };
+type PoHeader = Omit<PoRow, "purchase_order_items">;
+type PoItem = NonNullable<PoRow["purchase_order_items"]>[number] & { po_id: string };
+type InvoiceItem = NonNullable<InvoiceRow["purchase_invoice_items"]>[number] & { id: string; invoice_id: string };
 
 export default async function FakturBaruPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; replace_invoice?: string }>;
+  searchParams: Promise<{ error?: string; replace_invoice?: string; po_no?: string; hal?: string }>;
 }) {
-  const { error, replace_invoice } = await searchParams;
+  const { error, replace_invoice, po_no, hal } = await searchParams;
+  const poNo = (po_no ?? "").trim().slice(0, 24);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
@@ -41,25 +48,42 @@ export default async function FakturBaruPage({
     initial = source as PoInvoiceInitial;
   }
 
-  const poQuery = supabase
-      .from("purchase_orders")
-      .select("id, no_po, tanggal, purchase_order_receipt_closures(po_id), suppliers(nama, termin_hari), purchase_order_items(id, item_id, qty, qty_terima, harga_beli, nama, satuan, faktor, items(unit))")
-      .eq("status", "Diterima")
-      .order("created_at", { ascending: false })
-      .limit(100);
+  let poPage: Awaited<ReturnType<typeof readListPage<PoHeader>>> | undefined;
+  let loadError: unknown;
+  let pos: PoRow[] = [];
+  let invoiceRows: InvoiceRow[] = [];
+  try {
+    poPage = await readListPage<PoHeader>((from, to) => {
+      let query = supabase.from("purchase_orders")
+        .select("id, no_po, tanggal, purchase_order_receipt_closures(po_id), suppliers(nama, termin_hari)", { count: "exact" })
+        .eq("status", "Diterima");
+      if (initial) query = query.eq("id", initial.po_id);
+      else if (poNo) query = query.eq("no_po", poNo);
+      return query.order("created_at", { ascending: false }).order("id").range(from, to);
+    }, "Daftar PO untuk faktur", initial || poNo ? "1" : hal);
+    const poIds = poPage.rows.map(po => po.id);
+    if (poIds.length) {
+      const [poItems, invoices] = await Promise.all([
+        readCompleteList<PoItem>((from, to) => supabase.from("purchase_order_items")
+          .select("id, po_id, item_id, qty, qty_terima, harga_beli, nama, satuan, faktor, items(unit)", { count: "exact" })
+          .in("po_id", poIds).order("id").range(from, to), "Baris PO untuk faktur", { maxRows: null }),
+        readCompleteList<{ id: string; po_id: string | null }>((from, to) => supabase.from("purchase_invoices")
+          .select("id, po_id", { count: "exact" }).in("po_id", poIds).is("voided_at", null)
+          .order("id").range(from, to), "Faktur terkait PO", { maxRows: null }),
+      ]);
+      const itemsByPo = new Map<string, PoItem[]>();
+      for (const item of poItems) itemsByPo.set(item.po_id, [...(itemsByPo.get(item.po_id) ?? []), item]);
+      pos = poPage.rows.map(po => ({ ...po, purchase_order_items: itemsByPo.get(po.id) ?? [] }));
+      const invoiceIds = invoices.map(invoice => invoice.id);
+      const items = invoiceIds.length ? await readCompleteList<InvoiceItem>((from, to) => supabase.from("purchase_invoice_items")
+        .select("id, invoice_id, po_item_id, item_id, qty, faktor", { count: "exact" })
+        .in("invoice_id", invoiceIds).order("id").range(from, to), "Baris faktur terkait PO", { maxRows: null }) : [];
+      const itemsByInvoice = new Map<string, InvoiceItem[]>();
+      for (const item of items) itemsByInvoice.set(item.invoice_id, [...(itemsByInvoice.get(item.invoice_id) ?? []), item]);
+      invoiceRows = invoices.map(invoice => ({ ...invoice, purchase_invoice_items: itemsByInvoice.get(invoice.id) ?? [] }));
+    }
+  } catch (cause) { loadError = cause; }
 
-  const [{ data: pos, error: poError }, { data: invs, error: invoiceReadError }] = await Promise.all([
-    initial ? poQuery.eq("id", initial.po_id) : poQuery,
-    supabase.from("purchase_invoices").select("po_id, purchase_invoice_items(po_item_id, item_id, qty, faktor)").is("voided_at", null),
-  ]);
-
-  const loadError = poError
-    ? "Daftar PO tidak dapat dimuat. Muat ulang sebelum membuat faktur."
-    : invoiceReadError
-      ? "Faktur lama tidak dapat diperiksa. Muat ulang sebelum membuat faktur."
-      : null;
-
-  const invoiceRows = (invs ?? []) as unknown as InvoiceRow[];
   const invoicesByPo = new Map<string, InvoiceRow[]>();
   for (const invoice of invoiceRows) {
     if (!invoice.po_id) continue;
@@ -68,7 +92,7 @@ export default async function FakturBaruPage({
     invoicesByPo.set(invoice.po_id, rows);
   }
 
-  const options: PoOption[] = loadError ? [] : ((pos ?? []) as unknown as PoRow[]).map((p) => {
+  const options: PoOption[] = loadError ? [] : pos.map((p) => {
     const poItems = (p.purchase_order_items ?? []).map((r) => ({
       id: r.id,
       item_id: r.item_id,
@@ -86,8 +110,8 @@ export default async function FakturBaruPage({
     ];
     return {
       id: p.id,
-      label: `${p.no_po ?? p.id.slice(0, 8)} — ${p.suppliers?.nama ?? "Tanpa pemasok"} (${p.tanggal})${one(p.purchase_order_receipt_closures ?? null) ? " — Selesai parsial" : ""}`,
-      terminHari: Number(p.suppliers?.termin_hari ?? 30),
+      label: `${p.no_po ?? p.id.slice(0, 8)} — ${one(p.suppliers)?.nama ?? "Tanpa pemasok"} (${p.tanggal})${one(p.purchase_order_receipt_closures ?? null) ? " — Selesai parsial" : ""}`,
+      terminHari: Number(one(p.suppliers)?.termin_hari ?? 30),
       warning: warningParts.join(" ") || null,
       items: (p.purchase_order_items ?? []).flatMap((r) => {
         if (!r.item_id) return [];
@@ -125,11 +149,14 @@ export default async function FakturBaruPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
-      {loadError && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-circle" /> {loadError}
-        </div>
-      )}
+      {!initial && <form method="get" style={{ display: "flex", alignItems: "end", gap: 8, marginBottom: 12 }}>
+        <div><label className="flab" htmlFor="po_no">Cari nomor PO tepat</label><input className="fi" id="po_no" name="po_no" defaultValue={poNo} maxLength={24} placeholder="Mis. PO.2026.10.00001" /></div>
+        <button type="submit" className="btn-def">Cari PO</button>
+        {poNo && <Link href="/pembelian/faktur/baru" className="btn-def">Lihat terbaru</Link>}
+      </form>}
+      {loadError !== undefined && <ListLoadFailure error={loadError} label="Daftar PO untuk faktur" />}
+      {!loadError && poNo && poPage?.count === 0 && <div role="status" className="p2ban">PO diterima dengan nomor itu tidak ditemukan.</div>}
+      {!initial && !poNo && poPage && loadError === undefined && <ListPagination path="/pembelian/faktur/baru" query={{}} total={poPage.count} pageInfo={poPage.pageInfo} />}
 
       <FakturForm initial={initial} options={options} userId={userId} />
     </>

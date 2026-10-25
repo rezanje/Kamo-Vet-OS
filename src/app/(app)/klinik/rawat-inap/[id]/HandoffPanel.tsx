@@ -21,6 +21,7 @@ export function HandoffPanel({data,visitId,admittedAt}:{data:InpatientHandoff|nu
  return <section className="crm-sec" data-inpatient-handoff style={{minWidth:0,overflowWrap:'anywhere'}}>
   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}><h2 style={{fontSize:15}}>Ringkasan konsultasi dan resep</h2><Link className="back-btn" href={`/klinik/rekam-medis/${encodeURIComponent(visitId)}`}>Buka rekam medis asal</Link></div>
   <p style={{fontSize:12}}>Dokter kunjungan: <b>{data.doctor??'Belum tercatat'}</b>. Data tersimpan saat ini pada kunjungan yang sama; tambahan selama rawat inap ikut ditampilkan.</p>
+  <p style={{whiteSpace:'pre-wrap'}}><b>Keluhan awal kunjungan:</b> {data.complaint||'Belum tercatat'}</p>
   {data.records.map(record=><article key={record.id} style={{borderTop:'1px solid var(--bd)',paddingTop:10,marginTop:10}}>
    <p style={{fontSize:11,color:'var(--tm)'}}>{recorded(record.created_at,admittedAt)}</p>
    <div className="grid2"><div><b>Anamnesis / catatan konsultasi</b><p style={{whiteSpace:'pre-wrap'}}>{record.anamnesis||'Belum tercatat'}</p></div><div><b>Diagnosis tercatat</b><p style={{whiteSpace:'pre-wrap'}}>{record.diagnosis||'Belum tercatat'}</p></div></div>

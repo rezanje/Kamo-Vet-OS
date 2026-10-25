@@ -27,6 +27,6 @@ it.each([['struk',Struk],['invoice',Invoice],['rombongan',GroupReceipt]] as cons
 });
 
 it('inpatient handoff shows source prescription snapshots separately from the case doctor',()=>{
- const html=renderToStaticMarkup(<HandoffPanel visitId="visit" admittedAt="2026-10-23T10:00:00Z" data={{doctor:'PIC Kasus',records:[],recipes:[],invoices:[],invoiceLines:[],prescriptions:[{id:'rx',medical_record_id:'record',nama_obat:'Jasa',qty:1,satuan:'jasa',jenis:'jasa',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-23T10:00:00Z',service_performers:{version:1,doctor_id:'doctor',doctor_name:'Dokter Pelaksana Sumber',staff_id:null}}]}}/>);
+ const html=renderToStaticMarkup(<HandoffPanel visitId="visit" admittedAt="2026-10-23T10:00:00Z" data={{doctor:'PIC Kasus',complaint:null,records:[],recipes:[],invoices:[],invoiceLines:[],prescriptions:[{id:'rx',medical_record_id:'record',nama_obat:'Jasa',qty:1,satuan:'jasa',jenis:'jasa',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-23T10:00:00Z',service_performers:{version:1,doctor_id:'doctor',doctor_name:'Dokter Pelaksana Sumber',staff_id:null}}]}}/>);
  expect(html).toContain('Dokter Pelaksana Sumber');expect(html).toContain('PIC Kasus');
 });

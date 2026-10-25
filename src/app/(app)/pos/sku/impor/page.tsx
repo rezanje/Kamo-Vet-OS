@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { ImporForm } from "./ImporForm";
-import { InventoryImportWorkspace, type RecoverableStockBatch } from "./InventoryImportWorkspace";
+import { InventoryImportWorkspace, type RecoverableMasterBatch, type RecoverableStockBatch } from "./InventoryImportWorkspace";
 import { recoverInitialStock } from "./actions";
 import { createClient } from "@/lib/supabase/server";
 import { GroupComponentImport } from "./GroupComponentImport";
+import { bacaProgresDariRingkasan } from "@/lib/impor-accurate-batch";
 
 export default async function ImporBarangPage({
   searchParams,
@@ -27,13 +28,31 @@ export default async function ImporBarangPage({
     : null;
 
   let batches: RecoverableStockBatch[] = [];
+  let masterBatches: RecoverableMasterBatch[] = [];
   let recoveryError: string | null = null;
+  let masterError: string | null = null;
   if (boleh) {
     const db = await createClient(); const {data:{user}} = await db.auth.getUser();
     if (user) {
-      const result = await db.from("import_runs").select("id,source_name,status,as_of_date")
-        .eq("kind","initial_stock").eq("created_by",user.id).order("created_at",{ascending:false}).limit(20);
-      batches = result.data ?? []; recoveryError = result.error?.message ?? null;
+      const [stockResult, masterResult] = await Promise.all([
+        db.from("import_runs").select("id,source_name,status,as_of_date")
+          .eq("kind","initial_stock").eq("created_by",user.id).order("created_at",{ascending:false}).limit(20),
+        db.from("import_runs").select("id,source_name,status,summary")
+          .eq("kind","master_accurate").eq("created_by",user.id).order("created_at",{ascending:false}).limit(20),
+      ]);
+      batches = stockResult.data ?? [];
+      recoveryError = stockResult.error?.message ?? null;
+      masterError = masterResult.error?.message ?? null;
+      masterBatches = (masterResult.data ?? []).map((run) => ({
+        id: run.id,
+        source_name: run.source_name,
+        status: run.status,
+        rejectedCount: run.summary && typeof run.summary === "object" && !Array.isArray(run.summary)
+          && "Ditolak" in run.summary && Number.isSafeInteger(run.summary.Ditolak) && run.summary.Ditolak >= 0
+          ? run.summary.Ditolak : null,
+        progress: run.summary && typeof run.summary === "object" && !Array.isArray(run.summary) && "progress" in run.summary
+          ? bacaProgresDariRingkasan(run.summary) : null,
+      }));
     }
   }
   const recovered = boleh && run_id ? await recoverInitialStock(run_id) : null;
@@ -66,7 +85,7 @@ export default async function ImporBarangPage({
       ) : (
         <>
           {recoveryError && <p role="alert">Daftar batch belum dapat dimuat: {recoveryError}</p>}
-          <InventoryImportWorkspace batches={batches} recovered={recovered} initialReceipt={initialReceipt} />
+          <InventoryImportWorkspace batches={batches} masterBatches={masterBatches} masterError={masterError} recovered={recovered} initialReceipt={initialReceipt} />
           <GroupComponentImport />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>
