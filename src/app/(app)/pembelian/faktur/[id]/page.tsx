@@ -87,7 +87,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
         {owner && !payment.reversal_of && !payment.voided_at && <details><summary className="btn-def">Koreksi pembayaran</summary>
           <PaymentCorrectionForm userId={user!.id} invoiceId={id} paymentId={payment.id} revision={payment.revision} grouped={!!payment.payment_order_id} />
         </details>}
-        {owner && !invoice.voided_at && payment.voided_at && !payment.payment_order_id && <Link href={`/keuangan/hutang?replace_payment=${payment.id}`}>Siapkan pembayaran pengganti</Link>}
+        {owner && !invoice.voided_at && payment.voided_at && !payment.payment_order_id && !payments.some(p => p.replaces_payment_id === payment.id) && <Link href={`/keuangan/hutang?replace_payment=${payment.id}`}>Siapkan pembayaran pengganti</Link>}
       </article>)}
     </section>
   </>;
