@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
-const focused=vi.hoisted(()=>({enabled:false,lookups:0}));
+const focused=vi.hoisted(()=>({enabled:false,lookups:0,filters:[] as string[]}));
 vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams()}));
 vi.mock('next/cache',()=>({revalidatePath:()=>{}}));
 vi.mock('@/lib/master-guard',()=>({bolehTransaksiKas:async()=>false,bolehKelolaMaster:async()=>false}));
@@ -11,7 +11,7 @@ vi.mock('@/app/(app)/pembelian/perintah-bayar/actions',()=>({batalkanPerintahBay
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'actor'}}})},from:(table:string)=>{
  const rows=table==='purchase_advances'||table==='sales_advances'?[{id:'advance-id',no_um:'UM-1',tanggal:'2026-10-22',jumlah:100,terpakai:0,status:'aktif'}]
  :table==='payment_orders'?[{id:'order-id',no_pp:'PP-1',tanggal:'2026-10-22',total:100,status:'draft',revision:0,payment_order_items:[]}]:[];
- const q={select:()=>q,eq:()=>{if(table==='payment_orders')focused.lookups++;return q;},in:()=>q,is:()=>q,order:()=>q,limit:()=>q,range:()=>q,maybeSingle:async()=>({data:{id:'10000000-0000-4000-8000-000000000001',no_pp:'PP-OLD',tanggal:'2026-10-01',total:100,status:'draft',revision:0,payment_order_items:[]},error:null}),then:(resolve:(value:unknown)=>void)=>resolve({data:table==='payment_orders'&&focused.enabled?[]:rows,count:rows.length,error:null})};return q;
+ const q={select:()=>q,eq:(column:string,value:unknown)=>{if(table==='payment_orders'){focused.lookups++;focused.filters.push(`${column}:${String(value)}`);}return q;},in:()=>q,is:()=>q,order:()=>q,limit:()=>q,range:()=>q,maybeSingle:async()=>({data:{id:'10000000-0000-4000-8000-000000000001',no_pp:'PP-OLD',tanggal:'2026-10-01',total:100,status:'draft',revision:0,payment_order_items:[]},error:null}),then:(resolve:(value:unknown)=>void)=>resolve({data:table==='payment_orders'&&focused.enabled?[]:rows,count:rows.length,error:null})};return q;
 }})}));
 import PurchaseAdvances from '@/app/(app)/pembelian/uang-muka/page';
 import SalesAdvances from '@/app/(app)/penjualan/uang-muka/page';
@@ -37,4 +37,9 @@ it('renders an older selected payment order even when the newest list omits it',
   expect(html).toContain('PP-OLD');
   expect(focused.lookups).toBe(1);
  }finally{focused.enabled=false;}
+});
+it('filters the payment order source before the list cap when opening pending approvals',async()=>{
+ focused.filters=[];
+ await PaymentOrders({searchParams:Promise.resolve({pending:'1'})});
+ expect(focused.filters).toContain('status:draft');
 });

@@ -66,14 +66,16 @@ export default async function PembelianPage({
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
 
-  const [{ data: poData }, { data: supData }, { data: supCatData }] = await Promise.all([
+  const [{ data: poData }, { data: supData }, { data: supCatData }, pendingOrders] = await Promise.all([
     supabase
       .from("purchase_orders")
       .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(qty, qty_terima, harga_beli)")
       .order("created_at", { ascending: false }),
     supabase.from("suppliers").select("id, nama, kontak, telp, npwp, termin_hari, bank_nama, bank_rekening, alamat, category_id, bank_atas_nama, is_active, trashed_at, lifecycle_revision, supplier_categories(nama)").order("nama"),
     supabase.from("supplier_categories").select("id, nama").eq("is_active", true).order("nama"),
+    bolehKelola ? supabase.from("payment_orders").select("id", { count: "exact", head: true }).eq("status", "draft") : Promise.resolve({ count: null, error: null }),
   ]);
+  const pendingOrderCount = !pendingOrders.error && typeof pendingOrders.count === "number" && pendingOrders.count > 0 ? pendingOrders.count : 0;
 
   const pos = (poData ?? []) as unknown as PO[];
   const suppliers = visibleMasters((supData ?? []) as unknown as Supplier[], view, row => row.is_active);
@@ -120,6 +122,7 @@ export default async function PembelianPage({
       <div style={{ marginBottom: 18 }}>
         <TileGrid moduleId="pembelian" />
       </div>
+      {pendingOrderCount > 0 && <p role="status" className="p2ban"><Link href="/pembelian/perintah-bayar?pending=1">{pendingOrderCount} perintah pembayaran menunggu persetujuan</Link></p>}
 
       {/* Tab nav */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
