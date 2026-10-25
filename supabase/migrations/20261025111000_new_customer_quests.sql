@@ -1,11 +1,28 @@
 -- Customer acquisition is a distinct quest target; existing definitions stay intact.
 do $$ begin
  if not (select relrowsecurity from pg_class where oid='public.staff_quest_definitions'::regclass)
+  or (select count(*) from pg_policies where schemaname='public'
+   and tablename='staff_quest_definitions')<>3
   or not exists(select 1 from pg_policies where schemaname='public'
-   and tablename='staff_quest_definitions' and policyname='sqd_all'
-   and permissive='PERMISSIVE' and cmd='ALL' and 'authenticated'=any(roles)
-   and qual='true' and with_check='true')
-  or not has_table_privilege('authenticated','public.staff_quest_definitions','TRUNCATE')
+   and tablename='staff_quest_definitions' and policyname='quest_definitions_read'
+   and cmd='SELECT' and permissive='PERMISSIVE' and roles=array['authenticated']::name[]
+   and qual='true')
+  or not exists(select 1 from pg_policies where schemaname='public'
+   and tablename='staff_quest_definitions' and policyname='quest_definitions_manager_insert'
+   and cmd='INSERT' and permissive='PERMISSIVE' and roles=array['authenticated']::name[]
+   and qual is null
+   and regexp_replace(with_check,'[[:space:]]+',' ','g')=$manager$(EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = auth.uid()) AND p.is_active AND (p.role = ANY (ARRAY['OWNER'::user_role, 'ADMIN'::user_role])))))$manager$)
+  or not exists(select 1 from pg_policies where schemaname='public'
+   and tablename='staff_quest_definitions' and policyname='quest_definitions_manager_update'
+   and cmd='UPDATE' and permissive='PERMISSIVE' and roles=array['authenticated']::name[]
+   and regexp_replace(qual,'[[:space:]]+',' ','g')=$manager$(EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = auth.uid()) AND p.is_active AND (p.role = ANY (ARRAY['OWNER'::user_role, 'ADMIN'::user_role])))))$manager$
+   and regexp_replace(with_check,'[[:space:]]+',' ','g')=$manager$(EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = auth.uid()) AND p.is_active AND (p.role = ANY (ARRAY['OWNER'::user_role, 'ADMIN'::user_role])))))$manager$)
+  or has_table_privilege('authenticated','public.staff_quest_definitions','TRUNCATE')
+  or has_table_privilege('anon','public.staff_quest_definitions','TRUNCATE')
+  or exists(select 1 from pg_class c,
+    aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
+    where c.oid='public.staff_quest_definitions'::regclass
+     and acl.grantee=0 and acl.privilege_type='TRUNCATE')
   or not exists(select 1 from pg_constraint c
    where c.conrelid='public.staff_quest_definitions'::regclass
     and c.conname='staff_quest_definitions_target_kind_check' and c.contype='c'
@@ -23,8 +40,6 @@ do $$ begin
   raise exception 'Q01_POLICY_DRIFT: review quest definition access before release';
  end if;
 end $$;
--- TRUNCATE bypasses RLS, so row-level write guards alone do not protect rewards.
-revoke truncate on table public.staff_quest_definitions from public,anon,authenticated;
 alter table public.staff_quest_definitions
  drop constraint staff_quest_definitions_target_kind_check;
 alter table public.staff_quest_definitions
@@ -35,22 +50,6 @@ alter table public.staff_quest_definitions
  check (target_kind<>'new_customer' or
   (target_value::text not in ('NaN','Infinity','-Infinity')
    and target_value>=1 and target_value=trunc(target_value) and target_ref_id is null));
-
--- The old permissive policy remains for reading. Only active managers may change rewards.
-create policy quest_definitions_manager_insert on public.staff_quest_definitions
- as restrictive for insert to authenticated
- with check (exists(select 1 from public.profiles p where p.id=auth.uid()
-  and p.is_active and p.role in('OWNER','ADMIN')));
-create policy quest_definitions_manager_update on public.staff_quest_definitions
- as restrictive for update to authenticated
- using (exists(select 1 from public.profiles p where p.id=auth.uid()
-  and p.is_active and p.role in('OWNER','ADMIN')))
- with check (exists(select 1 from public.profiles p where p.id=auth.uid()
-  and p.is_active and p.role in('OWNER','ADMIN')));
-create policy quest_definitions_manager_delete on public.staff_quest_definitions
- as restrictive for delete to authenticated
- using (exists(select 1 from public.profiles p where p.id=auth.uid()
-  and p.is_active and p.role in('OWNER','ADMIN')));
 
 -- This key is deliberately global: formatting and +62/0 cannot create a second customer.
 create function public.quest_customer_phone_key(p_phone text) returns text

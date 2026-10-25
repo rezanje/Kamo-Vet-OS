@@ -145,6 +145,10 @@ alter default privileges in schema public grant all on sequences to authenticate
                 "alter table public.staff_quest_definitions add constraint staff_quest_definitions_target_kind_check check (target_kind is not null);",
                 "alter function public.apply_sale_staff_effects(uuid) security invoker;",
                 "grant execute on function public.apply_sale_staff_effects(uuid) to anon;",
+                "alter policy quest_definitions_manager_insert on public.staff_quest_definitions with check (true);",
+                "alter policy quest_definitions_manager_update on public.staff_quest_definitions using (true) with check (true);",
+                "grant truncate on public.staff_quest_definitions to anon;",
+                "grant truncate on public.staff_quest_definitions to public;",
             ):
                 try:
                     sql('begin;\n' + drift + '\n' + migration.read_text() + '\ncommit;')
@@ -152,7 +156,7 @@ alter default privileges in schema public grant all on sequences to authenticate
                     if 'Q01_POLICY_DRIFT' not in str(error):
                         raise RuntimeError('Wrong drift rejection: ' + str(error)) from error
                 else:
-                    raise RuntimeError('Q01 preflight accepted a changed constraint or privilege')
+                    raise RuntimeError('Q01 preflight accepted a changed constraint, policy, or privilege')
         try:
             sql('begin;\n' + migration.read_text() + '\ncommit;')
         except RuntimeError as error:
