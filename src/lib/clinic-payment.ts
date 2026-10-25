@@ -5,17 +5,17 @@ import { unitOptions, type ItemUnit } from "./satuan";
 import { penjualValid } from "./penjual";
 
 export type ClinicPaymentMasterItem = {
-  id: string; code: string; name: string; unit: string; harga: number; units: ItemUnit[];
+  id: string; code: string; name: string; unit: string; harga: number; units: ItemUnit[]; tindakan_kategori: string | null;
 };
-type MasterRow = { id: string; code: string | null; name: string; unit: string | null; sell_price: number; item_type: string };
+type MasterRow = { id: string; code: string | null; name: string; unit: string | null; sell_price: number; item_type: string; tindakan_kategori: string | null };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadClinicPaymentMaster(client: any, branchId: string | null) {
   const rows = await readCompleteList<MasterRow>((from,to)=>client.from("items")
-    .select("id,code,name,unit,sell_price,item_type",{count:"exact"})
+    .select("id,code,name,unit,sell_price,item_type,tindakan_kategori",{count:"exact"})
     .eq("is_active",true).order("name").order("id").range(from,to),"Barang & Jasa untuk pembayaran klinik");
   const details = await loadClinicSkuDetails(client,rows.map(row=>row.id),branchId);
   const master = rows.map(row=>({
-    id:row.id,code:row.code??"",name:row.name,unit:row.unit||"pcs",
+    id:row.id,code:row.code??"",name:row.name,unit:row.unit||"pcs",tindakan_kategori:row.tindakan_kategori,
     harga:hargaCabang(details.prices,row.id,row.unit||"pcs",Number(row.sell_price)),
     units:applyHargaCabang(unitOptions({unit:row.unit,sell_price:Number(row.sell_price)},details.units.get(row.id)??[]),row.id,details.prices),
     jasa:row.item_type==="Jasa",

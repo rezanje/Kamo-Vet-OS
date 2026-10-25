@@ -1,4 +1,4 @@
-import { loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
+import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
@@ -199,6 +199,8 @@ export default async function PembayaranPage({
   // terjual tapi persediaan tidak pernah berkurang.
   const { obat: masterObat, jasa: masterJasa, all: master } = await loadClinicPaymentMaster(supabase, visit.branch_id ?? null);
   const serviceStaff = invoice ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
+  const groomingPolicy = visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
+  const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
   const cashier = invoice ? {name:invoice.cashier_name ?? "Kasir belum tercatat"} : draftUser ? await loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null) : {name:"Akun kasir"};
   // Older databases retain their base-unit-only invoice posting contract.
   const unitCapability = await supabase.rpc("clinic_manual_invoice_units_supported");
@@ -543,6 +545,8 @@ export default async function PembayaranPage({
           demoPolicy={demoPolicy}
           demoStaff={demoStaffResult.data ?? []}
           serviceStaff={serviceStaff}
+          groomingDoctorRequired={groomingDoctorRequired}
+          groomingApplies={groomingPolicy?.applies ?? false}
           cashierName={cashier.name}
           catatanResep={mr?.catatan_resep ?? null}
         />

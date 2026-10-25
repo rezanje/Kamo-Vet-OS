@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { validasiKoordinat } from "@/lib/lokasi";
+import { isGroomingOutlet } from "@/lib/grooming-requirements";
 
 const BACK = "/pengaturan/cabang";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
@@ -34,4 +35,24 @@ export async function simpanLokasiCabang(formData: FormData) {
   if (error) gagal(error.message);
 
   redirect(`${BACK}?success=1`);
+}
+
+export async function simpanAturanGroomingCabang(formData: FormData) {
+  const supabase = await assertRole(BACK, "aturan grooming cabang", ["OWNER", "ADMIN"]);
+  const branchId = String(formData.get("id") ?? "").trim();
+  const choice = String(formData.get("doctor_required") ?? "");
+  if (!branchId || !["1", "0"].includes(choice)) gagal("Aturan grooming cabang tidak valid");
+  const { data: branch, error: branchError } = await supabase.from("branches").select("type").eq("id", branchId).maybeSingle();
+  if (branchError || !branch || !isGroomingOutlet(branch.type)) gagal("Cabang ini tidak melayani Grooming di outlet");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return gagal("Sesi akun tidak tersedia");
+  const { data: existing, error: readError } = await supabase.from("branch_grooming_rules")
+    .select("branch_id").eq("branch_id", branchId).maybeSingle();
+  if (readError) gagal("Aturan grooming belum dapat diperiksa. Coba muat ulang.");
+  const next = { doctor_required: choice === "1", updated_by: user.id, updated_at: new Date().toISOString() };
+  const { error } = existing
+    ? await supabase.from("branch_grooming_rules").update(next).eq("branch_id", branchId)
+    : await supabase.from("branch_grooming_rules").insert({ branch_id: branchId, ...next });
+  if (error) gagal("Aturan grooming belum dapat disimpan. Coba muat ulang.");
+  redirect(`${BACK}?success=grooming`);
 }

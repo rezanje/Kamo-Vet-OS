@@ -14,6 +14,8 @@ import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } from "@/lib/kasir-catalog";
+import { loadBranchGroomingPolicy } from "@/lib/service-performers-server";
+import { isGroomingService } from "@/lib/grooming-requirements";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
@@ -63,6 +65,8 @@ export default async function KasirPage({
       .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value")
       .eq("is_active", true),
   ]);
+  const groomingPolicy = itemsRaw.some(item => isGroomingService(item.item_type, item.tindakan_kategori))
+    ? await loadBranchGroomingPolicy(supabase, shift.branch_id) : { applies: false, doctorRequired: false };
 
   // Addendum: promo yang aktif hari ini untuk cabang shift (branch + tanggal).
   const wibToday = hariIniWIB();
@@ -174,6 +178,7 @@ export default async function KasirPage({
     return {
       id: i.id, code: i.code, name: i.name,
       itemType: i.item_type,
+      tindakanKategori: i.tindakan_kategori,
       harga: hargaCabang(harga, i.id, i.unit, Number(i.sell_price)),
       kategori: one(i.item_categories)?.name ?? "Lainnya",
       stok: i.item_type === "Grup" ? groupStock : stockMap[i.id] ?? 0,
@@ -232,6 +237,8 @@ export default async function KasirPage({
 
   const cashier = (
     <KasirClient
+        groomingDoctorRequired={groomingPolicy.doctorRequired}
+        groomingApplies={groomingPolicy.applies}
       key={`${shift.id}:${replacement?.id ?? ""}`}
       replacementDraft={replacementDraft}
       replacementId={replacement?.id}

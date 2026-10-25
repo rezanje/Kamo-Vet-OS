@@ -1,6 +1,6 @@
 vi.mock("@/lib/service-performers-server",async(importOriginal)=>{
   const actual=await importOriginal<typeof import("../service-performers-server")>();
-  return {...actual,loadServiceStaff:async(...args:Parameters<typeof actual.loadServiceStaff>)=>fixture.realStaff?actual.loadServiceStaff(...args):[]};
+  return {...actual,loadServiceStaff:async(...args:Parameters<typeof actual.loadServiceStaff>)=>fixture.realStaff?actual.loadServiceStaff(...args):[],loadBranchGroomingPolicy:async()=>({applies:true,doctorRequired:true})};
 });
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";

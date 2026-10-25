@@ -41,7 +41,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [] }: {
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true }: {
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
@@ -53,6 +53,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   bolehManual: boolean;
   doctors?:ClinicalStaff[];paramedics?:ClinicalStaff[];
   serviceStaff?: ServiceStaff[];
+  groomingDoctorRequired?: boolean;
+  groomingApplies?: boolean;
 }) {
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
   const [tab, setTab] = useState<Tab>("Obat");
@@ -449,6 +451,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                               ) : <span>{r.satuan}</span>}
                             </div>
                             {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                              grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
+                              doctorRequired={groomingDoctorRequired}
                               onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>

@@ -1,5 +1,5 @@
 import {createHash} from "node:crypto";
-vi.mock("@/lib/service-performers-server",()=>({loadServiceStaff:async()=>[],loggedInCashier:async()=>({employeeId:null,name:"Kasir Login"})}));
+vi.mock("@/lib/service-performers-server",()=>({loadServiceStaff:async()=>[],loadBranchGroomingPolicy:async()=>({applies:true,doctorRequired:true}),loggedInCashier:async()=>({employeeId:null,name:"Kasir Login"})}));
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({mode:'draft',fail:'',inpatientOpen:false,visitStatus:'Pembayaran',calls:[] as unknown[][]}));

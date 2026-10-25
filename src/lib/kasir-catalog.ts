@@ -5,6 +5,7 @@ import type { AturanDiskon } from "./harga-golongan";
 type Rel<T> = T | T[] | null;
 export type KasirCatalogItem = {
   id: string; code: string; name: string; unit: string; item_type: ItemType;
+  tindakan_kategori: string | null;
   sell_price: number; buy_price: number; target_species: string;
   min_sell_qty: number; default_discount: number; substitute_item_id: string | null;
   category_id: string | null;
@@ -14,7 +15,7 @@ export type KasirCatalogItem = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadKasirItems(client: any): Promise<KasirCatalogItem[]> {
   return readCompleteList<KasirCatalogItem>((from, to) => client.from("items")
-    .select("id,code,name,unit,item_type,sell_price,buy_price,target_species,min_sell_qty,default_discount,substitute_item_id,category_id,item_categories(name,parent_id)", { count: "exact" })
+    .select("id,code,name,unit,item_type,tindakan_kategori,sell_price,buy_price,target_species,min_sell_qty,default_discount,substitute_item_id,category_id,item_categories(name,parent_id)", { count: "exact" })
     .eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang kasir", { maxRows: null });
 }
 

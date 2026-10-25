@@ -1,6 +1,6 @@
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
-import { loadServiceStaff } from "@/lib/service-performers-server";
+import { loadBranchGroomingPolicy, loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
@@ -232,6 +232,8 @@ export default async function RekamMedisPage({
     : "—";
   const tglPeriksa = new Date(visit.created_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
+  const groomingPolicy = !recorded && visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
+  const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -512,6 +514,8 @@ export default async function RekamMedisPage({
           draftUserId={user?.id ?? ""}
           petId={visit.pet_id}
           serviceStaff={serviceStaff}
+          groomingDoctorRequired={groomingDoctorRequired}
+          groomingApplies={groomingPolicy?.applies ?? false}
           dokterOpsi={dokterOpsi}
           currentWeight={pet?.weight ?? null}
           items={obatItems}

@@ -69,13 +69,14 @@ export async function checkoutSale(formData: FormData) {
   const [unitOpts, hargaMap, catalogue] = await Promise.all([
     loadUnitOptions(supabase, cartIds),
     loadHargaCabang(supabase, branchId, cartIds),
-    cartIds.length ? readCompleteList<{ id: string; item_type: string }>((from, to) => supabase.from("items")
-      .select("id, item_type", { count: "exact" }).in("id", [...new Set(cartIds)]).order("id").range(from, to), "Jenis barang POS", { maxRows: null }) : [],
+    cartIds.length ? readCompleteList<{ id: string; item_type: string; tindakan_kategori: string | null }>((from, to) => supabase.from("items")
+      .select("id, item_type, tindakan_kategori", { count: "exact" }).in("id", [...new Set(cartIds)]).order("id").range(from, to), "Jenis barang POS", { maxRows: null }) : [],
   ]);
-  const itemTypes = new Map(catalogue.map(item => [item.id, item.item_type]));
+  const itemTypes = new Map(catalogue.map(item => [item.id, item]));
   let performerRows: CartLine[];
   try {
-    const typedRows = rawRows.map(line => ({ ...line, item_type: line.item_id ? itemTypes.get(line.item_id) : undefined }));
+    const typedRows = rawRows.map(line => ({ ...line, item_type: line.item_id ? itemTypes.get(line.item_id)?.item_type : undefined,
+      tindakan_kategori: line.item_id ? itemTypes.get(line.item_id)?.tindakan_kategori : null }));
     const normalized = await validateServicePerformerRows(supabase, branchId, typedRows);
     performerRows = typedRows.map((line, index) => ({ ...line, service_performers: normalized[index] }));
   } catch (error) {

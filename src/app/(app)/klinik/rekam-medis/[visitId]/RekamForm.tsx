@@ -54,11 +54,13 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], correction }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, correction }: {
   correction?: ClinicalCorrection;
   visitId: string; petId: string; requestKey: string; draftUserId: string;
   service?: string | null;
   serviceStaff?: ServiceStaff[];
+  groomingDoctorRequired?: boolean;
+  groomingApplies?: boolean;
   patient: { name: string; species: string; breed: string | null; noRM: string; tglPeriksa: string; dokter: string; dokterId: string | null; providerId: string | null; owner: string; phone: string; address: string; tier: string; keluhan: string | null; photo: string | null };
   items: ItemLite[];
   racikanItems: ItemLite[];
@@ -367,6 +369,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                               ) : <span>{r.satuan}</span>}
                             </div>
                             {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                              grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
+                              doctorRequired={groomingDoctorRequired}
                               onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
