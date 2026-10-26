@@ -6,10 +6,14 @@ const fixture = vi.hoisted(() => ({
   usage: null as string | null, steps: "habiskan, sebelum makan", status: "pending", official: false,
   saleBinding: null as null | { recipe_id: string; visit_id: string; sale_item_id: string; sale_name: string },
   saleBindingError: false, materialId: null as string | null,
+  productionTrace: [] as Array<{ ingredient_id: string; material_item_id: string; production_order_id: string; no_produksi: string; restored: boolean }>,
+  productionTraceError: false,
 }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); }, useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/app/(app)/klinik/racik/actions", () => ({ advanceRecipeStatus: vi.fn(), voidRecipe: vi.fn(), updateRacikPetunjuk: vi.fn(), updateRacikPemakaian: vi.fn() }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: (table: string) => {
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
+  rpc: async () => ({ data: fixture.productionTrace, error: fixture.productionTraceError ? { message: "denied" } : null }),
+  from: (table: string) => {
   const record = () => ({ id: "recipe", recipe_name: "Fictional compound", dosage_instruction: fixture.usage,
     compounding_steps: fixture.steps, total_volume: "7", dosage_form: "kapsul", status: fixture.status,
     compound_official_usage: fixture.official ? [{ recipe_id: "recipe" }] : [], compounding_ingredients: [{ ingredient_name: "Fictional material", item_id: fixture.materialId, quantity: 2, unit: "ml" }],
@@ -25,7 +29,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: (ta
 } }) }));
 import Page from "@/app/(app)/klinik/racik/[recipeId]/page";
 
-beforeEach(() => { fixture.usage = null; fixture.steps = "habiskan, sebelum makan"; fixture.status = "pending"; fixture.official = false; fixture.saleBinding = null; fixture.saleBindingError = false; fixture.materialId = null; });
+beforeEach(() => { fixture.usage = null; fixture.steps = "habiskan, sebelum makan"; fixture.status = "pending"; fixture.official = false; fixture.saleBinding = null; fixture.saleBindingError = false; fixture.materialId = null; fixture.productionTrace = []; fixture.productionTraceError = false; });
 async function render() {
   document.body.innerHTML = renderToStaticMarkup(await Page({ params: Promise.resolve({ recipeId: "recipe" }), searchParams: Promise.resolve({}) }));
   return document;
@@ -87,4 +91,18 @@ it("does not link a mismatched or unreadable selling parent", async () => {
   fixture.saleBindingError = true;
   doc = await render();
   expect(doc.querySelector('[aria-label="Jejak sumber racikan"]')?.textContent).toContain("belum dapat diperiksa");
+});
+it("opens an exact produced material source and labels restored consumption", async () => {
+  fixture.productionTrace = [{ ingredient_id: "ingredient", material_item_id: "material", production_order_id: "job", no_produksi: "PRD.I09.00001", restored: true }];
+  const doc = await render();
+  const section = doc.querySelector('[aria-label="Asal produksi bahan racikan"]');
+  expect(section?.querySelector('a[href="/pos/produksi?nomor=PRD.I09.00001#selected-production"]')).not.toBeNull();
+  expect(section?.textContent).toContain("pemakaian dibatalkan dan stok dipulihkan");
+  expect(section?.textContent).toContain("tidak diberi saldo stok virtual");
+});
+it("does not render production links when the private source reader denies access", async () => {
+  fixture.productionTraceError = true;
+  const doc = await render();
+  expect(doc.querySelector('[aria-label="Asal produksi bahan racikan"] a')).toBeNull();
+  expect(doc.querySelector('[aria-label="Asal produksi bahan racikan"] [role="alert"]')).not.toBeNull();
 });

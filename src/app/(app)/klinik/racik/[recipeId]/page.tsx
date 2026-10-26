@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { advanceRecipeStatus, voidRecipe, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readCompleteList } from "@/lib/checked-list";
+import { readCompoundProductionTrace } from "@/lib/compound-production-trace";
+import { hrefPerintahProduksi } from "@/lib/tautan-dokumen";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -77,6 +79,9 @@ export default async function RacikDetailPage({
     const invoice = one(line.invoices);
     return invoice && invoice.id === line.invoice_id && invoice.visit_id === visit?.id ? [[invoice.id, invoice] as const] : [];
   })).values());
+  const productionTrace = await readCompoundProductionTrace(supabase, recipeId)
+    .then(rows => ({ rows, error: false }))
+    .catch(() => ({ rows: [], error: true }));
 
   // Semua racikan dalam resep yang sama (referensi: daftar bisa >1 baris).
   const { data: siblings } = mr
@@ -123,6 +128,16 @@ export default async function RacikDetailPage({
           : <p>{saleBindingError ? "Tautan induk belum dapat diperiksa. Coba muat ulang." : "Induk penjualan tersimpan belum tersedia untuk racikan ini."}</p>}
         {visit && mr && <p>Dokumen asal: <Link href={`/klinik/rekam-medis/${encodeURIComponent(visit.id)}`}>Kunjungan / rekam medis</Link></p>}
       </div>
+      <section className="crm-sec" aria-label="Asal produksi bahan racikan" style={{ marginBottom: 14 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Asal produksi bahan racikan</h2>
+        <p style={{ fontSize: 11, color: "var(--tm)" }}>Tautan ini hanya muncul bila lapisan FIFO bahan yang benar-benar dipakai berasal dari pekerjaan produksi tersimpan. Induk racikan tidak diberi saldo stok virtual.</p>
+        {productionTrace.error ? <p role="alert">Bukti asal produksi belum dapat diperiksa. Coba muat ulang.</p>
+          : productionTrace.rows.length === 0 ? <p>Tidak ada bahan terpakai yang terlacak ke pekerjaan produksi tersimpan.</p>
+          : <ul>{productionTrace.rows.map((entry, index) => <li key={`${entry.ingredient_id}-${entry.production_order_id}-${index}`}>
+              <Link href={hrefPerintahProduksi(entry.no_produksi)}>{entry.no_produksi}</Link>
+              {` · bahan ${entry.material_item_id}${entry.restored ? " · pemakaian dibatalkan dan stok dipulihkan" : " · bahan terpakai"}`}
+            </li>)}</ul>}
+      </section>
 
       {/* Judul besar (referensi) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
