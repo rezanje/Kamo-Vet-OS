@@ -168,3 +168,4 @@ it.each(['exam','inpatient'])('K02 %s procedure rows record optional BMHP from s
   expect(row.bmhp).toEqual([{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }]);
   expect(host.querySelector('input[aria-label="Tambah BMHP Makanan kucing"]')).toBeNull();
 });
+
