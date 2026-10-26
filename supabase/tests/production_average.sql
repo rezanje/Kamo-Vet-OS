@@ -41,6 +41,42 @@ reset role;
 select pg_temp.ok((select count(*)=2 from production_atomic_postings),'two and only two stage receipts');
 rollback;
 
+-- Positive stock with an unknown moving-average cost must not be priced from
+-- the master item price by a production start.
+begin;
+select stock_in_fifo(md5('i08-avg-a')::uuid,md5('i08-avg-material')::uuid,2,2.5,'fixture','I08AVG.NULL.M',current_date-1,null);
+update inventory_costing_settings set method='moving_average',activated_at=now() where id;
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-avg-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select pg_temp.reject($q$select post_production_atomic('start','avg-null-material',jsonb_build_object('recipe_id',md5('i08-avg-recipe')::uuid,'warehouse_id',md5('i08-avg-a')::uuid,'batch',1,'tanggal',current_date-1))$q$,'Valuasi average bahan tidak sesuai WIP');
+reset role;
+select pg_temp.ok(not exists(select 1 from production_orders),'unknown source cost leaves no order');
+select pg_temp.ok(not exists(select 1 from inventory_cost_events where source='produksi'),'unknown source cost leaves no event');
+select pg_temp.ok(not exists(select 1 from stock_moves where source='produksi'),'unknown source cost leaves no movement');
+rollback;
+
+-- A corrupted NULL output event cannot be hidden by SUM/COALESCE when the
+-- numerical total is otherwise zero. The finish rolls back as one unit.
+begin;
+select stock_in_fifo(md5('i08-avg-a')::uuid,md5('i08-avg-material')::uuid,2,0,'fixture','I08AVG.NULL.EVENT',(date_trunc('month',current_date)-interval '1 month')::date,null);
+update stock set average_cost=0 where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-material')::uuid;
+update inventory_costing_settings set method='moving_average',activated_at=date_trunc('month',current_date)-interval '1 month' where id;
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-avg-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+create temp table i08_avg_null_event as select post_production_atomic('start','avg-null-output-start',jsonb_build_object('recipe_id',md5('i08-avg-recipe')::uuid,'warehouse_id',md5('i08-avg-a')::uuid,'batch',1,'tanggal',(date_trunc('month',current_date)-interval '1 month')::date)) receipt;
+reset role;
+create function pg_temp.null_output_event() returns trigger language plpgsql as $$begin if new.source='produksi' and new.qty_delta>0 then new.value_after:=null;end if;return new;end$$;
+create trigger fictional_i08_null_output before insert on inventory_cost_events for each row execute function pg_temp.null_output_event();
+set local role authenticated;
+select pg_temp.reject(format('select post_production_atomic(''finish'',''avg-null-output-finish'',%L::jsonb)',jsonb_build_object('id',(select receipt->>'order_id' from i08_avg_null_event),'qty_jadi',1,'tanggal_selesai',(date_trunc('month',current_date)-interval '1 month')::date)),'Valuasi average barang jadi tidak sesuai jurnal persediaan');
+reset role;
+select pg_temp.ok((select status='berjalan' from production_orders where id=(select (receipt->>'order_id')::uuid from i08_avg_null_event)),'NULL event keeps order running');
+select pg_temp.ok(not exists(select 1 from stock_moves where source='produksi' and qty>0),'NULL event rolls back output');
+select pg_temp.ok(not exists(select 1 from production_atomic_postings where kind='finish'),'NULL event leaves no finish proof');
+rollback;
+
 begin;
 insert into item_units(item_id,unit,factor,sell_price,buy_price) values(md5('i08-avg-material')::uuid,'BOX',2,10,5);
 select stock_in_fifo(md5('i08-avg-a')::uuid,md5('i08-avg-material')::uuid,2,2.5,'fixture','I08AVG.A1',current_date-1,null);
@@ -156,5 +192,32 @@ do $$declare a jsonb;begin
  perform post_production_atomic('finish','avg-negative-finish',jsonb_build_object('id',a->>'order_id','qty_jadi',3,'tanggal_selesai',current_date));
  perform pg_temp.ok((select qty=1 from stock where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-output')::uuid),'average output covers deficit');
  perform pg_temp.ok((select count(*)>0 from journal_entries where source='inventory-variance' and source_ref in(select id::text from stock_moves where source='produksi' and source_ref=a->>'no_produksi' and qty>0)),'existing variance journal covers deficit');
+end$$;
+rollback;
+
+-- Zero is a known cost, not an unknown cost. The receipt, event, and closing
+-- snapshot must all keep zero instead of silently recording NULL value.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-avg-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select activate_moving_average();
+reset role;
+-- Shift only the fictional activation timestamp to exercise a completed month.
+update inventory_costing_settings set activated_at=date_trunc('month',current_date)-interval '1 month' where id;
+select stock_in_fifo(md5('i08-avg-a')::uuid,md5('i08-avg-material')::uuid,2,0,'fixture','I08AVG.ZERO.M',(date_trunc('month',current_date)-interval '1 month')::date,null);
+select pg_temp.ok((select qty=2 and average_cost=0 from stock where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-material')::uuid),'zero-cost receipt stores known zero average');
+set local role authenticated;
+do $$declare a jsonb;b jsonb;ref text;begin
+ a:=post_production_atomic('start','avg-zero-start',jsonb_build_object('recipe_id',md5('i08-avg-recipe')::uuid,'warehouse_id',md5('i08-avg-a')::uuid,'batch',1,'tanggal',(date_trunc('month',current_date)-interval '1 month')::date));
+ ref:=a->>'no_produksi';
+ perform pg_temp.ok((a->>'value')::numeric=0,'zero-cost issue is known zero');
+ b:=post_production_atomic('finish','avg-zero-finish',jsonb_build_object('id',a->>'order_id','qty_jadi',1,'tanggal_selesai',(date_trunc('month',current_date)-interval '1 month')::date));
+ perform pg_temp.ok((b->>'value')::numeric=0,'zero-cost output is known zero');
+ perform pg_temp.ok((select qty=1 and average_cost=0 from stock where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-output')::uuid),'positive output has known zero average');
+ perform pg_temp.ok((select count(*)=1 and bool_and(value_delta=0 and value_after=0 and average_after=0) from inventory_cost_events where source='produksi' and source_ref=ref and item_id=md5('i08-avg-output')::uuid and qty_delta>0),'output event has known zero values');
+ perform pg_temp.ok((select count(*)=0 from journal_entries where source='produksi' and source_ref=ref),'zero value needs no invented journal amount');
+ perform pg_temp.ok((close_inventory_month((date_trunc('month',current_date)-interval '1 month')::date)->>'already_closed')::boolean=false,'zero-cost month closes');
+ perform pg_temp.ok((select qty=1 and average_cost=0 and value=0 from inventory_month_values where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-output')::uuid),'closing snapshot preserves known zero');
 end$$;
 rollback;
