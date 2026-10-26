@@ -39,7 +39,7 @@ export default async function VoucherPage({
   const [{ data }, { data: custData }, { data: golData }] = await Promise.all([
     supabase
     .from("vouchers")
-    .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id, created_at, customers(name), customer_categories(nama)")
+    .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, max_uses, min_belanja, boleh_gabung_promo, customer_id, category_id, created_at, customers(name), customer_categories(nama)")
     .order("created_at", { ascending: false }),
     supabase.from("customers").select("id, name").order("name").limit(500),
     supabase.from("customer_categories").select("id, nama").eq("is_active", true).order("nama"),
@@ -85,6 +85,9 @@ export default async function VoucherPage({
           <i className="ti ti-circle-check" /> Voucher tersimpan.
         </div>
       )}
+      <div className="p2ban">
+        Kode voucher di halaman ini memberi potongan pada total transaksi. Promo untuk barang tertentu diatur terpisah pada tab Promo; mengisi kode di sini tidak menghubungkannya secara otomatis ke promo barang.
+      </div>
       {!bolehKelola && (
         <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN yang bisa mengatur voucher.</div>
       )}
@@ -142,6 +145,14 @@ export default async function VoucherPage({
                 defaultValue={editing?.min_belanja || ""} placeholder="0 = bebas" />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Dihitung setelah diskon per barang.
+              </div>
+            </div>
+            <div>
+              <label className="flab">Maks. dokumen memakai kode</label>
+              <NumberInput className="fi" name="max_uses" type="number" min={1} step={1}
+                defaultValue={editing?.max_uses ?? ""} placeholder="kosong = tanpa batas" />
+              <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+                Satu penjualan atau faktur klinik yang menyimpan kode dihitung satu kali, termasuk yang kemudian dibatalkan.
               </div>
             </div>
             {/* Sasaran voucher (permintaan Pak Aldi, meeting 14 Agustus): voucher

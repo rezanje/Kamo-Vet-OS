@@ -39,10 +39,10 @@ export default async function PromoPage({
   const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData }] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
-        .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
+        .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, campaign_code, created_at, branch_id, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
         .gte("created_at", mulai).lte("created_at", akhir)),
       completeReportQuery(supabase.from("invoices")
-        .select("id, total, subtotal, discount, voucher_code, created_at, visits(branch_id, branches(name))", { count: "exact" })
+        .select("id, total, subtotal, discount, voucher_code, campaign_code, created_at, visits(branch_id, branches(name))", { count: "exact" })
         .is("voided_at", null).gte("created_at", mulai).lte("created_at", akhir)),
       completeReportQuery(supabase.from("vouchers")
         .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id", { count: "exact" })),
@@ -61,11 +61,11 @@ export default async function PromoPage({
   };
   type Sale = SaleCompletion & {
     id: string; total: number; subtotal: number; discount: number; diskon_kategori: number | null;
-    poin_digunakan: number | null; voucher_code: string | null; created_at: string;
+    poin_digunakan: number | null; voucher_code: string | null; campaign_code: string | null; created_at: string;
     branch_id: string | null; branches: Rel<{ name: string }>; sale_items: SaleItem[] | null;
   };
   type Inv = {
-    total: number; subtotal: number; discount: number; voucher_code: string | null; created_at: string;
+    total: number; subtotal: number; discount: number; voucher_code: string | null; campaign_code: string | null; created_at: string;
     visits: Rel<{ branch_id: string | null; branches: Rel<{ name: string }> }>;
   };
 
@@ -168,6 +168,21 @@ export default async function PromoPage({
   for (const inv of invoices) {
     catatVoucher(inv.voucher_code, Number(inv.total) || 0, one(one(inv.visits)?.branches ?? null)?.name ?? "—");
   }
+
+  // Voucher counts remain keyed by the canonical source. This separate view
+  // attributes each redemption to the alias actually submitted at checkout.
+  const kampanyePakai = new Map<string, { sumber: string; trx: number; nilai: number; cabang: Set<string> }>();
+  const catatKampanye = (alias: string | null, sumber: string | null, nilai: number, cabang: string) => {
+    if (!alias || !sumber) return;
+    const cur = kampanyePakai.get(alias) ?? { sumber, trx: 0, nilai: 0, cabang: new Set<string>() };
+    cur.trx++;
+    cur.nilai += nilai;
+    cur.cabang.add(cabang);
+    kampanyePakai.set(alias, cur);
+  };
+  for (const s of sales) catatKampanye(s.campaign_code, s.voucher_code, Number(s.total) || 0, one(s.branches)?.name ?? "—");
+  for (const inv of invoices) catatKampanye(inv.campaign_code, inv.voucher_code, Number(inv.total) || 0, one(one(inv.visits)?.branches ?? null)?.name ?? "—");
+  const kampanyeRows = [...kampanyePakai].sort((a,b) => b[1].trx-a[1].trx || a[0].localeCompare(b[0]));
 
   const vouchers = ((voucherData ?? []) as unknown as VoucherRow[]).map((v) => {
     const pakai = pakaiVoucher.get(v.code);
@@ -292,6 +307,16 @@ export default async function PromoPage({
           Rupiah potongan voucher belum disimpan terpisah — di kolom diskon bawah, potongannya
           menyatu dengan &quot;diskon transaksi&quot;. Yang bisa dipastikan di sini jumlah pemakaian
           dan nilai transaksi yang memakainya.
+        </div>
+        <h3 style={{ fontSize: 12, marginTop: 16 }}>Kode kampanye yang diredeem</h3>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 620 }}>
+            <thead><tr><th>Kode kampanye</th><th>Voucher sumber</th><th style={{ textAlign: "center" }}>Ditukar</th><th style={{ textAlign: "right" }}>Nilai transaksi</th><th>Cabang</th></tr></thead>
+            <tbody>
+              {kampanyeRows.map(([kode, row]) => <tr key={kode}><td>{kode}</td><td>{row.sumber}</td><td style={{ textAlign: "center" }}>{row.trx}x</td><td style={{ textAlign: "right" }}>{rp(row.nilai)}</td><td>{[...row.cabang].join(", ")}</td></tr>)}
+              {kampanyeRows.length === 0 && <TabelKosong kolom={5} pesan="Belum ada kode kampanye yang diredeem pada periode ini." />}
+            </tbody>
+          </table>
         </div>
       </div>
 

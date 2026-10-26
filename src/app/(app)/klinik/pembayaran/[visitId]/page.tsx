@@ -85,7 +85,7 @@ export default async function PembayaranPage({
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   const { data: invoice, error: invoiceError } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id, cashier_name, service_pricing_version")
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id, cashier_name, service_pricing_version, campaign_code")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (invoiceError) throw unverifiedBilling();
   const [demoPolicy, demoStaffResult, demoSnapshotResult] = await Promise.all([
@@ -505,6 +505,7 @@ export default async function PembayaranPage({
             <div style={{ marginTop: 10, marginLeft: "auto", width: 220 }}>
               <SumRow label="Subtotal" value={rp(invoice.subtotal)} />
               {invoice.discount > 0 && <SumRow label="Diskon" value={`- ${rp(invoice.discount)}`} />}
+              {invoice.campaign_code && <SumRow label="Kode kampanye" value={invoice.campaign_code} />}
               <SumRow label="PPN 11%" value={rp(invoice.tax)} />
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
                 <span style={{ fontWeight: 600 }}>Total</span>

@@ -23,7 +23,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
 
   const { data: invoice } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at, cashier_name")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at, cashier_name, campaign_code")
     .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
   if (!invoice) notFound();
 
@@ -81,6 +81,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Hr />
         <Row k="Subtotal" v={rp(invoice.subtotal)} />
         {invoice.discount > 0 && <Row k="Diskon" v={`-${rp(invoice.discount)}`} />}
+        {invoice.campaign_code && <Row k="Kode kampanye" v={invoice.campaign_code} />}
         <Row k="PPN 11%" v={rp(invoice.tax)} />
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12, marginTop: 2 }}>
           <span>TOTAL</span><span>{rp(invoice.total)}</span>

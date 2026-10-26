@@ -25,7 +25,7 @@ export function parseCampaignBinding(form: FormData): CampaignBindingInput {
 }
 
 export function campaignBindingReadiness(mode: CampaignCalculationMode): string {
-  return mode
-    ? "Relasi tersimpan untuk peninjauan. Kode belum dapat diredeem di kasir sampai alur penjualan disetujui dan diaktifkan."
-    : "Mode perhitungan belum dipilih. Kode tidak dapat diredeem di kasir.";
+  if (mode === "existing_voucher") return "Alias voucher transaksi aktif untuk kasir petshop dan pembayaran satu kunjungan klinik. Pembayaran rombongan belum mendukung alias.";
+  if (mode === "existing_promo") return "Relasi promo tersimpan untuk peninjauan. Kode belum dapat diredeem di kasir.";
+  return "Mode perhitungan belum dipilih. Kode tidak dapat diredeem di kasir.";
 }

@@ -10,11 +10,14 @@ export type VoucherRow = {
   valid_from: string | null;   // 'YYYY-MM-DD', null = tanpa batas awal
   valid_until: string | null;  // 'YYYY-MM-DD', null = tanpa batas akhir
   max_potongan: number | null; // plafon rupiah; null = tanpa batas
+  max_uses?: number | null;      // batas dokumen berkode; null = tanpa batas
   min_belanja: number;         // 0 = bebas
   boleh_gabung_promo: boolean;
   /** Sasaran voucher (meeting 14 Agustus): null = terbuka untuk siapa pun. */
   customer_id?: string | null;
   category_id?: string | null;
+  /** Preview-only marker: group clinic checkout cannot redeem a campaign alias. */
+  campaign_alias?: boolean;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -121,6 +124,7 @@ export function pesanVoucherDitolak(
 export function ringkasSyarat(v: VoucherRow, namaSasaran?: string | null): string {
   const bagian: string[] = [];
   if (v.customer_id || v.category_id) bagian.push(namaSasaran ? `khusus ${namaSasaran}` : "khusus sasaran tertentu");
+  if (v.max_uses) bagian.push(`maks ${v.max_uses} dokumen berkode`);
   if (v.max_potongan) bagian.push(`maks ${rp(v.max_potongan)}`);
   if (v.min_belanja > 0) bagian.push(`min belanja ${rp(v.min_belanja)}`);
   if (!v.boleh_gabung_promo) bagian.push("tidak digabung promo");

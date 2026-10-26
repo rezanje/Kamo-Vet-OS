@@ -25,9 +25,9 @@ export default async function CampaignBindingPage({searchParams}:{searchParams:P
   return <div>
     <Link className="back-btn" href="/crm/promo">← Promo & Voucher</Link>
     <h1 style={{fontSize:20,margin:"16px 0 8px"}}>Relasi kode kampanye</h1>
-    <div className="p2ban">Konfigurasi di halaman ini belum mengaktifkan kode pada kasir. Pilih sumber dan mode perhitungan yang sudah ada untuk ditinjau. Tanpa mode, kode tetap tidak dapat diredeem. Batas pemakaian voucher transaksi dikelola di halaman Voucher.</div>
+    <div className="p2ban">Kode dengan sumber voucher transaksi dan mode perhitungan existing voucher dapat digunakan di kasir petshop dan pembayaran satu kunjungan klinik. Alias promo barang dan kode tanpa mode belum dapat digunakan. Batas pemakaian voucher transaksi dikelola di halaman Voucher.</div>
     {params.error&&<div role="alert" className="p2ban">{params.error}</div>}
-    {params.saved&&<div className="p2ban">Relasi tersimpan sebagai konfigurasi; kode belum dapat diredeem.</div>}
+    {params.saved&&<div className="p2ban">Relasi tersimpan. Status penggunaan setiap kode ditampilkan di tabel.</div>}
     <form action={saveCampaignBinding} className="crm-sec" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
       <input type="hidden" name="id" value={editing?.id??""}/>
       <label>Kode kampanye baru<input className="fi" name="code" required maxLength={24} defaultValue={editing?.code??""} placeholder="MISALPROMO10"/></label>

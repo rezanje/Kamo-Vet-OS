@@ -15,6 +15,8 @@ import { hitungPromoKeranjang, loadPromoAktif } from "./promo-hitung";
 import { diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang } from "./harga-golongan";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, voucherBerlaku, type VoucherRow } from "./voucher";
 import { hariIniWIB } from "./tanggal";
+import { campaignVoucherPreview } from "./campaign-voucher-runtime";
+import { readCompleteList } from "./checked-list";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -267,11 +269,11 @@ export async function bekalPotonganKlinik(
   itemIds: string[],
 ): Promise<BekalPotongan> {
   const hariIni = hariIniWIB();
-  const [promos, { data: vouchers }, cust] = await Promise.all([
+  const [promos, vouchers, cust] = await Promise.all([
     branchId ? loadPromoAktif(supabase, branchId) : Promise.resolve([]),
-    supabase.from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
-      .eq("is_active", true),
+    readCompleteList<VoucherRow & { id: string }>((from,to)=>supabase.from("vouchers")
+      .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id",{count:"exact"})
+      .eq("is_active", true).order("id").range(from,to),"Voucher klinik aktif",{maxRows:null}),
     customerId
       ? supabase.from("customers")
           .select("points, category_id, customer_categories(diskon_persen, rupiah_per_poin, is_active)")
@@ -293,7 +295,7 @@ export async function bekalPotonganKlinik(
 
   return {
     promos,
-    vouchers: ((vouchers ?? []) as VoucherRow[]).filter((v) => voucherBerlaku(v, hariIni)),
+    vouchers: await campaignVoucherPreview(supabase, vouchers.filter((v) => voucherBerlaku(v, hariIni))),
     aturanDiskon,
     // Map tidak bisa dikirim ke komponen klien — layar merakit ulang Map-nya.
     infoBarang: Object.fromEntries(infoMap),
