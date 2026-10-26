@@ -27,11 +27,12 @@ const WARNA_STATUS: Record<string, string> = {
 export default async function PromoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; promo_id?: string }>;
 }) {
   const sp = await searchParams;
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
+  const promoId = (sp.promo_id ?? "").slice(0, 80);
   const mulai = `${dari}T00:00:00+07:00`;
   const akhir = `${sampai}T23:59:59+07:00`;
 
@@ -198,6 +199,10 @@ export default async function PromoPage({
     id, nama: namaPromo.get(id)?.name ?? "(promo terhapus)",
     jenis: namaPromo.get(id)?.promo_type ?? "—", ...v,
   })).sort((a, b) => b.potongan - a.potongan || b.baris - a.baris);
+  const promoRowsTerpilih = promoId ? promoRows.filter(row => row.id === promoId) : promoRows;
+  const promoOptions = [...namaPromo].map(([id, promo]) => ({ id, nama: promo.name }));
+  for (const row of promoRows) if (!namaPromo.has(row.id)) promoOptions.push({ id: row.id, nama: row.nama });
+  promoOptions.sort((a, b) => a.nama.localeCompare(b.nama, "id"));
 
   // Struk paling lama di rentang — dipakai memberi tahu kalau datanya dari masa
   // sebelum nilai promo mulai dicatat (migrasi 0127, 25 Agustus 2026).
@@ -219,6 +224,14 @@ export default async function PromoPage({
           <div>
             <label className="flab">Sampai tanggal</label>
             <input className="fi" type="date" name="sampai" defaultValue={sampai} />
+          </div>
+          <div>
+            <label className="flab">Promo otomatis (tabel 02)</label>
+            <select className="fi" name="promo_id" defaultValue={promoId}>
+              <option value="">Semua promo</option>
+              {promoId && !promoOptions.some(promo => promo.id === promoId) && <option value={promoId}>Promo tidak ada · {promoId.slice(0, 8)}</option>}
+              {promoOptions.map(promo => <option key={promo.id} value={promo.id}>{promo.nama} · {promo.id.slice(-8)}</option>)}
+            </select>
           </div>
           <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
         </>
@@ -297,6 +310,7 @@ export default async function PromoPage({
 
       <div className="crm-sec" style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>02 · PROMO OTOMATIS</div>
+        {promoId && <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>Pilihan promo berlaku untuk tabel ini. Ringkasan, voucher, dan diskon cabang tetap mencakup seluruh transaksi pada periode terpilih.</div>}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 620 }}>
             <thead>
@@ -309,7 +323,7 @@ export default async function PromoPage({
               </tr>
             </thead>
             <tbody>
-              {promoRows.map((p) => (
+              {promoRowsTerpilih.map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{p.nama}</td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{p.jenis}</td>
@@ -318,7 +332,7 @@ export default async function PromoPage({
                   <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 700, color: "#b45309" }}>{rp(p.potongan)}</td>
                 </tr>
               ))}
-              {promoRows.length === 0 && (
+              {promoRowsTerpilih.length === 0 && (
                 <TabelKosong kolom={5} pesan="Belum ada promo otomatis yang kena di rentang ini." />
               )}
             </tbody>
