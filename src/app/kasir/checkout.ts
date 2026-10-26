@@ -8,7 +8,7 @@ import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
 import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
-import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
+import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
@@ -26,6 +26,7 @@ import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-ident
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import { readCompleteList } from "@/lib/checked-list";
+import { resolveCampaignVoucher } from "@/lib/campaign-voucher-runtime";
 import { cashierPriceFloorIssue, cashierStockCostEvents, quoteCashierLineCosts } from "@/lib/cashier-price-floor";
 import {
   expandBarisGrup,
@@ -80,7 +81,13 @@ export async function checkoutKasir(formData: FormData) {
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
   // normalizeKode = aturan yang sama dengan layar pengelola voucher, jadi kode
   // yang diketik pakai spasi ("HEMAT 10") tetap ketemu barisnya.
-  const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
+  let voucherCode: string | null;
+  let campaignCode: string | null;
+  try {
+    ({ voucherCode, campaignCode } = await resolveCampaignVoucher(supabase, formData.get("voucherCode")));
+  } catch (error) {
+    redirect(`${failureUrl}${encodeURIComponent(error instanceof Error ? error.message : "Kode kampanye tidak valid")}`);
+  }
   const poinReq = Math.max(0, Math.floor(Number(formData.get("poinDigunakan")) || 0));
   const bayar = Number(formData.get("bayar")) || 0;
 
@@ -439,7 +446,7 @@ export async function checkoutKasir(formData: FormData) {
       total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
       payment_plan: quote.parts,
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
-      poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
+      poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode, campaign_code: campaignCode,
       cashier_id: user?.id ?? null, shift_id: shift!.id,
       salesperson_id: salespersonId, cashier_name: cashier.name,
     })

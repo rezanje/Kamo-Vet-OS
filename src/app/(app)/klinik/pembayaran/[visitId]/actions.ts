@@ -19,6 +19,7 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
 import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { resolveCampaignVoucher } from "@/lib/campaign-voucher-runtime";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
@@ -174,7 +175,15 @@ export async function bayarVisit(formData: FormData) {
 
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
-  const voucherCode = existing ? existing.voucher_code : normalizeKode(formData.get("voucherCode")) || null;
+  let voucherCode: string | null = existing ? existing.voucher_code : null;
+  let campaignCode: string | null = null;
+  if (!existing) {
+    try {
+      ({ voucherCode, campaignCode } = await resolveCampaignVoucher(supabase, formData.get("voucherCode")));
+    } catch (error) {
+      redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Kode kampanye tidak valid")}`);
+    }
+  }
 
   // Promo, voucher, dan diskon golongan DIHITUNG ULANG di server dari master —
   // angka dari layar tidak menentukan uang. Layar kasir yang sudah lama terbuka
@@ -286,7 +295,7 @@ export async function bayarVisit(formData: FormData) {
     p_invoice: {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
-      shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
+      shift_id: klinikShift.id, voucher_code: voucherCode, campaign_code: campaignCode, salesperson_id: salespersonId,
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows),
@@ -357,6 +366,16 @@ export async function bayarRombongan(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   const klinikShift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;
   if (!klinikShift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
+
+  // A group redemption creates several invoices; the existing voucher cap
+  // counts documents, so a campaign alias must wait for an explicit policy.
+  let campaignAliasInGroup = false;
+  try {
+    campaignAliasInGroup = (await resolveCampaignVoucher(supabase, voucherCode)).campaignCode !== null;
+  } catch (error) {
+    redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Kode kampanye tidak valid")}`);
+  }
+  if (campaignAliasInGroup) redirect(`${back}?error=${encodeURIComponent("Kode kampanye belum tersedia untuk pembayaran rombongan.")}`);
 
   const rombongan = await bacaRombongan(supabase, visitId);
   const belum = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);

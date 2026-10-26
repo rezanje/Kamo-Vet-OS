@@ -18,6 +18,7 @@ import { loadBranchGroomingPolicy } from "@/lib/service-performers-server";
 import { isGroomingService } from "@/lib/grooming-requirements";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
 import { readCompleteList } from "@/lib/checked-list";
+import { campaignVoucherPreview } from "@/lib/campaign-voucher-runtime";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -59,9 +60,9 @@ export default async function KasirPage({
       .select("total, visits!inner(customer_id)")
       .eq("paid_status", "Lunas")
       .is("voided_at", null),
-    supabase.from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
-      .eq("is_active", true),
+    readCompleteList<VoucherFull & { id: string }>((from,to)=>supabase.from("vouchers")
+      .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id",{count:"exact"})
+      .eq("is_active", true).order("id").range(from,to),"Voucher aktif kasir",{maxRows:null}),
     readCompleteList<PromoFull>((from,to)=>supabase.from("promos")
       .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value",{count:"exact"})
       .eq("is_active", true).order("id").range(from,to),"Promo aktif kasir",{maxRows:null}),
@@ -106,7 +107,8 @@ export default async function KasirPage({
 
   // Voucher yang sudah lewat/belum mulai tidak dikirim ke layar: kalau dikirim,
   // kasir melihat potongan yang nanti ditolak server saat tombol bayar ditekan.
-  const vouchersAktif = ((vouchers ?? []) as unknown as VoucherFull[]).filter((v) => voucherBerlaku(v, wibToday));
+  const vouchersAktif = await campaignVoucherPreview(supabase,
+    ((vouchers ?? []) as unknown as VoucherFull[]).filter((v) => voucherBerlaku(v, wibToday)));
 
   // stok di gudang pertama cabang shift (tampilan stok toko).
   const { data: wh, error: warehouseError } = await supabase

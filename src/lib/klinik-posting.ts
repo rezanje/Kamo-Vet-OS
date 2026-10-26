@@ -41,6 +41,7 @@ export type ClinicInvoiceInput = {
   metode_bayar: string;
   shift_id: string;
   voucher_code: string | null;
+  campaign_code?: string | null;
   salesperson_id: string | null;
 };
 
