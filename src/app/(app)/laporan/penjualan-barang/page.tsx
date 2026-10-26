@@ -2,12 +2,13 @@ import Link from "next/link";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { ambilPenjualanBarang, waktuWIB } from "./data";
+import { normalizeReportColumns } from "@/lib/report-columns";
 
 const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 const UKURAN_HALAMAN_TAMPILAN = 100;
 
 export default async function LaporanPenjualanBarangPage({ searchParams }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; pelaksana_id?: string; halaman?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; pelaksana_id?: string; kolom?: string; halaman?: string }>;
 }) {
   const sp = await searchParams;
   const hariIni = hariIniWIB();
@@ -20,6 +21,8 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const pelaksanaId = (sp.pelaksana_id ?? "").slice(0, 80);
   const halamanDiminta = Number(sp.halaman);
   const halaman = Number.isSafeInteger(halamanDiminta) && halamanDiminta > 0 ? halamanDiminta : 1;
+  let kolom = "";
+  try { kolom = normalizeReportColumns(sp.kolom ?? null); } catch { /* Invalid URL choices stay visible in the column editor. */ }
   const { rows: terpilih, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({
     dari, sampai, kanal: kanal as "POS" | "Online" | "Klinik", jenis, q, cabangId, pelaksanaId,
   });
@@ -28,6 +31,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const terlihat = terpilih.slice((halamanAktif - 1) * UKURAN_HALAMAN_TAMPILAN, halamanAktif * UKURAN_HALAMAN_TAMPILAN);
   const tautanHalaman = (nomor: number) => {
     const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId, halaman: String(nomor) });
+    if (kolom) params.set("kolom", kolom);
     return `/laporan/penjualan-barang?${params}`;
   };
   const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId });
@@ -35,6 +39,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   return (
     <LaporanPage
       unduhTampilan={false}
+      pilihKolom
       icon="ti-list-details" title="RINCIAN PENJUALAN PER BARANG"
       desc="Setiap barang, obat, jasa, dan racikan yang tercatat pada struk atau invoice. Bawaan: racikan klinik bulan ini."
       filter={<>
@@ -71,6 +76,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
       {pesanError ? <div className="p2ban" style={{ color: "#b91c1c" }}>{pesanError}</div> : <>
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: "var(--tm)", alignSelf: "center" }}>Pilihan kolom berlaku di layar; berkas unduh tetap lengkap untuk payroll.</span>
             <Link className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}`}>
               <i className="ti ti-download" /> Unduh CSV ({terpilih.length} baris)
             </Link>
