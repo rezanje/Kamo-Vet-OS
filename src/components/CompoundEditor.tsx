@@ -15,7 +15,11 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
   const boundCatalog=sku?catalog.filter(row=>row.active&&row.sale_item_id===sku.id):[];
   const formula=boundCatalog.find(row=>row.version_id===value.formulaId);
   const term=search.trim().toLowerCase(),materialTerm=materialSearch.trim().toLowerCase();
-  const matches=term?items.filter(item=>`${item.name} ${item.code??""}`.toLowerCase().includes(term)):[];
+  // K03: daftar SKU obat racik aktif tampil tanpa harus mengetik dulu (seperti daftar lama),
+  // supaya item tidak terlihat "hilang". Setelah SKU dipilih, daftar disembunyikan sampai dicari lagi.
+  const showList=!!term||!sku;
+  const matches=term?items.filter(item=>`${item.name} ${item.code??""}`.toLowerCase().includes(term)):items;
+  const formulaCount=(id:string)=>catalog.filter(row=>row.active&&row.sale_item_id===id).length;
   const materialMatches=materialTerm?materials.filter(item=>`${item.name} ${item.code??""}`.toLowerCase().includes(materialTerm)):[];
   const materialById=new Map(materials.map(item=>[item.id,item]));
   const canAdjustFormula=!!formula&&allowCustom&&formula.ingredients.length>0&&formula.ingredients.every(row=>{
@@ -26,12 +30,12 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
   const materialPages=Math.max(1,Math.ceil(materialMatches.length/40)),currentMaterialPage=Math.min(materialPage,materialPages);
   const valid=!!sku&&(!!formula || (!value.formulaId&&allowCustom&&value.ingredients.length>0&&value.ingredients.every(row=>Number.isFinite(row.qty)&&row.qty>0)));
   return <section aria-label="Editor obat racik" style={{ display:"flex",flexDirection:"column",gap:8 }}>
-    <strong style={{fontSize:12}}>Obat racik dari Barang &amp; Jasa</strong>
+    <strong style={{fontSize:12}}>Obat racik dari Barang &amp; Jasa ({items.length})</strong>
     <input className="fi" aria-label="Cari obat racik" placeholder="Cari nama / kode obat racik…" value={search} onChange={event=>{setSearch(event.target.value);setPage(1);}} />
-    {term&&<div style={{maxHeight:200,overflowY:"auto",display:"grid",gap:4}}>
-      {matches.slice((currentPage-1)*40,currentPage*40).map(item=><button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{onChange({...value,saleItemId:item.id,formulaId:value.saleItemId===item.id?value.formulaId:""});setSearch("");}} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
-        <span>{item.name}<small style={{display:"block",color:"var(--tm)"}}>Stok obat jadi {item.stok} {item.unit}</small></span><span>{rp(item.sell_price)}</span>
-      </button>)}
+    {showList&&items.length>0&&<div style={{maxHeight:200,overflowY:"auto",display:"grid",gap:4}}>
+      {matches.slice((currentPage-1)*40,currentPage*40).map(item=>{const count=formulaCount(item.id);return <button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{onChange({...value,saleItemId:item.id,formulaId:value.saleItemId===item.id?value.formulaId:""});setSearch("");}} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
+        <span>{item.name}<small style={{display:"block",color:"var(--tm)"}}>{item.code?`${item.code} · `:""}{count?`${count} resep resmi`:allowCustom?"Belum ada resep resmi · racikan khusus pasien":"Belum ada resep resmi"}{onAddStock?` · Stok obat jadi ${item.stok} ${item.unit}`:""}</small></span><span>{rp(item.sell_price)}</span>
+      </button>;})}
       {!matches.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Tidak ada obat racik yang cocok.</span>}
       {pages>1&&<div style={{display:"flex",gap:8}}><button type="button" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>Sebelumnya</button><span>{currentPage}/{pages}</span><button type="button" disabled={currentPage===pages} onClick={()=>setPage(currentPage+1)}>Berikutnya</button></div>}
     </div>}

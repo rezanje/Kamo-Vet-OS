@@ -81,3 +81,27 @@ it('does not offer a patient copy without current custom permission and matching
   await act(async () => root.render(<CompoundEditor items={[item]} materials={[{ id: 'material', name: 'Bahan', unit: 'gram', sell_price: 20, stok: 10 }]} catalog={[official]} allowCustom={false} value={value} onChange={() => {}} />));
   expect(copyButton()).toBeUndefined();
 });
+
+it('K03 keeps every active compound SKU visible before typing and selects it into the composition flow', async () => {
+  root = createRoot(host);
+  const second = { id: 'sku-b', name: 'Obat Racik B', unit: 'pcs', sell_price: 200, stok: 0, code: 'RB' };
+  const catalog = [{ ...formula, sale_item_id: 'sku' }] as KatalogRacikan[];
+  let draft: CompoundDraft = { saleItemId: '', formulaId: '', dosageForm: 'puyer', instruction: '', ingredients: [] };
+  function Harness({ allowCustom }: { allowCustom: boolean }) {
+    const [value, setValue] = useState(draft);
+    return <CompoundEditor items={[item, second]} materials={[]} catalog={catalog} allowCustom={allowCustom} value={value}
+      onChange={next => { draft = next; setValue(next); }} />;
+  }
+  await act(async () => root.render(<Harness allowCustom={false} />));
+  expect(host.textContent).toContain('Obat racik dari Barang & Jasa (2)');
+  expect(host.querySelector('[aria-label="Pilih Obat Racik A"]')).toBeTruthy();
+  const pickB = host.querySelector<HTMLButtonElement>('[aria-label="Pilih Obat Racik B"]');
+  expect(pickB).toBeTruthy();
+  expect(pickB!.textContent).toContain('Belum ada resep resmi');
+  expect(host.querySelector('[aria-label="Pilih Obat Racik A"]')!.textContent).toContain('1 resep resmi');
+  await act(async () => pickB!.click());
+  expect(draft.saleItemId).toBe('sku-b');
+  expect(host.textContent).toContain('Komposisi racikan');
+  expect(host.querySelector('[aria-label="Pilih Obat Racik A"]')).toBeNull();
+  expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(true);
+});
