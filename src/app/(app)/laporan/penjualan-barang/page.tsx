@@ -7,7 +7,7 @@ const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID"
 const UKURAN_HALAMAN_TAMPILAN = 100;
 
 export default async function LaporanPenjualanBarangPage({ searchParams }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; halaman?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; pelaksana_id?: string; halaman?: string }>;
 }) {
   const sp = await searchParams;
   const hariIni = hariIniWIB();
@@ -17,19 +17,20 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan", "Biaya Admin"].includes(sp.jenis ?? "") ? sp.jenis! : kanal === "Klinik" ? "Racikan" : "Barang";
   const q = (sp.q ?? "").trim().slice(0, 120);
   const cabangId = (sp.cabang_id ?? "").slice(0, 80);
+  const pelaksanaId = (sp.pelaksana_id ?? "").slice(0, 80);
   const halamanDiminta = Number(sp.halaman);
   const halaman = Number.isSafeInteger(halamanDiminta) && halamanDiminta > 0 ? halamanDiminta : 1;
-  const { rows: terpilih, cabangOptions, pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({
-    dari, sampai, kanal: kanal as "POS" | "Online" | "Klinik", jenis, q, cabangId,
+  const { rows: terpilih, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({
+    dari, sampai, kanal: kanal as "POS" | "Online" | "Klinik", jenis, q, cabangId, pelaksanaId,
   });
   const banyakHalaman = Math.max(1, Math.ceil(terpilih.length / UKURAN_HALAMAN_TAMPILAN));
   const halamanAktif = Math.min(halaman, banyakHalaman);
   const terlihat = terpilih.slice((halamanAktif - 1) * UKURAN_HALAMAN_TAMPILAN, halamanAktif * UKURAN_HALAMAN_TAMPILAN);
   const tautanHalaman = (nomor: number) => {
-    const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, halaman: String(nomor) });
+    const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId, halaman: String(nomor) });
     return `/laporan/penjualan-barang?${params}`;
   };
-  const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId });
+  const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId });
 
   return (
     <LaporanPage
@@ -52,6 +53,11 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
             <option value="Racikan">Racikan</option><option value="Obat">Obat lain</option>
             <option value="Jasa">Jasa/tindakan</option><option value="Biaya Admin">Biaya admin DEMO</option>
           </> : <option value="Barang">Barang kasir/online</option>}
+        </select></div>
+        <div><label className="flab">Pelaksana tersimpan</label><select className="fi" name="pelaksana_id" defaultValue={pelaksanaId}>
+          <option value="">Semua pelaksana</option>
+          {pelaksanaId && !pelaksanaOptions.some(person => person.id === pelaksanaId) && <option value={pelaksanaId}>Pelaksana tidak ada pada data · {pelaksanaId.slice(0, 8)}</option>}
+          {pelaksanaOptions.map(person => <option key={person.id} value={person.id}>{person.nama} · {person.id.slice(-8)}</option>)}
         </select></div>
         <div><label className="flab">Cari nama / invoice / pelanggan / pelaksana</label><input className="fi" name="q" defaultValue={q} placeholder="Mis. puyer" style={{ minWidth: 190 }} /></div>
         <button className="btn-def" type="submit"><i className="ti ti-filter" /> Tampilkan</button>
@@ -105,7 +111,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
               : kanal === "Klinik"
                 ? "Neto invoice klinik dibagi ke tiap baris setelah diskon invoice, termasuk promo, voucher, poin, dan pembulatan; pajak dan pembayaran DP tidak masuk nilai baris. Selisih pembulatan bisa bernilai negatif."
                 : "Nilai baris sudah memperhitungkan diskon per barang. Diskon tingkat nota, retur, dan pajak belum dibagi ke tiap baris; total bisa berbeda dari pembayaran."}
-            {" "}Racikan dicocokkan dengan resep pada kunjungan yang sama.
+            {" "}Racikan dicocokkan dengan resep pada kunjungan yang sama. Filter pelaksana memakai ID yang tersimpan pada baris jasa; baris dengan dokter dan pelaksana muncul pada filter masing-masing, tetapi omzet cabang menghitung baris itu sekali. Ini laporan penjualan, bukan total insentif.
           </div>
         </div>
       </>}
