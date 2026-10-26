@@ -7,7 +7,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { komisiPeriode } from "@/lib/komisi-data";
-import { hapusAturanKomisi, simpanAturanKomisi, toggleAturanKomisi } from "./actions";
+import { hapusAturanKomisi, simpanAturanKomisi, simpanKelompokKomisi, toggleAturanKomisi } from "./actions";
 import { readCompleteList } from "@/lib/checked-list";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { ItemReferenceField } from "@/components/ItemReferenceField";
@@ -26,6 +26,7 @@ const LABEL_SUMBER: Record<string, string> = {
 type Aturan = {
   id: string; nama: string; tipe: string; basis: string; sumber: string; persen: number; nominal: number;
   employee_id: string | null; branch_id: string | null; category_id: string | null; item_id: string | null;
+  commission_group: string | null; override_group_rule_id: string | null;
   min_omzet: number; berlaku_dari: string | null; berlaku_sampai: string | null; is_active: boolean;
 };
 
@@ -43,10 +44,10 @@ export default async function KomisiPage({
   let loaded;
   try { loaded = await Promise.all([
       readCompleteList<Aturan>((from, to) => supabase.from("commission_rules")
-        .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active", { count: "exact" })
+        .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, commission_group, override_group_rule_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active", { count: "exact" })
         .order("nama").order("id").range(from, to), "Aturan komisi", { maxRows: null }),
-      readCompleteList<{ id: string; nama: string; jabatan: string | null }>((from, to) => supabase.from("employees")
-        .select("id, nama, jabatan", { count: "exact" }).eq("status", "Aktif").order("nama").order("id").range(from, to), "Karyawan komisi", { maxRows: null }),
+      readCompleteList<{ id: string; nama: string; jabatan: string | null; commission_group: string | null }>((from, to) => supabase.from("employees")
+        .select("id, nama, jabatan, commission_group", { count: "exact" }).eq("status", "Aktif").order("nama").order("id").range(from, to), "Karyawan komisi", { maxRows: null }),
       readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("branches")
         .select("id, name", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Cabang komisi", { maxRows: null }),
       readCompleteList<{ id: string; name: string; parent_id: string | null }>((from, to) => supabase.from("item_categories")
@@ -58,6 +59,7 @@ export default async function KomisiPage({
   const [aturan, karyawan, cabang, kategori, barang, hitungan] = loaded;
 
   const namaEmp = new Map(karyawan.map((k) => [k.id, k.nama]));
+  const groupEmp = new Map(karyawan.map((k) => [k.id, k.commission_group]));
   const namaCab = new Map(cabang.map((c) => [c.id, c.name]));
   const namaKat = new Map(kategori.map((k) => [k.id, k.name]));
   const namaItem = new Map(barang.map((i) => [i.id, i.name]));
@@ -66,6 +68,8 @@ export default async function KomisiPage({
   const cakupan = (a: Aturan): string => {
     const bagian = [
       a.employee_id ? namaEmp.get(a.employee_id) ?? "karyawan" : null,
+      a.commission_group ? `kelompok ${a.commission_group}` : null,
+      a.override_group_rule_id ? `mengganti ${aturan.find(rule => rule.id === a.override_group_rule_id)?.nama ?? "aturan kelompok"}` : null,
       a.branch_id ? namaCab.get(a.branch_id) ?? "cabang" : null,
       a.category_id ? `kategori ${namaKat.get(a.category_id) ?? "?"}` : null,
       a.item_id ? namaItem.get(a.item_id) ?? "produk" : null,
@@ -92,6 +96,17 @@ export default async function KomisiPage({
         </Link>
       ) : null}
     >
+      <div className="crm-sec">
+        <SecHeader num="00" title="KELOMPOK INSENTIF" desc="Tetapkan kode grade/kelompok karyawan sesuai keputusan bisnis. Kode kosong berarti tanpa kelompok." />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          {karyawan.map(k => <form key={k.id} action={simpanKelompokKomisi} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="hidden" name="employee_id" value={k.id} />
+            <label className="flab" htmlFor={`group-${k.id}`}>{k.nama}</label>
+            {bolehKelola ? <><input id={`group-${k.id}`} className="fi" name="commission_group" maxLength={40} pattern="[a-z0-9][a-z0-9_-]{0,39}" defaultValue={k.commission_group ?? ""} placeholder="kode kelompok" style={{ width: 145 }} />
+              <SubmitButton className="btn-def" pendingText="Menyimpan…">Simpan</SubmitButton></> : <span>{k.commission_group ?? "—"}</span>}
+          </form>)}
+        </div>
+      </div>
       <div className="crm-sec">
         <SecHeader
           num="01" title="DAFTAR ATURAN"
@@ -153,6 +168,14 @@ export default async function KomisiPage({
                   {karyawan.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
                 </select>
               </div>
+              <div><label className="flab">Khusus grade/kelompok</label><select className="fi" name="commission_group" defaultValue="">
+                <option value="">— semua kelompok —</option>
+                {[...new Set(karyawan.map(k => k.commission_group).filter((code): code is string => !!code))].sort().map(code => <option key={code} value={code}>{code}</option>)}
+              </select><div style={{ fontSize: 10, color: "var(--tm)" }}>Pilih kelompok atau karyawan khusus.</div></div>
+              <div><label className="flab">Pengecualian individu: ganti aturan kelompok</label><select className="fi" name="override_group_rule_id" defaultValue="">
+                <option value="">— tidak mengganti —</option>
+                {aturan.filter(a => a.commission_group).map(a => <option key={a.id} value={a.id}>{a.nama} ({a.commission_group})</option>)}
+              </select><div style={{ fontSize: 10, color: "var(--tm)" }}>Perlu pilih satu karyawan; aturan kelompok diganti hanya pada baris yang cocok.</div></div>
               <div>
                 <label className="flab">Khusus cabang</label>
                 <select className="fi" name="branch_id" defaultValue="">
@@ -306,6 +329,7 @@ export default async function KomisiPage({
                 <tr key={h.employeeId}>
                   <td style={{ fontSize: 11.5 }}>
                     <b>{namaEmp.get(h.employeeId) ?? "—"}</b>
+                    {groupEmp.get(h.employeeId) && <span style={{ marginLeft: 6, color: "var(--tm)" }}>({groupEmp.get(h.employeeId)})</span>}
                     {h.rincian.length > 0 && (
                       <details style={{ marginTop: 4 }}>
                         <summary style={{ fontSize: 10, color: "var(--tm)", cursor: "pointer" }}>
