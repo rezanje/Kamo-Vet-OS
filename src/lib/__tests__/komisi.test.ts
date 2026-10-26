@@ -47,6 +47,12 @@ describe("hitungKomisi", () => {
     expect(satu([baris({ qty: 3 })], [aturan({ tipe: "nominal", nominal: 5_000 })]).komisi).toBe(15_000);
   });
 
+  it("keeps a fractional quantity in nominal-rule evidence", () => {
+    const result = satu([baris({ qty: 0.5 })], [aturan({ tipe: "nominal", nominal: 5_000 })]);
+    expect(result.komisi).toBe(2_500);
+    expect(result.rincian[0].dasar).toBe(0.5);
+  });
+
   it("beberapa aturan bisa kena bersamaan", () => {
     const h = satu([baris()], [aturan(), aturan({ id: "r2", tipe: "nominal", nominal: 1_000 })]);
     expect(h.komisi).toBe(3_000);
