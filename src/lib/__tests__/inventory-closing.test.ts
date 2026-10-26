@@ -77,6 +77,19 @@ it('compares saved branch values with the currently visible GL 1301 as of the sa
  expect(records).toContainEqual({table:'journal_lines',method:'lte',args:['journal_entries.tanggal','2026-09-30']});
 });
 
+it('does not include a denied branch or branchless journal in an accessible branch comparison', async () => {
+ const report = await loadInventoryClosing(clientFixture({deniedBranch:'b2',tables:{...historicalTables(),
+  coa_accounts:[{id:'a1301',code:'1301'}],journal_lines:[
+   {id:'j1',account_id:'a1301',debit:160,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:'b1'}},
+   {id:'j2',account_id:'a1301',debit:999,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:'b2'}},
+   {id:'j3',account_id:'a1301',debit:7,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:null}},
+  ],
+ }}).client,'c1');
+ expect(report.branchSummary).toEqual([{id:'b1',name:'Satu',count:1,value:160,ledgerValue:160,difference:0}]);
+ expect(report.scopedLedgerValue).toBe(160);
+ expect(report.allBranches).toBe(false);
+});
+
 it('keeps missing GL account and incomplete snapshot values unavailable instead of treating them as zero', async () => {
  const tables = historicalTables();
  const source = tables.inventory_month_values as Array<Record<string, unknown>>;
