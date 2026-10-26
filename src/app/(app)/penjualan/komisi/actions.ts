@@ -54,9 +54,13 @@ export async function simpanAturanKomisi(formData: FormData) {
   if (commissionGroup && employeeId) gagal("Pilih kelompok atau karyawan khusus, bukan keduanya");
   if (overrideGroupRuleId) {
     if (!employeeId || commissionGroup || overrideGroupRuleId === id) gagal("Pengecualian harus khusus satu karyawan dan merujuk aturan kelompok lain");
-    const { data: base, error: baseError } = await supabase.from("commission_rules")
-      .select("id, commission_group").eq("id", overrideGroupRuleId).maybeSingle();
-    if (baseError || !base?.commission_group) gagal("Aturan kelompok yang diganti tidak tersedia");
+    const [{ data: base, error: baseError }, { data: employee, error: employeeError }] = await Promise.all([
+      supabase.from("commission_rules").select("id, commission_group, is_active").eq("id", overrideGroupRuleId).maybeSingle(),
+      supabase.from("employees").select("id, commission_group").eq("id", employeeId).maybeSingle(),
+    ]);
+    const baseGroup = base?.commission_group ?? "";
+    if (baseError || !baseGroup || !base?.is_active) gagal("Aturan kelompok yang diganti tidak aktif atau tidak tersedia");
+    if (employeeError || !employee || employee.commission_group !== baseGroup) gagal("Kelompok karyawan harus cocok dengan aturan yang diganti");
   }
 
   const dari = opsional(formData.get("berlaku_dari"));

@@ -117,6 +117,14 @@ function cocok(b: BarisJual, a: AturanKomisi): boolean {
 }
 
 export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[], groupPerEmployee: ReadonlyMap<string, string | null> = new Map()): HasilKomisi[] {
+  const ruleById = new Map(aturan.map(rule => [rule.id, rule]));
+  const overridesByParent = new Map<string, AturanKomisi[]>();
+  for (const rule of aturan) {
+    if (!rule.overrideGroupRuleId) continue;
+    const list = overridesByParent.get(rule.overrideGroupRuleId) ?? [];
+    list.push(rule);
+    overridesByParent.set(rule.overrideGroupRuleId, list);
+  }
   const perOrang = new Map<string, BarisJual[]>();
   for (const b of baris) {
     if (!b.employeeId) continue;
@@ -135,12 +143,18 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[], groupPe
     const rincian: RincianAturan[] = [];
 
     for (const a of aturan) {
+      const base = a.overrideGroupRuleId ? ruleById.get(a.overrideGroupRuleId) : null;
+      if (a.overrideGroupRuleId) {
+        // A stale/deactivated group rule must not leave a standalone individual payout.
+        if (!base?.commissionGroup || groupPerEmployee.get(employeeId) !== base.commissionGroup) continue;
+      }
       const kena = milikDia.filter((b) => {
         if (!cocok(b, a)) return false;
+        if (base && !cocok(b, base)) return false;
         if (a.commissionGroup && groupPerEmployee.get(employeeId) !== a.commissionGroup) return false;
         if (!a.commissionGroup) return true;
-        return !aturan.some((individual) => individual.overrideGroupRuleId === a.id
-          && individual.employeeId === employeeId && cocok(b, individual));
+        return !(overridesByParent.get(a.id) ?? []).some(individual =>
+          individual.employeeId === employeeId && cocok(b, individual));
       });
       if (kena.length === 0) continue;
 
@@ -164,7 +178,9 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[], groupPe
       // Ambang diukur dari realisasi karyawan sebulan, bukan dari baris yang kena aturan —
       // "komisi cair kalau bulan ini tembus sekian" memang maksudnya begitu.
       const realisasi = a.basis === "laba" ? laba : omzet;
-      const cair = a.minOmzet <= 0 || realisasi >= a.minOmzet;
+      const parentRealisasi = base?.basis === "laba" ? laba : omzet;
+      const cair = (a.minOmzet <= 0 || realisasi >= a.minOmzet)
+        && (!base || base.minOmzet <= 0 || parentRealisasi >= base.minOmzet);
 
       // Komisi negatif (retur melebihi penjualan) ditahan di nol: gaji orang tidak
       // dipotong gara-gara komisi, potongan retur diurus terpisah kalau memang perlu.

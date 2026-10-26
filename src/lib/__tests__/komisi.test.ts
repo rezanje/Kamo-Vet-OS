@@ -61,6 +61,22 @@ describe("hitungKomisi", () => {
   it("does not apply a group rule when employee has no configured group", () => {
     expect(satu([baris()], [aturan({ commissionGroup: "doctor_old" })]).komisi).toBe(0);
   });
+
+  it("does not pay an individual exception after its group changes or parent is inactive", () => {
+    const groupRule = aturan({ id: "group", commissionGroup: "doctor_old" });
+    const exception = aturan({ id: "exception", employeeId: "emp1", overrideGroupRuleId: "group", persen: 20 });
+    expect(hitungKomisi([baris()], [groupRule, exception], new Map([["emp1", "doctor_new"]]))[0].komisi).toBe(0);
+    expect(hitungKomisi([baris()], [exception], new Map([["emp1", "doctor_old"]]))[0].komisi).toBe(0);
+  });
+
+  it("limits an individual exception to parent SKU and threshold", () => {
+    const groupRule = aturan({ id: "group", commissionGroup: "doctor_old", itemId: "it1", minOmzet: 200_000 });
+    const exception = aturan({ id: "exception", employeeId: "emp1", overrideGroupRuleId: "group", persen: 20 });
+    const group = new Map([["emp1", "doctor_old"]]);
+    expect(hitungKomisi([baris({ itemId: "it2", omzet: 300_000 })], [groupRule, exception], group)[0].komisi).toBe(0);
+    expect(hitungKomisi([baris({ itemId: "it1", omzet: 100_000 })], [groupRule, exception], group)[0].komisi).toBe(0);
+    expect(hitungKomisi([baris({ itemId: "it1", omzet: 300_000 })], [groupRule, exception], group)[0].komisi).toBe(60_000);
+  });
   it("persen dari omzet", () => {
     expect(satu([baris()], [aturan()]).komisi).toBe(2_000);
   });
