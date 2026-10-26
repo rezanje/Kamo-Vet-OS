@@ -223,6 +223,33 @@ export async function koreksiRekamMedis(formData: FormData) {
   return { saved: true, href: `${back}?success=correction` };
 }
 
+/** Paid records remain untouched; this only appends a separately audited note. */
+export async function tambahAddendumRekamMedis(formData: FormData) {
+  const visitId = String(formData.get("visitId") ?? "").trim();
+  const recordId = String(formData.get("medical_record_id") ?? "").trim();
+  const back = `/klinik/rekam-medis/${encodeURIComponent(visitId)}`;
+  const reason = String(formData.get("reason") ?? "").trim();
+  const amendment = String(formData.get("amendment") ?? "").trim();
+  const requestKey = String(formData.get("draft_key") ?? "").trim();
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(visitId) || !uuid.test(recordId) || requestKey.length < 1 || requestKey.length > 100
+    || reason.length < 3 || reason.length > 1000 || amendment.length < 3 || amendment.length > 4000) {
+    redirect(`${back}?error=${encodeURIComponent("Isi addendum, alasan, dan identitas pemeriksaan wajib valid.")}`);
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("clinic_add_paid_record_addendum", {
+    p_visit_id: visitId,
+    p_record_id: recordId,
+    p_amendment: amendment,
+    p_reason: reason,
+    p_request_key: requestKey,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(error))}`);
+  revalidatePath(back);
+  revalidatePath(`${back}/dokumen`);
+  redirect(`${back}?success=addendum${transactionDraftAck(formData)}`);
+}
+
 export async function createReferral(formData: FormData) {
   const supabase = await createClient();
   const visitId = String(formData.get("visit_id") ?? "").trim();
