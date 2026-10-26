@@ -38,6 +38,20 @@ describe("qtyDapatPotongan", () => {
 });
 
 describe("potonganBaris", () => {
+  it("uses an explicit total-per-package amount with minimum, cap and optional repeats", () => {
+    const once = promo({ itemIds:["a"], discountType: "nominal", discountValue: 10_000, discountMode: "package_total", minQty: 5, maxQty: 5 });
+    const repeat = { ...once, maxQty: null, kelipatan: true };
+    expect([4, 5, 6, 10].map(qty => potonganBaris({ item_id: "a", qty, harga: 10_000 }, once))).toEqual([0, 10_000, 10_000, 10_000]);
+    expect([4, 5, 6, 10].map(qty => potonganBaris({ item_id: "a", qty, harga: 10_000 }, repeat))).toEqual([0, 10_000, 10_000, 20_000]);
+    expect(qtyDapatPotongan(6, once)).toBe(5);
+    expect(qtyDapatPotongan(10, repeat)).toBe(10);
+    expect(qtyDapatPotongan(10, {...once,maxQty:null})).toBe(5);
+  });
+
+  it("never discounts more than the qualifying package gross", () => {
+    const rule = promo({ itemIds:["a"], discountType: "nominal", discountValue: 100_000, discountMode: "package_total", minQty: 5, maxQty: 5 });
+    expect(potonganBaris({ item_id: "a", qty: 10, harga: 1_000 }, rule)).toBe(5_000);
+  });
   it("persen dihitung per satuan lalu dikali qty yang kena", () => {
     expect(potonganBaris({ item_id: "a", qty: 3, harga: 10_000 }, promo())).toBe(3_000);
   });

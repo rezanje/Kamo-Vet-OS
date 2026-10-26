@@ -27,7 +27,7 @@ function ringkasBarang(nama: string[] | undefined): string {
 function ringkasAturan(p: PromoRow): string {
   const bagian: string[] = [];
   if (p.discount_type && p.discount_value) {
-    bagian.push(p.discount_type === "percent" ? `${p.discount_value}%` : `${rp(p.discount_value)}/${p.rule?.unit ?? "satuan"}`);
+    bagian.push(p.discount_type === "percent" ? `${p.discount_value}%` : p.rule?.discount_mode === "package_total" ? `${rp(p.discount_value)}/paket min ${p.min_qty}` : `${rp(p.discount_value)}/${p.rule?.unit ?? "satuan"}`);
   }
   if (p.rule?.unit) bagian.push(`satuan ${p.rule.unit}`);
   if (p.min_qty) bagian.push(`min ${p.min_qty}`);

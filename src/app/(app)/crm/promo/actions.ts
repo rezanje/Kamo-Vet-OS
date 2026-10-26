@@ -6,6 +6,7 @@ import {transactionDraftAck} from "@/lib/transaction-draft-ack";
 import { createClient } from "@/lib/supabase/server";
 
 import {promoEditInput} from "@/lib/promo-edit";
+import {promoDiscountMode,validatePackageDiscount} from "@/lib/promo-hitung";
 
 const BACK = "/crm/promo";
 
@@ -35,6 +36,9 @@ export async function createPromo(formData: FormData) {
   const promoType = String(formData.get("promo_type") ?? "diskon_produk");
   const suggest = String(formData.get("suggest") ?? "").trim();
   const discountType = String(formData.get("discount_type") ?? "") || null;
+  let discountMode: ReturnType<typeof promoDiscountMode>;
+  try { discountMode=promoDiscountMode(formData.get("discount_mode")); }
+  catch { redirect(`${BACK}?error=${encodeURIComponent("Cara hitung diskon promo tidak valid")}`); }
   const discountValue = angkaOpsional(formData.get("discount_value"));
   const minQty = angkaOpsional(formData.get("min_qty"));
   const maxQty = angkaOpsional(formData.get("max_qty"));
@@ -70,10 +74,13 @@ export async function createPromo(formData: FormData) {
   if (autoApply && kelipatan && minQty == null) {
     gagal("Aturan kelipatan butuh min. qty terisi");
   }
+  try { validatePackageDiscount(discountMode, discountType, minQty, itemIds); }
+  catch(error) { gagal(error instanceof Error?error.message:"Aturan total per paket tidak valid"); }
 
   // `rule` dipertahankan untuk teks saran & min. subtotal (dibaca reminder lama).
   const rule: Record<string, unknown> = { suggest };
   if (minSubtotal != null) rule.min_subtotal = minSubtotal;
+  if (discountMode === "package_total") rule.discount_mode = discountMode;
 
   const { data: promo, error } = await supabase.from("promos").insert({
     name, promo_type: promoType, rule,
