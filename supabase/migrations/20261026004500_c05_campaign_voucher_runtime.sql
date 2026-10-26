@@ -39,6 +39,10 @@ create function public.guard_campaign_redemption() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare source_code text; source_voucher text; canonical text;
 begin
+  if new.campaign_code is null and new.voucher_code is not null
+    and exists(select 1 from public.campaign_code_bindings b where b.code=new.voucher_code) then
+    raise exception 'CAMPAIGN_ALIAS_REQUIRES_BINDING' using errcode='23514';
+  end if;
   if tg_op='UPDATE' then
     if new.campaign_code is distinct from old.campaign_code then
       raise exception 'CAMPAIGN_SNAPSHOT_IMMUTABLE' using errcode='23514';

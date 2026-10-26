@@ -26,7 +26,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   if (!visit) notFound();
 
   let invoiceQuery=supabase.from("invoices")
-    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name")
+    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name,campaign_code")
     .eq("visit_id",visitId).is("voided_at",null);
   if(requested)invoiceQuery=invoiceQuery.eq("id",requested);
   const{data:invoice,error:invoiceError}=await invoiceQuery.maybeSingle();
@@ -136,6 +136,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         <div style={{ marginTop: 14, marginLeft: "auto", width: 260 }}>
           <SumRow label="Subtotal (DPP)" value={rp(invoice.subtotal)} />
           {invoice.discount > 0 && <SumRow label="Diskon" value={`- ${rp(invoice.discount)}`} />}
+          {invoice.campaign_code && <SumRow label="Kode kampanye" value={invoice.campaign_code} />}
           <SumRow label="PPN 11%" value={rp(invoice.tax)} />
           <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderTop: "1.5px solid #141413", marginTop: 4 }}>
             <span style={{ fontWeight: 700 }}>TOTAL</span>

@@ -15,7 +15,7 @@ export async function campaignVoucherPreview(supabase: Client, vouchers: Voucher
   const byCode = new Map(vouchers.map(v => [v.code, v]));
   return [...vouchers, ...aliases.flatMap(alias => {
     const source = byCode.get(alias.voucher_code);
-    return source ? [{ ...source, code: alias.code }] : [];
+    return source ? [{ ...source, code: alias.code, campaign_alias: true }] : [];
   })];
 }
 

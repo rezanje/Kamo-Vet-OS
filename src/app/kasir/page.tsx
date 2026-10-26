@@ -47,7 +47,7 @@ export default async function KasirPage({
   }
   const replacementDraft = replacement ? saleReplacementDraft(replacement) : undefined;
 
-  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, promos] = await Promise.all([
+  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, vouchers, promos] = await Promise.all([
     loadKasirItems(supabase),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.

@@ -22,7 +22,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, cashier_name, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
+    .select("id, no_struk, cashier_name, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, campaign_code, created_at, customers(name), branches(name)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
   const paymentRows = receiptPaymentRows(sale);
@@ -109,8 +109,8 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
             <>
               <Row k="Subtotal" v={rp(sale.subtotal)} />
               {itemDisc > 0 && <Row k="Pot. per item" v={`-${rp(itemDisc)}`} />}
-              {txnDisc > 0 && <Row k={sale.voucher_code ? `Diskon + voucher ${sale.voucher_code}` : "Diskon transaksi"} v={`-${rp(txnDisc)}`} />}
-              {!txnDisc && sale.voucher_code ? <Row k={`Voucher ${sale.voucher_code}`} v="✓" /> : null}
+              {txnDisc > 0 && <Row k={sale.voucher_code ? `Diskon + voucher ${sale.campaign_code ?? sale.voucher_code}` : "Diskon transaksi"} v={`-${rp(txnDisc)}`} />}
+              {!txnDisc && sale.voucher_code ? <Row k={`Voucher ${sale.campaign_code ?? sale.voucher_code}`} v="✓" /> : null}
               {sale.poin_digunakan > 0 && <Row k="Poin dipakai" v={`-${rp(sale.poin_digunakan)}`} />}
             </>
           );

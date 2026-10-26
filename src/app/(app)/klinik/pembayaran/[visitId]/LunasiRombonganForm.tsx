@@ -40,7 +40,7 @@ export function LunasiRombonganForm({ visitId, requestKey, contextKey, jumlahPas
 
   // Angka di layar memakai rumus yang sama dengan server, tapi server tetap
   // menghitung ulang saat tombol ditekan — layar tidak menentukan uang.
-  const voucherRow = bekal.vouchers.find((v) => v.code === normalizeKode(voucher));
+  const voucherRow = bekal.vouchers.find((v) => !v.campaign_alias && v.code === normalizeKode(voucher));
   const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
     dasar: total, adaPromoOtomatis: promoTotal > 0,
     customerId: bekal.customerId, categoryId: bekal.categoryId,

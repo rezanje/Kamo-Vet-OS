@@ -16,6 +16,8 @@ export type VoucherRow = {
   /** Sasaran voucher (meeting 14 Agustus): null = terbuka untuk siapa pun. */
   customer_id?: string | null;
   category_id?: string | null;
+  /** Preview-only marker: group clinic checkout cannot redeem a campaign alias. */
+  campaign_alias?: boolean;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");

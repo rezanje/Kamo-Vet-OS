@@ -11,10 +11,6 @@ spec.loader.exec_module(fixture)
 
 with fixture.DisposablePostgres() as db:
     db.bootstrap()
-    cap = (ROOT / "supabase/migrations/20261026001920_c05_voucher_usage_limit.sql")
-    if not cap.exists():
-        cap = Path("/workspace/Kamo-Vet-OS-c05-binding/supabase/migrations/20261026001920_c05_voucher_usage_limit.sql")
-    db.sql("begin;\n" + cap.read_text() + "\ncommit;")
 
     pos = (ROOT / "supabase/tests/pos_split_payments.sql").read_text().split("set local role authenticated;")[0]
     db.sql(pos + """
@@ -47,6 +43,7 @@ select pg_temp.assert_ok((select voucher_code='SOURCEV' and campaign_code='ALIAS
 select pg_temp.reject($q$select pg_temp.campaign_sale('CAMPAIGN.TWO','SOURCEV','ALIASV')$q$,'canonical usage cap counts alias redemption');
 select pg_temp.reject($q$select pg_temp.campaign_sale('CAMPAIGN.BAD','OTHER','ALIASV')$q$,'mismatched source refused');
 select pg_temp.reject($q$select pg_temp.campaign_sale('CAMPAIGN.WAIT','OTHER','WAITING')$q$,'unconfigured alias refused on direct write');
+select pg_temp.reject($q$select pg_temp.campaign_sale('CAMPAIGN.BYPASS','ALIASV',null)$q$,'alias cannot bypass canonical voucher binding');
 select pg_temp.reject($q$update sales set campaign_code=null where no_struk='CAMPAIGN.ONE'$q$,'snapshot cannot be removed');
 rollback;
 """)

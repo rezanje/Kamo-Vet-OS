@@ -269,7 +269,7 @@ export async function bekalPotonganKlinik(
   itemIds: string[],
 ): Promise<BekalPotongan> {
   const hariIni = hariIniWIB();
-  const [promos, { data: vouchers }, cust] = await Promise.all([
+  const [promos, vouchers, cust] = await Promise.all([
     branchId ? loadPromoAktif(supabase, branchId) : Promise.resolve([]),
     readCompleteList<VoucherRow & { id: string }>((from,to)=>supabase.from("vouchers")
       .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id",{count:"exact"})
