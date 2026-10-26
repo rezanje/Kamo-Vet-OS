@@ -1,0 +1,2 @@
+Applied 266/266 repository migrations to isolated PGlite PostgreSQL 18.6.
+FAIL /opt/data/kamo-k03/supabase/tests/clinic_procedure_bmhp.sql: column "bmhp_components" of relation "prescription_items" does not exist
