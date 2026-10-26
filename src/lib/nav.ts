@@ -85,6 +85,7 @@ export const TILES: Record<string, Tile[]> = {
     // Kode voucher tidak lagi berdiri sendiri di menu — pintunya lewat Promo,
     // di mana keduanya sudah dipasangkan sebagai tab.
     { label: "Promo & Voucher", icon: "ti-speakerphone", ...G, href: "/crm/promo" },
+    { label: "Relasi kode kampanye", icon: "ti-ticket", ...G, href: "/crm/kampanye" },
     { label: "Pelanggan", icon: "ti-users-group", ...B, href: "/crm/pelanggan" },
     { label: "Kategori Pelanggan", icon: "ti-crown", ...B, href: "/crm/kategori-pelanggan" },
     { label: "Status Ulasan", icon: "ti-star-half", ...B, nw: true, href: "/crm/status-ulasan" },
