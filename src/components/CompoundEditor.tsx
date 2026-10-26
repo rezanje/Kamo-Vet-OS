@@ -17,6 +17,11 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
   const term=search.trim().toLowerCase(),materialTerm=materialSearch.trim().toLowerCase();
   const matches=term?items.filter(item=>`${item.name} ${item.code??""}`.toLowerCase().includes(term)):[];
   const materialMatches=materialTerm?materials.filter(item=>`${item.name} ${item.code??""}`.toLowerCase().includes(materialTerm)):[];
+  const materialById=new Map(materials.map(item=>[item.id,item]));
+  const canAdjustFormula=!!formula&&allowCustom&&formula.ingredients.length>0&&formula.ingredients.every(row=>{
+    const material=materialById.get(row.item_id);
+    return !!material&&material.unit===row.unit&&Number.isFinite(row.quantity)&&row.quantity>0;
+  });
   const pages=Math.max(1,Math.ceil(matches.length/40)),currentPage=Math.min(page,pages);
   const materialPages=Math.max(1,Math.ceil(materialMatches.length/40)),currentMaterialPage=Math.min(materialPage,materialPages);
   const valid=!!sku&&(!!formula || (!value.formulaId&&allowCustom&&value.ingredients.length>0&&value.ingredients.every(row=>Number.isFinite(row.qty)&&row.qty>0)));
@@ -44,6 +49,14 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
       <strong>{formula.name} · {formula.dosage_form}</strong>
       <div>{formula.ingredients.map(row=>`${row.name} ${row.quantity} ${row.unit}`).join(" · ")}</div>
       <div>Petunjuk pemakaian: {formula.dosage_instruction??"Tidak ditetapkan"}</div>
+      {canAdjustFormula&&<button type="button" className="btn-def" onClick={()=>onChange({
+        ...value,formulaId:"",dosageForm:formula.dosage_form,instruction:formula.dosage_instruction??"",
+        ingredients:formula.ingredients.map(row=>{
+          const material=materialById.get(row.item_id)!;
+          return {item_id:material.id,nama:material.name,qty:row.quantity,satuan:material.unit,harga:material.sell_price};
+        }),
+      })}>Sesuaikan komposisi untuk pasien</button>}
+      {allowCustom&&!canAdjustFormula&&<div role="status">Komposisi ini belum dapat disalin: bahan atau satuan aktif tidak cocok. Pilih bahan racikan khusus dari awal.</div>}
     </div>:allowCustom?<>
       <div style={{display:"flex",gap:6}}><select className="fi" aria-label="Bentuk racikan" value={value.dosageForm} onChange={event=>onChange({...value,dosageForm:event.target.value})}>
         {["sirup","nebul","salep","puyer","kapsul","lainnya"].map(form=><option key={form}>{form}</option>)}
