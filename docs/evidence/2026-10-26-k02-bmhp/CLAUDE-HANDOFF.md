@@ -65,8 +65,42 @@ Results (logs in this folder):
   compounds). No automatic restock on refund.
 - Not in scope: cashier screen and printed invoice do not show BMHP.
 
+## Stage 2 — PR243 checks, void-without-reissue, owner package (26 Oct 2026)
+
+PR243: https://github.com/rezanje/Kamo-Vet-OS/pull/243 (draft, open, mergeable). Technical checks on head
+`0855d0888929e83d7012f475ee91ae40486460d1`: **SUCCESS** (run 40334856596, job 121613574503, completed
+2026-10-26T14:01:49Z); it was the only required check. Result for this stage's head commit: see the PR.
+
+Void without reissue — does a path exist? **No.** Checked all migrations and app code:
+- The only clinic invoice void is `clinic_void_reissue_invoice` → `clinic_void_reissue_invoice_core`; it always
+  sets `voided_at` on the old invoice and inserts the replacement in the same transaction. No RPC voids alone.
+- `authenticated` has no INSERT/UPDATE/DELETE on `public.invoices`
+  (`20260929120000_clinic_billing_lifecycle.sql`: `revoke insert, update, delete on public.invoices from authenticated`),
+  and the `guard_posted_clinic_invoice` trigger additionally rejects any change to a posted invoice by that role.
+- App code only reads `invoices` (filters `voided_at is null`); the cashier's cancel button calls the reissue RPC.
+- Refund of a BMHP invoice is refused (fails closed to manual reconciliation), as before.
+- Only a database owner / service role (SQL Editor, outside the app) could bypass this; not an app path.
+
+Added to `supabase/tests/clinic_procedure_bmhp.sql` (step 3, as the doctor role after a BMHP invoice posts):
+a direct `update invoices set voided_at` and a direct `delete` are both refused (`permission denied`), and the
+invoice stays active — so BMHP stock, HPP and journal can only be reversed through void+reissue. Behaviour
+reported as is; no business rule changed. Test sha256 now `638147821d45eb934b6cc851ff6721ac6e944fa5c23997f3ba3f2c459cbd5582`.
+Re-ran `run-native-pg.py` on PG 16.14 and 17.11: K02 + 7 clinic suites pass (FIFO), K02 passes (moving
+average); logs `native-pg16.log`, `native-pg17.log` (content unchanged apart from the run).
+
+Owner package: `owner-apply/OWNER-RUNBOOK.md` with `01-preflight-readonly.sql` (40 checks incl. per-function
+fingerprints and a dry run of all 18 anchors), `03-readback-readonly.sql` (53 checks),
+`04-rollback-only-if-decided.sql` (one transaction, refuses once BMHP data exists, reverses the 18 patches).
+Generated and rehearsed by `owner-apply/build-and-verify.py` on PG 16.14 and 17.11 (byte-identical output):
+preflight 0 failed → apply → readback 0 failed → rollback refused with BMHP data → rollback → preflight 0 failed
+→ re-apply → readback 0 failed → K02 suite passes. Logs `owner-apply/rehearsal-pg16.log`, `rehearsal-pg17.log`.
+Nothing was run against production or any remote database.
+
+Finding for the owner: two repository migrations share version `0106` (`0106_audit_keuangan.sql`,
+`0106_monitoring_rawat_inap.sql`), so Supabase CLI history comparison can be noisy; the runbook prefers the
+SQL Editor path, which is the one rehearsed.
+
 ## Next
 
-1. Open PR, wait for Technical checks.
-2. Production migration only with legitimate owner access, confirmed target, recent backup, then readback
-   per `verification.md`. Not done.
+1. Owner decision on the production window; then run the owner package (Step 0–4). Not done.
+2. Merge PR243 only after the readback passes; verify the exact-SHA Production deployment and the BMHP picker.

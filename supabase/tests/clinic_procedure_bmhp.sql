@@ -158,6 +158,22 @@ begin
     perform clinic_private.bmhp_issue('e9000000-0000-4000-8000-000000000001', wh, 'x', current_date);
   exception when insufficient_privilege then failed := true; end;
   if not failed then raise exception 'private BMHP issue is callable'; end if;
+  -- no void without reissue: a direct void or delete of the posted invoice is refused,
+  -- so BMHP stock, HPP and journal can only be reversed through clinic_void_reissue_invoice
+  failed := false;
+  begin
+    update public.invoices set voided_at = now() where id = inv;
+  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1;
+    when insufficient_privilege then failed := true; end;
+  if not failed or (select voided_at from public.invoices where id = inv) is not null then
+    raise exception 'BMHP invoice voided without reissue'; end if;
+  failed := false;
+  begin
+    delete from public.invoices where id = inv;
+  exception when sqlstate 'P0001' then failed := position('INVOICE_POSTED:' in sqlerrm) = 1;
+    when insufficient_privilege then failed := true; end;
+  if not failed or not exists(select 1 from public.invoices where id = inv) then
+    raise exception 'BMHP invoice deleted without reversal'; end if;
 
   -- 4) refund source fails closed (no BMHP restock path there)
   if (public.preview_clinic_refund_source(inv)->>'eligible')::boolean

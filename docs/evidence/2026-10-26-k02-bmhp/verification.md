@@ -4,7 +4,7 @@ Approved semantics (Founder, 26 Oct 2026 09:25): BMHP is recorded as actual usag
 
 ## Files
 - `supabase/migrations/20261026100000_k02_procedure_bmhp.sql` (sha256 `513f9c0937fa74a91e5c84a6bbfcc1fd7763d00686120277e599bd8c5aad9cbd`)
-- `supabase/tests/clinic_procedure_bmhp.sql` (sha256 `bca94d31b71568c3926b096e71e1bf73db438bfbdb55dfb0f445d12be01f690e`)
+- `supabase/tests/clinic_procedure_bmhp.sql` (sha256 `638147821d45eb934b6cc851ff6721ac6e944fa5c23997f3ba3f2c459cbd5582`; was `bca94d31…690e` before the 26 Oct direct-void/delete assertions were added)
 - `scripts/test-procedure-bmhp-postgres.py` — official disposable runner (Docker `postgres:16`, same bootstrap as `test-compound-catalog-postgres.py`; never accepts a DB URL).
 
 ## What the migration does (additive)
@@ -25,6 +25,7 @@ Approved semantics (Founder, 26 Oct 2026 09:25): BMHP is recorded as actual usag
 - Clinic cashier screen and printed invoice are unchanged in this candidate (BMHP is not a billable line); a read-only BMHP display at the cashier can follow after the migration is live.
 
 ## Owner apply path (requires existing Supabase owner/DB access; no new token is requested)
+Full rehearsed package (preflight, apply, readback, rollback SQL): `owner-apply/OWNER-RUNBOOK.md`. Summary:
 1. Preflight read-only on the target: every repository migration before this one must already be applied (latest on main before K02 is `20261026090000_inpatient_rx_evidence.sql`); record the newest completed backup time.
 2. Run `python3 scripts/test-procedure-bmhp-postgres.py` locally (Docker) — must print every suite as passed.
 3. Apply exactly this file once (Supabase CLI `supabase db push` from a checkout of this PR head, or SQL Editor with the file whose sha256 matches above). It runs in one transaction; any anchor drift aborts with `K02 expected exactly one anchor`.
