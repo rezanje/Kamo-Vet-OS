@@ -6,6 +6,8 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { ProcedureBmhpField } from "@/components/ProcedureBmhpField";
+import type { BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -37,6 +39,8 @@ type CartRow = {
   official_version_id?: string;
   sale_item_id?: string;
   service_performers?: ServicePerformersInput | null;
+  /** K02: actual consumables on a procedure row (optional). */
+  bmhp?: BmhpRow[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -372,6 +376,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                               grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}
                               onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
+                            {r.jenis === "jasa" && r.item_id && <ProcedureBmhpField label={r.nama_obat} value={r.bmhp} items={items}
+                              onChange={bmhp => setCart(rows => rows.map(row => row.key === r.key ? {...row, bmhp} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (

@@ -87,6 +87,9 @@ Cetak invoice, struk, dan dokumen medis memakai Save as PDF dulu; cocokkan
 nama cabang/pasien, tanggal, rincian, total, tanda tangan, lebar kertas, dan
 pemisahan halaman. Hasil printer fisik perlu konfirmasi pengguna.
 
+Untuk printer kasir setelah laptop dimatikan dan dinyalakan lagi (T01), gunakan
+[prosedur uji restart dan catatan hasil](./verification/2026-10-26-t01-printer-reboot.md).
+
 ## 5. Maintenance, dokter cabang, dan loyalty
 
 Status: maintenance sudah dicoba dengan data fiktif; dokter lintas cabang, batas akses,

@@ -1303,8 +1303,16 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     // No reconstruction from a possibly changed master: exact persisted rows win.
     const recovered = await recoverInitialStock(String(prepared.data));
     if (recovered.ok) {
-      await rememberInitialStockScope(supabase, parsed.rows, getInitialStockScopeSelection(formData));
+      // Scope memory is only a convenience for the next file. A saved batch must
+      // remain visible even if this separate write fails after preparation.
+      let mappingWarning = "";
+      try {
+        await rememberInitialStockScope(supabase, parsed.rows, getInitialStockScopeSelection(formData));
+      } catch {
+        mappingWarning = " Pemetaan tujuan belum tersimpan; pilih lagi bila menyiapkan file berikutnya. Batch ini tetap tersimpan dan perlu ditinjau sebelum posting.";
+      }
       revalidatePath(BACK);
+      return mappingWarning ? { ...recovered, message: `${recovered.message}${mappingWarning}` } : recovered;
     }
     return recovered;
   } catch (error) {

@@ -1,0 +1,10 @@
+Applied 267/267 repository migrations to isolated PGlite PostgreSQL 18.6.
+PASS /opt/data/kamo-k03/supabase/tests/clinic_procedure_bmhp.sql
+PASS /opt/data/kamo-k03/supabase/tests/clinic_invoice_post.sql
+PASS /opt/data/kamo-k03/supabase/tests/clinic_billing_lifecycle.sql
+PASS /opt/data/kamo-k03/supabase/tests/clinic_compound_issue.sql
+PASS /opt/data/kamo-k03/supabase/tests/clinic_manual_invoice_units.sql
+PASS /opt/data/kamo-k03/supabase/tests/clinic_inpatient_action_category.sql
+PASS /opt/data/kamo-k03/supabase/tests/official_compound_catalog.sql
+PASS /opt/data/kamo-k03/supabase/tests/compound_catalog_sku_binding.sql
+PASS /opt/data/pglite-scratch/k02_avg_from_script.sql
