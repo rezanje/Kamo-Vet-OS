@@ -104,3 +104,18 @@ SQL Editor path, which is the one rehearsed.
 
 1. Owner decision on the production window; then run the owner package (Step 0–4). Not done.
 2. Merge PR243 only after the readback passes; verify the exact-SHA Production deployment and the BMHP picker.
+
+## Checkpoint — 26 Oct 2026 22:25 WIB (Claude Code, local Mac session)
+
+- ID K02, owner Claude Code (handoff from Fufufafa), branch `claude/k02-bmhp`, head `f22f6282`, PR243 draft.
+  Technical checks on `f22f6282`: SUCCESS (run 40346388607).
+- Access checked: GitHub push/admin OK; `main` has no branch protection (do not rely on it, still go through PR
+  and green checks). Production deployments readable via the GitHub Deployments API (latest Production =
+  `8e0f59a0`, main). Vercel CLI here is logged into a personal scope without the `kamo-group` team.
+  Supabase: no access to the KAMO project from this machine (CLI account only sees an unrelated inactive
+  project; MCP disconnected; `.env.local` has only the public URL/anon key). Sheet: public CSV read; edit works
+  through the in-app browser, which is NOT signed in to Google, so edits appear as anonymous.
+- Sheet K02 row (19): appended claim + evidence to J, progress to O, blocker to P; read back via CSV export
+  (only those 3 cells changed, prior text kept). F stays `Terhalang`, G/H stay FALSE.
+- Blocked on: production migration by someone with KAMO Supabase owner access (owner-apply/OWNER-RUNBOOK.md).
+  Then merge PR243, verify the Production deployment for the merge SHA, check the BMHP picker live, update Sheet.
