@@ -66,12 +66,16 @@ it('keeps source billing, invoice payment, pharmacy handover and administration 
  expect(html).toContain('Faktur lunas; pembayaran belum dialokasikan per baris');
  expect(html).toContain('Belum ada bukti pemberian per resep');
  expect(html).toContain('Hanya pada faktur dibatalkan');
- expect(html).toContain('Penyerahan obat biasa belum memiliki bukti per resep');
+ expect(html).toContain('Pemberian obat biasa hanya terbukti dari catatan pemberian per resep');
+ expect(html).toContain('Belum ada bukti penyerahan atau pemberian untuk resep ini.');
+ expect(html).toContain('name="recordId" value="inpat"');
+ expect(html).toContain('Catat penyerahan');
+ expect(html).toContain('Catat pemberian');
  expect(html.match(/data-inpatient-handoff/g)).toHaveLength(1);
 });
 
 it('warns when an exact prescription source is on two active invoices without claiming a second charge was prevented',()=>{
- const data:InpatientHandoff={doctor:null,complaint:null,records:[],recipes:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional',qty:1,satuan:'tab',jenis:'obat',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22'}],invoices:[{id:'i1',invoice_no:'A',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22'},{id:'i2',invoice_no:'B',paid_status:'DP',voided_at:null,created_at:'2026-10-22'}],invoiceLines:[{id:'l1',invoice_id:'i1',prescription_item_id:'rx',compound_recipe_id:null,qty:1},{id:'l2',invoice_id:'i2',prescription_item_id:'rx',compound_recipe_id:null,qty:1}]};
+ const data:InpatientHandoff={doctor:null,complaint:null,records:[],recipes:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional',qty:1,satuan:'tab',jenis:'obat',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22'}],invoices:[{id:'i1',invoice_no:'A',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22'},{id:'i2',invoice_no:'B',paid_status:'DP',voided_at:null,created_at:'2026-10-22'}],invoiceLines:[{id:'l1',invoice_id:'i1',prescription_item_id:'rx',compound_recipe_id:null,qty:1},{id:'l2',invoice_id:'i2',prescription_item_id:'rx',compound_recipe_id:null,qty:1}],evidence:[]};
  const [row]=handoffSourceStatus(data).rows;
  expect(row.duplicateActiveInvoices).toBe(true);
  expect(row.billing).toContain('A · qty faktur 1; B · qty faktur 1');
@@ -97,14 +101,14 @@ it('offers forced discharge with a separate signed form step and keeps cross-bra
  expect(s.reads.some(r=>r.table==='consents')).toBe(false);
 });
 it('shows explicit gaps for a verified empty source without inferring paid inpatient days',()=>{
- const empty:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[],recipes:[],invoices:[],invoiceLines:[]};
+ const empty:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[],recipes:[],invoices:[],invoiceLines:[],evidence:[]};
  const status=handoffSourceStatus(empty);
  expect(status.rows).toEqual([]);
  expect(status.gaps).toContain('Lama inap terbayar tidak dihitung: tagihan belum menyimpan tanggal cakupan rawat inap.');
  expect(status.gaps.some(gap=>gap.includes('baris resep/racikan belum punya tautan'))).toBe(false);
 });
 it('keeps a linked compound available in its recipe card without counting one missing bill twice',()=>{
- const linked:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional compound',qty:1,satuan:'btl',jenis:'obat',aturan_pakai:null,compound_recipe_id:'recipe',created_at:'2026-10-22'}],recipes:[{id:'recipe',medical_record_id:'mr',recipe_name:'Fictional recipe',total_volume:'30 ml',dosage_form:'sirup',dosage_instruction:'Fictional instruction',status:'handed_over',created_at:'2026-10-22'}],invoices:[],invoiceLines:[]};
+ const linked:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional compound',qty:1,satuan:'btl',jenis:'obat',aturan_pakai:null,compound_recipe_id:'recipe',created_at:'2026-10-22'}],recipes:[{id:'recipe',medical_record_id:'mr',recipe_name:'Fictional recipe',total_volume:'30 ml',dosage_form:'sirup',dosage_instruction:'Fictional instruction',status:'handed_over',created_at:'2026-10-22'}],invoices:[],invoiceLines:[],evidence:[]};
  const status=handoffSourceStatus(linked);
  expect(status.rows.map(row=>row.key)).toEqual(['rx:rx','recipe:recipe']);
  expect(status.rows[1].handover).toBe('Diserahkan oleh farmasi');
