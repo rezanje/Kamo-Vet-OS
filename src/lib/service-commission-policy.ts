@@ -1,6 +1,6 @@
 import { cocokAturanKomisi, type AturanKomisi, type BarisJual } from "./komisi";
 
-export type ServiceCommissionMode = "personal_rules" | "both_full" | "split";
+export type ServiceCommissionMode = "pending" | "personal_rules" | "both_full" | "split";
 export type ServiceCommissionPolicy = {
   id: string;
   branchId: string | null;
@@ -17,7 +17,7 @@ function validPolicy(policy: ServiceCommissionPolicy): boolean {
     && Number.isFinite(policy.doctorSharePct) && Number.isFinite(policy.staffSharePct)
     && policy.doctorSharePct >= 0 && policy.staffSharePct >= 0
     && policy.doctorSharePct + policy.staffSharePct === 100;
-  return (policy.mode === "personal_rules" || policy.mode === "both_full")
+  return (policy.mode === "pending" || policy.mode === "personal_rules" || policy.mode === "both_full")
     && policy.doctorSharePct === null && policy.staffSharePct === null;
 }
 
@@ -54,6 +54,10 @@ export function prepareServiceCommission(
     const policy = selectedPolicy(source, policies);
     if (!policy || !validPolicy(policy)) {
       rows.push(source); calculationRows.push(source); continue;
+    }
+    if (policy.mode === "pending") {
+      const pending = { ...source, commissionPolicyWarning: "Kebijakan menahan komisi dua pelaksana." };
+      rows.push(pending); calculationRows.push(pending); continue;
     }
     const doctorShare = policy.mode === "split" ? policy.doctorSharePct! : 100;
     const qty = policy.mode === "split" ? allocated(source.qty, doctorShare) : [source.qty, source.qty];

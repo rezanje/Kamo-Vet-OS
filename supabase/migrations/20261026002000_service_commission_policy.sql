@@ -4,7 +4,7 @@ create table public.service_commission_policies (
  id uuid primary key default gen_random_uuid(),
  branch_id uuid references public.branches(id) on delete restrict,
  effective_from date not null,
- mode text not null check (mode in ('personal_rules','both_full','split')),
+ mode text not null check (mode in ('pending','personal_rules','both_full','split')),
  doctor_share_pct numeric,
  staff_share_pct numeric,
  created_by uuid not null default auth.uid(),

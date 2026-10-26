@@ -82,7 +82,7 @@ export async function simpanKebijakanKomisiJasa(formData: FormData) {
   const mode = String(formData.get("mode") ?? "");
   const effectiveFrom = String(formData.get("effective_from") ?? "");
   const branchId = opsional(formData.get("branch_id"));
-  if (!["personal_rules", "both_full", "split"].includes(mode)) gagal("Cara menghitung dua pelaksana wajib dipilih");
+  if (!["pending", "personal_rules", "both_full", "split"].includes(mode)) gagal("Cara menghitung dua pelaksana wajib dipilih");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) || Number.isNaN(Date.parse(`${effectiveFrom}T00:00:00Z`))
     || new Date(`${effectiveFrom}T00:00:00Z`).toISOString().slice(0,10)!==effectiveFrom) gagal("Tanggal berlaku tidak valid");
   if (branchId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchId)) gagal("Cabang tidak valid");

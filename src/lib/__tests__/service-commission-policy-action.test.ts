@@ -29,3 +29,9 @@ it("stores only the explicit choice and shares, retaining server-owned audit fie
  expect(state.inserted).toEqual([{branch_id:"fb100000-0000-4000-8000-000000000001",effective_from:"2026-11-01",mode:"split",
   doctor_share_pct:62.5,staff_share_pct:37.5}]);
 });
+
+it("saves an explicit pending choice to pause an earlier policy",async()=>{
+ await expect(simpanKebijakanKomisiJasa(form({mode:"pending",effective_from:"2026-12-01"})))
+  .rejects.toThrow("REDIRECT:/penjualan/komisi?success=1");
+ expect(state.inserted).toEqual([{branch_id:null,effective_from:"2026-12-01",mode:"pending",doctor_share_pct:null,staff_share_pct:null}]);
+});

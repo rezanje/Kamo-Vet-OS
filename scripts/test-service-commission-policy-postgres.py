@@ -75,6 +75,8 @@ commit;""")
       values('fa100000-0000-4000-8000-000000000003','2026-11-02','both_full');commit;""", "permission denied")
     db.sql(session("1") + """insert into service_commission_policies(effective_from,mode)
       values('2026-11-01','both_full');commit;""")
+    db.sql(session("1") + """insert into service_commission_policies(effective_from,mode)
+      values('2026-12-01','pending');commit;""")
     result = db.sql(session("1") + "select count(*) from service_commission_policies;commit;")
-    assert result.splitlines()[-1] == "3", result
+    assert result.splitlines()[-1] == "4", result
     print("PASS: append-only choices, admin/owner insert, active-profile RLS, no anonymous/edit access, and share validation.")

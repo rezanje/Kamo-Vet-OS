@@ -56,6 +56,16 @@ it("uses a branch choice ahead of a global choice and fails closed on invalid se
  expect(bad.rows[0].commissionPending).toBe(true);
 });
 
+it("lets an append-only pending choice pause a previous payout without erasing its history",()=>{
+ const configured=prepareServiceCommission([source],[rule("global",null)],[
+  policy("both_full",{id:"old",effectiveFrom:"2026-11-01"}),
+  policy("pending",{id:"pause",effectiveFrom:"2026-11-12"}),
+ ]);
+ expect(configured.rows[0]).toMatchObject({commissionPending:true,commissionPolicyWarning:"Kebijakan menahan komisi dua pelaksana."});
+ expect(configured.calculationRows).toHaveLength(1);
+ expect(()=>assertServiceAttributionReady(configured.rows)).toThrow("SERVICE_ATTRIBUTION_PENDING");
+});
+
 it("never replaces a DEMO snapshot or an ambiguous return source",()=>{
  const ambiguous={...source,servicePerformers:undefined,sourceLineId:undefined};
  const prepared=prepareServiceCommission([{...source,fixedCommission:true},ambiguous],[rule("global",null)],[policy("both_full")]);

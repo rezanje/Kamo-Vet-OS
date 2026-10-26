@@ -104,6 +104,7 @@ export default async function KomisiPage({
             <div><label className="flab" htmlFor="service-policy-mode">Cara menghitung *</label>
               <select className="fi" id="service-policy-mode" name="mode" defaultValue="" required>
                 <option value="" disabled>Pilih kebijakan</option>
+                <option value="pending">Tahan komisi dua pelaksana sampai diputuskan</option>
                 <option value="personal_rules">Hanya aturan khusus masing-masing karyawan</option>
                 <option value="both_full">Masing-masing memakai dasar penuh</option>
                 <option value="split">Bagi dasar menurut persentase yang diisi</option>
@@ -123,7 +124,7 @@ export default async function KomisiPage({
         {kebijakanJasa.length===0?<p style={{fontSize:11}}>Belum ada kebijakan tersimpan. Baris dua pelaksana tetap perlu keputusan sebelum masuk penggajian.</p>
           :<div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Mulai</th><th>Cabang</th><th>Cara hitung</th></tr></thead><tbody>
             {kebijakanJasa.slice(0,20).map(row=><tr key={row.id}><td>{row.effective_from}</td><td>{row.branch_id?namaCab.get(row.branch_id)??"Cabang tidak aktif":"Semua cabang"}</td>
-              <td>{row.mode==="personal_rules"?"Aturan khusus karyawan":row.mode==="both_full"?"Masing-masing dasar penuh":row.mode==="split"?`Dokter ${row.doctor_share_pct}% · non-dokter ${row.staff_share_pct}%`:"Tidak dikenal — tertahan"}</td></tr>)}</tbody></table>
+              <td>{row.mode==="pending"?"Ditahan — perlu keputusan":row.mode==="personal_rules"?"Aturan khusus karyawan":row.mode==="both_full"?"Masing-masing dasar penuh":row.mode==="split"?`Dokter ${row.doctor_share_pct}% · non-dokter ${row.staff_share_pct}%`:"Tidak dikenal — tertahan"}</td></tr>)}</tbody></table>
             {kebijakanJasa.length>20&&<p style={{fontSize:11}}>Menampilkan 20 pilihan terbaru dari {kebijakanJasa.length} riwayat.</p>}
           </div>}
       </div>
