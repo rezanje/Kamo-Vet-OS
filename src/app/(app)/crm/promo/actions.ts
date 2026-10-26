@@ -109,9 +109,9 @@ export async function createPromo(formData: FormData) {
   if (discountMode === "package_total") {
     const {data:activated,error:activationError}=await supabase.from("promos")
       .update({is_active:true}).eq("id",promo!.id).select("id").single();
-    // A failed activation leaves the configured promotion inactive. The DB
-    // guard also rejects a concurrent target removal or manual early toggle.
-    if(activationError||!activated)gagal(`Promo tersimpan nonaktif; periksa target lalu aktifkan ulang: ${activationError?.message??"aktivasi tidak terkonfirmasi"}`);
+    // A lost response can follow a committed activation. Do not tell the
+    // manager it is inactive until the saved state has been read again.
+    if(activationError||!activated)gagal(`Status aktivasi promo belum terkonfirmasi; muat ulang daftar sebelum mencoba lagi: ${activationError?.message??"aktivasi tidak terkonfirmasi"}`);
   }
 
   revalidatePath(BACK);
