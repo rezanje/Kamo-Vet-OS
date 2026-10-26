@@ -16,6 +16,10 @@ type CostEvent = {
   value_delta: number | string | null; qty_after: number | string;
   value_after: number | string | null; average_after: number | string | null;
 };
+type InventoryJournalLine = {
+  id: string; debit: number | string; credit: number | string;
+  journal_entries: { branch_id: string | null } | { branch_id: string | null }[] | null;
+};
 
 function amount(value: number | string, label: string): Decimal {
   try {
@@ -51,6 +55,39 @@ function eventPositions(events: CostEvent[]) {
     positions.set(key, { event, qty, value, complete: (previous?.complete ?? true) && monetaryLink });
   }
   return [...positions.values()];
+}
+
+async function inventoryLedgerAtDate(client: SupabaseClient, asOf: string, branchIds: string[], includeUnallocated: boolean) {
+  const { data: account, error } = await client.from("coa_accounts").select("id").eq("code", "1301").maybeSingle();
+  if (error) throw new Error(`Akun persediaan gagal dibaca: ${error.message}`);
+  if (!account) return null;
+  const lines: InventoryJournalLine[] = [];
+  for (let start = 0; start < branchIds.length; start += 100) {
+    const ids = branchIds.slice(start, start + 100);
+    lines.push(...await readReportRows<InventoryJournalLine>(async (from, to) => client.from("journal_lines")
+      .select("id,debit::text,credit::text,journal_entries!inner(tanggal,branch_id)", { count: "exact" })
+      .eq("account_id", account.id).lte("journal_entries.tanggal", asOf)
+      .in("journal_entries.branch_id", ids).order("id").range(from, to)));
+  }
+  if (includeUnallocated) {
+    lines.push(...await readReportRows<InventoryJournalLine>(async (from, to) => client.from("journal_lines")
+      .select("id,debit::text,credit::text,journal_entries!inner(tanggal,branch_id)", { count: "exact" })
+      .eq("account_id", account.id).lte("journal_entries.tanggal", asOf)
+      .is("journal_entries.branch_id", null).order("id").range(from, to)));
+  }
+  const balances = new Map(branchIds.map(id => [id, new Exact(0)]));
+  let unallocated = new Exact(0);
+  for (const line of lines) {
+    const entry = Array.isArray(line.journal_entries) ? line.journal_entries[0] : line.journal_entries;
+    if (!entry || (entry.branch_id !== null && typeof entry.branch_id !== "string")) throw new ReportInputError("Cabang jurnal persediaan tidak lengkap.");
+    const debit = amount(line.debit, "Debit GL 1301");
+    const credit = amount(line.credit, "Kredit GL 1301");
+    if (debit.isNegative() || credit.isNegative()) throw new ReportInputError("Nilai jurnal persediaan negatif; rekonsiliasi sumber diperlukan.");
+    const value = debit.minus(credit);
+    if (entry.branch_id === null) unallocated = unallocated.plus(value);
+    else if (balances.has(entry.branch_id)) balances.set(entry.branch_id, balances.get(entry.branch_id)!.plus(value));
+  }
+  return { balances, unallocated };
 }
 
 export async function loadHistoricalInventory(client: SupabaseClient, input: { tanggal?: string; cabang?: string[] } = {}) {
@@ -141,11 +178,22 @@ export async function loadHistoricalInventory(client: SupabaseClient, input: { t
       qty: position.qty.toFixed(), value: position.complete && position.value !== null ? position.value.toFixed() : null,
       average, negative: position.qty.isNegative(), source: event.source, sourceRef: event.source_ref, sourceDate: event.tanggal };
   }).sort((a, b) => a.branch.localeCompare(b.branch) || a.warehouse.localeCompare(b.warehouse) || a.item.localeCompare(b.item) || a.id.localeCompare(b.id));
+  const fullBranchAccess = allBranches.length > 0 && branches.length === allBranches.length;
+  const ledger = canViewLedger ? await inventoryLedgerAtDate(client, asOf, selected.map(branch => branch.id),
+    fullBranchAccess && selected.length === branches.length) : null;
   const subtotal = (subset: typeof rows) => subset.some(row => row.value === null) ? null
     : subset.reduce((sum, row) => sum.plus(row.value!), new Exact(0)).toFixed();
   const summary = selected.map(branch => {
     const scoped = rows.filter(row => row.branchId === branch.id);
-    return { ...branch, count: scoped.length, value: subtotal(scoped), negativeCount: scoped.filter(row => row.negative).length };
+    const value = subtotal(scoped);
+    const ledgerValue = ledger?.balances.get(branch.id)?.toFixed() ?? null;
+    return { ...branch, count: scoped.length, value, ledgerValue,
+      difference: value === null || ledgerValue === null ? null : new Exact(value).minus(ledgerValue).toFixed(),
+      negativeCount: scoped.filter(row => row.negative).length };
   });
-  return { asOf, activatedAt, available: true as const, branches, selectedIds, selected, canViewLedger, rows, summary, total: subtotal(rows) };
+  const total = subtotal(rows);
+  const scopedLedgerValue = ledger ? selected.reduce((sum, branch) => sum.plus(ledger.balances.get(branch.id) ?? 0), new Exact(0)).toFixed() : null;
+  return { asOf, activatedAt, available: true as const, branches, selectedIds, selected, canViewLedger, rows, summary, total,
+    scopedLedgerValue, scopedDifference: total === null || scopedLedgerValue === null ? null : new Exact(total).minus(scopedLedgerValue).toFixed(),
+    unallocatedLedger: ledger && fullBranchAccess && selected.length === branches.length ? ledger.unallocated.toFixed() : null, fullBranchAccess };
 }

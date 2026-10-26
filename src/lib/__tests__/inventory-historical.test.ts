@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import Decimal from "decimal.js";
 import { loadHistoricalInventory } from "../inventory-historical";
 import { hariIniWIB } from "../tanggal";
 import { clientFixture } from "./fixtures/hpp-report-client";
@@ -15,7 +16,15 @@ const events = [
   { id: 4, warehouse_id: "w2", item_id: "i", tanggal: "2026-10-23", source: "purchase", source_ref: "PO-1", qty_delta: "1", value_delta: "33.125", qty_after: "3", value_after: "93.125", average_after: "31.041666666667" },
   { id: 5, warehouse_id: "w1", item_id: "i", tanggal: "2026-10-24", source: "sale", source_ref: "SALE-2", qty_delta: "-1", value_delta: "-100", qty_after: "2", value_after: "200", average_after: "100" },
 ];
-const tables = () => ({ inventory_costing_settings: settings, warehouses, inventory_cost_events: events });
+const journalLines = [
+  { id: "l1", account_id: "a1301", debit: "400", credit: "100", journal_entries: { tanggal: "2026-10-22", branch_id: "b1" } },
+  { id: "l2", account_id: "a1301", debit: "90", credit: "0", journal_entries: { tanggal: "2026-10-23", branch_id: "b2" } },
+  { id: "l3", account_id: "a1301", debit: "7", credit: "0", journal_entries: { tanggal: "2026-10-23", branch_id: null } },
+  { id: "l4", account_id: "a1301", debit: "100", credit: "0", journal_entries: { tanggal: "2026-10-24", branch_id: "b1" } },
+  { id: "l5", account_id: "other", debit: "1000", credit: "0", journal_entries: { tanggal: "2026-10-22", branch_id: "b1" } },
+];
+const tables = () => ({ inventory_costing_settings: settings, warehouses, inventory_cost_events: events,
+  coa_accounts: [{ id: "a1301", code: "1301" }], journal_lines: journalLines });
 
 it("uses dated average events for an exact branch/detail as-of total and ignores later moves", async () => {
   const { client, records } = clientFixture({ tables: tables() });
@@ -26,8 +35,15 @@ it("uses dated average events for an exact branch/detail as-of total and ignores
   ]);
   expect(report.summary.map(row => row.value)).toEqual(["300", "93.125"]);
   expect(report.total).toBe("393.125");
+  expect(report.summary.map(row => [row.ledgerValue, row.difference])).toEqual([["300", "0"], ["90", "3.125"]]);
+  expect([report.scopedLedgerValue, report.scopedDifference, report.unallocatedLedger]).toEqual(["390", "3.125", "7"]);
+  expect(report.summary.reduce((sum, branch) => sum.plus(branch.value!), new Decimal(0)).toFixed()).toBe(report.total);
   expect(records).toContainEqual({ table: "inventory_cost_events", method: "lte", args: ["tanggal", "2026-10-23"] });
+  expect(records).toContainEqual({ table: "journal_lines", method: "lte", args: ["journal_entries.tanggal", "2026-10-23"] });
+  expect(records).toContainEqual({ table: "journal_lines", method: "in", args: ["journal_entries.branch_id", ["b1", "b2"]] });
+  expect(records).toContainEqual({ table: "journal_lines", method: "is", args: ["journal_entries.branch_id", null] });
   expect(records.some(record => record.table === "inventory_cost_events" && record.method === "select" && String(record.args[0]).includes("value_after::text"))).toBe(true);
+  expect(records.some(record => record.table === "journal_lines" && record.method === "select" && String(record.args[0]).includes("debit::text,credit::text"))).toBe(true);
   expect(records.some(record => record.table === "stock_moves" || record.table === "stock_layers")).toBe(false);
 });
 
@@ -119,18 +135,58 @@ it("enforces branch access and fails closed on incomplete event pages", async ()
   await expect(loadHistoricalInventory(clientFixture({ deniedBranch: "b2", tables: tables() }).client,
     { tanggal: "2026-10-23", cabang: ["b2"] })).rejects.toMatchObject({ status: 403 });
   const limited = await loadHistoricalInventory(clientFixture({ deniedBranch: "b2", tables: tables() }).client, { tanggal: "2026-10-23" });
-  expect(limited.summary).toEqual([{ id: "b1", name: "Satu", count: 1, value: "300", negativeCount: 0 }]);
+  expect(limited.summary).toEqual([{ id: "b1", name: "Satu", count: 1, value: "300", ledgerValue: "300", difference: "0", negativeCount: 0 }]);
+  expect(limited.fullBranchAccess).toBe(false);
   await expect(loadHistoricalInventory(clientFixture({ missingCountTable: "inventory_cost_events", tables: tables() }).client,
     { tanggal: "2026-10-23" })).rejects.toThrow("jumlah pasti");
   await expect(loadHistoricalInventory(clientFixture({ errorTable: "inventory_cost_events", tables: tables() }).client,
     { tanggal: "2026-10-23" })).rejects.toThrow("read failed");
 });
 
-it("shows the GL drilldown only when the separate Buku Besar module is allowed", async () => {
-  const report = await loadHistoricalInventory(clientFixture({ role: "FINANCE", modules: [{ role: "FINANCE", module_id: "laporan" }], tables: tables() }).client,
+it("reads no GL lines without the separate Buku Besar module", async () => {
+  const { client, records } = clientFixture({ role: "FINANCE", modules: [{ role: "FINANCE", module_id: "laporan" }], tables: tables() });
+  const report = await loadHistoricalInventory(client,
     { tanggal: "2026-10-23", cabang: ["b1"] });
   expect(report.available).toBe(true);
   expect(report.canViewLedger).toBe(false);
+  expect(report.scopedLedgerValue).toBeNull();
+  expect(records.some(row => row.table === "coa_accounts" || row.table === "journal_lines")).toBe(false);
+});
+
+it("uses exact decimal journal amounts and excludes other branches from selected subtotal", async () => {
+  const huge = "9007199254740993.123456789123";
+  const report = await loadHistoricalInventory(clientFixture({ tables: {
+    ...tables(), journal_lines: [{ id: "l1", account_id: "a1301", debit: huge, credit: "0.123456789123", journal_entries: { tanggal: "2026-10-22", branch_id: "b1" } }, ...journalLines.slice(1)],
+  } }).client, { tanggal: "2026-10-23", cabang: ["b1"] });
+  expect(report.scopedLedgerValue).toBe("9007199254740993");
+  expect(report.scopedDifference).toBe("-9007199254740693");
+  expect(report.unallocatedLedger).toBeNull();
+});
+
+it("leaves comparison unavailable when account 1301 is absent and fails on incomplete GL pages", async () => {
+  const missing = await loadHistoricalInventory(clientFixture({ tables: { ...tables(), coa_accounts: [] } }).client, { tanggal: "2026-10-23" });
+  expect(missing.total).toBe("393.125");
+  expect(missing.scopedLedgerValue).toBeNull();
+  await expect(loadHistoricalInventory(clientFixture({ tables: tables(), missingCountTable: "journal_lines" }).client,
+    { tanggal: "2026-10-23" })).rejects.toThrow("jumlah pasti");
+  await expect(loadHistoricalInventory(clientFixture({ tables: tables(), errorTable: "journal_lines" }).client,
+    { tanggal: "2026-10-23" })).rejects.toThrow("read failed");
+  await expect(loadHistoricalInventory(clientFixture({ tables: { ...tables(), journal_lines: [{ ...journalLines[0], debit: "NaN" }] } }).client,
+    { tanggal: "2026-10-23" })).rejects.toThrow("tidak sah");
+});
+
+it("pages all selected GL lines and rejects a server-truncated GL page", async () => {
+  const long = Array.from({ length: 1201 }, (_, index) => ({
+    id: `l${String(index).padStart(4, "0")}`, account_id: "a1301", debit: "1", credit: "0",
+    journal_entries: { tanggal: "2026-10-22", branch_id: "b1" },
+  }));
+  const { client, records } = clientFixture({ tables: { ...tables(), journal_lines: long } });
+  const report = await loadHistoricalInventory(client, { tanggal: "2026-10-23", cabang: ["b1"] });
+  expect(report.scopedLedgerValue).toBe("1201");
+  expect(report.scopedDifference).toBe("-901");
+  expect(records.filter(row => row.table === "journal_lines" && row.method === "range")).toHaveLength(3);
+  await expect(loadHistoricalInventory(clientFixture({ tables: { ...tables(), journal_lines: long }, serverCap: 100 }).client,
+    { tanggal: "2026-10-23", cabang: ["b1"] })).rejects.toThrow("terpotong");
 });
 
 it("reads all event pages before choosing the last event and total", async () => {

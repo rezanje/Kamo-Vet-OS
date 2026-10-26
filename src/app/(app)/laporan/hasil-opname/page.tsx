@@ -59,6 +59,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
         {report?.revision && <div>Angka harga ini berasal dari posting awal. Koreksi stok revisi {report.revision} tidak mengubah snapshot ini.</div>}
       </div>}
       {report?.legacy && <div className="p2ban" role="status">Hasil lama ini tidak mempunyai snapshot harga saat posting. Harga historis tidak tersedia.</div>}
+      {selected && report?.journalReview && <div className="crm-sec">
+        <h3 style={{ marginTop: 0 }}>Rekonsiliasi jurnal hasil asal</h3>
+        <p>Perbandingan ini memakai seluruh baris hasil saat posting, termasuk yang tersembunyi oleh filter selisih. Akun lawan mengikuti jurnal yang tercatat dan tetap perlu ditinjau finance.</p>
+        <div role="status" className="p2ban">
+          {report.journalReview.status === "cocok" ? "Mutasi akun persediaan 1301 cocok dengan nilai modal hasil asal; jurnal sumber berimbang." :
+            report.journalReview.status === "tanpa-selisih" ? "Tidak ada selisih nilai modal atau jurnal sumber untuk hasil ini." :
+              report.journalReview.status === "tidak-tersedia" ? "Nilai modal historis tidak tersedia; rekonsiliasi otomatis tidak dapat dilakukan." :
+                "Mutasi akun persediaan atau kelengkapan jurnal belum cocok. Periksa jurnal dan dokumen asal; jangan posting ulang."}
+        </div>
+        <p>Selisih lebih modal: {money(report.journalReview.expectedGain)} · Debit 1301: {money(report.journalReview.ledgerGain)}. Selisih kurang modal: {money(report.journalReview.expectedLoss)} · Kredit 1301: {money(report.journalReview.ledgerLoss)}.</p>
+        {report.journalReview.journals.length ? <ul>{report.journalReview.journals.map(journal => <li key={journal.id}>
+          <Link href={`/keuangan/jurnal?entry=${encodeURIComponent(journal.id)}`}>{journal.number}</Link> · debit {money(journal.debit)}, kredit {money(journal.credit)} · {journal.accounts.join(", ")}{journal.valid ? "" : " · perlu diperiksa"}
+        </li>)}</ul> : <p>Jurnal sumber belum ditemukan.</p>}
+      </div>}
       {selected && !report?.legacy && <div className="crm-sec">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
           <Link className="btn" href={query({ dasar: "modal" })}>Modal FIFO</Link>

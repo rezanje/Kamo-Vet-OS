@@ -6,12 +6,13 @@ const paths=new Set(['absensi','nilai-persediaan','gaji','rekap-klinik','transak
 const filters=new Set(['dari','sampai','periode','cabang','cabang_id','gudang','dokter','q','masalah','rincian','kanal','jenis','horizon','preset','from','to','channel','branch','ambang','cari','kolom']);
 const opnameFilters=new Set(['order','dasar','arah']);
 const salesItemFilters=new Set(['pelaksana_id']);
+const promoFilters=new Set(['promo_id']);
 export function reportPresetKey(userId:string){if(!userId)throw Error('Akun belum tersedia.');return `vetos:report-presets:v1:${userId}`;}
 export function reportPresetHref(path:string,query:string):string {
  if(!path.startsWith('/laporan/')||!paths.has(path.slice(9)))throw Error('Tujuan laporan tidak didukung.');
  if(query.length>8000)throw Error('Filter terlalu panjang.');
  const clean=new URLSearchParams();let count=0;let hasColumns=false;
- for(const [key,value] of new URLSearchParams(query))if(filters.has(key)||(path==='/laporan/hasil-opname'&&opnameFilters.has(key))||(path==='/laporan/penjualan-barang'&&salesItemFilters.has(key))){
+ for(const [key,value] of new URLSearchParams(query))if(filters.has(key)||(path==='/laporan/hasil-opname'&&opnameFilters.has(key))||(path==='/laporan/penjualan-barang'&&salesItemFilters.has(key))||(path==='/laporan/promo'&&promoFilters.has(key))){
   if(value.length>(key==='kolom'?3000:1000)||++count>100)throw Error('Filter terlalu panjang.');
   if(key==='kolom'){if(hasColumns)throw Error('Pilihan kolom berulang.');hasColumns=true;const columns=normalizeReportColumns(value);if(columns)clean.append(key,columns);}
   else clean.append(key,value);

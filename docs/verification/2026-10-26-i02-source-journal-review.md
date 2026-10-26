@@ -1,0 +1,7 @@
+# I02 — pemeriksaan jurnal hasil stok opname
+
+Checklist I02 meminta jejak dari hasil SO plus/minus ke jurnal dan rekonsiliasi nilai persediaan. Posting atomik sudah ada di main. Perubahan ini menambah pemeriksaan baca saja pada laporan hasil SO untuk satu dokumen yang dipilih: daftar jurnal sumber `opname` menurut nomor hasil, tautan ke entri jurnal, total debit/kredit, akun yang tercatat, serta perbandingan debit dan kredit akun persediaan 1301 dengan nilai modal seluruh baris snapshot posting. Filter selisih dan pilihan harga jual laporan tidak mengubah dasar perbandingan. Tanggal, cabang, jurnal batal, dan keseimbangan entri ikut diperiksa. Data yang hilang atau tidak cocok ditandai untuk penelusuran, tanpa posting ulang atau koreksi otomatis.
+
+Fixture fiktif mencakup selisih lebih 100 dan kurang 200, jurnal berimbang, filter tampilan harga jual yang tidak mengubah perbandingan modal, jurnal hilang, cabang berbeda, jurnal tidak berimbang, dan kegagalan baca. Tidak ada migration, perubahan RLS, atau transaksi target.
+
+**Batas bukti:** perbandingan ini hanya jurnal hasil asal yang dapat dibaca akun terkait. Jurnal faktur selisih retail dan koreksi setelah posting harus ditinjau terpisah. Akun lawan, metode HPP aktif untuk data target, insiden pelanggan tertentu, dan rekonsiliasi laporan keuangan memerlukan dokumen SO serta keputusan finance; status checklist I02 tetap parsial. Angka snapshot lama yang tidak tersedia tidak dibuat ulang dari harga master sekarang.
