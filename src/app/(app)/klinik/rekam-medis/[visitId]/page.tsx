@@ -23,6 +23,7 @@ import { ReferralPanel } from "./ReferralPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
+import { tambahAddendumRekamMedis } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -125,6 +126,28 @@ export default async function RekamMedisPage({
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
     prescriptions: resep, compounds: racikanList,
   } : undefined;
+  type PaidAddendum = { id: string; amendment: string; reason: string; created_at: string;
+    created_by: string; profiles: Rel<{ full_name: string | null }> };
+  const paidInvoice = recorded && mrId && !mrLoadFailed
+    ? await supabase.from("invoices").select("id").eq("visit_id", visitId)
+      .eq("paid_status", "Lunas").not("paid_at", "is", null).is("voided_at", null).maybeSingle()
+    : { data: null, error: null };
+  const hasPaidInvoice = !!paidInvoice.data && !paidInvoice.error;
+  let paidAddenda: PaidAddendum[] = [];
+  let paidAddendaError = false;
+  if (recorded && mrId && !mrLoadFailed) {
+    try {
+      paidAddenda = await readCompleteList<PaidAddendum>((from, to) => supabase
+        .from("clinic_paid_record_addenda")
+        .select("id, amendment, reason, created_at, created_by, profiles(full_name)", { count: "exact" })
+        .eq("medical_record_id", mrId).order("created_at").order("id").range(from, to),
+      "Addendum rekam medis", { maxRows: null });
+    } catch { paidAddendaError = true; }
+  }
+  const addendumReady = hasPaidInvoice && mrId && !paidAddendaError
+    ? await supabase.rpc("clinic_can_add_paid_addendum", { p_record_id: mrId })
+    : { data: false, error: null };
+  const canAddPaidAddendum = addendumReady.data === true && !addendumReady.error;
   const { data: savedProvider } = editing && visit.service_provider_id
     ? await supabase.from("employees").select("id,nama,jabatan").eq("id", visit.service_provider_id).maybeSingle()
     : { data: null };
@@ -275,6 +298,8 @@ export default async function RekamMedisPage({
         </div>
       )}
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {success === "addendum" && <div className="p2ban" role="status">Addendum rekam medis tersimpan; catatan dan transaksi asli tetap.</div>}
+      {paidInvoice.error && <div className="p2ban" role="alert">Status pembayaran belum dapat diverifikasi. Addendum ditahan; muat ulang.</div>}
       {edit && !editing && <div className="p2ban" role="alert">Koreksi belum dapat dibuka. Periksa akses, status kunjungan, dan muat ulang data pemeriksaan.</div>}
       {racikan === "dibuat" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
@@ -425,6 +450,26 @@ export default async function RekamMedisPage({
               )}
             </div>
           </div>
+
+          {(hasPaidInvoice || paidAddenda.length > 0 || paidAddendaError) && <section className="card" style={{ marginTop: 12 }}>
+            <div className="card-hd"><i className="ti ti-file-plus" /> Addendum klinis setelah pembayaran</div>
+            <p>Catatan tambahan dicatat terpisah. Hasil pemeriksaan asli, resep, stok, tagihan, dan pembayaran tidak diubah.</p>
+            {paidAddendaError && <p role="alert">Riwayat addendum belum dapat diverifikasi. Muat ulang sebelum mencetak rekam medis.</p>}
+            {addendumReady.error && <p role="alert">Izin addendum belum dapat diverifikasi. Muat ulang sebelum mencoba lagi.</p>}
+            {paidAddenda.map(row => <div key={row.id} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8, marginTop: 8 }}>
+              <div><b>{one(row.profiles)?.full_name ?? row.created_by}</b> · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
+              <div>Alasan: {row.reason}</div><div>Catatan tambahan: {row.amendment}</div>
+            </div>)}
+            {canAddPaidAddendum && mrId && <TransactionForm userId={draftUserId} scope={`paid-clinical-addendum:${visitId}:${mrId}`} action={tambahAddendumRekamMedis}>
+              <input type="hidden" name="visitId" value={visitId} />
+              <input type="hidden" name="medical_record_id" value={mrId} />
+              <label className="flab" htmlFor="paid-amendment">Catatan tambahan *</label>
+              <textarea id="paid-amendment" className="fi" name="amendment" minLength={3} maxLength={4000} required rows={3} />
+              <label className="flab" htmlFor="paid-amendment-reason">Alasan *</label>
+              <textarea id="paid-amendment-reason" className="fi" name="reason" minLength={3} maxLength={1000} required rows={2} />
+              <SubmitButton className="btn-acc" pendingText="Mencatat addendum…">Catat addendum</SubmitButton>
+            </TransactionForm>}
+          </section>}
 
           {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
           <div className="card" style={{ marginTop: 12 }}>

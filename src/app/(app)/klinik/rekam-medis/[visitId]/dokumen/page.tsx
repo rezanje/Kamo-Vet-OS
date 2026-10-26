@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null { return Array.isArray(r) ? (r[0] ?? null) : r; }
@@ -57,8 +58,21 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   const obat = (presc ?? []).filter((p) => p.jenis !== "jasa");
   const jasa = (presc ?? []).filter((p) => p.jenis === "jasa");
 
-  const { data: invoice } = await supabase
+  const { data: invoice, error: invoiceError } = await supabase
     .from("invoices").select("metode_bayar, total, paid_status").eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+  type PaidAddendum = { id: string; amendment: string; reason: string; created_at: string;
+    created_by: string; profiles: Rel<{ full_name: string | null }> };
+  let paidAddenda: PaidAddendum[] = [];
+  let paidAddendaError = !!invoiceError;
+  if (mr) {
+    try {
+      paidAddenda = await readCompleteList<PaidAddendum>((from, to) => supabase
+        .from("clinic_paid_record_addenda")
+        .select("id, amendment, reason, created_at, created_by, profiles(full_name)", { count: "exact" })
+        .eq("medical_record_id", mr.id).order("created_at").order("id").range(from, to),
+      "Addendum cetak rekam medis", { maxRows: null });
+    } catch { paidAddendaError = true; }
+  }
 
   const { data: inpat } = await supabase
     .from("inpatient_records").select("admitted_at, condition_status").eq("visit_id", visitId).order("admitted_at", { ascending: false });
@@ -71,7 +85,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
     <>
       <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <Link href={`/klinik/rekam-medis/${visitId}`} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke rekam medis</Link>
-        <PrintButton label="Cetak Rekam Medis" />
+        {paidAddendaError ? <span role="alert">Riwayat addendum belum dapat diverifikasi; cetak ditahan.</span> : <PrintButton label="Cetak Rekam Medis" />}
       </div>
 
       <div className="rm-doc" style={{ maxWidth: 900, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", padding: "30px 34px", fontSize: 11.5, color: "#141413" }}>
@@ -219,6 +233,15 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
             <Row label="Status" value={invoice?.paid_status ?? "Belum Lunas"} />
           </div>
         </div>
+
+        {paidAddenda.length > 0 && <section style={{ marginTop: 16, borderTop: `1px solid ${BLUE}`, paddingTop: 12 }}>
+          <SecTitle icon="ti-file-plus" text="ADDENDUM KLINIS SETELAH PEMBAYARAN" />
+          <p>Catatan asli di atas tetap seperti tersimpan; addendum berikut dicatat terpisah.</p>
+          {paidAddenda.map(row => <div key={row.id} style={{ border: ".5px solid var(--bd)", borderRadius: 6, padding: 8, marginTop: 8, breakInside: "avoid" }}>
+            <b>{one(row.profiles)?.full_name ?? row.created_by}</b> · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
+            <div>Alasan: {row.reason}</div><div>Catatan tambahan: {row.amendment}</div>
+          </div>)}
+        </section>}
 
         {/* ===== Tanda tangan + info ===== */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.3fr", gap: 20, marginTop: 22, alignItems: "end" }}>
