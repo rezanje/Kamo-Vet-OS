@@ -11,6 +11,7 @@ import { hapusAturanKomisi, simpanAturanKomisi, simpanKebijakanKomisiJasa, toggl
 import { readCompleteList } from "@/lib/checked-list";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { ItemReferenceField } from "@/components/ItemReferenceField";
+import { rincianKomisiText } from "@/lib/komisi-detail";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const periodeSekarang = () => new Date().toISOString().slice(0, 7);
@@ -62,6 +63,7 @@ export default async function KomisiPage({
   const namaCab = new Map(cabang.map((c) => [c.id, c.name]));
   const namaKat = new Map(kategori.map((k) => [k.id, k.name]));
   const namaItem = new Map(barang.map((i) => [i.id, i.name]));
+  const aturanById = new Map(aturan.map((a) => [a.id, a]));
 
   const cakupan = (a: Aturan): string => {
     const bagian = [
@@ -347,12 +349,13 @@ export default async function KomisiPage({
                           rincian {h.rincian.length} aturan
                         </summary>
                         <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4, lineHeight: 1.7 }}>
-                          {h.rincian.map((r) => (
-                            <div key={r.aturanId}>
-                              {r.nama}: dasar {rp(r.dasar)} → <b>{rp(r.komisi)}</b>
+                          {h.rincian.map((r) => {
+                            const detail = rincianKomisiText(r, aturanById.get(r.aturanId));
+                            return <div key={r.aturanId}>
+                              {r.nama}: {detail.basis}{detail.tarif ? ` × ${detail.tarif}` : ""} → <b>{rp(r.komisi)}</b>
                               {!r.cair && <span style={{ color: "#b45309" }}> (ambang belum tembus)</span>}
-                            </div>
-                          ))}
+                            </div>;
+                          })}
                         </div>
                       </details>
                     )}

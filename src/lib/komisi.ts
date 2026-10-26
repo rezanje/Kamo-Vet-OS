@@ -167,7 +167,9 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilK
       // Komisi negatif (retur melebihi penjualan) ditahan di nol: gaji orang tidak
       // dipotong gara-gara komisi, potongan retur diurus terpisah kalau memang perlu.
       const nilai = cair ? Math.max(0, Math.round(komisi)) : 0;
-      rincian.push({ aturanId: a.id, nama: a.nama, dasar: Math.round(dasar), komisi: nilai, cair });
+      // Qty may be fractional (for example a half-unit service). Rounding it in
+      // the evidence while calculating payout from the original qty misstates the rate.
+      rincian.push({ aturanId: a.id, nama: a.nama, dasar: a.tipe === "nominal" ? dasar : Math.round(dasar), komisi: nilai, cair });
     }
 
     hasil.push({
