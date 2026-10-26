@@ -127,6 +127,10 @@ describe("ringkasSyarat", () => {
     expect(ringkasSyarat(v({ max_potongan: 10_000, min_belanja: 100_000, boleh_gabung_promo: false })))
       .toBe("maks Rp 10.000 · min belanja Rp 100.000 · tidak digabung promo");
   });
+  it("menjelaskan batas dokumen berkode tanpa mengubah rumus diskon", () => {
+    expect(ringkasSyarat(v({ max_uses: 3 }))).toBe("maks 3 dokumen berkode");
+    expect(potonganVoucher(10_000, v({ max_uses: 3 }))).toBe(1000);
+  });
 });
 
 describe("voucher bersasaran (meeting 14 Agustus)", () => {

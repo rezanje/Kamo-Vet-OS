@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parseClinicPostingError, parseClinicRecordError, toClinicCompoundRecipeInput } from "../klinik-posting";
 
 describe("parseClinicPostingError", () => {
+  it("menjelaskan batas voucher tanpa membocorkan kode internal database", () => {
+    expect(parseClinicPostingError({ code: "P0001", message: "VOUCHER_USAGE_LIMIT_REACHED" }))
+      .toBe("Batas pemakaian kode voucher tercapai. Hapus kode atau pilih kode lain.");
+  });
   it("identifies the medicine whose stock is insufficient", () => {
     expect(parseClinicPostingError({ code: "P0001", message: "STOCK_SHORT: Obat A" }))
       .toBe("Stok tidak cukup: Obat A");

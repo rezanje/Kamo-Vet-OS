@@ -31,6 +31,8 @@ export async function simpanVoucher(formData: FormData) {
 
   const maxRaw = String(formData.get("max_potongan") ?? "").trim();
   const maxPotongan = maxRaw ? Number(maxRaw) : null;
+  const maxUsesRaw = String(formData.get("max_uses") ?? "").trim();
+  const maxUses = maxUsesRaw ? Number(maxUsesRaw) : null;
   const minBelanja = Number(formData.get("min_belanja") ?? 0) || 0;
   const bolehGabung = String(formData.get("boleh_gabung_promo") ?? "") === "1";
   // Sasaran voucher (meeting 14 Agustus): kosong = terbuka untuk siapa pun.
@@ -51,6 +53,9 @@ export async function simpanVoucher(formData: FormData) {
   if (maxPotongan !== null && (!Number.isFinite(maxPotongan) || maxPotongan <= 0)) {
     redirect(`${BACK}?error=${encodeURIComponent("Maks. potongan harus lebih dari 0, atau kosongkan kalau tanpa batas")}`);
   }
+  if (maxUses !== null && (!Number.isSafeInteger(maxUses) || maxUses <= 0)) {
+    redirect(`${BACK}?error=${encodeURIComponent("Batas pemakaian harus bilangan bulat positif, atau kosong untuk tanpa batas")}`);
+  }
   if (minBelanja < 0) {
     redirect(`${BACK}?error=${encodeURIComponent("Min. belanja tidak boleh negatif")}`);
   }
@@ -68,7 +73,7 @@ export async function simpanVoucher(formData: FormData) {
 
   const row = {
     code, tipe, nilai, valid_from: validFrom, valid_until: validUntil,
-    max_potongan: maxPotongan, min_belanja: minBelanja, boleh_gabung_promo: bolehGabung,
+    max_potongan: maxPotongan, max_uses: maxUses, min_belanja: minBelanja, boleh_gabung_promo: bolehGabung,
     customer_id: customerId, category_id: categoryId,
   };
   const { error } = id
