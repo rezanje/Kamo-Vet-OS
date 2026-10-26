@@ -16,6 +16,19 @@ describe('private report configurations',()=>{
   expect(readReportPresets(JSON.stringify([{id:'one',name:'Opname Oktober',href,savedAt:'2026-10-25T00:00:00Z'}]))[0].href).toBe(href);
   expect(reportPresetHref('/laporan/promo','order=order-a&dasar=jual&arah=kurang')).toBe('/laporan/promo');
  });
+ it('retains the exact R01 service performer filter only on the item sales report',()=>{
+  const href=reportPresetHref('/laporan/penjualan-barang','dari=2026-10-01&sampai=2026-10-31&pelaksana_id=fa100000-0000-4000-8000-000000000001&q=vaksin');
+  expect(href).toContain('pelaksana_id=fa100000-0000-4000-8000-000000000001');
+  expect(readReportPresets(JSON.stringify([{id:'one',name:'Vaksin dokter',href,savedAt:'2026-10-26T00:00:00Z'}]))[0].href).toBe(href);
+  expect(reportPresetHref('/laporan/promo','pelaksana_id=fa100000-0000-4000-8000-000000000001')).toBe('/laporan/promo');
+ });
+ it('reopens a named monthly promotion view without broadening the filter to other reports',()=>{
+  const selected='fa100000-0000-4000-8000-000000000019';
+  const href=reportPresetHref('/laporan/promo',`dari=2026-10-01&sampai=2026-10-31&promo_id=${selected}`);
+  expect(href).toContain(`promo_id=${selected}`);
+  expect(readReportPresets(JSON.stringify([{id:'promo',name:'Vaksin bulanan',href,savedAt:'2026-10-26T00:00:00Z'}]))[0].href).toBe(href);
+  expect(reportPresetHref('/laporan/penjualan-barang',`promo_id=${selected}`)).toBe('/laporan/penjualan-barang');
+ });
  it('rejects external, executable, download and non-report destinations',()=>{
   for(const path of ['https://bad.test/laporan/promo','//bad.test','javascript:alert(1)','/laporan/promo/unduh','/pengaturan/reset','/laporan/../pengaturan','/laporan/%2e%2e/promo']) expect(()=>reportPresetHref(path,'')).toThrow();
  });
