@@ -11,7 +11,7 @@ vi.mock("@/lib/komisi-data", () => ({ komisiPeriode: async () => ({
     { aturanId: "sales", nama: "Omzet", dasar: 75_000, komisi: 5_625, cair: true },
   ] }] : [], omzetTanpaPenjual: 0, baris: [],
 }) }));
-vi.mock("@/app/(app)/penjualan/komisi/actions", () => ({ hapusAturanKomisi: vi.fn(), simpanAturanKomisi: vi.fn(), toggleAturanKomisi: vi.fn() }));
+vi.mock("@/app/(app)/penjualan/komisi/actions", () => ({ hapusAturanKomisi: vi.fn(), simpanAturanKomisi: vi.fn(), simpanKelompokKomisi: vi.fn(), toggleAturanKomisi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(table: string) {
   const read = { table, orders: [], from: 0 } as { table: string; orders: string[]; from: number }; state.reads.push(read);
   let to = 999, counted = false;
