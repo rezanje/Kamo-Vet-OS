@@ -2,6 +2,7 @@ import { completeReportQuery } from "./report-query";
 import { isCompletedSale, saleMerchandiseTotal, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
 import { PosDecimal } from "./pos-money";
 import type { ServicePerformersSnapshot } from "./service-performers";
+import { prepareServiceCommission, type ServiceCommissionPolicy } from "./service-commission-policy";
 // Pengumpul data komisi: menarik penjualan + retur satu periode lalu menyusunnya
 // jadi baris siap hitung untuk `hitungKomisi`.
 //
@@ -69,7 +70,7 @@ function serviceAttribution(row:{id?:string;service_performers?:ServicePerformer
   return {employeeId:ids.length===1?ids[0]:null,commissionPending:ids.length>1,servicePerformers:row.service_performers,
     sourceLineId:row.id,sourceDocumentId:documentId,sourceDocumentNumber:number,sourceDocumentHref:href};
 }
-type SaleInfo={employeeId:string|null;branchId:string|null;hppPerUnit:Map<string,number>;sale:SaleMerchantTotal;lines:SaleItemRow[];documentId:string;number?:string};
+type SaleInfo={employeeId:string|null;branchId:string|null;hppPerUnit:Map<string,number>;sale:SaleMerchantTotal;lines:SaleItemRow[];documentId:string;number?:string;sourceDate:string};
 
 type FakturJualRow = {
   id: string;
@@ -171,7 +172,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       });
     }
 
-    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk });
+    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk,sourceDate:s.created_at.slice(0,10) });
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
@@ -198,6 +199,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       const hppUnit = source && source.hpp!==null && Number(source.qty)>0 ? Number(source.hpp)/Number(source.qty) : it.item_id ? info.hppPerUnit.get(it.item_id) : undefined;
       baris.push({
         tanggal: r.tanggal,
+        commissionPolicyDate: info.sourceDate,
         sumber: "kasir",
         ...attribution,
         branchId: info.branchId,
@@ -335,7 +337,7 @@ async function infoStrukLuarPeriode(
   empPerProfile: Map<string, string>,
 ): Promise<SaleInfo | null> {
   const { data } = await supabase
-    .from("sales").select("id, no_struk, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, hpp, service_performers)").eq("id", saleId).maybeSingle();
+    .from("sales").select("id, no_struk, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, hpp, service_performers)").eq("id", saleId).maybeSingle();
   if (!data || !isCompletedSale(data)) return null;
   const hppPerUnit = new Map<string, number>();
   for (const it of (data.sale_items ?? []) as { item_id: string | null; qty: number; hpp: number | null }[]) {
@@ -346,7 +348,7 @@ async function infoStrukLuarPeriode(
     branchId: data.branch_id,
     hppPerUnit,
     sale: data,
-    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,
+    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,sourceDate:String(data.created_at??"").slice(0,10),
   };
 }
 
@@ -380,10 +382,19 @@ export async function komisiPeriode(
   supabase: AnyClient,
   periode: string,
 ): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; omzetTanpaPenjual: number }> {
-  const [{ baris, omzetTanpaPenjual }, aturan] = await Promise.all([
+  const [{ baris, omzetTanpaPenjual }, aturan, policyResult] = await Promise.all([
     kumpulkanBarisKomisi(supabase, periode),
     muatAturanKomisi(supabase),
+    completeReportQuery(supabase.from("service_commission_policies")
+      .select("id,branch_id,effective_from,mode,doctor_share_pct,staff_share_pct,created_at", {count:"exact"})
+      .lte("effective_from", akhirPeriode(periode)).order("effective_from",{ascending:false}).order("created_at",{ascending:false}).order("id",{ascending:false})),
   ]);
+  const policies = ((policyResult.data ?? []) as Record<string, unknown>[]).map((row): ServiceCommissionPolicy => ({
+    id:String(row.id),branchId:(row.branch_id as string|null)??null,effectiveFrom:String(row.effective_from),
+    mode:row.mode as ServiceCommissionPolicy["mode"],doctorSharePct:row.doctor_share_pct===null?null:Number(row.doctor_share_pct),
+    staffSharePct:row.staff_share_pct===null?null:Number(row.staff_share_pct),createdAt:String(row.created_at),
+  }));
+  const prepared = prepareServiceCommission(baris, aturan, policies);
   const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
     .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})
     .eq("invoices.paid_status","Lunas").is("invoices.voided_at",null)
@@ -391,5 +402,6 @@ export async function komisiPeriode(
   type Allocation = {invoice_id:string;employee_id:string;amount:number;clinic_demo_invoice_snapshots:{service_basis:number}|{service_basis:number}[]};
   const shared = (allocations as Allocation[]).map(row=>({employeeId:row.employee_id,invoiceId:row.invoice_id,amount:Number(row.amount),
     basis:Number((Array.isArray(row.clinic_demo_invoice_snapshots) ? row.clinic_demo_invoice_snapshots[0] : row.clinic_demo_invoice_snapshots).service_basis)}));
-  return { hasil: mergeSharedIncentives(hitungKomisi(baris, aturan),shared), baris, omzetTanpaPenjual };
+  return { hasil: mergeSharedIncentives(hitungKomisi(prepared.calculationRows, aturan),shared),
+    baris:prepared.rows, omzetTanpaPenjual:omzetTanpaPenjual-prepared.resolvedUnassignedOmzet };
 }

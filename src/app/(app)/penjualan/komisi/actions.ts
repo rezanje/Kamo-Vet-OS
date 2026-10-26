@@ -75,3 +75,33 @@ export async function hapusAturanKomisi(formData: FormData) {
   const { error } = await supabase.from("commission_rules").delete().eq("id", id);
   redirect(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`);
 }
+
+/** Append-only: a later row at the same scope/date supersedes the previous choice. */
+export async function simpanKebijakanKomisiJasa(formData: FormData) {
+  const supabase = await assertMasterAdmin(BASE, "kebijakan komisi jasa");
+  const mode = String(formData.get("mode") ?? "");
+  const effectiveFrom = String(formData.get("effective_from") ?? "");
+  const branchId = opsional(formData.get("branch_id"));
+  if (!["personal_rules", "both_full", "split"].includes(mode)) gagal("Cara menghitung dua pelaksana wajib dipilih");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) || Number.isNaN(Date.parse(`${effectiveFrom}T00:00:00Z`))
+    || new Date(`${effectiveFrom}T00:00:00Z`).toISOString().slice(0,10)!==effectiveFrom) gagal("Tanggal berlaku tidak valid");
+  if (branchId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchId)) gagal("Cabang tidak valid");
+  const doctorRaw = opsional(formData.get("doctor_share_pct"));
+  const staffRaw = opsional(formData.get("staff_share_pct"));
+  let doctorShare: number|null = null, staffShare: number|null = null;
+  if (mode === "split") {
+    if (doctorRaw===null || staffRaw===null) gagal("Persentase dokter dan non-dokter wajib diisi");
+    doctorShare=Number(doctorRaw);staffShare=Number(staffRaw);
+    if (!Number.isFinite(doctorShare) || !Number.isFinite(staffShare)
+      || doctorShare<0 || doctorShare>100 || staffShare<0 || staffShare>100
+      || Math.round((doctorShare+staffShare)*100)!==10000
+      || Math.round(doctorShare*100)!==doctorShare*100 || Math.round(staffShare*100)!==staffShare*100)
+      gagal("Persentase harus 0–100, maksimal dua desimal, dan berjumlah 100");
+  } else if (doctorRaw!==null || staffRaw!==null) gagal("Persentase hanya untuk mode pembagian");
+  const { error } = await supabase.from("service_commission_policies").insert({
+    branch_id:branchId,effective_from:effectiveFrom,mode,
+    doctor_share_pct:doctorShare,staff_share_pct:staffShare,
+  });
+  if (error) gagal(error.message);
+  redirect(`${BASE}?success=1`);
+}
