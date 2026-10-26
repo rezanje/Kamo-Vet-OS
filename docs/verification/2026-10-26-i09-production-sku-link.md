@@ -1,0 +1,13 @@
+# I09: production documents for a saved selling SKU
+
+The saved clinic selling parent in `clinic_compound_sales.sale_item_id` (surfaced by draft PR #211) opens its SKU detail. Production orders also store output SKU identity: ad hoc work uses `production_orders.output_item_id`; recipe work uses `production_orders.recipe_id -> production_recipes.item_id`. Both use persisted UUID relations. The clinical selector and production output validation accept `Persediaan` items, so the same SKU can technically appear in both workflows.
+
+The SKU detail now lists production document numbers for this exact output SKU and links each to the selected production order. It verifies each candidate through the existing `read_production_atomic_sources` access and source proof before rendering. Missing proof, rejected access, incomplete lists or inconsistent identities never become links. All reads are paginated; source RPC calls are batched at its existing 100-order limit. No migration, grant, stock write or journal change is included.
+
+This is an item-level association, **not** proof that a particular clinic racikan used a particular production batch. The schema has no production-order or batch FK on `clinic_compound_sales` or `compounding_recipes`. Clinical compounding normally consumes its own material stock. Exact batch provenance and virtual nonstock in/out semantics remain unmade source/policy decisions; no virtual stock was created. Field UAT remains deferred.
+
+This branch is based on main `feb3b62`, which already includes PR #211's direct clinical-racikan-to-SKU navigation. The recipe detail addition was rebased alongside that released source panel; K07/K09 release files remain untouched.
+
+The candidate also includes `read_compound_production_layer_trace`, a security-sensitive, read-only RPC over the private `compound_issues` ledger. It checks an active OWNER/ADMIN, access to both the clinic visit and production warehouse branches, existing POS document access, exact item and warehouse equality across issue/layer/order, a completed order and finish proof. It returns only source IDs, production document number and whether the issue was restored; no private costs. The SQL migration is **prepared for security review and approval, not applied to any hosted environment**. The application trace panel requires that migration before release.
+
+The isolated PostgreSQL 17.6 fixture bootstraps repository migrations and checks exact layer provenance, denied staff and restricted ADMIN roles, clinic/production operational branch scope, restored issues, missing production source and warehouse mismatch. Component/reader fixtures check exact links and denial handling. No target records or credentials are used.
