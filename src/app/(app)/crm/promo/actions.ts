@@ -87,7 +87,9 @@ export async function createPromo(formData: FormData) {
     min_qty: minQty, max_qty: maxQty, kelipatan, auto_apply: autoApply,
     discount_type: discountType, discount_value: discountValue,
     branch_ids: branchIds.length ? branchIds : null, // kosong = semua cabang
-    valid_from: validFrom, valid_until: validUntil, is_active: true,
+    // Package targets are a second API write. Keep this row invisible to
+    // checkout until those targets have been stored and verified by the DB.
+    valid_from: validFrom, valid_until: validUntil, is_active: discountMode !== "package_total",
   }).select("id").single();
 
   if (error || !promo) gagal(error?.message ?? "Gagal simpan promo");
@@ -102,6 +104,14 @@ export async function createPromo(formData: FormData) {
       await supabase.from("promos").delete().eq("id", promo!.id);
       gagal(`Gagal simpan daftar barang promo: ${itErr.message}`);
     }
+  }
+
+  if (discountMode === "package_total") {
+    const {data:activated,error:activationError}=await supabase.from("promos")
+      .update({is_active:true}).eq("id",promo!.id).select("id").single();
+    // A failed activation leaves the configured promotion inactive. The DB
+    // guard also rejects a concurrent target removal or manual early toggle.
+    if(activationError||!activated)gagal(`Promo tersimpan nonaktif; periksa target lalu aktifkan ulang: ${activationError?.message??"aktivasi tidak terkonfirmasi"}`);
   }
 
   revalidatePath(BACK);

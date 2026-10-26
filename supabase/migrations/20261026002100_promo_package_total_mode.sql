@@ -48,3 +48,37 @@ begin
  end if;
  execute replace(replace(replace(replace(definition,old_fields,new_fields),old_record,new_record),old_targets,new_targets),old_rule,new_rule);
 end $$;
+
+-- Parent writes and target writes already lock the promotion through
+-- guard_promo_configuration. Defer this check so edit_promo may replace its
+-- one SKU atomically, while each committed state remains safe to read.
+create function public.assert_active_package_promo_target() returns trigger
+language plpgsql security definer set search_path='' as $$
+declare old_id uuid;new_id uuid;candidate uuid;active boolean;mode text;target_count integer;
+begin
+ if tg_table_name='promos' then
+  if tg_op='DELETE' then return null;end if;
+  new_id:=new.id;
+ else
+  if tg_op<>'INSERT' then old_id:=old.promo_id;end if;
+  if tg_op<>'DELETE' then new_id:=new.promo_id;end if;
+ end if;
+ for candidate in select distinct u.id from unnest(array[old_id,new_id]) as u(id) where u.id is not null order by u.id loop
+  select p.is_active,p.rule->>'discount_mode' into active,mode
+  from public.promos p where p.id=candidate for share;
+  if active and mode='package_total' then
+   select count(*) into target_count from public.promo_items i where i.promo_id=candidate;
+   if target_count<>1 then
+    raise exception 'C04_PACKAGE_TARGET_INCOMPLETE: promo paket aktif harus memiliki tepat satu barang target' using errcode='23514';
+   end if;
+  end if;
+ end loop;
+ return null;
+end $$;
+revoke all on function public.assert_active_package_promo_target() from public,anon,authenticated,service_role;
+create constraint trigger promo_package_target_header_guard
+ after insert or update on public.promos deferrable initially deferred
+ for each row execute function public.assert_active_package_promo_target();
+create constraint trigger promo_package_target_items_guard
+ after insert or update or delete on public.promo_items deferrable initially deferred
+ for each row execute function public.assert_active_package_promo_target();
