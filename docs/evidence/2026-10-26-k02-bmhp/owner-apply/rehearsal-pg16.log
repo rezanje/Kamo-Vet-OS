@@ -1,0 +1,16 @@
+server: PostgreSQL 16.14 (Homebrew) on aarch64-apple-darwin25.4.0
+applied 266 migrations before K02 (target state the owner preflight expects)
+generated 01-preflight-readonly.sql, 03-readback-readonly.sql, 04-rollback-only-if-decided.sql
+preflight A before apply: 0 failed (40 checks)
+preflight B newest: 20261026090000 inpatient_rx_evidence
+preflight C rows: 6
+readback A after apply: 0 failed (53 checks)
+readback B: 20261026100000 k02_procedure_bmhp
+preflight A re-run after apply correctly reports 23 failed checks (already applied)
+readback A after refused rollback (nothing changed): 0 failed (53 checks)
+preflight A after rollback (back to pre-K02 fingerprints): 0 failed (40 checks)
+history after rollback newest: 20261026090000 inpatient_rx_evidence
+readback A after re-apply: 0 failed (53 checks)
+clinic_procedure_bmhp.sql after rollback + re-apply: passed (FIFO)
+REHEARSAL PASSED
+cleanup: temp cluster removed
