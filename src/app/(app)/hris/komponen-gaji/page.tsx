@@ -9,8 +9,8 @@ import { lepasKomponen, pasangKomponen, simpanKomponen, toggleKomponen } from ".
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-type Komponen = { id: string; nama: string; tipe: string; nominal: number; is_active: boolean };
-type Pasangan = { id: string; employee_id: string; component_id: string; nominal: number | null };
+type Komponen = { id: string; nama: string; tipe: string; nominal: number; is_active: boolean; calculation_basis: "fixed" | "net_turnover"; sales_source: string; sales_scope: string; rate_percent: number };
+type Pasangan = { id: string; employee_id: string; component_id: string; nominal: number | null; rate_percent_override: number | null };
 
 export default async function KomponenGajiPage({
   searchParams,
@@ -22,9 +22,9 @@ export default async function KomponenGajiPage({
   const bolehKelola = await bolehKelolaMaster();
 
   const [{ data: kompData, error: componentError }, { data: empData, error: employeeError }, { data: pasangData, error: assignmentError }] = await Promise.all([
-    supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("tipe").order("nama"),
+    supabase.from("salary_components").select("id, nama, tipe, nominal, is_active, calculation_basis, sales_source, sales_scope, rate_percent").order("tipe").order("nama"),
     supabase.from("employees").select("id, nama, jabatan, gaji_pokok").eq("status", "Aktif").order("nama"),
-    supabase.from("employee_salary_components").select("id, employee_id, component_id, nominal"),
+    supabase.from("employee_salary_components").select("id, employee_id, component_id, nominal, rate_percent_override"),
   ]);
   if (componentError || employeeError || assignmentError) return <div role="alert" className="p2ban">Komponen gaji belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>;
 
@@ -43,21 +43,21 @@ export default async function KomponenGajiPage({
   const contextHref = contextEmp ? `/hris/komponen-gaji?${new URLSearchParams({ emp: contextEmp })}` : "/hris/komponen-gaji";
 
   const nilai = (p: Pasangan) => (p.nominal ?? kompById.get(p.component_id)?.nominal ?? 0);
-  const totalTunjangan = milikDia.filter((p) => kompById.get(p.component_id)?.tipe === "tunjangan")
+  const totalTunjangan = milikDia.filter((p) => kompById.get(p.component_id)?.tipe === "tunjangan" && kompById.get(p.component_id)?.calculation_basis === "fixed")
     .reduce((a, p) => a + Number(nilai(p)), 0);
-  const totalPotongan = milikDia.filter((p) => kompById.get(p.component_id)?.tipe === "potongan")
+  const totalPotongan = milikDia.filter((p) => kompById.get(p.component_id)?.tipe === "potongan" && kompById.get(p.component_id)?.calculation_basis === "fixed")
     .reduce((a, p) => a + Number(nilai(p)), 0);
 
   return (
     <MasterPage
       back="/hris" icon="ti-coin" title="KOMPONEN GAJI"
-      desc="Tunjangan & potongan tetap — dipasang sekali, dipakai tiap bulan"
+      desc="Tunjangan dan potongan tetap atau persentase omzet neto; setiap komponen dipasang ke karyawan"
       error={error} success={success} successMsg="Komponen gaji tersimpan."
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah komponen gaji."
     >
       <div className="crm-sec">
-        <SecHeader num="01" title="DAFTAR KOMPONEN" desc="Nominal di sini jadi bawaan; per karyawan boleh beda." />
+        <SecHeader num="01" title="DAFTAR KOMPONEN" desc="Tarif ditetapkan di sini; pengecualian per karyawan dapat diisi saat pemasangan." />
 
         {bolehKelola && (
           <form key={editing?.id ?? "create"} action={simpanKomponen} style={{ marginBottom: 12 }}>
@@ -80,6 +80,16 @@ export default async function KomponenGajiPage({
                 <label className="flab">Nominal bawaan</label>
                 <NumberInput className="fi" name="nominal" type="number" min={0} step="any" defaultValue={editing?.nominal ?? 0} />
               </div>
+              <div><label className="flab">Dasar hitung</label><select className="fi" name="calculation_basis" defaultValue={editing?.calculation_basis ?? "fixed"}>
+                <option value="fixed">Nominal tetap</option><option value="net_turnover">Persentase omzet neto</option>
+              </select></div>
+              <div><label className="flab">Persentase omzet (jika omzet)</label><NumberInput className="fi" name="rate_percent" type="number" min={0} max={100} step="0.0001" defaultValue={editing?.rate_percent ?? 0} /></div>
+              <div><label className="flab">Sumber omzet</label><select className="fi" name="sales_source" defaultValue={editing?.sales_source ?? "semua"}>
+                <option value="semua">Semua sumber</option><option value="kasir">Kasir</option><option value="klinik">Klinik</option><option value="reseller">Reseller</option>
+              </select></div>
+              <div><label className="flab">Cakupan omzet</label><select className="fi" name="sales_scope" defaultValue={editing?.sales_scope ?? "employee"}>
+                <option value="employee">Transaksi karyawan</option><option value="own_branch">Cabang karyawan</option><option value="all_branches">Semua cabang</option>
+              </select></div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               {editing && <Link className="btn-def" href={contextHref} style={{ marginRight: 8 }}>Batal edit</Link>}
@@ -95,7 +105,7 @@ export default async function KomponenGajiPage({
             <thead>
               <tr>
                 <th>Komponen</th><th style={{ width: 170 }}>Jenis</th>
-                <th style={{ width: 140, textAlign: "right" }}>Nominal bawaan</th>
+                <th style={{ width: 140, textAlign: "right" }}>Nominal / tarif</th>
                 <th style={{ width: 80 }}>Status</th>
                 {bolehKelola && <th style={{ width: 120 }}>Aksi</th>}
               </tr>
@@ -109,7 +119,7 @@ export default async function KomponenGajiPage({
                       {k.tipe === "tunjangan" ? "Tunjangan" : "Potongan"}
                     </span>
                   </td>
-                  <td style={{ textAlign: "right", fontSize: 11 }}>{rp(Number(k.nominal))}</td>
+                  <td style={{ textAlign: "right", fontSize: 11 }}>{k.calculation_basis === "net_turnover" ? `${k.rate_percent}% omzet neto · ${k.sales_source} · ${k.sales_scope}` : rp(Number(k.nominal))}</td>
                   <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehKelola && (
                     <td>
@@ -169,7 +179,7 @@ export default async function KomponenGajiPage({
                       <option value="">— pilih komponen —</option>
                       {komponen.filter((k) => k.is_active && !sudahDipakai.has(k.id)).map((k) => (
                         <option key={k.id} value={k.id}>
-                          {k.nama} ({k.tipe === "tunjangan" ? "+" : "−"}{rp(Number(k.nominal))})
+                          {k.nama} ({k.tipe === "tunjangan" ? "+" : "−"}{k.calculation_basis === "net_turnover" ? `${k.rate_percent}% omzet neto` : rp(Number(k.nominal))})
                         </option>
                       ))}
                     </select>
@@ -178,6 +188,7 @@ export default async function KomponenGajiPage({
                     <label className="flab">Nominal khusus (opsional)</label>
                     <NumberInput className="fi" name="nominal" type="number" min={0} step="any" placeholder="kosong = ikut bawaan" />
                   </div>
+                  <div><label className="flab">Persentase khusus (opsional, hanya omzet)</label><NumberInput className="fi" name="rate_percent_override" type="number" min={0.0001} max={100} step="0.0001" placeholder="kosong = ikut bawaan" /></div>
                   <div style={{ display: "flex", alignItems: "flex-end" }}>
                     <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
                       Pasang
@@ -192,7 +203,7 @@ export default async function KomponenGajiPage({
                 <thead>
                   <tr>
                     <th>Komponen</th><th style={{ width: 150 }}>Jenis</th>
-                    <th style={{ width: 150, textAlign: "right" }}>Nominal dipakai</th>
+                    <th style={{ width: 150, textAlign: "right" }}>Nominal / tarif dipakai</th>
                     {bolehKelola && <th style={{ width: 90 }}>Aksi</th>}
                   </tr>
                 </thead>
@@ -208,8 +219,8 @@ export default async function KomponenGajiPage({
                           </span>
                         </td>
                         <td style={{ textAlign: "right", fontSize: 11 }}>
-                          {rp(Number(nilai(p)))}
-                          {p.nominal === null && <span style={{ fontSize: 9.5, color: "var(--td)" }}> (bawaan)</span>}
+                          {k?.calculation_basis === "net_turnover" ? `${p.rate_percent_override ?? k.rate_percent}% omzet neto` : rp(Number(nilai(p)))}
+                          {(k?.calculation_basis === "net_turnover" ? p.rate_percent_override === null : p.nominal === null) && <span style={{ fontSize: 9.5, color: "var(--td)" }}> (bawaan)</span>}
                         </td>
                         {bolehKelola && (
                           <td>

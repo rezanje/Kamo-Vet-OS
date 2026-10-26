@@ -70,6 +70,7 @@ export async function hitungPenggajian(formData: FormData) {
       cicilan_kasbon: b.rincian.cicilanKasbon,
       reimburse: b.rincian.reimburse,
       komisi: b.rincian.komisi,
+      component_breakdown: b.componentBreakdown,
       penyesuaian: b.rincian.penyesuaian,
       status: "draft",
     })),

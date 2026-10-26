@@ -13,6 +13,7 @@ type Slip = {
   hari_kerja: number; hari_hadir: number; hari_bolos: number; menit_telat: number;
   jam_lembur: number; upah_lembur: number; potongan_telat: number; potongan_bolos: number;
   cicilan_kasbon: number; reimburse: number; komisi: number; penyesuaian: number; catatan: string | null;
+  component_breakdown: { name: string; type: "tunjangan" | "potongan"; basis: number | null; ratePercent: number | null; amount: number; source: string | null; scope: string | null }[];
   status: string;
   employees: Rel<{ nama: string; nik: string | null; jabatan: string | null; branches: Rel<{ name: string }> }>;
 };
@@ -28,7 +29,7 @@ export default async function SlipPage({
 
   const { data } = await supabase
     .from("payrolls")
-    .select("employee_id, gaji_pokok, tunjangan, potongan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, employees(nama, nik, jabatan, branches(name))")
+    .select("employee_id, gaji_pokok, tunjangan, potongan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, component_breakdown, employees(nama, nik, jabatan, branches(name))")
     .eq("periode", periode);
 
   const slip = ((data ?? []) as unknown as Slip[])
@@ -84,7 +85,7 @@ export default async function SlipPage({
               <div>
                 <div style={{ fontSize: 10.5, fontWeight: 700, marginBottom: 6, color: "#15803d" }}>PENERIMAAN</div>
                 <Baris k="Gaji pokok" v={rp(s.gaji_pokok)} />
-                <Baris k="Tunjangan tetap" v={rp(s.tunjangan)} />
+                <Baris k="Tunjangan" v={rp(s.tunjangan)} />
                 <Baris k={`Upah lembur (${Number(s.jam_lembur)} jam)`} v={rp(s.upah_lembur)} />
                 <Baris k="Penggantian (reimburse)" v={rp(s.reimburse)} />
                 <Baris k="Komisi penjualan" v={rp(s.komisi)} />
@@ -98,10 +99,18 @@ export default async function SlipPage({
                 <Baris k={`Tidak hadir (${s.hari_bolos} hari)`} v={rp(s.potongan_bolos)} />
                 <Baris k="Cicilan kasbon" v={rp(s.cicilan_kasbon)} />
                 {/* potongan = seluruh potongan; sisanya setelah telat/bolos/kasbon = potongan tetap komponen */}
-                <Baris k="Potongan tetap" v={rp(Math.max(0,
+                <Baris k="Potongan komponen" v={rp(Math.max(0,
                   Number(s.potongan) - potongan - Number(s.cicilan_kasbon)))} />
               </div>
             </div>
+
+            {(s.component_breakdown ?? []).length > 0 && <div style={{ marginTop: 12, fontSize: 10.5 }}>
+              <b>Rincian komponen</b>
+              {s.component_breakdown.map((c, index) => <div key={`${c.name}-${index}`} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span>{c.name} ({c.type}){c.basis !== null ? ` · omzet neto ${rp(c.basis)} · ${c.ratePercent}% · ${c.source}/${c.scope}` : ""}</span>
+                <span>{rp(c.amount)}</span>
+              </div>)}
+            </div>}
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 10, borderTop: "2px solid #16213e" }}>
               <span style={{ fontSize: 12, fontWeight: 700 }}>GAJI DITERIMA</span>
