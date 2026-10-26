@@ -59,6 +59,7 @@ export function prepareServiceCommission(
       const pending = { ...source, commissionPolicyWarning: "Kebijakan menahan komisi dua pelaksana." };
       rows.push(pending); calculationRows.push(pending); continue;
     }
+    const resolvedMode: Exclude<ServiceCommissionMode,"pending"> = policy.mode;
     const doctorShare = policy.mode === "split" ? policy.doctorSharePct! : 100;
     const qty = policy.mode === "split" ? allocated(source.qty, doctorShare) : [source.qty, source.qty];
     const omzet = policy.mode === "split" ? allocated(source.omzet, doctorShare) : [source.omzet, source.omzet];
@@ -66,7 +67,7 @@ export function prepareServiceCommission(
       ? allocated(source.laba, doctorShare) : [source.laba, source.laba];
     const actors = [doctorId, staffId].map((employeeId, index): BarisJual => ({
       ...source, employeeId, qty: qty[index], omzet: omzet[index], laba: laba[index],
-      commissionPending: false, commissionPolicy: policy.mode,
+      commissionPending: false, commissionPolicy: resolvedMode,
       personalRulesOnly: policy.mode === "personal_rules",
     }));
     const uncovered = actors.some(actor => (policy.mode !== "split" || actor.qty !== 0)
@@ -75,7 +76,7 @@ export function prepareServiceCommission(
       const pending = { ...source, commissionPolicyWarning: "Aturan aktif belum cocok untuk setiap pelaksana." };
       rows.push(pending); calculationRows.push(pending); continue;
     }
-    rows.push({ ...source, commissionPending: false, commissionPolicy: policy.mode, commissionPolicyWarning: undefined });
+    rows.push({ ...source, commissionPending: false, commissionPolicy: resolvedMode, commissionPolicyWarning: undefined });
     calculationRows.push(...actors);
     resolvedUnassignedOmzet += source.omzet;
   }
