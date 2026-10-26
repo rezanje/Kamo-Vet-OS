@@ -9,6 +9,7 @@ import { komisiPeriode } from "./komisi-data";
 import { rentangTanggal } from "./tanggal";
 import { assertServiceAttributionReady } from "./commission-readiness";
 import { readCompleteList } from "./checked-list";
+import { hitungKomponenOmzet, type TurnoverComponent } from "./payroll-turnover";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -18,6 +19,7 @@ export type BarisGaji = {
   nama: string;
   jabatan: string | null;
   rincian: RincianGaji;
+  componentBreakdown: { name: string; type: "tunjangan" | "potongan"; basis: number | null; ratePercent: number | null; amount: number; source: string | null; scope: string | null }[];
   /** Cicilan periode ini per kasbon — satu karyawan bisa punya lebih dari satu utang. */
   cicilanKasbon: { id?: string; jumlah: number }[];
   reimburseIds: string[];
@@ -48,8 +50,8 @@ export async function kumpulkanDataGaji(
 
   const [aturan, karyawan, komisi] = await Promise.all([
     getAturanGaji(supabase),
-    readCompleteList<{ id: string; nama: string; jabatan: string | null; gaji_pokok: number }>((from, to) => supabase
-      .from("employees").select("id, nama, jabatan, gaji_pokok", { count: "exact" })
+    readCompleteList<{ id: string; nama: string; jabatan: string | null; gaji_pokok: number; branch_id: string | null }>((from, to) => supabase
+      .from("employees").select("id, nama, jabatan, gaji_pokok, branch_id", { count: "exact" })
       .eq("status", "Aktif").order("id").range(from, to), "Karyawan penggajian", { maxRows: null }),
     komisiPeriode(supabase, periode),
   ]);
@@ -77,7 +79,7 @@ export async function kumpulkanDataGaji(
       .select("id, employee_id, jam", { count: "exact" })
       .in("employee_id", batch).eq("status", "Disetujui").gte("tanggal", awal).lte("tanggal", akhir)),
     readEmployeeRows(ids, "Komponen penggajian", batch => supabase.from("employee_salary_components")
-      .select("id, employee_id, nominal, salary_components(tipe, nominal, is_active)", { count: "exact" })
+      .select("id, employee_id, nominal, rate_percent_override, salary_components(nama, tipe, nominal, is_active, calculation_basis, sales_source, sales_scope, rate_percent)", { count: "exact" })
       .in("employee_id", batch)),
     readEmployeeRows(ids, "Kasbon penggajian", batch => supabase.from("cash_advances")
       .select("id, employee_id, jumlah, tenor_bulan, cash_advance_installments(jumlah)", { count: "exact" })
@@ -119,16 +121,30 @@ export async function kumpulkanDataGaji(
     lemburPer.set(l.employee_id, (lemburPer.get(l.employee_id) ?? 0) + Number(l.jam));
   }
 
-  type KompRel = { tipe: string; nominal: number; is_active: boolean };
+  type KompRel = { nama: string; tipe: string; nominal: number; is_active: boolean; calculation_basis: string; sales_source: TurnoverComponent["source"]; sales_scope: TurnoverComponent["scope"]; rate_percent: number };
   const kompPer = new Map<string, { tipe: "tunjangan" | "potongan"; nominal: number }[]>();
-  for (const k of kompData as unknown as { employee_id: string; nominal: number | null; salary_components: KompRel | KompRel[] | null }[]) {
+  const breakdownPer = new Map<string, BarisGaji["componentBreakdown"]>();
+  const branchPer = new Map(karyawan.map(k => [k.id, k.branch_id]));
+  for (const k of kompData as unknown as { employee_id: string; nominal: number | null; rate_percent_override: number | null; salary_components: KompRel | KompRel[] | null }[]) {
     const c = satu(k.salary_components);
     if (!c) throw new Error("Komponen penggajian belum dapat diverifikasi. Coba muat ulang.");
     if (!c.is_active) continue;
     const arr = kompPer.get(k.employee_id) ?? [];
-    // nominal null = ikut nominal bawaan komponennya.
-    arr.push({ tipe: c.tipe as "tunjangan" | "potongan", nominal: Number(k.nominal ?? c.nominal) });
+    // Monetary overrides apply only to fixed components; turnover rates have their own override.
+    const turnover = c.calculation_basis === "net_turnover"
+      ? hitungKomponenOmzet(komisi.baris, {
+        source: c.sales_source, scope: c.sales_scope,
+        ratePercent: Number(k.rate_percent_override ?? c.rate_percent),
+      }, k.employee_id, branchPer.get(k.employee_id) ?? null)
+      : null;
+    const nominal = turnover?.amount ?? Number(k.nominal ?? c.nominal);
+    arr.push({ tipe: c.tipe as "tunjangan" | "potongan", nominal });
     kompPer.set(k.employee_id, arr);
+    const breakdown = breakdownPer.get(k.employee_id) ?? [];
+    breakdown.push({ name: c.nama, type: c.tipe as "tunjangan" | "potongan",
+      basis: turnover?.basis ?? null, ratePercent: turnover ? Number(k.rate_percent_override ?? c.rate_percent) : null,
+      amount: nominal, source: turnover ? c.sales_source : null, scope: turnover ? c.sales_scope : null });
+    breakdownPer.set(k.employee_id, breakdown);
   }
 
   // SEMUA kasbon berjalan per karyawan, bukan satu. Dulu memakai `set` di dalam
@@ -179,6 +195,7 @@ export async function kumpulkanDataGaji(
       nama: k.nama,
       jabatan: k.jabatan,
       rincian,
+      componentBreakdown: breakdownPer.get(k.id) ?? [],
       cicilanKasbon: rincian.cicilanPerKasbon,
       reimburseIds: reim.ids,
     };

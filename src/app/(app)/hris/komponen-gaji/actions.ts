@@ -15,6 +15,11 @@ export async function simpanKomponen(formData: FormData) {
   const tipe = String(formData.get("tipe") ?? "").trim();
   const nominalRaw = String(formData.get("nominal") ?? "").trim();
   const nominal = nominalRaw === "" ? 0 : Number(nominalRaw);
+  const calculationBasis = String(formData.get("calculation_basis") ?? "fixed");
+  const salesSource = String(formData.get("sales_source") ?? "semua");
+  const salesScope = String(formData.get("sales_scope") ?? "employee");
+  const rateRaw = String(formData.get("rate_percent") ?? "").trim();
+  const ratePercent = rateRaw === "" ? 0 : Number(rateRaw);
   const employeeContext = String(formData.get("emp") ?? "").trim();
   const emp = /^[0-9a-f-]{36}$/i.test(employeeContext) ? employeeContext : "";
   const gagalSimpan = (message: string): never => {
@@ -25,8 +30,14 @@ export async function simpanKomponen(formData: FormData) {
   if (!nama) gagalSimpan("Nama komponen wajib diisi");
   if (tipe !== "tunjangan" && tipe !== "potongan") gagalSimpan("Jenis komponen tidak dikenal");
   if (!Number.isFinite(nominal) || nominal < 0) gagalSimpan("Nominal tidak valid");
+  if (!["fixed", "net_turnover"].includes(calculationBasis)) gagalSimpan("Dasar komponen tidak dikenal");
+  if (!["semua", "kasir", "klinik", "reseller"].includes(salesSource)) gagalSimpan("Sumber omzet tidak dikenal");
+  if (!["employee", "own_branch", "all_branches"].includes(salesScope)) gagalSimpan("Cakupan omzet tidak dikenal");
+  if (!Number.isFinite(ratePercent) || ratePercent < 0 || ratePercent > 100 || (calculationBasis === "net_turnover" && ratePercent === 0)) gagalSimpan("Persentase omzet harus lebih dari 0 sampai 100");
 
-  const row = { nama, tipe, nominal };
+  const row = { nama, tipe, nominal: calculationBasis === "fixed" ? nominal : 0,
+    calculation_basis: calculationBasis, sales_source: salesSource, sales_scope: salesScope,
+    rate_percent: calculationBasis === "net_turnover" ? ratePercent : 0 };
   const { error } = id
     ? await supabase.from("salary_components").update(row).eq("id", id)
     : await supabase.from("salary_components").insert(row);
@@ -59,15 +70,26 @@ export async function pasangKomponen(formData: FormData) {
   const gagalPasang = (msg: string): never => redirect(`${back}?error=${encodeURIComponent(msg)}`);
   const nominalRaw = String(formData.get("nominal") ?? "").trim();
   const nominal = nominalRaw === "" ? null : Number(nominalRaw);
+  const rateRaw = String(formData.get("rate_percent_override") ?? "").trim();
+  const ratePercentOverride = rateRaw === "" ? null : Number(rateRaw);
 
   if (!employeeId) gagalPasang("Pilih karyawan");
   if (!componentId) gagalPasang("Pilih komponen");
   if (nominal !== null && (!Number.isFinite(nominal) || nominal < 0)) gagalPasang("Nominal tidak valid");
+  if (ratePercentOverride !== null && (!Number.isFinite(ratePercentOverride) || ratePercentOverride <= 0 || ratePercentOverride > 100)) gagalPasang("Persentase khusus harus lebih dari 0 sampai 100");
+
+  const { data: component, error: componentError } = await supabase.from("salary_components")
+    .select("calculation_basis, is_active").eq("id", componentId).maybeSingle();
+  if (componentError) gagalPasang("Komponen belum dapat diverifikasi");
+  if (!component) throw new Error("Komponen belum dapat diverifikasi");
+  if (!component.is_active) gagalPasang("Komponen tidak aktif");
+  if (component.calculation_basis === "net_turnover" && nominal !== null) gagalPasang("Komponen omzet memakai persentase, bukan nominal");
+  if (component.calculation_basis === "fixed" && ratePercentOverride !== null) gagalPasang("Komponen tetap memakai nominal, bukan persentase");
 
   // Index uniknya (employee_id, component_id) penuh — upsert aman di sini.
   const { error } = await supabase
     .from("employee_salary_components")
-    .upsert({ employee_id: employeeId, component_id: componentId, nominal }, { onConflict: "employee_id,component_id" });
+    .upsert({ employee_id: employeeId, component_id: componentId, nominal, rate_percent_override: ratePercentOverride }, { onConflict: "employee_id,component_id" });
   if (error) gagalPasang(error.message);
 
   revalidatePath(back);
