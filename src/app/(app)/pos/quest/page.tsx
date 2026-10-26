@@ -47,7 +47,7 @@ export default async function QuestAdminPage({
       {success === "fulfill" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Reward ditandai sudah diserahkan.</div>}
 
       <div className="crm-sec">
-        <SecHeader num="01" title="BUAT QUEST BARU" desc="Target produk / kategori / nominal — daily atau monthly, per cabang atau semua cabang." />
+        <SecHeader num="01" title="BUAT QUEST BARU" desc="Target produk, kategori, nominal, atau customer baru — daily atau monthly, per cabang atau semua cabang." />
         <form action={createQuestDef} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.4fr 1fr 1fr 1.2fr auto", gap: 8, alignItems: "flex-end" }}>
           <div>
             <label className="flab">Judul quest *</label>
@@ -66,6 +66,7 @@ export default async function QuestAdminPage({
               <option value="total_sales_amount">Total penjualan (Rp)</option>
               <option value="product_qty">Qty produk tertentu</option>
               <option value="category_qty">Qty per kategori</option>
+              <option value="new_customer">Customer baru (jumlah)</option>
             </select>
           </div>
           <div>
@@ -101,7 +102,7 @@ export default async function QuestAdminPage({
                   <tr key={d.id} style={{ opacity: d.is_active ? 1 : 0.5 }}>
                     <td style={{ fontWeight: 500 }}>{d.title}</td>
                     <td><span className={`bge ${d.quest_type === "daily" ? "b" : "o"}`}>{d.quest_type}</span></td>
-                    <td style={{ fontSize: 11 }}>{d.target_kind === "total_sales_amount" ? rp(Number(d.target_value)) : `${Number(d.target_value)} pcs`}</td>
+                    <td style={{ fontSize: 11 }}>{d.target_kind === "total_sales_amount" ? rp(Number(d.target_value)) : `${Number(d.target_value)} ${d.target_kind === "new_customer" ? "customer" : "pcs"}`}</td>
                     <td style={{ fontSize: 11.5, fontWeight: 700 }}>{d.points_reward}</td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "Semua"}</td>
                     <td><span className={`bge ${d.is_active ? "g" : "r"}`}>{d.is_active ? "Aktif" : "Nonaktif"}</span></td>

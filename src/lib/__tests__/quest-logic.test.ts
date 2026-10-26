@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyStreak, canRedeem, isCompleted, monthlyLeaderboard, msUntilMidnightWib,
-  periodKey, saleContribution, streakBonusDue,
+  periodKey, saleContribution, streakBonusDue, normalizeQuestTarget,
 } from "../quest-logic";
 
 describe("periodKey (WIB)", () => {
@@ -35,6 +35,18 @@ describe("saleContribution", () => {
   });
   it("no match → 0", () => {
     expect(saleContribution({ target_kind: "product_qty", target_ref_id: "Z" }, lines, 99)).toBe(0);
+  });
+});
+
+describe("normalizeQuestTarget", () => {
+  it("accepts a whole-customer target without an item reference", () => {
+    expect(normalizeQuestTarget("new_customer", 5, "stale-item")).toEqual({
+      target_kind: "new_customer", target_value: 5, target_ref_id: null,
+    });
+  });
+  it("rejects fractional customer counts and unknown kinds", () => {
+    expect(normalizeQuestTarget("new_customer", 1.5, null)).toBeNull();
+    expect(normalizeQuestTarget("customer_count", 1, null)).toBeNull();
   });
 });
 
@@ -83,6 +95,12 @@ describe("monthlyLeaderboard", () => {
       { staff_id: "s1", points: 90 },
       { staff_id: "s2", points: 80 },
     ]);
+  });
+  it("uses the WIB month at a UTC month boundary", () => {
+    expect(monthlyLeaderboard([
+      { staff_id: "s1", points_delta: 10, source_type: "quest_completion", created_at: "2026-09-30T18:00:00Z" },
+      { staff_id: "s1", points_delta: 20, source_type: "quest_completion", created_at: "2026-10-31T18:00:00Z" },
+    ], "2026-10")).toEqual([{ staff_id: "s1", points: 10 }]);
   });
 });
 

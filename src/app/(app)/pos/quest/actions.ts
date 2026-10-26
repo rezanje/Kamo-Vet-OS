@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeQuestTarget } from "@/lib/quest-logic";
 
 // Konfigurasi quest & reward dari dashboard (Addendum §8: wajib configurable, bukan hardcode).
 // Semua aksi di sini khusus OWNER/ADMIN (manajer cabang / owner).
@@ -26,14 +27,15 @@ export async function createQuestDef(formData: FormData) {
   const pointsReward = Number(formData.get("points_reward")) || 0;
   const branchId = String(formData.get("branch_id") ?? "") || null;
 
-  if (!title || targetValue <= 0 || pointsReward <= 0) {
+  const target = normalizeQuestTarget(targetKind, targetValue, targetRefId);
+  if (!title || !["daily", "monthly"].includes(questType) || !target
+    || !Number.isInteger(pointsReward) || pointsReward <= 0) {
     redirect(`/pos/quest?error=${encodeURIComponent("Lengkapi judul, target, dan poin reward")}`);
   }
 
   const { data: saved, error } = await supabase.from("staff_quest_definitions").insert({
-    title, quest_type: questType, target_kind: targetKind,
-    target_ref_id: targetKind === "total_sales_amount" ? null : targetRefId,
-    target_value: targetValue, points_reward: pointsReward, branch_id: branchId, created_by: userId,
+    title, quest_type: questType, ...target,
+    points_reward: pointsReward, branch_id: branchId, created_by: userId,
   }).select("id").single();
   if (error || !saved) redirect(`/pos/quest?error=${encodeURIComponent("Quest gagal disimpan. Muat ulang dan coba lagi.")}`);
   revalidatePath("/pos/quest");
