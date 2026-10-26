@@ -10,9 +10,10 @@ import { mulaiProduksi, selesaikanProduksi } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { kebutuhanBahan } from "@/lib/produksi";
-import { readCompleteList } from "@/lib/checked-list";
+import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { ProductionAdhocForm } from "./ProductionAdhocForm";
 import { hrefPerintahProduksi } from "@/lib/tautan-dokumen";
+import { ListPagination } from "@/components/ListPagination";
 
 // Produksi own brand: resep → perintah (bahan keluar) → penyelesaian (barang jadi
 // masuk). Satu halaman karena ketiganya dipakai berurutan oleh orang yang sama;
@@ -47,22 +48,25 @@ type Perintah = {
 export default async function ProduksiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; nomor?: string | string[] }>;
+  searchParams: Promise<{ error?: string; success?: string; nomor?: string | string[]; hal?: string }>;
 }) {
-  const { error, success, nomor } = await searchParams;
+  const { error, success, nomor, hal } = await searchParams;
   const requestedNumber = typeof nomor === "string" && nomor.length > 0 && nomor.length <= 30
     && !/[\u0000-\u001f\u007f]/.test(nomor) ? nomor : null;
   const supabase = await createClient();
   const { data: { user: draftUser } } = await supabase.auth.getUser();
   const draftUserId = draftUser?.id ?? "";
 
-  const [resepData, { data: orderData }, itemData, whData, branchData, selectedResult] = await Promise.all([
+  const [resepData, runningOrders, completedHistory, itemData, whData, branchData, selectedResult] = await Promise.all([
     readCompleteList<Resep>((from,to)=>supabase.from("production_recipes")
       .select("id, nama, output_qty, is_active, items(code, name, unit), production_recipe_items(qty, items(name, unit))",{count:"exact"})
       .eq("is_active", true).order("created_at", { ascending: false }).order("id").range(from,to),"Resep produksi",{maxRows:null}),
-    supabase.from("production_orders")
-      .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty, items(unit)), warehouses(name)")
-      .order("created_at", { ascending: false }).limit(50),
+    readCompleteList<Perintah>((from,to)=>supabase.from("production_orders")
+      .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty, items(unit)), warehouses(name)",{count:"exact"})
+      .eq("status","berjalan").order("created_at", { ascending: false }).order("id").range(from,to),"Pekerjaan produksi berjalan",{maxRows:null}),
+    readListPage<Perintah>((from,to)=>supabase.from("production_orders")
+      .select("id, no_produksi, batch, qty_jadi, nilai_bahan, status, tanggal, tanggal_selesai, production_recipes(nama, output_qty, items(unit)), warehouses(name)",{count:"exact"})
+      .eq("status","selesai").order("created_at", { ascending: false }).order("id").range(from,to),"Riwayat produksi",hal),
     readCompleteList<BarangPilihan>((from,to)=>supabase.from("items").select("id, code, name, unit",{count:"exact"})
       .eq("is_active", true).eq("item_type", "Persediaan").order("name").order("id").range(from,to),"Barang produksi",{maxRows:null}),
     readCompleteList<{id:string;name:string;branch_id:string}>((from,to)=>supabase.from("warehouses").select("id, name, branch_id",{count:"exact"}).eq("is_active", true).order("name").order("id").range(from,to),"Gudang produksi",{maxRows:null}),
@@ -73,11 +77,11 @@ export default async function ProduksiPage({
   ]);
 
   const resep = (resepData ?? []) as unknown as Resep[];
-  const perintah = (orderData ?? []) as unknown as Perintah[];
+  const perintah = [...runningOrders, ...completedHistory.rows];
   const itemUnits = await loadItemUnits(supabase, (itemData ?? []).map((item: { id: string }) => item.id));
   const barang = ((itemData ?? []) as BarangPilihan[]).map(item => ({ ...item, units: unitOptions({ unit: item.unit, sell_price: 0 }, itemUnits.get(item.id) ?? []) }));
   const gudang = whData;
-  const berjalan = perintah.filter((p) => p.status === "berjalan");
+  const berjalan = runningOrders;
   const selected = selectedResult.data && selectedResult.data.no_produksi === requestedNumber
     ? selectedResult.data as Perintah : null;
   const sourceResult = await supabase.rpc("read_production_atomic_sources", {
@@ -301,7 +305,7 @@ export default async function ProduksiPage({
               </tr>
             </thead>
             <tbody>
-              {perintah.filter((p) => p.status === "selesai").map((p) => (
+              {completedHistory.rows.map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontSize: 11, fontWeight: 600 }}><Link href={hrefPerintahProduksi(p.no_produksi)}>{p.no_produksi}</Link></td>
                   <td style={{ fontSize: 11.5 }}>{sourceFor(p.id)?.recipe_name??one(p.production_recipes)?.nama??"Sumber lama / belum terverifikasi"}<div>{sourceFor(p.id)?.output_name??''}</div><FrozenMaterials materials={sourceFor(p.id)?.materials} fallback={one(p.warehouses)?.name}/></td>
@@ -313,7 +317,7 @@ export default async function ProduksiPage({
                   <td style={{ fontSize: 11 }}>{tgl(p.tanggal_selesai)}</td>
                 </tr>
               ))}
-              {perintah.filter((p) => p.status === "selesai").length === 0 && (
+              {completedHistory.rows.length === 0 && (
                 <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
                   Belum ada produksi yang selesai.
                 </td></tr>
@@ -321,6 +325,7 @@ export default async function ProduksiPage({
             </tbody>
           </table>
         </div>
+        <ListPagination path="/pos/produksi" query={{}} total={completedHistory.count} pageInfo={completedHistory.pageInfo} />
       </div>
     </>
   );
