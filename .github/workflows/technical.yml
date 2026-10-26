@@ -23,4 +23,6 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npx tsc --noEmit
+        if: success() || failure()
       - run: npm run build
+        if: success() || failure()
