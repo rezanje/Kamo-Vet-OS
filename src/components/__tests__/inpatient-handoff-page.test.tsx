@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handoffSourceStatus, type InpatientHandoff } from '@/lib/inpatient-handoff';
-const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
+const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,paidStay:'' as ''|'Lunas'|'DP',broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('@/lib/branch-access',()=>({allowedBranchIds:async()=>s.allowed,canUseBranch:(allowed:string[]|null,id:string)=>allowed===null||allowed.includes(id)}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/PapanPemantauan',()=>({PapanPemantauan:()=> <div>DAILY MONITORING</div>}));
@@ -22,18 +22,29 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
   if(table==='invoice_items')data=[{id:'line-paid',invoice_id:'invoice-paid',prescription_item_id:'rx-a',compound_recipe_id:null,qty:1},{id:'line-void',invoice_id:'invoice-void',prescription_item_id:null,compound_recipe_id:'recipe-a',qty:1}];
   if(s.duplicateInvoice&&table==='invoices')data=[{id:'invoice-paid',visit_id:'visit-a',invoice_no:'INV.PAID',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22T09:30:00Z'},{id:'invoice-dp',visit_id:'visit-a',invoice_no:'INV.DP',paid_status:'DP',voided_at:null,created_at:'2026-10-22T11:30:00Z'}];
   if(s.duplicateInvoice&&table==='invoice_items')data=[{id:'line-paid',invoice_id:'invoice-paid',prescription_item_id:'rx-a',compound_recipe_id:null,qty:1},{id:'line-dp',invoice_id:'invoice-dp',prescription_item_id:'rx-a',compound_recipe_id:null,qty:1}];
+  if(s.paidStay&&table==='prescription_items')data=[...(data as unknown[]),{id:'service-stay',medical_record_id:'mr-a',inpatient_record_id:'inpat',kategori:'Rawat Inap',nama_obat:'Fictional inpatient stay',qty:3,satuan:'hari',jenis:'jasa',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22T12:00:00Z'}];
+  if(s.paidStay&&table==='invoices')data=[{id:'invoice-stay',visit_id:'visit-a',invoice_no:'INV.STAY',paid_status:s.paidStay,voided_at:null,created_at:'2026-10-22T13:00:00Z'}];
+  if(s.paidStay&&table==='invoice_items')data=[{id:'line-stay',invoice_id:'invoice-stay',prescription_item_id:'service-stay',compound_recipe_id:null,qty:3}];
   if(table==='prescription_items'&&s.longRx)data=Array.from({length:1205},(_,i)=>({id:'rx-'+i,medical_record_id:'mr-a',nama_obat:'Fictional long '+i,qty:1,satuan:'tablet',jenis:'obat',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22T09:00:00Z'}));
   const rows=Array.isArray(data)?data:[];return Promise.resolve({data:single?(Array.isArray(data)?data[0]??null:data):Array.isArray(data)?data.slice(request.from??0,request.to===undefined?undefined:request.to+1):data,count:rows.length,error:table===s.broken?{message:'private read failure'}:null}).then(done);
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/rawat-inap/[id]/page';
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.broken='';s.authReads=0;s.reads=[]});
+beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.paidStay='';s.broken='';s.authReads=0;s.reads=[]});
 it('shows consultation, prescriptions and compound status before daily visit notes with explicit source links',async()=>{
  const html=await render();expect(html).toContain('Ringkasan konsultasi dan resep');expect(html).toContain('Keluhan awal kunjungan');expect(html).toContain('Fictional complaint');expect(html).toContain('Fictional consultation note');expect(html).toContain('Fictional tablet');expect(html).toContain('Fictional mixture instructions');expect(html).toContain('Drh Konsultasi');
  expect(html.indexOf('Ringkasan konsultasi dan resep')).toBeLessThan(html.indexOf('DAILY MONITORING'));expect(html).toContain('/klinik/rekam-medis/visit-a');expect(html).toContain('/klinik/racik/recipe-a');
 });
 it('keeps paid invoice, void history and unlinked additions distinct without claiming administration or paid duration',async()=>{
  const html=await render();expect(html).toContain('INV.PAID');expect(html).toContain('Lunas');expect(html).toContain('INV.OLD');expect(html).toContain('Dibatalkan');expect(html).toContain('Belum ada tautan tagihan per baris');expect(html).toContain('Diserahkan oleh farmasi');expect(html).toContain('bukan bukti obat sudah diberikan');expect(html).toContain('Lama inap terbayar belum dapat dipastikan');
+});
+it('shows days only from an exact stay line on a fully paid invoice and leaves deposit days unallocated',async()=>{
+ s.paidStay='Lunas';const paid=await render();
+ expect(paid).toContain('3 hari pada faktur lunas');expect(paid).toContain('INV.STAY');
+ expect(paid).not.toContain('Lama inap terbayar belum dapat dipastikan: relasi rawat inap');
+ s.paidStay='DP';const deposit=await render();
+ expect(deposit).toContain('DP atau cicilan belum dialokasikan per hari');
+ expect(deposit).not.toContain('3 hari pada faktur lunas');
 });
 it('denies anonymous or cross-branch parents before loading additional clinical data',async()=>{
  s.allowed=['branch-b'];await expect(render()).rejects.toThrow('NOT_FOUND');expect(s.reads.some(r=>r.table==='medical_records')).toBe(false);
@@ -104,7 +115,7 @@ it('shows explicit gaps for a verified empty source without inferring paid inpat
  const empty:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[],recipes:[],invoices:[],invoiceLines:[],evidence:[]};
  const status=handoffSourceStatus(empty);
  expect(status.rows).toEqual([]);
- expect(status.gaps).toContain('Lama inap terbayar tidak dihitung: tagihan belum menyimpan tanggal cakupan rawat inap.');
+ expect(status.gaps).toContain('Lama inap terbayar belum dapat dipastikan dari relasi sumber dan faktur lunas yang tersimpan.');
  expect(status.gaps.some(gap=>gap.includes('baris resep/racikan belum punya tautan'))).toBe(false);
 });
 it('keeps a linked compound available in its recipe card without counting one missing bill twice',()=>{

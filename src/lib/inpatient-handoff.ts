@@ -3,7 +3,7 @@ import type { createClient } from './supabase/server';
 import { readCompleteList } from './checked-list';
 type Db=Awaited<ReturnType<typeof createClient>>;
 export type HandoffRecord={id:string;visit_id:string;created_at:string;anamnesis:string|null;diagnosis:string|null;catatan_resep:string|null};
-export type HandoffPrescription={service_performers?:ServicePerformersSnapshot|null;id:string;medical_record_id:string;nama_obat:string;qty:number;satuan:string|null;jenis:string;aturan_pakai:string|null;compound_recipe_id:string|null;created_at:string};
+export type HandoffPrescription={service_performers?:ServicePerformersSnapshot|null;id:string;medical_record_id:string;inpatient_record_id?:string|null;kategori?:string|null;nama_obat:string;qty:number;satuan:string|null;jenis:string;aturan_pakai:string|null;compound_recipe_id:string|null;created_at:string};
 export type HandoffRecipe={id:string;medical_record_id:string;recipe_name:string;total_volume:string;dosage_form:string;dosage_instruction:string;status:string;created_at:string};
 export type HandoffInvoice={id:string;invoice_no:string|null;paid_status:string;voided_at:string|null;created_at:string};
 export type HandoffInvoiceLine={id:string;invoice_id:string;prescription_item_id:string|null;compound_recipe_id:string|null;qty:number};
@@ -13,6 +13,29 @@ export type InpatientHandoff={doctor:string|null;complaint:string|null;records:H
 
 export type HandoffSourceRow={key:string;name:string;kind:string;prescribed:string;billing:string;payment:string;handover:string;administration:string;duplicateActiveInvoices:boolean};
 export type HandoffSourceStatus={rows:HandoffSourceRow[];gaps:string[]};
+export type PaidInpatientStay={kind:'paid'|'unallocated'|'unbilled'|'unverified';days:number|null;invoiceNo:string|null};
+
+/** Count paid days only when one stored stay source matches one active, fully paid invoice line. */
+export function paidInpatientStay(data:InpatientHandoff,recordId:string):PaidInpatientStay{
+ const unknown:PaidInpatientStay={kind:'unverified',days:null,invoiceNo:null};
+ const sources=data.prescriptions.filter(row=>row.inpatient_record_id===recordId);
+ if(sources.length!==1){
+  return sources.length>1||data.prescriptions.some(row=>row.kategori==='Rawat Inap'&&!row.inpatient_record_id)
+   ?unknown:{kind:'unbilled',days:null,invoiceNo:null};
+ }
+ const source=sources[0];
+ if(source.jenis!=='jasa'||source.kategori!=='Rawat Inap'||!Number.isInteger(source.qty)||source.qty<=0)return unknown;
+ const linked=data.invoiceLines.filter(line=>line.prescription_item_id===source.id);
+ const invoices=new Map(data.invoices.map(invoice=>[invoice.id,invoice]));
+ if(linked.some(line=>!invoices.has(line.invoice_id)))return unknown;
+ const active=linked.filter(line=>!invoices.get(line.invoice_id)?.voided_at);
+ if(!active.length)return {kind:'unbilled',days:null,invoiceNo:null};
+ if(active.length!==1||Number(active[0].qty)!==Number(source.qty))return unknown;
+ const invoice=invoices.get(active[0].invoice_id)!;
+ if(invoice.paid_status==='Lunas')return {kind:'paid',days:source.qty,invoiceNo:invoice.invoice_no};
+ if(invoice.paid_status==='DP'||invoice.paid_status==='Belum Lunas')return {kind:'unallocated',days:null,invoiceNo:invoice.invoice_no};
+ return unknown;
+}
 const paymentStatus:Record<string,string>={
  'Lunas':'Faktur lunas; pembayaran belum dialokasikan per baris',
  'DP':'Faktur DP: pembayaran belum dialokasikan per baris',
@@ -31,7 +54,7 @@ export function evidenceTotals(evidence:readonly HandoffEvidence[],prescriptionI
 }
 
 /** Read-only source status. Invoice payment belongs to the whole invoice, never to one line. */
-export function handoffSourceStatus(data:InpatientHandoff):HandoffSourceStatus{
+export function handoffSourceStatus(data:InpatientHandoff,recordId?:string):HandoffSourceStatus{
  const invoiceById=new Map(data.invoices.map(invoice=>[invoice.id,invoice]));
  const recipeById=new Map(data.recipes.map(recipe=>[recipe.id,recipe]));
  const linkedRecipes=new Set(data.prescriptions.map(row=>row.compound_recipe_id).filter((id):id is string=>Boolean(id)));
@@ -69,7 +92,7 @@ export function handoffSourceStatus(data:InpatientHandoff):HandoffSourceStatus{
   'Bukti penyerahan dan pemberian tidak mengubah stok, jurnal, atau tagihan.',
   ...(evidence===null?['Bukti penyerahan/pemberian obat biasa belum dapat dimuat lengkap; jangan menyimpulkan obat belum diserahkan atau diberikan.']:[]),
   'Status bayar tersimpan per faktur, bukan per baris; faktur DP tidak dialokasikan ke obat/tindakan tertentu.',
-  'Lama inap terbayar tidak dihitung: tagihan belum menyimpan tanggal cakupan rawat inap.',
+  ...(!recordId||paidInpatientStay(data,recordId).kind!=='paid'?['Lama inap terbayar belum dapat dipastikan dari relasi sumber dan faktur lunas yang tersimpan.']:[]),
   ...(unlinked?[`${unlinked} baris resep/racikan belum punya tautan tagihan per baris dan tidak dipasangkan berdasarkan nama.`]:[]),
   ...(freeLines?[`${freeLines} baris faktur tanpa ID resep/racikan tidak dipasangkan ke baris mana pun.`]:[]),
  ]};
@@ -89,7 +112,7 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
   for(let offset=0;offset<records.length;offset+=200){
    const ids=records.slice(offset,offset+200).map(row=>row.id);
    const [rx,compounds]=await Promise.all([
-    readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
+    readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,inpatient_record_id,kategori,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
     readCompleteList<HandoffRecipe>((from,to)=>db.from('compounding_recipes').select('id,medical_record_id,recipe_name,total_volume,dosage_form,dosage_instruction,status,created_at',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Racikan handoff',{maxRows:null}),
    ]);prescriptions.push(...rx);recipes.push(...compounds);
   }

@@ -41,9 +41,10 @@ with InMemoryPostgres() as db:
     if not base.rstrip().endswith('rollback;'):
         raise RuntimeError('Inpatient fixture no longer ends with ROLLBACK; review setup')
     rx = (ROOT / 'supabase/tests/inpatient_rx_evidence.sql').read_text()
+    paid_stay = (ROOT / 'supabase/tests/inpatient_paid_stay_source.sql').read_text()
     # Commit fictional rows only inside this disposable tmpfs database so two
     # independent psql sessions can exercise the same request concurrently.
-    db.sql(base.rsplit('rollback;', 1)[0] + rx + '\ncommit;')
+    db.sql(base.rsplit('rollback;', 1)[0] + rx + paid_stay + '\ncommit;')
     same_request = """begin;
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -63,4 +64,5 @@ commit;"""
     count = db.sql("select count(*) from public.inpatient_rx_evidence where request_key='rx-evidence-concurrent-demo-01';")
     if count != '1':
         raise RuntimeError('Concurrent identical requests created duplicate evidence')
-    print('PASS K07 fictional handover, administration, concurrent retry, void, source integrity and cross-branch guards')
+    db.sql((ROOT / 'supabase/tests/inpatient_redischarged_source.sql').read_text())
+    print('PASS K07 fictional handover, administration, concurrent retry, void, stay-to-fee binding, source integrity and cross-branch guards')
