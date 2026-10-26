@@ -446,7 +446,10 @@ export async function checkoutKasir(formData: FormData) {
     .select("id").single();
   if (saleErr || !sale) {
     await resumePosCheckout(supabase, user.id, checkout, "cashier", undefined, replacementId);
-    redirect(`${failureUrl}${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+    const message = saleErr?.message === "VOUCHER_USAGE_LIMIT_REACHED"
+      ? "Batas pemakaian kode voucher tercapai. Hapus kode atau pilih kode lain."
+      : saleErr?.message ?? "Gagal simpan transaksi";
+    redirect(`${failureUrl}${encodeURIComponent(message)}`);
   }
 
   // Validate every pending line snapshot before any separate stock request.
