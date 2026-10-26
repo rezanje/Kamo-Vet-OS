@@ -84,11 +84,28 @@ export default async function ProduksiPage({
   const berjalan = runningOrders;
   const selected = selectedResult.data && selectedResult.data.no_produksi === requestedNumber
     ? selectedResult.data as Perintah : null;
-  const sourceResult = await supabase.rpc("read_production_atomic_sources", {
-    p_order_ids: [...new Set([...perintah.map(p => p.id), ...(selected ? [selected.id] : [])])],
-  });
   type FrozenSource = {recipe_name:string;output_name:string;unit:string|null;planned_qty:number;materials?:MaterialSource[]};
-  const sourceMap = !sourceResult.error && sourceResult.data && typeof sourceResult.data === "object" && !Array.isArray(sourceResult.data) ? sourceResult.data as Record<string,FrozenSource> : {};
+  const sourceIds = [...new Set([...perintah.map(p => p.id), ...(selected ? [selected.id] : [])])];
+  let sourceMap: Record<string,FrozenSource> = {};
+  let sourceFailed = false;
+  // The source RPC enforces a 100-ID ceiling. Every chunk must succeed before
+  // any proof is shown or an in-progress job can be completed.
+  for (let from = 0; from < sourceIds.length; from += 100) {
+    const chunk = sourceIds.slice(from, from + 100);
+    try {
+      const result = await supabase.rpc("read_production_atomic_sources", { p_order_ids: chunk });
+      if (result.error || !result.data || typeof result.data !== "object" || Array.isArray(result.data)
+        || Object.keys(result.data).some(id => !chunk.includes(id))) {
+        sourceFailed = true;
+        break;
+      }
+      sourceMap = { ...sourceMap, ...result.data as Record<string,FrozenSource> };
+    } catch {
+      sourceFailed = true;
+      break;
+    }
+  }
+  if (sourceFailed) sourceMap = {};
   const sourceFor = (id:string) => {
     const source = sourceMap[id];
     return source && typeof source.recipe_name === "string" && typeof source.output_name === "string" && (source.unit===null || typeof source.unit === "string") && typeof source.planned_qty === "number" && Number.isFinite(source.planned_qty) ? source : undefined;
@@ -114,11 +131,11 @@ export default async function ProduksiPage({
         </div>
       )}
 
-      {sourceResult.error && <div role="alert" className="p2ban">Bukti sumber produksi belum dapat diperiksa. Penyelesaian ditahan; muat ulang sebelum melanjutkan.</div>}
+      {sourceFailed && <div role="alert" className="p2ban">Bukti sumber produksi belum dapat diperiksa. Penyelesaian ditahan; muat ulang sebelum melanjutkan.</div>}
 
       {nomor !== undefined && <section id="selected-production" className="crm-sec" aria-label="Perintah produksi terpilih">
         {requestedNumber === null ? <p>Nomor pekerjaan tidak valid.</p> :
-          selectedResult.error || sourceResult.error ? <p role="alert">Pekerjaan belum dapat diperiksa. Muat ulang.</p> :
+          selectedResult.error || sourceFailed ? <p role="alert">Pekerjaan belum dapat diperiksa. Muat ulang.</p> :
           !selected || !selectedSource ? <p>Pekerjaan tidak tersedia untuk akses Anda.</p> : <>
               <h2 style={{ fontSize: 14, marginBottom: 8 }}>Perintah produksi {selected.no_produksi}</h2>
               <p>{selectedSource.recipe_name} · {selectedSource.output_name} · {selected.status === "selesai" ? "Selesai" : selected.status === "berjalan" ? "Berjalan" : "Batal"}</p>
