@@ -7,7 +7,7 @@ it("allows legacy and the already-posted DEMO pool without inventing new payout 
  expect(()=>assertServiceAttributionReady([{}, {commissionPending:true,fixedCommission:true}])).not.toThrow();
 });
 it("stops payroll calculation before unresolved two-person service commission can be silently omitted",async()=>{
- const reads:string[]=[];const client={from(table:string){reads.push(table);const q={select:()=>q,eq:()=>q,order:async()=>({data:[],error:null})};return q;}};
+ const reads:string[]=[];const client={from(table:string){reads.push(table);const q={select:()=>q,eq:()=>q,order:()=>q,range:async()=>({data:[],count:0,error:null})};return q;}};
  await expect(kumpulkanDataGaji(client,"2026-10")).rejects.toThrow("SERVICE_ATTRIBUTION_PENDING:");
  expect(reads).toEqual(["employees"]);
 });
