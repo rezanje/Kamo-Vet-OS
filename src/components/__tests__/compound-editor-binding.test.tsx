@@ -2,8 +2,10 @@
 import { afterEach, expect, it } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { useState } from 'react';
 import { CompoundEditor } from '../CompoundEditor';
 import type { KatalogRacikan } from '@/lib/katalog-racikan';
+import { masterCompoundCartRow, type CompoundDraft } from '@/lib/master-compound-cart';
 
 const item = { id: 'sku', name: 'Obat Racik A', unit: 'pcs', sell_price: 100, stok: 0 };
 const formula = { id: 'formula', code: 'A', active: true, version_id: 'version', version: 1, name: 'Formula A', dosage_form: 'puyer', dosage_instruction: null, ingredients: [] };
@@ -37,4 +39,45 @@ it('exposes only the selected SKU’s explicitly bound active formulas and rejec
   expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(true);
   await render('', true);
   expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(false);
+});
+
+it('copies an official recipe into an editable patient composition without issuing the fixed formula', async () => {
+  root = createRoot(host);
+  const material = { id: 'material', name: 'Bahan aktif', unit: 'gram', sell_price: 20, stok: 10 };
+  const official = { ...formula, sale_item_id: 'sku', dosage_instruction: 'Instruksi resmi', ingredients: [
+    { item_id: 'material', name: 'Nama lama', quantity: 1, unit: 'gram', unit_price: 10 },
+  ] } as KatalogRacikan;
+  let draft: CompoundDraft = { saleItemId: 'sku', formulaId: 'version', dosageForm: 'puyer', instruction: '', ingredients: [] };
+  function Harness() {
+    const [value, setValue] = useState(draft);
+    return <CompoundEditor items={[item]} materials={[material]} catalog={[official]} allowCustom value={value}
+      onChange={next => { draft = next; setValue(next); }} />;
+  }
+  await act(async () => root.render(<Harness />));
+  const copy = [...host.querySelectorAll('button')].find(button => button.textContent === 'Sesuaikan komposisi untuk pasien');
+  expect(copy).toBeDefined();
+  await act(async () => copy!.click());
+  expect(draft).toMatchObject({ formulaId: '', dosageForm: 'puyer', instruction: 'Instruksi resmi', ingredients: [
+    { item_id: 'material', nama: 'Bahan aktif', qty: 1, satuan: 'gram', harga: 20 },
+  ] });
+  const quantity = host.querySelector<HTMLInputElement>('[aria-label="Jumlah bahan Bahan aktif"]')!;
+  expect(quantity).toBeTruthy();
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(quantity, '2'); quantity.dispatchEvent(new Event('input', { bubbles: true })); });
+  expect(masterCompoundCartRow(item, null, draft, 'request', true)).toMatchObject({
+    official_version_id: undefined, ingredients: [{ item_id: 'material', qty: 2 }],
+  });
+});
+
+it('does not offer a patient copy without current custom permission and matching active ingredient units', async () => {
+  root = createRoot(host);
+  const official = { ...formula, sale_item_id: 'sku', ingredients: [
+    { item_id: 'material', name: 'Bahan', quantity: 1, unit: 'gram', unit_price: 10 },
+  ] } as KatalogRacikan;
+  const value = { saleItemId: 'sku', formulaId: 'version', dosageForm: 'puyer', instruction: '', ingredients: [] };
+  const copyButton = () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Sesuaikan komposisi untuk pasien');
+  await act(async () => root.render(<CompoundEditor items={[item]} materials={[]} catalog={[official]} allowCustom value={value} onChange={() => {}} />));
+  expect(copyButton()).toBeUndefined();
+  expect(host.textContent).toContain('bahan atau satuan aktif tidak cocok');
+  await act(async () => root.render(<CompoundEditor items={[item]} materials={[{ id: 'material', name: 'Bahan', unit: 'gram', sell_price: 20, stok: 10 }]} catalog={[official]} allowCustom={false} value={value} onChange={() => {}} />));
+  expect(copyButton()).toBeUndefined();
 });
