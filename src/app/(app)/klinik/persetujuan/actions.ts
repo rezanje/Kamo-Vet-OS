@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
+import { TEMPLATE_CATEGORIES } from "@/lib/consent";
 
 const BACK = "/klinik/persetujuan";
 
@@ -16,7 +16,7 @@ export async function simpanTemplate(formData: FormData) {
   const isi = String(formData.get("isi") ?? "").trim();
   const branchId = String(formData.get("branchId") ?? "") || null;
   const kategori = String(formData.get("kategori") ?? "Umum");
-  if (!["Umum", ...TINDAKAN_KATEGORI].includes(kategori)) redirect(`${BACK}?error=${encodeURIComponent("Jenis persetujuan tidak valid")}`);
+  if (!(TEMPLATE_CATEGORIES as readonly string[]).includes(kategori)) redirect(`${BACK}?error=${encodeURIComponent("Jenis persetujuan tidak valid")}`);
 
   if (!nama || !isi) redirect(`${BACK}?error=${encodeURIComponent("Nama dan isi template wajib diisi")}`);
 
@@ -72,7 +72,7 @@ export async function simpanAturanConsent(formData: FormData) {
     let templateId: string | null = null;
     if (templateRaw) {
       const { data: t } = await supabase
-        .from("consent_templates").select("id").eq("id", templateRaw).eq("is_active", true).maybeSingle();
+        .from("consent_templates").select("id").eq("id", templateRaw).eq("is_active", true).neq("kategori", "Pulang Paksa").maybeSingle();
       templateId = t?.id ?? null;
     }
     const { error } = await supabase.from("consent_rules").upsert({

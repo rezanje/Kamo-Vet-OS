@@ -345,6 +345,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                 <option value="kritis">Kritis</option>
                 <option value="sembuh">Sembuh / Boleh Pulang</option>
                 <option value="rip">RIP (Meninggal)</option>
+                <option value="pulang_paksa">Pulang Paksa (perlu form khusus bertanda tangan)</option>
               </select>
             </div>
           </div>

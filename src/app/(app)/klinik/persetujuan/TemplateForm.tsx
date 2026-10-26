@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
-import { PLACEHOLDERS } from "@/lib/consent";
-import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
+import { PLACEHOLDERS, TEMPLATE_CATEGORIES } from "@/lib/consent";
 import { simpanTemplate } from "./actions";
 
 export type TemplateRow = {
@@ -62,7 +61,7 @@ export function TemplateForm({ branches, editing }: {
       <div className="fg">
         <label className="flab">Jenis persetujuan</label>
         <select className="fi" name="kategori" defaultValue={editing?.kategori ?? "Umum"}>
-          {["Umum", ...TINDAKAN_KATEGORI].map(kategori => <option key={kategori}>{kategori}</option>)}
+          {TEMPLATE_CATEGORIES.map(kategori => <option key={kategori}>{kategori}</option>)}
         </select>
       </div>
       <div className="fg">

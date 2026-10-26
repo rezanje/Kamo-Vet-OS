@@ -1,6 +1,6 @@
 // Aturan rawat inap (Addendum §3) — pure, dipakai server action + UI.
 
-export type Condition = "stabil" | "kritis" | "sembuh" | "rip";
+export type Condition = "stabil" | "kritis" | "sembuh" | "rip" | "pulang_paksa";
 export type Role = "OWNER" | "ADMIN" | "FINANCE" | "STAFF" | "DOCTOR";
 
 export const CONDITION_LABEL: Record<Condition, string> = {
@@ -8,6 +8,7 @@ export const CONDITION_LABEL: Record<Condition, string> = {
   kritis: "Kritis",
   sembuh: "Sembuh / Boleh Pulang",
   rip: "RIP (Meninggal)",
+  pulang_paksa: "Pulang Paksa",
 };
 
 // §3: transisi ke 'rip' hanya boleh dokter — validasi role di server action, bukan cuma UI.
@@ -18,7 +19,7 @@ export function canTransition(role: Role, to: Condition): boolean {
 }
 
 export function isTerminal(c: Condition): boolean {
-  return c === "sembuh" || c === "rip";
+  return c === "sembuh" || c === "rip" || c === "pulang_paksa";
 }
 
 // Template WA khusus RIP (bukan template monitoring rutin) — dikirim via Fonnte setelah review dokter.

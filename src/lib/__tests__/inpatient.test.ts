@@ -18,6 +18,7 @@ describe("isTerminal", () => {
   it("sembuh & rip are terminal, stabil & kritis are not", () => {
     expect(isTerminal("sembuh")).toBe(true);
     expect(isTerminal("rip")).toBe(true);
+    expect(isTerminal("pulang_paksa")).toBe(true);
     expect(isTerminal("stabil")).toBe(false);
     expect(isTerminal("kritis")).toBe(false);
   });
