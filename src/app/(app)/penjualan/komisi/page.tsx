@@ -59,6 +59,7 @@ export default async function KomisiPage({
   const [aturan, karyawan, cabang, kategori, barang, hitungan] = loaded;
 
   const namaEmp = new Map(karyawan.map((k) => [k.id, k.nama]));
+  const groupEmp = new Map(karyawan.map((k) => [k.id, k.commission_group]));
   const namaCab = new Map(cabang.map((c) => [c.id, c.name]));
   const namaKat = new Map(kategori.map((k) => [k.id, k.name]));
   const namaItem = new Map(barang.map((i) => [i.id, i.name]));
@@ -328,6 +329,7 @@ export default async function KomisiPage({
                 <tr key={h.employeeId}>
                   <td style={{ fontSize: 11.5 }}>
                     <b>{namaEmp.get(h.employeeId) ?? "—"}</b>
+                    {groupEmp.get(h.employeeId) && <span style={{ marginLeft: 6, color: "var(--tm)" }}>({groupEmp.get(h.employeeId)})</span>}
                     {h.rincian.length > 0 && (
                       <details style={{ marginTop: 4 }}>
                         <summary style={{ fontSize: 10, color: "var(--tm)", cursor: "pointer" }}>

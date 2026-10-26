@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(tabl
         { id: "sku", nama: "Tindakan", tipe: "nominal", basis: "omzet", sumber: "klinik", nominal: 5_000, persen: 0, is_active: true },
         { id: "sales", nama: "Omzet", tipe: "persen", basis: "omzet", sumber: "klinik", nominal: 0, persen: 7.5, is_active: true },
       ] : [] : [
-        ...Array.from({ length: 1205 }, (_, i) => ({ id: `${table}-${i}`, name: i > 1202 ? "Duplicate name" : `Name ${i}`, nama: `Name ${i}`, code: `CODE-${i}`, is_active: true, status: "Aktif", parent_id: null })),
+        ...Array.from({ length: 1205 }, (_, i) => ({ id: `${table}-${i}`, name: i > 1202 ? "Duplicate name" : `Name ${i}`, nama: `Name ${i}`, code: `CODE-${i}`, is_active: true, status: "Aktif", parent_id: null, commission_group: table === "employees" && i === 0 ? "doctor_new" : null })),
         { id: "inactive", name: "Inactive", nama: "Inactive", is_active: false, status: "Nonaktif", parent_id: null },
       ].filter(row => filters.every(filter => filter(row)));
       const data = rows.slice(read.from, to + 1);
@@ -72,5 +72,6 @@ it("shows quantity, configured rate and net-sales basis in the employee readout"
   const html = renderToStaticMarkup(await page());
   expect(html).toContain("0,5 unit × Rp 5.000/unit");
   expect(html).toContain("omzet neto Rp 75.000 × 7,5%");
+  expect(html).toContain("(doctor_new)");
   expect(html).not.toContain("dasar Rp 1");
 });
