@@ -195,7 +195,11 @@ export default async function KartuStokPage({
                   {baris.map((r, i) => (
                     <tr key={i}>
                       <td style={{ fontSize: 10.5 }}>{r.tanggal}</td>
-                      <td style={{ fontSize: 10.5, fontFamily: "var(--mono, monospace)", color: "var(--tm)" }}>{r.source_ref ?? "—"}</td>
+                      <td style={{ fontSize: 10.5, fontFamily: "var(--mono, monospace)", color: "var(--tm)" }}>
+                        {r.source === "racik" && r.source_ref && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.source_ref)
+                          ? <Link href={`/klinik/racik/${encodeURIComponent(r.source_ref)}`}>{r.source_ref}</Link>
+                          : r.source_ref ?? "—"}
+                      </td>
                       <td style={{ fontSize: 11 }}>{labelSource(r.source)}</td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{r.gudang}</td>
                       <td style={{ textAlign: "right", fontSize: 10.5, color: "var(--tm)" }}>

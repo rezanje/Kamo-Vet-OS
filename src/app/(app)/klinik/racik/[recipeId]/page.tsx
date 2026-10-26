@@ -16,7 +16,7 @@ const statusLabel: Record<string, string> = {
 };
 const statusBadge = (s: string) => (s === "handed_over" ? "g" : s === "ready" ? "b" : s === "void" ? "r" : "o");
 
-type Ingredient = { ingredient_name: string; quantity: number; unit: string };
+type Ingredient = { ingredient_name: string; item_id: string | null; quantity: number; unit: string };
 type Recipe = {
   id: string; recipe_name: string; dosage_instruction: string; total_volume: string; dosage_form: string;
   compounding_steps: string; status: string; compounding_ingredients: Ingredient[];
@@ -49,6 +49,15 @@ export default async function RacikDetailPage({
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
 
+  // The selling parent is a stored identity, not a physical stock balance.
+  const { data: saleBinding, error: saleBindingError } = await supabase
+    .from("clinic_compound_sales")
+    .select("recipe_id, visit_id, sale_item_id, sale_name")
+    .eq("recipe_id", recipeId)
+    .maybeSingle();
+  const sellingParent = !saleBindingError && saleBinding?.recipe_id === recipeId
+    && saleBinding.visit_id === visit?.id && saleBinding.sale_item_id ? saleBinding : null;
+
   type InvoiceLine = { id: string; invoice_id: string; invoices: Rel<{ id: string; visit_id: string; invoice_no: string | null; voided_at: string | null }> };
   let invoiceLines: InvoiceLine[] = [];
   let invoiceLookupFailed = false;
@@ -73,7 +82,7 @@ export default async function RacikDetailPage({
   const { data: siblings } = mr
     ? await supabase
         .from("compounding_recipes")
-        .select("id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, compounding_ingredients(ingredient_name, quantity, unit)")
+        .select("id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, compounding_ingredients(ingredient_name, item_id, quantity, unit)")
         .eq("medical_record_id", mr.id)
         .order("created_at", { ascending: true })
     : { data: [] };
@@ -106,6 +115,14 @@ export default async function RacikDetailPage({
               </Link>}
           </div>) : <p>Belum ada invoice terkait yang tersedia untuk akses Anda.</p>}
       </div>}
+
+      <div className="crm-sec" aria-label="Jejak sumber racikan" style={{ marginBottom: 14 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Jejak sumber racikan</div>
+        <p>Induk racikan adalah identitas penjualan nonstok; stok fisik dan mutasinya berada pada bahan.</p>
+        {sellingParent ? <p>Induk penjualan: <Link href={`/pos/sku/${encodeURIComponent(sellingParent.sale_item_id)}`}>{sellingParent.sale_name}</Link></p>
+          : <p>{saleBindingError ? "Tautan induk belum dapat diperiksa. Coba muat ulang." : "Induk penjualan tersimpan belum tersedia untuk racikan ini."}</p>}
+        {visit && mr && <p>Dokumen asal: <Link href={`/klinik/rekam-medis/${encodeURIComponent(visit.id)}`}>Kunjungan / rekam medis</Link></p>}
+      </div>
 
       {/* Judul besar (referensi) */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
@@ -180,7 +197,7 @@ export default async function RacikDetailPage({
                     <td style={{ verticalAlign: "top" }}>
                       {ings.map((i, idx) => (
                         <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, padding: "1px 0" }}>
-                          <span>• {i.ingredient_name}</span>
+                          <span>• {i.item_id ? <Link href={`/pos/kartu-stok?item=${encodeURIComponent(i.item_id)}`}>{i.ingredient_name} · kartu stok bahan</Link> : i.ingredient_name}</span>
                           <span style={{ color: "var(--tm)", whiteSpace: "nowrap" }}>{Number(i.quantity)} {i.unit}</span>
                         </div>
                       ))}
