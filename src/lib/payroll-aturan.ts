@@ -48,21 +48,18 @@ export function menitTelat(jamShift: string | null, jamAbsen: string | null): nu
 }
 
 export async function getAturanGaji(supabase: AnyClient): Promise<AturanGaji> {
-  try {
-    const { data } = await supabase
-      .from("payroll_settings")
-      .select("telat_mulai_menit, telat_blok_menit, telat_nominal_per_blok, telat_maks, bolos_per_hari, lembur_per_jam")
-      .eq("id", true).maybeSingle();
-    if (!data) return ATURAN_KOSONG;
-    return {
-      telat_mulai_menit: Number(data.telat_mulai_menit) || 0,
-      telat_blok_menit: Number(data.telat_blok_menit) || 5,
-      telat_nominal_per_blok: Number(data.telat_nominal_per_blok) || 0,
-      telat_maks: Number(data.telat_maks) || 0,
-      bolos_per_hari: Number(data.bolos_per_hari) || 0,
-      lembur_per_jam: Number(data.lembur_per_jam) || 0,
-    };
-  } catch {
-    return ATURAN_KOSONG;
-  }
+  const { data, error } = await supabase
+    .from("payroll_settings")
+    .select("telat_mulai_menit, telat_blok_menit, telat_nominal_per_blok, telat_maks, bolos_per_hari, lembur_per_jam")
+    .eq("id", true).maybeSingle();
+  // A failed or RLS-hidden read cannot be interpreted as a configured zero rate.
+  if (error || !data) throw new Error("Aturan gaji belum dapat diverifikasi. Coba muat ulang.");
+  return {
+    telat_mulai_menit: Number(data.telat_mulai_menit) || 0,
+    telat_blok_menit: Number(data.telat_blok_menit) || 5,
+    telat_nominal_per_blok: Number(data.telat_nominal_per_blok) || 0,
+    telat_maks: Number(data.telat_maks) || 0,
+    bolos_per_hari: Number(data.bolos_per_hari) || 0,
+    lembur_per_jam: Number(data.lembur_per_jam) || 0,
+  };
 }
