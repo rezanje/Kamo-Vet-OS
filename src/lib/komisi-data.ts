@@ -353,7 +353,7 @@ async function infoStrukLuarPeriode(
 export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomisi[]> {
   const { data } = await completeReportQuery(supabase
     .from("commission_rules")
-    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai", { count: "exact" })
+    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, commission_group, override_group_rule_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai", { count: "exact" })
     .eq("is_active", true)
     .order("nama"));
 
@@ -366,6 +366,8 @@ export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomis
     persen: Number(r.persen),
     nominal: Number(r.nominal),
     employeeId: (r.employee_id as string | null) ?? null,
+    commissionGroup: (r.commission_group as string | null) ?? null,
+    overrideGroupRuleId: (r.override_group_rule_id as string | null) ?? null,
     branchId: (r.branch_id as string | null) ?? null,
     categoryId: (r.category_id as string | null) ?? null,
     itemId: (r.item_id as string | null) ?? null,
@@ -380,9 +382,11 @@ export async function komisiPeriode(
   supabase: AnyClient,
   periode: string,
 ): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; omzetTanpaPenjual: number }> {
-  const [{ baris, omzetTanpaPenjual }, aturan] = await Promise.all([
+  const [{ baris, omzetTanpaPenjual }, aturan, { data: employeeGroups }] = await Promise.all([
     kumpulkanBarisKomisi(supabase, periode),
     muatAturanKomisi(supabase),
+    completeReportQuery<{ id: string; commission_group: string | null }>(supabase.from("employees")
+      .select("id, commission_group", { count: "exact" })),
   ]);
   const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
     .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})
@@ -391,5 +395,6 @@ export async function komisiPeriode(
   type Allocation = {invoice_id:string;employee_id:string;amount:number;clinic_demo_invoice_snapshots:{service_basis:number}|{service_basis:number}[]};
   const shared = (allocations as Allocation[]).map(row=>({employeeId:row.employee_id,invoiceId:row.invoice_id,amount:Number(row.amount),
     basis:Number((Array.isArray(row.clinic_demo_invoice_snapshots) ? row.clinic_demo_invoice_snapshots[0] : row.clinic_demo_invoice_snapshots).service_basis)}));
-  return { hasil: mergeSharedIncentives(hitungKomisi(baris, aturan),shared), baris, omzetTanpaPenjual };
+  const groupPerEmployee = new Map(employeeGroups.map(row => [row.id, row.commission_group]));
+  return { hasil: mergeSharedIncentives(hitungKomisi(baris, aturan, groupPerEmployee),shared), baris, omzetTanpaPenjual };
 }

@@ -43,6 +43,10 @@ export type AturanKomisi = {
   persen: number;
   nominal: number;              // rupiah per unit terjual
   employeeId: string | null;
+  /** Optional configured grade/group; null leaves the legacy rule unrestricted. */
+  commissionGroup?: string | null;
+  /** Individual rule explicitly replaces this group rule on intersecting lines. */
+  overrideGroupRuleId?: string | null;
   branchId: string | null;
   categoryId: string | null;
   itemId: string | null;
@@ -112,7 +116,7 @@ function cocok(b: BarisJual, a: AturanKomisi): boolean {
   return true;
 }
 
-export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilKomisi[] {
+export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[], groupPerEmployee: ReadonlyMap<string, string | null> = new Map()): HasilKomisi[] {
   const perOrang = new Map<string, BarisJual[]>();
   for (const b of baris) {
     if (!b.employeeId) continue;
@@ -131,7 +135,13 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilK
     const rincian: RincianAturan[] = [];
 
     for (const a of aturan) {
-      const kena = milikDia.filter((b) => cocok(b, a));
+      const kena = milikDia.filter((b) => {
+        if (!cocok(b, a)) return false;
+        if (a.commissionGroup && groupPerEmployee.get(employeeId) !== a.commissionGroup) return false;
+        if (!a.commissionGroup) return true;
+        return !aturan.some((individual) => individual.overrideGroupRuleId === a.id
+          && individual.employeeId === employeeId && cocok(b, individual));
+      });
       if (kena.length === 0) continue;
 
       let dasar = 0;

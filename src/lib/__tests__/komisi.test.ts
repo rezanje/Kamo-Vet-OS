@@ -35,6 +35,32 @@ const aturan = (o: Partial<AturanKomisi> = {}): AturanKomisi => ({
 const satu = (b: BarisJual[], a: AturanKomisi[]) => hitungKomisi(b, a)[0];
 
 describe("hitungKomisi", () => {
+  it("uses configured SKU rates by doctor group and keeps separate sales percent rules", () => {
+    // Dummy fixture values exercise different configured rates; no production tariff is seeded.
+    const rows = [baris({ employeeId: "doctor-old", qty: 2, omzet: 80_000 }), baris({ employeeId: "doctor-new", qty: 1, omzet: 40_000 })];
+    const oldRule = aturan({ id: "old", tipe: "nominal", nominal: 15_000, persen: 0, itemId: "it1", commissionGroup: "doctor_old" });
+    const newRule = aturan({ id: "new", tipe: "nominal", nominal: 10_000, persen: 0, itemId: "it1", commissionGroup: "doctor_new" });
+    const salesRule = aturan({ id: "sales", employeeId: "doctor-new", persen: 5 });
+    const result = hitungKomisi(rows, [oldRule, newRule, salesRule], new Map([
+      ["doctor-old", "doctor_old"], ["doctor-new", "doctor_new"],
+    ]));
+    expect(result.find(r => r.employeeId === "doctor-old")?.komisi).toBe(30_000);
+    expect(result.find(r => r.employeeId === "doctor-new")?.komisi).toBe(12_000);
+  });
+
+  it("replaces a group rule only for matching individual SKU lines", () => {
+    const groupRule = aturan({ id: "group", tipe: "nominal", nominal: 10_000, persen: 0, commissionGroup: "doctor_new" });
+    const exception = aturan({ id: "exception", tipe: "nominal", nominal: 15_000, persen: 0, employeeId: "doctor-a", itemId: "it1", overrideGroupRuleId: "group" });
+    const rows = [baris({ employeeId: "doctor-a", itemId: "it1" }), baris({ employeeId: "doctor-a", itemId: "it2" })];
+    const [result] = hitungKomisi(rows, [groupRule, exception], new Map([["doctor-a", "doctor_new"]]));
+    expect(result.komisi).toBe(25_000);
+    expect(result.rincian.find(r => r.aturanId === "group")?.dasar).toBe(1);
+    expect(result.rincian.find(r => r.aturanId === "exception")?.dasar).toBe(1);
+  });
+
+  it("does not apply a group rule when employee has no configured group", () => {
+    expect(satu([baris()], [aturan({ commissionGroup: "doctor_old" })]).komisi).toBe(0);
+  });
   it("persen dari omzet", () => {
     expect(satu([baris()], [aturan()]).komisi).toBe(2_000);
   });
