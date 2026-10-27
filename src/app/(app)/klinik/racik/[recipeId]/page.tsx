@@ -18,7 +18,7 @@ const statusBadge = (s: string) => (s === "handed_over" ? "g" : s === "ready" ? 
 
 type Ingredient = { ingredient_name: string; item_id: string | null; quantity: number; unit: string };
 type Recipe = {
-  id: string; recipe_name: string; dosage_instruction: string; total_volume: string; dosage_form: string;
+  id: string; recipe_name: string; created_at: string; dosage_instruction: string; total_volume: string; dosage_form: string;
   compounding_steps: string; status: string; compounding_ingredients: Ingredient[];
 };
 
@@ -34,13 +34,15 @@ export default async function RacikDetailPage({
   const { error, success } = await searchParams;
   const supabase = await createClient();
 
-  const { data: r } = await supabase
+  const { data: r, error: recipeError } = await supabase
     .from("compounding_recipes")
     .select(`id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, created_at, medical_record_id, compound_official_usage(recipe_id),
       medical_records(id, diagnosis, anamnesis, catatan_resep, visit_id,
         visits(id, poli, dokter, keluhan, created_at, pets(name, species, breed, photo_url), customers(name, phone, address)))`)
     .eq("id", recipeId)
     .maybeSingle();
+  // A failed read is not evidence that the source document is missing.
+  if (recipeError) throw new Error("Racikan belum dapat dimuat. Coba muat ulang.");
   if (!r) notFound();
   const official = !!one(r.compound_official_usage as Rel<{ recipe_id: string }>);
 
@@ -79,14 +81,19 @@ export default async function RacikDetailPage({
   })).values());
 
   // Semua racikan dalam resep yang sama (referensi: daftar bisa >1 baris).
-  const { data: siblings } = mr
+  const { data: siblings, error: siblingsError } = mr
     ? await supabase
         .from("compounding_recipes")
-        .select("id, recipe_name, dosage_instruction, total_volume, dosage_form, compounding_steps, status, compounding_ingredients(ingredient_name, item_id, quantity, unit)")
+        .select("id, recipe_name, created_at, dosage_instruction, total_volume, dosage_form, compounding_steps, status, compounding_ingredients(ingredient_name, item_id, quantity, unit)")
         .eq("medical_record_id", mr.id)
         .order("created_at", { ascending: true })
-    : { data: [] };
-  const recipes = (siblings ?? []) as Recipe[];
+    : { data: [], error: null };
+  const recipes = siblingsError ? [] : (siblings ?? []) as Recipe[];
+  // Stock moves for an issue are dated on or after the recipe was saved (UTC date is never later).
+  const stockCardHref = (itemId: string, savedAt: string | null | undefined) => {
+    const dari = /^\d{4}-\d{2}-\d{2}/.exec(savedAt ?? "")?.[0];
+    return `/pos/kartu-stok?item=${encodeURIComponent(itemId)}${dari ? `&dari=${dari}` : ""}`;
+  };
 
   const tglResep = visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
   const tglPeriksa = visit ? new Date(visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -174,12 +181,14 @@ export default async function RacikDetailPage({
       </div>
 
       {/* Daftar obat racikan */}
-      <div className="crm-sec">
+      <div className="crm-sec" aria-label="Daftar obat racikan">
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <i className="ti ti-mortar" style={{ fontSize: 18, color: "var(--posb)" }} />
           <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>DAFTAR OBAT RACIKAN</div>
         </div>
-        <div style={{ overflowX: "auto" }}>
+        {siblingsError ? <p role="alert">Komposisi racikan belum dapat dimuat lengkap. Coba muat ulang.</p>
+          : !mr && <p role="alert">Rekam medis sumber tidak tersedia untuk akses Anda, jadi komposisi tidak ditampilkan.</p>}
+        {!siblingsError && mr && <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
               <tr><th style={{ width: 30 }}>No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Petunjuk pemakaian</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Catatan racik tersimpan (internal)</th></tr>
@@ -191,13 +200,13 @@ export default async function RacikDetailPage({
                   <tr key={rc.id}>
                     <td style={{ verticalAlign: "top", fontSize: 11, color: "var(--tm)" }}>{ri + 1}</td>
                     <td style={{ fontWeight: 600, verticalAlign: "top" }}>
-                      {rc.recipe_name}
+                      {rc.id === r.id ? rc.recipe_name : <Link href={`/klinik/racik/${encodeURIComponent(rc.id)}`}>{rc.recipe_name}</Link>}
                       {rc.id !== r.id && <span className={`bge ${statusBadge(rc.status)}`} style={{ display: "block", marginTop: 4, width: "fit-content" }}>{statusLabel[rc.status]}</span>}
                     </td>
                     <td style={{ verticalAlign: "top" }}>
                       {ings.map((i, idx) => (
                         <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, padding: "1px 0" }}>
-                          <span>• {i.item_id ? <Link href={`/pos/kartu-stok?item=${encodeURIComponent(i.item_id)}`}>{i.ingredient_name} · kartu stok bahan</Link> : i.ingredient_name}</span>
+                          <span>• {i.item_id ? <Link href={stockCardHref(i.item_id, rc.created_at)}>{i.ingredient_name} · kartu stok bahan</Link> : i.ingredient_name}</span>
                           <span style={{ color: "var(--tm)", whiteSpace: "nowrap" }}>{Number(i.quantity)} {i.unit}</span>
                         </div>
                       ))}
@@ -213,7 +222,7 @@ export default async function RacikDetailPage({
               })}
             </tbody>
           </table>
-        </div>
+        </div>}
 
         <p style={{ fontSize: 11, color: "var(--tm)", marginTop: 10 }}>
           Catatan racik tersimpan perlu ditinjau oleh dokter sebelum digunakan sebagai petunjuk pemakaian. Isinya tidak disalin otomatis.

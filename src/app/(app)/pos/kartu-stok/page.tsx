@@ -4,6 +4,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { susunKartuStok, labelSource, type Mutasi } from "@/lib/kartu-stok";
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
+import { readCompleteList } from "@/lib/checked-list";
 import { KartuStokItemFilter } from "./KartuStokItemFilter";
 
 type Rel<T> = T | T[] | null;
@@ -20,7 +21,7 @@ function awalBulanWib() {
 }
 
 type MoveRow = {
-  tanggal: string; qty: number; unit_cost: number; source: string; source_ref: string | null;
+  id: string; tanggal: string; qty: number; unit_cost: number; source: string; source_ref: string | null;
   warehouse_id: string; warehouses: Rel<{ code: string; name: string }>;
 };
 
@@ -34,7 +35,7 @@ export default async function KartuStokPage({
   const sampai = sp.sampai || todayWib();
   const supabase = await createClient();
 
-  const [items, { data: whRows }] = await Promise.all([
+  const [items, { data: whRows, error: whError }] = await Promise.all([
     loadKatalogPermintaan(supabase),
     supabase.from("warehouses").select("id, code, name").eq("is_active", true).order("code"),
   ]);
@@ -47,24 +48,30 @@ export default async function KartuStokPage({
   let saldoAwal = 0;
   let baris: ReturnType<typeof susunKartuStok> = [];
   let perGudang: { nama: string; saldo: number }[] = [];
+  // Without the warehouse list a requested warehouse filter would silently become all-warehouse totals.
+  let loadError = whError ? "Daftar gudang belum dapat dimuat. Coba muat ulang." : "";
 
-  if (itemId) {
+  if (itemId && !loadError) try {
     // Saldo awal = akumulasi semua mutasi SEBELUM tanggal mulai. Dihitung, bukan
     // disimpan, supaya rentang tanggal apa pun tetap nyambung dengan riwayatnya.
-    let qAwal = supabase.from("stock_moves").select("qty").eq("item_id", itemId).lt("tanggal", dari);
-    if (gudangId) qAwal = qAwal.eq("warehouse_id", gudangId);
-    const { data: awal } = await qAwal;
-    saldoAwal = (awal ?? []).reduce((a: number, r: { qty: number }) => a + Number(r.qty), 0);
+    // Every read is complete or the card is not shown: a partial ledger would print wrong balances.
+    const awal = await readCompleteList<{ id: string; qty: number }>((from, to) => {
+      let q = supabase.from("stock_moves").select("id, qty", { count: "exact" }).eq("item_id", itemId).lt("tanggal", dari);
+      if (gudangId) q = q.eq("warehouse_id", gudangId);
+      return q.order("id").range(from, to);
+    }, "Saldo awal kartu stok", { maxRows: null });
+    saldoAwal = awal.reduce((a: number, r) => a + Number(r.qty), 0);
 
-    let qMoves = supabase
-      .from("stock_moves")
-      .select("tanggal, qty, unit_cost, source, source_ref, warehouse_id, warehouses(code, name)")
-      .eq("item_id", itemId).gte("tanggal", dari).lte("tanggal", sampai)
-      .order("tanggal", { ascending: true }).order("created_at", { ascending: true });
-    if (gudangId) qMoves = qMoves.eq("warehouse_id", gudangId);
-    const { data: moves } = await qMoves;
+    const moves = await readCompleteList<MoveRow>((from, to) => {
+      let q = supabase
+        .from("stock_moves")
+        .select("id, tanggal, qty, unit_cost, source, source_ref, warehouse_id, warehouses(code, name)", { count: "exact" })
+        .eq("item_id", itemId).gte("tanggal", dari).lte("tanggal", sampai);
+      if (gudangId) q = q.eq("warehouse_id", gudangId);
+      return q.order("tanggal", { ascending: true }).order("created_at", { ascending: true }).order("id").range(from, to);
+    }, "Mutasi kartu stok", { maxRows: null });
 
-    const mutasi: Mutasi[] = ((moves ?? []) as unknown as MoveRow[]).map((m) => ({
+    const mutasi: Mutasi[] = moves.map((m) => ({
       tanggal: m.tanggal, qty: Number(m.qty), unit_cost: Number(m.unit_cost),
       source: m.source, source_ref: m.source_ref,
       gudang: one(m.warehouses)?.code ?? "—",
@@ -73,16 +80,18 @@ export default async function KartuStokPage({
 
     // Saldo per gudang PER TANGGAL `sampai` — dihitung dari mutasi, bukan dari
     // tabel stock, supaya bisa melihat posisi stok di tanggal yang sudah lewat.
-    const { data: sampaiRows } = await supabase
-      .from("stock_moves").select("qty, warehouses(code, name)")
-      .eq("item_id", itemId).lte("tanggal", sampai);
+    const sampaiRows = await readCompleteList<{ id: string; qty: number; warehouses: Rel<{ code: string; name: string }> }>((from, to) => supabase
+      .from("stock_moves").select("id, qty, warehouses(code, name)", { count: "exact" })
+      .eq("item_id", itemId).lte("tanggal", sampai).order("id").range(from, to), "Saldo per gudang", { maxRows: null });
     const acc = new Map<string, number>();
-    for (const r of (sampaiRows ?? []) as unknown as { qty: number; warehouses: Rel<{ code: string; name: string }> }[]) {
+    for (const r of sampaiRows) {
       const w = one(r.warehouses);
       const nama = w ? `${w.code}` : "—";
       acc.set(nama, (acc.get(nama) ?? 0) + Number(r.qty));
     }
     perGudang = [...acc.entries()].map(([nama, saldo]) => ({ nama, saldo })).sort((a, b) => a.nama.localeCompare(b.nama));
+  } catch (e) {
+    loadError = e instanceof Error ? e.message : "Kartu stok belum dapat dimuat lengkap. Coba muat ulang.";
   }
 
   const saldoAkhir = baris.length ? baris[baris.length - 1].saldo : saldoAwal;
@@ -122,7 +131,12 @@ export default async function KartuStokPage({
 
       {!itemId ? (
         <div className="crm-sec" style={{ textAlign: "center", color: "var(--td)", fontSize: 11, padding: "26px 0" }}>
+          {sp.item ? <p role="alert">Barang dari tautan tidak ditemukan atau tidak aktif, jadi riwayatnya tidak ditampilkan di sini.</p> : null}
           Pilih barang dulu untuk melihat riwayat masuk-keluarnya.
+        </div>
+      ) : loadError ? (
+        <div className="crm-sec" role="alert" style={{ textAlign: "center", color: "#b91c1c", fontSize: 11, padding: "26px 0" }}>
+          {loadError}
         </div>
       ) : (
         <>
