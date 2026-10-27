@@ -1,4 +1,4 @@
-import { cocokAturanKomisi, type AturanKomisi, type BarisJual } from "./komisi";
+import { cocokAturanKomisi, type AturanKomisi, type BarisJual, type KelompokKaryawan } from "./komisi";
 
 export type ServiceCommissionMode = "pending" | "personal_rules" | "both_full" | "split";
 export type ServiceCommissionPolicy = {
@@ -40,6 +40,7 @@ function allocated(value: number, doctorShare: number): [number, number] {
 /** Source rows stay unique. Only calculation rows are projected per saved actor. */
 export function prepareServiceCommission(
   sourceRows: readonly BarisJual[], rules: readonly AturanKomisi[], policies: readonly ServiceCommissionPolicy[],
+  groups?: KelompokKaryawan,
 ): { rows: BarisJual[]; calculationRows: BarisJual[]; resolvedUnassignedOmzet: number } {
   const rows: BarisJual[] = [], calculationRows: BarisJual[] = [];
   let resolvedUnassignedOmzet = 0;
@@ -71,7 +72,7 @@ export function prepareServiceCommission(
       personalRulesOnly: policy.mode === "personal_rules",
     }));
     const uncovered = actors.some(actor => (policy.mode !== "split" || actor.qty !== 0)
-      && !rules.some(rule => cocokAturanKomisi(actor, rule)));
+      && !rules.some(rule => cocokAturanKomisi(actor, rule, groups)));
     if (uncovered) {
       const pending = { ...source, commissionPolicyWarning: "Aturan aktif belum cocok untuk setiap pelaksana." };
       rows.push(pending); calculationRows.push(pending); continue;
