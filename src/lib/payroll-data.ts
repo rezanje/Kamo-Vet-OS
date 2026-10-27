@@ -10,6 +10,8 @@ import { komisiPeriode } from "./komisi-data";
 import { rentangTanggal } from "./tanggal";
 import { assertServiceAttributionReady } from "./commission-readiness";
 import { readCompleteList } from "./checked-list";
+import { hitungKomponenOmzet, type TurnoverComponent } from "./payroll-turnover";
+import { komponenEfektif, type BarisKaryawan, type BarisTemplate, type KomponenMaster } from "./payslip-template";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -19,6 +21,9 @@ export type BarisGaji = {
   nama: string;
   jabatan: string | null;
   rincian: RincianGaji;
+  componentBreakdown: { name: string; type: "tunjangan" | "potongan"; basis: number | null; ratePercent: number | null; amount: number; source: string | null; scope: string | null;
+    /** H02: template = from the employee's payslip template; pengecualian = explicit override; individu = extra. */
+    origin?: "template" | "pengecualian" | "individu" }[];
   /** Cicilan periode ini per kasbon — satu karyawan bisa punya lebih dari satu utang. */
   cicilanKasbon: { id?: string; jumlah: number }[];
   reimburseIds: string[];
@@ -49,8 +54,8 @@ export async function kumpulkanDataGaji(
 
   const [aturan, karyawanDir, komisi] = await Promise.all([
     getAturanGaji(supabase),
-    readCompleteList<{ id: string; nama: string; jabatan: string | null }>((from, to) => supabase
-      .from("employees").select("id, nama, jabatan", { count: "exact" })
+    readCompleteList<{ id: string; nama: string; jabatan: string | null; branch_id: string | null }>((from, to) => supabase
+      .from("employees").select("id, nama, jabatan, branch_id", { count: "exact" })
       .eq("status", "Aktif").order("id").range(from, to), "Karyawan penggajian", { maxRows: null }),
     komisiPeriode(supabase, periode),
   ]);
@@ -63,9 +68,10 @@ export async function kumpulkanDataGaji(
 
   const ids = karyawan.map((k) => k.id);
 
+  const KOMPONEN = "nama, tipe, nominal, is_active, calculation_basis, sales_source, sales_scope, rate_percent";
   const [
     jadwalData, absenData, cutiData,
-    lemburData, kompData, kasbonData, reimData,
+    lemburData, kompData, kasbonData, reimData, templateLinkData,
   ] = await Promise.all([
     readEmployeeRows(ids, "Jadwal penggajian", batch => supabase.from("employee_schedules")
       .select("id, employee_id, tanggal, work_shifts(is_libur, jam_masuk)", { count: "exact" })
@@ -80,7 +86,7 @@ export async function kumpulkanDataGaji(
       .select("id, employee_id, jam", { count: "exact" })
       .in("employee_id", batch).eq("status", "Disetujui").gte("tanggal", awal).lte("tanggal", akhir)),
     readEmployeeRows(ids, "Komponen penggajian", batch => supabase.from("employee_salary_components")
-      .select("id, employee_id, nominal, salary_components(tipe, nominal, is_active)", { count: "exact" })
+      .select(`id, employee_id, component_id, nominal, rate_percent_override, salary_components(${KOMPONEN})`, { count: "exact" })
       .in("employee_id", batch)),
     readEmployeeRows(ids, "Kasbon penggajian", batch => supabase.from("cash_advances")
       .select("id, employee_id, jumlah, tenor_bulan, cash_advance_installments(jumlah)", { count: "exact" })
@@ -89,6 +95,10 @@ export async function kumpulkanDataGaji(
     readEmployeeRows(ids, "Reimburse penggajian", batch => supabase.from("reimbursements")
       .select("id, employee_id, jumlah", { count: "exact" })
       .in("employee_id", batch).eq("status", "Disetujui").is("paid_periode", null)),
+    // H02: one payslip template per employee (optional).
+    readEmployeeRows(ids, "Template slip penggajian", batch => supabase.from("employee_payslip_templates")
+      .select("id, employee_id, template_id", { count: "exact" })
+      .in("employee_id", batch)),
   ]);
 
   type ShiftRel = { is_libur: boolean; jam_masuk: string | null } | { is_libur: boolean; jam_masuk: string | null }[] | null;
@@ -122,16 +132,61 @@ export async function kumpulkanDataGaji(
     lemburPer.set(l.employee_id, (lemburPer.get(l.employee_id) ?? 0) + Number(l.jam));
   }
 
-  type KompRel = { tipe: string; nominal: number; is_active: boolean };
-  const kompPer = new Map<string, { tipe: "tunjangan" | "potongan"; nominal: number }[]>();
-  for (const k of kompData as unknown as { employee_id: string; nominal: number | null; salary_components: KompRel | KompRel[] | null }[]) {
-    const c = satu(k.salary_components);
+  // H02: template rows for the templates linked to these employees.
+  const templatePer = new Map((templateLinkData as unknown as { employee_id: string; template_id: string }[])
+    .map((row) => [row.employee_id, row.template_id]));
+  const templateIds = [...new Set(templatePer.values())];
+  const templateRows: { template_id: string; component_id: string; nominal: number | null; rate_percent: number | null; salary_components: KomponenMaster | KomponenMaster[] | null }[] = [];
+  for (let start = 0; start < templateIds.length; start += 100) {
+    const batch = templateIds.slice(start, start + 100);
+    templateRows.push(...await readCompleteList<typeof templateRows[number] & { id: string }>((from, to) => supabase
+      .from("payslip_template_components")
+      .select(`id, template_id, component_id, nominal, rate_percent, salary_components(${KOMPONEN})`, { count: "exact" })
+      .in("template_id", batch).order("id").range(from, to), "Komponen template slip", { maxRows: null }));
+  }
+  const masterOf = (rel: KomponenMaster | KomponenMaster[] | null): KomponenMaster => {
+    const c = satu(rel);
     if (!c) throw new Error("Komponen penggajian belum dapat diverifikasi. Coba muat ulang.");
-    if (!c.is_active) continue;
-    const arr = kompPer.get(k.employee_id) ?? [];
-    // nominal null = ikut nominal bawaan komponennya.
-    arr.push({ tipe: c.tipe as "tunjangan" | "potongan", nominal: Number(k.nominal ?? c.nominal) });
-    kompPer.set(k.employee_id, arr);
+    return c;
+  };
+  const templateKomp = new Map<string, BarisTemplate[]>();
+  for (const row of templateRows) {
+    const arr = templateKomp.get(row.template_id) ?? [];
+    arr.push({ component_id: row.component_id, nominal: row.nominal, rate_percent: row.rate_percent, master: masterOf(row.salary_components) });
+    templateKomp.set(row.template_id, arr);
+  }
+  const karyawanKomp = new Map<string, BarisKaryawan[]>();
+  for (const k of kompData as unknown as { employee_id: string; component_id: string; nominal: number | null; rate_percent_override: number | null; salary_components: KomponenMaster | KomponenMaster[] | null }[]) {
+    const arr = karyawanKomp.get(k.employee_id) ?? [];
+    arr.push({ component_id: k.component_id, nominal: k.nominal, rate_percent_override: k.rate_percent_override, master: masterOf(k.salary_components) });
+    karyawanKomp.set(k.employee_id, arr);
+  }
+
+  const kompPer = new Map<string, { tipe: "tunjangan" | "potongan"; nominal: number }[]>();
+  const breakdownPer = new Map<string, BarisGaji["componentBreakdown"]>();
+  const branchPer = new Map(karyawan.map(k => [k.id, k.branch_id]));
+  for (const { id: employeeId } of karyawan) {
+    const templateId = templatePer.get(employeeId);
+    const efektif = komponenEfektif(templateId ? templateKomp.get(templateId) ?? [] : [], karyawanKomp.get(employeeId) ?? []);
+    for (const e of efektif) {
+      const c = e.master;
+      // Monetary values apply only to fixed components; turnover components use their rate.
+      const turnover = c.calculation_basis === "net_turnover"
+        ? hitungKomponenOmzet(komisi.baris, {
+          source: c.sales_source as TurnoverComponent["source"], scope: c.sales_scope as TurnoverComponent["scope"],
+          ratePercent: e.ratePercent,
+        }, employeeId, branchPer.get(employeeId) ?? null)
+        : null;
+      const nominal = turnover?.amount ?? e.nominal;
+      const arr = kompPer.get(employeeId) ?? [];
+      arr.push({ tipe: c.tipe as "tunjangan" | "potongan", nominal });
+      kompPer.set(employeeId, arr);
+      const breakdown = breakdownPer.get(employeeId) ?? [];
+      breakdown.push({ name: c.nama, type: c.tipe as "tunjangan" | "potongan",
+        basis: turnover?.basis ?? null, ratePercent: turnover ? e.ratePercent : null,
+        amount: nominal, source: turnover ? c.sales_source : null, scope: turnover ? c.sales_scope : null, origin: e.asal });
+      breakdownPer.set(employeeId, breakdown);
+    }
   }
 
   // SEMUA kasbon berjalan per karyawan, bukan satu. Dulu memakai `set` di dalam
@@ -182,6 +237,7 @@ export async function kumpulkanDataGaji(
       nama: k.nama,
       jabatan: k.jabatan,
       rincian,
+      componentBreakdown: breakdownPer.get(k.id) ?? [],
       cicilanKasbon: rincian.cicilanPerKasbon,
       reimburseIds: reim.ids,
     };

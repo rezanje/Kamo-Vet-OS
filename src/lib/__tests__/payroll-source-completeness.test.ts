@@ -8,7 +8,7 @@ const rules = {
   telat_maks: 0, bolos_per_hari: 0, lembur_per_jam: 0,
 };
 
-function fixture(fail = "", truncate = "") {
+function fixture(fail = "", truncate = "", extra: Record<string, Record<string, unknown>[]> = {}) {
   const reads: { table: string; from: number }[] = [];
   const tables: Record<string, Record<string, unknown>[]> = {
     payroll_settings: [rules],
@@ -20,6 +20,7 @@ function fixture(fail = "", truncate = "") {
     overtime_requests: [],
     employee_salary_components: [{ id: "component", employee_id: "employee", nominal: null, salary_components: { tipe: "tunjangan", nominal: 500, is_active: true } }],
     cash_advances: [], reimbursements: [],
+    ...extra,
   };
   const client = { from(table: string) {
     let rows = tables[table] ?? [];
@@ -59,4 +60,19 @@ it.each(["employees", "employee_schedules", "attendance", "leave_requests", "ove
 it("blocks payroll when a source returns fewer rows than its verified count", async () => {
   await expect(kumpulkanDataGaji(fixture("", "employee_salary_components").client, "2026-10"))
     .rejects.toThrow("belum dimuat lengkap");
+});
+
+it("H02: applies the linked payslip template and an explicit employee exception", async () => {
+  const master = (nama: string, nominal: number) => ({ nama, tipe: "tunjangan", nominal, is_active: true, calculation_basis: "fixed", sales_source: "semua", sales_scope: "employee", rate_percent: 0 });
+  const { client } = fixture("", "", {
+    employee_salary_components: [{ id: "esc", employee_id: "employee", component_id: "meal", nominal: 300, rate_percent_override: null, salary_components: master("Makan", 100) }],
+    employee_payslip_templates: [{ id: "link", employee_id: "employee", template_id: "groomer" }],
+    payslip_template_components: [
+      { id: "t1", template_id: "groomer", component_id: "meal", nominal: 200, rate_percent: null, salary_components: master("Makan", 100) },
+      { id: "t2", template_id: "groomer", component_id: "transport", nominal: null, rate_percent: null, salary_components: master("Transport", 50) },
+    ],
+  });
+  const [result] = await kumpulkanDataGaji(client, "2026-10");
+  expect(result.rincian.tunjangan).toBe(350);
+  expect(result.componentBreakdown.map(c => [c.name, c.amount, c.origin])).toEqual([["Makan", 300, "pengecualian"], ["Transport", 50, "template"]]);
 });

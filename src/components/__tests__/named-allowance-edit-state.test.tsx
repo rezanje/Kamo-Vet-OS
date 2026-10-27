@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => true, bolehKelolaPayroll: async () => true }));
-vi.mock("@/app/(app)/hris/komponen-gaji/actions", () => ({ simpanKomponen: vi.fn(), toggleKomponen: vi.fn(), lepasKomponen: vi.fn(), pasangKomponen: vi.fn() }));
+vi.mock("@/app/(app)/hris/komponen-gaji/actions", () => ({ simpanKomponen: vi.fn(), toggleKomponen: vi.fn(), lepasKomponen: vi.fn(), pasangKomponen: vi.fn(), simpanTemplateSlip: vi.fn(), pasangKomponenTemplate: vi.fn(), lepasKomponenTemplate: vi.fn(), pasangTemplateKaryawan: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(table: string) {
   const query = { select: () => query, eq: () => query, order: () => query, in: () => query,
     then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "salary_components" ? [

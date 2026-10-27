@@ -9,10 +9,10 @@ import { bacaGajiPokok } from "@/lib/employee-salary";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { editKaryawan } from "../actions";
-import { pasangKomponen, lepasKomponen } from "../../komponen-gaji/actions";
+import { pasangKomponen, lepasKomponen, pasangTemplateKaryawan } from "../../komponen-gaji/actions";
 
 const rp = (value: number) => `Rp ${Number(value).toLocaleString("id-ID")}`;
-type Komponen = { id: string; nama: string; tipe: string; nominal: number; is_active: boolean };
+type Komponen = { id: string; nama: string; tipe: string; nominal: number; is_active: boolean; calculation_basis: "fixed" | "net_turnover"; sales_source: string; sales_scope: string; rate_percent: number };
 
 export default async function RincianKaryawanPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
@@ -26,8 +26,8 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const [empResult, detailResult, componentsResult, assignedResult, branchesResult] = await Promise.all([
     supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, status, branch_id, trashed_at").eq("id", id).maybeSingle(),
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
-    supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("nama"),
-    supabase.from("employee_salary_components").select("id, component_id, nominal").eq("employee_id", id),
+    supabase.from("salary_components").select("id, nama, tipe, nominal, is_active, calculation_basis, sales_source, sales_scope, rate_percent").order("nama"),
+    supabase.from("employee_salary_components").select("id, component_id, nominal, rate_percent_override").eq("employee_id", id),
     supabase.from("branches").select("id, code, name, type"),
   ]);
   if (empResult.error) throw new Error("Profil karyawan gagal dimuat");
@@ -43,9 +43,24 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const fields = detail?.fields && typeof detail.fields === "object" && !Array.isArray(detail.fields)
     ? detail.fields as Record<string, string> : {};
   const components = (componentsResult.data ?? []) as Komponen[];
-  const assigned = (assignedResult.data ?? []) as { id: string; component_id: string; nominal: number | null }[];
+  const assigned = (assignedResult.data ?? []) as { id: string; component_id: string; nominal: number | null; rate_percent_override: number | null }[];
   const componentMap = new Map(components.map(c => [c.id, c]));
-  const benefitError = componentsResult.error || assignedResult.error;
+  // H02: template slip + riwayat pengecualian (OWNER/FINANCE saja; RLS mengembalikan kosong untuk peran lain).
+  const [templatesResult, linkResult, historyResult] = aturGaji ? await Promise.all([
+    supabase.from("payslip_templates").select("id, kode, nama").order("nama"),
+    supabase.from("employee_payslip_templates").select("template_id").eq("employee_id", id).maybeSingle(),
+    supabase.from("payslip_override_history").select("id, action, template_id, component_id, old_value, new_value, reason, changed_at")
+      .eq("employee_id", id).order("changed_at", { ascending: false }).limit(20),
+  ]) : [{ data: [], error: null }, { data: null, error: null }, { data: [], error: null }];
+  const templates = (templatesResult.data ?? []) as { id: string; kode: string; nama: string }[];
+  const templateId = (linkResult.data as { template_id: string } | null)?.template_id ?? "";
+  const templateName = new Map(templates.map(t => [t.id, t.nama]));
+  type Riwayat = { id: string; action: string; template_id: string | null; component_id: string | null; old_value: Record<string, unknown> | null; new_value: Record<string, unknown> | null; reason: string | null; changed_at: string };
+  const riwayat = (historyResult.data ?? []) as Riwayat[];
+  const nilaiRiwayat = (v: Record<string, unknown> | null) => !v ? "—" : v.template_id ? templateName.get(String(v.template_id)) ?? "template" :
+    v.rate_percent_override != null ? `${v.rate_percent_override}%` : v.nominal != null ? rp(Number(v.nominal)) : "ikut template/master";
+  const LABEL_RIWAYAT: Record<string, string> = { template_set: "Template ditetapkan", template_removed: "Template dilepas", component_set: "Komponen/pengecualian diubah", component_removed: "Komponen dilepas" };
+  const benefitError = componentsResult.error || assignedResult.error || templatesResult.error || linkResult.error || historyResult.error;
   const inputs = [
     ["nik", "NIK", "text"], ["nama", "Nama *", "text"], ["jabatan", "Jabatan", "text"],
     ["departemen", "Departemen", "text"], ["phone", "No. HP", "tel"], ["email", "Email", "email"],
@@ -75,19 +90,36 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
       <p>Cabang utama: {branchesResult.error ? "Gagal dimuat" : primaryBranchName}. <Link href="/hris/karyawan">Kelola penugasan cabang</Link></p>
     </div>
     {aturGaji && <div className="crm-sec">
-      <SecHeader num="02" title="BENEFIT & KOMPONEN GAJI" desc="Gaji pokok, tunjangan, insentif tetap, dan potongan yang berlaku untuk karyawan ini." action={<Link className="btn-def" href={`/hris/komponen-gaji?emp=${id}`}>Master Komponen</Link>} />
-      <p>Gaji pokok: <b>{rp(gajiPokok ?? 0)}</b>. Insentif tetap dapat dibuat sebagai komponen tunjangan. Nominal kosong mengikuti nominal master. Perubahan berlaku pada perhitungan gaji berikutnya; slip yang telah disahkan tetap tersimpan.</p>
+      <SecHeader num="02" title="BENEFIT & KOMPONEN GAJI" desc="Gaji pokok, tunjangan, insentif omzet, dan potongan yang berlaku untuk karyawan ini." action={<Link className="btn-def" href={`/hris/komponen-gaji?emp=${id}`}>Master Komponen</Link>} />
+      <p>Gaji pokok: <b>{rp(gajiPokok ?? 0)}</b>. Nominal atau persentase khusus kosong mengikuti master. Perubahan berlaku pada perhitungan gaji berikutnya; slip yang telah disahkan tetap tersimpan.</p>
       {benefitError ? <p role="alert">Komponen gaji gagal dimuat. Muat ulang halaman sebelum mengubah benefit.</p> : <>
-        <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Komponen</th><th>Jenis</th><th>Nominal</th><th>Aksi</th></tr></thead><tbody>
-          {assigned.map(a => { const c = componentMap.get(a.component_id); return <tr key={a.id}><td>{c?.nama ?? "Komponen tidak tersedia"}{c && !c.is_active && " (Nonaktif)"}</td><td>{c?.tipe ?? "—"}</td><td>{rp(a.nominal ?? c?.nominal ?? 0)}{a.nominal === null && " (ikut master)"}</td><td><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{c && <Link className="btn-def" href={`/hris/komponen-gaji?${new URLSearchParams({ emp: id, edit: c.id })}`} style={{ fontSize: 10.5 }}>Edit nama / nominal master</Link>}<form action={lepasKomponen}><input type="hidden" name="id" value={a.id} /><input type="hidden" name="employee_id" value={id} /><input type="hidden" name="return_to" value="profil" /><SubmitButton className="btn-def" pendingText="Melepas…">Lepas</SubmitButton></form></div></td></tr>; })}
+        <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Komponen</th><th>Jenis</th><th>Nominal / tarif</th><th>Aksi</th></tr></thead><tbody>
+          {assigned.map(a => { const c = componentMap.get(a.component_id); return <tr key={a.id}><td>{c?.nama ?? "Komponen tidak tersedia"}{c && !c.is_active && " (Nonaktif)"}</td><td>{c?.tipe ?? "—"}</td><td>{c?.calculation_basis === "net_turnover" ? `${a.rate_percent_override ?? c.rate_percent}% omzet neto · ${c.sales_source}/${c.sales_scope}` : rp(a.nominal ?? c?.nominal ?? 0)}{(c?.calculation_basis === "net_turnover" ? a.rate_percent_override === null : a.nominal === null) && " (ikut master)"}</td><td><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{c && <Link className="btn-def" href={`/hris/komponen-gaji?${new URLSearchParams({ emp: id, edit: c.id })}`} style={{ fontSize: 10.5 }}>Edit master</Link>}<form action={lepasKomponen}><input type="hidden" name="id" value={a.id} /><input type="hidden" name="employee_id" value={id} /><input type="hidden" name="return_to" value="profil" /><SubmitButton className="btn-def" pendingText="Melepas…">Lepas</SubmitButton></form></div></td></tr>; })}
           {!assigned.length && <tr><td colSpan={4}>Belum ada komponen benefit untuk karyawan ini.</td></tr>}
         </tbody></table></div>
+        <form action={pasangTemplateKaryawan} style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <input type="hidden" name="employee_id" value={id} />
+          <div><label className="flab" htmlFor="payslip-template">Template slip gaji</label>
+            <select id="payslip-template" className="fi" name="template_id" defaultValue={templateId}>
+              <option value="">Tanpa template (komponen per karyawan saja)</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.nama} ({t.kode})</option>)}
+            </select></div>
+          <SubmitButton className="btn-def" pendingText="Menyimpan…">Simpan template</SubmitButton>
+          <Link href="/hris/komponen-gaji" style={{ fontSize: 11 }}>Atur isi template</Link>
+        </form>
+        <p style={{ fontSize: 11 }}>Komponen di template berlaku otomatis. Komponen yang dipasang di bawah pada komponen yang sama adalah pengecualian khusus karyawan ini dan wajib diberi alasan.</p>
         <form action={pasangKomponen} style={{ marginTop: 12 }}>
           <input type="hidden" name="employee_id" value={id} /><input type="hidden" name="return_to" value="profil" />
-          <div className="grid2"><div><label className="flab" htmlFor="component">Komponen *</label><select id="component" className="fi" name="component_id" required defaultValue=""><option value="">Pilih komponen untuk tambah atau ubah nominal</option>{components.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.nama} · {c.tipe} · {rp(c.nominal)}</option>)}</select></div><div><label className="flab" htmlFor="nominal">Nominal khusus (Rp, opsional)</label><NumberInput id="nominal" className="fi" name="nominal" type="number" min={0} step="any" placeholder="Kosong = ikut master" /></div></div>
+          <div className="grid2"><div><label className="flab" htmlFor="component">Komponen *</label><select id="component" className="fi" name="component_id" required defaultValue=""><option value="">Pilih komponen untuk tambah atau ubah tarif</option>{components.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.nama} · {c.tipe} · {c.calculation_basis === "net_turnover" ? `${c.rate_percent}% omzet neto` : rp(c.nominal)}</option>)}</select></div><div><label className="flab" htmlFor="nominal">Nominal khusus (Rp, hanya tetap)</label><NumberInput id="nominal" className="fi" name="nominal" type="number" min={0} step="any" placeholder="Kosong = ikut master" /></div><div><label className="flab" htmlFor="rate_percent_override">Persentase khusus (hanya omzet)</label><NumberInput id="rate_percent_override" className="fi" name="rate_percent_override" type="number" min={0.0001} max={100} step="0.0001" placeholder="Kosong = ikut master" /></div><div><label className="flab" htmlFor="override_reason">Alasan pengecualian (wajib bila menimpa template)</label><input id="override_reason" className="fi" name="override_reason" maxLength={300} /></div></div>
           <SubmitButton className="btn-acc" pendingText="Menyimpan…" style={{ marginTop: 12 }}>Simpan Benefit</SubmitButton>
         </form>
       </>}
+      {!benefitError && riwayat.length > 0 && <div style={{ overflowX: "auto", marginTop: 12 }}>
+        <b style={{ fontSize: 11 }}>Riwayat template & pengecualian</b>
+        <table className="tbl"><thead><tr><th>Waktu</th><th>Perubahan</th><th>Komponen</th><th>Sebelum</th><th>Sesudah</th><th>Alasan</th></tr></thead><tbody>
+          {riwayat.map(r => <tr key={r.id}><td>{new Date(r.changed_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</td><td>{LABEL_RIWAYAT[r.action] ?? r.action}</td>
+            <td>{r.component_id ? componentMap.get(r.component_id)?.nama ?? "—" : "—"}</td><td>{nilaiRiwayat(r.old_value)}</td><td>{nilaiRiwayat(r.new_value)}</td><td>{r.reason ?? "—"}</td></tr>)}
+        </tbody></table></div>}
       <p><Link href="/hris/penggajian">Buka Penggajian & Slip Gaji</Link></p>
     </div>}
     <div className="crm-sec"><SecHeader num="03" title="RINCIAN IMPOR EXCEL" desc="Data tambahan dari sumber impor." />

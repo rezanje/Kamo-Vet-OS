@@ -82,5 +82,59 @@ begin
   raise exception 'Expected visit item rejection';
  exception when check_violation then null;end;
 end $$;
+-- H03 turnover components and H02 templates/history/access.
+insert into auth.users(id) values ('fc000000-0000-4000-8000-000000000001'),('fc000000-0000-4000-8000-000000000002'),('fc000000-0000-4000-8000-000000000003');
+insert into public.profiles(id, full_name, role, is_active) values
+ ('fc000000-0000-4000-8000-000000000001','Fiksi Owner H','OWNER',true),
+ ('fc000000-0000-4000-8000-000000000002','Fiksi Admin H','ADMIN',true),
+ ('fc000000-0000-4000-8000-000000000003','Fiksi Finance H','FINANCE',true)
+on conflict (id) do update set role=excluded.role,is_active=true;
+do $$
+begin
+ begin
+  insert into public.salary_components(nama,tipe,calculation_basis,rate_percent) values ('Bad turnover','tunjangan','net_turnover',0);
+  raise exception 'Expected zero turnover rate rejection';
+ exception when check_violation then null;end;
+ insert into public.salary_components(id,nama,tipe,nominal) values ('fd000000-0000-4000-8000-000000000001','Fiksi makan','tunjangan',1);
+ insert into public.salary_components(id,nama,tipe,calculation_basis,sales_source,sales_scope,rate_percent)
+  values ('fd000000-0000-4000-8000-000000000002','Fiksi omzet','tunjangan','net_turnover','klinik','own_branch',1);
+end $$;
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000001',true);
+insert into public.payslip_templates(id,kode,nama) values ('fe000000-0000-4000-8000-000000000001','groomer','Fiksi groomer');
+insert into public.payslip_template_components(template_id,component_id,nominal) values ('fe000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',2);
+insert into public.employee_payslip_templates(employee_id,template_id) values ('fb000000-0000-4000-8000-000000000001','fe000000-0000-4000-8000-000000000001');
+insert into public.employee_salary_components(employee_id,component_id,nominal,override_reason)
+ values ('fb000000-0000-4000-8000-000000000001','fd000000-0000-4000-8000-000000000001',3,'Fiksi senioritas');
+update public.employee_salary_components set nominal=4,override_reason='Fiksi naik' where employee_id='fb000000-0000-4000-8000-000000000001';
+do $$begin
+ perform pg_temp.assert_h((select count(*)=3 from public.payslip_override_history where employee_id='fb000000-0000-4000-8000-000000000001'),'template link and two exception changes are recorded');
+ perform pg_temp.assert_h((select reason='Fiksi naik' and (old_value->>'nominal')::numeric=3 and (new_value->>'nominal')::numeric=4 and changed_by='fc000000-0000-4000-8000-000000000001'
+   from public.payslip_override_history where action='component_set' order by changed_at desc, (new_value->>'nominal') desc limit 1),'exception history keeps before/after, reason and actor');
+ begin
+  insert into public.payslip_override_history(employee_id,action) values ('fb000000-0000-4000-8000-000000000001','template_set');
+  raise exception 'Expected history to be trigger-only';
+ exception when insufficient_privilege then null;end;
+end $$;
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000002',true);
+do $$begin
+ perform pg_temp.assert_h((select count(*)=0 from public.payslip_templates),'ADMIN cannot read pay templates');
+ perform pg_temp.assert_h((select count(*)=0 from public.payslip_override_history),'ADMIN cannot read pay history');
+ begin
+  insert into public.payslip_templates(kode,nama) values ('admin','Admin forged');
+  raise exception 'Expected ADMIN template write rejection';
+ exception when insufficient_privilege then null;end;
+end $$;
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000003',true);
+do $$begin
+ perform pg_temp.assert_h((select count(*)=1 from public.payslip_templates),'FINANCE reads pay templates');
+ perform pg_temp.assert_h((select count(*)=3 from public.payslip_override_history),'FINANCE reads pay history');
+ begin
+  update public.payslip_template_components set nominal=9;
+  perform pg_temp.assert_h((select min(nominal)=2 from public.payslip_template_components),'FINANCE cannot change template');
+ exception when insufficient_privilege then null;end;
+end $$;
+reset role;
 select 'h_payroll_incentives: all assertions passed';
 rollback;

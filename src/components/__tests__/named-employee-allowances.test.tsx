@@ -34,7 +34,7 @@ function client() {
       return { data: rows().filter(row => Object.entries(filters).every(([key, value]) => row[key] === value)), error: state.failed === table ? { message: "private benefit fixture" } : null };
     };
     const query = {
-      select() { return query; }, order() { return query; }, in() { return query; }, eq(key: string, value: unknown) { filters[key] = value; return query; },
+      select() { return query; }, order() { return query; }, limit() { return query; }, in() { return query; }, eq(key: string, value: unknown) { filters[key] = value; return query; },
       update(row: Row) { mutation = { kind: "update", row }; return query; }, insert(row: Row) { mutation = { kind: "insert", row }; return query; },
       upsert(row: Row) { mutation = { kind: "upsert", row }; return query; }, delete() { mutation = { kind: "delete", row: {} }; return query; },
       maybeSingle: async () => ({ ...result(), data: result().data[0] ?? null }),
