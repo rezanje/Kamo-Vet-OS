@@ -27,20 +27,24 @@ backup and flag state — see `production-preflight-2026-10-27.md`. Repeat Query
 | File | Writes? | sha256 |
 |---|---|---|
 | `supabase/migrations/20261026002100_promo_package_total_mode.sql` | yes (the migration) | `5aa9cae66fdc02f79fdac57e067a951b95b0cf0b09cd039edb8810a0ff8f0a7e` |
+| `00-optional-scoped-snapshot-writes.sql` | **yes** — optional, promos/promo_items copy in schema `ops_backup` | `3d929afbffb37f7c84928bcd43557f5a98a15e28c63c2cfc70838ace2d5b3e8f` |
 | `01-preflight-readonly.sql` | no | `252e7416467923821a2650cc13dc9a68bb55c567f5fbaf37dfe7ab7502ee9cbb` |
 | `02-apply-writes.sql` | **yes** — migration + history row, one transaction, `lock_timeout 5s` | `616cf5ed48e09a8d4a1b718fb6ec8ebbf7d81fc110c237ea6ca883ad6201aff7` |
 | `03-readback-readonly.sql` | no | `1cc17d0bf07941be2d9fa7ffa011e303699f6d8f28ac0ccf47ac3452bde0df71` |
 | `04-rollback-only-if-decided.sql` | **yes** — only on a rollback decision | `19b1c711212eec038b30b24124dfba348dad536b61792b857a800ac32f27b9a0` |
+| `05-restore-from-snapshot-only-if-decided.sql` | **yes** — only on a decision, only if `00` was run | `fc271b9e570421d330dd12abe0032cf6b96156edd49e819053f18800879664bf` |
 
 The migration hash above is the version on this package's branch (it closes a NULL gap found in security review,
 see `SECURITY-REVIEW.md`). Use these files only after that branch is merged to main.
 
 ## Step 0 — target, slot and backup (dashboard, no SQL)
 
-1. Supabase project `koaglxcyjqfmgfzxszkj` (verified 27 Oct: only project, PostgreSQL 17.6, serving the live
-   app). Do not use any other project.
-2. Database → Backups: PITR is **off**; newest completed daily backup on 27 Oct 03:32Z was 2026-10-26 15:20:57Z,
-   i.e. *before* K02. Apply C04 only after a newer completed backup exists (daily ≈15:15Z) or an on-demand one.
+1. Supabase project `koaglxcyjqfmgfzxszkj` (verified 27 Oct: only project, PostgreSQL 17.6; the live app's
+   `/booking` query appears in its edge log — `../BACKUP-OPTIONS.md`). Do not use any other project.
+2. Backup gate: a daily backup newer than 2026-10-26T15:20:57Z must show `COMPLETED` (Dashboard → Database →
+   Backups, or `GET /database/backups`). PITR is off; on-demand backup is not offered on this plan; the run time
+   cannot be read with current access. Paths, costs and the optional scoped snapshot: `../BACKUP-OPTIONS.md`.
+   If the coordinator wants the snapshot as well, run `00-optional-scoped-snapshot-writes.sql` right before Step 3.
 3. Release slot from Wowo; no other migration (A02, R05) in the same window. Quiet time: the migration briefly
    locks `promos`/`promo_items` (constraint + triggers); with `lock_timeout 5s` it gives up instead of queueing
    checkout reads.

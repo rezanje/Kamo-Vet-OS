@@ -9,9 +9,8 @@ configured in this session's environment (no new token, grant or permission). SQ
 
 - Supabase: the only project visible to the token, `koaglxcyjqfmgfzxszkj`, ACTIVE_HEALTHY, ap-northeast-2,
   PostgreSQL 17.6 (`17.6.1.127`). Newest app sign-in 2026-10-27 02:47:46Z (after the 02:45Z Production deploy).
-  The Vercel value of `NEXT_PUBLIC_SUPABASE_URL` is stored as *sensitive* and cannot be read back, so the
-  Vercel→Supabase link is established by the single project, its live history matching main and the sign-in
-  timing, not by reading that value.
+  The Vercel value of `NEXT_PUBLIC_SUPABASE_URL` is *sensitive* and was not read; the Vercel→Supabase link is
+  proven by the live `/booking` request appearing in this project's edge log (`../BACKUP-OPTIONS.md`).
 - Vercel: project `kamo-vet-os` (`prj_1TsfC077JVwOax0quRQGUG6IeDAV`), production branch `main`; alias
   `kamo-vet-os.vercel.app` → `dpl_ApQb7y1F4qVW7Usg5gG9X1vjtxv9`, READY, commit `906bc98c` (includes C04 app merge
   `e7737406`). Project env keys: `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_URL` — **no
@@ -21,8 +20,8 @@ configured in this session's environment (no new token, grant or permission). SQ
 
 `GET /v1/projects/{ref}/database/backups`: PITR **off**, daily physical backups, newest COMPLETED
 2026-10-26T15:20:57Z (previous 10-25, 10-24, 10-23). K02 was applied at 2026-10-26T17:16:58Z, after that backup;
-the next daily backup is expected around 15:15Z today. Plan the C04 slot after a newer completed backup, or take an
-on-demand backup first (dashboard, owner).
+past completions fall between 15:13 and 15:21Z, but the schedule itself is not readable (Enterprise-only endpoint)
+and on-demand backups are not offered. Gate: a newer backup shows `COMPLETED` (`../BACKUP-OPTIONS.md`).
 
 ## Preflight Query A (verbatim, 03:32:44Z) — `SUMMARY 0 failed`
 

@@ -18,16 +18,20 @@ Coordinator note (Wowo, approved by Reza): C04 first, then A02; R05 queued. This
 | Flag state | `PROMO_PACKAGE_TOTAL_ENABLED` absent in Vercel project env (off). |
 | PostgreSQL 17 | Full rehearsal on 17.6 passes; SQL files byte-identical to the 16.15 run. |
 
+| App → database link | Public `/booking` request at 03:37:41Z appears as its exact query in `koaglxcyjqfmgfzxszkj` edge log at 03:37:41.867Z (`BACKUP-OPTIONS.md`). |
+
 ## Facts checked, gate not yet met
 
-- **Backup**: PITR off; newest completed daily backup 2026-10-26 15:20:57Z predates K02 (applied 17:16Z). Needs a
-  newer completed backup (next daily ≈15:15Z today) or an on-demand one before Step 3.
+- **Backup**: PITR off; newest completed daily backup 2026-10-26 15:20:57Z predates K02 (applied 17:16Z). Gate: a
+  newer one shows `COMPLETED`. Paths, costs and the optional scoped snapshot (with restore proof): `BACKUP-OPTIONS.md`.
 
 ## Real access limits
 
-- Vercel stores `NEXT_PUBLIC_SUPABASE_URL` as sensitive; its value cannot be read back with the existing token, so
-  the app→project link is inferred (single project, live history = main, sign-in after deploy), not read.
-- No on-demand backup or production write was attempted: not authorised in this phase.
+- Backup schedule / next run: `GET /database/backups/schedule` requires the Enterprise plan → not verifiable; only
+  past completion times (15:13–15:21Z) are known. On-demand backup is not offered (restore-point endpoint unavailable).
+- Vercel stores `NEXT_PUBLIC_SUPABASE_URL` as sensitive and integration listing is forbidden for the token; neither
+  was widened. The link was proven through the edge log instead.
+- No production write, add-on or backup action was attempted: not authorised in this phase.
 
 ## Gates still open
 
