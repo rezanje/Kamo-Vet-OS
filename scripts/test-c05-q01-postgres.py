@@ -107,6 +107,11 @@ alter default privileges in schema public grant all on sequences to authenticate
     for name in SUITES + REGRESSIONS:
         sql((tests / name).read_text())
         print(name + ': passed.')
+    # J03 refund suites run on the clinic_invoice_post fixture prelude (same as scripts/test-clinic-refund-postgres.py).
+    prelude = (tests / 'clinic_invoice_post.sql').read_text().split('set local role authenticated;')[0]
+    for name in ['clinic_refund_source.sql', 'clinic_refund_post.sql']:
+        sql(prelude + (tests / name).read_text())
+        print(name + ': passed.')
 
     # Race 1 (C05): cap 1, two cashiers' receipts with the same code are both written (unfinished
     # receipts do not use the code) and then paid at the same moment -> exactly one is finalized.

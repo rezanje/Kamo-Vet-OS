@@ -28,5 +28,9 @@ select 'sales.campaign_code / invoices.campaign_code not yet used by something e
     and table_name in ('sales','invoices') and column_name = 'campaign_code'
     and (character_maximum_length is distinct from 24 or data_type <> 'character varying'))
 union all
+select 'customers.imported_at not yet used by something else',
+  not exists (select 1 from information_schema.columns where table_schema = 'public'
+    and table_name = 'customers' and column_name = 'imported_at' and data_type <> 'timestamp with time zone')
+union all
 select 'info: customers with a usable phone identity = ' || count(*) filter (where length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 8), true
 from public.customers;

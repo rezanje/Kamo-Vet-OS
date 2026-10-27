@@ -1,10 +1,10 @@
 server: postgres (PostgreSQL) 16.14 (Homebrew)
-baseline: 280 earlier migrations applied
-preflight (before): 6 rows ok
+baseline: 286 earlier migrations applied
+preflight (before): 7 rows ok
 readback: 10 rows ok
 readback after re-apply (idempotent): 10 rows ok
 rollback (default): functions identical to baseline; campaign code row kept in campaign_codes_archived_c05q01
-preflight (after rollback): 6 rows ok
+preflight (after rollback): 7 rows ok
 readback (re-apply over archive): 10 rows ok
 rollback (owner flag): functions identical to baseline; new tables/columns dropped
 readback (re-apply): 10 rows ok
