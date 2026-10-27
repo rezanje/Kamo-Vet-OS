@@ -50,8 +50,8 @@ async function tab(name: string) {
 }
 const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="resep"]')!.value);
 
-it('outpatient compound requires a composition path instead of offering direct finished-stock use', async () => {
-  await render('exam'); await tab('Racikan');
+it.each(['exam', 'inpatient'])('%s compound requires a composition path instead of offering direct finished-stock use', async kind => {
+  await render(kind); await tab('Racikan');
   const search = host.querySelector<HTMLInputElement>('[aria-label="Cari obat racik"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Obat Racik');

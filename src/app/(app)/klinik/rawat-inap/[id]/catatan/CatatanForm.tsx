@@ -467,7 +467,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
               )}
               {tab === "Racikan" && (
                 <CompoundEditor items={racikanItems} materials={bahanItems} catalog={katalogRacikan} allowCustom={bolehManual}
-                  value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} onAddStock={addObat} />
+                  value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} />
               )}
             </div>
 
