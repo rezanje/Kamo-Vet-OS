@@ -35,7 +35,7 @@ export default async function KartuStokPage({
   const sampai = sp.sampai || todayWib();
   const supabase = await createClient();
 
-  const [items, { data: whRows }] = await Promise.all([
+  const [items, { data: whRows, error: whError }] = await Promise.all([
     loadKatalogPermintaan(supabase),
     supabase.from("warehouses").select("id, code, name").eq("is_active", true).order("code"),
   ]);
@@ -48,9 +48,10 @@ export default async function KartuStokPage({
   let saldoAwal = 0;
   let baris: ReturnType<typeof susunKartuStok> = [];
   let perGudang: { nama: string; saldo: number }[] = [];
-  let loadError = "";
+  // Without the warehouse list a requested warehouse filter would silently become all-warehouse totals.
+  let loadError = whError ? "Daftar gudang belum dapat dimuat. Coba muat ulang." : "";
 
-  if (itemId) try {
+  if (itemId && !loadError) try {
     // Saldo awal = akumulasi semua mutasi SEBELUM tanggal mulai. Dihitung, bukan
     // disimpan, supaya rentang tanggal apa pun tetap nyambung dengan riwayatnya.
     // Every read is complete or the card is not shown: a partial ledger would print wrong balances.

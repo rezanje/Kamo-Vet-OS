@@ -186,8 +186,9 @@ export default async function RacikDetailPage({
           <i className="ti ti-mortar" style={{ fontSize: 18, color: "var(--posb)" }} />
           <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>DAFTAR OBAT RACIKAN</div>
         </div>
-        {siblingsError && <p role="alert">Komposisi racikan belum dapat dimuat lengkap. Coba muat ulang.</p>}
-        {!siblingsError && <div style={{ overflowX: "auto" }}>
+        {siblingsError ? <p role="alert">Komposisi racikan belum dapat dimuat lengkap. Coba muat ulang.</p>
+          : !mr && <p role="alert">Rekam medis sumber tidak tersedia untuk akses Anda, jadi komposisi tidak ditampilkan.</p>}
+        {!siblingsError && mr && <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
               <tr><th style={{ width: 30 }}>No.</th><th>Nama Racikan</th><th>Komposisi</th><th>Petunjuk pemakaian</th><th>Jumlah Racikan</th><th>Bentuk Sediaan</th><th>Catatan racik tersimpan (internal)</th></tr>

@@ -75,6 +75,8 @@ it("does not link any source when the stored visit/record is missing or deleted"
   expect(doc.querySelector('a[href="/pos/sku/parent-sku"]')).toBeNull();
   expect(doc.querySelector('a[href^="/klinik/rekam-medis/"]')).toBeNull();
   expect(doc.querySelector('[aria-label="Invoice terkait"]')).toBeNull();
+  expect(doc.querySelector('[aria-label="Daftar obat racikan"] [role="alert"]')?.textContent).toContain("tidak tersedia");
+  expect(doc.querySelector('[aria-label="Daftar obat racikan"] tbody tr')).toBeNull();
 });
 
 it("treats a recipe hidden by branch access as not found without leaking linked documents", async () => {
