@@ -17,13 +17,12 @@ import { SecHeader } from "@/components/SecHeader";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { buatPO } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
-import { priceDeviationWarning } from "@/lib/purchase-price-check";
-import { PriceDeviationConfirm, PriceDeviationHint } from "@/components/PriceDeviationConfirm";
+import { PriceDeviationConfirm } from "@/components/PriceDeviationConfirm";
 
 type Supplier = { id: string; nama: string };
 type Warehouse = { id: string; name: string };
 type Branch = { id: string; name: string };
-export type Item = { id: string; code: string; name: string; unit: string; buy_price: number; item_type?: string; units: ItemUnit[]; hpp?: number | null };
+export type Item = { id: string; code: string; name: string; unit: string; buy_price: number; item_type?: string; units: ItemUnit[] };
 type Row = { nama: string; qty: number; harga_beli: number; item_id?: string | null; satuan?: string; faktor?: number };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -37,6 +36,7 @@ export function POForm({
   branches,
   items,
   stock = [],
+  priceWarning,
 }: {
   userId: string;
   suppliers: Supplier[];
@@ -44,6 +44,8 @@ export function POForm({
   branches: Branch[];
   items: Item[];
   stock?: WarehouseStock[];
+  /** P04: peringatan harga dari server saat simpan terakhir. */
+  priceWarning?: string;
 }) {
   const { save, failure } = usePreservedAction(buatPO);
   const [warehouseId, setWarehouseId] = useState("");
@@ -101,9 +103,6 @@ export function POForm({
   );
 
   const today = hariIniWIB();
-  // P04: harga per satuan beli dibagi faktor = harga per satuan dasar, dibanding HPP rata-rata.
-  const warningOf = (r: Row) => r.item_id ? priceDeviationWarning(r.harga_beli, r.faktor, byId.get(r.item_id)?.hpp) : null;
-  const deviating = rows.filter(r => r.nama.trim() && warningOf(r)).length;
 
   return (
     <form action={save}>
@@ -250,7 +249,6 @@ export function POForm({
                   {r.item_id && (!byId.get(r.item_id)?.item_type || byId.get(r.item_id)?.item_type === "Persediaan") && (
                     <WarehouseStockHint warehouseId={warehouseId} quantity={stockByItem.get(r.item_id) ?? 0} baseUnit={byId.get(r.item_id)?.unit ?? dasar ?? "pcs"} selectedUnit={opts.find(u => u.unit === r.satuan)} />
                   )}
-                  <PriceDeviationHint warning={warningOf(r)} />
                   {faktor !== 1 && dasar && (
                     <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>
                       Stok masuk {(Number(r.qty) || 0) * faktor} {dasar} ({faktor} {dasar} per {r.satuan})
@@ -269,7 +267,7 @@ export function POForm({
         </div>
       </div>
 
-      <PriceDeviationConfirm count={deviating} />
+      <PriceDeviationConfirm warning={priceWarning} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <Link href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
           Batal

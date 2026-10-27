@@ -2,7 +2,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { readCompleteList } from "@/lib/checked-list";
-import { loadItemHpp } from "@/lib/purchase-price-check";
 import { FakturLangsungForm, type DirectInvoiceInitial } from "./FakturLangsungForm";
 
 // Faktur Pembelian Langsung — beli barang tanpa PO, barang masuk di dokumen yang sama.
@@ -11,9 +10,9 @@ type SourceLine = { id: string; item_id: string | null; qty: number; harga: numb
 export default async function FakturLangsungPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; replace_invoice?: string }>;
+  searchParams: Promise<{ error?: string; replace_invoice?: string; harga_cek?: string }>;
 }) {
-  const { error, replace_invoice } = await searchParams;
+  const { error, replace_invoice, harga_cek } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -50,7 +49,7 @@ export default async function FakturLangsungPage({
     }
   }
 
-  const [suppliers, warehouses, items, hpp] = await Promise.all([
+  const [suppliers, warehouses, items] = await Promise.all([
     readCompleteList<{ id: string; nama: string; termin_hari: number }>((from, to) => supabase.from("suppliers")
       .select("id, nama, termin_hari", { count: "exact" }).eq("is_active", true)
       .order("nama").order("id").range(from, to), "Pemasok faktur langsung", { maxRows: null }),
@@ -61,7 +60,6 @@ export default async function FakturLangsungPage({
       .from("items").select("id, code, name, buy_price, unit, track_expiry", { count: "exact" })
       .eq("is_active", true).eq("item_type", "Persediaan").order("name").order("id").range(from, to),
       "Daftar barang faktur langsung", { maxRows: null }),
-    loadItemHpp(supabase),
   ]);
 
   const daftar = items ?? [];
@@ -102,7 +100,7 @@ export default async function FakturLangsungPage({
         </div>
       )}
 
-      <FakturLangsungForm initial={initial} userId={user?.id ?? ""}
+      <FakturLangsungForm initial={initial} userId={user?.id ?? ""} priceWarning={harga_cek}
         suppliers={(suppliers ?? []).map((s) => ({
           id: s.id as string, nama: s.nama as string, terminHari: Number(s.termin_hari) || 0,
         }))}
@@ -114,7 +112,6 @@ export default async function FakturLangsungPage({
           id: i.id, code: i.code, name: i.name,
           hargaBeli: Number(i.buy_price) || 0,
           trackExpiry: !!i.track_expiry,
-          hpp: hpp.get(i.id) ?? null,
           satuan: (unitMap.get(i.id) ?? []).map((u) => ({
             unit: u.unit, factor: u.factor, buy_price: u.buy_price,
           })),

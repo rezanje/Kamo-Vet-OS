@@ -4,7 +4,6 @@ import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { loadUnitOptions } from "@/lib/satuan";
-import { loadItemHpp } from "@/lib/purchase-price-check";
 import { FakturForm, type PoOption, type PoInvoiceInitial } from "./FakturForm";
 
 type Rel<T> = T | T[] | null;
@@ -36,9 +35,9 @@ type SourceLine = { id: string; po_item_id: string | null; item_id: string | nul
 export default async function FakturBaruPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; replace_invoice?: string; po_no?: string; hal?: string }>;
+  searchParams: Promise<{ error?: string; replace_invoice?: string; po_no?: string; hal?: string; harga_cek?: string }>;
 }) {
-  const { error, replace_invoice, po_no, hal } = await searchParams;
+  const { error, replace_invoice, po_no, hal, harga_cek } = await searchParams;
   const poNo = (po_no ?? "").trim().slice(0, 24);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -114,9 +113,6 @@ export default async function FakturBaruPage({
     invoicesByPo.set(invoice.po_id, rows);
   }
 
-  // P04: HPP rata-rata hanya untuk barang di PO yang tampil di halaman ini.
-  const hpp = loadError ? new Map<string, number>() : await loadItemHpp(supabase,
-    pos.flatMap(p => (p.purchase_order_items ?? []).map(r => r.item_id ?? "")));
   const options: PoOption[] = loadError ? [] : pos.map((p) => {
     const poItems = (p.purchase_order_items ?? []).map((r) => ({
       id: r.id,
@@ -153,7 +149,7 @@ export default async function FakturBaruPage({
         const satuan = r.satuan || one(r.items)?.unit || "unit";
         return [{
           po_item_id: r.id, item_id: r.item_id, sisa: qtyLeft, nama: r.nama,
-          harga_po: Number(r.harga_beli) || 0, satuan, faktor: factor, blockedReason, hpp: hpp.get(r.item_id) ?? null,
+          harga_po: Number(r.harga_beli) || 0, satuan, faktor: factor, blockedReason,
         }];
       }),
     };
@@ -200,7 +196,7 @@ export default async function FakturBaruPage({
       {!loadError && poNo && poPage?.count === 0 && <div role="status" className="p2ban">PO diterima dengan nomor itu tidak ditemukan.</div>}
       {!initial && !poNo && poPage && loadError === undefined && <ListPagination path="/pembelian/faktur/baru" query={{}} total={poPage.count} pageInfo={poPage.pageInfo} />}
 
-      <FakturForm initial={initial} options={options} userId={userId} />
+      <FakturForm initial={initial} options={options} userId={userId} priceWarning={harga_cek} />
     </>
   );
 }

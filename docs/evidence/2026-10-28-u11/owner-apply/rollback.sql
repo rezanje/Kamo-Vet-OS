@@ -4,5 +4,6 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '30s';
 drop function if exists public.create_branch(text,text,text,boolean);
+drop index if exists public.branches_code_lower_key;
 delete from supabase_migrations.schema_migrations where version = '20261028131000';
 commit;

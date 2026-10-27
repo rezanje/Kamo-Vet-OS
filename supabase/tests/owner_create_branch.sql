@@ -52,4 +52,9 @@ begin
 end$$;
 reset role;
 insert into warehouses(branch_id,code,name,type)select id,'U11-W','Fiction new warehouse','VET' from branches where code='U11-NEW';
+-- The case-insensitive unique index holds for every write path, not only the RPC.
+do $$declare blocked boolean:=false;begin
+ begin insert into branches(code,name,type)values('u11-new','Fiction case duplicate','KLINIK');exception when unique_violation then blocked:=true;end;
+ if not blocked then raise exception 'Case-duplicate branch code accepted by the table';end if;
+end$$;
 rollback;

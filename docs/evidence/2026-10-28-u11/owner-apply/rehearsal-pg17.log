@@ -8,11 +8,13 @@ PASS docs/evidence/2026-10-28-p01/owner-apply/preflight.sql -> SUMMARY: 1 failed
 PASS rollback p01
 PASS docs/evidence/2026-10-28-p01/owner-apply/preflight.sql -> SUMMARY: 0 failed|t
 PASS docs/evidence/2026-10-28-p01/owner-apply/readback.sql -> SUMMARY: 0 failed|t
+PASS docs/evidence/2026-10-28-u11/owner-apply/preflight.sql -> SUMMARY: 1 failed|f
+PASS apply refused case-duplicate codes (rolled back): ERROR:  could not create unique index "branches_code_lower_key"
 PASS docs/evidence/2026-10-28-u11/owner-apply/preflight.sql -> SUMMARY: 0 failed|t
-PASS docs/evidence/2026-10-28-u11/owner-apply/readback.sql -> SUMMARY: 5 failed|f
+PASS docs/evidence/2026-10-28-u11/owner-apply/readback.sql -> SUMMARY: 6 failed|f
 PASS apply u11
 PASS docs/evidence/2026-10-28-u11/owner-apply/readback.sql -> SUMMARY: 0 failed|t
-PASS docs/evidence/2026-10-28-u11/owner-apply/preflight.sql -> SUMMARY: 2 failed|f
+PASS docs/evidence/2026-10-28-u11/owner-apply/preflight.sql -> SUMMARY: 3 failed|f
 PASS rollback u11
 PASS docs/evidence/2026-10-28-u11/owner-apply/preflight.sql -> SUMMARY: 0 failed|t
 PASS docs/evidence/2026-10-28-u11/owner-apply/readback.sql -> SUMMARY: 0 failed|t

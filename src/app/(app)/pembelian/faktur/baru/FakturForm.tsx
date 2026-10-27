@@ -10,8 +10,7 @@ import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatFaktur } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
-import { priceDeviationWarning } from "@/lib/purchase-price-check";
-import { PriceDeviationConfirm, PriceDeviationHint } from "@/components/PriceDeviationConfirm";
+import { PriceDeviationConfirm } from "@/components/PriceDeviationConfirm";
 
 export type PoOption = {
   id: string;
@@ -22,8 +21,6 @@ export type PoOption = {
   items: {
     po_item_id: string; item_id: string; nama: string; harga_po: number; sisa: number;
     satuan: string; faktor: number; blockedReason: string | null;
-    /** HPP rata-rata bergerak per satuan dasar; null = belum diketahui (P04 tanpa peringatan). */
-    hpp?: number | null;
   }[];
 };
 
@@ -36,7 +33,7 @@ const plusDays = (iso: string, days: number) => {
 
 export type PoInvoiceInitial = { id: string; po_id: string; tanggal: string; jatuh_tempo: string; no_faktur_pemasok: string | null; keterangan: string | null; purchase_invoice_items: { po_item_id: string; qty: number; harga: number }[] };
 
-export function FakturForm({ options, userId, initial }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial }) {
+export function FakturForm({ options, userId, initial, priceWarning }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial; priceWarning?: string }) {
   const today = hariIniWIB();
   const [poId, setPoId] = useState(initial?.po_id ?? "");
   const [qty, setQty] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.qty)])));
@@ -62,10 +59,6 @@ export function FakturForm({ options, userId, initial }: { options: PoOption[]; 
     }))
     .filter((r) => r.qty > 0);
   const total = payload.reduce((a, r) => a + r.qty * r.harga, 0);
-  // P04: harga faktor per satuan PO dibagi faktor = harga per satuan dasar, dibanding HPP rata-rata.
-  const warningOf = (it: PoOption["items"][number]) => it.blockedReason ? null
-    : priceDeviationWarning(Number(harga[it.po_item_id]) || 0, it.faktor, it.hpp);
-  const deviating = (po?.items ?? []).filter((it) => (Number(qty[it.po_item_id]) || 0) > 0 && warningOf(it)).length;
 
   return (
     <CorrectionTransactionForm action={buatFaktur} scope={`invoice${initial ? `:${initial.id}` : ""}`} userId={userId} state={{ snapshot: { poId, qty, harga, tempo }, restore(value) {
@@ -122,8 +115,7 @@ export function FakturForm({ options, userId, initial }: { options: PoOption[]; 
             {(po?.items ?? []).map((it) => {
               const beda = (Number(harga[it.po_item_id]) || 0) !== it.harga_po;
               return (
-                <div key={it.po_item_id}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <div key={it.po_item_id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <span style={{ flex: 1, fontSize: 11.5 }}>
                     {it.nama}{" "}
                     <span style={{ color: "var(--td)", fontSize: 10.5 }}>
@@ -145,8 +137,6 @@ export function FakturForm({ options, userId, initial }: { options: PoOption[]; 
                     </>
                   )}
                 </div>
-                <PriceDeviationHint warning={warningOf(it)} />
-                </div>
               );
             })}
           </div>
@@ -158,7 +148,7 @@ export function FakturForm({ options, userId, initial }: { options: PoOption[]; 
         </div>
       </div>
 
-      <PriceDeviationConfirm count={deviating} />
+      <PriceDeviationConfirm warning={priceWarning} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <SubmitButton className="btn-acc" disabled={!ready || !poId || payload.length === 0}>
           <i className="ti ti-file-invoice" /> Simpan faktur

@@ -1,5 +1,6 @@
--- U11 APPLY — WRITES. Satu transaksi: isi migrasi 20261028131000_u11_owner_create_branch.sql apa adanya (sha256 36cf25d97fb4b20a34df17fbb0527c1cbc88c0083e1b9faaca692b5f6561444b) + baris riwayat.
--- Galat apa pun (termasuk tunggu kunci > 5 dtk atau bukan role postgres) membatalkan semuanya.
+-- U11 APPLY — WRITES. Satu transaksi: isi migrasi 20261028131000_u11_owner_create_branch.sql apa adanya (sha256 a8800bd18da41a3dfd7e9f6b5c3d306bccba822281e6d452bfbf57a4064e1f8e) + baris riwayat.
+-- Galat apa pun (termasuk tunggu kunci > 5 dtk, duplikat kode beda huruf besar/kecil, atau bukan role postgres)
+-- membatalkan semuanya.
 begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
@@ -17,6 +18,10 @@ end $$;
 -- DEFINER dengan cek OWNER aktif di database, bukan hanya di layar. Tidak ada policy
 -- INSERT yang dibuka, sehingga insert langsung lewat REST tetap ditolak untuk semua peran.
 -- Idempoten: create or replace dengan tanda tangan tetap.
+
+-- Kode cabang unik tanpa membedakan huruf besar/kecil ("pdry" = "PDRY"), juga untuk jalur
+-- penulisan lain. Preflight owner memastikan production belum punya duplikat seperti itu.
+create unique index if not exists branches_code_lower_key on public.branches (lower(code));
 
 create or replace function public.create_branch(p_code text, p_name text, p_type text, p_is_active boolean)
 returns jsonb

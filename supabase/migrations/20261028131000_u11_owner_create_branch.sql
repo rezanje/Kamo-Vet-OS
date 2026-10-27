@@ -7,6 +7,10 @@
 -- INSERT yang dibuka, sehingga insert langsung lewat REST tetap ditolak untuk semua peran.
 -- Idempoten: create or replace dengan tanda tangan tetap.
 
+-- Kode cabang unik tanpa membedakan huruf besar/kecil ("pdry" = "PDRY"), juga untuk jalur
+-- penulisan lain. Preflight owner memastikan production belum punya duplikat seperti itu.
+create unique index if not exists branches_code_lower_key on public.branches (lower(code));
+
 create or replace function public.create_branch(p_code text, p_name text, p_type text, p_is_active boolean)
 returns jsonb
 language plpgsql security definer set search_path='' as $$
