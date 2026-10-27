@@ -1,0 +1,12 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew)
+Applied 279 repository migrations.
+Re-applied K01/K13 migrations: idempotent.
+clinic_record_addenda_history.sql: passed.
+clinic_therapy_note.sql: passed.
+readback after migrations: 11 checks ok
+rollback guard: refused while rows exist, nothing dropped.
+rollback with explicit owner flag: done.
+preflight after rollback: 9 checks ok
+readback after apply.sql: 11 checks ok
+clinic_record_addenda_history.sql: passed again after owner package apply.
+cleanup: temp cluster removed
