@@ -13,3 +13,5 @@ with fixture.DisposablePostgres() as database:
     prefix = (ROOT / 'supabase/tests/clinic_invoice_post.sql').read_text().split('set local role authenticated;')[0]
     database.sql(prefix + (ROOT / 'supabase/tests/clinic_line_salespeople.sql').read_text())
     print('PASS clinic per-line sellers: medicine/service snapshots, branch/active guards, retry, correction and reissue', flush=True)
+    database.sql(prefix + (ROOT / 'supabase/tests/clinic_record_line_salespeople.sql').read_text())
+    print('PASS clinic record sellers: output snapshot, branch guard, compound context and invoice inheritance', flush=True)

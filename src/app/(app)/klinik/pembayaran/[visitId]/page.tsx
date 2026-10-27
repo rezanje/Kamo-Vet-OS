@@ -123,8 +123,8 @@ export default async function PembayaranPage({
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
   const { data: resep, error: prescriptionError } = mr
-    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).order("created_at")
-    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
+    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name").eq("medical_record_id", mr.id).order("created_at")
+    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
   if (prescriptionError) throw unverifiedBilling();
   // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
   // saat pasien menebus, dan modalnya tidak pernah tercatat.
@@ -132,6 +132,7 @@ export default async function PembayaranPage({
     deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0,
     jenis: r.jenis ?? "obat", item_id: r.item_id ?? null, satuan: r.satuan ?? null,
     prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
+    ...(r.salesperson_id ? {salesperson_id:r.salesperson_id, salesperson_name:r.salesperson_name ?? null} : {}),
     ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers:r.service_performers} : {}),
   }));
 

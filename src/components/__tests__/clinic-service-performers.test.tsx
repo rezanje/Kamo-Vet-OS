@@ -85,7 +85,7 @@ it.each(["exam", "inpatient"])("%s offers performers only for services and prese
   expect(cart()[0].service_performers ?? null).toBeNull();
   await tab("Jasa");
   for(let i=0;i<2;i++)await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
-  const selects=()=>[...host.querySelectorAll<HTMLSelectElement>('select')].filter(select=>[...select.options].some(option=>option.value==="doctor-a"));
+  const selects=()=>[...host.querySelectorAll<HTMLSelectElement>('select')].filter(select=>select.closest('fieldset') && [...select.options].some(option=>option.value==="doctor-a"));
   expect(selects()).toHaveLength(3);
   await act(async()=>{selects()[0].value="doctor-a";selects()[0].dispatchEvent(new Event("change",{bubbles:true}));});
   const bulkStaff=[...host.querySelectorAll<HTMLSelectElement>('select')].find(select=>select.closest('fieldset')?.textContent?.includes('Isi pelaksana')&&[...select.options].some(option=>option.value==='staff-a'))!;
@@ -98,11 +98,14 @@ it.each(["exam", "inpatient"])("%s offers performers only for services and prese
 
 it('payment shows persisted snapshots and login cashier, without editable global salesperson or source performers',async()=>{
  await act(async()=>root.render(<PembayaranForm visitId="visit" requestKey="pay" patient={{...patient,jenisLayanan:'Klinik',noInvoice:'baru',tanggal:'hari ini'}} initialObat={[]} initialJasa={[
-  {deskripsi:'Jasa tersimpan',qty:1,harga:100,prescription_item_id:'source',service_performers:{version:1,doctor_id:'doctor-a',doctor_name:'Dokter Saat Transaksi',staff_id:null}},
+  {deskripsi:'Jasa tersimpan',qty:1,harga:100,prescription_item_id:'source',salesperson_id:'doctor-a',salesperson_name:'Penjual Saat Resep',service_performers:{version:1,doctor_id:'doctor-a',doctor_name:'Dokter Saat Transaksi',staff_id:null}},
   {deskripsi:'Jasa lama',qty:1,harga:100,prescription_item_id:'legacy',service_performers:null},
  ]} serviceStaff={common.serviceStaff} cashierName="Kasir Login" catatanResep={null} bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-23',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
  expect(host.querySelector('[name=salesperson_id]')).toBeNull();
  expect(host.textContent).toContain('Kasir Login');expect(host.textContent).toContain('Dokter Saat Transaksi');
+ expect(host.textContent).toContain('Penjual Saat Resep');
+ expect(host.querySelector('[aria-label="Penjual Jasa tersimpan"]')).toBeNull();
+ expect(host.querySelector('[aria-label="Penjual Jasa lama"]')).not.toBeNull();
  expect(host.textContent).toContain('data lama');
  expect([...host.querySelectorAll('fieldset')].filter(field=>field.textContent?.includes('Pelaksana Jasa tersimpan'))).toHaveLength(0);
 });
@@ -187,6 +190,22 @@ it.each(['exam','inpatient'])('K02 %s action cart keeps chosen BMHP after reopen
   await act(async () => root.unmount()); root = createRoot(host); await render(kind);
   expect(cart()[0].bmhp).toEqual([{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }]);
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Makanan kucing"]')?.value).toBe('1');
+});
+
+it.each(['exam','inpatient'])('%s records separate clinic sellers for medicine and procedure in its recoverable cart', async kind => {
+  await render(kind);
+  const foodRow=[...host.querySelectorAll('tr')].find(row=>row.textContent?.includes('Makanan kucing'))!;
+  await act(async()=>foodRow.querySelector<HTMLButtonElement>('button')!.click());
+  await tab('Tindakan');
+  await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  const medicine=host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Makanan kucing"]');
+  const procedure=host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Steril"]');
+  expect(medicine).toBeTruthy();expect(procedure).toBeTruthy();
+  await act(async()=>{medicine!.value='doctor-a';medicine!.dispatchEvent(new Event('change',{bubbles:true}));});
+  await act(async()=>{procedure!.value='staff-a';procedure!.dispatchEvent(new Event('change',{bubbles:true}));});
+  expect(cart().map((row:{salesperson_id:string})=>row.salesperson_id)).toEqual(['doctor-a','staff-a']);
+  await act(async()=>root.unmount());root=createRoot(host);await render(kind);
+  expect(cart().map((row:{salesperson_id:string})=>row.salesperson_id)).toEqual(['doctor-a','staff-a']);
 });
 
 it('clinic payment records a different salesperson on medicine and procedure lines', async () => {

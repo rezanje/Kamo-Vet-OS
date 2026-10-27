@@ -5,6 +5,7 @@ import { NumberInput } from "@/components/NumberInput";
 import { useMemo, useState } from "react";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { ProcedureBmhpField } from "@/components/ProcedureBmhpField";
+import { ClinicLineSellerField } from "@/components/ClinicLineSellerField";
 import type { BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
@@ -32,6 +33,7 @@ type CartRow = {
   official_version_id?: string;
   sale_item_id?: string;
   service_performers?: ServicePerformersInput | null;
+  salesperson_id?: string | null;
   /** K02: actual consumables on a procedure row (optional). */
   bmhp?: BmhpRow[];
 };
@@ -152,6 +154,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
       satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
       kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
         service_performers: isService ? emptyServicePerformers() : null,
+        salesperson_id: null,
     }];
   });
   const compoundDraft: CompoundDraft = { saleItemId, formulaId: officialVersionId, dosageForm: racikForm, instruction: racikAturan, ingredients: racikBahan };
@@ -163,7 +166,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const addRacikanToCart = () => {
     const sku = racikanItems.find(item => item.id === saleItemId) ?? null;
     const row = masterCompoundCartRow(sku, selectedFormula ?? null, compoundDraft, crypto.randomUUID(), bolehManual);
-    setCart(rows => [...rows, row]);
+    setCart(rows => [...rows, {...row, salesperson_id:null}]);
     setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]);
   };
 
@@ -461,6 +464,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                                 </select>
                               ) : <span>{r.satuan}</span>}
                             </div>
+                            <ClinicLineSellerField name={r.nama_obat} value={r.salesperson_id} staff={serviceStaff}
+                              onChange={salesperson_id => setCart(rows => rows.map(row => row.key === r.key ? {...row, salesperson_id} : row))} />
                             {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
                               grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}

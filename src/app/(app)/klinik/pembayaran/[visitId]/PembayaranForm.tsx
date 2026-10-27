@@ -125,7 +125,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                   : <ServicePerformersField label={`Pelaksana ${r.deskripsi || `jasa baris ${i+1}`}`} value={r.service_performers} staff={serviceStaff}
                     grooming={groomingApplies && (r.kategori === "Grooming" || master.some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                     doctorRequired={groomingDoctorRequired} onChange={value => set(i,{service_performers:value})} />)}
-                {sealedSalespeople && r.source_invoice_item_id ? <div style={{fontSize:10,color:'var(--tm)'}}>Penjual: {r.salesperson_name || 'Belum tercatat'}</div>
+                {((sealedSalespeople && !!r.source_invoice_item_id) || (!!r.prescription_item_id && !!r.salesperson_id)) ? <div style={{fontSize:10,color:'var(--tm)'}}>Penjual: {r.salesperson_name || 'Belum tercatat'}</div>
                   : <label style={{display:'block',fontSize:10,marginTop:4}}>Penjual SKU
                     <select className="fi" aria-label={`Penjual ${r.deskripsi}`} value={r.salesperson_id ?? ''}
                       onChange={event => set(i,{salesperson_id:event.target.value || null})} style={{height:25,fontSize:10}}>
