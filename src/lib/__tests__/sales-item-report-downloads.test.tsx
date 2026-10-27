@@ -66,9 +66,9 @@ it("does not read report data when download authorization fails", async () => {
   expect(mocks.load).not.toHaveBeenCalled();
 });
 
-it("offers and exports every posted clinic line as one selection", async () => {
+it("passes the clinic Semua selection through the page, links and export route", async () => {
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Semua" }) }));
-  expect(html).toMatch(/<option value="Semua"[^>]*>Semua baris invoice klinik<\/option>/);
+  expect(html).toContain('<option value="Semua" selected="">Semua baris invoice klinik</option>');
   expect(mocks.load).toHaveBeenLastCalledWith(expect.objectContaining({ kanal: "Klinik", jenis: "Semua" }));
   expect(html).toContain("jenis=Semua");
   const response = await GET(new Request("https://example.test/laporan/penjualan-barang/unduh?dari=2026-10-01&sampai=2026-10-04&kanal=Klinik&jenis=Semua&format=csv"));
