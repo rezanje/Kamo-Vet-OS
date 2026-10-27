@@ -1,4 +1,5 @@
 import React from "react";
+import { readdirSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PurchaseCorrectionRequest } from "@/lib/purchase-correction-requests";
@@ -157,5 +158,15 @@ describe("request actions", () => {
     expect(state.rpc).toEqual([["process_purchase_correction_request", { p_id: id, p_resolution: "Faktur diganti" }]]);
     state.rpcError = { message: "Hanya Super Admin aktif yang dapat memproses permintaan koreksi" };
     await expect(prosesKoreksiPembelian(form({ id, resolution: "x" }))).rejects.toThrow("error=" + encodeURIComponent("Hanya Super Admin aktif yang dapat memproses permintaan koreksi"));
+  });
+});
+
+describe("release safety", () => {
+  it("keeps the A02 migration version unique so it cannot collide with another release", () => {
+    const files = readdirSync("supabase/migrations");
+    const mine = files.filter(name => name.endsWith("_purchase_correction_requests.sql"));
+    expect(mine).toHaveLength(1);
+    const version = mine[0].split("_")[0];
+    expect(files.filter(name => name.split("_")[0] === version)).toEqual(mine);
   });
 });

@@ -24,6 +24,33 @@ def main():
         left = db.sql('select count(*) from purchase_correction_requests;')
         assert left == '0', 'Fixture rows leaked: ' + left
         print('PASS fixture rolled back (0 request rows remain)', flush=True)
+        # Rehearse rollback step 1 exactly as documented: freeze writes, keep stored requests readable.
+        suite = (ROOT / 'supabase/tests/purchase_correction_requests.sql').read_text()
+        fixture_sql = suite[:suite.index('set local role authenticated;')]
+        doc = (ROOT / 'docs/rollback/2026-10-27-a02-purchase-correction-requests.sql').read_text()
+        freeze = doc[doc.index('begin;') + len('begin;'):doc.index('commit;')]
+        db.sql(fixture_sql + """
+set local role authenticated;set local request.jwt.claim.role='authenticated';
+select set_config('request.jwt.claim.sub',md5('a02-staff')::uuid::text,true);
+select create_purchase_correction_request('purchase_order',md5('a02-po')::uuid,'a02-rollback-01','Rincian sebelum rollback dibekukan');
+reset role;
+""" + freeze + """
+set local role authenticated;
+do $$declare blocked boolean:=false;begin
+ begin perform create_purchase_correction_request('purchase_order',md5('a02-po')::uuid,'a02-rollback-02','Rincian setelah rollback dibekukan');
+ exception when insufficient_privilege then blocked:=true;end;
+ if not blocked then raise exception 'Rollback freeze still accepts new requests';end if;
+ if (select count(*) from purchase_correction_requests where status='pending')<>1 then raise exception 'Rollback freeze lost the stored request';end if;
+end$$;
+select set_config('request.jwt.claim.sub',md5('a02-owner')::uuid::text,true);
+do $$declare blocked boolean:=false;begin
+ begin perform process_purchase_correction_request((select id from purchase_correction_requests limit 1),'Setelah dibekukan');
+ exception when insufficient_privilege then blocked:=true;end;
+ if not blocked then raise exception 'Rollback freeze still allows processing';end if;
+end$$;
+rollback;
+""")
+        print('PASS documented rollback step 1 freezes writes and keeps stored requests readable', flush=True)
 
 
 if __name__ == '__main__':
