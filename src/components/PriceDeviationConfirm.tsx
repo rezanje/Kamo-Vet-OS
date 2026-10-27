@@ -1,5 +1,5 @@
 /**
- * P04: tampil setelah server menolak simpan karena harga menyimpang jauh dari HPP rata-rata.
+ * P04: tampil setelah server menolak simpan karena harga menyimpang jauh dari harga pokok acuan.
  * Pengguna memperbaiki harga lalu simpan lagi (dicek ulang), atau mencentang konfirmasi
  * untuk tetap menyimpan apa adanya. Penegakannya di server action, bukan di sini.
  */

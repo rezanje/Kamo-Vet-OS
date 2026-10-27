@@ -1,6 +1,12 @@
 // P04: peringatan (bukan blokir) bila harga beli per satuan dasar menyimpang lebih dari
-// 50% dari HPP rata-rata bergerak saat ini. Tanpa HPP (belum ada / nol) tidak ada peringatan.
+// 50% dari harga pokok acuan. Tanpa harga pokok acuan sama sekali tidak ada peringatan.
 // Baris berharga 0/kosong (bonus) dilewati.
+//
+// Harga pokok acuan per barang (satuan dasar), urutan pertama yang ada:
+//   1. HPP rata-rata bergerak (stock.average_cost) — bila metode persediaan moving average;
+//   2. rata-rata tertimbang lapisan FIFO yang masih bersisa: sum(qty_left*unit_cost)/sum(qty_left);
+//   3. harga beli terakhir dari faktur pembelian aktif (harga / faktor).
+// Production saat ini memakai FIFO, sehingga (2) adalah jalur utama.
 //
 // Dicek di SERVER saat simpan (server action PO/faktur): HPP tidak pernah dikirim ke browser,
 // karena nilai HPP hanya boleh dilihat OWNER/FINANCE. Persentase pun hanya untuk OWNER/FINANCE.
@@ -12,6 +18,10 @@ export const PRICE_CONFIRM_FIELD = "konfirmasi_harga";
 
 type Num = number | string | null | undefined;
 export type StockCostRow = { item_id: string; qty: Num; average_cost?: Num };
+export type LayerRow = { item_id: string; qty_left: Num; unit_cost: Num };
+type Rel<T> = T | T[] | null | undefined;
+export type InvoiceLineRow = { id: string; item_id: string | null; harga: Num; faktor: Num;
+  purchase_invoices?: Rel<{ tanggal: string | null; created_at?: string | null; voided_at?: string | null }> };
 export type PriceLine = { item_id: string | null | undefined; harga: Num; factor: Num };
 export type Deviation = { itemId: string; deviation: number };
 
@@ -38,6 +48,34 @@ export function itemHppMap(rows: StockCostRow[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const [id, a] of acc) out.set(id, a.qty > 0 ? a.value / a.qty : a.sum / a.n);
   return out;
+}
+
+/** Rata-rata tertimbang lapisan FIFO bersisa (satuan dasar). Lapisan tanpa harga positif diabaikan. */
+export function layerCostMap(rows: LayerRow[]): Map<string, number> {
+  const acc = new Map<string, { value: number; qty: number }>();
+  for (const row of rows) {
+    const qty = finite(row.qty_left), cost = finite(row.unit_cost);
+    if (!row.item_id || qty === null || qty <= 0 || cost === null || cost <= 0) continue;
+    const a = acc.get(row.item_id) ?? { value: 0, qty: 0 };
+    a.value += qty * cost; a.qty += qty;
+    acc.set(row.item_id, a);
+  }
+  return new Map([...acc].map(([id, a]) => [id, a.value / a.qty]));
+}
+
+/** Harga beli terakhir per satuan dasar dari baris faktur aktif (tanggal faktur, lalu waktu dibuat, terbaru). */
+export function lastPurchaseCostMap(rows: InvoiceLineRow[]): Map<string, number> {
+  const best = new Map<string, { key: string; cost: number }>();
+  for (const row of rows) {
+    const invoice = Array.isArray(row.purchase_invoices) ? row.purchase_invoices[0] : row.purchase_invoices;
+    const harga = finite(row.harga), faktor = finite(row.faktor);
+    if (!row.item_id || !invoice || invoice.voided_at || harga === null || harga <= 0) continue;
+    const cost = harga / (faktor !== null && faktor > 0 ? faktor : 1);
+    const key = `${invoice.tanggal ?? ""}|${invoice.created_at ?? ""}|${row.id}`;
+    const prior = best.get(row.item_id);
+    if (!prior || key > prior.key) best.set(row.item_id, { key, cost });
+  }
+  return new Map([...best].map(([id, b]) => [id, b.cost]));
 }
 
 /**
@@ -73,22 +111,40 @@ export function priceWarningMessage(rows: Deviation[], names: Map<string, string
     const pct = Math.round(Math.abs(row.deviation) * 100).toLocaleString("id-ID");
     return `${name} (${pct}% lebih ${row.deviation > 0 ? "mahal" : "murah"})`;
   });
-  const head = showPercent ? "Harga beli per satuan dasar menyimpang lebih dari 50% dari HPP rata-rata"
+  const head = showPercent ? "Harga beli per satuan dasar menyimpang lebih dari 50% dari harga pokok acuan (HPP)"
     : "Harga jauh berbeda dari harga pokok rata-rata, periksa ulang";
   return `${head}: ${parts.join(", ")}. Periksa satuan dan harga, lalu centang konfirmasi untuk tetap menyimpan.`;
 }
 
-/** HPP rata-rata bergerak untuk barang yang diminta saja, terbatas pada gudang yang boleh dibaca (RLS stok). */
+const chunks = (ids: string[]) => Array.from({ length: Math.ceil(ids.length / 100) }, (_, i) => ids.slice(i * 100, i * 100 + 100));
+
+/**
+ * Harga pokok acuan untuk barang yang diminta saja (lihat urutan di atas), terbatas pada data yang
+ * boleh dibaca akun ini (RLS stok/lapisan/faktur). Sumber berikutnya hanya dibaca untuk barang
+ * yang belum punya acuan dari sumber sebelumnya.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadItemHpp(client: any, itemIds: string[]): Promise<Map<string, number>> {
+export async function loadReferenceCost(client: any, itemIds: string[]): Promise<Map<string, number>> {
   const ids = [...new Set(itemIds.filter(Boolean))];
-  const rows: StockCostRow[] = [];
-  for (let start = 0; start < ids.length; start += 100) {
-    rows.push(...await readCompleteList<StockCostRow & { id: string }>((from, to) => client.from("stock")
-      .select("id,item_id,qty,average_cost", { count: "exact" }).in("item_id", ids.slice(start, start + 100))
-      .not("average_cost", "is", null).order("id").range(from, to), "HPP rata-rata barang", { maxRows: null }));
-  }
-  return itemHppMap(rows);
+  const out = new Map<string, number>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const read = async <T extends { id: string }>(table: string, columns: string, label: string, ids: string[], filter: (query: any) => any) => {
+    const rows: T[] = [];
+    for (const chunk of chunks(ids)) rows.push(...await readCompleteList<T>((from, to) => filter(client.from(table)
+      .select(columns, { count: "exact" }).in("item_id", chunk)).order("id").range(from, to), label, { maxRows: null }));
+    return rows;
+  };
+  const missing = () => ids.filter(id => !out.has(id));
+  const merge = (map: Map<string, number>) => { for (const [id, cost] of map) if (!out.has(id)) out.set(id, cost); };
+
+  merge(itemHppMap(await read<StockCostRow & { id: string }>("stock", "id,item_id,qty,average_cost", "HPP rata-rata barang", ids,
+    query => query.not("average_cost", "is", null))));
+  if (missing().length) merge(layerCostMap(await read<LayerRow & { id: string }>("stock_layers", "id,item_id,qty_left,unit_cost", "Lapisan FIFO barang", missing(),
+    query => query.gt("qty_left", 0))));
+  if (missing().length) merge(lastPurchaseCostMap(await read<InvoiceLineRow>("purchase_invoice_items",
+    "id,item_id,harga,faktor,purchase_invoices!inner(tanggal,created_at,voided_at)", "Harga beli terakhir", missing(),
+    query => query.gt("harga", 0).is("purchase_invoices.voided_at", null))));
+  return out;
 }
 
 /**
@@ -102,7 +158,7 @@ export async function priceCheckBeforeSave(client: any, formData: FormData, line
   const priced = lines.filter(line => line.item_id && (finite(line.harga) ?? 0) > 0);
   if (!priced.length) return null;
   try {
-    const rows = deviatingLines(priced, await loadItemHpp(client, priced.map(line => line.item_id as string)));
+    const rows = deviatingLines(priced, await loadReferenceCost(client, priced.map(line => line.item_id as string)));
     if (!rows.length) return null;
     const [{ data: { user } }, { data: items }] = await Promise.all([
       client.auth.getUser(),

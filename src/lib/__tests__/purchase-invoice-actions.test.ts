@@ -55,7 +55,7 @@ it("uses the recorded invoice kind to prepare the existing replacement form", as
 const readOnly = (tables: Record<string, unknown[]>, inCalls: [string, unknown[]][] = []) => (table: string) => {
   const q: Record<string, unknown> = {};
   const result = () => Promise.resolve({ data: tables[table] ?? [], count: (tables[table] ?? []).length, error: null });
-  for (const name of ["select", "eq", "not", "order", "is"]) q[name] = () => q;
+  for (const name of ["select", "eq", "not", "order", "is", "gt"]) q[name] = () => q;
   q.in = (_: string, ids: unknown[]) => { inCalls.push([table, ids]); return q; };
   q.range = result; q.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
   q.then = (resolve: (value: unknown) => unknown) => result().then(resolve);
