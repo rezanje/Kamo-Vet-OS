@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({
   mappingError: true,
+  recoverError: false,
   prepare: vi.fn(async () => ({ data: "11111111-1111-4111-8111-111111111111", error: null })),
 }));
 
@@ -22,7 +23,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
           ? [{ source_row: 2, source_code: "FIX-A", status: "valid", reason: null,
             payload: { item_id: "fixture-item", warehouse_id: "fixture-wh", base_qty: "5", base_unit_cost: "10", unit: "PCS" } }]
           : [], error: null }),
-      maybeSingle: async () => ({ data: table === "profiles"
+      maybeSingle: async () => table === "import_runs" && fixture.recoverError
+        ? { data: null, error: { message: "fixture read timeout" } }
+        : ({ data: table === "profiles"
         ? { role: "OWNER", is_active: true }
         : table === "import_runs"
           ? { id: "11111111-1111-4111-8111-111111111111", created_by: "fixture-owner", status: "previewed",
@@ -70,4 +73,21 @@ it("returns the ordinary review result when scope mapping saves", async () => {
   const result = await previewSaldoAwalAccurate(await form());
   expect(result).toMatchObject({ ok: true, phase: "preview", run_id: "11111111-1111-4111-8111-111111111111" });
   expect(result.message).not.toMatch(/pemetaan.*belum tersimpan/i);
+});
+
+it("keeps the prepared batch ID when its saved rows cannot be read back", async () => {
+  fixture.mappingError = false;
+  fixture.recoverError = true;
+  fixture.prepare.mockClear();
+  try {
+    const result = await previewSaldoAwalAccurate(await form());
+    expect(fixture.prepare).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ ok: false, run_id: "11111111-1111-4111-8111-111111111111" });
+    expect(result.message).toMatch(/batch tersimpan/i);
+    // An identical hash can name an already posted batch, so posting status is not claimed.
+    expect(result.message).toMatch(/status posting belum dapat dipastikan/i);
+    expect(result.message).not.toMatch(/belum diposting/i);
+  } finally {
+    fixture.recoverError = false;
+  }
 });

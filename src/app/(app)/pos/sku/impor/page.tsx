@@ -113,7 +113,7 @@ export default async function ImporBarangPage({
       ) : (
         <>
           {recoveryError && <p role="alert">Daftar batch belum dapat dimuat: {recoveryError}</p>}
-          <InventoryImportWorkspace batches={batches} masterBatches={masterBatches} masterError={masterError} masterReview={masterReview} recovered={recovered} initialReceipt={initialReceipt} />
+          <InventoryImportWorkspace batches={batches} masterBatches={masterBatches} masterError={masterError} masterReview={masterReview} recovered={recovered} recoveredRunId={run_id ?? null} initialReceipt={initialReceipt} />
           <GroupComponentImport />
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 10px" }}>
