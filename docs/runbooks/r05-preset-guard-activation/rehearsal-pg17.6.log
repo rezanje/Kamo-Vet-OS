@@ -1,9 +1,12 @@
 PostgreSQL 17.6; guard pre-image md5 2af62273edc72a46899471ccb7c0edfb, post-image md5 a638bdea4dfe40865e312257f3936f56; migration sha256 e2d2ed479561fe75f590794114393fe14771d810b2ccfb410fd98940a4f60b2a
-server 17.6; pre-release fixture: 1:898d97c53c46a75e33ed1a9debe70472
+server 17.6; pre-release fixture: 1 preset
 01 preflight:
 info: server version||17.6|
 history: prerequisite 20261026000345 recorded|1|1|t
 history: 20261027090000 not yet recorded|0|0|t
+operator may replace the guard (owner or member of its owner role)|true|true|t
+operator may insert the history row|true|true|t
+history table needs no column besides version and name|0|0|t
 guard function present|true|true|t
 guard is not security definer|false|false|t
 guard search_path is empty|true|true|t
@@ -37,13 +40,16 @@ guard fingerprint = repository post-image|a638bdea4dfe40865e312257f3936f56|a638b
 promo_id clause present once|1|1|t
 historical report path present|true|true|t
 SUMMARY|0 failed|0 failed|
-after release activity (A saved 2, edited 1; B saved 1): 4:8f76708f8e4379dda2f63a414d012b67
+after release activity (A saved 2, edited 1; B saved 1): 4 presets
 02 apply again: refused R05_ACTIVATION_ALREADY_RECORDED, rows unchanged
-04 rollback: ok, rows identical 4:8f76708f8e4379dda2f63a414d012b67
+04 rollback: ok; every preset row identical (id, owner, name, href, saved_at compared by content hash)
 01 preflight after rollback:
 info: server version||17.6|
 history: prerequisite 20261026000345 recorded|1|1|t
 history: 20261027090000 not yet recorded|0|0|t
+operator may replace the guard (owner or member of its owner role)|true|true|t
+operator may insert the history row|true|true|t
+history table needs no column besides version and name|0|0|t
 guard function present|true|true|t
 guard is not security definer|false|false|t
 guard search_path is empty|true|true|t
@@ -80,4 +86,5 @@ historical report path present|true|true|t
 SUMMARY|0 failed|0 failed|
 after re-apply: rows identical before the edit; editing a post-release promo preset works again
 drifted target: preflight reports 2 failed (pre-image and dry-run fingerprints); apply refused R05_ACTIVATION_PREIMAGE_MISMATCH; function and history untouched
+failure after the guard was already replaced (history insert refused): whole apply rolled back; guard is the pre-image, no history row, preflight passes again
 REHEARSAL PASS

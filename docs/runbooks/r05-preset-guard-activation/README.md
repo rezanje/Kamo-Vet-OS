@@ -28,11 +28,17 @@ It does **not** touch any table, row, RLS policy, grant, role or credential.
 
 ## Procedure
 
+Run each file with `psql -X -v ON_ERROR_STOP=1 -f <file>` (recommended). In the Supabase SQL editor, which shows
+only the last statement's result, run `02`/`04` whole, but for `01`/`03` select and run only the
+`with checks … select …` statement (a plain read-only SELECT); otherwise the editor shows just the final `rollback`.
+
 1. Run `01`. Every row with an expected value must show `ok = true`; last row `SUMMARY | 0 failed`.
    It proves: prerequisite `20261026000345` recorded, `20261027090000` not recorded, the guard is exactly the
    repository pre-image (md5 `2af62273edc72a46899471ccb7c0edfb` on PostgreSQL 17.6), both anchors occur once,
-   the dry-run patch gives exactly the post-image (md5 `a638bdea4dfe40865e312257f3936f56`), and trigger, grants,
-   RLS and policy are as expected. **Any failed row: stop**, nothing has been changed.
+   the dry-run patch gives exactly the post-image (md5 `a638bdea4dfe40865e312257f3936f56`), the operator may replace
+   the function and insert the history row (and the history table needs no other column), and the trigger, the
+   function's EXECUTE grants, RLS and the policy are as expected (table grants are not checked; the patch does not
+   touch them). **Any failed row: stop**, nothing has been changed.
 2. Run `02` once. Success = no error. It takes a brief lock to replace one function (`lock_timeout 5s`,
    `statement_timeout 60s`). Any error aborts the whole transaction; nothing is half-applied. Error codes:
    `R05_ACTIVATION_ALREADY_RECORDED` (already applied, go to step 3), `R05_ACTIVATION_PREIMAGE_MISMATCH`
@@ -62,16 +68,21 @@ deleted.** Presets saved or edited after activation remain readable and openable
 guard refuses saving or editing a preset that uses `promo_id` or the historical report (deleting still works).
 Re-activation after a rollback is the same steps 1–3 (`01` passes again; the info row then counts those presets).
 
+A rollback is temporary by nature: the migration file stays in the repository, so the next `supabase db push` /
+migration run would apply it again. Making a rollback permanent needs a follow-up revert migration in a PR.
+
 ## Rehearsal (fictional fixtures)
 
 `python3 docs/runbooks/r05-preset-guard-activation/build-and-verify.py <postgresql-17.6-bin>` regenerates the
 four files, fails if they differ from the committed ones, then rehearses on a throwaway local cluster
 (`scripts/native_postgres.py`: unix socket only, no Docker, no DB URL, deleted afterwards):
 preflight → apply → readback → two users save and edit presets after release → refused second apply (rows
-unchanged) → rollback (rows byte-identical) → preflight passes → old guard refuses new promo saves and edits →
+unchanged) → rollback (every row identical: id, owner, name, href, saved_at compared by content hash) → preflight passes → old guard refuses new promo saves and edits →
 second rollback refused → re-apply → readback → rows identical, edits work again; and on a separate cluster with
-a drifted guard: preflight fails and apply is refused with function and history untouched.
+a drifted guard: preflight fails and apply is refused with function and history untouched; and on a third cluster
+a failure after the guard is already replaced (history insert refused): the whole apply rolls back, the guard is
+the pre-image again and no history row exists.
 Result: `rehearsal-pg17.6.log`. PostgreSQL 17.6 binaries came from npm `@embedded-postgres/linux-x64@17.6.0-beta.15`
 (registry integrity `sha512-f04/oSB35rc2SB4WbJLvUGeh8eNnnwbsIkLXLf86Bi43vOc7H07Znx1zROwpi08mGkUFmNrpAcXyL4Yu8YRgMw==`
-verified); the local `psql` client was 16.15. The fingerprints are version-specific: on another server
-version the generated files differ and the check fails by design.
+verified); the local `psql` client was 16.15. The fingerprints were measured on 17.6. On another server version
+the function text, and so the fingerprint, may differ; then preflight fails and apply refuses, which is safe.

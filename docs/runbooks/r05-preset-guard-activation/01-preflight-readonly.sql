@@ -7,6 +7,11 @@ with checks(check_name, expected, actual) as (values
   ('info: server version', '', current_setting('server_version')),
   ('history: prerequisite 20261026000345 recorded', '1', (select count(*)::text from supabase_migrations.schema_migrations where version='20261026000345')),
   ('history: 20261027090000 not yet recorded', '0', (select count(*)::text from supabase_migrations.schema_migrations where version='20261027090000')),
+  ('operator may replace the guard (owner or member of its owner role)', 'true', coalesce((select pg_has_role(current_user, proowner, 'USAGE')::text from pg_proc where oid=to_regprocedure('public.guard_private_report_preset()')),'missing')),
+  ('operator may insert the history row', 'true', has_table_privilege('supabase_migrations.schema_migrations','INSERT')::text),
+  ('history table needs no column besides version and name', '0', (select count(*)::text from information_schema.columns
+     where table_schema='supabase_migrations' and table_name='schema_migrations' and is_nullable='NO' and column_default is null
+       and column_name not in ('version','name'))),
   ('guard function present', 'true', (to_regprocedure('public.guard_private_report_preset()') is not null)::text),
   ('guard is not security definer', 'false', coalesce((select prosecdef::text from pg_proc where oid=to_regprocedure('public.guard_private_report_preset()')),'missing')),
   ('guard search_path is empty', 'true', coalesce((select (proconfig @> array['search_path=""'])::text from pg_proc where oid=to_regprocedure('public.guard_private_report_preset()')),'missing')),
