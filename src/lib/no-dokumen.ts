@@ -115,6 +115,7 @@ export const FORMAT_BAWAAN: FormatDokumen[] = [
   { jenis: "RC", label: "Penerimaan Penjualan", pola: "RC.{YYYY}.{MM}.", digit: 5, kelompok: "Penjualan" },
   { jenis: "UJ", label: "Uang Muka Penjualan", pola: "UJ.{YYYY}.{MM}.", digit: 5, kelompok: "Penjualan" },
   { jenis: "RJ", label: "Retur Penjualan", pola: "RJ.{YYYY}.{MM}.", digit: 5, kelompok: "Penjualan" },
+  { jenis: "RJK", label: "Refund Invoice Klinik", pola: "RJK.{YYYY}.{MM}.", digit: 5, kelompok: "Penjualan" },
 
   { jenis: "POS", label: "Struk Kasir", pola: "POS-{YYYY}{MM}{DD}-", digit: 4, kelompok: "Kasir & Klinik" },
   { jenis: "ONL", label: "Pesanan Online", pola: "ONL-{YYYY}{MM}{DD}-", digit: 4, kelompok: "Kasir & Klinik" },

@@ -1,0 +1,12 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: /var/folders/xr/gmtpnd917t3bpy6jj70hz9p80000gn/T/vetos-k06-k14-native-goqpw_d2
+Applied 275 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+preflight.sql -> SUMMARY: 0 failed|t
+apply.sql -> applied twice (idempotent)
+readback.sql -> SUMMARY: 0 failed|t
+acceptance -> PASS K06/K14 continuation, idempotency, one live stay per patient, role gate, pet hotel log, separate billing
+preflight.sql -> SUMMARY: 0 failed|t
+rollback.sql -> clean rollback, preflight passes again
+rollback.sql -> refused once real continuation/pet hotel data exists (as designed)
+PASS K06/K14 owner package rehearsal
+Removed owned PostgreSQL test container and volumes.
+cleanup: temp cluster removed

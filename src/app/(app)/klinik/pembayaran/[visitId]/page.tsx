@@ -3,6 +3,7 @@ import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/ser
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
+import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
@@ -159,6 +160,7 @@ export default async function PembayaranPage({
   const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
 
   const lunas = invoice?.paid_status === "Lunas";
+  const refundData = invoice && lunas && !invoice.correction_pending ? await loadClinicRefundData(supabase, invoice.id) : null;
 
   // Kasir menyebut angka ke pemilik SEBELUM memilih metode bayar. Kunjungan yang
   // invoicenya belum dibuat tidak punya total tersimpan, jadi dihitung di sini
@@ -516,6 +518,15 @@ export default async function PembayaranPage({
               </div>
             </div>
           </div>
+
+          {/* J03: refund per baris untuk invoice lunas. */}
+          {refundData && (
+            <ClinicRefundPanel data={refundData} visitId={visit.id} userId={draftUser?.id}
+              invoice={{ id: invoice.id, subtotal: Number(invoice.subtotal), total: Number(invoice.total) }}
+              lines={(invItems ?? []).map((l) => ({ id: l.id, deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis, item_id: l.item_id,
+                diskon_persen: l.diskon_persen === null ? null : Number(l.diskon_persen), compound_recipe_id: l.compound_recipe_id, satuan: l.satuan }))}
+              message={success && !["bayar", "edit", "rombongan", "reissue"].includes(success) ? success : undefined} />
+          )}
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
           {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (

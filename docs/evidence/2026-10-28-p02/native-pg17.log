@@ -1,0 +1,5 @@
+Applied 276 repository migrations to isolated PostgreSQL 17.11 (Homebrew) with fictional auth/storage shims.
+PASS purchase_invoice_line_correction.sql (fifo)
+PASS purchase_invoice_line_correction.sql (average)
+Stopped and removed the throwaway PostgreSQL cluster.
+rc=0

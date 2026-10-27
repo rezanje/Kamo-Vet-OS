@@ -2,6 +2,7 @@
 
 // ponytail: server actions — buatPO, tambahSupplier, updatePOStatus (+ receiving logic).
 
+import { priceCheckBeforeSave } from "@/lib/purchase-price-check";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { pesanSimpanGagal } from "@/lib/barang";
 import { revalidatePath } from "next/cache";
@@ -58,6 +59,9 @@ export async function buatPO(formData: FormData) {
   });
 
   if (!requestKey || requestKey.length > 120) redirect("/pembelian/baru?error=" + encodeURIComponent("Formulir PO belum siap. Muat ulang lalu coba lagi."));
+  // P04: harga menyimpang > 50% dari harga pokok acuan → tidak disimpan sebelum dikonfirmasi.
+  const hargaCek = await priceCheckBeforeSave(supabase, formData, rows.map(r => ({ item_id: r.item_id, harga: r.harga_beli, factor: r.faktor })));
+  if (hargaCek) redirect("/pembelian/baru?harga_cek=" + encodeURIComponent(hargaCek));
   const { prefix, digit } = await nomorBerikutnya(supabase, "PO", tanggal, {
     table: "purchase_orders", column: "no_po",
   });
