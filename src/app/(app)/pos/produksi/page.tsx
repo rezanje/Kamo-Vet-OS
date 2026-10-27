@@ -12,7 +12,7 @@ import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { kebutuhanBahan } from "@/lib/produksi";
 import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { ProductionAdhocForm } from "./ProductionAdhocForm";
-import { hrefPerintahProduksi } from "@/lib/tautan-dokumen";
+import { hrefDokumen, hrefNomorModul, hrefPerintahProduksi } from "@/lib/tautan-dokumen";
 import { ListPagination } from "@/components/ListPagination";
 
 // Produksi own brand: resep → perintah (bahan keluar) → penyelesaian (barang jadi
@@ -30,6 +30,20 @@ type MaterialSource={nama:string;warehouse_name?:string;qty:number;unit?:string;
 function FrozenMaterials({materials,fallback}:{materials?:MaterialSource[];fallback?:string}){
   if(!Array.isArray(materials))return null;
   return <details><summary>Bahan keluar tersimpan</summary><ul>{materials.filter(m=>m&&typeof m.nama==='string'&&typeof m.qty==='number'&&Number.isFinite(m.qty)).map((m,i)=><li key={i}>{m.nama} · {m.qty.toLocaleString('id-ID',{maximumFractionDigits:12})} {typeof m.unit==='string'?m.unit:''} · {typeof m.warehouse_name==='string'?m.warehouse_name:fallback??'Gudang sumber'}{typeof m.cost==='number'&&Number.isFinite(m.cost)?` · ${rp(m.cost)}`:''}</li>)}</ul></details>;
+}
+
+const jurnalHref = (no: string) => hrefNomorModul(no) ?? hrefDokumen(no);
+const qtyId = (n: number) => n.toLocaleString("id-ID", { maximumFractionDigits: 12 });
+// I08: pekerjaan (bahan keluar) -> penyelesaian (barang jadi masuk) dalam satu nomor
+// produksi; dua jurnal tahapnya dapat diklik.
+function JobCompletion({source,unit}:{source:{start_journal?:string|null;completion?:{qty:number;tanggal:string;value:number;journal:string|null;received_qty:number;received_value:number}|null};unit:string|null}){
+  const c = source.completion;
+  const ok = c && typeof c.qty === "number" && typeof c.received_qty === "number" && typeof c.received_value === "number";
+  return <div aria-label="Pekerjaan dan penyelesaian">
+    <p>Pekerjaan (bahan keluar): {typeof source.start_journal === "string" ? <Link href={jurnalHref(source.start_journal)}>{source.start_journal}</Link> : "tanpa jurnal (nilai nol)"}</p>
+    {!c ? <p>Penyelesaian: belum ada — barang jadi belum masuk.</p> : !ok ? <p role="alert">Bukti penyelesaian tidak lengkap.</p> :
+      <p>Penyelesaian {tgl(c.tanggal)}: masuk {qtyId(c.received_qty)} {unit ?? ""} senilai {rp(c.received_value)} · jurnal {typeof c.journal === "string" ? <Link href={jurnalHref(c.journal)}>{c.journal}</Link> : "tanpa jurnal (nilai nol)"}</p>}
+  </div>;
 }
 
 type Resep = {
@@ -84,7 +98,9 @@ export default async function ProduksiPage({
   const berjalan = runningOrders;
   const selected = selectedResult.data && selectedResult.data.no_produksi === requestedNumber
     ? selectedResult.data as Perintah : null;
-  type FrozenSource = {recipe_name:string;output_name:string;unit:string|null;planned_qty:number;materials?:MaterialSource[]};
+  type Completion = {qty:number;tanggal:string;value:number;journal:string|null;received_qty:number;received_value:number};
+  type FrozenSource = {recipe_name:string;output_name:string;unit:string|null;planned_qty:number;materials?:MaterialSource[];
+    branch_name?:string|null;start_journal?:string|null;completion?:Completion|null};
   const sourceIds = [...new Set([...perintah.map(p => p.id), ...(selected ? [selected.id] : [])])];
   let sourceMap: Record<string,FrozenSource> = {};
   let sourceFailed = false;
@@ -141,7 +157,9 @@ export default async function ProduksiPage({
               <p>{selectedSource.recipe_name} · {selectedSource.output_name} · {selected.status === "selesai" ? "Selesai" : selected.status === "berjalan" ? "Berjalan" : "Batal"}</p>
               <p>Rencana {selectedSource.planned_qty.toLocaleString("id-ID")} {selectedSource.unit ?? ""} · Jadi {Number(selected.qty_jadi).toLocaleString("id-ID")} · Modal bahan {rp(Number(selected.nilai_bahan))}</p>
               <p>Mulai {tgl(selected.tanggal)} · Selesai {tgl(selected.tanggal_selesai)} · Gudang {one(selected.warehouses)?.name ?? "—"}</p>
+              {selectedSource.branch_name && <p>Cabang (konteks biaya) {selectedSource.branch_name}</p>}
               <FrozenMaterials materials={selectedSource.materials} fallback={one(selected.warehouses)?.name}/>
+              <JobCompletion source={selectedSource} unit={selectedSource.unit}/>
             </>}
       </section>}
 

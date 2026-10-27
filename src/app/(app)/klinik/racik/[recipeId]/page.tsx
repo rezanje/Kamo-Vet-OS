@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { advanceRecipeStatus, voidRecipe, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readCompleteList } from "@/lib/checked-list";
+import { hrefAsalBahan, hrefInvoiceTujuan, labelAsalBahan, readCompoundTrace, type CompoundTrace } from "@/lib/compound-trace";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -80,6 +81,10 @@ export default async function RacikDetailPage({
     return invoice && invoice.id === line.invoice_id && invoice.visit_id === visit?.id ? [[invoice.id, invoice] as const] : [];
   })).values());
 
+  // I09: bahan terpakai, asal lapisannya, mutasi stok bahan dan invoice tujuan.
+  // Dibaca saja; induk racikan tetap tanpa stok.
+  const trace: CompoundTrace | null = await readCompoundTrace(supabase, recipeId).catch(() => null);
+
   // Semua racikan dalam resep yang sama (referensi: daftar bisa >1 baris).
   const { data: siblings, error: siblingsError } = mr
     ? await supabase
@@ -129,6 +134,39 @@ export default async function RacikDetailPage({
         {sellingParent ? <p>Induk penjualan: <Link href={`/pos/sku/${encodeURIComponent(sellingParent.sale_item_id)}`}>{sellingParent.sale_name}</Link></p>
           : <p>{saleBindingError ? "Tautan induk belum dapat diperiksa. Coba muat ulang." : "Induk penjualan tersimpan belum tersedia untuk racikan ini."}</p>}
         {visit && mr && <p>Dokumen asal: <Link href={`/klinik/rekam-medis/${encodeURIComponent(visit.id)}`}>Kunjungan / rekam medis</Link></p>}
+      </div>
+
+      <div className="crm-sec" aria-label="Jejak bahan racikan" style={{ marginBottom: 14 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Jejak bahan racikan</div>
+        {!trace ? <p role="alert">Jejak bahan belum dapat diperiksa untuk akses Anda. Coba muat ulang.</p> : <>
+          {trace.materials.length === 0 ? <p>Belum ada bahan yang tercatat keluar untuk racikan ini.</p> : <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ minWidth: 640 }}>
+              <thead><tr><th>Bahan terpakai</th><th>Gudang</th><th style={{ textAlign: "right" }}>Jumlah</th><th>Asal bahan</th><th>Transaksi tujuan</th></tr></thead>
+              <tbody>
+                {trace.materials.map((m, i) => {
+                  const asal = hrefAsalBahan(m.origin);
+                  return <tr key={`${m.item_id}-${i}`}>
+                    <td>{m.item_name}{m.restored && <span className="bge o" style={{ marginLeft: 6 }}>Dikembalikan ke stok</span>}</td>
+                    <td>{m.warehouse_name}</td>
+                    <td style={{ textAlign: "right" }}>{m.qty.toLocaleString("id-ID", { maximumFractionDigits: 6 })} {m.unit}</td>
+                    <td>{labelAsalBahan(m.origin.source)}{asal ? <> · <Link href={asal.href}>{asal.label}</Link></> : null}</td>
+                    <td>{m.invoice ? (m.invoice.voided ? <span>{m.invoice.invoice_no ?? "Invoice"} · Dibatalkan</span>
+                      : <Link href={hrefInvoiceTujuan(m.invoice)}>{m.invoice.invoice_no ?? "Buka invoice"}</Link>)
+                      : <span style={{ color: "var(--tm)" }}>Belum ditagihkan</span>}{cust?.name ? ` · ${cust.name}` : ""}</td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>}
+          {trace.moves.length > 0 && <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 600 }}>Mutasi stok bahan</div>
+            <ul style={{ fontSize: 11.5, margin: "4px 0 0 16px" }}>
+              {trace.moves.map((mv, i) => <li key={i}>
+                {mv.tanggal} · <Link href={stockCardHref(mv.item_id, mv.tanggal)}>{mv.item_name}</Link> · {mv.warehouse_name} · {mv.qty < 0 ? "keluar" : "masuk kembali"} {Math.abs(mv.qty).toLocaleString("id-ID", { maximumFractionDigits: 6 })} {mv.unit}
+              </li>)}
+            </ul>
+          </div>}
+        </>}
       </div>
 
       {/* Judul besar (referensi) */}

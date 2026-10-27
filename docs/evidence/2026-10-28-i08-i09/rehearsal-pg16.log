@@ -1,0 +1,14 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew)
+apply.sql sha256 72c3fba63f864867e244d67191b7ae74cc0951ed400b90f9d54627e5eada65b4
+Applied 277 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+PASS preflight.sql (7 checks)
+PASS readback.sql (6 checks)
+PASS readback.sql (6 checks)
+PASS apply is idempotent
+PASS rollback restores exact pre-apply function bodies
+PASS preflight.sql (7 checks)
+PASS readback.sql (6 checks)
+PASS production_atomic.sql
+PASS production_adhoc.sql
+PASS production_average.sql
+PASS production_trace_i08_i09.sql
