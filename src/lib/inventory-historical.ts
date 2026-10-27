@@ -52,7 +52,11 @@ function eventPositions(events: CostEvent[]) {
     if (knownPreviousValue !== null && value !== null && valueDelta !== null && !monetaryLink) {
       throw new ReportInputError("Riwayat nilai persediaan tidak lengkap; periksa event sumber sebelum menarik nilai historis.");
     }
-    positions.set(key, { event, qty, value, complete: (previous?.complete ?? true) && monetaryLink });
+    // A recorded zero position carries exactly zero value (the valuation trigger and
+    // saved closing both take value_after as-is), so an earlier unknown cost no longer
+    // blocks later values; continuity is checked strictly again from this zero.
+    const knownZero = qty.isZero() && value !== null && value.isZero();
+    positions.set(key, { event, qty, value, complete: knownZero || ((previous?.complete ?? true) && monetaryLink) });
   }
   return [...positions.values()];
 }

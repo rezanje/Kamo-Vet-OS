@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { postInventoryAccounting, previewInventoryAccounting } from "./actions";
 import type { InventoryAccountingAccount, InventoryAccountingBatch, InventoryAccountingReceipt, InventoryAccountingReport } from "./types";
 import { inventoryBasisRows } from "@/lib/accurate-inventory-basis";
+import { initialStockBatchStage } from "@/lib/initial-stock-batch-status";
 
 const money = (value: number | string) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
 
@@ -69,7 +70,7 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
     <label style={{ display: "grid", gap: 5 }}>Batch Accurate
       <select aria-label="Batch Accurate" className="fi" value={runId} disabled={freezeRequest} onChange={event => { setRunId(event.target.value); clearPreview(); }}>
         <option value="">Pilih batch</option>
-        {batches.map(batch => <option key={batch.id} value={batch.id}>{batch.source_name} · {batch.as_of_date ?? "tanpa tanggal"} · {batch.status} · {batch.id.slice(0, 8)}</option>)}
+        {batches.map(batch => <option key={batch.id} value={batch.id}>{batch.source_name} · {batch.as_of_date ?? "tanpa tanggal"} · {initialStockBatchStage(batch.status)} · {batch.id.slice(0, 8)}</option>)}
       </select>
     </label>
     <label style={{ display: "grid", gap: 5 }}>Akun lawan ekuitas yang sudah diputuskan

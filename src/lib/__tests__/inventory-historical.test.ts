@@ -93,6 +93,32 @@ it("keeps branch and total unavailable when a source value is unknown, while pre
   expect(report.total).toBeNull();
 });
 
+it("restarts a known value after an unknown-cost position returns to zero, like the saved closing", async () => {
+  // Fictional item sold before any priced receipt: the recorded value is unknown
+  // while stock is minus, then exactly zero once the receipt brings qty back to zero.
+  const recovered = [
+    { id: 6, warehouse_id: "w1", item_id: "k", tanggal: "2026-10-22", source: "average-activation", source_ref: null, qty_delta: "0", value_delta: "0", qty_after: "0", value_after: "0", average_after: null },
+    { id: 7, warehouse_id: "w1", item_id: "k", tanggal: "2026-10-22", source: "sale", source_ref: "SALE-K1", qty_delta: "-1", value_delta: null, qty_after: "-1", value_after: null, average_after: null },
+    { id: 8, warehouse_id: "w1", item_id: "k", tanggal: "2026-10-23", source: "purchase", source_ref: "PO-K1", qty_delta: "1", value_delta: null, qty_after: "0", value_after: "0", average_after: "10" },
+    { id: 9, warehouse_id: "w1", item_id: "k", tanggal: "2026-10-23", source: "purchase", source_ref: "PO-K2", qty_delta: "5", value_delta: "50", qty_after: "5", value_after: "50", average_after: "10" },
+  ];
+  const fixture = { ...tables(), inventory_cost_events: [...events, ...recovered], items: [
+    { id: "i", code: "SKU", name: "Obat lama", unit: "ml" },
+    { id: "k", code: "SKU-K", name: "Barang minus", unit: "pcs" },
+  ] };
+  // While the minus position has no cost, the item and its totals stay unavailable.
+  const during = await loadHistoricalInventory(clientFixture({ tables: fixture }).client, { tanggal: "2026-10-22" });
+  expect(during.rows.find(row => row.itemCode === "SKU-K")).toMatchObject({ qty: "-1", value: null });
+  expect(during.total).toBeNull();
+  const after = await loadHistoricalInventory(clientFixture({ tables: fixture }).client, { tanggal: "2026-10-23" });
+  expect(after.rows.find(row => row.itemCode === "SKU-K")).toMatchObject({ qty: "5", value: "50" });
+  expect(after.summary.map(row => row.value)).toEqual(["350", "93.125"]);
+  expect(after.total).toBe("443.125");
+  // A contradiction after the restart is still rejected rather than accepted.
+  const contradicted = { ...fixture, inventory_cost_events: [...events, ...recovered.slice(0, 3), { ...recovered[3], value_after: "49" }] };
+  await expect(loadHistoricalInventory(clientFixture({ tables: contradicted }).client, { tanggal: "2026-10-23" })).rejects.toThrow("Riwayat nilai");
+});
+
 it("shows a recorded negative position without deciding its accounting policy", async () => {
   const negativeEvents = [
     { ...events[0], qty_delta: "0", value_delta: "0", qty_after: "0", value_after: "0", average_after: null },
