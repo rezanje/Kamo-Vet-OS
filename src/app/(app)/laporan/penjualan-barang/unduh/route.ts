@@ -28,7 +28,8 @@ export async function GET(request: Request) {
   const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan", "Biaya Admin"].includes(jenisInput ?? "") ? jenisInput! : kanal === "Klinik" ? "Racikan" : "Barang";
   const q = (params.get("q") ?? "").trim().slice(0, 120);
   const cabangId = (params.get("cabang_id") ?? "").slice(0, 80);
-  const { rows, cabangOptions, pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId });
+  const pelaksanaId = (params.get("pelaksana_id") ?? "").slice(0, 80);
+  const { rows, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId, pelaksanaId });
   if (pesanError) return NextResponse.json({ error: pesanError }, { status: 400 });
 
   const headers = {
@@ -43,7 +44,8 @@ export async function GET(request: Request) {
       ? "Neto invoice klinik dibagi ke tiap baris setelah diskon invoice, termasuk promo, voucher, poin, dan pembulatan. Pajak dan DP tidak masuk nilai baris. Racikan dicocokkan dengan resep pada kunjungan yang sama."
       : "Nilai setelah diskon item. Diskon tingkat nota, retur, dan pajak belum dibagi ke tiap baris; total dapat berbeda dari pembayaran.";
   const metadata: (string | number)[][] = [["Rincian penjualan per barang"], ["Dari tanggal WIB", dari], ["Sampai tanggal WIB", sampai],
-    ["Sumber", kanal], ["Jenis", jenis], ["Cabang", cabangId ? `${cabangOptions.find(branch => branch.id === cabangId)?.name ?? "Tidak tersedia"} · ${cabangId}` : "Semua cabang yang dapat diakses"], ["Cari", q], ["Baris penjualan", rows.length], ["Jumlah terjual", qtyTotal],
+    ["Sumber", kanal], ["Jenis", jenis], ["Cabang", cabangId ? `${cabangOptions.find(branch => branch.id === cabangId)?.name ?? "Tidak tersedia"} · ${cabangId}` : "Semua cabang yang dapat diakses"],
+    ["Pelaksana tersimpan", pelaksanaId ? `${pelaksanaOptions.find(person => person.id === pelaksanaId)?.nama ?? "Tidak tersedia"} · ${pelaksanaId}` : "Semua pelaksana"], ["Cari", q], ["Baris penjualan", rows.length], ["Jumlah terjual", qtyTotal],
     [kanal === "POS" ? "Neto barang sebelum retur dan fee (Rp)" : kanal === "Klinik" ? "Neto baris sebelum pajak (Rp)" : "Nilai setelah diskon item (Rp)", nilaiTotal], ["Keterangan", context]];
   const filename = `penjualan-barang-${dari}-${sampai}`;
   if (params.get("format") === "xlsx") {

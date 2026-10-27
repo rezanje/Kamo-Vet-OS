@@ -32,7 +32,7 @@ it('filters one or multiple branches without changing global mutation authorizat
  const one = await loadInventoryClosing(fixture.client, 'c1', ['b2']);
  expect(one.values.map(r => r.warehouse_id)).toEqual(['w2']);
  expect(one.history[0].scopedValue).toBe(40); expect(one.allBranches).toBe(true);
- expect(one.branchSummary).toEqual([{ id: 'b2', name: 'Dua', count: 1, value: 40 }]);
+ expect(one.branchSummary).toEqual([{ id: 'b2', name: 'Dua', count: 1, value: 40, ledgerValue: null, difference: null }]);
  const both = await loadInventoryClosing(fixture.client, 'c1', ['b1', 'b2', 'b1']);
  expect(both.branchSummary.map(r => r.value)).toEqual([160, 40]);
  expect(both.history[0].scopedValue).toBe(200);
@@ -58,4 +58,54 @@ it('reads more than 1000 historical rows and keeps exact decimal branch/total su
  expect(report.values).toHaveLength(1201);
  expect(report.history[0].scopedValue).toBe(120.1);
  expect(report.branchSummary.map(r=>r.value)).toEqual([60.1,60]);
+});
+
+it('compares saved branch values with the currently visible GL 1301 as of the saved close date', async () => {
+ const tables = { ...historicalTables(), coa_accounts:[{id:'a1301',code:'1301'}], journal_lines:[
+  {id:'j1',account_id:'a1301',debit:'160.00',credit:'0',journal_entries:{tanggal:'2026-09-01',branch_id:'b1'}},
+  {id:'j2',account_id:'a1301',debit:'30.00',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:'b2'}},
+  {id:'j3',account_id:'a1301',debit:'0',credit:'5.00',journal_entries:{tanggal:'2026-10-01',branch_id:'b2'}},
+  {id:'j4',account_id:'a1301',debit:'12.00',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:null}},
+  {id:'j5',account_id:'other',debit:'1000',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:'b1'}},
+ ] };
+ const {client,records} = clientFixture({tables});
+ const report = await loadInventoryClosing(client,'c1');
+ expect(report.branchSummary.map(r=>[r.value,r.ledgerValue,r.difference])).toEqual([[160,160,0],[40,30,10]]);
+ expect(report.scopedLedgerValue).toBe(190);
+ expect(report.scopedDifference).toBe(10);
+ expect(report.unallocatedLedger).toBe(12);
+ expect(records).toContainEqual({table:'journal_lines',method:'lte',args:['journal_entries.tanggal','2026-09-30']});
+});
+
+it('does not include a denied branch or branchless journal in an accessible branch comparison', async () => {
+ const report = await loadInventoryClosing(clientFixture({deniedBranch:'b2',tables:{...historicalTables(),
+  coa_accounts:[{id:'a1301',code:'1301'}],journal_lines:[
+   {id:'j1',account_id:'a1301',debit:160,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:'b1'}},
+   {id:'j2',account_id:'a1301',debit:999,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:'b2'}},
+   {id:'j3',account_id:'a1301',debit:7,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:null}},
+  ],
+ }}).client,'c1');
+ expect(report.branchSummary).toEqual([{id:'b1',name:'Satu',count:1,value:160,ledgerValue:160,difference:0}]);
+ expect(report.scopedLedgerValue).toBe(160);
+ expect(report.allBranches).toBe(false);
+});
+
+it('keeps missing GL account and incomplete snapshot values unavailable instead of treating them as zero', async () => {
+ const tables = historicalTables();
+ const source = tables.inventory_month_values as Array<Record<string, unknown>>;
+ source[1].value = null;
+ const report = await loadInventoryClosing(clientFixture({tables}).client,'c1');
+ expect(report.branchSummary[0].ledgerValue).toBeNull();
+ expect(report.branchSummary[1].difference).toBeNull();
+ expect(report.scopedDifference).toBeNull();
+});
+
+it('fails closed when a GL 1301 read is incomplete or has invalid money or missing document', async () => {
+ const base = { ...historicalTables(), coa_accounts:[{id:'a1301',code:'1301'}], journal_lines:[
+  {id:'j1',account_id:'a1301',debit:'1',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:'b1'}},
+ ] };
+ await expect(loadInventoryClosing(clientFixture({tables:base,errorTable:'journal_lines'}).client,'c1')).rejects.toThrow('read failed');
+ await expect(loadInventoryClosing(clientFixture({tables:base,missingCountTable:'journal_lines'}).client,'c1')).rejects.toThrow('jumlah pasti');
+ await expect(loadInventoryClosing(clientFixture({tables:{...base,journal_lines:[{...base.journal_lines[0],debit:'NaN'}]}}).client,'c1')).rejects.toThrow('tidak sah');
+ await expect(loadInventoryClosing(clientFixture({tables:{...base,journal_lines:[{...base.journal_lines[0],journal_entries:{tanggal:'2026-09-30'}}]}}).client,'c1')).rejects.toThrow('Cabang jurnal');
 });

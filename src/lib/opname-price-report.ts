@@ -13,9 +13,13 @@ type SourceResult = { id: string; order_id: string; no_hasil: string; tanggal: s
 export type OpnameEntry = { resultId: string; orderId: string; resultNo: string; orderNo: string; date: string; warehouseId: string; warehouse: string; branchId: string; branch: string };
 export type OpnamePriceRow = { itemId: string; code: string; name: string; unit: string; systemQty: number; physicalQty: number; difference: number;
   unitCost: string | null; costSource: string; branchPrice: string; modalDifference: string | null; saleDifference: string; modalDifferenceSource: string; stockAfter: number; stockValueAfter: string | null };
+export type OpnameJournalReview = { status: "cocok" | "perlu-periksa" | "tanpa-selisih" | "tidak-tersedia";
+  expectedGain: string | null; expectedLoss: string | null; ledgerGain: string; ledgerLoss: string;
+  journals: { id: string; number: string; debit: string; credit: string; accounts: string[]; valid: boolean }[] };
 export type OpnamePriceReport = { filters: OpnameFilters; entries: OpnameEntry[]; branches: { id: string; name: string }[];
   selected: OpnameEntry | null; scope: "Sebagian" | "Seluruh" | null; method: string | null; revision: number | null;
-  rows: OpnamePriceRow[]; shown: OpnamePriceRow[]; plus: string | null; minus: string | null; net: string | null; unavailable: number; legacy: boolean };
+  rows: OpnamePriceRow[]; shown: OpnamePriceRow[]; plus: string | null; minus: string | null; net: string | null; unavailable: number; legacy: boolean;
+  journalReview: OpnameJournalReview | null };
 
 export function opnameFilters(params: OpnameReportParams): OpnameFilters {
   const today = hariIniWIB();
@@ -61,6 +65,43 @@ export function opnameSummary(rows: OpnamePriceRow[], basis: OpnameFilters["dasa
   }
   return { plus: unavailable ? null : plus.toFixed(), minus: unavailable ? null : minus.toFixed(),
     net: unavailable ? null : plus.plus(minus).toFixed(), unavailable };
+}
+
+type SourceJournal = { id: string; no_jurnal: string | null; tanggal: string; branch_id: string | null; voided_at: string | null;
+  journal_lines: { debit: number | string; credit: number | string; coa_accounts: { code: string; name: string } | null }[] };
+
+// Read the source journals by exact result number. This is a review of the original
+// posting, not a repair of historical effects or a policy decision about the contra account.
+export async function loadOpnameJournalReview(client: SupabaseClient, selected: OpnameEntry, rows: OpnamePriceRow[], legacy: boolean): Promise<OpnameJournalReview> {
+  const source = await readReportRows<SourceJournal>(async (from, to) => {
+    const r = await client.from("journal_entries")
+      .select("id,no_jurnal,tanggal,branch_id,voided_at,journal_lines(debit,credit,coa_accounts(code,name))", { count: "exact" })
+      .eq("source", "opname").eq("source_ref", selected.resultNo).order("id").range(from, to);
+    return { data: r.data as unknown as SourceJournal[] | null, error: r.error, count: r.count };
+  });
+  if (source.length > 100) throw new ReportInputError("Terlalu banyak jurnal untuk satu hasil opname; periksa nomor sumber");
+  let ledgerGain = new Decimal(0), ledgerLoss = new Decimal(0);
+  const journals = source.map(entry => {
+    let debit = new Decimal(0), credit = new Decimal(0);
+    const accounts = new Set<string>();
+    if (!Array.isArray(entry.journal_lines)) throw new ReportInputError("Rincian jurnal opname tidak tersedia");
+    for (const line of entry.journal_lines) {
+      const dr = new Decimal(String(line.debit)), cr = new Decimal(String(line.credit));
+      if (!dr.isFinite() || !cr.isFinite() || dr.lt(0) || cr.lt(0) || !line.coa_accounts?.code) throw new ReportInputError("Rincian jurnal opname tidak valid");
+      debit = debit.plus(dr); credit = credit.plus(cr);
+      accounts.add(`${line.coa_accounts.code} ${line.coa_accounts.name}`);
+      if (line.coa_accounts.code === "1301") { ledgerGain = ledgerGain.plus(dr); ledgerLoss = ledgerLoss.plus(cr); }
+    }
+    return { id: entry.id, number: entry.no_jurnal ?? entry.id, debit: debit.toFixed(), credit: credit.toFixed(), accounts: [...accounts],
+      valid: entry.tanggal === selected.date && entry.branch_id === selected.branchId && !entry.voided_at && entry.journal_lines.length > 0 && debit.eq(credit) };
+  });
+  const expected = legacy ? null : opnameSummary(rows, "modal");
+  const expectedGain = expected?.plus ?? null, expectedLoss = expected?.minus === null || expected === null ? null : new Decimal(expected.minus).neg().toFixed();
+  const matches = expectedGain !== null && expectedLoss !== null && ledgerGain.eq(expectedGain) && ledgerLoss.eq(expectedLoss)
+    && journals.every(row => row.valid) && (journals.length > 0 || new Decimal(expectedGain).eq(0) && new Decimal(expectedLoss).eq(0));
+  return { status: legacy || expectedGain === null || expectedLoss === null ? "tidak-tersedia" :
+      matches ? journals.length ? "cocok" : "tanpa-selisih" : "perlu-periksa",
+    expectedGain, expectedLoss, ledgerGain: ledgerGain.toFixed(), ledgerLoss: ledgerLoss.toFixed(), journals };
 }
 
 export async function loadOpnamePriceReport(client: SupabaseClient, params: OpnameReportParams): Promise<OpnamePriceReport> {
@@ -139,5 +180,6 @@ export async function loadOpnamePriceReport(client: SupabaseClient, params: Opna
   const shown = rows.filter(row => filters.arah === "semua" || (filters.arah === "lebih" && row.difference > 0)
     || (filters.arah === "kurang" && row.difference < 0) || (filters.arah === "sama" && row.difference === 0));
   const summary = opnameSummary(shown, filters.dasar);
-  return { filters, entries, branches: names, selected, scope, method, revision, rows, shown, legacy, ...summary };
+  const journalReview = selected ? await loadOpnameJournalReview(client, selected, rows, legacy) : null;
+  return { filters, entries, branches: names, selected, scope, method, revision, rows, shown, legacy, journalReview, ...summary };
 }

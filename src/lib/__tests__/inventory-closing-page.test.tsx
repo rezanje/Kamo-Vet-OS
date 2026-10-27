@@ -39,3 +39,22 @@ it('shows branch subtotals from the selected historical snapshot and preserves f
  expect(html).toContain('snapshot=c1&amp;cabang=b1&amp;halaman=2');
  expect(html).toContain('tanggal lain');
 });
+
+it('shows per-branch ledger comparison, source links, and separately flags unallocated GL', async () => {
+ fixture.client = clientFixture({tables:{
+  inventory_month_closes:[{id:'c1',period:'2026-09-01',closed_through:'2026-09-30',closed_at:'2026-10-01T00:00:00Z'}],
+  inventory_month_values:[{close_id:'c1',warehouse_id:'w1',item_id:'i',qty:2,average_cost:80,value:160}],
+  coa_accounts:[{id:'a1301',code:'1301'}],
+  journal_lines:[
+   {id:'j1',account_id:'a1301',debit:'150',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:'b1'}},
+   {id:'j2',account_id:'a1301',debit:'5',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:null}},
+  ],
+ }}).client;
+ const html = renderToStaticMarkup(await ClosingPage({searchParams:Promise.resolve({snapshot:'c1'})}));
+ expect(html).toContain('GL 1301 as-of');
+ expect(html).toContain('Rp 150,00');
+ expect(html).toContain('Rp 10,00');
+ expect(html).toContain('/keuangan/buku-besar?akun=1301&amp;sampai=2026-09-30&amp;cabang=b1');
+ expect(html).toContain('Jurnal 1301 tanpa cabang');
+ expect(html).toContain('tidak termasuk total GL cabang');
+});

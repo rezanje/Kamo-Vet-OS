@@ -20,7 +20,7 @@ beforeEach(() => {
 it.each(["csv", "xlsx", "print"])("exports all selected rows, applied filters and complete totals as %s independently of display page", async format => {
   const response = await GET(new Request(`https://example.test/laporan/penjualan-barang/unduh?dari=2026-10-01&sampai=2026-10-04&kanal=Klinik&jenis=Racikan&q=obat&halaman=2&format=${format}`));
   expect(response.status).toBe(200);
-  expect(mocks.load).toHaveBeenCalledWith({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", q: "obat", cabangId: "" });
+  expect(mocks.load).toHaveBeenCalledWith({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", q: "obat", cabangId: "", pelaksanaId: "" });
   if (format === "xlsx") {
     expect(response.headers.get("Content-Type")).toContain("spreadsheetml");
     const book = new ExcelJS.Workbook();
@@ -47,6 +47,17 @@ it("provides only complete export links on the paginated report", async () => {
   expect(html).toContain("format=xlsx");
   expect(html).toContain("format=print");
   expect(html).toContain("q=obat");
+});
+
+it("preserves the exact saved performer filter in page navigation and export metadata", async () => {
+  mocks.load.mockResolvedValue({ rows, cabangOptions: [], pelaksanaOptions: [{ id: "doctor-a", nama: "Dokter: Nama Sama" }], pesanError: "", nilaiTotal: 38950, qtyTotal: 410 });
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", pelaksana_id: "doctor-a", halaman: "2" }) }));
+  expect(html).toContain("pelaksana_id=doctor-a");
+  expect(html).toContain("Dokter: Nama Sama");
+  const response = await GET(new Request("https://example.test/laporan/penjualan-barang/unduh?dari=2026-10-01&sampai=2026-10-04&kanal=Klinik&jenis=Racikan&pelaksana_id=doctor-a"));
+  expect(response.status).toBe(200);
+  expect(mocks.load).toHaveBeenLastCalledWith({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", q: "", cabangId: "", pelaksanaId: "doctor-a" });
+  expect(await response.text()).toContain("Dokter: Nama Sama · doctor-a");
 });
 
 it("does not read report data when download authorization fails", async () => {
