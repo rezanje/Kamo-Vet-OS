@@ -35,6 +35,24 @@ FREEZE, TEARDOWN = HERE / '04-freeze-if-decided.sql', HERE / '05-teardown-empty-
 FUNCS = ['public.purchase_module_access()', 'public.purchase_correction_request_visible(uuid,uuid)',
          'public.create_purchase_correction_request(text,uuid,text,text)', 'public.process_purchase_correction_request(uuid,text)']
 INDEXES = ['purchase_correction_requests_queue', 'purchase_correction_requests_po', 'purchase_correction_requests_invoice']
+TABLE = f"to_regclass('public.{NAME}')"
+GRANTS = "(select coalesce(string_agg(case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end || ':' || a.privilege_type, ',' order by 1), 'none') from aclexplode({acl}) a where a.grantee <> {owner})"
+# Exact catalog shape of everything the migration creates. Expected values are read from the rehearsal cluster
+# right after applying the migration; grants exclude the owner's own privileges (PG17 adds MAINTAIN).
+SHAPE = [('owner: table', f"(select pg_get_userbyid(relowner) from pg_class where oid = {TABLE})"),
+         ('grants: table (all roles except owner)', GRANTS.format(acl=f'(select relacl from pg_class where oid = {TABLE})', owner=f'(select relowner from pg_class where oid = {TABLE})')),
+         ('rls: enabled / forced', f"(select relrowsecurity || ' / ' || relforcerowsecurity from pg_class where oid = {TABLE})"),
+         ('policies (all on table)', f"(select string_agg(policyname || ' ' || permissive || ' ' || cmd || ' ' || roles::text || ' ' || coalesce(qual, '-') || ' ' || coalesce(with_check, '-'), ' ; ' order by policyname) from pg_policies where schemaname = 'public' and tablename = '{NAME}')"),
+         ('triggers (all on table)', f"(select string_agg(pg_get_triggerdef(oid) || ' enabled=' || tgenabled::text, ' ; ' order by tgname) from pg_trigger where tgrelid = {TABLE} and not tgisinternal)"),
+         ('constraints md5', f"(select md5(string_agg(conname || ' ' || pg_get_constraintdef(oid), ' ; ' order by conname)) from pg_constraint where conrelid = {TABLE})"),
+         ('indexes md5', f"(select md5(string_agg(pg_get_indexdef(indexrelid), ' ; ' order by indexrelid::regclass::text)) from pg_index where indrelid = {TABLE})"),
+         ('columns md5', f"(select md5(string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || ' ' || a.attnotnull || ' ' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-'), ' ; ' order by a.attnum)) from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum where a.attrelid = {TABLE} and a.attnum > 0 and not a.attisdropped)")]
+for _f in ['public.purchase_module_access()', 'public.purchase_correction_request_visible(uuid,uuid)',
+           'public.create_purchase_correction_request(text,uuid,text,text)', 'public.process_purchase_correction_request(uuid,text)']:
+    _p = f"(select {{}} from pg_proc where oid = to_regprocedure('{_f}'))"
+    SHAPE += [('fingerprint (same as tested): ' + _f, _p.format('md5(prosrc)')),
+              ('owner / volatility / security definer / config: ' + _f, _p.format("pg_get_userbyid(proowner) || ' ' || provolatile::text || ' ' || prosecdef || ' ' || coalesce(array_to_string(proconfig, ','), '-')")),
+              ('grants (all roles except owner): ' + _f, GRANTS.format(acl=f"(select proacl from pg_proc where oid = to_regprocedure('{_f}'))", owner=f"(select proowner from pg_proc where oid = to_regprocedure('{_f}'))"))]
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--server-bin', required=True, type=Path)
@@ -101,7 +119,7 @@ def checks(lines):
         f"select {lit(n)}, {lit(e)}, ({a})::text" for n, e, a in lines) + CHECKS_TAIL
 
 
-def render(fingerprints):
+def render(shape):
     deps = [('dependency: table ' + t, 'true', f"to_regclass('{t}') is not null") for t in
             ['public.purchase_orders', 'public.purchase_invoices', 'public.branches', 'public.profiles', 'public.role_modules',
              'public.user_branches', 'public.activity_log_sources', 'public.activity_log']]
@@ -134,21 +152,10 @@ select * from (select 'newest ' || version, name from supabase_migrations.schema
 """
     post = [('info: server version', None, "current_setting('server_version')"),
             ('info: database', None, 'current_database()'),
-            ('applied: table present', 'true', f"to_regclass('public.{NAME}') is not null"),
-            ('applied: row level security on', 'true', f"(select relrowsecurity from pg_class where oid = to_regclass('public.{NAME}'))"),
-            ('applied: read policy', '1', f"(select count(*) from pg_policies where schemaname = 'public' and tablename = '{NAME}' and policyname = 'purchase_correction_requests_read' and cmd = 'SELECT')")]
+            ('applied: table present', 'true', f"{TABLE} is not null")]
     post += [('applied: index ' + i, 'true', f"to_regclass('public.{i}') is not null") for i in INDEXES]
-    for f in FUNCS:
-        post += [('fingerprint (same as tested): ' + f, fingerprints[f], f"(select md5(prosrc) from pg_proc where oid = to_regprocedure('{f}'))"),
-                 ('security definer, empty search_path: ' + f, 'true search_path=""', f"(select prosecdef::text || ' ' || array_to_string(proconfig, ',') from pg_proc where oid = to_regprocedure('{f}'))"),
-                 ('grant: authenticated may call ' + f, 'true', f"has_function_privilege('authenticated', '{f}', 'EXECUTE')"),
-                 ('grant: anon may call ' + f, 'false', f"has_function_privilege('anon', '{f}', 'EXECUTE')"),
-                 ('grant: service_role may call ' + f, 'false', f"has_function_privilege('service_role', '{f}', 'EXECUTE')")]
-    for priv, expected in [('SELECT', 'true'), ('INSERT', 'false'), ('UPDATE', 'false'), ('DELETE', 'false')]:
-        post.append((f'table grant: authenticated {priv}', expected, f"has_table_privilege('authenticated', 'public.{NAME}', '{priv}')"))
-    post += [('table grant: anon SELECT', 'false', f"has_table_privilege('anon', 'public.{NAME}', 'SELECT')"),
-             ('activity log: source readers', '{OWNER}', f"(select reader_roles::text from public.activity_log_sources where entity = '{NAME}')"),
-             ('activity log: triggers enabled', '2', f"(select count(*) from pg_trigger where tgrelid = to_regclass('public.{NAME}') and tgname in ('a01_activity_change', 'a01_activity_delete') and tgenabled = 'O')"),
+    post += [(n, shape[n], sql) for n, sql in SHAPE]
+    post += [('activity log: source readers', '{OWNER}', f"(select reader_roles::text from public.activity_log_sources where entity = '{NAME}')"),
              ('info: request rows', None, f"(select count(*) from public.{NAME})")]
     readback = f"""-- A02 READBACK — READ ONLY. Generated by build-and-verify.py from {MIG.name}; do not edit by hand.
 -- Run right after the apply script, each query on its own.
@@ -212,6 +219,26 @@ def summary(path, letter='A'):
     return result[-1][2]
 
 
+DRIFT = [
+    f'grant select on public.{NAME} to service_role;', f'grant truncate on public.{NAME} to authenticated;',
+    f'grant insert on public.{NAME} to anon;', f'alter policy purchase_correction_requests_read on public.{NAME} to public;',
+    f'alter policy purchase_correction_requests_read on public.{NAME} using (true);',
+    f'create policy a02_drift on public.{NAME} for select to authenticated using (true);',
+    'create role a02_drift_owner; alter function public.purchase_module_access() owner to a02_drift_owner;',
+    'alter function public.purchase_module_access() volatile;',
+    'grant execute on function public.create_purchase_correction_request(text,uuid,text,text) to public;',
+    f'drop trigger a01_activity_delete on public.{NAME}; create trigger a01_activity_delete after delete on public.{NAME} for each row execute function public.capture_activity_log();',
+    f'alter table public.{NAME} drop constraint purchase_correction_requests_status_check;',
+    f'alter table public.{NAME} alter column detail drop not null;', f'create index a02_drift_idx on public.{NAME} (created_at);',
+]
+FREEZE_READBACK = ['grants (all roles except owner): public.create_purchase_correction_request(text,uuid,text,text)',
+                   'grants (all roles except owner): public.process_purchase_correction_request(uuid,text)', 'SUMMARY']
+
+
+def failed_checks(sql):
+    return [r[0] for r in rows(sql) if len(r) == 4 and r[3] == 'f']
+
+
 def expect_error(sql, needle):
     r = psql(sql, check=False)
     assert r.returncode and needle in r.stderr, (r.returncode, r.stderr[-400:])
@@ -229,12 +256,12 @@ def main():
                    subprocess.run([CBIN / 'psql', '--version'], capture_output=True, text=True).stdout.strip())
         bootstrap()
 
-        # Fingerprints of the four functions as the migration creates them (applied, read, rolled back).
+        # Exact shape of the objects as the migration creates them (applied, read, rolled back).
         probe = psql('begin;\n' + MIG.read_text() + '\n' + '\n'.join(
-            f"select '{f}', md5(prosrc) from pg_proc where oid = to_regprocedure('{f}');" for f in FUNCS) + '\nrollback;').stdout
-        fingerprints = dict(line.split('|') for line in probe.splitlines() if line.startswith('public.'))
-        assert set(fingerprints) == set(FUNCS), fingerprints
-        files = render(fingerprints)
+            f"select {lit('#' + n)}, ({sql})::text;" for n, sql in SHAPE) + '\nrollback;').stdout
+        shape = dict(line[1:].split('|', 1) for line in probe.splitlines() if line.startswith('#'))
+        assert set(shape) == {n for n, _ in SHAPE} and all(v for v in shape.values()), shape
+        files = render(shape)
         for name, text in files.items():
             path = HERE / name
             if args.write:
@@ -271,6 +298,10 @@ def main():
 
         psql(app.read_text())
         LOG.append('apply: ok | readback A: ' + summary(back) + ' | B: ' + rows(query(back, 'B'))[0][0] + ' history row')
+        for change in DRIFT:
+            caught = failed_checks('begin;\n' + change + '\n' + query(back, 'A') + '\nrollback;')
+            assert caught, change
+        LOG.append(f'readback catches each of {len(DRIFT)} single catalog drifts (each changed in a rolled-back transaction): ok | readback A after: ' + summary(back))
         psql(SUITE.read_text())
         LOG.append(f'{SUITE.name}: PASS (rolled back) | readback A: ' + summary(back))
 
@@ -287,6 +318,9 @@ select create_purchase_correction_request('purchase_order',md5('a02-po')::uuid,'
 commit;""")
         as_user = "set role authenticated; set request.jwt.claim.role='authenticated'; select set_config('request.jwt.claim.sub',md5('{}')::uuid::text,false);\n"
         psql(FREEZE.read_text())
+        frozen = failed_checks(query(back, 'A'))
+        assert frozen == FREEZE_READBACK, frozen
+        LOG.append('readback A after freeze fails exactly the expected rows: ' + '; '.join(frozen))
         err_create = expect_error(as_user.format('a02-staff') + "select create_purchase_correction_request('purchase_order',md5('a02-po')::uuid,'owner-pkg-0002','Rincian setelah dibekukan');", 'permission denied')
         err_process = expect_error(as_user.format('a02-owner') + f"select process_purchase_correction_request((select id from public.{NAME} limit 1),'Setelah dibekukan');", 'permission denied')
         readable = rows(as_user.format('a02-staff') + f'select count(*) from public.{NAME};')[-1][0]
@@ -300,6 +334,11 @@ commit;""")
         history = rows(f"select count(*) from supabase_migrations.schema_migrations where version = '{VERSION}'")[0][0]
         assert after == [before, 't'] and history == '1', (before, after, history)
         LOG.append(f'teardown with data: refused ({err}); rows {before} -> {after[0]}, objects and history row kept')
+        psql(f'delete from public.{NAME};')  # an administrator removing rows by hand still leaves audit history
+        err = expect_error(TEARDOWN.read_text(), 'teardown refused')
+        kept = rows(f"select count(*) from public.activity_log where row_entity = '{NAME}'")[0][0]
+        assert rows(f"select {TABLE} is not null")[0][0] == 't' and int(kept) > 0, kept
+        LOG.append(f'teardown after rows were deleted by hand: refused ({err}); {kept} audit rows and all objects kept')
         LOG.append('RESULT: PASS')
     finally:
         if (DATA / 'postmaster.pid').exists():

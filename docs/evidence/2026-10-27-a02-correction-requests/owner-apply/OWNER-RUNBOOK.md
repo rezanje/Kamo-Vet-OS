@@ -10,8 +10,9 @@ production ke repo/PR.** Catat semuanya di catatan rilis privat (lihat "Catatan 
 
 Semua langkah sudah dilatih ujung-ke-ujung pada cluster sementara PostgreSQL 16.15 dan **17.6** (versi production)
 dengan 270 migrasi repo sebelumnya + riwayat migrasi tiruan: preflight → apply tertahan kunci (gagal aman) →
-apply → readback → suite A02 → teardown saat kosong → preflight → apply ulang → readback → request fiktif →
-freeze → teardown ditolak. Log: `rehearsal-pg16.log`, `rehearsal-pg17.6.log`. Ulangi dengan
+apply → readback → readback menangkap 13 penyimpangan katalog (satu per satu, di-rollback) → suite A02 → teardown
+saat kosong → preflight → apply ulang → readback → request fiktif → freeze → teardown ditolak (ada baris) →
+teardown ditolak (baris dihapus manual tetapi jejak log ada). Log: `rehearsal-pg16.log`, `rehearsal-pg17.6.log`. Ulangi dengan
 `build-and-verify.py` (lihat docstring); file 01–03 dihasilkan ulang dan harus identik byte demi byte.
 
 ## File
@@ -21,9 +22,9 @@ freeze → teardown ditolak. Log: `rehearsal-pg16.log`, `rehearsal-pg17.6.log`. 
 | `supabase/migrations/20261027153000_purchase_correction_requests.sql` | (isi dari 02) | `923bb7420acd35ecaee2ba80ff54b201e9beb3d8fce65ff8fae21d11e5909081` |
 | `01-preflight-readonly.sql` | tidak | `e5c7d09bdc237420292ffd266b665179fefb14130cb65401b031f5d5dfb54f4f` |
 | `02-apply.sql` | **ya** — migrasi + baris riwayat, satu transaksi | `9b0ba4fcb8bb492a4086123f89a1dc460d46fa4e04c0bd747db00f006733a6a0` |
-| `03-readback-readonly.sql` | tidak | `182c9345a2e3d06c213f24a724996a73b16599d08201da6758dd9aed7a63ecf1` |
+| `03-readback-readonly.sql` | tidak | `6699bb23cf969d144d3e41e57f39a299e31733a30ea74fad1b43e92c259fbd94` |
 | `04-freeze-if-decided.sql` | **ya** — hanya pada keputusan rollback | `725d5a12cd8b46a73edfd1534834b68212bd4855175b3a487baee8b370ef546f` |
-| `05-teardown-empty-only.sql` | **ya** — hanya bila belum ada request | `de887bed7f17e12357e9b0dd27362b9ddbf297fcf6cc297824182f87b3eab00b` |
+| `05-teardown-empty-only.sql` | **ya** — hanya bila belum ada request | `479589f91c2377a9ce6b54b8d986007203a963edcb74659135b42f6c525178f9` |
 
 ## Dampak migrasi
 
@@ -74,9 +75,13 @@ lain yang belum terpasang di production (mis. C04/R05) bisa ikut terpasang.
 
 ## Langkah 4 — baca-balik (hanya baca): `03-readback-readonly.sql`
 
-- **Query A**: `SUMMARY` = `0 failed` (tabel + RLS + policy, 3 index, sidik jari 4 fungsi sama dengan yang diuji,
-  security definer + `search_path=""`, grant hanya `authenticated`, anon/service_role tanpa EXECUTE, tabel hanya
-  SELECT, pembaca log `{OWNER}`, 2 trigger aktif). `info: request rows` = 0.
+- **Query A**: `SUMMARY` = `0 failed`. Bentuk katalog dibandingkan persis dengan hasil latihan: pemilik tabel dan
+  fungsi (`postgres`), grant tabel dan fungsi per role selain pemilik (tabel: `authenticated:SELECT` saja; fungsi:
+  `authenticated:EXECUTE` saja — anon, service_role, PUBLIC tidak ada), RLS aktif/tidak dipaksa, seluruh policy
+  (nama, permissive, cmd, roles, aturan), seluruh trigger (definisi + aktif), constraint, index, kolom, sidik jari
+  isi 4 fungsi, sifat fungsi (volatility, security definer, `search_path=""`), pembaca log `{OWNER}`.
+  `info: request rows` = 0. Bila pemilik berbeda (dipasang lewat role lain) atau baris lain gagal: berhenti dan
+  kirim hasilnya ke developer.
 - **Query B**: `a02_rows` = 1.
 
 Gagal: jangan merge aplikasi; kirim hasilnya ke developer (pilihan: `05` bila masih kosong).
@@ -91,9 +96,12 @@ tanpa transaksi, lalu satu komentar pasca-deploy di PR248 (AGENTS.md) — tanpa 
 - **Default (data dipertahankan): `04-freeze-if-decided.sql`**, lalu revert commit aplikasi A02. Mencabut EXECUTE dua
   fungsi tulis; semua request, catatan tindak lanjut, dan log aktivitas tetap tersimpan dan terbaca. Dilatih:
   pembuatan dan pemrosesan ditolak, pemohon dan Super Admin tetap membaca datanya. Membuka kembali: dua `grant`
-  di komentar file.
-- **Hapus total: `05-teardown-empty-only.sql`** hanya bila belum ada satu pun request. Menolak (tanpa perubahan)
-  bila tabel berisi; dilatih dua-duanya (berhasil saat kosong → preflight kembali `0 failed`; ditolak saat berisi).
+  di komentar file. **Cek setelah freeze:** jalankan readback Query A; yang gagal harus tepat dua baris
+  `grants (all roles except owner)` untuk `create_purchase_correction_request` dan `process_purchase_correction_request`
+  (plus `SUMMARY`), selebihnya `ok`.
+- **Hapus total: `05-teardown-empty-only.sql`** hanya bila belum pernah ada satu pun request. Menolak (tanpa perubahan)
+  bila tabel berisi **atau** log aktivitas pernah mencatat request (mis. baris dihapus manual). Dilatih: berhasil saat
+  kosong → preflight kembali `0 failed`; ditolak saat berisi; ditolak setelah penghapusan manual (jejak log tetap).
 - Restore backup **bukan** bagian rollback A02.
 
 ## Catatan privat (di luar repo)

@@ -1,7 +1,7 @@
 # A02 — permintaan koreksi pembelian tersimpan + antrean/notifikasi
 
 Stack: PR221 (approval read fail-closed) → PR233 (dashboard pending work) → PR248 (request koreksi tersimpan).
-PR221 (`80800f4`) dan PR233 (`e77eb34`) sudah dirilis ke production. PR248 kini berbasis `main` `e77eb34`, digabung
+PR221 (`80800f4`) dan PR233 (`e77eb34`) sudah dirilis ke production. PR248 kini berbasis `main` `4a36212` (termasuk K03), digabung
 dengan merge biasa; konflik di alert dashboard diselesaikan dengan mempertahankan gating Akses Grup dari PR233.
 
 PR248 belum di-merge/deploy dan migrasinya belum diterapkan ke production. Sheet checklist hanya dibaca.
@@ -111,11 +111,11 @@ PR248 belum di-merge/deploy dan migrasinya belum diterapkan ke production. Sheet
 - Paket owner dilatih penuh pada PostgreSQL 16.15 dan **17.6** (versi production), 270 migrasi sebelumnya + riwayat:
   preflight `0 failed`; apply tertahan kunci tulis pada `purchase_orders` menyerah setelah 5,0 s tanpa perubahan;
   apply + readback `0 failed`; suite A02 lulus; teardown saat kosong berhasil lalu preflight kembali `0 failed`;
-  apply ulang; freeze menolak pembuatan/pemrosesan sementara data tetap terbaca; teardown saat berisi ditolak tanpa
-  perubahan. File 01–03 identik byte demi byte di kedua versi. Log: `owner-apply/rehearsal-pg16.log`,
+  apply ulang; freeze menolak pembuatan/pemrosesan sementara data tetap terbaca (readback setelah freeze gagal tepat di
+  dua grant fungsi); teardown ditolak saat berisi dan saat jejak log request ada. Readback membandingkan bentuk katalog
+  persis (pemilik, grant per role, policy, trigger, constraint, index, kolom, fungsi) dan terbukti menangkap 13
+  penyimpangan tunggal. File 01–03 identik byte demi byte di kedua versi. Log: `owner-apply/rehearsal-pg16.log`,
   `owner-apply/rehearsal-pg17.6.log`.
-- Preflight read-only ke production (akses yang sudah ada, `read_only: true`, penulisan terbukti ditolak):
-  `SUMMARY 0 failed`, A02 belum terpasang. Detail hanya di catatan privat.
 
 ### Kegagalan baseline (sama persis di main murni; bukan dari A02)
 - `test-activity-audit-postgres.py`: 6 suite gagal identik di main murni dan main+A02 (`activity_audit_framework` batas

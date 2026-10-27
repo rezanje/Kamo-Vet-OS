@@ -1,6 +1,6 @@
 -- A02 TEARDOWN — WRITES. Only for an owner decision to remove A02 entirely BEFORE any real request exists.
--- Refuses (and changes nothing) if the request table holds any row; then use 04-freeze-if-decided.sql and keep
--- the data. Removes only objects the A02 migration created, plus its history row. One transaction.
+-- Refuses (and changes nothing) if the request table holds any row or any request was ever recorded in the
+-- activity log; then use 04-freeze-if-decided.sql and keep the data. Removes only objects the A02 migration created, plus its history row. One transaction.
 begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
@@ -9,6 +9,9 @@ do $$
 begin
   if exists (select 1 from public.purchase_correction_requests) then
     raise exception 'A02 teardown refused: purchase_correction_requests has rows; freeze with 04 and keep the data';
+  end if;
+  if exists (select 1 from public.activity_log where row_entity = 'purchase_correction_requests') then
+    raise exception 'A02 teardown refused: request activity history exists; freeze with 04 and keep the data';
   end if;
 end $$;
 drop trigger a01_activity_change on public.purchase_correction_requests;
