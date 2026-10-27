@@ -10,22 +10,26 @@ The app half of C04 is already live (PR #223, merge `e7737406`, Production deplo
 02:45Z; current Production `906bc98c` includes it). Package-total is hidden and refused until the flag below is
 set, so nothing in this package changes day-to-day behaviour until Step 5.
 
-Rehearsed end to end on a throwaway native PostgreSQL 16.15 cluster with every migration on main except C04
+Rehearsed end to end on throwaway native PostgreSQL **17.6** (production's version) and 16.15 clusters with every migration on main except C04
 (production-like history table), fictional data only: before-tests → preflight → apply → readback → after-tests →
 second apply refused → rollback refused while a package promo exists → rollback → preflight → after-rollback tests
-→ re-apply → readback → tests. Log: `rehearsal-pg16.log`. Reproduce:
+→ re-apply → readback → tests. Logs: `rehearsal-pg17.log`, `rehearsal-pg16.log`; both versions generate
+byte-identical SQL files and the same fingerprints. Reproduce:
 `python3 docs/evidence/2026-10-27-c04-package-activation/owner-apply/build-and-verify.py [pg bin dir]`
-(regenerates the four SQL files). **Production runs PostgreSQL 17.6; a PG17 rehearsal was not possible in this
-session** (no PG17 binaries reachable). Running the script once with a PG17 bin dir before Step 3 closes that gap.
+(regenerates the four SQL files). The 17.6 server binaries came from npm `@embedded-postgres/linux-x64@17.6.0-beta.15`
+(integrity `sha512-f04/oSB35rc2…YRgMw==`), run with `LD_LIBRARY_PATH` set to its `lib` dir.
+
+**Read-only production check already done** (27 Oct 03:32Z): preflight Query A `0 failed`, Query B without C04,
+backup and flag state — see `production-preflight-2026-10-27.md`. Repeat Query A inside the release slot.
 
 ## Files
 
 | File | Writes? | sha256 |
 |---|---|---|
 | `supabase/migrations/20261026002100_promo_package_total_mode.sql` | yes (the migration) | `5aa9cae66fdc02f79fdac57e067a951b95b0cf0b09cd039edb8810a0ff8f0a7e` |
-| `01-preflight-readonly.sql` | no | `3bce4309d17bb31de7faa06b62bee09d8cba84a6e80cbf9b04ecba7dc5d56064` |
+| `01-preflight-readonly.sql` | no | `252e7416467923821a2650cc13dc9a68bb55c567f5fbaf37dfe7ab7502ee9cbb` |
 | `02-apply-writes.sql` | **yes** — migration + history row, one transaction, `lock_timeout 5s` | `616cf5ed48e09a8d4a1b718fb6ec8ebbf7d81fc110c237ea6ca883ad6201aff7` |
-| `03-readback-readonly.sql` | no | `1fde55fe1ba777dc5ad4d8931575342c67015868177c31665776c305e7358182` |
+| `03-readback-readonly.sql` | no | `1cc17d0bf07941be2d9fa7ffa011e303699f6d8f28ac0ccf47ac3452bde0df71` |
 | `04-rollback-only-if-decided.sql` | **yes** — only on a rollback decision | `19b1c711212eec038b30b24124dfba348dad536b61792b857a800ac32f27b9a0` |
 
 The migration hash above is the version on this package's branch (it closes a NULL gap found in security review,
@@ -33,11 +37,10 @@ see `SECURITY-REVIEW.md`). Use these files only after that branch is merged to m
 
 ## Step 0 — target, slot and backup (dashboard, no SQL)
 
-1. Supabase project serving Vercel `kamo-group/kamo-vet-os` Production. Last recorded on 2026-10-26 as
-   `koaglxcyjqfmgfzxszkj` (only project on the account, PostgreSQL 17.6). Confirm the ref again; do not use any
-   other project.
-2. Database → Backups: write down the newest **completed** backup time (PITR was off on 26 Oct). Take an
-   on-demand backup if the plan allows.
+1. Supabase project `koaglxcyjqfmgfzxszkj` (verified 27 Oct: only project, PostgreSQL 17.6, serving the live
+   app). Do not use any other project.
+2. Database → Backups: PITR is **off**; newest completed daily backup on 27 Oct 03:32Z was 2026-10-26 15:20:57Z,
+   i.e. *before* K02. Apply C04 only after a newer completed backup exists (daily ≈15:15Z) or an on-demand one.
 3. Release slot from Wowo; no other migration (A02, R05) in the same window. Quiet time: the migration briefly
    locks `promos`/`promo_items` (constraint + triggers); with `lock_timeout 5s` it gives up instead of queueing
    checkout reads.
@@ -52,7 +55,8 @@ SQL Editor, each query separately.
 
 - **Query A**: every row with an expected value shows `ok = true`; `SUMMARY` = `0 failed`. Confirms C04 is not
   applied, `edit_promo` is byte-identical to the repository (`fingerprint f4a53d51…`), keeps SECURITY DEFINER,
-  empty search_path and its grants (authenticated only), is owned by the role you are running as, all four
+  empty search_path and its grants (authenticated only), the editor and both tables are owned by `postgres` (the
+  SQL Editor role that applies), all four
   anchors the migration replaces occur exactly once, and no promo already stores `discount_mode`.
 - **Query B**: no row `20261026002100`. Several newer versions are expected (e.g. `20261026100000`); C04 is
   applied out of order on purpose. Note whether `20261027090000` is present (R05) — informational only.

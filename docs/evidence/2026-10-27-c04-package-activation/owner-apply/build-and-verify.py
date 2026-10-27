@@ -9,7 +9,9 @@ cluster, then rehearse with fictional data only:
 Never accepts a database URL. The cluster lives in a fresh temp dir, unix socket only, and is deleted.
 Usage (repo root):
   python3 docs/evidence/2026-10-27-c04-package-activation/owner-apply/build-and-verify.py [pg bin dir]
-Default bin dir: /usr/lib/postgresql/16/bin. Production runs PostgreSQL 17; pass a 17 bin dir where available.
+Default bin dir: /usr/lib/postgresql/16/bin. Production runs PostgreSQL 17.6; rehearse with a 17 bin dir too.
+The bin dir needs initdb, pg_ctl, postgres and psql (a symlinked psql from another major works); set
+LD_LIBRARY_PATH when the server binaries ship their own libraries (e.g. @embedded-postgres/linux-x64).
 When run as root, the cluster runs as the local `postgres` OS user.
 """
 from pathlib import Path
@@ -45,6 +47,7 @@ AS_PG = ['runuser', '-u', 'postgres', '--'] if os.geteuid() == 0 else []
 ENV = {k: v for k, v in os.environ.items() if not k.startswith('PG')}
 ENV.update(PSQLRC='/dev/null', TZ='Etc/UTC')
 LOG = []
+MAJOR = ['unknown']
 
 
 def log(line):
@@ -92,7 +95,9 @@ COMMON = f"""  select 'info: server version', null, current_setting('server_vers
   union all select 'editor search_path empty', 'true', (select coalesce(proconfig @> array['search_path=""']::text[], false)::text from pg_proc where oid = to_regprocedure('{EDITOR}'))
   union all select 'editor grant: anon', 'false', has_function_privilege('anon', '{EDITOR}', 'EXECUTE')::text
   union all select 'editor grant: service_role', 'false', has_function_privilege('service_role', '{EDITOR}', 'EXECUTE')::text
-  union all select 'editor owned by the role running this (needed for CREATE OR REPLACE)', 'true', (select pg_get_userbyid(proowner) = current_user from pg_proc where oid = to_regprocedure('{EDITOR}'))::text
+  union all select 'owner of editor (SQL Editor applies as postgres)', 'postgres', (select pg_get_userbyid(proowner) from pg_proc where oid = to_regprocedure('{EDITOR}'))
+  union all select 'owner of ' || t, 'postgres', (select pg_get_userbyid(relowner) from pg_class where oid = to_regclass(t)) from unnest(array['public.promos', 'public.promo_items']) t
+  union all select 'info: transactions open > 1 minute', null, (select count(*) from pg_stat_activity where state <> 'idle' and xact_start < now() - interval '1 minute')::text
   union all select 'editor grant: authenticated', 'true', has_function_privilege('authenticated', '{EDITOR}', 'EXECUTE')::text
   union all select 'prerequisite: promo_configuration_guard triggers', '2', (select count(*) from pg_trigger where tgname = 'promo_configuration_guard' and tgrelid in ('public.promos'::regclass, 'public.promo_items'::regclass))::text
   union all select 'info: promos total', null, (select count(*) from public.promos)::text
@@ -281,6 +286,7 @@ def main():
         versions = sorted({m.name.split('_', 1)[0]: m.name.split('_', 1)[1][:-4] for m in (staged / 'supabase/migrations').iterdir()}.items())
         psql('create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key, statements text[], name text);'
              + ''.join(f"insert into supabase_migrations.schema_migrations(version,name) values('{v}','{n}');" for v, n in versions))
+        MAJOR[0] = one('show server_version_num')[:2]
         log(f'PostgreSQL {one("show server_version")}: {len(versions)} history versions applied, everything on main except {VERSION} (production-like).')
         pre = one(f"select md5(prosrc) from pg_proc where oid=to_regprocedure('{EDITOR}')")
         # Derive post-apply fingerprints, then return to the pre-C04 state with the generated rollback.
@@ -330,8 +336,7 @@ values('e9900000-0000-4000-8000-0000000000c5','Fiction rollback blocker','diskon
     finally:
         subprocess.run(AS_PG + [str(BIN / 'pg_ctl'), '-D', str(DATA), '-m', 'immediate', 'stop'], capture_output=True)
         shutil.rmtree(WORK, ignore_errors=True)
-        major = BIN.parent.name if BIN.parent.name.isdigit() else 'pg'
-        (HERE / f'rehearsal-pg{major}.log').write_text('\n'.join(LOG) + '\n')
+        (HERE / f'rehearsal-pg{MAJOR[0]}.log').write_text('\n'.join(LOG) + '\n')
 
 
 if __name__ == '__main__':

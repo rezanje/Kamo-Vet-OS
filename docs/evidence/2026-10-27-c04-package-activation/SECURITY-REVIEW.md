@@ -31,8 +31,8 @@ gate still needs the integrator's sign-off before Step 3 of `owner-apply/OWNER-R
 - `lock_timeout 5s` in `02-apply-writes.sql` so the apply cannot queue behind a long transaction and stall checkout reads.
 - Guard function grants checked after apply (readback) before the flag is turned on.
 
-## Not covered
+## Production comparison (read-only, 27 Oct 03:32Z)
 
-- PostgreSQL 17 rehearsal (production is 17.6; rehearsal ran on 16.15).
-- Production-only drift outside the four anchors is detected by the fingerprint, not silently kept, as long as
-  preflight is run.
+Production `edit_promo` fingerprint equals the repository (`f4a53d51…`), SECURITY DEFINER, `search_path=""`,
+grants authenticated-only, owner `postgres`; no promo stores `discount_mode`; C04 objects absent. Rehearsed on
+PostgreSQL 17.6 and 16.15 with identical results. Remaining gate: integrator sign-off of this review.

@@ -9,19 +9,31 @@ Coordinator note (Wowo, approved by Reza): C04 first, then A02; R05 queued. This
 |---|---|
 | Only one DB change pending for C04 | `supabase/migrations/20261026002100_promo_package_total_mode.sql`. No other C04 database object. |
 | App half live and safe without it | PR #223 merge `e7737406`, Production deployment completed 02:45Z; current Production `906bc98c` includes it. Rehearsal: live-app legacy edit payload accepted by the pre-C04 editor; package payload refused. |
-| Migration safe to apply out of order on latest main | Rehearsal on all 267 other main versions; before/after/rollback suites pass (`owner-apply/rehearsal-pg16.log`). |
+| Migration safe to apply out of order on latest main | Rehearsal on all 267 other main versions; before/after/rollback suites pass (`owner-apply/rehearsal-pg17.log`, `rehearsal-pg16.log`). |
 | Security pre-review | `SECURITY-REVIEW.md`: no escalation; one NULL gap found and fixed (red→green). |
 | Rollback | `04-rollback-only-if-decided.sql` rehearsed: refuses while a package promo exists; otherwise restores the exact pre-C04 editor body and removes all C04 objects and the history row. |
 | Activation switch | `PROMO_PACKAGE_TOTAL_ENABLED=1` (Vercel Production) + redeploy, only after readback passes. |
+| Production target | `koaglxcyjqfmgfzxszkj`, PostgreSQL 17.6, only project; Vercel alias → `906bc98c` READY (`owner-apply/production-preflight-2026-10-27.md`). |
+| Production preflight (read-only) | Query A `0 failed` at 03:32Z; Query B: no C04 row, newest K02, R05 not applied; 0 long transactions. |
+| Flag state | `PROMO_PACKAGE_TOTAL_ENABLED` absent in Vercel project env (off). |
+| PostgreSQL 17 | Full rehearsal on 17.6 passes; SQL files byte-identical to the 16.15 run. |
 
-## Not proven (needs the owner's existing access)
+## Facts checked, gate not yet met
 
-- Production project ref today (last recorded `koaglxcyjqfmgfzxszkj` on 26 Oct), C04 absence in production
-  history, production editor fingerprint — all answered by preflight Query A/B.
-- Current backup state (PITR was off on 26 Oct).
-- PostgreSQL 17 rehearsal.
-- Integrator sign-off of the security pre-review.
-- Field UAT.
+- **Backup**: PITR off; newest completed daily backup 2026-10-26 15:20:57Z predates K02 (applied 17:16Z). Needs a
+  newer completed backup (next daily ≈15:15Z today) or an on-demand one before Step 3.
+
+## Real access limits
+
+- Vercel stores `NEXT_PUBLIC_SUPABASE_URL` as sensitive; its value cannot be read back with the existing token, so
+  the app→project link is inferred (single project, live history = main, sign-in after deploy), not read.
+- No on-demand backup or production write was attempted: not authorised in this phase.
+
+## Gates still open
+
+- Integrator sign-off of `SECURITY-REVIEW.md`; PR #249 merged (it changes the migration file).
+- Release slot from Wowo (no A02/R05 migration in the same window); preflight Query A repeated in the slot.
+- Field UAT after the flag is on.
 
 ## Release coordination finding (not C04)
 

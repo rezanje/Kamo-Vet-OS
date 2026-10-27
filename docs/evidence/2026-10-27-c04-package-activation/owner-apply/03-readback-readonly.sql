@@ -29,7 +29,9 @@ with patches(n, old_text, new_text) as (values
   union all select 'editor search_path empty', 'true', (select coalesce(proconfig @> array['search_path=""']::text[], false)::text from pg_proc where oid = to_regprocedure('public.edit_promo(uuid,text,jsonb,uuid[])'))
   union all select 'editor grant: anon', 'false', has_function_privilege('anon', 'public.edit_promo(uuid,text,jsonb,uuid[])', 'EXECUTE')::text
   union all select 'editor grant: service_role', 'false', has_function_privilege('service_role', 'public.edit_promo(uuid,text,jsonb,uuid[])', 'EXECUTE')::text
-  union all select 'editor owned by the role running this (needed for CREATE OR REPLACE)', 'true', (select pg_get_userbyid(proowner) = current_user from pg_proc where oid = to_regprocedure('public.edit_promo(uuid,text,jsonb,uuid[])'))::text
+  union all select 'owner of editor (SQL Editor applies as postgres)', 'postgres', (select pg_get_userbyid(proowner) from pg_proc where oid = to_regprocedure('public.edit_promo(uuid,text,jsonb,uuid[])'))
+  union all select 'owner of ' || t, 'postgres', (select pg_get_userbyid(relowner) from pg_class where oid = to_regclass(t)) from unnest(array['public.promos', 'public.promo_items']) t
+  union all select 'info: transactions open > 1 minute', null, (select count(*) from pg_stat_activity where state <> 'idle' and xact_start < now() - interval '1 minute')::text
   union all select 'editor grant: authenticated', 'true', has_function_privilege('authenticated', 'public.edit_promo(uuid,text,jsonb,uuid[])', 'EXECUTE')::text
   union all select 'prerequisite: promo_configuration_guard triggers', '2', (select count(*) from pg_trigger where tgname = 'promo_configuration_guard' and tgrelid in ('public.promos'::regclass, 'public.promo_items'::regclass))::text
   union all select 'info: promos total', null, (select count(*) from public.promos)::text
