@@ -1,4 +1,4 @@
-Applied 275 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+Applied 276 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
 PASS P08 suite fails on the base (detects the missing change)
 PASS 01 preflight: SUMMARY|0 failed|0 failed|t
 PASS 02 apply
