@@ -4,7 +4,7 @@ import {readCompleteList} from '@/lib/checked-list';
 import {promoCategoryOptions,promoCategoryItem,type PromoCategoryItem} from '@/lib/promo-categories';
 import type {KategoriRow} from '@/lib/kategori';
 import type {MultiSelectItem} from '@/components/SearchableMultiSelect';
-import type {PromoEditSnapshot} from '@/lib/promo-edit';
+import {packageTotalReleased,type PromoEditSnapshot} from '@/lib/promo-edit';
 import {ActivityHistoryLink} from '@/components/ActivityHistoryLink';
 import {PromoEditor} from '../../PromoEditor';
 const back=<Link className="back-btn" href="/crm/promo">Kembali ke daftar promo</Link>;
@@ -48,7 +48,7 @@ export default async function EditPromoPage({params}:{params:Promise<{id:string}
    <p>Perubahan berlaku untuk penggunaan promo berikutnya. Diskon dan nilai transaksi yang sudah tersimpan tidak dihitung ulang.</p>
    <p>Riwayat aktivitas mencatat pelaku, waktu, dan rincian perubahan yang tersedia. Teks saran tidak disalin ke riwayat.</p>
    {hasLegacy&&<p role="status">Target lama/nonaktif tetap dipilih. Lepaskan secara eksplisit jika ingin mengubahnya; pilihan baru hanya dari daftar aktif.</p>}
-   <div className="crm-sec"><PromoEditor key={`${user.id}:${id}:${snapshot.version}`} userId={user.id} snapshot={snapshot} items={items} branches={branches} categories={categories}/></div>
+   <div className="crm-sec"><PromoEditor key={`${user.id}:${id}:${snapshot.version}`} userId={user.id} snapshot={snapshot} items={items} branches={branches} categories={categories} packageTotal={packageTotalReleased()}/></div>
   </>;
 
 }
