@@ -23,6 +23,8 @@ import { ReferralPanel } from "./ReferralPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
+import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
+import { tambahAdendumRekamMedis } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -53,14 +55,62 @@ export default async function RekamMedisPage({
   const { visitId } = await params;
   const { error, racikan, success, edit } = await searchParams;
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // U07: semua bacaan yang cuma butuh visitId jalan bareng dalam satu putaran.
+  // Dulu halaman ini antre ±12 perjalanan ke database satu per satu, dan halaman
+  // ini ikut dirender ulang tiap kali rekam medis disimpan.
+  const [
+    { data: { user } },
+    { data: visit },
+    latestRecord,
+    latestInvoice,
+    [{ data: inpatient, error: inpatientError }, { data: referralRows }],
+    [{ data: consentRows, error: consentsError }, { data: tplRows, error: templatesError }],
+    { data: inpatientConsentRule, error: ruleError },
+    saudara,
+    bolehManual,
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("visits")
+      .select("id, pet_id, branch_id, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
+      .eq("id", visitId)
+      .maybeSingle(),
+    // Rekam medis & invoice terakhir: dipakai hanya bila kunjungan sudah tersimpan,
+    // tapi membacanya selagi menunggu data kunjungan lebih murah daripada antre.
+    supabase
+      .from("medical_records")
+      .select("*")
+      .eq("visit_id", visitId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
+    // Rawat inap aktif utk visit ini (Addendum §3 — admit dari rekam medis, design klinik/07).
+    Promise.all([
+      supabase.from("inpatient_records")
+        .select("id, condition_status, discharged_at")
+        .eq("visit_id", visitId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("visit_referrals")
+        .select("id, direction, facility, reason, notes, referred_at")
+        .eq("visit_id", visitId).order("referred_at", { ascending: false }),
+    ]),
+    // Form persetujuan (spec 2026-07-20) — template yang berlaku utk cabang kunjungan ini.
+    Promise.all([
+      supabase.from("consents")
+        .select("id, tindakan, isi_snapshot, kategori, template_id, status, signer_name, signature_data, signed_at")
+        .eq("visit_id", visitId).order("created_at"),
+      supabase.from("consent_templates").select("id, nama, kategori, branch_id, is_active"),
+    ]),
+    supabase.from("consent_rules").select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle(),
+    // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
+    // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
+    bacaSaudaraKunjungan(supabase, visitId),
+    bolehRacikKhusus(),
+  ]);
   const draftUserId = user?.id ?? "";
-
-  const { data: visit } = await supabase
-    .from("visits")
-    .select("id, pet_id, branch_id, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
-    .eq("id", visitId)
-    .maybeSingle();
 
   if (!visit) notFound();
 
@@ -69,10 +119,6 @@ export default async function RekamMedisPage({
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
-  const serviceStaff = recorded ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
-  const dokterOpsi = recorded ? [] : await daftarDokter(supabase, { branchId: visit.branch_id });
-  const providerOpsi = recorded ? [] : performersForService(dokterOpsi, visit.poli);
-
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: (Omit<ClinicalCorrection, "recordId" | "revision" | "prescriptions"> & { id: string; clinical_revision?: number }) | null = null;
   let mrId: string | null = null;
@@ -81,40 +127,60 @@ export default async function RekamMedisPage({
   let resep: { nama_obat: string; qty: number; satuan?: string | null; aturan_pakai: string | null; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
-    const { data: mr, error: mrError } = await supabase
-      .from("medical_records")
-      .select("*")
-      .eq("visit_id", visitId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    mrLoadFailed = !!mrError;
-    record = mr;
-    mrId = mr?.id ?? null;
-    if (mr) {
-      const { data: pi, error: piError } = await supabase
-        .from("prescription_items")
-        .select("nama_obat, qty, satuan, aturan_pakai, jenis, service_performers")
-        .eq("medical_record_id", mr.id)
-        .order("created_at");
-      resep = pi ?? [];
-      // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
-      const { data: cr, error: crError } = await supabase
-        .from("compounding_recipes")
-        .select("id, recipe_name, dosage_form, total_volume, status")
-        .eq("medical_record_id", mr.id)
-        .order("created_at", { ascending: false });
-      racikanList = cr ?? [];
-      correctionDataFailed = !!(piError || crError);
-    }
+    mrLoadFailed = !!latestRecord.error;
+    record = latestRecord.data;
+    mrId = latestRecord.data?.id ?? null;
   }
 
-  const correctionCheck = menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed && !correctionDataFailed
-    ? await supabase.rpc("clinic_can_correct_record", { p_record_id: mrId }) : { data: false, error: null };
-  const canCorrect = correctionCheck.data === true && !correctionCheck.error;
-  const invoiceCheck = menungguBayar && mrId
-    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle()
-    : { data: null, error: null };
+  // Tahap 2 — butuh status kunjungan/rekam medis. Cabang "tersimpan" dan "form
+  // pemeriksaan" masing-masing dijalankan paralel.
+  type MasterRow = {
+    id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean;
+    item_type: string; tindakan_kategori: string | null; category_id: string | null;
+  };
+  const [recordedData, examData] = await Promise.all([
+    recorded && mrId ? Promise.all([
+      supabase
+        .from("prescription_items")
+        .select("nama_obat, qty, satuan, aturan_pakai, jenis, service_performers")
+        .eq("medical_record_id", mrId)
+        .order("created_at"),
+      // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
+      supabase
+        .from("compounding_recipes")
+        .select("id, recipe_name, dosage_form, total_volume, status")
+        .eq("medical_record_id", mrId)
+        .order("created_at", { ascending: false }),
+      menungguBayar && !visit.checked_out_at && !mrLoadFailed
+        ? supabase.rpc("clinic_can_correct_record", { p_record_id: mrId })
+        : Promise.resolve({ data: false, error: null }),
+    ]) : null,
+    !recorded ? Promise.all([
+      loadServiceStaff(supabase, visit.branch_id ?? null),
+      daftarDokter(supabase, { branchId: visit.branch_id }),
+      loadKatalogRacikan(),
+      readCompleteList<MasterRow>((from, to) => supabase
+        .from("items").select("id, code, upc, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
+        .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik"),
+      loadClinicItemCategories(supabase),
+      visit.branch_id ? loadBranchGroomingPolicy(supabase, visit.branch_id) : Promise.resolve(null),
+    ]) : null,
+  ]);
+  let correctionCheck: { data: unknown; error: unknown } = { data: false, error: null };
+  if (recordedData) {
+    const [{ data: pi, error: piError }, { data: cr, error: crError }, check] = recordedData;
+    resep = pi ?? [];
+    racikanList = cr ?? [];
+    correctionDataFailed = !!(piError || crError);
+    correctionCheck = check;
+  }
+  const serviceStaff = examData?.[0] ?? [];
+  const dokterOpsi = examData?.[1] ?? [];
+  const providerOpsi = recorded ? [] : performersForService(dokterOpsi, visit.poli);
+
+  // Koreksi hanya bila resep & racikan juga terbaca (syarat lama tetap berlaku).
+  const canCorrect = !correctionDataFailed && correctionCheck.data === true && !correctionCheck.error;
+  const invoiceCheck = menungguBayar && mrId ? latestInvoice : { data: null, error: null };
   const canAddRacikan = !!(menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed
     && !correctionDataFailed && !invoiceCheck.error && !invoiceCheck.data);
   const editing = !!edit && edit === mrId && canCorrect;
@@ -125,22 +191,21 @@ export default async function RekamMedisPage({
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
     prescriptions: resep, compounds: racikanList,
   } : undefined;
+  // K01: once billing is posted the original form stays locked; doctors append
+  // a diagnosis/therapy addendum instead (no invoice, stock or payment change).
+  const addendumScope = recorded && mrId && !mrLoadFailed;
+  // Any invoice, active or voided: unpaid Edit closes as soon as one ever existed.
+  const anyInvoice = addendumScope
+    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle()
+    : { data: null, error: null };
+  const addenda: AddendaLoad = addendumScope && mrId ? await loadRecordAddenda(supabase, mrId) : { state: "ok", rows: [] };
+  const addendumCheck = addendumScope && mrId && anyInvoice.data && !anyInvoice.error && addenda.state === "ok"
+    ? await supabase.rpc("clinic_can_add_record_addendum", { p_record_id: mrId }) : { data: false, error: null };
+  const canAddAddendum = addendumCheck.data === true && !addendumCheck.error;
+  const showAddenda = addenda.state !== "missing" && (canAddAddendum || addenda.rows.length > 0 || addenda.state === "error");
   const { data: savedProvider } = editing && visit.service_provider_id
     ? await supabase.from("employees").select("id,nama,jabatan").eq("id", visit.service_provider_id).maybeSingle()
     : { data: null };
-
-  // Rawat inap aktif utk visit ini (Addendum §3 — admit dari rekam medis, design klinik/07).
-  const [{ data: inpatient, error: inpatientError }, { data: referralRows }] = await Promise.all([
-    supabase.from("inpatient_records")
-      .select("id, condition_status, discharged_at")
-      .eq("visit_id", visitId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from("visit_referrals")
-      .select("id, direction, facility, reason, notes, referred_at")
-      .eq("visit_id", visitId).order("referred_at", { ascending: false }),
-  ]);
 
   const STEP_BY_STATUS: Record<string, number> = { Menunggu: 1, Diperiksa: 2, Pembayaran: 5, Selesai: 6 };
   const activeStep = STEP_BY_STATUS[visit.status] ?? 2;
@@ -166,16 +231,9 @@ export default async function RekamMedisPage({
   let jasaItems: ItemLiteFull[] = [];
   let tindakanItems: ItemLiteFull[] = [];
   let racikanItems: ItemLiteFull[] = [];
-  const katalogRacikan = !recorded ? await loadKatalogRacikan() : [];
-  const bolehManual = await bolehRacikKhusus();
-  if (!recorded) {
-    const masterRows = await readCompleteList<{
-      id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean;
-      item_type: string; tindakan_kategori: string | null; category_id: string | null;
-    }>((from, to) => supabase
-      .from("items").select("id, code, upc, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
-      .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
-    const categories = await loadClinicItemCategories(supabase);
+  const katalogRacikan = examData?.[2] ?? [];
+  if (examData) {
+    const [, , , masterRows, categories] = examData;
     const compoundRows = await loadClinicCompoundSkus(supabase, categories);
     const compoundIds = new Set(compoundRows.map(item => item.id));
     const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
@@ -207,36 +265,23 @@ export default async function RekamMedisPage({
     bahanItems = groups.bahan;
   }
 
-  // Form persetujuan (spec 2026-07-20) — template yang berlaku utk cabang kunjungan ini.
-  const [{ data: consentRows, error: consentsError }, { data: tplRows, error: templatesError }] = await Promise.all([
-    supabase.from("consents")
-      .select("id, tindakan, isi_snapshot, kategori, template_id, status, signer_name, signature_data, signed_at")
-      .eq("visit_id", visitId).order("created_at"),
-    supabase.from("consent_templates").select("id, nama, kategori, branch_id, is_active"),
-  ]);
   const consents = (consentRows ?? []) as ConsentRow[];
   const templates = templatesForBranch(
     (tplRows ?? []) as { id: string; nama: string; kategori?: string; branch_id: string | null; is_active: boolean }[],
     (visit.branch_id as string) ?? null,
   );
-  const { data: inpatientConsentRule, error: ruleError } = await supabase.from("consent_rules")
-    .select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle();
   const admission = clinicAdmissionReadiness({
     readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed),
     status: visit.status, checkedOutAt: visit.checked_out_at ?? null, doctorId: visit.doctor_id ?? null,
     medicalRecordId: mrId, rule: inpatientConsentRule, consents: consentRows ?? [],
   });
 
-  // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
-  // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
-  const saudara = await bacaSaudaraKunjungan(supabase, visitId);
-
   const petIdCode = pet
     ? `RM-${new Date(visit.created_at as string).toISOString().slice(2, 10).replace(/-/g, "")}-${(visit.id as string).slice(0, 4).toUpperCase()}`
     : "—";
   const tglPeriksa = new Date(visit.created_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
-  const groomingPolicy = !recorded && visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
+  const groomingPolicy = examData?.[5] ?? null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
   return (
     <>
@@ -275,6 +320,7 @@ export default async function RekamMedisPage({
         </div>
       )}
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
       {edit && !editing && <div className="p2ban" role="alert">Koreksi belum dapat dibuka. Periksa akses, status kunjungan, dan muat ulang data pemeriksaan.</div>}
       {racikan === "dibuat" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
@@ -425,6 +471,29 @@ export default async function RekamMedisPage({
               )}
             </div>
           </div>
+
+          {showAddenda && <section className="card" style={{ marginTop: 12 }}>
+            <div className="card-hd"><span><i className="ti ti-file-plus" style={{ color: "var(--acc)" }} /> Adendum diagnosa / terapi</span></div>
+            <p style={{ fontSize: 11, color: "var(--tm)" }}>Tagihan sudah pernah terbit, jadi hasil pemeriksaan asli dikunci. Tambahan dicatat terpisah beserta nama dan waktunya; tagihan, obat, dan stok tidak berubah.</p>
+            {addenda.state === "error" && <p role="alert">Riwayat adendum belum dapat dimuat. Muat ulang sebelum mencetak rekam medis.</p>}
+            {addenda.rows.map(row => <div key={row.id} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8, marginTop: 8, fontSize: 11.5 }}>
+              <div><b>{addendumAuthor(row)}</b> · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
+              {row.diagnosis_addendum && <div>Diagnosa: {row.diagnosis_addendum}</div>}
+              {row.therapy_addendum && <div>Terapi: {row.therapy_addendum}</div>}
+              {row.reason && <div style={{ color: "var(--tm)" }}>Alasan: {row.reason}</div>}
+            </div>)}
+            {canAddAddendum && mrId && <TransactionForm userId={draftUserId} scope={`clinical-addendum:${visitId}:${mrId}`} action={tambahAdendumRekamMedis}>
+              <input type="hidden" name="visitId" value={visitId} />
+              <input type="hidden" name="medical_record_id" value={mrId} />
+              <label className="flab" htmlFor="addendum-diagnosis">Tambahan diagnosa</label>
+              <textarea id="addendum-diagnosis" className="fi" name="diagnosis_addendum" maxLength={4000} rows={2} />
+              <label className="flab" htmlFor="addendum-therapy">Tambahan terapi</label>
+              <textarea id="addendum-therapy" className="fi" name="therapy_addendum" maxLength={4000} rows={2} />
+              <label className="flab" htmlFor="addendum-reason">Alasan (opsional)</label>
+              <input id="addendum-reason" className="fi" name="reason" maxLength={1000} />
+              <SubmitButton className="btn-acc" pendingText="Mencatat adendum…">Catat adendum</SubmitButton>
+            </TransactionForm>}
+          </section>}
 
           {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
           <div className="card" style={{ marginTop: 12 }}>

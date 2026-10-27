@@ -6,6 +6,7 @@ import { resolveClinicSalesperson } from "@/lib/clinic-payment";
 import type { ServicePerformersInput } from "@/lib/service-performers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { getOpenShift } from "@/lib/shift";
@@ -326,11 +327,21 @@ export async function bayarVisit(formData: FormData) {
   const cust = Array.isArray(customer) ? customer[0] : customer;
   const patient = Array.isArray(pet) ? pet[0] : pet;
   if (paidStatus === "Lunas" && v?.customer_id && cust?.phone) {
-    await kirimStrukWa(supabase, {
+    const struk = {
       invoiceNo, customerId: v.customer_id, phone: cust.phone, customerName: cust.name ?? "Kak", petName: patient?.name,
       total: total + demoCustomerFee, items: [...rows.map((r) => ({ deskripsi: r.deskripsi, qty: r.qty, harga: r.harga })),
         ...(demoCustomerFee > 0 ? [{deskripsi:"Admin pembayaran DEMO",qty:1,harga:demoCustomerFee}] : [])],
-    });
+    };
+    // U07: struk WA (3 bacaan/tulisan log + panggilan ke penyedia WA) tidak lagi
+    // menahan kasir. Hasilnya memang tidak dipakai layar; idempotensi tetap dijaga
+    // oleh log `receipt:<no invoice>`. Di luar konteks request (tes) jalan langsung.
+    const kirim = () => kirimStrukWa(supabase, struk).then(
+      () => undefined,
+      // Hasil ok:false (mis. WA belum diaktifkan) sudah tercatat di log WA; yang
+      // dicatat di sini hanya kegagalan tak terduga agar tidak hilang diam-diam.
+      (error: unknown) => { console.error(`[struk-wa] ${invoiceNo}: pengiriman gagal`, error); },
+    );
+    try { after(kirim); } catch { await kirim(); }
   }
 
   if (v?.customer_id) await recomputeCustomerTier(supabase, v.customer_id);

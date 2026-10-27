@@ -28,7 +28,8 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
   const lastSnapshot = useRef(JSON.stringify(snapshot));
 
   function persist() {
-    if (!ready.current || !userId || !formRef.current) return;
+    // After an acknowledged save the draft is gone for good; never write it back.
+    if (!ready.current || allowReset.current || !userId || !formRef.current) return;
     const fields: Record<string, string> = {};
     for (const control of Array.from(formRef.current.elements)) {
       if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)
@@ -110,17 +111,41 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
     setSaveError("");
     ready.current = true;
   }
+  // U07: one save at a time. Buttons stay locked after success until the next page
+  // replaces this form, so a slow navigation cannot invite a second click.
+  const inFlight = useRef(false);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (!leaving) return;
+    // Safety valve: if navigation never replaces the form, unlock after a while.
+    const timer = setTimeout(() => setLeaving(false), 20_000);
+    return () => clearTimeout(timer);
+  }, [leaving]);
   async function submit(data: FormData, action: (form: FormData) => Promise<{ saved: boolean; href: string }>) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     persist();
     setSaveError("");
     try {
       const result = await action(data);
-      if (result.saved) { allowReset.current = true; clear(); router.push(result.href); }
+      if (result.saved) {
+        allowReset.current = true; clear();
+        // A revalidating action already returned the fresh current page (for the
+        // initial exam, the recorded view replaces this form); pushing the same URL
+        // would render that whole page a second time. Only a real navigation keeps
+        // the buttons locked — a same-page success releases them at once.
+        if (result.href !== window.location.pathname + window.location.search) {
+          setLeaving(true);
+          router.push(result.href);
+        }
+      }
     } catch (error) {
       // Next handles server redirects; only transport failures need an inline retry message.
       if (typeof (error as { digest?: unknown })?.digest === "string"
         && (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")) throw error;
       setSaveError(uncertainMessage ?? "Belum tersimpan. Isian tetap tersedia; periksa koneksi lalu coba simpan lagi.");
+    } finally {
+      inFlight.current = false;
     }
   }
   function preventFailedReset(event: Event) {
@@ -131,5 +156,5 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
     formRef.current = node;
     node?.addEventListener("reset", preventFailedReset);
   }
-  return { attachForm, submissionKey, recovered, storageError, saveError, capture: persist, discard, submit };
+  return { attachForm, submissionKey, recovered, storageError, saveError, capture: persist, discard, submit, leaving };
 }

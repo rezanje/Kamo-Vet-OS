@@ -316,7 +316,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
 
-  const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit } = useClinicDraft({
+  const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit, leaving } = useClinicDraft({
     userId: draftUserId, scope: draftScope, requestKey,
     uncertainMessage: "Hasil pembayaran belum dapat dipastikan. Isian dan kunci percobaan tetap tersimpan. Periksa invoice sebelum mencoba lagi; jangan menerima pembayaran ulang.",
     snapshot: { sourceVersion: draftSourceVersion, obat, jasa, discount, metode, reason, voucher, poinPakai, bayar, salesperson, mixed, splitPayments, demoEnabled, demoPolicyId, demoEmployees },
@@ -600,8 +600,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
                 <i className="ti ti-printer" /> Cetak
               </span>
             )}
-            <SubmitButton className="btn-acc" name="finalize" value="0" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>{demoEnabled ? "Simpan lunas DEMO" : "Simpan"}</SubmitButton>
-            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
+            <SubmitButton className="btn-acc" name="finalize" value="0" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>{demoEnabled ? "Simpan lunas DEMO" : "Simpan"}</SubmitButton>
+            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
           </div>
         </div>
       </div>

@@ -101,18 +101,69 @@ select pg_temp.assert_ok((select sum(l.credit)=0.3125 from journal_lines l join 
 select pg_temp.assert_ok((select sum(qty_left*unit_cost)=2.1875 from stock_layers),'sub-cent layer value reconciles');
 rollback;
 
+-- I02 policy (28 Okt 2026): shop (toko) and clinic branches post opname
+-- differences identically. Minus = debit 5902 / credit 1301 at FIFO/average cost;
+-- plus = debit 1301 / credit 5902. No receivable invoice to the head store.
+create function pg_temp.assert_uniform_opname(label text,wh text,expected_inventory numeric) returns void language plpgsql as $$
+declare v_ref text;
+begin
+ select r.no_hasil into strict v_ref from opname_results r where r.order_id=md5(label)::uuid;
+ perform pg_temp.assert_ok((select sum(l.debit-l.credit)=expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='1301' and j.source='opname' and j.source_ref=v_ref),label||': inventory delta');
+ perform pg_temp.assert_ok((select sum(l.debit-l.credit)=-expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='5902' and j.source='opname' and j.source_ref=v_ref),label||': same variance expense account both directions');
+ perform pg_temp.assert_ok(not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where j.source in('opname','opname-selisih') and j.source_ref=v_ref and a.code not in('1301','5902')),label||': no COGS/receivable/revenue line');
+ perform pg_temp.assert_ok(not exists(select j.id from journal_entries j join journal_lines l on l.entry_id=j.id where j.source='opname' and j.source_ref=v_ref group by j.id having sum(l.debit)<>sum(l.credit)),label||': balanced');
+ perform pg_temp.assert_ok(not exists(select 1 from sales_invoices where kategori='selisih_stok') and not exists(select 1 from journal_entries where source='opname-selisih'),label||': no head-store receivable invoice');
+ perform pg_temp.assert_ok((select invoice_id is null from opname_results where order_id=md5(label)::uuid),label||': result has no invoice');
+ perform pg_temp.assert_ok((select source_snapshot->>'warehouse_policy'='uniform-variance-expense' and source_snapshot->>'variance_account'='5902' and receipt->>'no_faktur' is null from opname_posting_receipts where order_id=md5(label)::uuid),label||': receipt records uniform policy');
+ perform pg_temp.assert_ok((select sum(qty_left*unit_cost) from stock_layers where warehouse_id=md5(wh)::uuid)=1000+expected_inventory,label||': layer value equals GL');
+end$$;
+
 begin;
-select pg_temp.order_doc('i02-retail','i02-retail-wh');
+select pg_temp.order_doc('i02-retail-minus','i02-retail-wh');
 select stock_in_fifo(md5('i02-retail-wh')::uuid,md5('i02-a')::uuid,10,100,'fixture','RETAIL',current_date,null);
-insert into opname_counts(order_id,item_id,qty_sistem,qty_fisik) values(md5('i02-retail')::uuid,md5('i02-a')::uuid,10,8);
+insert into opname_counts(order_id,item_id,qty_sistem,qty_fisik) values(md5('i02-retail-minus')::uuid,md5('i02-a')::uuid,10,8);
 set local role authenticated;
 select set_config('request.jwt.claim.sub',md5('i02-owner')::uuid::text,true);
 select set_config('request.jwt.claim.role','authenticated',true);
-select post_opname_atomic(md5('i02-retail')::uuid,current_date,jsonb_build_object(md5('i02-a')::uuid::text,8));
-select pg_temp.assert_ok((select count(*)=1 and sum(total)=300 from sales_invoices where kategori='selisih_stok'),'legacy retail invoice preserved');
-select pg_temp.assert_ok((select sum(qty*harga)=300 from sales_invoice_items),'retail invoice lines reconcile');
-select pg_temp.assert_ok((select sum(l.debit-l.credit)=200 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='5101'),'retail COGS uses FIFO cost');
-select pg_temp.assert_ok((select sum(l.debit-l.credit)=300 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1201'),'retail receivable matches invoice');
+select post_opname_atomic(md5('i02-retail-minus')::uuid,current_date,jsonb_build_object(md5('i02-a')::uuid::text,8));
+reset role;
+select pg_temp.assert_uniform_opname('i02-retail-minus','i02-retail-wh',-200);
+rollback;
+
+begin;
+select pg_temp.order_doc('i02-retail-plus','i02-retail-wh');
+select stock_in_fifo(md5('i02-retail-wh')::uuid,md5('i02-a')::uuid,10,100,'fixture','RETAIL',current_date,null);
+insert into opname_counts(order_id,item_id,qty_sistem,qty_fisik) values(md5('i02-retail-plus')::uuid,md5('i02-a')::uuid,10,13);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i02-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select post_opname_atomic(md5('i02-retail-plus')::uuid,current_date,jsonb_build_object(md5('i02-a')::uuid::text,13));
+reset role;
+select pg_temp.assert_uniform_opname('i02-retail-plus','i02-retail-wh',300);
+rollback;
+
+begin;
+select pg_temp.order_doc('i02-clinic-minus');
+select stock_in_fifo(md5('i02-vet-wh')::uuid,md5('i02-a')::uuid,10,100,'fixture','CLINIC',current_date,null);
+insert into opname_counts(order_id,item_id,qty_sistem,qty_fisik) values(md5('i02-clinic-minus')::uuid,md5('i02-a')::uuid,10,8);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i02-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select post_opname_atomic(md5('i02-clinic-minus')::uuid,current_date,jsonb_build_object(md5('i02-a')::uuid::text,8));
+reset role;
+select pg_temp.assert_uniform_opname('i02-clinic-minus','i02-vet-wh',-200);
+rollback;
+
+begin;
+select pg_temp.order_doc('i02-clinic-plus');
+select stock_in_fifo(md5('i02-vet-wh')::uuid,md5('i02-a')::uuid,10,100,'fixture','CLINIC',current_date,null);
+insert into opname_counts(order_id,item_id,qty_sistem,qty_fisik) values(md5('i02-clinic-plus')::uuid,md5('i02-a')::uuid,10,13);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i02-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select post_opname_atomic(md5('i02-clinic-plus')::uuid,current_date,jsonb_build_object(md5('i02-a')::uuid::text,13));
+reset role;
+select pg_temp.assert_uniform_opname('i02-clinic-plus','i02-vet-wh',300);
 rollback;
 
 -- No retry of legacy partial source, no coercion of blank/invalid input, no

@@ -18,6 +18,7 @@ export type MedEntry = {
   branchName?:string;
   records?:ClinicalRecord[];
   readOnly?:boolean;
+  canOpen?:boolean;
 };
 export type RacikanEntry = { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string; date: string };
 export type InapEntry = { id: string; visitId: string; doctor: string | null; condition: string; admitted: string; discharged: string | null };
@@ -30,8 +31,8 @@ const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hou
 const TABS = ["Riwayat Medis", "Rawat Inap", "Resep / Racikan", "Invoice / Pembayaran"] as const;
 type Tab = (typeof TABS)[number];
 
-export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=false }: {
-  med: MedEntry[]; racikan: RacikanEntry[]; inap: InapEntry[]; invoices: InvoiceEntry[];clinicalUnavailable?:boolean;
+export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=false,crossBranch=false }: {
+  med: MedEntry[]; racikan: RacikanEntry[]; inap: InapEntry[]; invoices: InvoiceEntry[];clinicalUnavailable?:boolean;crossBranch?:boolean;
 }) {
   const [tab, setTab] = useState<Tab>("Riwayat Medis");
 
@@ -53,7 +54,7 @@ export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=f
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>Riwayat Medis</div>
           </div>
-          <p style={{fontSize:11,color:'var(--tm)'}}>Riwayat klinis mengikuti hak akses cabang akun Anda. Rincian di sini baca saja; pembayaran dan perubahan tetap melalui cabang asal.</p>
+          <p style={{fontSize:11,color:'var(--tm)'}}>{crossBranch?'Riwayat klinis pasien ini dari semua cabang, dicocokkan per ID pasien.':'Riwayat klinis mengikuti hak akses cabang akun Anda.'} Rincian di sini baca saja; pembayaran dan perubahan tetap melalui cabang asal.</p>
           {clinicalUnavailable?<p role="alert">Riwayat klinis belum dapat dimuat lengkap. Coba muat ulang.</p>:med.length === 0 ? (
             <Empty text="Belum ada riwayat medis." />
           ) : (
@@ -68,7 +69,7 @@ export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=f
                     <div style={{ fontSize: 10.5, color: "var(--tm)" }}><i className="ti ti-clock" style={{ fontSize: 11 }} /> {fmtTime(m.date)}</div>
                     <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 8 }}>{m.poli}</div>
                     {m.dokter && <div style={{ fontSize: 10.5, color: "var(--tm)" }}>{m.dokter}</div>}
-                    {m.branchName&&<div style={{fontSize:10.5,color:'var(--tm)'}}>{m.branchName}</div>}
+                    {m.branchName&&<div style={{marginTop:4}}><Pill><i className="ti ti-building-hospital" style={{fontSize:10}} /> {m.branchName}</Pill></div>}
                   </div>
                   <div>
                     <Label>Keluhan</Label>
@@ -97,7 +98,12 @@ export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=f
                     {!m.records?.length?<p>Rekam medis belum tersimpan untuk kunjungan ini.</p>:m.records.map(record=><section key={record.id} style={{marginTop:10,borderTop:'1px solid var(--bd)',paddingTop:8}}>
                       <b>{fmtDate(record.created_at)}</b><p>Anamnesis: {record.anamnesis||'—'}</p><p>Diagnosa: {record.diagnosis||'—'}</p><p>Terapi / tindakan: {record.therapy||'—'}</p>
                       <ul>{record.prescriptions.map(rx=><li key={rx.id}>{rx.nama_obat} · {rx.qty} {rx.satuan??''}{rx.aturan_pakai&&<> · {rx.aturan_pakai}</>}</li>)}</ul>
+                      {record.addenda?.map(a=><div key={a.id} style={{borderLeft:'2px solid var(--posb)',paddingLeft:8,marginTop:6}}>
+                        <b>Adendum</b> · {a.author??'—'} · {fmtDate(a.created_at)} {fmtTime(a.created_at)}
+                        {a.diagnosis&&<p>Diagnosa: {a.diagnosis}</p>}{a.therapy&&<p>Terapi: {a.therapy}</p>}{a.reason&&<p>Alasan: {a.reason}</p>}
+                      </div>)}
                     </section>)}
+                    {m.canOpen&&<Link href={`/klinik/rekam-medis/${m.visitId}`} style={{display:'inline-block',marginTop:6}}>Buka rekam medis</Link>}
                   </details>:<Link href={`/klinik/rekam-medis/${m.visitId}`} className="btn-def" style={{ padding: "5px 11px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
                     <i className="ti ti-eye" /> Lihat Detail
                   </Link>}
