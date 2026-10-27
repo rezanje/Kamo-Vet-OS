@@ -4,6 +4,7 @@ import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { loadUnitOptions } from "@/lib/satuan";
+import { loadItemHpp } from "@/lib/purchase-price-check";
 import { FakturForm, type PoOption, type PoInvoiceInitial } from "./FakturForm";
 
 type Rel<T> = T | T[] | null;
@@ -113,6 +114,9 @@ export default async function FakturBaruPage({
     invoicesByPo.set(invoice.po_id, rows);
   }
 
+  // P04: HPP rata-rata hanya untuk barang di PO yang tampil di halaman ini.
+  const hpp = loadError ? new Map<string, number>() : await loadItemHpp(supabase,
+    pos.flatMap(p => (p.purchase_order_items ?? []).map(r => r.item_id ?? "")));
   const options: PoOption[] = loadError ? [] : pos.map((p) => {
     const poItems = (p.purchase_order_items ?? []).map((r) => ({
       id: r.id,
@@ -149,7 +153,7 @@ export default async function FakturBaruPage({
         const satuan = r.satuan || one(r.items)?.unit || "unit";
         return [{
           po_item_id: r.id, item_id: r.item_id, sisa: qtyLeft, nama: r.nama,
-          harga_po: Number(r.harga_beli) || 0, satuan, faktor: factor, blockedReason,
+          harga_po: Number(r.harga_beli) || 0, satuan, faktor: factor, blockedReason, hpp: hpp.get(r.item_id) ?? null,
         }];
       }),
     };

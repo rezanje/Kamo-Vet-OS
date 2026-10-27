@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { POForm, type Item } from "./POForm";
 import { readCompleteList } from "@/lib/checked-list";
+import { itemHppMap } from "@/lib/purchase-price-check";
 
 type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number; buy_price: number; item_type: string };
 
@@ -36,6 +37,9 @@ export default async function BaruPOPage({
     stock.push(...await loadWarehouseStock(supabase, warehouses.slice(start, start + 200).map(w => w.id)));
   }
 
+  // P04: HPP rata-rata per barang dari saldo stok yang sudah dimuat untuk petunjuk stok.
+  const hpp = itemHppMap(stock);
+
   // Satuan berjenjang: PO bisa dibuat per box/sak, stok tetap masuk dalam satuan dasar.
   const unitMap = await loadItemUnits(supabase, (items ?? []).map((i) => i.id as string));
   const katalog: Item[] = (items ?? []).map((i) => ({
@@ -45,6 +49,7 @@ export default async function BaruPOPage({
     unit: i.unit as string,
     buy_price: Number(i.buy_price),
     item_type: i.item_type,
+    hpp: hpp.get(i.id as string) ?? null,
     units: unitOptions(
       { unit: i.unit as string, sell_price: Number(i.sell_price), buy_price: Number(i.buy_price) },
       unitMap.get(i.id as string) ?? [],

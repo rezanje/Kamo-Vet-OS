@@ -12,11 +12,13 @@ import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB, geserHari } from "@/lib/tanggal";
 import { buatFakturLangsung } from "./actions";
+import { priceDeviationWarning } from "@/lib/purchase-price-check";
+import { PriceDeviationConfirm, PriceDeviationHint } from "@/components/PriceDeviationConfirm";
 
 type SatuanOpsi = { unit: string; factor: number; buy_price: number };
 type ItemOpsi = {
   id: string; code: string; name: string; hargaBeli: number;
-  trackExpiry: boolean; satuan: SatuanOpsi[];
+  trackExpiry: boolean; satuan: SatuanOpsi[]; hpp?: number | null;
 };
 type Baris = { key: number; item_id: string; qty: number; harga: number; satuan: string; exp_date: string };
 
@@ -81,6 +83,14 @@ export function FakturLangsungForm({
   };
 
   const isi = baris.filter((r) => r.item_id && r.qty > 0);
+  // P04: faktor satuan baris (satuan dasar = 1) untuk membandingkan harga dengan HPP rata-rata.
+  const warningOf = (r: Baris) => {
+    const it = itemMap.get(r.item_id);
+    if (!it) return null;
+    const factor = (r.satuan ? it.satuan.find((o) => o.unit === r.satuan) : it.satuan[0])?.factor ?? 1;
+    return priceDeviationWarning(r.harga, factor, it.hpp);
+  };
+  const deviating = isi.filter((r) => warningOf(r)).length;
   const total = isi.reduce((a, r) => a + r.qty * r.harga, 0);
   const payload = isi.map((r) => ({
     item_id: r.item_id, qty: r.qty, harga: r.harga,
@@ -200,6 +210,7 @@ export function FakturLangsungForm({
                     <td>
                       <NumberInput className="fi" type="number" min={0} step="any" value={r.harga}
                         onChange={(e) => set(r.key, { harga: Number(e.target.value) })} />
+                      <PriceDeviationHint warning={warningOf(r)} />
                     </td>
                     <td>
                       {it?.trackExpiry ? (
@@ -239,6 +250,7 @@ export function FakturLangsungForm({
           barangnya tidak akan muncul di Monitor Kadaluarsa.
         </div>
 
+        <PriceDeviationConfirm count={deviating} />
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
           <SubmitButton className="btn-acc" disabled={!ready || payload.length === 0 || total <= 0}>
             <i className="ti ti-device-floppy" /> Simpan faktur &amp; terima barang
