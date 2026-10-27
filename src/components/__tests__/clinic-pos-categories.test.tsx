@@ -140,6 +140,27 @@ it.each(["exam", "inpatient"])("%s searches only finished compounds and designat
   expect(host.querySelector('button[aria-label="Pilih bahan Makanan kucing"]')).toBeNull();
 });
 
+it.each(["exam", "inpatient"])("%s retains a doctor-selected patient composition for a finished compound after draft reload", async kind => {
+  await render(kind); await tab("Racikan");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Obat Racik Sirup"]')!.click());
+  await search("Cari bahan racikan", "Bahan");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih bahan Bahan diizinkan"]')!.click());
+  const quantity = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah bahan Bahan diizinkan"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(quantity, "2");
+    quantity.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Tambah racikan ke keranjang"))!;
+  await act(async () => add.click());
+  const expected = [expect.objectContaining({ sale_item_id: "compound", item_id: null, jenis: "racikan",
+    ingredients: [expect.objectContaining({ item_id: "ingredient", qty: 2 })] })];
+  expect(cart()).toEqual(expected);
+  expect(cart()[0]).not.toHaveProperty("official_version_id");
+  await act(async () => root.unmount()); root = createRoot(host); await render(kind);
+  expect(cart()).toEqual(expected);
+  expect(cart()[0]).not.toHaveProperty("official_version_id");
+});
+
 it('places optional therapy below diagnosis and restores the note without adding billable items',async()=>{
   await render('exam');
   const note=host.querySelector<HTMLTextAreaElement>('textarea[name="therapy"]');expect(note).not.toBeNull();expect(note!.required).toBe(false);

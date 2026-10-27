@@ -49,8 +49,21 @@ alter default privileges in schema public grant all on sequences to authenticate
         except RuntimeError as error:
             raise RuntimeError(migration.name + ': ' + str(error)) from error
     print(f'Applied {len(migrations)} repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.')
-    for name in ['compound_catalog_sku_binding.sql', 'official_compound_catalog.sql', 'clinical_occupation_selection.sql']:
+    for name in ['compound_catalog_sku_binding.sql', 'official_compound_catalog.sql']:
         sql((ROOT / 'supabase/tests' / name).read_text())
         print(name + ': passed with real FIFO and prescription triggers.')
+    rollback = (ROOT / 'docs/rollback/2026-10-27-k03-doctor-compound.sql').read_text()
+    sql(rollback)
+    state = sql("""select
+      position('v_recipe_id:=public.clinic_issue_compound(p_medical_record_id,p_visit_id,v_recipe,v_key);'
+        in pg_get_functiondef('public.clinic_issue_master_compound(uuid,uuid,uuid,jsonb,text,uuid,text)'::regprocedure))>0,
+      to_regprocedure('public.clinic_doctor_custom_compound_supported()') is null,
+      has_function_privilege('authenticated','public.clinic_issue_master_compound(uuid,uuid,uuid,jsonb,text,uuid,text)','EXECUTE')""", tuples=True).stdout.strip()
+    if state != 't|t|t' or sql(rollback, check=False).returncode == 0:
+        raise RuntimeError('Doctor compound rollback did not restore the former API or reject a second apply')
+    print('doctor compound guarded rollback: passed; historical recipe tables untouched.')
+    name = 'clinical_occupation_selection.sql'
+    sql((ROOT / 'supabase/tests' / name).read_text())
+    print(name + ': passed with real FIFO and prescription triggers.')
 finally:
     subprocess.run(['docker', 'rm', '-f', CONTAINER], capture_output=True)
