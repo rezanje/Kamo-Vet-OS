@@ -14,17 +14,18 @@ production ke repo/PR.
 
 Layar penerimaan versi baru membaca kolom status batal. Kalau kode live sebelum migrasi, halaman penerimaan
 gagal dimuat. Jadi: **01 → 02 → 03 → baru merge PR → tunggu deploy → cek layar.**
-Migrasi aman untuk kode lama (hanya menambah kolom/tabel/fungsi; tidak mengubah data yang ada).
+Migrasi aman untuk kode lama: menambah kolom/tabel/fungsi dan menyesuaikan 3 fungsi persediaan supaya harga
+dari penerimaan yang dibatalkan tidak lagi dipakai sebagai patokan HPP; tidak mengubah data yang ada.
 
 ## File
 
 | File | Menulis? | sha256 |
 |---|---|---|
-| `supabase/migrations/20261028120000_goods_receipt_cancellation.sql` | (isi dari 02) | `087abef2b035fe2982729c2e8f66b81228401861ed0bb64df576d03078b9ab28` |
-| `01-preflight-readonly.sql` | tidak | `fd5a337318201d7f2ee9e7c0d2e43563bb6ad3224c72a23cb5d5ea5135fc929e` |
-| `02-apply.sql` | **ya** — migrasi persis + baris riwayat, satu transaksi | `12a00e68e1da6ed0d766bc7ff095b934a1025dd0f813b5d864881ecd43ed11e4` |
-| `03-readback-readonly.sql` | tidak | `e5750ecb65596a877019545b0208cee7f09a0926780addec3546b267754c69bc` |
-| `04-rollback-only-if-unused.sql` | **ya** — hanya bila diputuskan rollback, sebelum ada penerimaan dibatalkan | `f50736e3ef4240d90df79eb515be9f3318395e4df964b6f6a902c0b8b11f548b` |
+| `supabase/migrations/20261028190000_goods_receipt_cancellation.sql` | (isi dari 02) | `3805bfe42bf0fbfaa4a5521d8ee0841c73efd851032e14afa3dc771af6eb6baa` |
+| `01-preflight-readonly.sql` | tidak | `2ee1d0bfa408e27f4455d579703217673c20413b5f420f095adb95d112824e22` |
+| `02-apply.sql` | **ya** — migrasi persis + baris riwayat, satu transaksi | `64657b1b2cf3cad8dddec68e2e120b2ac816968201255f61abbb55485082a045` |
+| `03-readback-readonly.sql` | tidak | `f4f22744983e44b777a1af2e2802440a9d238e395306e080d46c974d0532b76b` |
+| `04-rollback-only-if-unused.sql` | **ya** — hanya bila diputuskan rollback, sebelum ada penerimaan dibatalkan; mengembalikan 4 fungsi yang disesuaikan persis seperti semula | `6a71a11c07a51b00ddbc3d1d6abbbe367d95f01c706522851e407a524a07aadf` |
 | `05-freeze-if-used.sql` | **ya** — menghentikan pembatalan baru, riwayat tetap | `e06cc7a9ece088ad0f837e898f97cdef735010390f08f3334abb31cbeaf7d7a5` |
 
 `02` dihasilkan `build-and-verify.py`; jangan diedit tangan. Gladi lengkap (PostgreSQL 16, data fiktif):

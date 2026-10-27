@@ -6,6 +6,7 @@ PASS 03 readback: SUMMARY|0 failed|0 failed|t
 PASS 02 again refused
 PASS P08 suite after apply (rolled back)
 PASS 04 rollback on unused install; 01 again: SUMMARY|0 failed|0 failed|t
+PASS 04 restored the 4 patched functions byte-identical
 PASS 02 re-apply; 03: SUMMARY|0 failed|0 failed|t
 PASS 04 refused once a receipt is cancelled; data intact
 PASS 05 freeze stops new cancellations

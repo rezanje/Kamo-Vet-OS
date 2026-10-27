@@ -10,18 +10,22 @@ insert into items(id,code,name,unit,item_type) values
  ('f8400000-0000-4000-8000-000000000001','P08-A','P08 safe goods','pcs','Persediaan'),
  ('f8400000-0000-4000-8000-000000000002','P08-D','P08 invoiced goods','pcs','Persediaan'),
  ('f8400000-0000-4000-8000-000000000003','P08-E','P08 consumed goods','pcs','Persediaan'),
- ('f8400000-0000-4000-8000-000000000004','P08-S','P08 service','pcs','Jasa');
+ ('f8400000-0000-4000-8000-000000000004','P08-S','P08 service','pcs','Jasa'),
+ ('f8400000-0000-4000-8000-000000000005','P08-G','P08 cost evidence goods','pcs','Persediaan');
+update items set buy_price=7 where id='f8400000-0000-4000-8000-000000000005';
 insert into item_units(item_id,unit,factor) values
- ('f8400000-0000-4000-8000-000000000001','box',10),('f8400000-0000-4000-8000-000000000002','box',10),('f8400000-0000-4000-8000-000000000003','box',10);
+ ('f8400000-0000-4000-8000-000000000001','box',10),('f8400000-0000-4000-8000-000000000002','box',10),('f8400000-0000-4000-8000-000000000003','box',10),('f8400000-0000-4000-8000-000000000005','box',10);
 insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,status) values
  ('f8500000-0000-4000-8000-000000000001','PO.P08.A','f8300000-0000-4000-8000-000000000001','f8100000-0000-4000-8000-000000000001','f8200000-0000-4000-8000-000000000001','Dipesan'),
  ('f8500000-0000-4000-8000-000000000002','PO.P08.D','f8300000-0000-4000-8000-000000000001','f8100000-0000-4000-8000-000000000001','f8200000-0000-4000-8000-000000000001','Dipesan'),
+ ('f8500000-0000-4000-8000-000000000005','PO.P08.G','f8300000-0000-4000-8000-000000000001','f8100000-0000-4000-8000-000000000001','f8200000-0000-4000-8000-000000000001','Dipesan'),
  ('f8500000-0000-4000-8000-000000000003','PO.P08.E','f8300000-0000-4000-8000-000000000001','f8100000-0000-4000-8000-000000000001','f8200000-0000-4000-8000-000000000001','Dipesan');
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor) values
  ('f8600000-0000-4000-8000-000000000001','f8500000-0000-4000-8000-000000000001','f8400000-0000-4000-8000-000000000001','P08 safe goods',4,100,'box',10),
  ('f8600000-0000-4000-8000-000000000004','f8500000-0000-4000-8000-000000000001','f8400000-0000-4000-8000-000000000004','P08 service',1,50,null,1),
  ('f8600000-0000-4000-8000-000000000002','f8500000-0000-4000-8000-000000000002','f8400000-0000-4000-8000-000000000002','P08 invoiced goods',2,100,'box',10),
- ('f8600000-0000-4000-8000-000000000003','f8500000-0000-4000-8000-000000000003','f8400000-0000-4000-8000-000000000003','P08 consumed goods',2,100,'box',10);
+ ('f8600000-0000-4000-8000-000000000003','f8500000-0000-4000-8000-000000000003','f8400000-0000-4000-8000-000000000003','P08 consumed goods',2,100,'box',10),
+ ('f8600000-0000-4000-8000-000000000005','f8500000-0000-4000-8000-000000000005','f8400000-0000-4000-8000-000000000005','P08 cost evidence goods',1,500,'box',10);
 insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction stock','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
 update coa_accounts set is_active=true,is_header=false where code in('1301','2102');
 update accounting_locks set closed_until=null;
@@ -134,6 +138,22 @@ select pg_temp.expect_error(format('select cancel_goods_receipt(%L,%L,%L)',(sele
 select pg_temp.ok((select qty from stock where item_id='f8400000-0000-4000-8000-000000000003')=19,'consumed refusal left stock');
 select pg_temp.ok((select coalesce(qty_terima,0) from purchase_order_items where id='f8600000-0000-4000-8000-000000000003')=2,'consumed refusal left PO');
 select pg_temp.ok(not exists(select 1 from journal_entries where source='purchase-receipt-void' and source_ref=(select result->>'no_terima' from p08_results where name='E')),'consumed refusal left journal');
+
+-- 6. A cancelled receipt is no longer cost evidence (layers and moves), like a voided direct invoice.
+insert into p08_results select 'G',receive_purchase_order('f8500000-0000-4000-8000-000000000005','p08-receipt-g','TB.P08.',5,current_date,null,null,'[{"id":"f8600000-0000-4000-8000-000000000005","qty_terima":1}]');
+select pg_temp.ok((select method from inventory_costing_settings where id)='moving_average'
+ or inventory_effective_unit_cost('f8200000-0000-4000-8000-000000000001','f8400000-0000-4000-8000-000000000005')=50,'active receipt is cost evidence');
+select pg_temp.ok(cancel_goods_receipt((select (result->>'receipt_id')::uuid from p08_results where name='G'),'p08-cancel-g','Harga salah',current_date) ? 'reversal_journal_id','receipt G cancelled');
+select pg_temp.ok(stock_layer_cost_was_reversed(l.id) and stock_move_cost_was_reversed(m.id),'cancelled layer and move marked reversed')
+ from stock_layers l join stock_moves m on m.item_id=l.item_id and m.source='purchase' where l.item_id='f8400000-0000-4000-8000-000000000005';
+-- FIFO keeps no average, so the fallback must skip the cancelled 50/unit and use the master price 7.
+select pg_temp.ok((select method from inventory_costing_settings where id)='moving_average'
+ or inventory_effective_unit_cost('f8200000-0000-4000-8000-000000000001','f8400000-0000-4000-8000-000000000005')=7,'cancelled receipt cost not reused');
+reset role;
+do $$declare issued record;begin
+ select * into issued from stock_out_fifo('f8200000-0000-4000-8000-000000000001','f8400000-0000-4000-8000-000000000005',1,'test-consume','TEST.P08.G',current_date);
+ perform pg_temp.ok((select method from inventory_costing_settings where id)='moving_average' or issued.harga_beli=7,'FIFO shortfall fallback skips cancelled receipt cost');
+end$$;
 
 reset role;
 -- GL stays balanced overall.

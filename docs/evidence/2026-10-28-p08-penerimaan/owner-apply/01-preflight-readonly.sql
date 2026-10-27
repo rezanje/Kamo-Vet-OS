@@ -7,7 +7,7 @@ with checks(check_name, expected, actual) as (
   union all select 'info: database', null, current_database()::text
   union all select 'role: running as postgres (apply requires it)', 'postgres', current_user::text
   union all select 'history: table supabase_migrations.schema_migrations', 'true', (to_regclass('supabase_migrations.schema_migrations') is not null)::text
-  union all select 'history: 20261028120000 not recorded yet', '0', (select count(*) from supabase_migrations.schema_migrations where version = '20261028120000')::text
+  union all select 'history: 20261028190000 not recorded yet', '0', (select count(*) from supabase_migrations.schema_migrations where version = '20261028190000')::text
   union all select 'not yet applied: goods_receipts has no void columns', '0', (select count(*) from information_schema.columns where table_schema = 'public'
       and table_name = 'goods_receipts' and column_name in ('voided_at', 'voided_on', 'voided_by', 'void_reason', 'reversal_journal_id'))::text
   union all select 'not yet applied: table purchase_receipt_cancellations absent', 'true', (to_regclass('public.purchase_receipt_cancellations') is null)::text
@@ -25,6 +25,15 @@ with checks(check_name, expected, actual) as (
   union all select 'dependency: moving-average anchor appears exactly once in inventory_record_valuation', '1',
       ((length(prosrc) - length(replace(prosrc, 'new.source=''purchase-invoice-void''', ''))) / length('new.source=''purchase-invoice-void'''))::text
       from pg_proc where oid = to_regprocedure('public.inventory_record_valuation()')
+  union all select 'dependency: cost-evidence anchor appears exactly once in inventory_effective_unit_cost', '1',
+      ((length(prosrc) - length(replace(prosrc, 'and m.source not in(''sale-void'',''purchase-invoice-void'')', ''))) / length('and m.source not in(''sale-void'',''purchase-invoice-void'')'))::text
+      from pg_proc where oid = to_regprocedure('public.inventory_effective_unit_cost(uuid,uuid)')
+  union all select 'dependency: cost-evidence anchor appears exactly once in stock_out_fifo', '1',
+      ((length(prosrc) - length(replace(prosrc, 'and source not in (''sale-void'', ''purchase-invoice-void'')', ''))) / length('and source not in (''sale-void'', ''purchase-invoice-void'')'))::text
+      from pg_proc where oid = to_regprocedure('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)')
+  union all select 'dependency: stock_layer_cost_was_reversed is the original (invoice proofs only)', 'false',
+      (select position('purchase_receipt_cancellations' in prosrc) > 0 from pg_proc where oid = to_regprocedure('public.stock_layer_cost_was_reversed(uuid)'))::text
+  union all select 'not yet applied: function stock_move_cost_was_reversed absent', 'true', (to_regprocedure('public.stock_move_cost_was_reversed(uuid)') is null)::text
   union all select 'dependency: COA 1301 and 2102 active, not header', '2', (select count(*) from public.coa_accounts where code in ('1301', '2102') and is_active and not is_header)::text
   union all select 'name free: no stock move/journal with source purchase-receipt-void', '0',
       ((select count(*) from public.stock_moves where source = 'purchase-receipt-void') + (select count(*) from public.journal_entries where source = 'purchase-receipt-void'))::text

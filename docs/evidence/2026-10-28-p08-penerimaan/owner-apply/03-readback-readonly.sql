@@ -1,7 +1,7 @@
 -- P08 PEMBATALAN PENERIMAAN — READBACK, READ ONLY. Run after 02. Last row SUMMARY must say "0 failed".
 begin read only;
 with checks(check_name, expected, actual) as (
-  select 'history: 20261028120000 recorded once', '1', (select count(*) from supabase_migrations.schema_migrations where version = '20261028120000')::text
+  select 'history: 20261028190000 recorded once', '1', (select count(*) from supabase_migrations.schema_migrations where version = '20261028190000')::text
   union all select 'columns: goods_receipts void columns', '5', (select count(*) from information_schema.columns where table_schema = 'public'
       and table_name = 'goods_receipts' and column_name in ('voided_at', 'voided_on', 'voided_by', 'void_reason', 'reversal_journal_id'))::text
   union all select 'table: purchase_receipt_cancellations with RLS on', 'true',
@@ -15,6 +15,11 @@ with checks(check_name, expected, actual) as (
       'purchase_receipt_void_move_guard', 'purchase_receipt_void_journal_guard', 'purchase_receipt_void_journal_lines_guard'))::text
   union all select 'average: valuation treats purchase-receipt-void like invoice void', 'true',
       (select position('purchase-receipt-void' in prosrc) > 0 from pg_proc where oid = to_regprocedure('public.inventory_record_valuation()'))::text
+  union all select 'cost evidence: cancelled receipt layers count as reversed', 'true',
+      (select position('purchase_receipt_cancellations' in prosrc) > 0 from pg_proc where oid = to_regprocedure('public.stock_layer_cost_was_reversed(uuid)'))::text
+  union all select 'cost evidence: both fallbacks skip cancelled receipt moves', '2', (select count(*) from pg_proc where oid in (
+      to_regprocedure('public.inventory_effective_unit_cost(uuid,uuid)'), to_regprocedure('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'))
+      and position('stock_move_cost_was_reversed' in prosrc) > 0)::text
   union all select 'data: no receipt cancelled by the apply itself', '0', (select count(*) from public.goods_receipts where voided_at is not null)::text
   union all select 'data: no cancellation rows yet', '0', (select count(*) from public.purchase_receipt_cancellations)::text
 )

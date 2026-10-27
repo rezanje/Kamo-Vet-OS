@@ -141,6 +141,54 @@ begin
   end if;
 end $$;
 
+-- Harga dari penerimaan yang dibatalkan bukan lagi bukti harga pokok (fallback HPP), sama seperti
+-- lapisan faktur langsung yang dibatalkan.
+create or replace function public.stock_layer_cost_was_reversed(p_layer_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.purchase_invoice_layer_proofs proof
+    join public.purchase_invoices invoice on invoice.id = proof.invoice_id
+    where proof.layer_id = p_layer_id and proof.before_state is null
+      and invoice.voided_at is not null
+  ) or exists (
+    select 1 from public.purchase_receipt_cancellations c
+    where c.layers @> jsonb_build_array(jsonb_build_object('id', p_layer_id))
+  );
+$$;
+revoke all on function public.stock_layer_cost_was_reversed(uuid) from public, anon;
+grant execute on function public.stock_layer_cost_was_reversed(uuid) to authenticated;
+
+create or replace function public.stock_move_cost_was_reversed(p_move_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.purchase_receipt_cancellations c
+    where c.stock_moves @> jsonb_build_array(jsonb_build_object('id', p_move_id))
+  );
+$$;
+revoke all on function public.stock_move_cost_was_reversed(uuid) from public, anon;
+grant execute on function public.stock_move_cost_was_reversed(uuid) to authenticated;
+
+do $$
+declare body text; anchor text;
+begin
+  select pg_get_functiondef('public.inventory_effective_unit_cost(uuid,uuid)'::regprocedure) into body;
+  if position('stock_move_cost_was_reversed' in body) = 0 then
+    anchor := $q$and m.source not in('sale-void','purchase-invoice-void')$q$;
+    if (length(body) - length(replace(body, anchor, ''))) / length(anchor) <> 1 then
+      raise exception 'P08: anchor inventory_effective_unit_cost tidak ditemukan; migrasi dihentikan';
+    end if;
+    execute replace(body, anchor, anchor || ' and not public.stock_move_cost_was_reversed(m.id)');
+  end if;
+  select pg_get_functiondef('public.stock_out_fifo(uuid,uuid,numeric,text,text,date)'::regprocedure) into body;
+  if position('stock_move_cost_was_reversed' in body) = 0 then
+    anchor := $q$and source not in ('sale-void', 'purchase-invoice-void')$q$;
+    if (length(body) - length(replace(body, anchor, ''))) / length(anchor) <> 1 then
+      raise exception 'P08: anchor stock_out_fifo tidak ditemukan; migrasi dihentikan';
+    end if;
+    execute replace(body, anchor, anchor || ' and not public.stock_move_cost_was_reversed(id)');
+  end if;
+end $$;
+
 create or replace function public.cancel_goods_receipt(
   p_receipt_id uuid, p_request_key text, p_reason text,
   p_tanggal date default (now() at time zone 'Asia/Jakarta')::date
@@ -274,9 +322,10 @@ begin
 
   -- Jurnal sumber: Persediaan (1301) / Barang diterima belum difaktur (2102) senilai dokumen.
   select coalesce(sum(gi.qty_terima * gi.harga), 0) into v_total from public.goods_receipt_items gi where gi.receipt_id = gr.id;
+  -- Sama dengan pembatalan faktur: kunci jurnal (setelah stok/lapisan) sebelum membaca jurnal sumber.
+  lock table public.journal_entries in share row exclusive mode;
   select count(*), min(e.id::text)::uuid into v_journal_count, v_source_journal
     from public.journal_entries e where e.source = 'purchase' and e.source_ref = gr.no_terima;
-  lock table public.journal_entries in share row exclusive mode;
   if v_total > 0 then
     if v_journal_count <> 1 or exists (select 1 from public.journal_entries e where e.id = v_source_journal and e.voided_at is not null) then
       raise exception '%', unclear;

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """P08 goods receipt cancellation — owner package: generate 02 and rehearse the whole package.
 
-02-apply.sql = migration 20261028120000 verbatim + history row, one transaction (generated; never edit by hand).
+02-apply.sql = migration 20261028190000 verbatim + history row, one transaction (generated; never edit by hand).
 01/03/04/05 are hand-written and only rehearsed here.
 
 Rehearsal on a throwaway native cluster (scripts/native_postgres.py: unix socket only, no Docker, no DB URL,
 deleted afterwards), fictional fixtures only:
   all repository migrations except P08 + simulated history → P08 suite FAILS (detects the missing change) →
   01 preflight 0 failed → 02 apply → 03 readback 0 failed → 02 again refused → P08 suite passes (rolled back) →
-  04 rollback (unused) → 01 preflight 0 failed again → 02 re-apply → 03 0 failed → one fictional cancelled
+  04 rollback (unused) → patched functions byte-identical, 01 preflight 0 failed again → 02 re-apply → 03 0 failed → one fictional cancelled
   receipt committed → 04 refused, data intact → 05 freeze → authenticated can no longer execute.
 
 Usage: python3 docs/evidence/2026-10-28-p08-penerimaan/owner-apply/build-and-verify.py BIN_DIR [--write]
@@ -25,9 +25,12 @@ ROOT = HERE.parents[3]
 sys.path.insert(0, str(ROOT / "scripts"))
 from native_postgres import NativePostgres  # noqa: E402
 
-VERSION, NAME = "20261028120000", "goods_receipt_cancellation"
+VERSION, NAME = "20261028190000", "goods_receipt_cancellation"
 MIGRATION = ROOT / "supabase/migrations" / f"{VERSION}_{NAME}.sql"
 SUITE = ROOT / "supabase/tests/goods_receipt_cancellation.sql"
+# Existing functions the apply patches; 04 must restore them byte-identical.
+PATCHED = ("select string_agg(p.proname || ':' || md5(p.prosrc), ',' order by p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace "
+           "where n.nspname = 'public' and p.proname in ('inventory_record_valuation', 'inventory_effective_unit_cost', 'stock_out_fifo', 'stock_layer_cost_was_reversed');")
 
 
 def apply_sql():
@@ -88,6 +91,7 @@ def main():
         expect_fail(db, SUITE.read_text(), "ERROR")
         print("PASS P08 suite fails on the base (detects the missing change)", flush=True)
         print("PASS 01 preflight:", summary(db, "01-preflight-readonly.sql"), flush=True)
+        original = db.sql(PATCHED)
         db.sql(target.read_text())
         print("PASS 02 apply", flush=True)
         print("PASS 03 readback:", summary(db, "03-readback-readonly.sql"), flush=True)
@@ -97,6 +101,8 @@ def main():
         print("PASS P08 suite after apply (rolled back)", flush=True)
         db.sql((HERE / "04-rollback-only-if-unused.sql").read_text())
         print("PASS 04 rollback on unused install; 01 again:", summary(db, "01-preflight-readonly.sql"), flush=True)
+        assert db.sql(PATCHED) == original, "04 did not restore patched functions byte-identical"
+        print("PASS 04 restored the 4 patched functions byte-identical", flush=True)
         db.sql(target.read_text())
         print("PASS 02 re-apply; 03:", summary(db, "03-readback-readonly.sql"), flush=True)
         db.sql("""insert into branches(id,code,name,type) values('f9100000-0000-4000-8000-000000000001','P08-PKG','P08 pkg','KLINIK');
@@ -105,7 +111,7 @@ insert into goods_receipts(id,no_terima,po_id,tanggal,voided_at,void_reason) val
         before = db.sql("select count(*), max(void_reason) from goods_receipts where voided_at is not null;")
         expect_fail(db, (HERE / "04-rollback-only-if-unused.sql").read_text(), "P08_IN_USE")
         assert db.sql("select count(*), max(void_reason) from goods_receipts where voided_at is not null;") == before
-        assert db.sql("select count(*) from supabase_migrations.schema_migrations where version='20261028120000';") == "1"
+        assert db.sql("select count(*) from supabase_migrations.schema_migrations where version='20261028190000';") == "1"
         print("PASS 04 refused once a receipt is cancelled; data intact", flush=True)
         db.sql((HERE / "05-freeze-if-used.sql").read_text())
         assert db.sql("select has_function_privilege('authenticated','public.cancel_goods_receipt(uuid,text,text,date)','execute');") == "f"
