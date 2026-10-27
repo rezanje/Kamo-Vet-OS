@@ -152,8 +152,16 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                   // Line qty follows the recipe: packages x component qty per package (in the line's unit).
                   const qtyUntuk = (packageId: string, jumlah: number) => {
                     const base = choices.find(option => option.id === packageId)?.perPaket?.[r.item_id!];
-                    const factor = master.find(it => it.id === r.item_id)?.units?.find(unit => unit.unit === r.satuan)?.factor ?? 1;
-                    return base ? { qty: Math.round((jumlah * base / factor) * 10000) / 10000 } : {};
+                    if (!base) return {};
+                    const units = master.find(it => it.id === r.item_id)?.units ?? [];
+                    const factor = units.find(unit => unit.unit === r.satuan)?.factor ?? 1;
+                    const needed = jumlah * base; // base units, exactly as the database checks
+                    const inUnit = needed / factor;
+                    // Invoice lines hold whole quantities: when the chosen unit cannot express the
+                    // recipe exactly, bill the component in its base unit instead of rounding.
+                    if (Math.abs(inUnit - Math.round(inUnit)) < 1e-9 || factor === 1) return { qty: inUnit };
+                    const baseUnit = units.find(unit => unit.factor === 1);
+                    return baseUnit ? { qty: needed, satuan: baseUnit.unit, harga: baseUnit.sell_price } : { qty: inUnit };
                   };
                   return <div style={{display:'flex',gap:4,alignItems:'flex-end',marginTop:4}}>
                     <label style={{display:'block',fontSize:10,flex:1}}>Asal paket

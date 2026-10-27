@@ -102,7 +102,9 @@ create policy commission_rules_write_admin_general on public.commission_rules
 -- ===== 20261028170500_h06_doctor_visit_tamper_guard.sql =====
 -- H06: the doctor-visit incentive pays from inpatient_daily_logs rows with log_kind='doctor_visit'.
 -- Those rows must not be steerable from the browser:
---  * on save, a visit's time is the server's time (any client created_at/log_date is replaced);
+--  * on save, the entered visit time is kept only if it is not in the future and at most 48 hours
+--    old (OWNER/ADMIN may record any past time); otherwise the save is refused with a clear
+--    message. The visit date always follows the visit time in Asia/Jakarta;
 --  * after save, only OWNER/ADMIN may change a visit's time, date, doctor or kind (also turning a
 --    monitoring note into a visit or a visit into a monitoring note). Everyone else is refused.
 -- Monitoring notes keep their current behaviour (backdated entry still allowed). Edits remain
@@ -112,8 +114,17 @@ language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'INSERT' then
     if new.log_kind = 'doctor_visit' then
-      new.created_at := now();
-      new.log_date := (now() at time zone 'Asia/Jakarta')::date;
+      new.created_at := coalesce(new.created_at, now());
+      if new.created_at > now() + interval '5 minutes' then
+        raise exception using errcode = 'P0001', message = 'CARE_INVALID: waktu visit dokter tidak boleh di masa depan';
+      end if;
+      if new.created_at < now() - interval '48 hours'
+         and coalesce(auth.role(), '') = 'authenticated'
+         and coalesce(private.hris_role(), '') not in ('OWNER', 'ADMIN') then
+        raise exception using errcode = 'P0001',
+          message = 'CARE_INVALID: visit dokter lebih dari 48 jam lalu hanya dapat dicatat Admin/Owner';
+      end if;
+      new.log_date := (new.created_at at time zone 'Asia/Jakarta')::date;
     end if;
     return new;
   end if;
@@ -186,6 +197,11 @@ begin
     end if;
     return new;
   end if;
+  -- One package sale has one package qty: every tagged component line must agree.
+  if exists(select 1 from public.invoice_items x where x.invoice_id = new.invoice_id
+      and x.package_item_id = new.package_item_id and x.package_qty <> new.package_qty) then
+    raise exception using errcode = 'P0001', message = 'CARE_INVALID: jumlah paket harus sama untuk semua komponen paket ini di satu invoice';
+  end if;
   if exists(select 1 from public.invoice_items x where x.invoice_id = new.invoice_id and x.item_id = new.package_item_id) then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: paket ini sudah ditagih sebagai satu baris di invoice yang sama';
   end if;
@@ -201,8 +217,10 @@ begin
   if v_recipe_base is null then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: barang ini bukan komponen paket aktif yang dipilih';
   end if;
+  -- Compare in base units; the tolerance scales with the line unit factor (one rounding step
+  -- of the line quantity is factor x 0.0001 base units).
   v_line_base := new.qty * coalesce(new.faktor, 1);
-  if abs(v_line_base - new.package_qty * v_recipe_base) > 0.0001 then
+  if abs(v_line_base - new.package_qty * v_recipe_base) > 0.0001 * greatest(coalesce(new.faktor, 1), 1) then
     raise exception using errcode = 'P0001',
       message = format('CARE_INVALID: jumlah komponen harus %s (jumlah paket x isi resep), bukan %s', trim_scale(new.package_qty * v_recipe_base), trim_scale(v_line_base));
   end if;
@@ -335,7 +353,9 @@ comment on column public.employee_salary_components.override_reason is
 
 create table if not exists public.payslip_override_history (
   id uuid primary key default gen_random_uuid(),
-  employee_id uuid not null references public.employees(id) on delete cascade,
+  -- No foreign key: history must outlive the employee and must never block deleting one
+  -- (the cascaded component/template deletes write their own history rows).
+  employee_id uuid not null,
   action text not null check (action in ('template_set', 'template_removed', 'component_set', 'component_removed')),
   template_id uuid,
   component_id uuid,

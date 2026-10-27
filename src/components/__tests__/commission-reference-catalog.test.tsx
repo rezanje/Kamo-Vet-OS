@@ -12,7 +12,7 @@ vi.mock("@/lib/komisi-data", () => ({ komisiPeriode: async () => ({
   ] }] : [], omzetTanpaPenjual: 0, baris: [],
 }), muatKebijakanKomisiJasa: async () => ({ policies: [], installed: state.policyInstalled }) }));
 vi.mock("@/app/(app)/penjualan/komisi/actions", () => ({ hapusAturanKomisi: vi.fn(), simpanAturanKomisi: vi.fn(), toggleAturanKomisi: vi.fn(), simpanKebijakanKomisiJasa: vi.fn(), simpanKelompokKomisi: vi.fn() }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(table: string) {
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: null } }) }, from(table: string) {
   const read = { table, orders: [], from: 0 } as { table: string; orders: string[]; from: number }; state.reads.push(read);
   let to = 999, counted = false;
   const filters: ((row: Row) => boolean)[] = [];
@@ -84,4 +84,9 @@ it("shows quantity, configured rate and net-sales basis in the employee readout"
   expect(html).toContain("omzet neto Rp 75.000 × 7,5%");
   expect(html).toContain("(doctor_new)");
   expect(html).not.toContain("dasar Rp 1");
+});
+
+it("tells accounts that cannot read personal/group rules that totals may be partial", async () => {
+  const html = renderToStaticMarkup(await page());
+  expect(html).toContain("Aturan khusus karyawan/kelompok disembunyikan");
 });

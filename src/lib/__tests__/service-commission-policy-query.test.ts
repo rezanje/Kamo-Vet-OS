@@ -1,6 +1,9 @@
 import { expect,it } from "vitest";
 import { komisiPeriode, muatKebijakanKomisiJasa } from "../komisi-data";
 import { assertServiceAttributionReady } from "../commission-readiness";
+// Timestamps compare as instants (offset-less = UTC, like Postgres on Supabase); dates/text as strings.
+const at = (v: string) => /T\d\d:/.test(v) ? Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(v) ? v : `${v}Z`) : NaN;
+const cmp = (a: string, b: string) => { const x = at(a), y = at(b); return Number.isNaN(x) || Number.isNaN(y) ? (a < b ? -1 : a > b ? 1 : 0) : x - y; };
 
 function client(options:{policyError?:{code:string;message:string};singleOnly?:boolean}={}) {
  const tables:Record<string,Record<string,unknown>[]>={
@@ -20,8 +23,9 @@ function client(options:{policyError?:{code:string;message:string};singleOnly?:b
    eq:(key:string,value:unknown)=>{filters.push(row=>row[key]===value);return q;},
    neq:(key:string,value:unknown)=>{filters.push(row=>row[key]!==value);return q;},
    is:(key:string,value:unknown)=>{filters.push(row=>row[key]===value);return q;},
-   gte:(key:string,value:string)=>{filters.push(row=>String(row[key])>=value);return q;},
-   lte:(key:string,value:string)=>{filters.push(row=>String(row[key])<=value);return q;},
+   gte:(key:string,value:string)=>{filters.push(row=>cmp(String(row[key]),value)>=0);return q;},
+   lte:(key:string,value:string)=>{filters.push(row=>cmp(String(row[key]),value)<=0);return q;},
+   lt:(key:string,value:string)=>{filters.push(row=>cmp(String(row[key]),value)<0);return q;},
    range:(start:number,end:number)=>{from=start;to=end;return q;},
    then:(resolve:(result:unknown)=>unknown)=>{
     if(table==="service_commission_policies"&&options.policyError)return Promise.resolve({data:null,count:null,error:options.policyError}).then(resolve);

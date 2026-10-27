@@ -42,7 +42,9 @@ comment on column public.employee_salary_components.override_reason is
 
 create table if not exists public.payslip_override_history (
   id uuid primary key default gen_random_uuid(),
-  employee_id uuid not null references public.employees(id) on delete cascade,
+  -- No foreign key: history must outlive the employee and must never block deleting one
+  -- (the cascaded component/template deletes write their own history rows).
+  employee_id uuid not null,
   action text not null check (action in ('template_set', 'template_removed', 'component_set', 'component_removed')),
   template_id uuid,
   component_id uuid,

@@ -25,18 +25,23 @@ export type EditRow = {
   before: { condition_note?: string; tindakan?: string | null; keterangan?: string | null; doctor_name?: string | null;paramedic_name?:string|null;log_kind?:string|null };
 };
 
-export function LogEditForm({ log, recordId, backHref, patient, editable, edits,doctors=[],paramedics=[] }: {
+export function LogEditForm({ log, recordId, backHref, patient, editable, edits,doctors=[],paramedics=[],bolehKoreksiVisit=true }: {
   log: LogRow; recordId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   editable: boolean;
   edits: EditRow[];
   doctors?:ClinicalStaff[];paramedics?:ClinicalStaff[];
+  /** H06: false = visit time/doctor/kind are read-only (correction by Admin/Owner). */
+  bolehKoreksiVisit?: boolean;
 }) {
+  const kunciVisit = !bolehKoreksiVisit;
+  const kunciWaktu = kunciVisit && log.log_kind === "doctor_visit";
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:log.log_kind??null,visit_doctor_id:log.visit_doctor_id??null,paramedic_id:log.paramedic_id??null});
   const d = new Date(log.created_at);
   const pad = (n: number) => String(n).padStart(2, "0");
   const dateStr = log.log_date?.slice(0, 10) || `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // WIB, matching how the server compares an unchanged time (a locked visit time must round-trip).
+  const timeStr = new Date(d.getTime() + 7 * 3600_000).toISOString().slice(11, 16);
 
   return (
     <PreservedForm action={updateDailyLog}>
@@ -79,13 +84,14 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
           <div className="frow">
             <div>
               <label className="flab">Tanggal *</label>
-              <input className="fi" type="date" name="log_date" defaultValue={dateStr} required disabled={!editable} />
+              <input className="fi" type="date" name="log_date" defaultValue={dateStr} required disabled={!editable} readOnly={kunciWaktu} />
             </div>
             <div>
               <label className="flab">Waktu *</label>
-              <input className="fi" type="time" name="log_time" defaultValue={timeStr} required disabled={!editable} />
+              <input className="fi" type="time" name="log_time" defaultValue={timeStr} required disabled={!editable} readOnly={kunciWaktu} />
             </div>
           </div>
+          {kunciWaktu && <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>Waktu dan dokter visit terkunci — koreksi waktu/dokter visit oleh Admin/Owner.</div>}
           {/* Angka pemantauan bisa dikoreksi — salah ketik suhu/berat menyesatkan
               grafik dan bisa memicu tindakan yang tidak perlu. Nilai lamanya tetap
               tersimpan di riwayat koreksi. */}
@@ -171,7 +177,7 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
           </div>
 
           <div className="fg">
-            <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics} disabled={!editable} legacyName={log.doctor_name} doctorName={log.doctor_name} paramedicName={log.paramedic_name}/>
+            <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics} disabled={!editable} legacyName={log.doctor_name} doctorName={log.doctor_name} paramedicName={log.paramedic_name} lockVisit={kunciVisit} savedKind={log.log_kind??null}/>
           </div>
 
           {editable && (

@@ -36,6 +36,8 @@ with checks(check_name, ok) as (
       'public.employee_payslip_templates'::regclass,'public.payslip_override_history'::regclass))
   union all select 'H02 history triggers', (select count(*) = 2 from pg_trigger where tgname='h02_payslip_history')
   union all select 'H02 history not writable by app', not has_table_privilege('authenticated','public.payslip_override_history','INSERT')
+  union all select 'H02 history never blocks deleting an employee',
+    not exists(select 1 from pg_constraint where conrelid='public.payslip_override_history'::regclass and contype='f')
   union all select 'no template seeded', not exists(select 1 from public.payslip_templates)
   union all select 'no visit rate seeded', not exists(select 1 from public.commission_rules where sumber='visit_ranap')
 )

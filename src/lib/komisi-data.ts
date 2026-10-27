@@ -20,13 +20,44 @@ type AnyClient = any;
 export const awalPeriode = (periode: string) => `${periode}-01`;
 
 /**
- * One Asia/Jakarta (UTC+7, no DST) boundary for every timestamp period filter: struk kasir,
- * pelunasan klinik, visit ranap, pool DEMO. A sale at 00:30 WIB on the 1st belongs to that month.
+ * Period boundaries for every timestamp filter (struk kasir, pelunasan klinik, visit ranap,
+ * pool DEMO). From the go-live period (2026-11) on, a period is the Asia/Jakarta month:
+ * [1st 00:00 WIB, next 1st 00:00 WIB). Earlier periods keep the legacy window exactly as
+ * they were calculated (UTC dates, inclusive 23:59:59). The go-live month itself starts where
+ * the legacy October window ended (2026-11-01 00:00 UTC = 07:00 WIB), so the 00:00–06:59 WIB
+ * hours of 1 November stay in October and are never counted in two months.
  */
-export const batasWIB = (periode: string) => ({
-  dari: `${awalPeriode(periode)}T00:00:00+07:00`,
-  sampai: `${akhirPeriode(periode)}T23:59:59.999+07:00`,
-});
+export const PERIODE_WIB_MULAI = "2026-11";
+/** End of the legacy October window: rows from this instant on are dated by WIB. */
+const CUTOVER_WIB_ISO = "2026-11-01T00:00:00.000Z";
+
+const periodeBerikut = (periode: string): string => {
+  const [thn, bln] = periode.split("-").map(Number);
+  return bln === 12 ? `${thn + 1}-01` : `${thn}-${String(bln + 1).padStart(2, "0")}`;
+};
+
+export type BatasPeriode = { dari: string; sampai: string; sampaiEksklusif: boolean };
+export function batasPeriode(periode: string): BatasPeriode {
+  if (periode >= PERIODE_WIB_MULAI) {
+    const dari = periode === PERIODE_WIB_MULAI ? CUTOVER_WIB_ISO : `${awalPeriode(periode)}T00:00:00+07:00`;
+    return { dari, sampai: `${periodeBerikut(periode)}-01T00:00:00+07:00`, sampaiEksklusif: true };
+  }
+  return { dari: `${awalPeriode(periode)}T00:00:00`, sampai: `${akhirPeriode(periode)}T23:59:59`, sampaiEksklusif: false };
+}
+
+/** Apply the period window to a timestamp column (gte + lt for WIB periods, gte + lte for legacy). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function filterPeriode<Q extends { gte: (c: string, v: string) => any }>(query: Q, column: string, periode: string) {
+  const b = batasPeriode(periode);
+  const q = query.gte(column, b.dari);
+  return b.sampaiEksklusif ? q.lt(column, b.sampai) : q.lte(column, b.sampai);
+}
+
+/** Row date: WIB calendar date from the go-live instant on, legacy UTC slice before it. */
+export function tanggalBaris(iso: string): string {
+  if (!iso) return "";
+  return new Date(iso).getTime() >= Date.parse(CUTOVER_WIB_ISO) ? tanggalWIB(iso) : iso.slice(0, 10);
+}
 
 export const akhirPeriode = (periode: string): string => {
   const [thn, bln] = periode.split("-").map(Number);
@@ -116,9 +147,8 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   const akhir = akhirPeriode(periode);
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
-    completeReportQuery(supabase.from("sales")
-      .select("id, no_struk, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, harga, item_discount_type, item_discount_value, hpp, service_performers)", { count: "exact" })
-      .gte("created_at", batasWIB(periode).dari).lte("created_at", batasWIB(periode).sampai)),
+    completeReportQuery(filterPeriode(supabase.from("sales")
+      .select("id, no_struk, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, harga, item_discount_type, item_discount_value, hpp, service_performers)", { count: "exact" }), "created_at", periode)),
     completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
     completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
     completeReportQuery(supabase.from("item_categories").select("id, parent_id", { count: "exact" })),
@@ -172,7 +202,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       // tidak boleh kehilangan omzet cuma karena kasirnya belum terhubung ke
       // data karyawan. `hitungKomisi` yang menyaringnya.
       baris.push({
-        tanggal: tanggalWIB(s.created_at),
+        tanggal: tanggalBaris(s.created_at),
         sumber: "kasir",
         ...attribution,
         branchId: s.branch_id,
@@ -184,7 +214,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       });
     }
 
-    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk,sourceDate:tanggalWIB(s.created_at) });
+    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk,sourceDate:tanggalBaris(s.created_at) });
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
@@ -227,11 +257,10 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // ── Klinik: tagihan kunjungan yang sudah lunas, jadi haknya dokter ────────────
   // Dipatok pada tanggal bayar, bukan tanggal periksa: yang dikomisikan adalah uang
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
-  const { data: invData } = await completeReportQuery(supabase
+  const { data: invData } = await completeReportQuery(filterPeriode(supabase
     .from("invoices")
     .select("id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers, salesperson_id, package_item_id, package_qty), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
-    .eq("paid_status", "Lunas").is("voided_at", null)
-    .gte("paid_at", batasWIB(periode).dari).lte("paid_at", batasWIB(periode).sampai));
+    .eq("paid_status", "Lunas").is("voided_at", null), "paid_at", periode));
 
   for (const inv of (invData ?? []) as InvoiceRow[]) {
     const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
@@ -258,7 +287,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       if (!attribution.employeeId) omzetTanpaPenjual += omzet;
 
       baris.push({
-        tanggal: tanggalWIB(inv.paid_at),
+        tanggal: tanggalBaris(inv.paid_at),
         sumber: "klinik",
         fixedCommission: Array.isArray(inv.clinic_demo_invoice_snapshots) ? inv.clinic_demo_invoice_snapshots.length>0 : !!inv.clinic_demo_invoice_snapshots,
         ...attribution,
@@ -371,7 +400,7 @@ async function infoStrukLuarPeriode(
     branchId: data.branch_id,
     hppPerUnit,
     sale: data,
-    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,sourceDate:data.created_at?tanggalWIB(String(data.created_at)):"",
+    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,sourceDate:data.created_at?tanggalBaris(String(data.created_at)):"",
   };
 }
 
@@ -409,10 +438,9 @@ export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomis
 export async function muatVisitRanap(supabase: AnyClient, periode: string): Promise<{ baris: BarisJual[]; dobel: VisitDobel[] }> {
   type Row = { id: string; inpatient_record_id: string; visit_doctor_id: string | null; created_at: string;
     inpatient_records: { branch_id: string | null } | { branch_id: string | null }[] | null };
-  const { data } = await completeReportQuery(supabase.from("inpatient_daily_logs")
+  const { data } = await completeReportQuery(filterPeriode(supabase.from("inpatient_daily_logs")
     .select("id, inpatient_record_id, visit_doctor_id, created_at, inpatient_records(branch_id)", { count: "exact" })
-    .eq("log_kind", "doctor_visit").not("visit_doctor_id", "is", null)
-    .gte("created_at", batasWIB(periode).dari).lte("created_at", batasWIB(periode).sampai));
+    .eq("log_kind", "doctor_visit").not("visit_doctor_id", "is", null), "created_at", periode));
   const logs: LogVisitDokter[] = ((data ?? []) as Row[]).map((row) => {
     const record = Array.isArray(row.inpatient_records) ? row.inpatient_records[0] ?? null : row.inpatient_records;
     return { id: row.id, inpatientRecordId: row.inpatient_record_id, doctorId: row.visit_doctor_id,
@@ -487,10 +515,9 @@ export async function komisiPeriode(
   // H06 visits are separate source rows that only visit rules can pay.
   const baris = [...barisJual, ...visit.baris];
   const prepared = prepareServiceCommission(baris, aturan, policies, groups);
-  const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
+  const {data: allocations} = await completeReportQuery(filterPeriode(supabase.from("clinic_demo_incentive_allocations")
     .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})
-    .eq("invoices.paid_status","Lunas").is("invoices.voided_at",null)
-    .gte("clinic_demo_invoice_snapshots.earned_at",batasWIB(periode).dari).lte("clinic_demo_invoice_snapshots.earned_at",batasWIB(periode).sampai));
+    .eq("invoices.paid_status","Lunas").is("invoices.voided_at",null), "clinic_demo_invoice_snapshots.earned_at", periode));
   type Allocation = {invoice_id:string;employee_id:string;amount:number;clinic_demo_invoice_snapshots:{service_basis:number}|{service_basis:number}[]};
   const shared = (allocations as Allocation[]).map(row=>({employeeId:row.employee_id,invoiceId:row.invoice_id,amount:Number(row.amount),
     basis:Number((Array.isArray(row.clinic_demo_invoice_snapshots) ? row.clinic_demo_invoice_snapshots[0] : row.clinic_demo_invoice_snapshots).service_basis)}));

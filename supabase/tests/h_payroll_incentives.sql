@@ -41,6 +41,16 @@ begin
     jsonb_set(lines,'{0,package_qty}','5'));
   raise exception 'Expected inflated package qty rejection';
  exception when others then if sqlerrm not like 'CARE_INVALID: jumlah komponen harus%' then raise;end if;end;
+ begin
+  perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000002','h05.package.disagree',header||jsonb_build_object('subtotal',100,'total',100),
+    jsonb_build_array(lines->0, jsonb_set(jsonb_set(lines->0,'{qty}','2'),'{package_qty}','2')));
+  raise exception 'Expected disagreeing package qty rejection';
+ exception when others then if sqlerrm not like 'CARE_INVALID: jumlah paket harus sama%' then raise;end if;end;
+ -- A component billed in a larger unit: 1 strip (10 pcs) = 10 packages x 1 pcs.
+ perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000002','h05.package.strip',header||jsonb_build_object('subtotal',100,'total',100),
+   jsonb_build_array(jsonb_build_object('description','Vaksin (paket, strip)','qty',1,'price',100,'kind','obat','item_id','d8000000-0000-4000-8000-000000000001','unit','strip','discount_percent',0,
+     'package_item_id','fa000000-0000-4000-8000-000000000001','package_qty',10)));
+ perform pg_temp.assert_h((select package_qty=10 and faktor=10 from public.invoice_items where deskripsi='Vaksin (paket, strip)'),'non-base unit component accepted in base units');
  -- Correction: the line linked to its source keeps the package origin without resending it.
  -- (Existing correction rule: one SKU appears once per corrected invoice, so the normal line is dropped.)
  select jsonb_agg(jsonb_build_object('source_invoice_item_id',id,'description',deskripsi,'qty',qty,'price',harga,
@@ -221,11 +231,23 @@ select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000001'
 -- Admission itself goes through the consent RPC in the app; the fixture inserts it directly.
 insert into public.inpatient_records(id,branch_id,visit_id) values ('ff000000-0000-4000-8000-000000000001','d2000000-0000-4000-8000-000000000001','d6000000-0000-4000-8000-000000000004');
 set local role authenticated;
-insert into public.inpatient_daily_logs(id,inpatient_record_id,condition_note,log_kind,visit_doctor_id,created_at,log_date)
- values ('ff000000-0000-4000-8000-000000000002','ff000000-0000-4000-8000-000000000001','Fiksi visit','doctor_visit','fb000000-0000-4000-8000-000000000001','2020-01-01T00:00:00Z','2020-01-01');
 do $$begin
- perform pg_temp.assert_h((select created_at > now() - interval '1 minute' and log_date=(now() at time zone 'Asia/Jakarta')::date
-   from public.inpatient_daily_logs where id='ff000000-0000-4000-8000-000000000002'),'visit time is server-set on save');
+ begin
+  insert into public.inpatient_daily_logs(inpatient_record_id,condition_note,log_kind,visit_doctor_id,created_at)
+   values ('ff000000-0000-4000-8000-000000000001','Fiksi visit lama','doctor_visit','fb000000-0000-4000-8000-000000000001',now() - interval '3 days');
+  raise exception 'Expected old visit rejection for non-admin';
+ exception when others then if sqlerrm not like 'CARE_INVALID: visit dokter lebih dari 48 jam%' then raise;end if;end;
+ begin
+  insert into public.inpatient_daily_logs(inpatient_record_id,condition_note,log_kind,visit_doctor_id,created_at)
+   values ('ff000000-0000-4000-8000-000000000001','Fiksi visit nanti','doctor_visit','fb000000-0000-4000-8000-000000000001',now() + interval '1 day');
+  raise exception 'Expected future visit rejection';
+ exception when others then if sqlerrm not like 'CARE_INVALID: waktu visit dokter tidak boleh di masa depan%' then raise;end if;end;
+end $$;
+insert into public.inpatient_daily_logs(id,inpatient_record_id,condition_note,log_kind,visit_doctor_id,created_at,log_date)
+ values ('ff000000-0000-4000-8000-000000000002','ff000000-0000-4000-8000-000000000001','Fiksi visit','doctor_visit','fb000000-0000-4000-8000-000000000001',now() - interval '20 hours','2020-01-01');
+do $$begin
+ perform pg_temp.assert_h((select created_at = now() - interval '20 hours' and log_date=((now() - interval '20 hours') at time zone 'Asia/Jakarta')::date
+   from public.inpatient_daily_logs where id='ff000000-0000-4000-8000-000000000002'),'entered visit time within 48h is kept; date follows it in WIB');
  begin
   perform public.clinic_update_inpatient_log('ff000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000002',
    jsonb_build_object('created_at','2026-01-01T00:00:00Z'),'Fiksi geser');
@@ -236,11 +258,32 @@ do $$begin
  perform pg_temp.assert_h((select condition_note='Fiksi visit dikoreksi' from public.inpatient_daily_logs where id='ff000000-0000-4000-8000-000000000002'),'non-admin can still correct the note');
 end $$;
 select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000002',true);
+insert into public.inpatient_daily_logs(inpatient_record_id,condition_note,log_kind,visit_doctor_id,created_at)
+ values ('ff000000-0000-4000-8000-000000000001','Fiksi visit susulan owner','doctor_visit','fb000000-0000-4000-8000-000000000001',now() - interval '5 days');
 do $$begin
+ perform pg_temp.assert_h(exists(select 1 from public.inpatient_daily_logs where condition_note='Fiksi visit susulan owner'),'OWNER may record an older visit');
  perform public.clinic_update_inpatient_log('ff000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000002',
    jsonb_build_object('created_at','2026-01-01T03:00:00Z','log_date','2026-01-01'),'Fiksi koreksi owner');
  perform pg_temp.assert_h((select created_at='2026-01-01T03:00:00Z'::timestamptz from public.inpatient_daily_logs where id='ff000000-0000-4000-8000-000000000002'),'OWNER can correct visit time');
 end $$;
 reset role;
+-- H02: hard-deleting an employee with template link + exceptions is not blocked by history.
+reset role;
+select set_config('request.jwt.claim.role','',true);
+select set_config('request.jwt.claim.sub','',true);
+do $$
+declare v_before bigint;
+begin
+ insert into public.employees(id,nama,jabatan,branch_id,status) values ('fb000000-0000-4000-8000-000000000009','Fiksi keluar','Groomer','d2000000-0000-4000-8000-000000000001','Aktif');
+ insert into public.employee_payslip_templates(employee_id,template_id) values ('fb000000-0000-4000-8000-000000000009','fe000000-0000-4000-8000-000000000001');
+ insert into public.employee_salary_components(employee_id,component_id,nominal,override_reason) values ('fb000000-0000-4000-8000-000000000009','fd000000-0000-4000-8000-000000000001',5,'Fiksi');
+ select count(*) into v_before from public.payslip_override_history where employee_id='fb000000-0000-4000-8000-000000000009';
+ -- The app blocks hard deletes via the master lifecycle guard; a purge path (or DBA) bypasses it.
+ alter table public.employees disable trigger guard_master_lifecycle;
+ delete from public.employees where id='fb000000-0000-4000-8000-000000000009';
+ alter table public.employees enable trigger guard_master_lifecycle;
+ perform pg_temp.assert_h(not exists(select 1 from public.employees where id='fb000000-0000-4000-8000-000000000009'),'employee hard delete succeeds');
+ perform pg_temp.assert_h((select count(*) > v_before from public.payslip_override_history where employee_id='fb000000-0000-4000-8000-000000000009'),'history keeps the removal rows');
+end $$;
 select 'h_payroll_incentives: all assertions passed';
 rollback;

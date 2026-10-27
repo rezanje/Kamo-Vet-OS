@@ -86,6 +86,17 @@ async function simpan(supabase: Db, jenis: JenisImpor, baris: ReturnType<typeof 
 
       const { siap, salah } = periksaKomisi(baris.baris, { karyawan, cabang, kategori, barang });
       if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
+      // H04: rules naming an employee (or a group/exception) are pay configuration that only
+      // OWNER may write. Refuse the whole file up front instead of a half-failed database insert.
+      const khusus = siap.filter((row) => (row as { employee_id?: string | null }).employee_id
+        || (row as { commission_group?: string | null }).commission_group || (row as { override_group_rule_id?: string | null }).override_group_rule_id);
+      if (khusus.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data: profile } = user ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle() : { data: null };
+        if (profile?.role !== "OWNER") {
+          return { masuk: 0, salah, pesanGagal: `${khusus.length} aturan di file ini khusus untuk karyawan tertentu dan hanya boleh diimpor OWNER. Hapus kolom karyawan dari baris itu atau minta OWNER mengimpornya.` };
+        }
+      }
       const { error } = await supabase.from("commission_rules").insert(siap);
       if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
       return { masuk: siap.length, salah, pesanGagal: null };

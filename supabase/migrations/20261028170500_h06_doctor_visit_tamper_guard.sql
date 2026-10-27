@@ -1,6 +1,8 @@
 -- H06: the doctor-visit incentive pays from inpatient_daily_logs rows with log_kind='doctor_visit'.
 -- Those rows must not be steerable from the browser:
---  * on save, a visit's time is the server's time (any client created_at/log_date is replaced);
+--  * on save, the entered visit time is kept only if it is not in the future and at most 48 hours
+--    old (OWNER/ADMIN may record any past time); otherwise the save is refused with a clear
+--    message. The visit date always follows the visit time in Asia/Jakarta;
 --  * after save, only OWNER/ADMIN may change a visit's time, date, doctor or kind (also turning a
 --    monitoring note into a visit or a visit into a monitoring note). Everyone else is refused.
 -- Monitoring notes keep their current behaviour (backdated entry still allowed). Edits remain
@@ -10,8 +12,17 @@ language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'INSERT' then
     if new.log_kind = 'doctor_visit' then
-      new.created_at := now();
-      new.log_date := (now() at time zone 'Asia/Jakarta')::date;
+      new.created_at := coalesce(new.created_at, now());
+      if new.created_at > now() + interval '5 minutes' then
+        raise exception using errcode = 'P0001', message = 'CARE_INVALID: waktu visit dokter tidak boleh di masa depan';
+      end if;
+      if new.created_at < now() - interval '48 hours'
+         and coalesce(auth.role(), '') = 'authenticated'
+         and coalesce(private.hris_role(), '') not in ('OWNER', 'ADMIN') then
+        raise exception using errcode = 'P0001',
+          message = 'CARE_INVALID: visit dokter lebih dari 48 jam lalu hanya dapat dicatat Admin/Owner';
+      end if;
+      new.log_date := (new.created_at at time zone 'Asia/Jakarta')::date;
     end if;
     return new;
   end if;

@@ -12,9 +12,10 @@ import { readCompleteList } from "@/lib/checked-list";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { ItemReferenceField } from "@/components/ItemReferenceField";
 import { rincianKomisiText } from "@/lib/komisi-detail";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const periodeSekarang = () => new Date().toISOString().slice(0, 7);
+const periodeSekarang = () => hariIniWIB().slice(0, 7);
 
 const LABEL_SUMBER: Record<string, string> = {
   semua: "Semua penjualan",
@@ -43,6 +44,10 @@ export default async function KomisiPage({
   const bolehKelola = await bolehKelolaMaster();
   // Group membership and personal/group/exception rules are pay configuration: OWNER only.
   const bolehAturGaji = await bolehKelolaPayroll();
+  // Personal/group/exception rules are readable by OWNER/ADMIN/FINANCE only (RLS); others see partial totals.
+  const { data: { user: viewer } } = await supabase.auth.getUser();
+  const { data: viewerProfile } = viewer ? await supabase.from("profiles").select("role").eq("id", viewer.id).maybeSingle() : { data: null };
+  const aturanKhususTersembunyi = !["OWNER", "ADMIN", "FINANCE"].includes(String(viewerProfile?.role ?? ""));
 
   let loaded;
   try { loaded = await Promise.all([
@@ -353,6 +358,12 @@ export default async function KomisiPage({
           <b style={{ color: "#15803d" }}>{rp(totalKomisi)}</b>
         </div>
 
+        {aturanKhususTersembunyi && (
+          <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "#1e40af" }}>
+            <i className="ti ti-eye-off" /> Aturan khusus karyawan/kelompok disembunyikan untuk akun ini, jadi total komisi di sini
+            bisa belum lengkap. Angka resmi ada di penggajian yang dihitung Owner.
+          </div>
+        )}
         {(hitungan.peringatanAturan ?? []).length > 0 && (
           <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
             <i className="ti ti-alert-triangle" /> Aturan yang saat ini tidak membayar apa pun:

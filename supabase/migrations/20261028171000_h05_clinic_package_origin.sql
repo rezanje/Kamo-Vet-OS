@@ -51,6 +51,11 @@ begin
     end if;
     return new;
   end if;
+  -- One package sale has one package qty: every tagged component line must agree.
+  if exists(select 1 from public.invoice_items x where x.invoice_id = new.invoice_id
+      and x.package_item_id = new.package_item_id and x.package_qty <> new.package_qty) then
+    raise exception using errcode = 'P0001', message = 'CARE_INVALID: jumlah paket harus sama untuk semua komponen paket ini di satu invoice';
+  end if;
   if exists(select 1 from public.invoice_items x where x.invoice_id = new.invoice_id and x.item_id = new.package_item_id) then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: paket ini sudah ditagih sebagai satu baris di invoice yang sama';
   end if;
@@ -66,8 +71,10 @@ begin
   if v_recipe_base is null then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: barang ini bukan komponen paket aktif yang dipilih';
   end if;
+  -- Compare in base units; the tolerance scales with the line unit factor (one rounding step
+  -- of the line quantity is factor x 0.0001 base units).
   v_line_base := new.qty * coalesce(new.faktor, 1);
-  if abs(v_line_base - new.package_qty * v_recipe_base) > 0.0001 then
+  if abs(v_line_base - new.package_qty * v_recipe_base) > 0.0001 * greatest(coalesce(new.faktor, 1), 1) then
     raise exception using errcode = 'P0001',
       message = format('CARE_INVALID: jumlah komponen harus %s (jumlah paket x isi resep), bukan %s', trim_scale(new.package_qty * v_recipe_base), trim_scale(v_line_base));
   end if;
