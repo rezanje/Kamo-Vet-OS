@@ -83,4 +83,12 @@ Tidak ada deploy preview, penulisan production, atau perubahan Sheet. Sheet chec
 - SQL: `python3 docs/evidence/2026-10-27-a02-correction-requests/run-native-pg.py scripts/test-purchase-correction-requests-postgres.py`
   → PostgreSQL 16.15 sementara (socket lokal, dihapus setelahnya), seluruh migration repo + main, suite lulus, 0 baris tersisa.
   Runner Docker yang sama: `python3 scripts/test-purchase-correction-requests-postgres.py`.
-- Lihat laporan PR untuk hasil vitest, lint, typecheck, build, dan Technical checks.
+- Regresi SQL terkait dengan runner yang ada (`test-activity-audit-postgres.py`, plus `purchase_invoice_lifecycle`,
+  `purchase_order_lifecycle`, `purchase_payment_corrections`, `activity_audit_framework/financial` lewat runner umum) dijalankan
+  pada main murni dan pada gabungan main + PR ini: hasil **identik** (13 PASS; kegagalan lama yang sama di kedua sisi, mis.
+  batas "179 sumber" dari sebelum refund A01 dan prasyarat fixture lama). Tidak ada kegagalan baru.
+- Head branch: `npm test` 499 berkas / 3.624 tes lulus; `tsc --noEmit` lulus; `npm run lint` 0 error (12 warning lama);
+  `npm run build` lulus.
+- Technical checks (urutan workflow `technical.yml`: npm ci → lint → test → tsc → build) pada gabungan main + PR ini:
+  lint 0 error, 507 berkas / 3.690 tes lulus (1 di-skip, bawaan main), tsc lulus, build lulus dengan rute `/pembelian/koreksi`.
+  Workflow GitHub hanya berjalan untuk PR ke `main`, jadi akan jalan otomatis setelah PR221/PR233 masuk dan PR ini diarahkan ke main.
