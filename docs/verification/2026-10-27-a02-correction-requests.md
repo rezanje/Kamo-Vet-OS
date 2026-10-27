@@ -92,7 +92,7 @@ PR248 belum di-merge/deploy dan migrasinya belum diterapkan ke production. Sheet
 ## Verifikasi (main `e77eb34`, data uji fiktif saja)
 
 ### Lulus
-- SQL A02 (PostgreSQL 16.15 sementara, socket lokal, dihapus setelahnya; seluruh 270 migrasi repo):
+- SQL A02 (PostgreSQL 16.15 sementara, socket lokal, dihapus setelahnya; seluruh migrasi repo sebelumnya, 271 di main `43b1a33`):
   `purchase_correction_requests.sql` lulus (lifecycle pending→selesai, idempotensi, tautan asal, pemroses/catatan,
   pelacakan pemohon, isolasi STAFF/ADMIN/FINANCE/cabang lain/OWNER nonaktif, tulis langsung ditolak,
   PO/faktur/jurnal/pembayaran tidak berubah, log A01 tanpa teks bebas dan tidak terbaca ADMIN, faktur tanpa cabang
@@ -108,7 +108,7 @@ PR248 belum di-merge/deploy dan migrasinya belum diterapkan ke production. Sheet
 - Regresi SQL terkait identik main vs main+A02 (`purchase_invoice_lifecycle`, `purchase_short_close`, 13 suite PASS di
   `test-activity-audit-postgres.py`).
 - Technical checks GitHub di head final PR248: lihat laporan PR248 (URL dan langkah per head).
-- Paket owner dilatih penuh pada PostgreSQL 16.15 dan **17.6** (versi production), 270 migrasi sebelumnya + riwayat:
+- Paket owner dilatih penuh pada PostgreSQL 16.15 dan **17.6** (versi production), 271 migrasi sebelumnya (main `43b1a33`) + riwayat:
   preflight `0 failed`; apply tertahan kunci tulis pada `purchase_orders` menyerah setelah 5,0 s tanpa perubahan;
   apply + readback `0 failed`; suite A02 lulus; teardown saat kosong berhasil lalu preflight kembali `0 failed`;
   apply ulang; freeze menolak pembuatan/pemrosesan sementara data tetap terbaca (readback setelah freeze gagal tepat di

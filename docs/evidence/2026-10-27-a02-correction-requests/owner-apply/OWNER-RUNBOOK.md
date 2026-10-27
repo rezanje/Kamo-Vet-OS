@@ -9,7 +9,7 @@ Repo ini bisa terbaca pihak lain: **jangan menulis ID project, waktu backup, jum
 production ke repo/PR.** Catat semuanya di catatan rilis privat (lihat "Catatan privat" di bawah).
 
 Semua langkah sudah dilatih ujung-ke-ujung pada cluster sementara PostgreSQL 16.15 dan **17.6** (versi production)
-dengan 270 migrasi repo sebelumnya + riwayat migrasi tiruan: preflight → apply tertahan kunci (gagal aman) →
+dengan seluruh migrasi repo sebelumnya (271 di main `43b1a33`) + riwayat migrasi tiruan: preflight → apply tertahan kunci (gagal aman) →
 apply sebagai role lain ditolak (gagal aman) → apply → readback → readback menangkap 13 penyimpangan katalog (satu per satu, di-rollback) → suite A02 → teardown
 saat kosong → preflight → apply ulang → readback → request fiktif → freeze → teardown ditolak (ada baris) →
 teardown ditolak (baris dihapus manual tetapi jejak log ada). Log: `rehearsal-pg16.log`, `rehearsal-pg17.6.log`. Ulangi dengan
