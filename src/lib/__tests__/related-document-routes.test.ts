@@ -44,3 +44,7 @@ it('preserves return-to-retur context when opening its exact purchase order', ()
  expect(documentBackHref(from)).toBe(from);
  expect(documentBackHref(from+'?next=//untrusted.invalid')).toBeNull();
 });
+it('opens a stored sales order by its exact ID only', () => {
+ expect(relatedDocumentHref('sales-order',id)).toBe('/penjualan/pesanan/'+id);
+ expect(relatedDocumentHref('sales-order','SO-NUMBER')).toBeNull();
+});
