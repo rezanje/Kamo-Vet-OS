@@ -10,6 +10,7 @@ import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatFaktur } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { PriceDeviationConfirm } from "@/components/PriceDeviationConfirm";
 
 export type PoOption = {
   id: string;
@@ -32,7 +33,7 @@ const plusDays = (iso: string, days: number) => {
 
 export type PoInvoiceInitial = { id: string; po_id: string; tanggal: string; jatuh_tempo: string; no_faktur_pemasok: string | null; keterangan: string | null; purchase_invoice_items: { po_item_id: string; qty: number; harga: number }[] };
 
-export function FakturForm({ options, userId, initial }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial }) {
+export function FakturForm({ options, userId, initial, priceWarning }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial; priceWarning?: string }) {
   const today = hariIniWIB();
   const [poId, setPoId] = useState(initial?.po_id ?? "");
   const [qty, setQty] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.qty)])));
@@ -147,6 +148,7 @@ export function FakturForm({ options, userId, initial }: { options: PoOption[]; 
         </div>
       </div>
 
+      <PriceDeviationConfirm warning={priceWarning} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <SubmitButton className="btn-acc" disabled={!ready || !poId || payload.length === 0}>
           <i className="ti ti-file-invoice" /> Simpan faktur

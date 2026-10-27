@@ -10,4 +10,5 @@ if __name__=='__main__':
  with m.DisposablePostgres() as db:
   db.bootstrap()
   prelude=(ROOT/'supabase/tests/clinic_invoice_post.sql').read_text().split('set local role authenticated;')[0]
-  db.sql(prelude+(ROOT/'supabase/tests/clinic_refund_source.sql').read_text());print('PASS clinic_refund_source.sql',flush=True)
+  for name in ['clinic_refund_source.sql','clinic_refund_post.sql']:
+   db.sql(prelude+(ROOT/'supabase/tests'/name).read_text());print('PASS '+name,flush=True)

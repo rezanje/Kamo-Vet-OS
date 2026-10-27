@@ -25,6 +25,7 @@ export const LABEL_SOURCE: Record<string, string> = {
   "transfer-out": "Pemindahan Keluar",
   opname: "Stok Opname",
   "retur-jual": "Retur Penjualan",
+  "retur-klinik": "Refund Klinik",
   "retur-beli": "Retur Pembelian",
   "faktur-langsung": "Faktur Pembelian Langsung",
   "terima-permintaan": "Penerimaan Permintaan Barang",

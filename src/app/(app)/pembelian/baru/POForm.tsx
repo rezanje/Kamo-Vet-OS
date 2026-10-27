@@ -17,6 +17,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { buatPO } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { PriceDeviationConfirm } from "@/components/PriceDeviationConfirm";
 
 type Supplier = { id: string; nama: string };
 type Warehouse = { id: string; name: string };
@@ -35,6 +36,7 @@ export function POForm({
   branches,
   items,
   stock = [],
+  priceWarning,
 }: {
   userId: string;
   suppliers: Supplier[];
@@ -42,6 +44,8 @@ export function POForm({
   branches: Branch[];
   items: Item[];
   stock?: WarehouseStock[];
+  /** P04: peringatan harga dari server saat simpan terakhir. */
+  priceWarning?: string;
 }) {
   const { save, failure } = usePreservedAction(buatPO);
   const [warehouseId, setWarehouseId] = useState("");
@@ -263,6 +267,7 @@ export function POForm({
         </div>
       </div>
 
+      <PriceDeviationConfirm warning={priceWarning} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <Link href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
           Batal

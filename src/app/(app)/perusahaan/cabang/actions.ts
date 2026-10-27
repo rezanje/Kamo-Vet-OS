@@ -50,3 +50,34 @@ export async function unassignUser(formData: FormData) {
   revalidatePath(PATH);
   redirect(`${PATH}?success=1`);
 }
+
+const BRANCH_TYPES = ["PETSHOP", "KLINIK", "BOTH", "DC", "ONLINE", "OFFICE"];
+// SQLSTATE dari pengaman RPC create_branch sendiri; galat lain tetap pesan umum.
+const BRANCH_GUARD_CODES = new Set(["42501", "22023"]);
+
+/** U11: cabang baru hanya oleh OWNER aktif. Pengaman sebenarnya ada di RPC create_branch. */
+export async function tambahCabang(formData: FormData) {
+  const code = String(formData.get("code") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const type = String(formData.get("type") ?? "");
+  const status = String(formData.get("is_active") ?? "");
+  if (!code || !name || !BRANCH_TYPES.includes(type) || !["1", "0"].includes(status)) {
+    redirect(`${PATH}?error=${encodeURIComponent("Lengkapi kode, nama, jenis, dan status cabang")}`);
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("create_branch", {
+    p_code: code, p_name: name, p_type: type, p_is_active: status === "1",
+  });
+  if (error) {
+    const message = error.code === "23505"
+      ? "Kode cabang sudah dipakai. Gunakan kode lain."
+      : BRANCH_GUARD_CODES.has(error.code ?? "") && error.message
+        ? error.message
+        : "Cabang belum dapat disimpan. Coba lagi.";
+    redirect(`${PATH}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(PATH);
+  revalidatePath("/perusahaan/gudang");
+  revalidatePath("/pengaturan/cabang");
+  redirect(`${PATH}?success=${encodeURIComponent(`Cabang ${name} sudah dibuat`)}`);
+}

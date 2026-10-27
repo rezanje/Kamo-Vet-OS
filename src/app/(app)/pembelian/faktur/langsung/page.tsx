@@ -10,9 +10,9 @@ type SourceLine = { id: string; item_id: string | null; qty: number; harga: numb
 export default async function FakturLangsungPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; replace_invoice?: string }>;
+  searchParams: Promise<{ error?: string; replace_invoice?: string; harga_cek?: string }>;
 }) {
-  const { error, replace_invoice } = await searchParams;
+  const { error, replace_invoice, harga_cek } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -100,7 +100,7 @@ export default async function FakturLangsungPage({
         </div>
       )}
 
-      <FakturLangsungForm initial={initial} userId={user?.id ?? ""}
+      <FakturLangsungForm initial={initial} userId={user?.id ?? ""} priceWarning={harga_cek}
         suppliers={(suppliers ?? []).map((s) => ({
           id: s.id as string, nama: s.nama as string, terminHari: Number(s.termin_hari) || 0,
         }))}

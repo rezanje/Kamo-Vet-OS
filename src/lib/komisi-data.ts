@@ -82,6 +82,24 @@ type FakturJualRow = {
   sales_invoice_items: { order_item_id: string | null; item_id: string | null; qty: number; harga: number }[] | null;
 };
 
+const INVOICE_KOMISI_SELECT = "id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers, salesperson_id), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)";
+
+type RefundKlinikRow = { id: string; invoice_id: string; tanggal: string; clinic_refund_items: { invoice_item_id: string; qty: number }[] | null };
+
+// PostgREST "table not found" / PostgreSQL "undefined table": the J03 migration is not applied yet → no refunds.
+const TABEL_BELUM_ADA = new Set(["PGRST205", "42P01"]);
+
+/** Refund klinik yang terjadi dalam periode (tanggal refund, bukan tanggal bayar). */
+async function bacaRefundKlinik(supabase: AnyClient, awal: string, akhir: string): Promise<RefundKlinikRow[]> {
+  return readReportRows<RefundKlinikRow>(async (from, to) => {
+    const result = await supabase.from("clinic_refunds")
+      .select("id, invoice_id, tanggal, clinic_refund_items(invoice_item_id, qty)", { count: "exact" })
+      .gte("tanggal", awal).lte("tanggal", akhir).order("id").range(from, to);
+    if (TABEL_BELUM_ADA.has(result.error?.code)) return { data: [], error: null, count: 0 };
+    return { data: result.data, error: result.error, count: result.count };
+  });
+}
+
 export type DataKomisi = {
   baris: BarisJual[];
   /** Omzet yang tidak bisa dibagikan ke siapa pun (kasir/dokternya belum terhubung ke data karyawan). */
@@ -218,11 +236,11 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
   const { data: invData } = await completeReportQuery(supabase
     .from("invoices")
-    .select("id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers, salesperson_id), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
+    .select(INVOICE_KOMISI_SELECT, { count: "exact" })
     .eq("paid_status", "Lunas").is("voided_at", null)
     .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
 
-  for (const inv of (invData ?? []) as InvoiceRow[]) {
+  const barisInvoice = (inv: InvoiceRow) => {
     const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
     const employeeId = inv.salesperson_id ?? v?.doctor_id ?? null;
     const items = inv.invoice_items ?? [];
@@ -233,14 +251,12 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     const jumlahBaris = kotorPer.reduce((a, x) => a + x, 0);
     const potongan = Math.max(0, jumlahBaris - Number(inv.total));
 
-    for (const [idx, it] of items.entries()) {
+    return items.map((it, idx) => {
       const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
       // A selected line seller overrides the legacy invoice seller. Existing
       // service performer attribution retains its precedence and payout policy.
       const attribution=serviceAttribution(it,it.salesperson_id ?? employeeId,inv.id,inv.invoice_no,inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined);
-      if (!attribution.employeeId) omzetTanpaPenjual += omzet;
-
-      baris.push({
+      const row: BarisJual = {
         tanggal: inv.paid_at.slice(0, 10),
         sumber: "klinik",
         fixedCommission: Array.isArray(inv.clinic_demo_invoice_snapshots) ? inv.clinic_demo_invoice_snapshots.length>0 : !!inv.clinic_demo_invoice_snapshots,
@@ -252,6 +268,51 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
         omzet,
         // Jasa tidak punya modal barang — labanya utuh, bukan tidak diketahui.
         laba: it.item_id === null ? omzet : it.hpp === null ? null : omzet - Number(it.hpp),
+      };
+      return { lineId: it.id, row };
+    });
+  };
+
+  const invoices = (invData ?? []) as InvoiceRow[];
+  for (const inv of invoices) {
+    for (const { row } of barisInvoice(inv)) {
+      if (!row.employeeId) omzetTanpaPenjual += row.omzet;
+      baris.push(row);
+    }
+  }
+
+  // ── Refund klinik (J03): mengurangi omzet/komisi pemilik baris asal, di bulan refundnya ──
+  // Nilai yang dibalik = porsi qty dari omzet/laba yang dulu dikreditkan untuk baris itu.
+  const refunds = await bacaRefundKlinik(supabase, awal, akhir);
+  const invoicePer = new Map(invoices.map((inv) => [inv.id, inv]));
+  const luarPeriode = [...new Set(refunds.map((r) => r.invoice_id).filter((id) => !invoicePer.has(id)))];
+  // Bounded id lists keep each request URL small however many old invoices a month refunds.
+  for (let i = 0; i < luarPeriode.length; i += 200) {
+    const { data: lama } = await completeReportQuery(supabase
+      .from("invoices")
+      .select(INVOICE_KOMISI_SELECT, { count: "exact" })
+      .in("id", luarPeriode.slice(i, i + 200)));
+    for (const inv of (lama ?? []) as InvoiceRow[]) invoicePer.set(inv.id, inv);
+  }
+  for (const refund of refunds) {
+    const inv = invoicePer.get(refund.invoice_id);
+    if (!inv) continue;
+    const asal = new Map(barisInvoice(inv).map((x) => [x.lineId, x.row]));
+    const qtyAsal = new Map((inv.invoice_items ?? []).map((it) => [it.id, Number(it.qty)]));
+    for (const it of refund.clinic_refund_items ?? []) {
+      const row = asal.get(it.invoice_item_id);
+      const qty = qtyAsal.get(it.invoice_item_id) ?? 0;
+      if (!row || qty <= 0) continue;
+      const porsi = Number(it.qty) / qty;
+      const omzet = -row.omzet * porsi;
+      if (!row.employeeId) omzetTanpaPenjual += omzet;
+      baris.push({
+        ...row,
+        tanggal: refund.tanggal,
+        commissionPolicyDate: row.tanggal,
+        qty: -Number(it.qty),
+        omzet,
+        laba: row.laba === null ? null : -row.laba * porsi,
       });
     }
   }

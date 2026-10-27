@@ -21,7 +21,7 @@ create temporary table a02_before on commit drop as
 grant select on a02_before to authenticated;
 set local role authenticated;set local request.jwt.claim.role='authenticated';
 
-do $$declare blocked boolean;first jsonb;retry jsonb;inv jsonb;admin_req jsonb;processed jsonb;
+do $$declare blocked boolean;first jsonb;retry jsonb;inv jsonb;admin_req jsonb;processed jsonb;fin_req jsonb;
 begin
  -- Requester with Pembelian access and branch access creates an origin-bound pending request.
  perform set_config('request.jwt.claim.sub',md5('a02-staff')::uuid::text,true);
@@ -52,11 +52,16 @@ begin
  if not blocked then raise exception 'Other-branch staff requested correction';end if;
  if (select count(*) from purchase_correction_requests)<>0 then raise exception 'Other-branch staff sees requests';end if;
 
- -- FINANCE default modules exclude Pembelian: no request, no queue rows.
+ -- P01: FINANCE default modules exclude Pembelian, but it can open the invoice (Hutang),
+ -- so it may file a request and trace its own request; never other people's, never process.
  perform set_config('request.jwt.claim.sub',md5('a02-finance')::uuid::text,true);
- blocked:=false;begin perform create_purchase_correction_request('purchase_order',md5('a02-po')::uuid,'a02-key-0006','Finance tanpa modul pembelian');exception when insufficient_privilege then blocked:=true;end;
- if not blocked then raise exception 'Finance without Pembelian requested correction';end if;
- if (select count(*) from purchase_correction_requests)<>0 then raise exception 'Finance sees purchase correction queue';end if;
+ if (select count(*) from purchase_correction_requests)<>0 then raise exception 'Finance sees other people''s requests';end if;
+ fin_req:=create_purchase_correction_request('purchase_invoice',md5('a02-invoice')::uuid,'a02-key-0006','Finance: total faktur seharusnya 900');
+ if fin_req->>'status'<>'pending' then raise exception 'Finance request not pending';end if;
+ if (select count(*) from purchase_correction_requests)<>1 or not exists(select 1 from purchase_correction_requests where id=(fin_req->>'id')::uuid)
+  then raise exception 'Finance cannot trace exactly its own request';end if;
+ blocked:=false;begin perform process_purchase_correction_request((fin_req->>'id')::uuid,'Finance proses sendiri');exception when insufficient_privilege then blocked:=true;end;
+ if not blocked then raise exception 'Finance processed a request';end if;
 
  -- ADMIN may request but only sees own requests and cannot process.
  perform set_config('request.jwt.claim.sub',md5('a02-admin')::uuid::text,true);
@@ -69,7 +74,7 @@ begin
  perform set_config('request.jwt.claim.sub',md5('a02-owner')::uuid::text,true);
  blocked:=false;begin perform create_purchase_correction_request('purchase_order',md5('a02-po')::uuid,'a02-key-0008','Owner tidak perlu meminta');exception when insufficient_privilege then blocked:=true;end;
  if not blocked then raise exception 'Owner filed a request';end if;
- if (select count(*) from purchase_correction_requests where status='pending')<>3 then raise exception 'Owner queue incomplete';end if;
+ if (select count(*) from purchase_correction_requests where status='pending')<>4 then raise exception 'Owner queue incomplete';end if;
  perform set_config('request.jwt.claim.sub',md5('a02-owner-off')::uuid::text,true);
  blocked:=false;begin perform process_purchase_correction_request((first->>'id')::uuid,'Owner nonaktif');exception when insufficient_privilege then blocked:=true;end;
  if not blocked then raise exception 'Inactive owner processed a request';end if;
@@ -83,7 +88,7 @@ begin
  blocked:=false;begin perform process_purchase_correction_request((first->>'id')::uuid,'Keputusan berbeda');exception when others then blocked:=sqlerrm like '%sudah diproses%';end;
  if not blocked then raise exception 'Processed request was decided twice';end if;
  if not exists(select 1 from purchase_correction_requests where id=(first->>'id')::uuid and processed_by=auth.uid() and processed_at is not null and resolution='Faktur FB.A02 dibatalkan dan diganti') then raise exception 'Processed trace missing';end if;
- if (select count(*) from purchase_correction_requests where status='pending')<>2 then raise exception 'Pending count wrong after processing';end if;
+ if (select count(*) from purchase_correction_requests where status='pending')<>3 then raise exception 'Pending count wrong after processing';end if;
 
  -- Requester sees the processed status and resolution of own request.
  perform set_config('request.jwt.claim.sub',md5('a02-staff')::uuid::text,true);

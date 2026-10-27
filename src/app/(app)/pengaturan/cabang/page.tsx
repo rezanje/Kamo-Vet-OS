@@ -8,8 +8,8 @@ import { simpanAturanGroomingCabang, simpanLokasiCabang } from "./actions";
 
 // REAL data. branches = readable by all authenticated; warehouses = RLS-filtered
 // (STAFF sees only assigned-branch warehouses, OWNER/ADMIN see all).
-// ponytail: tambah/hapus cabang masih lewat database; yang bisa diubah dari sini
-// baru titik lokasi absen — itu yang dibutuhkan HRIS.
+// Cabang baru dibuat OWNER di Perusahaan → Cabang (U11). Yang bisa diubah dari sini
+// titik lokasi absen dan aturan grooming.
 export default async function CabangPage({
   searchParams,
 }: {

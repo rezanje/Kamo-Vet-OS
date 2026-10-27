@@ -12,6 +12,7 @@ import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB, geserHari } from "@/lib/tanggal";
 import { buatFakturLangsung } from "./actions";
+import { PriceDeviationConfirm } from "@/components/PriceDeviationConfirm";
 
 type SatuanOpsi = { unit: string; factor: number; buy_price: number };
 type ItemOpsi = {
@@ -31,10 +32,12 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 export function FakturLangsungForm({
   userId,
-  suppliers, warehouses, items, initial,
+  suppliers, warehouses, items, initial, priceWarning,
 }: {
   userId: string;
   initial?: DirectInvoiceInitial;
+  /** P04: peringatan harga dari server saat simpan terakhir. */
+  priceWarning?: string;
   suppliers: { id: string; nama: string; terminHari: number }[];
   warehouses: { id: string; label: string }[];
   items: ItemOpsi[];
@@ -239,6 +242,7 @@ export function FakturLangsungForm({
           barangnya tidak akan muncul di Monitor Kadaluarsa.
         </div>
 
+        <PriceDeviationConfirm warning={priceWarning} />
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
           <SubmitButton className="btn-acc" disabled={!ready || payload.length === 0 || total <= 0}>
             <i className="ti ti-device-floppy" /> Simpan faktur &amp; terima barang

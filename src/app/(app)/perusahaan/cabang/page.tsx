@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { assignUser, unassignUser } from "./actions";
+import { assignUser, tambahCabang, unassignUser } from "./actions";
 
 const ROLE_COLOR: Record<string, string> = {
   OWNER: "#7c3aed", ADMIN: "#2563eb", FINANCE: "#d97706", STAFF: "#16a34a", DOCTOR: "#dc2626",
@@ -16,8 +16,10 @@ export default async function PerusahaanCabangPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase
-    .from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+    .from("profiles").select("role, is_active").eq("id", user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/perusahaan");
+  // U11: hanya OWNER aktif yang melihat form cabang baru; RPC create_branch menolak peran lain.
+  const bolehBuatCabang = me.role === "OWNER" && me.is_active === true;
 
   const [{ data: branches }, { data: profiles }, { data: links }] = await Promise.all([
     supabase.from("branches").select("id, code, name, type, is_active").order("name"),
@@ -50,7 +52,26 @@ export default async function PerusahaanCabangPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", marginBottom: 12 }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#f0fdf4", border: ".5px solid #86efac", color: "#166534", marginBottom: 12 }}><i className="ti ti-check" /> Tersimpan</div>}
+      {success && <div className="p2ban" style={{ background: "#f0fdf4", border: ".5px solid #86efac", color: "#166534", marginBottom: 12 }}><i className="ti ti-check" /> {success === "1" ? "Tersimpan" : success}</div>}
+
+      {bolehBuatCabang && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="card-hd"><i className="ti ti-building-plus" style={{ color: "var(--acc)" }} /> Tambah cabang</div>
+          <form action={tambahCabang} className="form-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", alignItems: "end" }}>
+            <label><span className="flab">Kode cabang *</span><input className="fi" name="code" required maxLength={15} pattern="[A-Za-z0-9][A-Za-z0-9 ._\-]{0,14}" placeholder="Contoh: PDRY" /></label>
+            <label><span className="flab">Nama cabang *</span><input className="fi" name="name" required minLength={2} maxLength={100} placeholder="Contoh: KAMO Pondok Dry" /></label>
+            <label><span className="flab">Jenis *</span><select className="fi" name="type" required defaultValue="BOTH">
+              <option value="BOTH">Klinik &amp; petshop</option><option value="KLINIK">Klinik</option><option value="PETSHOP">Petshop</option>
+              <option value="DC">Gudang distribusi</option><option value="ONLINE">Online</option><option value="OFFICE">Kantor</option>
+            </select></label>
+            <label><span className="flab">Status *</span><select className="fi" name="is_active" required defaultValue="1">
+              <option value="1">Aktif</option><option value="0">Nonaktif</option>
+            </select></label>
+            <button type="submit" className="btn-acc"><i className="ti ti-plus" /> Tambah</button>
+          </form>
+          <div style={{ fontSize: 10, color: "var(--td)", marginTop: 6 }}>Cabang aktif langsung bisa dipilih saat menambah gudang.</div>
+        </div>
+      )}
 
       <div className="grid2" style={{ alignItems: "start" }}>
         {branches?.map((b) => {
