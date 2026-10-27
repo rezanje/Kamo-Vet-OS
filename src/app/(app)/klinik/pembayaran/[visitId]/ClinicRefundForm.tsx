@@ -110,7 +110,7 @@ export function ClinicRefundForm({ visitId, invoiceId, rows, userId }: { visitId
       </table>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-        <small style={{ color: "var(--tm)" }}>Tanpa biaya admin. Poin yang didapat dari invoice ini dikurangi sebanding nilai refund. Nilai final dihitung ulang dari invoice asal.</small>
+        <small style={{ color: "var(--tm)" }}>Tanpa biaya admin. Poin yang dipakai dikembalikan dan poin yang didapat dikurangi, sebanding nilai refund. Obat layak jual kembali dengan tanggal kadaluarsa batch asal bila tercatat. Nilai final dihitung ulang dari invoice asal.</small>
         <strong>Perkiraan refund: {rp(total)}</strong>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>

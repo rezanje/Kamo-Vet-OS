@@ -61,3 +61,13 @@ it("J03: commission still reads when the clinic refund table is not installed ye
    range:async()=>result,then:(resolve:(r:unknown)=>unknown)=>Promise.resolve(result).then(resolve)};return q;}};
  await expect(kumpulkanBarisKomisi(fake,"2026-10")).resolves.toMatchObject({baris:[]});
 });
+it("J03: reads refunded invoices from earlier periods in bounded id batches",async()=>{
+ const refunds=Array.from({length:450},(_,n)=>({id:`rf${n}`,invoice_id:`old${n}`,tanggal:"2026-10-05",clinic_refund_items:[]}));
+ const batches:number[]=[];
+ const fake={from(table:string){let data:unknown[]=table==="clinic_refunds"?refunds:[];
+  const q={select:()=>q,eq:()=>q,is:()=>q,not:()=>q,neq:()=>q,gte:()=>q,lte:()=>q,order:()=>q,
+   in:(_c:string,ids:string[])=>{batches.push(ids.length);data=[];return q;},
+   range:async()=>({data,count:data.length,error:null}),then:(resolve:(result:unknown)=>unknown)=>Promise.resolve({data,count:data.length,error:null}).then(resolve)};return q;}};
+ await kumpulkanBarisKomisi(fake,"2026-10");
+ expect(batches).toEqual([200,200,50]);
+});

@@ -286,11 +286,12 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   const refunds = await bacaRefundKlinik(supabase, awal, akhir);
   const invoicePer = new Map(invoices.map((inv) => [inv.id, inv]));
   const luarPeriode = [...new Set(refunds.map((r) => r.invoice_id).filter((id) => !invoicePer.has(id)))];
-  if (luarPeriode.length) {
+  // Bounded id lists keep each request URL small however many old invoices a month refunds.
+  for (let i = 0; i < luarPeriode.length; i += 200) {
     const { data: lama } = await completeReportQuery(supabase
       .from("invoices")
       .select(INVOICE_KOMISI_SELECT, { count: "exact" })
-      .in("id", luarPeriode));
+      .in("id", luarPeriode.slice(i, i + 200)));
     for (const inv of (lama ?? []) as InvoiceRow[]) invoicePer.set(inv.id, inv);
   }
   for (const refund of refunds) {

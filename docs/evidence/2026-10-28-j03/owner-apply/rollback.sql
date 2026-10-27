@@ -4,18 +4,18 @@ begin;
 do $$begin
  if to_regclass('public.clinic_refunds') is not null and (exists(select 1 from public.clinic_refunds) or exists(select 1 from public.clinic_refund_requests)) then
   raise exception 'J03 rollback refused: clinic refunds/requests exist. Reconcile instead of dropping.';end if;
- if exists(select 1 from public.sales_refund_payouts where point_delta<>0) then
-  raise exception 'J03 rollback refused: petshop refunds already deducted points. Reconcile instead.';end if;
+ if exists(select 1 from public.sales_refund_payouts where point_delta<>0 or point_restored<>0) then
+  raise exception 'J03 rollback refused: petshop refunds already adjusted points. Reconcile instead.';end if;
 end$$;
 
 -- Reverse the text patches (exact inverse replacements).
 do $patch$declare body text;begin
  body:=pg_get_functiondef('public.pos_sale_post_refund_selected(public.sales,uuid,text,date,numeric,jsonb,text,jsonb)'::regprocedure);
  body:=replace(body,$n$values(p_doc,p_sale.id,p_sale.branch_id,method,expense,request.id,to_jsonb(account),p_total,auth.uid());
- update public.sales_refund_payouts set point_delta=-public.refund_point_deduction(p_sale.customer_id,coalesce(p_sale.poin_earned,0),(select coalesce(-sum(x.point_delta),0)::integer from public.sales_refund_payouts x where x.sale_id=p_sale.id),cumulative,p_sale.total,p_no,'Refund '||p_no||' (struk '||p_sale.no_struk||')') where return_id=p_doc;$n$,
+ update public.sales_refund_payouts f set point_delta=-x.deducted,point_restored=x.restored from public.refund_point_adjust(p_sale.customer_id,coalesce(p_sale.poin_earned,0),(select coalesce(-sum(y.point_delta),0)::integer from public.sales_refund_payouts y where y.sale_id=p_sale.id),coalesce(p_sale.poin_digunakan,0),(select coalesce(sum(y.point_restored),0)::integer from public.sales_refund_payouts y where y.sale_id=p_sale.id),cumulative,p_sale.total,p_no,'Refund '||p_no||' (struk '||p_sale.no_struk||')') x where f.return_id=p_doc;$n$,
   $o$values(p_doc,p_sale.id,p_sale.branch_id,method,expense,request.id,to_jsonb(account),p_total,auth.uid());$o$);execute body;
  body:=pg_get_functiondef('public.sales_refund_quote(uuid,jsonb,uuid)'::regprocedure);
- body:=replace(body,$n$null; -- J03: earned points are deducted proportionally when the refund posts$n$,
+ body:=replace(body,$n$null; -- J03: points are restored/deducted proportionally when the refund posts$n$,
   $o$raise exception 'Transaksi berpoin memerlukan rekonsiliasi pembalikan poin. Refund baru belum diposting';$o$);execute body;
  body:=pg_get_functiondef('public.refresh_customer_spending(uuid)'::regprocedure);
  body:=replace(body,$n$for s in select i.total-coalesce((select sum(f.total) from public.clinic_refunds f where f.invoice_id=i.id),0) as total from public.invoices i join public.visits v on v.id=i.visit_id$n$,
@@ -50,5 +50,7 @@ drop function if exists public.guard_clinic_refund_header();
 drop function if exists public.clinic_refund_actor_access(uuid,text);
 drop function if exists public.clinic_refund_finance_access(uuid);
 drop function if exists public.clinic_refund_number(date);
-drop function if exists public.refund_point_deduction(uuid,integer,integer,numeric,numeric,text,text);
+drop function if exists public.refund_point_adjust(uuid,integer,integer,integer,integer,numeric,numeric,text,text);
+alter table public.sales_refund_payouts drop constraint if exists sales_refund_payouts_point_restored_check;
+alter table public.sales_refund_payouts drop column if exists point_restored;
 commit;

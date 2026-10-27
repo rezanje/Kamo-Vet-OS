@@ -1,3 +1,4 @@
+fingerprint before: 96f90a74f13ed4d1c3fc654da4f21912
 == preflight.sql
 source core still has the original line filter (K02 text)|t
 source core still has the original stock loop|t
@@ -19,8 +20,9 @@ internal functions not callable|t
 guards installed|t
 source core accepts money-only lines|t
 petshop point refusal lifted|t
-petshop payout deducts points|t
+petshop payout restores/deducts points|t
 customer spending net of clinic refunds|t
+point restore columns present|t
 activity index registered|t
 no refund rows yet (fresh install)|t
 SUMMARY: 0 failed|t
@@ -34,13 +36,16 @@ internal functions not callable|t
 guards installed|t
 source core accepts money-only lines|t
 petshop point refusal lifted|t
-petshop payout deducts points|t
+petshop payout restores/deducts points|t
 customer spending net of clinic refunds|t
+point restore columns present|t
 activity index registered|t
 no refund rows yet (fresh install)|t
 SUMMARY: 0 failed|t
 == rollback.sql
 
+fingerprint after rollback: 96f90a74f13ed4d1c3fc654da4f21912
+J03 objects after rollback: 0
 == preflight.sql
 source core still has the original line filter (K02 text)|t
 source core still has the original stock loop|t
@@ -62,8 +67,9 @@ internal functions not callable|t
 guards installed|t
 source core accepts money-only lines|t
 petshop point refusal lifted|t
-petshop payout deducts points|t
+petshop payout restores/deducts points|t
 customer spending net of clinic refunds|t
+point restore columns present|t
 activity index registered|t
 no refund rows yet (fresh install)|t
 SUMMARY: 0 failed|t

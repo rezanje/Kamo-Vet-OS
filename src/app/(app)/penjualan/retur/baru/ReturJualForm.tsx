@@ -80,7 +80,7 @@ export function ReturJualForm({
           <select className="fi" name="refund_method" required value={payoutMethod} onChange={e=>setPayoutMethod(e.target.value)} style={{maxWidth:320}}>
             <option value="">Pilih cara pengembalian uang</option><option value="Tunai">Tunai dari kas shift petshop</option><option value="Transfer">Transfer melalui finance</option>
           </select>
-          <p>Poin yang didapat dari transaksi ini dikurangi sebanding nilai refund (saldo poin tidak pernah di bawah 0).</p>
+          <p>Poin yang dipakai di transaksi ini dikembalikan dan poin yang didapat dikurangi, sebanding nilai refund (saldo poin tidak pernah di bawah 0).</p>
           {payoutMethod==='Tunai'&&<p>Uang keluar dari kas/shift petshop aktif, meskipun transaksi asal dibayar transfer. Shift aktif diperlukan.</p>}
           {payoutMethod==='Transfer'&&<>
             <p>Ini permintaan ke finance. Retur, stok dan jurnal belum diposting sampai finance mencatat transfer selesai. Jangan membayar tunai untuk permintaan transfer yang sama.</p>

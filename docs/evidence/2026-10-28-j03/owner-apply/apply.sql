@@ -44,6 +44,7 @@ create table if not exists public.clinic_refunds(
  shift_id uuid references public.cashier_shifts(id),
  keterangan text,
  point_delta integer not null default 0 check(point_delta<=0),
+ point_restored integer not null default 0 check(point_restored>=0),
  created_by uuid not null references public.profiles(id),
  created_at timestamptz not null default now()
 );
@@ -87,25 +88,34 @@ create policy clinic_refund_items_branch_read on public.clinic_refund_items for 
  using(exists(select 1 from public.clinic_refunds r where r.id=refund_id and public.user_can_access_branch(r.branch_id)));
 
 -- 2. Shared helpers -----------------------------------------------------------------------
--- Proportional earned-point deduction: cumulative target floor(earned*refunded/total),
--- minus what earlier refunds already took, capped by the live balance (never below 0).
-create or replace function public.refund_point_deduction(p_customer uuid,p_earned integer,p_already integer,p_cumulative numeric,p_total numeric,p_ref text,p_description text)
-returns integer language plpgsql security definer set search_path='' as $$
-declare target integer;want integer;balance integer;take integer;begin
- if p_customer is null or coalesce(p_earned,0)<=0 or p_total is null or p_total<=0 then return 0;end if;
- target:=floor(p_earned*least(1,greatest(0,p_cumulative/p_total)));
- want:=greatest(0,target-greatest(coalesce(p_already,0),0));
- if want=0 then return 0;end if;
+-- Owner rule: on refund, earned points are deducted and redeemed points restored, both
+-- proportionally to the cumulative refunded value (floor). Each target is cumulative, minus
+-- what earlier refunds of the same source already did. Deduction is capped by the live
+-- balance after the restore, so the balance never goes below 0.
+create or replace function public.refund_point_adjust(p_customer uuid,p_earned integer,p_deducted integer,p_used integer,p_restored integer,
+ p_cumulative numeric,p_total numeric,p_ref text,p_description text,out deducted integer,out restored integer)
+language plpgsql security definer set search_path='' as $$
+declare share numeric;give integer;want integer;balance integer;begin
+ deducted:=0;restored:=0;
+ if p_customer is null or p_total is null or p_total<=0 or (coalesce(p_earned,0)<=0 and coalesce(p_used,0)<=0) then return;end if;
+ share:=least(1,greatest(0,p_cumulative/p_total));
+ give:=greatest(0,floor(greatest(coalesce(p_used,0),0)*share)::integer-greatest(coalesce(p_restored,0),0));
+ want:=greatest(0,floor(greatest(coalesce(p_earned,0),0)*share)::integer-greatest(coalesce(p_deducted,0),0));
+ if give=0 and want=0 then return;end if;
  select coalesce(points,0) into balance from public.customers where id=p_customer for update;
- if not found then return 0;end if;
- take:=least(want,greatest(balance,0));
- if take>0 then
-  insert into public.point_ledger(customer_id,delta,saldo,ref,description,entry_type) values(p_customer,-take,balance-take,left(p_ref,50),left(p_description,200),'adjustment');
-  update public.customers set points=balance-take where id=p_customer;
+ if not found then return;end if;
+ if give>0 then
+  balance:=balance+give;restored:=give;
+  insert into public.point_ledger(customer_id,delta,saldo,ref,description,entry_type) values(p_customer,give,balance,left(p_ref,50),left('Poin dipakai dikembalikan: '||p_description,200),'adjustment');
  end if;
- return take;
+ deducted:=least(want,greatest(balance,0));
+ if deducted>0 then
+  balance:=balance-deducted;
+  insert into public.point_ledger(customer_id,delta,saldo,ref,description,entry_type) values(p_customer,-deducted,balance,left(p_ref,50),left('Poin didapat dikurangi: '||p_description,200),'adjustment');
+ end if;
+ update public.customers set points=balance where id=p_customer;
 end$$;
-revoke all on function public.refund_point_deduction(uuid,integer,integer,numeric,numeric,text,text) from public,anon,authenticated,service_role;
+revoke all on function public.refund_point_adjust(uuid,integer,integer,integer,integer,numeric,numeric,text,text) from public,anon,authenticated,service_role;
 
 -- Clinic refund number: configured RJK pattern, highest existing + 1 (never count+1).
 create or replace function public.clinic_refund_number(p_date date) returns text
@@ -123,18 +133,20 @@ declare prefix text;digits integer;n bigint;begin
 end$$;
 revoke all on function public.clinic_refund_number(date) from public,anon,authenticated,service_role;
 
--- Requester: active branch actor. Cash leaves the actor's own open clinic shift; without
--- a shift only OWNER/ADMIN/FINANCE may file a transfer request.
+-- Requester: active branch actor with the clinic module in the Akses Grup matrix (same
+-- defaults as the app: OWNER always; a role without saved rows keeps its default modules).
+-- Cash always leaves the actor's own open clinic shift.
 create or replace function public.clinic_refund_actor_access(p_branch uuid,p_method text) returns uuid
 language plpgsql security definer set search_path='' as $$
 declare role_name text;shift uuid;begin
  select role into role_name from public.profiles where id=auth.uid() and is_active;
- if auth.uid() is null or auth.role() is distinct from 'authenticated' or role_name is null
-  or role_name not in('OWNER','ADMIN','FINANCE','STAFF','DOCTOR') or not public.user_can_access_branch(p_branch) then
+ if auth.uid() is null or auth.role() is distinct from 'authenticated' or role_name is null or not public.user_can_access_branch(p_branch)
+  or not(role_name='OWNER'
+   or exists(select 1 from public.role_modules m where m.role::text=role_name and m.module_id='klinik')
+   or (role_name in('ADMIN','DOCTOR','STAFF') and not exists(select 1 from public.role_modules m where m.role::text=role_name))) then
   raise exception 'Akses refund klinik ditolak' using errcode='42501';end if;
  select id into shift from public.cashier_shifts where opened_by=auth.uid() and branch_id=p_branch and status='open' and shift_type='klinik' order by opened_at desc,id limit 1 for update;
  if p_method='Tunai' and shift is null then raise exception 'Refund Tunai memerlukan shift klinik aktif milik Anda';end if;
- if shift is null and role_name not in('OWNER','ADMIN','FINANCE') then raise exception 'Shift klinik aktif diperlukan untuk mengajukan refund' using errcode='42501';end if;
  return shift;
 end$$;
 revoke all on function public.clinic_refund_actor_access(uuid,text) from public,anon,authenticated,service_role;
@@ -166,7 +178,7 @@ end$patch$;
 create or replace function public.clinic_refund_quote(p_invoice uuid,p_items jsonb,p_except uuid default null) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare src jsonb;i public.invoices%rowtype;r record;l public.invoice_items%rowtype;used integer;reserved integer;restock boolean;kondisi text;
- ratio numeric;raw numeric:=0;prev_raw numeric;previous numeric;total numeric;rows jsonb:='[]';open_left boolean:=false;begin
+ ratio numeric;raw numeric:=0;prev_raw numeric;previous numeric;res_total numeric;res_raw numeric;total numeric;rows jsonb:='[]';open_left boolean:=false;begin
  src:=public.clinic_refund_source_core(p_invoice);
  if (src->>'eligible')::boolean is not true then raise exception 'Invoice belum dapat direfund: %',coalesce(src->>'reason','sumber tidak valid');end if;
  select * into i from public.invoices where id=p_invoice;
@@ -184,33 +196,45 @@ declare src jsonb;i public.invoices%rowtype;r record;l public.invoice_items%rowt
   restock:=l.jenis='obat' and l.item_id is not null and l.compound_recipe_id is null;
   kondisi:=case when restock then coalesce(nullif(r.kondisi,''),'baik') end;
   if kondisi is not null and kondisi not in('baik','rusak') then raise exception 'Kondisi obat tidak valid';end if;
+  if kondisi='baik' and r.exp_date is not null and (r.exp_date<(now() at time zone 'Asia/Jakarta')::date or r.exp_date>(now() at time zone 'Asia/Jakarta')::date+interval '30 years') then raise exception 'Tanggal kadaluarsa obat tidak valid atau sudah lewat; obat kadaluarsa tidak layak jual';end if;
   raw:=raw+r.qty*l.harga*(1-coalesce(l.diskon_persen,0)/100)*ratio;
   rows:=rows||jsonb_build_array(jsonb_build_object('invoice_item_id',l.id,'qty',r.qty::integer,'kondisi',kondisi,'exp_date',case when kondisi='baik' then r.exp_date end));
  end loop;
  select coalesce(sum(f.total),0) into previous from public.clinic_refunds f where f.invoice_id=p_invoice;
  select coalesce(sum(ri.qty*x.harga*(1-coalesce(x.diskon_persen,0)/100)*ratio),0) into prev_raw
   from public.clinic_refund_items ri join public.clinic_refunds f on f.id=ri.refund_id join public.invoice_items x on x.id=ri.invoice_item_id where f.invoice_id=p_invoice;
- -- Lines left after this refund: when none remain, the invoice is refunded to the cent.
+ -- Requests finance is processing (money may already be on its way) reserve both their qty
+ -- and their quoted amount: other refunds can never consume them.
+ select coalesce(sum(q.quoted_total),0) into res_total from public.clinic_refund_requests q where q.invoice_id=p_invoice and q.status='diproses' and q.id is distinct from p_except;
+ select coalesce(sum((y->>'qty')::integer*x.harga*(1-coalesce(x.diskon_persen,0)/100)*ratio),0) into res_raw
+  from public.clinic_refund_requests q cross join lateral jsonb_array_elements(q.payload->'items')y join public.invoice_items x on x.id=(y->>'invoice_item_id')::uuid
+  where q.invoice_id=p_invoice and q.status='diproses' and q.id is distinct from p_except;
+ -- Lines left after this refund and the reservations: when none remain, the invoice is refunded to the cent.
  select exists(select 1 from public.invoice_items x where x.invoice_id=p_invoice and x.qty
    >(select coalesce(sum(ri.qty),0) from public.clinic_refund_items ri where ri.invoice_item_id=x.id)
+   +(select coalesce(sum((y->>'qty')::integer),0) from public.clinic_refund_requests q cross join lateral jsonb_array_elements(q.payload->'items')y
+      where q.invoice_id=p_invoice and q.status='diproses' and q.id is distinct from p_except and (y->>'invoice_item_id')::uuid=x.id)
    +coalesce((select (y->>'qty')::integer from jsonb_array_elements(rows)y where (y->>'invoice_item_id')::uuid=x.id),0)) into open_left;
- total:=case when open_left then least(round(prev_raw+raw,2),i.total)-previous else i.total-previous end;
- if total<=0 or total<>round(total,2) or previous+total>i.total then raise exception 'Nilai refund tidak valid atau di bawah presisi uang';end if;
- return jsonb_build_object('total',total,'items',rows);
+ total:=case when open_left then least(round(prev_raw+res_raw+raw,2),i.total)-previous-res_total else i.total-previous-res_total end;
+ if total<=0 or total<>round(total,2) or previous+res_total+total>i.total then raise exception 'Nilai refund tidak valid atau di bawah presisi uang';end if;
+ return jsonb_build_object('total',total,'items',rows,'cap',i.total-previous-res_total);
 end$$;
 revoke all on function public.clinic_refund_quote(uuid,jsonb,uuid) from public,anon,authenticated,service_role;
 
 -- 5. Posting core: refund document, stock, journals, payout, points (one transaction) ----
 create or replace function public.clinic_refund_apply(p_request uuid,p_date date,p_account uuid,p_shift uuid) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare q public.clinic_refund_requests%rowtype;i public.invoices%rowtype;v public.visits%rowtype;quote jsonb;method text;account public.cash_accounts%rowtype;
+declare q public.clinic_refund_requests%rowtype;i public.invoices%rowtype;v public.visits%rowtype;quote jsonb;method text;account public.cash_accounts%rowtype;src_exp date;exp date;
  doc uuid:=gen_random_uuid();expense uuid:=gen_random_uuid();no text;total numeric;previous numeric;cumulative numeric;r record;l public.invoice_items%rowtype;
  used integer;prev_hpp numeric;cost numeric;base numeric;wh uuid;hppgood numeric:=0;hppbad numeric:=0;disc numeric;tax numeric;lines jsonb;
- earned integer;already integer;taken integer:=0;result jsonb;begin
+ earned integer;used_pts integer;already integer;already_restored integer;pts record;taken integer:=0;given integer:=0;result jsonb;begin
  select * into q from public.clinic_refund_requests where id=p_request for update;
  select * into i from public.invoices where id=q.invoice_id;select * into v from public.visits where id=i.visit_id;
  quote:=public.clinic_refund_quote(q.invoice_id,q.payload->'items',q.id);
- if (quote->>'total')::numeric<>q.quoted_total or quote->'items' is distinct from q.payload->'items' then raise exception 'Sumber/nilai refund berubah; periksa dan buat permintaan baru';end if;
+ -- The quoted (possibly already transferred) amount is posted as long as the reserved lines
+ -- are unchanged and it still fits under the invoice cap; a later cent of rounding is absorbed
+ -- by the cumulative allocation of the next refunds.
+ if quote->'items' is distinct from q.payload->'items' or q.quoted_total>(quote->>'cap')::numeric then raise exception 'Sumber/nilai refund berubah; periksa dan buat permintaan baru';end if;
  total:=q.quoted_total;method:=q.payload->>'method';
  if p_date is null or not isfinite(p_date) or p_date>(now() at time zone 'Asia/Jakarta')::date or p_date<(i.created_at at time zone 'Asia/Jakarta')::date then raise exception 'Tanggal refund tidak valid';end if;
  perform public.inventory_assert_open_date(p_date);
@@ -231,18 +255,23 @@ declare q public.clinic_refund_requests%rowtype;i public.invoices%rowtype;v publ
   values(doc,no,i.id,v.id,v.branch_id,p_date,total,method,account.id,to_jsonb(account),expense,q.id,case when method='Tunai' then p_shift end,q.payload#>>'{header,keterangan}',auth.uid());
  for r in select * from jsonb_to_recordset(q.payload->'items')x(invoice_item_id uuid,qty integer,kondisi text,exp_date date) order by invoice_item_id loop
   select * into l from public.invoice_items where id=r.invoice_item_id;
-  cost:=null;base:=null;wh:=null;
+  cost:=null;base:=null;wh:=null;exp:=null;
   if r.kondisi is not null then
    select coalesce(sum(ri.qty),0),coalesce(sum(ri.hpp),0) into used,prev_hpp from public.clinic_refund_items ri where ri.invoice_item_id=l.id;
    cost:=greatest(0,least(l.hpp,round(l.hpp*(used+r.qty)/l.qty,2))-prev_hpp);base:=r.qty*l.faktor;
    if r.kondisi='baik' then
     select warehouse_id into wh from public.stock_moves where source='klinik' and source_ref=i.invoice_no and item_id=l.item_id limit 1;
     if wh is null then raise exception 'Gudang asal obat tidak ditemukan';end if;
-    perform public.stock_in_fifo(wh,l.item_id,base,cost/base,'retur-klinik',no,p_date,r.exp_date);hppgood:=hppgood+cost;
+    -- Expiry of the original batch when the source movement recorded it; staff entry only as fallback.
+    select min(b.exp_date) into src_exp from public.stock_moves m cross join lateral jsonb_to_recordset(coalesce(m.fifo_takes,'[]'::jsonb))t(id uuid)
+     join public.stock_layers b on b.id=t.id where m.source='klinik' and m.source_ref=i.invoice_no and m.item_id=l.item_id;
+    exp:=coalesce(src_exp,r.exp_date);
+    if exp is not null and exp<p_date then raise exception 'Obat % sudah kadaluarsa; tandai tidak layak jual',l.deskripsi;end if;
+    perform public.stock_in_fifo(wh,l.item_id,base,cost/base,'retur-klinik',no,p_date,exp);hppgood:=hppgood+cost;
    else hppbad:=hppbad+cost;end if;
   end if;
   insert into public.clinic_refund_items(refund_id,invoice_item_id,item_id,deskripsi,jenis,qty,amount,restock,kondisi,base_qty,hpp,exp_date,warehouse_id)
-   values(doc,l.id,l.item_id,l.deskripsi,l.jenis,r.qty,round(r.qty*l.harga*(1-coalesce(l.diskon_persen,0)/100)*i.total/i.subtotal,2),coalesce(r.kondisi='baik',false),r.kondisi,base,cost,r.exp_date,wh);
+   values(doc,l.id,l.item_id,l.deskripsi,l.jenis,r.qty,round(r.qty*l.harga*(1-coalesce(l.diskon_persen,0)/100)*i.total/i.subtotal,2),coalesce(r.kondisi='baik',false),r.kondisi,base,cost,exp,wh);
  end loop;
  -- Reverse the source revenue journal pro rata (cumulative cents, revenue is the plug).
  disc:=round(i.discount*cumulative/i.total,2)-round(i.discount*previous/i.total,2);
@@ -256,13 +285,15 @@ declare q public.clinic_refund_requests%rowtype;i public.invoices%rowtype;v publ
    jsonb_build_object('code','1301','debit',hppgood,'credit',0),jsonb_build_object('code','5902','debit',hppbad,'credit',0),jsonb_build_object('code','5101','debit',0,'credit',hppgood+hppbad)));
  end if;
  if v.customer_id is not null then
-  select coalesce(sum(delta),0) into earned from public.point_ledger where customer_id=v.customer_id and ref=i.invoice_no and delta>0;
-  select coalesce(-sum(point_delta),0) into already from public.clinic_refunds where invoice_id=i.id and id<>doc;
-  taken:=public.refund_point_deduction(v.customer_id,earned,already,cumulative,i.total,no,'Refund '||no||' (invoice '||i.invoice_no||')');
-  if taken>0 then update public.clinic_refunds set point_delta=-taken where id=doc;end if;
+  select coalesce(sum(delta) filter(where delta>0),0),coalesce(-sum(delta) filter(where delta<0),0) into earned,used_pts
+   from public.point_ledger where customer_id=v.customer_id and ref=i.invoice_no;
+  select coalesce(-sum(point_delta),0),coalesce(sum(point_restored),0) into already,already_restored from public.clinic_refunds where invoice_id=i.id and id<>doc;
+  select * into pts from public.refund_point_adjust(v.customer_id,earned,already,used_pts,already_restored,cumulative,i.total,no,'Refund '||no||' (invoice '||i.invoice_no||')');
+  taken:=pts.deducted;given:=pts.restored;
+  if taken>0 or given>0 then update public.clinic_refunds set point_delta=-taken,point_restored=given where id=doc;end if;
   perform public.refresh_customer_spending(v.customer_id);
  end if;
- result:=jsonb_build_object('refund_request_id',q.id,'status','selesai','document_id',doc,'document_no',no,'total',total,'point_delta',-taken,'source_ref',i.invoice_no,'invoice_id',i.id);
+ result:=jsonb_build_object('refund_request_id',q.id,'status','selesai','document_id',doc,'document_no',no,'total',total,'point_delta',-taken,'point_restored',given,'source_ref',i.invoice_no,'invoice_id',i.id);
  update public.clinic_refund_requests set status='selesai',refund_id=doc,receipt=result,updated_at=now() where id=q.id;
  return result;
 end$$;
@@ -420,10 +451,10 @@ end$$;
 revoke all on function public.guard_clinic_refund_immutable() from public,anon,authenticated,service_role;
 drop trigger if exists clinic_refund_items_immutable on public.clinic_refund_items;
 create trigger clinic_refund_items_immutable before update or delete on public.clinic_refund_items for each row execute function public.guard_clinic_refund_immutable();
--- clinic_refunds: only point_delta is set once, right after insert, inside the posting.
+-- clinic_refunds: only the point columns are set once, right after insert, inside the posting.
 create or replace function public.guard_clinic_refund_header() returns trigger
 language plpgsql security definer set search_path='' as $$begin
- if tg_op='DELETE' or (to_jsonb(new)-'point_delta') is distinct from (to_jsonb(old)-'point_delta') or old.point_delta<>0 then
+ if tg_op='DELETE' or (to_jsonb(new)-'point_delta'-'point_restored') is distinct from (to_jsonb(old)-'point_delta'-'point_restored') or old.point_delta<>0 or old.point_restored<>0 then
   raise exception 'Refund klinik yang sudah diposting tidak dapat diubah' using errcode='42501';end if;
  return new;
 end$$;
@@ -439,10 +470,15 @@ do $patch$declare body text;needle text:=$o$for s in select i.total from public.
  elsif position(repl in body)=0 then raise exception 'Customer spending provenance mismatch';end if;
 end$patch$;
 
--- 9. Petshop: lift the point refusal; deduct earned points with the same rule -------------
+-- 9. Petshop: lift the point refusal; restore redeemed / deduct earned points, same rule ---
+alter table public.sales_refund_payouts add column if not exists point_restored integer not null default 0;
+do $$begin
+ if not exists(select 1 from pg_constraint where conname='sales_refund_payouts_point_restored_check') then
+  alter table public.sales_refund_payouts add constraint sales_refund_payouts_point_restored_check check(point_restored>=0);end if;
+end$$;
 do $patch$declare body text;
  needle text:=$o$raise exception 'Transaksi berpoin memerlukan rekonsiliasi pembalikan poin. Refund baru belum diposting';$o$;
- repl text:=$n$null; -- J03: earned points are deducted proportionally when the refund posts$n$;begin
+ repl text:=$n$null; -- J03: points are restored/deducted proportionally when the refund posts$n$;begin
  body:=pg_get_functiondef('public.sales_refund_quote(uuid,jsonb,uuid)'::regprocedure);
  if position(needle in body)>0 then execute replace(body,needle,repl);
  elsif position(repl in body)=0 then raise exception 'Petshop point refusal provenance mismatch';end if;
@@ -450,7 +486,7 @@ end$patch$;
 do $patch$declare body text;
  needle text:=$o$values(p_doc,p_sale.id,p_sale.branch_id,method,expense,request.id,to_jsonb(account),p_total,auth.uid());$o$;
  repl text:=$n$values(p_doc,p_sale.id,p_sale.branch_id,method,expense,request.id,to_jsonb(account),p_total,auth.uid());
- update public.sales_refund_payouts set point_delta=-public.refund_point_deduction(p_sale.customer_id,coalesce(p_sale.poin_earned,0),(select coalesce(-sum(x.point_delta),0)::integer from public.sales_refund_payouts x where x.sale_id=p_sale.id),cumulative,p_sale.total,p_no,'Refund '||p_no||' (struk '||p_sale.no_struk||')') where return_id=p_doc;$n$;begin
+ update public.sales_refund_payouts f set point_delta=-x.deducted,point_restored=x.restored from public.refund_point_adjust(p_sale.customer_id,coalesce(p_sale.poin_earned,0),(select coalesce(-sum(y.point_delta),0)::integer from public.sales_refund_payouts y where y.sale_id=p_sale.id),coalesce(p_sale.poin_digunakan,0),(select coalesce(sum(y.point_restored),0)::integer from public.sales_refund_payouts y where y.sale_id=p_sale.id),cumulative,p_sale.total,p_no,'Refund '||p_no||' (struk '||p_sale.no_struk||')') x where f.return_id=p_doc;$n$;begin
  body:=pg_get_functiondef('public.pos_sale_post_refund_selected(public.sales,uuid,text,date,numeric,jsonb,text,jsonb)'::regprocedure);
  if position(repl in body)>0 then return;end if;
  if position(needle in body)=0 then raise exception 'Petshop payout provenance mismatch';end if;

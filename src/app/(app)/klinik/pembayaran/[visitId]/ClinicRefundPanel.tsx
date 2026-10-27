@@ -3,7 +3,7 @@ import { ClinicRefundForm, type ClinicRefundRow } from "./ClinicRefundForm";
 const rp = (n: number) => "Rp " + Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 });
 
 type Line = { id: string; deskripsi: string; qty: number; harga: number; jenis: string | null; item_id: string | null; diskon_persen: number | null; compound_recipe_id: string | null; satuan: string | null };
-type Refund = { id: string; no_refund: string; tanggal: string; total: number; method: string; point_delta: number; keterangan: string | null;
+type Refund = { id: string; no_refund: string; tanggal: string; total: number; method: string; point_delta: number; point_restored?: number; keterangan: string | null;
   clinic_refund_items: { invoice_item_id: string; deskripsi: string; qty: number; amount: number; kondisi: string | null; restock: boolean }[] | null };
 type Request = { id: string; status: string; quoted_total: number; method: string; requested_date: string; refund_no: string | null };
 
@@ -15,7 +15,7 @@ export type ClinicRefundData = { refunds: Refund[]; requests: Request[]; eligibl
 export async function loadClinicRefundData(db: AnyClient, invoiceId: string): Promise<ClinicRefundData | null> {
   try {
     const [refunds, requests, preview] = await Promise.all([
-      db.from("clinic_refunds").select("id,no_refund,tanggal,total,method,point_delta,keterangan,clinic_refund_items(invoice_item_id,deskripsi,qty,amount,kondisi,restock)").eq("invoice_id", invoiceId).order("created_at"),
+      db.from("clinic_refunds").select("id,no_refund,tanggal,total,method,point_delta,point_restored,keterangan,clinic_refund_items(invoice_item_id,deskripsi,qty,amount,kondisi,restock)").eq("invoice_id", invoiceId).order("created_at"),
       db.rpc("get_clinic_refund_requests", { p_invoice: invoiceId, p_office: false, p_status: "", p_offset: 0 }),
       db.rpc("preview_clinic_refund_source", { p_invoice: invoiceId }),
     ]);
@@ -56,7 +56,7 @@ export function ClinicRefundPanel({ visitId, invoice, lines, userId, message, da
         <tbody>{done.map((r) => <tr key={r.id}>
           <td>{r.no_refund}</td><td>{r.tanggal}</td>
           <td>{(r.clinic_refund_items ?? []).map((it) => `${it.qty}× ${it.deskripsi}${it.restock ? " (kembali ke stok)" : it.kondisi === "rusak" ? " (tidak layak jual)" : ""}`).join(", ")}
-            {r.point_delta < 0 && <div style={{ fontSize: 10 }}>Poin dikurangi {-r.point_delta}</div>}{r.keterangan && <div style={{ fontSize: 10 }}>{r.keterangan}</div>}</td>
+            {r.point_delta < 0 && <div style={{ fontSize: 10 }}>Poin dikurangi {-r.point_delta}</div>}{Number(r.point_restored ?? 0) > 0 && <div style={{ fontSize: 10 }}>Poin dikembalikan {r.point_restored}</div>}{r.keterangan && <div style={{ fontSize: 10 }}>{r.keterangan}</div>}</td>
           <td>{r.method}</td><td style={{ textAlign: "right" }}>{rp(r.total)}</td></tr>)}</tbody>
       </table>}
       {open.length > 0 && <div className="p2ban" style={{ marginTop: 8 }}>
