@@ -15,9 +15,17 @@ select check_name, ok from (values
     and not has_function_privilege('anon','public.clinic_add_record_addendum(uuid,uuid,text,text,text,text)','EXECUTE')),
   ('clinic_can_add_record_addendum executable by authenticated',
     has_function_privilege('authenticated','public.clinic_can_add_record_addendum(uuid)','EXECUTE')),
-  ('history reader is SECURITY DEFINER, STABLE, fixed search_path',
+  ('history reader is SECURITY DEFINER with fixed search_path (volatile: writes access trail)',
     exists(select 1 from pg_proc where oid = to_regprocedure('public.clinic_patient_clinical_history(uuid,uuid)')
-      and prosecdef and provolatile = 's' and proconfig @> array['search_path=""'])),
+      and prosecdef and provolatile = 'v' and proconfig @> array['search_path=""'])),
+  ('access trail table has RLS; authenticated read-only (no INSERT/UPDATE/DELETE)',
+    coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.clinic_history_reads')), false)
+    and not has_table_privilege('authenticated','public.clinic_history_reads','INSERT')
+    and not has_table_privilege('authenticated','public.clinic_history_reads','UPDATE')
+    and not has_table_privilege('authenticated','public.clinic_history_reads','DELETE')),
+  ('access trail mirrored to activity log (source registered + trigger)',
+    exists(select 1 from public.activity_log_sources where entity = 'clinic_history_reads' and metadata_only)
+    and exists(select 1 from pg_trigger where tgrelid = to_regclass('public.clinic_history_reads') and tgname = 'a01_activity_change')),
   ('history reader executable by authenticated, not anon',
     has_function_privilege('authenticated','public.clinic_patient_clinical_history(uuid,uuid)','EXECUTE')
     and not has_function_privilege('anon','public.clinic_patient_clinical_history(uuid,uuid)','EXECUTE')),

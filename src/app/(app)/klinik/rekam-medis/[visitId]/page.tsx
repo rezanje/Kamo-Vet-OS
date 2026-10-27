@@ -130,11 +130,12 @@ export default async function RekamMedisPage({
   // K01: once billing is posted the original form stays locked; doctors append
   // a diagnosis/therapy addendum instead (no invoice, stock or payment change).
   const addendumScope = recorded && mrId && !mrLoadFailed;
-  const activeInvoice = addendumScope
-    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).is("voided_at", null).limit(1).maybeSingle()
+  // Any invoice, active or voided: unpaid Edit closes as soon as one ever existed.
+  const anyInvoice = addendumScope
+    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle()
     : { data: null, error: null };
   const addenda: AddendaLoad = addendumScope && mrId ? await loadRecordAddenda(supabase, mrId) : { state: "ok", rows: [] };
-  const addendumCheck = addendumScope && mrId && activeInvoice.data && !activeInvoice.error && addenda.state === "ok"
+  const addendumCheck = addendumScope && mrId && anyInvoice.data && !anyInvoice.error && addenda.state === "ok"
     ? await supabase.rpc("clinic_can_add_record_addendum", { p_record_id: mrId }) : { data: false, error: null };
   const canAddAddendum = addendumCheck.data === true && !addendumCheck.error;
   const showAddenda = addenda.state !== "missing" && (canAddAddendum || addenda.rows.length > 0 || addenda.state === "error");
@@ -442,7 +443,7 @@ export default async function RekamMedisPage({
 
           {showAddenda && <section className="card" style={{ marginTop: 12 }}>
             <div className="card-hd"><span><i className="ti ti-file-plus" style={{ color: "var(--acc)" }} /> Adendum diagnosa / terapi</span></div>
-            <p style={{ fontSize: 11, color: "var(--tm)" }}>Tagihan sudah terbit, jadi hasil pemeriksaan asli dikunci. Tambahan dicatat terpisah beserta nama dan waktunya; tagihan, obat, dan stok tidak berubah.</p>
+            <p style={{ fontSize: 11, color: "var(--tm)" }}>Tagihan sudah pernah terbit, jadi hasil pemeriksaan asli dikunci. Tambahan dicatat terpisah beserta nama dan waktunya; tagihan, obat, dan stok tidak berubah.</p>
             {addenda.state === "error" && <p role="alert">Riwayat adendum belum dapat dimuat. Muat ulang sebelum mencetak rekam medis.</p>}
             {addenda.rows.map(row => <div key={row.id} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8, marginTop: 8, fontSize: 11.5 }}>
               <div><b>{addendumAuthor(row)}</b> · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</div>

@@ -3,8 +3,10 @@ Applied 277 repository migrations.
 Re-applied K01/K13 migrations: idempotent.
 clinic_record_addenda_history.sql: passed.
 clinic_therapy_note.sql: passed.
-readback after migrations: 9 checks ok
-preflight after rollback: 8 checks ok
-readback after apply.sql: 9 checks ok
+readback after migrations: 11 checks ok
+rollback guard: refused while rows exist, nothing dropped.
+rollback with explicit owner flag: done.
+preflight after rollback: 9 checks ok
+readback after apply.sql: 11 checks ok
 clinic_record_addenda_history.sql: passed again after owner package apply.
 cleanup: temp cluster removed

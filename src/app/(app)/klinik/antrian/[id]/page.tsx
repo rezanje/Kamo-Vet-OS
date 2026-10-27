@@ -240,7 +240,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        <RiwayatTabs med={med} clinicalUnavailable={!clinical.available} racikan={racikan} inap={inap} invoices={invoices} />
+        <RiwayatTabs med={med} clinicalUnavailable={!clinical.available} crossBranch={clinical.crossBranch===true} racikan={racikan} inap={inap} invoices={invoices} />
       </div>
     </>
   );

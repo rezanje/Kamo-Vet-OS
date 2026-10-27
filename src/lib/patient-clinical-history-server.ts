@@ -36,7 +36,7 @@ async function readViaHistoryRpc(visitId:string,expectedPetId:string):Promise<Pa
  if(!payload||payload.pet_id!==expectedPetId||!Array.isArray(payload.visits))return unavailable;
  // Never mix another patient (same name or not) into this timeline.
  if(payload.visits.some(v=>v.pet_id!==expectedPetId)||!payload.visits.some(v=>v.id===visitId))return unavailable;
- return {available:true,visits:payload.visits.map(v=>({
+ return {available:true,crossBranch:true,visits:payload.visits.map(v=>({
   id:v.id,pet_id:v.pet_id,branch_id:v.branch_id,branchName:v.branch_name??'Cabang tidak tercatat',
   created_at:v.created_at,poli:v.poli,dokter:v.dokter,keluhan:v.keluhan,canOpen:v.can_open===true,
   records:(v.records??[]).map(m=>({id:m.id,created_at:m.created_at,diagnosis:m.diagnosis,anamnesis:m.anamnesis,therapy:m.therapy,

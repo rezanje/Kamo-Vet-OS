@@ -43,20 +43,27 @@ insert into public.visits(id, branch_id, customer_id, pet_id, status, poli, dokt
    'd1330000-0000-4000-8000-000000000002', 'Selesai', 'Poli Umum', 'Dokter A', 'Rahasia pasien lain', now() - interval '5 days'),
   -- Milo-2 at B, used to prove the anchor binds the patient.
   ('d1340000-0000-4000-8000-0000000000b2', 'd1310000-0000-4000-8000-00000000000b', 'd1320000-0000-4000-8000-000000000002',
-   'd1330000-0000-4000-8000-000000000002', 'Diperiksa', 'Poli Umum', 'Dokter B', 'Kontrol', now());
+   'd1330000-0000-4000-8000-000000000002', 'Diperiksa', 'Poli Umum', 'Dokter B', 'Kontrol', now()),
+  -- Milo-2 at A whose only invoice was voided (frozen for Edit; addendum must work).
+  ('d1340000-0000-4000-8000-0000000000a3', 'd1310000-0000-4000-8000-00000000000a', 'd1320000-0000-4000-8000-000000000002',
+   'd1330000-0000-4000-8000-000000000002', 'Pembayaran', 'Poli Umum', 'Dokter A', 'Kontrol void', now() - interval '3 days');
 
 insert into public.medical_records(id, visit_id, diagnosis, anamnesis, therapy, created_at) values
   ('d1350000-0000-4000-8000-0000000000a1', 'd1340000-0000-4000-8000-0000000000a1', 'Gastritis', 'Muntah 2 hari', 'Antiemetik', now() - interval '10 days'),
-  ('d1350000-0000-4000-8000-0000000000a2', 'd1340000-0000-4000-8000-0000000000a2', 'Diagnosa pasien lain', 'x', 'y', now() - interval '5 days');
+  ('d1350000-0000-4000-8000-0000000000a2', 'd1340000-0000-4000-8000-0000000000a2', 'Diagnosa pasien lain', 'x', 'y', now() - interval '5 days'),
+  ('d1350000-0000-4000-8000-0000000000a3', 'd1340000-0000-4000-8000-0000000000a3', 'Diagnosa void', 'x', 'y', now() - interval '3 days');
 insert into public.prescription_items(id, medical_record_id, nama_obat, qty, aturan_pakai) values
   ('d1360000-0000-4000-8000-0000000000a1', 'd1350000-0000-4000-8000-0000000000a1', 'Obat A', 2, '2x1');
 insert into public.invoices(id, visit_id, total, paid_status, paid_at) values
   ('d1370000-0000-4000-8000-0000000000a1', 'd1340000-0000-4000-8000-0000000000a1', 50000, 'Lunas', now() - interval '10 days');
+insert into public.invoices(id, visit_id, total, paid_status, voided_at) values
+  ('d1370000-0000-4000-8000-0000000000a3', 'd1340000-0000-4000-8000-0000000000a3', 10000, 'Belum Lunas', now() - interval '2 days');
 
 create temp table k13_before as
   select (select to_jsonb(m) from public.medical_records m where m.id = 'd1350000-0000-4000-8000-0000000000a1') as rec,
          (select to_jsonb(i) from public.invoices i where i.id = 'd1370000-0000-4000-8000-0000000000a1') as inv,
-         (select count(*) from public.prescription_items) as rx;
+         (select count(*) from public.prescription_items) as rx,
+         (select count(*) from public.activity_log where row_entity = 'clinic_history_reads') as trail_log;
 grant select on k13_before to authenticated;
 
 set local role authenticated;
@@ -103,6 +110,16 @@ begin
   -- Unpaid/no-invoice record is not addendum territory (it uses Edit instead).
   if public.clinic_can_add_record_addendum('d1350000-0000-4000-8000-0000000000a2') then
     raise exception 'record without posted invoice must use Edit, not addendum';
+  end if;
+  -- Visit whose only invoice is voided: Edit is closed, so addendum must be open.
+  if not public.clinic_can_add_record_addendum('d1350000-0000-4000-8000-0000000000a3') then
+    raise exception 'voided-only invoice froze the record on both paths';
+  end if;
+  perform public.clinic_add_record_addendum('d1340000-0000-4000-8000-0000000000a3', 'd1350000-0000-4000-8000-0000000000a3',
+    null, 'Terapi lanjutan', null, 'k01-voided');
+  if not exists (select 1 from public.clinic_record_addenda where request_key = 'k01-voided'
+      and invoice_id = 'd1370000-0000-4000-8000-0000000000a3') then
+    raise exception 'voided invoice evidence not captured';
   end if;
 end $$;
 
@@ -169,7 +186,9 @@ begin
   if not failed then raise exception 'foreign-branch anchor accepted'; end if;
   -- Milo-2 via its own B anchor gets only Milo-2.
   h := public.clinic_patient_clinical_history('d1330000-0000-4000-8000-000000000002', 'd1340000-0000-4000-8000-0000000000b2');
-  if jsonb_array_length(h->'visits') <> 2 or h::text like '%Gastritis%' then raise exception 'Milo-2 history wrong: %', h; end if;
+  if jsonb_array_length(h->'visits') <> 3 or h::text like '%Gastritis%' then raise exception 'Milo-2 history wrong: %', h; end if;
+  -- Doctor B cannot read the access trail.
+  if exists (select 1 from public.clinic_history_reads) then raise exception 'doctor reads access trail'; end if;
 end $$;
 
 -- Operational branch header narrows the anchor check like every other read.
@@ -201,8 +220,33 @@ begin
   if not failed then raise exception 'inactive profile read history'; end if;
 end $$;
 
--- anon has no execute grant.
+-- Audit trail: exactly one row per successful call that disclosed other-branch visits
+-- (Milo-1 via B1, Milo-2 via B2); denied calls left nothing.
 reset role;
+do $$
+begin
+  if (select count(*) from public.clinic_history_reads) <> 2 then
+    raise exception 'expected 2 access-trail rows, got %', (select count(*) from public.clinic_history_reads);
+  end if;
+  if not exists (select 1 from public.clinic_history_reads where pet_id = 'd1330000-0000-4000-8000-000000000001'
+      and read_by = 'd1300000-0000-4000-8000-000000000002' and branch_id = 'd1310000-0000-4000-8000-00000000000b'
+      and foreign_branch_ids = array['d1310000-0000-4000-8000-00000000000a'::uuid] and foreign_visit_count = 1) then
+    raise exception 'Milo-1 trail row wrong';
+  end if;
+  if not exists (select 1 from public.clinic_history_reads where pet_id = 'd1330000-0000-4000-8000-000000000002' and foreign_visit_count = 2) then
+    raise exception 'Milo-2 trail row wrong';
+  end if;
+  if (select count(*) from public.activity_log where row_entity = 'clinic_history_reads' and action = 'create')
+      - (select trail_log from k13_before) <> 2 then
+    raise exception 'access trail not mirrored into activity_log';
+  end if;
+  begin
+    delete from public.clinic_history_reads;
+    raise exception 'access trail delete allowed';
+  exception when sqlstate '42501' then null; end;
+end $$;
+
+-- anon has no execute grant.
 set local role anon;
 do $$
 declare failed boolean := false;

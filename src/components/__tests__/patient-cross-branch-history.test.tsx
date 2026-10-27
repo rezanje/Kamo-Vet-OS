@@ -83,6 +83,7 @@ it('K13: single-branch doctor sees branch A history through the checked reader, 
  expect(s.rpcArgs).toEqual([{name:'clinic_patient_clinical_history',args:{p_pet_id:'pet',p_anchor_visit_id:'anchor-B'}}]);
  expect(html).toContain('Historical finding A');expect(html).toContain('Branch A');expect(html).toContain('Addendum finding');
  expect(html).not.toContain('href="/klinik/rekam-medis/old-A"');
+ expect(html).toContain('dari semua cabang');expect(html).not.toContain('mengikuti hak akses cabang akun Anda');
  expect(s.factories).toHaveLength(0);
 });
 it('K13: rejects a reader payload that mixes another patient (same name or not)',async()=>{
@@ -92,4 +93,7 @@ it('K13: rejects a reader payload that mixes another patient (same name or not)'
 it('K13: a denied reader fails closed instead of falling back',async()=>{
  s.rpc={data:null,error:{code:'42501',message:'denied'}};
  const html=await render();expect(html).toContain('Riwayat klinis belum dapat dimuat lengkap');expect(s.factories).toHaveLength(0);
+});
+it('K13: before the database step, the branch-scoped fallback keeps the old wording',async()=>{
+ const html=await render();expect(html).toContain('mengikuti hak akses cabang akun Anda');expect(html).not.toContain('dari semua cabang');
 });

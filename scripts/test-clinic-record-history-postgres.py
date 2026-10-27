@@ -81,9 +81,26 @@ alter default privileges in schema public grant all on sequences to authenticate
         return len(out)
 
     print('readback after migrations:', all_ok('readback.sql'), 'checks ok')
-    sql((pkg / 'rollback.sql').read_text())
-    if sql("select to_regclass('public.clinic_record_addenda') is null and to_regprocedure('public.clinic_patient_clinical_history(uuid,uuid)') is null").returncode:
-        raise RuntimeError('rollback incomplete')
+    rollback = (pkg / 'rollback.sql').read_text()
+    sql("insert into public.clinic_history_reads(pet_id,anchor_visit_id,branch_id,foreign_branch_ids,foreign_visit_count,read_by) "
+        "values (gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),'{}',1,gen_random_uuid())")
+    try:
+        sql(rollback)
+        raise AssertionError('rollback ran although audit rows exist')
+    except RuntimeError as error:
+        if 'ROLLBACK DIBATALKAN' not in str(error):
+            raise
+    if sql("select 1/(to_regclass('public.clinic_history_reads') is not null)::int").returncode:
+        raise RuntimeError('guarded rollback dropped objects')
+    print('rollback guard: refused while rows exist, nothing dropped.')
+    flag = "-- select set_config('vetos.k13_k01_rollback_discard', 'yes', true);"
+    if flag not in rollback:
+        raise RuntimeError('rollback flag line missing')
+    sql(rollback.replace(flag, flag[3:]))
+    print('rollback with explicit owner flag: done.')
+    sql("select 1/(to_regclass('public.clinic_record_addenda') is null and to_regclass('public.clinic_history_reads') is null "
+        "and to_regprocedure('public.clinic_patient_clinical_history(uuid,uuid)') is null "
+        "and not exists(select 1 from public.activity_log_sources where entity='clinic_history_reads'))::int")
     print('preflight after rollback:', all_ok('preflight.sql'), 'checks ok')
     sql((pkg / 'apply.sql').read_text())
     print('readback after apply.sql:', all_ok('readback.sql'), 'checks ok')

@@ -5,6 +5,9 @@ select check_name, ok from (values
   ('dependency: user_can_access_branch(uuid) exists',
     to_regprocedure('public.user_can_access_branch(uuid)') is not null),
   ('dependency: role_modules table exists', to_regclass('public.role_modules') is not null),
+  ('dependency: activity audit framework (capture_activity_log, activity_log_sources.metadata_only)',
+    to_regprocedure('public.capture_activity_log()') is not null
+    and exists(select 1 from information_schema.columns where table_schema='public' and table_name='activity_log_sources' and column_name='metadata_only')),
   ('dependency: medical_records.therapy column exists',
     exists(select 1 from information_schema.columns where table_schema='public' and table_name='medical_records' and column_name='therapy')),
   ('dependency: invoices.voided_at column exists',

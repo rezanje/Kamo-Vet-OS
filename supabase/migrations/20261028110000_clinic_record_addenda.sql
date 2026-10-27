@@ -1,5 +1,5 @@
 -- K01: append-only diagnosis/therapy addenda for a medical record whose visit
--- already has a posted (active) invoice. The submitted record, prescriptions,
+-- already has (or had) a posted invoice, active or voided. The submitted record, prescriptions,
 -- invoice, payments, stock and journals are never written by this workflow.
 -- Unpaid records without an invoice keep using clinic_record_corrections
 -- (20261024074043); once billing is posted, only an addendum is possible.
@@ -39,7 +39,9 @@ language sql stable security invoker set search_path = '' as $$
     join public.visits v on v.id = m.visit_id
     where m.id = p_record_id
       and public.clinic_record_correction_actor(v.id)
-      and exists (select 1 from public.invoices i where i.visit_id = v.id and i.voided_at is null)
+      -- Any invoice, active or voided: unpaid Edit is closed once one ever existed
+      -- (clinic_can_correct_record), so a voided-only visit must still be annotatable.
+      and exists (select 1 from public.invoices i where i.visit_id = v.id)
   );
 $$;
 revoke all on function public.clinic_can_add_record_addendum(uuid) from public, anon, service_role;
@@ -72,11 +74,11 @@ begin
   perform 1 from public.visits v where v.id = source_visit_id for update;
   select * into source from public.medical_records m where m.id = new.medical_record_id for share;
   if not found or not public.clinic_can_add_record_addendum(source.id) then
-    raise exception 'Adendum hanya untuk rekam medis yang tagihannya sudah diterbitkan';
+    raise exception 'Adendum hanya untuk rekam medis yang tagihannya pernah diterbitkan';
   end if;
   select * into inv from public.invoices i
-    where i.visit_id = source.visit_id and i.voided_at is null
-    order by i.created_at desc, i.id limit 1;  -- visit row lock above serialises invoice posting/void
+    where i.visit_id = source.visit_id
+    order by (i.voided_at is null) desc, i.created_at desc, i.id limit 1;  -- visit row lock above serialises invoice posting/void
   if not found then raise exception 'Tagihan kunjungan belum dapat diverifikasi'; end if;
   new.diagnosis_addendum := nullif(btrim(coalesce(new.diagnosis_addendum, '')), '');
   new.therapy_addendum := nullif(btrim(coalesce(new.therapy_addendum, '')), '');

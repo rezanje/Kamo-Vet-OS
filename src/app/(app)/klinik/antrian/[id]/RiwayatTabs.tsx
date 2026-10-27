@@ -31,8 +31,8 @@ const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { hou
 const TABS = ["Riwayat Medis", "Rawat Inap", "Resep / Racikan", "Invoice / Pembayaran"] as const;
 type Tab = (typeof TABS)[number];
 
-export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=false }: {
-  med: MedEntry[]; racikan: RacikanEntry[]; inap: InapEntry[]; invoices: InvoiceEntry[];clinicalUnavailable?:boolean;
+export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=false,crossBranch=false }: {
+  med: MedEntry[]; racikan: RacikanEntry[]; inap: InapEntry[]; invoices: InvoiceEntry[];clinicalUnavailable?:boolean;crossBranch?:boolean;
 }) {
   const [tab, setTab] = useState<Tab>("Riwayat Medis");
 
@@ -54,7 +54,7 @@ export function RiwayatTabs({ med, racikan, inap, invoices,clinicalUnavailable=f
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>Riwayat Medis</div>
           </div>
-          <p style={{fontSize:11,color:'var(--tm)'}}>Riwayat klinis pasien ini dari semua cabang, dicocokkan per ID pasien. Rincian di sini baca saja; pembayaran dan perubahan tetap melalui cabang asal.</p>
+          <p style={{fontSize:11,color:'var(--tm)'}}>{crossBranch?'Riwayat klinis pasien ini dari semua cabang, dicocokkan per ID pasien.':'Riwayat klinis mengikuti hak akses cabang akun Anda.'} Rincian di sini baca saja; pembayaran dan perubahan tetap melalui cabang asal.</p>
           {clinicalUnavailable?<p role="alert">Riwayat klinis belum dapat dimuat lengkap. Coba muat ulang.</p>:med.length === 0 ? (
             <Empty text="Belum ada riwayat medis." />
           ) : (
