@@ -1,6 +1,6 @@
 server: postgres (PostgreSQL) 16.14 (Homebrew)
 apply.sql sha256 c608a78fb88709e83440f129a9de49f41dbb314d46233ea0325a174b0db11cfb
-Applied 277 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+Applied 286 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
 PASS drifted body refused by preflight and apply (exact md5)
 PASS preflight.sql (7 checks)
 PASS readback.sql (6 checks)
