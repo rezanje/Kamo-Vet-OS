@@ -49,6 +49,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
         <option value="">Semua cabang yang diizinkan</option>
         {report?.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
       </select></div>
+      {/* Changing dates or branch keeps the chosen valuation basis and direction; the selected opname document is a drill-down and is not carried to a new range. */}
+      {filters?.dasar === "jual" && <input type="hidden" name="dasar" value="jual" />}
+      {filters && filters.arah !== "semua" && <input type="hidden" name="arah" value={filters.arah} />}
       <button className="btn bp" type="submit">Terapkan</button>
     </>}
     ringkasan={sum.length ? <KartuAngka items={sum} /> : undefined}>

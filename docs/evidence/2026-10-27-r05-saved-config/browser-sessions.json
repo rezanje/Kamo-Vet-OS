@@ -1,0 +1,10 @@
+{
+  "savedAndReloaded": true,
+  "notBrowserStorage": true,
+  "monthChangeKeepsOtherParams": true,
+  "otherBrowserSameAccountRestores": true,
+  "otherAccountIsolated": true,
+  "runtimeErrors": 0,
+  "externalRequests": 0,
+  "scope": "Component fixture: real ReportPresets/ReportColumns, account-keyed in-process store instead of Supabase. Not an authenticated production/UAT run."
+}

@@ -9,6 +9,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => fixture.clie
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); } }));
 vi.mock("next/link", () => ({ default: ({ children, href }: React.PropsWithChildren<{ href: string }>) => <a href={href}>{children}</a> }));
 vi.mock("@/components/SearchableMultiSelect", () => ({ SearchableMultiSelect: ({ value }: { value: string[] }) => <span>Cabang dipilih: {value.join(",")}</span> }));
+vi.mock("@/components/ReportPresets", () => ({ ReportPresets: ({ title }: { title: string }) => <span>Konfigurasi tersimpan: {title}</span> }));
 import Page from "@/app/(app)/laporan/nilai-persediaan/historis/page";
 
 it("renders saved-event details and reconciles branch subtotal to complete detail", async () => {
@@ -24,6 +25,7 @@ it("renders saved-event details and reconciles branch subtotal to complete detai
   } }).client;
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1"] }) }));
   expect(html).toContain("Cabang dipilih: b1");
+  expect(html).toContain("Konfigurasi tersimpan: Valuasi as-of");
   expect(html).toContain("Rp 20,125");
   expect(html).toContain("RINCIAN EVENT TERAKHIR");
   expect(html).toContain("gudang–cabang saat laporan dibaca");

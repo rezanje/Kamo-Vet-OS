@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { NoDok } from "@/components/NoDok";
+import { ReportPresets } from "@/components/ReportPresets";
 import { SecHeader } from "@/components/SecHeader";
 import { paginateReport } from "@/lib/hpp-reports";
 import { loadHistoricalInventory, HISTORICAL_INVENTORY_PATH } from "@/lib/inventory-historical";
@@ -42,6 +44,8 @@ export default async function HistoricalInventoryPage({ searchParams }: {
       <p style={{ fontSize: 12 }}>Tanggal sebelum aktivasi rata-rata bergerak, termasuk periode FIFO, tidak dapat dinilai ulang dari event ini. Mengaktifkan metode sekarang tidak menciptakan riwayat lama.</p>
       <p style={{ fontSize: 12 }}>Cabang mengikuti hubungan gudang–cabang saat laporan dibaca; riwayat perubahan cabang gudang belum tersimpan sebagai dimensi valuasi. Nilai tidak diposting sebagai jurnal.</p>
     </div>
+    {/* No date default is saved: a preset without tanggal keeps opening at today's WIB position. */}
+    <Suspense fallback={null}><ReportPresets title="Valuasi as-of" /></Suspense>
     <HistoricalFilters asOf={requestedDate} branches={report?.branches ?? []} selected={report?.selectedIds ?? selected} />
     {errorMessage && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{errorMessage}</div>}
     {report && !report.available && <div role="status" className="p2ban">Nilai as-of dari event rata-rata bergerak belum tersedia untuk {report.asOf}{report.activatedAt ? `; aktivasi tercatat sejak ${report.activatedAt}` : "; metode belum diaktifkan"}. Gunakan snapshot closing yang memang tersimpan untuk periode terkait.</div>}

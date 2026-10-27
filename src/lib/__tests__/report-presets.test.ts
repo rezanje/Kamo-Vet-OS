@@ -55,3 +55,11 @@ it('preserves canonical column selections but rejects repeated column parameters
  expect(reportPresetHref('/laporan/promo',`periode=2026-11&kolom=${columns}`)).toContain('kolom=');
  expect(()=>reportPresetHref('/laporan/promo',`kolom=${columns}&kolom=${columns}`)).toThrow();
 });
+
+it('reopens the historical valuation report with its as-of date and branches, keeping the date key report-specific',()=>{
+ const href=reportPresetHref('/laporan/nilai-persediaan/historis','tanggal=2026-10-22&cabang=b1&cabang=b2&halaman=2');
+ expect(href).toBe('/laporan/nilai-persediaan/historis?tanggal=2026-10-22&cabang=b1&cabang=b2');
+ expect(readReportPresets(JSON.stringify([{id:'h',name:'Valuasi akhir Oktober',href,savedAt:'2026-10-27T00:00:00Z'}]))[0].href).toBe(href);
+ expect(reportPresetHref('/laporan/nilai-persediaan','tanggal=2026-10-22&cabang=b1')).toBe('/laporan/nilai-persediaan?cabang=b1');
+ expect(()=>reportPresetHref('/laporan/nilai-persediaan/historis/unduh','')).toThrow();
+});
