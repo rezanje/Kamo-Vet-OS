@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { ProcedureBmhpField } from "@/components/ProcedureBmhpField";
+import { ClinicLineSellerField } from "@/components/ClinicLineSellerField";
 import type { BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
@@ -39,6 +40,7 @@ type CartRow = {
   official_version_id?: string;
   sale_item_id?: string;
   service_performers?: ServicePerformersInput | null;
+  salesperson_id?: string | null;
   /** K02: actual consumables on a procedure row (optional). */
   bmhp?: BmhpRow[];
 };
@@ -131,7 +133,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const addRacikanToCart = () => {
     const sku = racikanItems.find(item => item.id === saleItemId) ?? null;
     const row = masterCompoundCartRow(sku, selectedFormula ?? null, compoundDraft, crypto.randomUUID(), bolehManual);
-    setCart(rows => [...rows, row]);
+    setCart(rows => [...rows, {...row, salesperson_id:null}]);
     setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]);
   };
 
@@ -154,6 +156,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
         satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
         kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
         service_performers: isService ? emptyServicePerformers() : null,
+        salesperson_id: null,
       }];
     });
   };
@@ -331,7 +334,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 </>
               )}
               {(tab === "Jasa" || tab === "Tindakan") && (
-                <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
+                <>
+                  {tab === "Tindakan" && <div className="p2ban" role="note" style={{ fontSize: 11, marginBottom: 8 }}>Tekan + pada tindakan, lalu isi BMHP pada baris tindakan di Keranjang.</div>}
+                  <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
+                </>
               )}
               {tab === "Racikan" && (
                 // K03: racikan rawat jalan harus lewat komposisi; jangan tampilkan jalan pintas stok obat jadi.
@@ -375,6 +381,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                                 </select>
                               ) : <span>{r.satuan}</span>}
                             </div>
+                            <ClinicLineSellerField name={r.nama_obat} value={r.salesperson_id} staff={serviceStaff}
+                              onChange={salesperson_id => setCart(rows => rows.map(row => row.key === r.key ? {...row, salesperson_id} : row))} />
                             {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
                               grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}

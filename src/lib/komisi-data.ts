@@ -58,7 +58,7 @@ type InvoiceRow = {
   total: number;
   salesperson_id: string | null;
   visits: { branch_id: string | null; doctor_id: string | null } | { branch_id: string | null; doctor_id: string | null }[] | null;
-  invoice_items: { id?: string;service_performers?: ServicePerformersSnapshot | null;item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
+  invoice_items: { id?: string;service_performers?: ServicePerformersSnapshot | null;salesperson_id?: string | null;item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
 };
 
 type SourceAttribution = Pick<BarisJual,"employeeId"|"servicePerformers"|"sourceLineId"|"sourceDocumentId"|"sourceDocumentNumber"|"sourceDocumentHref"|"commissionPending">;
@@ -215,7 +215,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
   const { data: invData } = await completeReportQuery(supabase
     .from("invoices")
-    .select("id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
+    .select("id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers, salesperson_id), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
     .eq("paid_status", "Lunas").is("voided_at", null)
     .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
 
@@ -232,7 +232,9 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
     for (const [idx, it] of items.entries()) {
       const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
-      const attribution=serviceAttribution(it,employeeId,inv.id,inv.invoice_no,inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined);
+      // A selected line seller overrides the legacy invoice seller. Existing
+      // service performer attribution retains its precedence and payout policy.
+      const attribution=serviceAttribution(it,it.salesperson_id ?? employeeId,inv.id,inv.invoice_no,inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined);
       if (!attribution.employeeId) omzetTanpaPenjual += omzet;
 
       baris.push({
