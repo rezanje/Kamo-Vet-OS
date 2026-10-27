@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import {transactionDraftAck} from "@/lib/transaction-draft-ack";
 import { createClient } from "@/lib/supabase/server";
 
-import {promoEditInput} from "@/lib/promo-edit";
+import {assertPackageTotalReleased,promoEditInput} from "@/lib/promo-edit";
 import {promoDiscountMode,validatePackageDiscount} from "@/lib/promo-hitung";
 
 const BACK = "/crm/promo";
@@ -74,7 +74,7 @@ export async function createPromo(formData: FormData) {
   if (autoApply && kelipatan && minQty == null) {
     gagal("Aturan kelipatan butuh min. qty terisi");
   }
-  try { validatePackageDiscount(discountMode, discountType, minQty, itemIds); }
+  try { assertPackageTotalReleased(discountMode); validatePackageDiscount(discountMode, discountType, minQty, itemIds); }
   catch(error) { gagal(error instanceof Error?error.message:"Aturan total per paket tidak valid"); }
 
   // `rule` dipertahankan untuk teks saran & min. subtotal (dibaca reminder lama).

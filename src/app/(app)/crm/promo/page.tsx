@@ -5,6 +5,7 @@ import type { KategoriRow } from "@/lib/kategori";
 import {readCompleteList} from "@/lib/checked-list";
 import {PreservedForm,TransactionDraftComplete} from "@/components/LocalTransactionDraft";
 import {PromoFields} from "./PromoFields";
+import {packageTotalReleased} from "@/lib/promo-edit";
 import styles from "./PromoForm.module.css";
 import { SecHeader } from "@/components/SecHeader";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
@@ -111,7 +112,7 @@ export default async function PromoAdminPage({
       <div className="crm-sec">
         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
         <TransactionDraftComplete userId={user?.id ?? ""}/><PreservedForm key={user?.id ?? ""} action={createPromo} className={styles.form}>
-          <PromoFields userId={user?.id ?? ""} items={items} branches={branches} categories={categories} today={today}/>
+          <PromoFields userId={user?.id ?? ""} items={items} branches={branches} categories={categories} today={today} packageTotal={packageTotalReleased()}/>
           <button type="submit" className="btn-acc" style={{ gridColumn: "1 / -1", justifyContent: "center" }}>
             <i className="ti ti-plus" /> Buat Promo
           </button>

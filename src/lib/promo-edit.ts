@@ -1,7 +1,13 @@
 import type {PromoRow} from './promo';
 import {promoDiscountMode,validatePackageDiscount,type PromoDiscountMode} from './promo-hitung';
 export type PromoEditSnapshot={promo:PromoRow;item_ids:string[];version:string};
-export type PromoEditValues={name:string;promo_type:string;suggest:string;min_subtotal:number|null;min_qty:number|null;max_qty:number|null;kelipatan:boolean;auto_apply:boolean;discount_type:string|null;discount_value:number|null;discount_mode:PromoDiscountMode;branch_ids:string[]|null;valid_from:string|null;valid_until:string|null};
+export type PromoEditValues={name:string;promo_type:string;suggest:string;min_subtotal:number|null;min_qty:number|null;max_qty:number|null;kelipatan:boolean;auto_apply:boolean;discount_type:string|null;discount_value:number|null;discount_mode?:PromoDiscountMode;branch_ids:string[]|null;valid_from:string|null;valid_until:string|null};
+// Package-total needs migration 20261026002100. Until the release owner applies it
+// and sets this flag, the mode stays hidden and is refused, so the app can ship first.
+export function packageTotalReleased(flag=process.env.PROMO_PACKAGE_TOTAL_ENABLED):boolean{return flag==='1'||flag==='true';}
+export function assertPackageTotalReleased(mode:PromoDiscountMode,savedMode:PromoDiscountMode='per_unit',released=packageTotalReleased()):void{
+ if(mode==='package_total'&&savedMode!=='package_total'&&!released)throw new Error('Promo total per paket belum bisa dipakai: menunggu pembaruan database');
+}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function promoEditInput(form:FormData):{id:string;version:string;values:PromoEditValues;itemIds:string[]}{
  const text=(key:string)=>String(form.get(key)??'').trim();
@@ -10,7 +16,8 @@ export function promoEditInput(form:FormData):{id:string;version:string;values:P
  const id=text('id'),version=text('version');
  if(!uuid.test(id)||!/^[a-f0-9]{32}$/.test(version))throw new Error('Data promo tidak lengkap. Muat ulang halaman.');
  const name=text('name'),suggest=text('suggest'),promo_type=text('promo_type'),discount_type=text('discount_type')||null;
- const discount_mode=promoDiscountMode(text('discount_mode'));
+ const discount_mode=promoDiscountMode(text('discount_mode')),saved_mode=promoDiscountMode(text('discount_mode_saved'));
+ assertPackageTotalReleased(discount_mode,saved_mode);
  const discount_value=number('discount_value'),min_qty=number('min_qty'),max_qty=number('max_qty'),min_subtotal=number('min_subtotal');
  const kelipatan=text('kelipatan')==='1',auto_apply=text('auto_apply')==='1',valid_from=text('valid_from')||null,valid_until=text('valid_until')||null;
  if(!name||!suggest||name.length>120)throw new Error('Nama (maks. 120 karakter) & teks saran wajib diisi');
@@ -29,5 +36,8 @@ export function promoEditInput(form:FormData):{id:string;version:string;values:P
  const itemIds=ids('item_ids');
  validatePackageDiscount(discount_mode,discount_type,min_qty,itemIds);
  const branchIds=ids('branch_ids');
- return {id,version,itemIds,values:{name,promo_type,suggest,min_subtotal,min_qty,max_qty,kelipatan,auto_apply,discount_type,discount_value,discount_mode,branch_ids:branchIds.length?branchIds:null,valid_from,valid_until}};
+ return {id,version,itemIds,values:{name,promo_type,suggest,min_subtotal,min_qty,max_qty,kelipatan,auto_apply,discount_type,discount_value,
+  // Send the mode only when it is or was package-total. A legacy edit then stays
+  // valid for an edit_promo that predates the migration (omitted = keep stored).
+  ...(discount_mode==='package_total'||saved_mode==='package_total'?{discount_mode}:{}),branch_ids:branchIds.length?branchIds:null,valid_from,valid_until}};
 }

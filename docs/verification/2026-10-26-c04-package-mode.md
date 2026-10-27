@@ -36,12 +36,17 @@ Base brought up to date by merging main `0aea0979db5f969542ab723c505c319b252ead5
 
 Commands on the merged head (all in this container; disposable PostgreSQL 16 clusters, fictional data, removed after each run — no production, preview, Sheet or real transaction):
 
-- `npm test`: 505 files, 3,675 passed, 1 skipped (existing skip).
+- `npm test`: 3,681 passed, 1 skipped (existing skip) after the release-flag change and main `73bdf61`.
 - `npm run lint`: 0 errors (12 existing warnings in unrelated files). `npx tsc --noEmit`: pass. `npm run build`: pass.
 - `scripts/test-promo-package-total-postgres.py` (268 migrations), `test-promo-edit-postgres.py`, `test-pos-split-payments-postgres.py`, `test-clinic-billing-consistency-postgres.py`, `test-service-performers-postgres.py`, `promo_excel_batch.sql`: pass.
 - `test-sales-posting-postgres.py`, `test-posted-sales-postgres.py` (missing `auth.jwt()` shim) and `test-clinic-demo-postgres.py` (employee status guard) fail identically on unmodified main; harness drift unrelated to C04.
 
-**Migration plan (for the release owner, not executed here).** Apply `20261026002100` only after security-scope review of the `edit_promo` SECURITY DEFINER body change and a target migration-history check. If the target already holds `20261026090000`/`20261026100000`, this version is older than the latest applied one and must be applied deliberately as out-of-order (tested above). Order: migration first, then the app. The new editor always sends `discount_mode`, which an unmigrated `edit_promo` rejects, so every promo edit would fail if the app ships first; the old app keeps working on the migrated database (omitted mode is preserved). Rollback before any package promo is created: drop the two constraint triggers, the guard function and the constraint, and restore the C01 `edit_promo` body.
+**Release plan — app first, database later (owner decision 27 October).** The app is safe to ship before the migration:
+
+- The editor sends `discount_mode` only when the promo is or was package-total (`discount_mode_saved` hidden field). Legacy edits send the exact pre-C04 payload, accepted by both the old and the migrated `edit_promo` (tested on a database without C04: C01 suite passes, legacy payload accepted, package payload refused).
+- Package-total is hidden in the form and refused by create/edit until `PROMO_PACKAGE_TOTAL_ENABLED=1` is set. Without the flag nothing writes `rule.discount_mode`, so checkout keeps legacy per-unit pricing.
+- To turn the feature on, the release owner: (1) security-reviews the `edit_promo` SECURITY DEFINER body change; (2) checks target migration history — `20261026002100` is older than migrations already on main (`20261026090000`, `20261026100000`, `20261027090000`), so it is applied deliberately out-of-order (tested above); (3) applies it; (4) sets `PROMO_PACKAGE_TOTAL_ENABLED=1` in the app environment and redeploys. Never set the flag before step 3: without the database guard, package promos would run without the active-target check.
+- Rollback before any package promo exists: unset the flag; drop the two constraint triggers, the guard function and the constraint; restore the C01 `edit_promo` body.
 
 **Open business decisions (not inferred).**
 1. Mixed SKU: may one package combine different products (e.g. 3 of A + 2 of B = package of 5)? No decision is recorded. If "no", C04 is code-complete pending UAT; if "yes", the split of the discount across products also needs a rule. This mode deliberately allows exactly one SKU.
