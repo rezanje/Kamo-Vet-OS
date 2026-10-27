@@ -48,14 +48,14 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     // Retain prior-year/cancelled sources: their dated reversals may fall in
     // this year or the seven-day trend. Current settlement is computed separately.
     completeReportQuery(supabase.from("sales_invoices")
-      .select("id, total, tanggal, status, voided_on, carried_paid", { count: "exact" }).lte("tanggal", today)),
+      .select("id, total, tanggal, status, voided_on, carried_paid", { count: "exact" }).is("opening_batch_id", null).lte("tanggal", today)),
     completeReportQuery(supabase.from("sales_receipts")
       .select("id, invoice_id, tanggal, jumlah", { count: "exact" }).lte("tanggal", today)),
     supabase.from("purchase_orders").select("id, purchase_order_items(id,item_id,qty,qty_terima,harga_beli,faktor)").eq("status", "Diterima"),
     // Pelunasan pembelian hidup di purchase_invoice_payments (lewat Faktur Pembelian).
     // Tabel po_payments sudah tidak ditulis layar mana pun — membacanya bikin dashboard
     // selalu melaporkan seluruh PO sebagai belum dibayar.
-    supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_items(po_item_id,item_id,qty,faktor), purchase_invoice_payments(amount)").is("voided_at", null),
+    supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_items(po_item_id,item_id,qty,faktor), purchase_invoice_payments(amount)").is("voided_at", null).is("opening_batch_id", null),
     supabase.from("purchase_returns").select("po_id, total").is("voided_at", null),
     // baris jurnal kas/bank 7 hari terakhir untuk arus kas harian.
     supabase

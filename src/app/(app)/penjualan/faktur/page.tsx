@@ -11,23 +11,25 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
-import { agingBucket, agingDays, AGING_LABEL } from "@/lib/aging";
+import { agingFaktur, AGING_LABEL, TANPA_TANGGAL } from "@/lib/aging";
 import { sisaTagihan } from "@/lib/penjualan-dokumen";
 import { terimaPembayaranJual } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import Link from "next/link";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
+const tgl = (s: string | null) => !s ? "Tidak ada" : new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
 type Faktur = {
-  id: string; no_faktur: string; tanggal: string; jatuh_tempo: string;
+  /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal ini (M05). */
+  id: string; no_faktur: string; tanggal: string | null; jatuh_tempo: string | null;
   dpp: number; ppn: number; total: number; carried_paid: number; status: string; customer_id: string | null;
   kategori: string | null;
   catatan: string | null;
+  opening_batch_id: string | null;
   customers: Rel<{ name: string }>;
   sales_orders: Rel<{ no_pesanan: string }>;
   sales_receipts: { jumlah: number }[] | null;
@@ -58,7 +60,7 @@ export default async function FakturJualPage({
   type Credit={id:string;tanggal:string;customer_credit:number;sales_invoices:Rel<{id:string;no_faktur:string;customers:Rel<{name:string}>}>};
   const [invData,klinikData,umData,rekening,credits]=await Promise.all([
     readCompleteList<Omit<Faktur,'sales_receipts'>>((from,to)=>supabase.from('sales_invoices')
-      .select('id,no_faktur,tanggal,jatuh_tempo,dpp,ppn,total,carried_paid,status,customer_id,kategori,catatan,customers(name),sales_orders(no_pesanan)',{count:'exact'})
+      .select('id,no_faktur,tanggal,jatuh_tempo,dpp,ppn,total,carried_paid,status,customer_id,kategori,catatan,opening_batch_id,customers(name),sales_orders(no_pesanan)',{count:'exact'})
       .order('jatuh_tempo').order('id').range(from,to),'Faktur penjualan',{maxRows:null}),
     readCompleteList<Omit<FakturKlinik,'invoice_payments'>>((from,to)=>supabase.from('invoices')
       .select('id,visit_id,invoice_no,created_at,total,dp_amount,paid_status,visits(pets(name),customers(name),branches(name))',{count:'exact'})
@@ -87,7 +89,8 @@ export default async function FakturJualPage({
 
   const rows = faktur.map((f) => {
     const sisa = f.status === "batal" ? 0 : sisaTagihan(Number(f.total) - Number(f.carried_paid ?? 0), (f.sales_receipts ?? []) as { jumlah: number }[]);
-    return { f, sisa, hari: agingDays(f.jatuh_tempo, today), bucket: agingBucket(f.jatuh_tempo, today) };
+    const { days: hari, bucket } = agingFaktur(f.jatuh_tempo, today);
+    return { f, sisa, hari, bucket };
   });
   const berjalan = rows.filter((r) => r.sisa > 0 && r.f.status !== "batal");
   const totalPiutang = berjalan.reduce((a, r) => a + r.sisa, 0);
@@ -165,7 +168,8 @@ export default async function FakturJualPage({
                       <Link href={`/penjualan/faktur/${f.id}`}>{f.no_faktur}</Link>
                       {f.status === "batal" && <div className="bge x">Batal · riwayat disimpan</div>}
                       {Number(f.carried_paid) > 0 && <div style={{ fontSize: 10 }}>Pembayaran terbawa {rp(Number(f.carried_paid))}</div>}
-                      {f.kategori !== "selisih_stok" && (
+                      {f.opening_batch_id && <div><span className="bge b">Saldo awal</span> <span style={{ fontSize: 9.5, fontWeight: 400, color: "var(--td)" }}>{f.catatan}</span></div>}
+                      {f.kategori !== "selisih_stok" && !f.opening_batch_id && (
                         <div style={{ marginTop: 4 }}>
                           <Link href={`/keuangan/buku-besar/hpp/${encodeURIComponent(f.no_faktur)}`} style={{ fontSize: 9.5, fontWeight: 500 }}>
                             Lihat rincian HPP
@@ -192,7 +196,9 @@ export default async function FakturJualPage({
                     </td>
                     <td style={{ fontSize: 10.5 }}>
                       {sisa > 0
-                        ? <span className={`bge ${bucket === "current" ? "g" : bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[bucket]}</span>
+                        ? bucket === TANPA_TANGGAL
+                          ? <span className="bge x">Tanpa jatuh tempo</span>
+                          : <span className={`bge ${bucket === "current" ? "g" : bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[bucket]}</span>
                         : <span className={`bge ${f.status === "batal" ? "x" : "g"}`}>{f.status === "batal" ? "Batal" : "Lunas"}</span>}
                     </td>
                     {boleh && (

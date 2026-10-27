@@ -26,7 +26,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
   const { data: invoice, error } = await db.from("sales_invoices")
-    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,customers(name)")
+    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,opening_batch_id,customers(name)")
     .eq("id", id).maybeSingle();
   if (error) throw new Error("Rincian faktur belum dapat dibaca: " + error.message);
   if (!invoice) notFound();
@@ -85,8 +85,9 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
       {sp.error && <div className="p2ban" role="alert">{sp.error}</div>}
       {sp.success && <div className="p2ban" role="status">{sp.success}</div>}
-      <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal} · jatuh tempo {invoice.jatuh_tempo} · {invoice.status}</p>
+      <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal ?? "tanggal faktur tidak ada"} · jatuh tempo {invoice.jatuh_tempo ?? "tidak ada"} · {invoice.status}</p>
       <p>Total {rp(invoice.total)} · Pembayaran terbawa {rp(invoice.carried_paid)} · Penerimaan faktur ini {rp(ownPaid)} · Sisa piutang {rp(invoice.status === "batal" ? 0 : Math.max(0, Number(invoice.total) - paid))}</p>
+      {invoice.opening_batch_id && <p><span className="bge b">Saldo awal</span> {invoice.catatan} — sisa tagihan dari Accurate per tanggal cutover, tanpa barang, PPN, atau pendapatan periode ini. Terima pembayarannya dari daftar Faktur &amp; Penerimaan; pembatalan/koreksi tidak tersedia.</p>}
       {invoice.order_id && <p><Link href={`/penjualan/pesanan/${invoice.order_id}`}>Buka pesanan dan bukti pengiriman fisik</Link></p>}
       {invoice.replaces_invoice_id && <p>{byId.has(invoice.replaces_invoice_id) ? <>Menggantikan <DocumentLink kind="sales-invoice" id={invoice.replaces_invoice_id} from={`/penjualan/faktur/${id}`}>{byId.get(invoice.replaces_invoice_id)!.no_faktur}</DocumentLink> · {byId.get(invoice.replaces_invoice_id)!.status}</> : "Faktur asal tidak tersedia atau tidak dapat diakses."}</p>}
       {successor && <p>Diganti oleh <DocumentLink kind="sales-invoice" id={successor.id} from={`/penjualan/faktur/${id}`}>{successor.no_faktur}</DocumentLink> · {successor.status}</p>}

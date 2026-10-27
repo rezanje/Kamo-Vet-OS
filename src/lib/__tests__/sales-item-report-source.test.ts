@@ -226,3 +226,44 @@ it("reads saved compound recipe IDs and classifies posted racikan independently 
   expect(result.nilaiTotal).toBe(100);
   expect(records.find(record => record.table === "invoice_items" && record.method === "select")?.args[0]).toContain("compound_recipe_id");
 });
+
+it("R01: shows a mixed posted clinic invoice whole, once per line, with 50%/100% discounts and saved performers only", async () => {
+  const visits = { branch_id: "b1", branches: { name: "Klinik A" } };
+  const invoice = { id: "mix", visit_id: "v1", invoice_no: "INV-MIX", created_at: "2026-10-04T05:00:00Z", paid_status: "Lunas",
+    voided_at: null, subtotal: 230, discount: 30, visits };
+  const voided = { ...invoice, id: "void", invoice_no: "INV-VOID", voided_at: "2026-10-04T06:00:00Z" };
+  mocks.createClient.mockResolvedValue(clientFixture({ tables: { invoice_items: [
+    { id: "obat", deskripsi: "Amoxicillin", qty: 2, harga: 50, diskon_persen: 50, jenis: "obat", item_id: "i-obat", invoices: invoice },
+    { id: "racikan", deskripsi: "Racikan batuk", qty: 1, harga: 100, diskon_persen: 0, jenis: "obat", item_id: null, compound_recipe_id: "rc1", invoices: invoice },
+    { id: "konsultasi", deskripsi: "Jasa Konsultasi Umum", qty: 1, harga: 80, diskon_persen: 0, jenis: "jasa", item_id: null,
+      service_performers: { doctor_id: "doc-1", doctor_name: "drh Fiksi" }, invoices: invoice },
+    { id: "ranap", deskripsi: "Rawat inap kandang", qty: 2, harga: 150, diskon_persen: 100, jenis: "jasa", item_id: "i-ranap", invoices: invoice },
+    { id: "void-line", deskripsi: "Jasa Konsultasi Umum", qty: 1, harga: 80, diskon_persen: 0, jenis: "jasa", item_id: null,
+      service_performers: { doctor_id: "doc-1", doctor_name: "drh Fiksi" }, invoices: voided },
+  ], medical_records: [] } }).client);
+  const read = (jenis: string, pelaksanaId = "") => ambilPenjualanBarang({ ...filters, kanal: "Klinik", jenis, q: "", pelaksanaId });
+  const all = await read("Semua");
+  expect(all.pesanError).toBe("");
+  // Each posted line once; the voided invoice is not counted; the lines reconcile to subtotal − invoice discount.
+  expect(all.rows.map(row => row.id).sort()).toEqual(["klinik-konsultasi", "klinik-obat", "klinik-racikan", "klinik-ranap"]);
+  expect(new Set(all.rows.map(row => row.dokumen))).toEqual(new Set(["INV-MIX"]));
+  expect(Math.round(all.nilaiTotal * 100)).toBe(20000);
+  const value = (id: string) => all.rows.find(row => row.id === `klinik-${id}`)!;
+  expect(value("ranap").nilai).toBe(0);
+  expect(value("ranap").diskon).toBe(300);
+  expect(value("obat").nilai).toBeLessThan(50);
+  expect(value("obat").jenis).toBe("Obat");
+  expect(value("racikan").jenis).toBe("Racikan");
+  // The single-type views partition the same lines: no line twice, none missing, same total.
+  const parts = await Promise.all(["Obat", "Racikan", "Jasa", "Biaya Admin"].map(jenis => read(jenis)));
+  const ids = parts.flatMap(part => part.rows.map(row => row.id));
+  expect(ids.sort()).toEqual(all.rows.map(row => row.id).sort());
+  expect(Math.round(parts.reduce((sum, part) => sum + part.nilaiTotal, 0) * 100)).toBe(20000);
+  // Performer basis comes only from the saved snapshot: the stay line without one is labelled as unrecorded,
+  // gets no guessed actor and is not selectable under any performer.
+  expect(all.pelaksanaOptions).toEqual([{ id: "doc-1", nama: "Dokter: drh Fiksi" }]);
+  expect(value("ranap").pelaksana).toBe("Pelaksana per baris belum tercatat (data lama)");
+  expect(value("ranap").pelaksanaIds).toEqual([]);
+  const doctor = await read("Semua", "doc-1");
+  expect(doctor.rows.map(row => row.id)).toEqual(["klinik-konsultasi"]);
+});

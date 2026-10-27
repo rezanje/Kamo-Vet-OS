@@ -31,9 +31,17 @@ const categories = [
 const procedure = { ...base, id: "steril", name: "Sintetis Steril", sell_price: 75000, item_type: "Jasa", category_id: "bedah", tindakan_kategori: "Konsultasi" };
 const grooming = { ...base, id: "groom", name: "Sintetis Grooming", item_type: "Jasa", category_id: "grooming", tindakan_kategori: "Konsultasi" };
 const pickup = { ...base, id: "pickup", name: "Sintetis Antar Jemput", item_type: "Jasa", category_id: "delivery", tindakan_kategori: "Konsultasi" };
+const vaccine = { ...base, id: "vaksin", name: "Sintetis Vaksin Stok", sell_price: 235000, item_type: "Persediaan", category_id: "bedah", tindakan_kategori: null, unit: "VIAL",
+  units: [{ unit: "VIAL", factor: 1, sell_price: 235000, buy_price: 150000 }] };
 const gauze = { ...base, id: "gauze", name: "Kasa sintetis", item_type: "Persediaan", category_id: null, unit: "lembar",
   units: [{ unit: "lembar", factor: 1, sell_price: 1000, buy_price: 500 }, { unit: "pak", factor: 10, sell_price: 9000, buy_price: 5000 }] };
-const groups = splitClinicItems([procedure, grooming, pickup, gauze], categories, new Set());
+// Vaccination service coded "JV-<vial code>", with the vial itself kept as stock in the medicine list.
+const vial = { ...base, id: "vial", code: "VKS-1", name: "Vaccine Sintetis", sell_price: 235000, item_type: "Persediaan", category_id: null, unit: "VIAL" };
+const vaccination = { ...base, id: "vaksinasi", code: "JV-VKS-1", name: "Vaksinasi Sintetis", sell_price: 235000, item_type: "Jasa", category_id: "bedah", tindakan_kategori: "Konsultasi", unit: "PCS" };
+// A vial left (or moved back) under TINDAKAN still opens its vaccination instead of joining as stock.
+const strayVial = { ...vial, id: "vial2", code: "VKS-2", name: "Vaccine Nyasar", category_id: "bedah" };
+const strayVaccination = { ...vaccination, id: "vaksinasi2", code: "JV-VKS-2", name: "Vaksinasi Nyasar" };
+const groups = splitClinicItems([procedure, vaccine, vaccination, strayVial, strayVaccination, grooming, pickup, gauze, vial], categories, new Set());
 const common = {
   requestKey: "request", draftUserId: "owner", items: groups.obat, jasaItems: groups.jasa, tindakanItems: groups.tindakan,
   bahanItems: groups.bahan, racikanItems: groups.racikan, katalogRacikan: [], bolehManual: true,
@@ -54,7 +62,7 @@ const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="
 const bmhpEditors = () => host.querySelectorAll('input[aria-label^="Tambah BMHP"], button[aria-label^="Ubah BMHP"]');
 
 it("classifies by category tree, not by service type or name", () => {
-  expect(groups.tindakan.map(item => item.id)).toEqual(["steril"]);
+  expect(groups.tindakan.map(item => item.id)).toEqual(["steril", "vaksin", "vaksinasi", "vial2", "vaksinasi2"]);
   expect(groups.jasa.map(item => item.id).sort()).toEqual(["groom", "pickup"]);
 });
 
@@ -110,4 +118,41 @@ it.each(["exam", "inpatient"])("%s keeps BMHP already stored on a service row re
   expect(cart()[0].bmhp).toEqual(saved.snapshot.cart[0].bmhp);
   expect(bmhpEditors()).toHaveLength(0);
   expect(host.textContent).toContain("Kasa sintetis × 2 lembar");
+});
+
+it.each(["exam", "inpatient"])("%s stocked procedure SKU joins the cart as stock without a BMHP composer that could not be saved", async kind => {
+  await render(kind); await tab("Tindakan");
+  await click('button[aria-label="Tambah Sintetis Vaksin Stok"]');
+  expect(host.textContent).not.toContain("Komposisi BMHP tindakan");
+  expect(cart()).toHaveLength(1);
+  expect(cart()[0]).toMatchObject({ item_id: "vaksin", jenis: "obat", satuan: "VIAL", harga: 235000 });
+  expect(cart()[0]).not.toHaveProperty("bmhp");
+  expect(bmhpEditors()).toHaveLength(0);
+});
+
+it.each(["exam", "inpatient"])("%s vaccine vial picked from the medicine list opens its vaccination with the vial as BMHP", async kind => {
+  await render(kind);
+  const row = [...host.querySelectorAll("tr")].find(tr => tr.textContent?.includes("Vaccine Sintetis"))!;
+  await act(async () => row.querySelector<HTMLButtonElement>('button[title="Tambah"]')!.click());
+  expect(host.textContent).toContain("Komposisi BMHP tindakan");
+  expect(cart()).toHaveLength(0);
+  await click('button[aria-label="Tambah tindakan Vaksinasi Sintetis ke keranjang"]');
+  // One billed line: the vaccination service; the vial rides only as its BMHP.
+  expect(cart()).toHaveLength(1);
+  expect(cart()[0]).toMatchObject({ item_id: "vaksinasi", jenis: "jasa", harga: 235000, bmhp: [{ item_id: "vial", nama: "Vaccine Sintetis", qty: 1, unit: "VIAL" }] });
+});
+
+it.each(["exam", "inpatient"])("%s vaccination picked from the procedure tab starts with its vial as BMHP", async kind => {
+  await render(kind); await tab("Tindakan");
+  await click('button[aria-label="Tambah Vaksinasi Sintetis"]');
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Vaccine Sintetis"]')?.value).toBe("1");
+});
+
+it.each(["exam", "inpatient"])("%s vaccine vial listed under TINDAKAN still opens its vaccination", async kind => {
+  await render(kind); await tab("Tindakan");
+  await click('button[aria-label="Tambah Vaccine Nyasar"]');
+  expect(host.textContent).toContain("Komposisi BMHP tindakan");
+  await click('button[aria-label="Tambah tindakan Vaksinasi Nyasar ke keranjang"]');
+  expect(cart()).toHaveLength(1);
+  expect(cart()[0]).toMatchObject({ item_id: "vaksinasi2", jenis: "jasa", bmhp: [{ item_id: "vial2", qty: 1, unit: "VIAL" }] });
 });

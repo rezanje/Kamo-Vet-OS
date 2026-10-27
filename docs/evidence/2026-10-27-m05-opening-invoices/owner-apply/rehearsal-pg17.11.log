@@ -1,0 +1,15 @@
+sha256 e22a4351b6f38157066e0f1cd0dbd32b885f000000be124226253235ed20f95f  01-preflight-readonly.sql
+sha256 cbd070b7e7fb4a948d9c6b95d04acd625b1faf06efc8ba0eb724f206fa19a3fa  02-apply.sql
+sha256 8491c85fdbc5543a5bf17017f8fb2ed6693d012c9fcdeae2aaa37c16d322c8d2  03-readback-readonly.sql
+sha256 4e0410963b0314651e8a15de979ffcc1ad1923cbb9505c4d72c77bc8ca4be84d  04-rollback-only-if-unused.sql
+sha256 177ebde296717ca7e8e7f4021b2bb79bdeb6f41ae198779f8144b5290615079a  supabase/migrations/20261027180000_opening_ap_ar_invoices.sql
+Bootstrapped 273 repository migrations on PostgreSQL 17.11 (Homebrew)
+Simulated migration history (all versions recorded) and fictional COA 2101/1201/3101
+PASS 04 rollback on an empty install removed every M05 object and the history row
+PASS 01 preflight: 0 failed
+PASS 02 apply
+PASS 03 readback: 0 failed
+PASS second 02 apply refused (M05_ALREADY_APPLIED); readback unchanged
+PASS M05 SQL suite (rolled back)
+Committed one fictional batch (3 payables, 1 receivable)
+PASS 04 rollback refused once a batch exists (M05_ROLLBACK_REFUSED); invoices and batch intact

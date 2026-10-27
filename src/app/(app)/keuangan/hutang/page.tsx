@@ -2,19 +2,20 @@ import { PurchasePaymentForm, type PurchasePaymentDefaults } from "@/components/
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
+import { AGING_BUCKETS, AGING_LABEL, TANPA_TANGGAL, agingFaktur, type AgingBucket, type AgingBucketFaktur } from "@/lib/aging";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { loadRekeningAktif } from "@/components/PilihRekening";
 import { NoDok } from "@/components/NoDok";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string | null) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type FakturRow = {
   id: string; no_faktur: string; no_faktur_pemasok: string | null; po_no: string | null; po_id: string | null;
-  tanggal: string; jatuh_tempo: string; supplier: string; supplier_id: string | null;
-  total: number; dibayar: number; retur: number; sisa: number; days: number; bucket: AgingBucket;
+  /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal ini (M05). */
+  tanggal: string | null; jatuh_tempo: string | null; supplier: string; supplier_id: string | null;
+  total: number; dibayar: number; retur: number; sisa: number; days: number | null; bucket: AgingBucketFaktur; saldoAwal: boolean;
 };
 
 type UangMukaSiap = { id: string; no_um: string; sisa: number };
@@ -32,7 +33,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const [{ data: invs }, { data: pos }, { data: rets }] = await Promise.all([
     supabase
       .from("purchase_invoices")
-      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)").is("voided_at", null)
+      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, opening_batch_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)").is("voided_at", null)
       .order("jatuh_tempo").order("id"),
     supabase
       .from("purchase_orders")
@@ -46,8 +47,8 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   for (const r of rets ?? []) returSisa.set(r.po_id, (returSisa.get(r.po_id) ?? 0) + Number(r.total));
 
   const rows: FakturRow[] = ((invs ?? []) as unknown as {
-    id: string; no_faktur: string; no_faktur_pemasok: string | null; tanggal: string; jatuh_tempo: string;
-    total: number; po_id: string; supplier_id: string | null; suppliers: { nama: string } | null;
+    id: string; no_faktur: string; no_faktur_pemasok: string | null; tanggal: string | null; jatuh_tempo: string | null;
+    total: number; po_id: string; supplier_id: string | null; opening_batch_id: string | null; suppliers: { nama: string } | null;
     purchase_orders: { no_po: string | null } | null; purchase_invoice_payments: { amount: number }[] | null;
   }[])
     .map((v) => {
@@ -64,7 +65,8 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         tanggal: v.tanggal, jatuh_tempo: v.jatuh_tempo,
         supplier: v.suppliers?.nama ?? "—", supplier_id: v.supplier_id,
         total: Number(v.total), dibayar, retur, sisa,
-        days: agingDays(v.jatuh_tempo, today), bucket: agingBucket(v.jatuh_tempo, today),
+        ...agingFaktur(v.jatuh_tempo, today),
+        saldoAwal: !!v.opening_batch_id,
       };
     })
     .filter((r) => r.sisa > 0);
@@ -99,6 +101,9 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const perBucket = Object.fromEntries(
     AGING_BUCKETS.map((b) => [b, rows.filter((r) => r.bucket === b).reduce((a, r) => a + r.sisa, 0)]),
   ) as Record<AgingBucket, number>;
+  // Faktur saldo awal tanpa jatuh tempo: ikut total hutang, tapi tidak dimasukkan ke kelompok umur mana pun.
+  const tanpaJatuhTempo = rows.filter((r) => r.bucket === TANPA_TANGGAL);
+  const sisaTanpaJatuhTempo = tanpaJatuhTempo.reduce((a, r) => a + r.sisa, 0);
 
   // PO Diterima yang belum difakturkan penuh (saldo 2102 berjalan, nilai ~ sisa qty x harga PO)
   const invoicedByPo = new Map<string, { po_item_id: string | null; item_id: string | null; qty: number; faktor: number | null }[]>();
@@ -168,13 +173,20 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
       {replace_payment && !replacement && <div role="alert" className="p2ban">Pembayaran pengganti tidak tersedia. Periksa riwayat dan sisa hutang terbaru.</div>}
       <div className="crm-sec">
         <SecHeader num="01" title="UMUR HUTANG (AP AGING)" desc="Faktur pembelian belum lunas, dikelompokkan menurut umur JATUH TEMPO (pola Accurate)." />
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${AGING_BUCKETS.length + 1}, 1fr)`, gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${AGING_BUCKETS.length + (tanpaJatuhTempo.length ? 2 : 1)}, 1fr)`, gap: 8 }}>
           {AGING_BUCKETS.map((b) => (
             <div key={b} style={{ padding: "10px 12px", borderRadius: 8, border: ".5px solid var(--bd)" }}>
               <div style={{ fontSize: 9.5, color: "var(--tm)" }}>{AGING_LABEL[b]}</div>
               <div style={{ fontSize: 12, fontWeight: 700, marginTop: 2 }}>{rp(perBucket[b])}</div>
             </div>
           ))}
+          {tanpaJatuhTempo.length > 0 && (
+            <div style={{ padding: "10px 12px", borderRadius: 8, border: ".5px dashed var(--bd)", background: "#f3f4f6" }}
+              title="Faktur saldo awal yang di Accurate tidak punya jatuh tempo. Umurnya belum dihitung sampai ada keputusan aturan.">
+              <div style={{ fontSize: 9.5, color: "var(--tm)" }}>Tanpa jatuh tempo · {tanpaJatuhTempo.length} faktur</div>
+              <div style={{ fontSize: 12, fontWeight: 700, marginTop: 2 }}>{rp(sisaTanpaJatuhTempo)}</div>
+            </div>
+          )}
           <div style={{ padding: "10px 12px", borderRadius: 8, background: "#fef2f2", border: ".5px solid #fca5a5" }}>
             <div style={{ fontSize: 9.5, color: "#b91c1c", fontWeight: 700 }}>TOTAL HUTANG</div>
             <div style={{ fontSize: 13, fontWeight: 800, marginTop: 2, color: "#dc2626" }}>{rp(totalSisa)}</div>
@@ -211,16 +223,18 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                   <td style={{ fontSize: 11 }}>
                     {r.po_id
                       ? <Link href={`/pembelian/${r.po_id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{r.po_no ?? "Lihat PO"}</Link>
-                      : (r.po_no ?? "—")}
+                      : r.saldoAwal ? <span className="bge b">Saldo awal</span> : (r.po_no ?? "—")}
                   </td>
                   <td style={{ fontSize: 11.5 }}>{r.supplier}</td>
-                  <td style={{ fontSize: 11, color: r.days > 0 ? "#b91c1c" : "var(--tm)", fontWeight: r.days > 0 ? 700 : 400 }}>
-                    {fmtDate(r.jatuh_tempo)}
+                  <td style={{ fontSize: 11, color: (r.days ?? 0) > 0 ? "#b91c1c" : "var(--tm)", fontWeight: (r.days ?? 0) > 0 ? 700 : 400 }}>
+                    {r.jatuh_tempo ? fmtDate(r.jatuh_tempo) : "Tidak ada"}
                   </td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.total)}</td>
                   <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>{rp(r.dibayar + r.retur)}</td>
                   <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(r.sisa)}</td>
-                  <td><span className={`bge ${r.bucket === "current" ? "g" : r.bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[r.bucket]}</span></td>
+                  <td>{r.bucket === TANPA_TANGGAL
+                    ? <span className="bge x">Tanpa jatuh tempo</span>
+                    : <span className={`bge ${r.bucket === "current" ? "g" : r.bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[r.bucket]}</span>}</td>
                   <td>
                     <details open={replacement?.invoice_id === r.id}>
                       <summary className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-block" }}>

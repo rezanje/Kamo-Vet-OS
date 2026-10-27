@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { ProcedureBmhpComposer } from "@/components/ProcedureBmhpComposer";
 import { ClinicLineSellerField } from "@/components/ClinicLineSellerField";
-import type { BmhpRow } from "@/lib/procedure-bmhp";
+import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import Link from "next/link";
@@ -163,11 +163,19 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
         ...(isService && bmhp ? { bmhp } : {}),
     }];
   });
-  const selectProcedure = (item: ItemLite) => {
+  const selectProcedure = (item: ItemLite): void => {
+    // K02 BMHP is stored only on service (Jasa) master lines; a stocked procedure SKU is sold as stock,
+    // unless it is a vaccine vial with its own vaccination service.
+    if (item.item_type !== "Jasa") return pickObat(item);
     if (procedureDraft?.item.id === item.id && !procedureDraft.editKey) return;
     procedureCommitted.current = false;
     setProcedureError("");
-    setProcedureDraft({ item, bmhp: [], editKey: null });
+    setProcedureDraft({ item, bmhp: vaccinationBmhp(item, [...items, ...tindakanItems]), editKey: null });
+    setTab("Tindakan");
+  };
+  const pickObat = (it: ItemLite): void => {
+    const vaccination = vaccinationOf(it, tindakanItems);
+    return vaccination ? selectProcedure(vaccination) : addObat(it);
   };
   const editProcedure = (row: CartRow) => {
     const item = tindakanItems.find(candidate => candidate.id === row.item_id) ?? {
@@ -439,7 +447,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                             <td style={{ textAlign: "center", fontSize: 10.5, color: it.stok <= 0 ? "#b91c1c" : "var(--tm)" }}>{it.stok} {it.unit}</td>
                             <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.sell_price)}</td>
                             <td style={{ textAlign: "center" }}>
-                              <button type="button" onClick={() => addObat(it)} className="btn-acc" style={{ padding: "2px 7px", fontSize: 11, background: "#16a34a" }} title="Tambah"><i className="ti ti-plus" /></button>
+                              <button type="button" onClick={() => pickObat(it)} className="btn-acc" style={{ padding: "2px 7px", fontSize: 11, background: "#16a34a" }} title="Tambah"><i className="ti ti-plus" /></button>
                             </td>
                           </tr>
                         ))}
@@ -465,7 +473,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
               )}
               {tab === "Racikan" && (
                 <CompoundEditor items={racikanItems} materials={bahanItems} catalog={katalogRacikan} allowCustom={bolehManual}
-                  value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} onAddStock={addObat} />
+                  value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} />
               )}
             </div>
 

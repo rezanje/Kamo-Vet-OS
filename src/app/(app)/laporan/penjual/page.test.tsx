@@ -19,7 +19,7 @@ const fixture = vi.hoisted(() => ({
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from: (table: string) => {
-    const query = { table, select: () => query, neq: () => query, gte: () => query, lte: () => query };
+    const query = { table, select: () => query, neq: () => query, is: () => query, gte: () => query, lte: () => query };
     return query;
   },
 }) }));

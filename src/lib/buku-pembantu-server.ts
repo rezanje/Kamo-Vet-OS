@@ -13,11 +13,20 @@ const tgl = (s: string | null | undefined) => (s ? String(s).slice(0, 10) : "");
 
 export type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
+// Faktur saldo awal (M05) boleh tanpa tanggal faktur. Di buku pembantu barisnya ditaruh pada
+// tanggal saldo awal batch-nya — tanggal jurnal 2101/1201-nya — supaya saldonya sejalan dengan
+// buku besar. Tanggal faktur itu sendiri tetap kosong; tidak ada tanggal yang dikarang.
+// Batch hanya terbaca keuangan di cabangnya; kalau tidak terbaca, baris tetap ikut tanpa tanggal
+// (masuk saldo awal setiap periode) — tidak dibuang dan tidak ditebak.
+const KETERANGAN_TANPA_TANGGAL = "Saldo awal per faktur · tanggal faktur tidak ada, dicatat per tanggal saldo awal";
+type BatchSaldoAwal = { opening_invoice_batches: Rel<{ as_of: string }> };
+const tanggalSaldoAwal = (row: BatchSaldoAwal) => one(row.opening_invoice_batches)?.as_of ?? "";
+
 /** Semua pergerakan piutang s/d `sampai` — tanpa batas bawah, karena saldo awal butuh riwayat penuh. */
 export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): Promise<Mutasi[]> {
   const batas = `${sampai}T23:59:59+07:00`;
 
-  const [{ data: invs }, { data: fjs }, { data: rcs }, { data: credits, error: creditError }] = await Promise.all([
+  const [{ data: invs }, { data: fjs }, { data: rcs }, { data: credits, error: creditError }, { data: fjTanpaTanggal, error: undatedSalesError }] = await Promise.all([
     supabase.from("invoices")
       .select("id, invoice_no, total, dp_amount, dp_date, paid_status, paid_at, created_at, visits(customer_id, customers(name)), invoice_payments(id, tanggal, amount, metode, transferred_from)")
       .is("voided_at", null).lte("created_at", batas),
@@ -30,8 +39,12 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
     supabase.from("wholesale_invoice_corrections")
       .select("id,tanggal,customer_credit,sales_invoices!invoice_id(id,no_faktur,customer_id,customers(name))")
       .lte("tanggal", sampai),
+    supabase.from("sales_invoices")
+      .select("id, no_faktur, tanggal, total, status, voided_on, customer_id, customers(name), opening_invoice_batches!opening_batch_id(as_of)")
+      .is("tanggal", null),
   ]);
   if (creditError) throw new Error("Kredit pelanggan belum dapat diverifikasi: " + creditError.message);
+  if (undatedSalesError) throw new Error("Faktur saldo awal tanpa tanggal belum dapat diverifikasi: " + undatedSalesError.message);
 
   type InvRow = {
     id: string; invoice_no: string | null; total: number; dp_amount: number; dp_date: string | null;
@@ -89,13 +102,16 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
     }
   }
 
-  type FjRow = { id: string; no_faktur: string; tanggal: string; total: number; status: string; voided_on: string | null; customer_id: string | null; customers: Rel<{ name: string }> };
-  for (const f of (fjs ?? []) as unknown as FjRow[]) {
+  type FjRow = { id: string; no_faktur: string; tanggal: string | null; total: number; status: string; voided_on: string | null; customer_id: string | null; customers: Rel<{ name: string }> };
+  const tanpaTanggal = ((fjTanpaTanggal ?? []) as unknown as (FjRow & BatchSaldoAwal)[])
+    .map((f) => ({ ...f, tanggal: tanggalSaldoAwal(f), tanpaTanggal: true }))
+    .filter((f) => f.tanggal <= sampai);
+  for (const f of [...(fjs ?? []) as unknown as FjRow[], ...tanpaTanggal]) {
     if (f.status === "batal" && !f.voided_on) continue;
     out.push({
       tanggal: tgl(f.tanggal), pihakId: f.customer_id ?? "—",
       pihak: one(f.customers)?.name ?? "(tanpa pelanggan)",
-      nomor: f.no_faktur, jenis: "Faktur", keterangan: "Faktur penjualan reseller",
+      nomor: f.no_faktur, jenis: "Faktur", keterangan: "tanpaTanggal" in f ? KETERANGAN_TANPA_TANGGAL : "Faktur penjualan reseller",
       naik: Number(f.total) || 0, turun: 0, href: `/penjualan/faktur/${f.id}`,
     });
     if (f.voided_on && f.voided_on <= sampai) out.push({
@@ -129,28 +145,36 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
 
 /** Semua pergerakan hutang usaha s/d `sampai`. */
 export async function mutasiHutang(supabase: SupabaseServer, sampai: string): Promise<Mutasi[]> {
-  const [{ data: invs }, { data: rets }] = await Promise.all([
+  const kolom = "id, no_faktur, tanggal, total, voided_on, supplier_id, suppliers(nama), purchase_invoice_payments(id, tanggal, amount, dari_uang_muka)";
+  const [{ data: invs }, { data: rets }, { data: tanpaTanggalData, error: undatedError }] = await Promise.all([
     supabase.from("purchase_invoices")
-      .select("id, no_faktur, tanggal, total, voided_on, supplier_id, suppliers(nama), purchase_invoice_payments(id, tanggal, amount, dari_uang_muka)")
+      .select(kolom)
       .lte("tanggal", sampai),
     supabase.from("purchase_returns")
       .select("no_retur, tanggal, total, purchase_orders(supplier_id, suppliers(nama))").is("voided_at", null)
       .lte("tanggal", sampai),
+    supabase.from("purchase_invoices")
+      .select(`${kolom}, opening_invoice_batches!opening_batch_id(as_of)`)
+      .is("tanggal", null),
   ]);
+  if (undatedError) throw new Error("Faktur saldo awal tanpa tanggal belum dapat diverifikasi: " + undatedError.message);
 
   type PiRow = {
-    id: string; no_faktur: string; tanggal: string; total: number; voided_on: string | null;
+    id: string; no_faktur: string; tanggal: string | null; total: number; voided_on: string | null;
     supplier_id: string | null; suppliers: Rel<{ nama: string }>;
     purchase_invoice_payments: { id: string; tanggal: string; amount: number; dari_uang_muka: number | null }[] | null;
   };
+  const tanpaTanggal = ((tanpaTanggalData ?? []) as unknown as (PiRow & BatchSaldoAwal)[])
+    .map((v) => ({ ...v, tanggal: tanggalSaldoAwal(v), tanpaTanggal: true }))
+    .filter((v) => v.tanggal <= sampai);
 
   const out: Mutasi[] = [];
-  for (const v of (invs ?? []) as unknown as PiRow[]) {
+  for (const v of [...(invs ?? []) as unknown as PiRow[], ...tanpaTanggal]) {
     const pihakId = v.supplier_id ?? "—";
     const pihak = one(v.suppliers)?.nama ?? "(tanpa pemasok)";
     out.push({
       tanggal: tgl(v.tanggal), pihakId, pihak, nomor: v.no_faktur, jenis: "Faktur",
-      keterangan: "Faktur pembelian", naik: Number(v.total) || 0, turun: 0,
+      keterangan: "tanpaTanggal" in v ? KETERANGAN_TANPA_TANGGAL : "Faktur pembelian", naik: Number(v.total) || 0, turun: 0,
       href: "/pembelian/faktur",
     });
     if (v.voided_on && v.voided_on <= sampai) out.push({
