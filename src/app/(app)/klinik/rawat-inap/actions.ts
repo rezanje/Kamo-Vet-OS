@@ -85,6 +85,7 @@ export async function addDailyLog(formData: FormData) {
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
   service_performers?: ServicePerformersInput | null;
+  salesperson_id?: string | null;
   bmhp?: BmhpInput[];
   nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string; kategori?: string;
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
@@ -158,6 +159,7 @@ export async function addDailyLogPos(formData: FormData) {
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" — sama seperti jalur simpanRekamMedis.
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
+      ...(typeof r.salesperson_id === "string" && r.salesperson_id.trim() ? {salesperson_id:r.salesperson_id.trim()} : {}),
       ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
       ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
@@ -169,6 +171,7 @@ export async function addDailyLogPos(formData: FormData) {
     ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
     request_key: r.key ?? "",
     dosage_instruction: r.aturan_pakai ?? null,
+    ...(typeof r.salesperson_id === "string" && r.salesperson_id.trim() ? {salesperson_id:r.salesperson_id.trim()} : {}),
   } : {
     ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
     recipe: toClinicCompoundRecipeInput({
@@ -178,6 +181,7 @@ export async function addDailyLogPos(formData: FormData) {
       ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
     }),
     request_key: r.key ?? "",
+    ...(typeof r.salesperson_id === "string" && r.salesperson_id.trim() ? {salesperson_id:r.salesperson_id.trim()} : {}),
   });
   if (newStatus && !["stabil", "kritis", "sembuh", "rip", "pulang_paksa"].includes(newStatus)) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Status kondisi tidak valid")}`);
