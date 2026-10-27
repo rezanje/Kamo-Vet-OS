@@ -1,5 +1,5 @@
 server: postgres (PostgreSQL) 17.11 (Homebrew) | cluster: <temp>
-Applied 275 repository migrations to isolated PostgreSQL 17.11 (Homebrew) with fictional auth/storage shims.
+Applied 277 repository migrations to isolated PostgreSQL 17.11 (Homebrew) with fictional auth/storage shims.
 PASS docs/evidence/2026-10-28-p01/owner-apply/preflight.sql -> SUMMARY: 0 failed|t
 PASS docs/evidence/2026-10-28-p01/owner-apply/readback.sql -> SUMMARY: 3 failed|f
 PASS apply p01
