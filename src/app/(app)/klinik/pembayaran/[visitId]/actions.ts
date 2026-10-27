@@ -330,7 +330,12 @@ export async function bayarVisit(formData: FormData) {
     // U07: struk WA (3 bacaan/tulisan log + panggilan ke penyedia WA) tidak lagi
     // menahan kasir. Hasilnya memang tidak dipakai layar; idempotensi tetap dijaga
     // oleh log `receipt:<no invoice>`. Di luar konteks request (tes) jalan langsung.
-    const kirim = () => kirimStrukWa(supabase, struk).then(() => undefined, () => undefined);
+    const kirim = () => kirimStrukWa(supabase, struk).then(
+      () => undefined,
+      // Hasil ok:false (mis. WA belum diaktifkan) sudah tercatat di log WA; yang
+      // dicatat di sini hanya kegagalan tak terduga agar tidak hilang diam-diam.
+      (error: unknown) => { console.error(`[struk-wa] ${invoiceNo}: pengiriman gagal`, error); },
+    );
     try { after(kirim); } catch { await kirim(); }
   }
 

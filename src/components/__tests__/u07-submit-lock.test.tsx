@@ -48,6 +48,11 @@ it("does not render the current page twice when the destination is the page alre
   await act(async () => container.querySelector<HTMLButtonElement>("#twice")!.click());
   expect(action).toHaveBeenCalledTimes(1);
   expect(m.push).not.toHaveBeenCalled();
+  // No phantom 20s "opening page" lock, and a later click cannot resurrect the cleared draft.
+  const submit = container.querySelector<HTMLButtonElement>("button[type=submit]")!;
+  expect(submit.disabled).toBe(false);
+  await act(async () => container.querySelector<HTMLButtonElement>("#twice")!.click());
+  expect(sessionStorage.getItem("vetos:clinic-draft:v1:doctor:u07")).toBeNull();
 });
 
 it("a failed save unlocks for a retry with the same key", async () => {

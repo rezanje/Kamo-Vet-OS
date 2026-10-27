@@ -28,7 +28,8 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
   const lastSnapshot = useRef(JSON.stringify(snapshot));
 
   function persist() {
-    if (!ready.current || !userId || !formRef.current) return;
+    // After an acknowledged save the draft is gone for good; never write it back.
+    if (!ready.current || allowReset.current || !userId || !formRef.current) return;
     const fields: Record<string, string> = {};
     for (const control of Array.from(formRef.current.elements)) {
       if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)
@@ -128,10 +129,15 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
     try {
       const result = await action(data);
       if (result.saved) {
-        allowReset.current = true; clear(); setLeaving(true);
-        // A revalidating action already returned the fresh current page; pushing the
-        // same URL would render that whole page a second time.
-        if (result.href !== window.location.pathname + window.location.search) router.push(result.href);
+        allowReset.current = true; clear();
+        // A revalidating action already returned the fresh current page (for the
+        // initial exam, the recorded view replaces this form); pushing the same URL
+        // would render that whole page a second time. Only a real navigation keeps
+        // the buttons locked — a same-page success releases them at once.
+        if (result.href !== window.location.pathname + window.location.search) {
+          setLeaving(true);
+          router.push(result.href);
+        }
       }
     } catch (error) {
       // Next handles server redirects; only transport failures need an inline retry message.
