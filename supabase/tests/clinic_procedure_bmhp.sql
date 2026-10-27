@@ -175,10 +175,10 @@ begin
   if not failed or not exists(select 1 from public.invoices where id = inv) then
     raise exception 'BMHP invoice deleted without reversal'; end if;
 
-  -- 4) refund source fails closed (no BMHP restock path there)
-  if (public.preview_clinic_refund_source(inv)->>'eligible')::boolean
-     or position('racikan/obat' in public.preview_clinic_refund_source(inv)->>'reason') = 0 then
-    raise exception 'refund source accepted a BMHP invoice'; end if;
+  -- 4) J03: a procedure with BMHP is a money-only refund line (consumables never restock),
+  -- so line provenance must not block the refund source.
+  if position('racikan/obat' in coalesce(public.preview_clinic_refund_source(inv)->>'reason','')) > 0 then
+    raise exception 'refund source refused a BMHP procedure line'; end if;
 
   -- 5) void/reissue: HPP journal reversed and re-posted on the new invoice, stock not moved twice
   reissued := public.clinic_void_reissue_invoice(inv, 'k02-reissue', 'Uji pembatalan fiktif');

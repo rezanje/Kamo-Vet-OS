@@ -1,0 +1,75 @@
+fingerprint before: 96f90a74f13ed4d1c3fc654da4f21912
+== preflight.sql
+source core still has the original line filter (K02 text)|t
+source core still has the original stock loop|t
+petshop quote still refuses point sources (to be lifted)|t
+petshop payout insert text unchanged|t
+customer spending clinic loop unchanged|t
+J03 tables not installed yet|t
+required accounts active (4201 4102 2201 1301 5101 5902)|f
+Tunai mapped to an active cash account|f
+helpers present|t
+SUMMARY: 2 failed|f
+== apply.sql
+
+== readback.sql
+tables installed with RLS|t
+bank destinations not readable directly|t
+public RPCs granted|t
+internal functions not callable|t
+guards installed|t
+source core accepts money-only lines|t
+petshop point refusal lifted|t
+petshop payout restores/deducts points|t
+customer spending net of clinic refunds|t
+point restore columns present|t
+activity index registered|t
+no refund rows yet (fresh install)|t
+SUMMARY: 0 failed|t
+== apply.sql
+
+== readback.sql
+tables installed with RLS|t
+bank destinations not readable directly|t
+public RPCs granted|t
+internal functions not callable|t
+guards installed|t
+source core accepts money-only lines|t
+petshop point refusal lifted|t
+petshop payout restores/deducts points|t
+customer spending net of clinic refunds|t
+point restore columns present|t
+activity index registered|t
+no refund rows yet (fresh install)|t
+SUMMARY: 0 failed|t
+== rollback.sql
+
+fingerprint after rollback: 96f90a74f13ed4d1c3fc654da4f21912
+J03 objects after rollback: 0
+== preflight.sql
+source core still has the original line filter (K02 text)|t
+source core still has the original stock loop|t
+petshop quote still refuses point sources (to be lifted)|t
+petshop payout insert text unchanged|t
+customer spending clinic loop unchanged|t
+J03 tables not installed yet|t
+required accounts active (4201 4102 2201 1301 5101 5902)|f
+Tunai mapped to an active cash account|f
+helpers present|t
+SUMMARY: 2 failed|f
+== apply.sql
+
+== readback.sql
+tables installed with RLS|t
+bank destinations not readable directly|t
+public RPCs granted|t
+internal functions not callable|t
+guards installed|t
+source core accepts money-only lines|t
+petshop point refusal lifted|t
+petshop payout restores/deducts points|t
+customer spending net of clinic refunds|t
+point restore columns present|t
+activity index registered|t
+no refund rows yet (fresh install)|t
+SUMMARY: 0 failed|t
