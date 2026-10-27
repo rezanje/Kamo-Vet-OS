@@ -1,8 +1,9 @@
 -- C04: opt-in nominal amount per complete package for one targeted SKU.
 -- Existing rule JSON without discount_mode remains per-unit. Posted sales are untouched.
+-- coalesce: a NULL discount_type/min_qty must fail the package branch, not pass the check.
 alter table public.promos add constraint promos_discount_mode_valid check (
  coalesce(rule->>'discount_mode','per_unit')='per_unit'
- or (rule->>'discount_mode'='package_total' and discount_type='nominal' and min_qty>0)
+ or coalesce(rule->>'discount_mode'='package_total' and discount_type='nominal' and min_qty>0,false)
 ) not valid;
 
 -- Extend the existing owner/admin atomic editor without altering its ACL, signature,

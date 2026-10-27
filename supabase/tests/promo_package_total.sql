@@ -39,6 +39,17 @@ do $$begin
   raise exception 'Unknown mode accepted';
  exception when check_violation then null;
  end;
+ -- A direct write must not slip an incomplete package past the check through NULL columns.
+ begin
+  update promos set rule=rule||'{"discount_mode":"package_total"}'::jsonb,discount_type=null where id=md5('c04-package')::uuid;
+  raise exception 'Package mode without discount type accepted';
+ exception when check_violation then null;
+ end;
+ begin
+  update promos set rule=rule||'{"discount_mode":"package_total"}'::jsonb,min_qty=null where id=md5('c04-package')::uuid;
+  raise exception 'Package mode without minimum accepted';
+ exception when check_violation then null;
+ end;
  if has_function_privilege('anon','public.edit_promo(uuid,text,jsonb,uuid[])','EXECUTE') then raise exception 'Anonymous editor access widened';end if;
  if has_function_privilege('service_role','public.edit_promo(uuid,text,jsonb,uuid[])','EXECUTE') then raise exception 'Service editor access widened';end if;
 end$$;
