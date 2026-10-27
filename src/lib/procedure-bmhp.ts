@@ -23,3 +23,15 @@ export function bmhpInput(value: unknown): BmhpInput[] {
     return { item_id: id, qty, unit };
   });
 }
+
+// Vaccination services are coded "JV-<vial code>" (docs/rollback/2026-10-27-k02-vaksinasi-bmhp.sql);
+// the vial is their default BMHP, and a vial picked from the medicine list opens its vaccination.
+type Coded = { id: string; code?: string | null; name: string; unit: string };
+const VACCINATION = "JV-";
+export const vaccinationOf = <T extends Coded>(vial: Coded, services: T[]) =>
+  vial.code ? services.find(service => service.code === VACCINATION + vial.code) : undefined;
+export function vaccinationBmhp(service: Coded, items: Coded[]): BmhpRow[] {
+  const code = service.code?.startsWith(VACCINATION) ? service.code.slice(VACCINATION.length) : "";
+  const vial = code ? items.find(item => item.code === code) : undefined;
+  return vial ? [{ item_id: vial.id, nama: vial.name, qty: 1, unit: vial.unit }] : [];
+}
