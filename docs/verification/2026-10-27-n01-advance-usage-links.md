@@ -10,7 +10,7 @@ PR touching purchase pages (#248) edits the PO and purchase-invoice detail pages
 | PO → DP, purchase invoice payment → DP, sales receipt → DP | Linked (earlier N01 work). | Unchanged. |
 | Purchase DP → PO | PO number as plain text. | Links to the stored `po_id` PO when the PO is readable. |
 | Purchase DP → invoice payments that used it | Not shown; only the "terpakai" amount. | Every `purchase_invoice_payments.advance_id` row links to its exact `#payment-<id>` on the invoice, including split use across several invoices and cancellation/reversal rows. |
-| Purchase DP → legacy PO payments that used it | Not shown. | Every `po_payments.advance_id` row links to its `#legacy-payment-<id>` on the PO. |
+| Purchase DP → legacy PO payments | Not shown. | Not linked: migration 0095 dropped `po_payments.advance_id`, so no stored relation exists. |
 | Sales DP → sales order | Order number as plain text. | Links to the stored `order_id` order when readable. |
 | Sales DP → receipts that used it | Not shown. | Every `sales_receipts.advance_id` receipt links to its exact `#receipt-<id>` on the invoice (split receipts each listed). |
 
@@ -27,13 +27,15 @@ pages, `src/lib/advance-usage.ts`, `src/components/AdvanceUsageList.tsx`, one `s
 
 ## Verification (fictional fixtures only)
 
-- RED: 6/7 new page tests and the new route-helper test failed on base.
+- RED: 6/7 new page tests and the new route-helper test failed on base. Independent review found that the first candidate
+  read the dropped `po_payments.advance_id`. Mocked clients accept any column, so a schema test now pins every selected
+  column to `docs/evidence/2026-10-22-a01/schema-snapshot.json`. It failed red on that column before the read was removed.
 - GREEN: focused suites pass. Full Vitest, `npm run lint` (0 errors), `npx tsc --noEmit` and the production build
   were run on the candidate.
 
 ## Remaining (N01 stays partial)
 
-- Usage reads are batched per 100 DPs (two reads per batch for purchase). Very long DP lists load more slowly.
+- Usage reads are batched per 100 DPs (one read per batch). Very long DP lists load more slowly.
 - Goods receipt → invoice still has no stored allocation. Only shared-PO grouping exists, as recorded earlier.
 - Invoice ↔ return/refund and payment-order coverage are not changed here.
 - Field UAT not performed.

@@ -30,7 +30,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 import PurchaseAdvances from "@/app/(app)/pembelian/uang-muka/page";
 import SalesAdvances from "@/app/(app)/penjualan/uang-muka/page";
 
-const [po, dp, inv1, inv2, pay1, pay2, legacy, so, sdp, sinv, rc1, rc2] = Array.from({ length: 12 }, (_, i) => id(i + 1));
+const [po, dp, inv1, inv2, pay1, pay2, , so, sdp, sinv, rc1, rc2] = Array.from({ length: 12 }, (_, i) => id(i + 1));
 beforeEach(() => {
   fixture.fail = new Set(); fixture.filters = [];
   fixture.rows = {
@@ -40,7 +40,6 @@ beforeEach(() => {
       { id: pay1, invoice_id: inv1, advance_id: dp, tanggal: "2026-10-21", dari_uang_muka: 100, reversal_of: null, voided_at: null, purchase_invoices: { id: inv1, no_faktur: "FB-SAME" } },
       { id: pay2, invoice_id: inv2, advance_id: dp, tanggal: "2026-10-22", dari_uang_muka: 100, reversal_of: null, voided_at: null, purchase_invoices: { id: inv2, no_faktur: "FB-SAME" } },
     ],
-    po_payments: [{ id: legacy, po_id: po, advance_id: dp, tanggal: "2026-10-19", amount: 50, purchase_orders: { id: po, no_po: "PO-FICTION-1" } }],
     sales_advances: [{ id: sdp, order_id: so, no_um: "UJ-FICTION-1", tanggal: "2026-10-20", jumlah: 300, terpakai: 200, catatan: null,
       status: "aktif", customers: { name: "Fiction customer" }, sales_orders: { no_pesanan: "SO-FICTION-1" } }],
     sales_receipts: [
@@ -54,13 +53,13 @@ async function render(page: typeof PurchaseAdvances) {
   return document.getElementById(`advance-${page === PurchaseAdvances ? dp : sdp}`)!;
 }
 
-it("opens a purchase DP's PO and every invoice payment and legacy PO payment that used it", async () => {
+it("opens a purchase DP's PO and every invoice payment that used it", async () => {
   const row = await render(PurchaseAdvances);
   expect(row.querySelector(`a[href="/pembelian/${po}"]`)?.textContent).toBe("PO-FICTION-1");
   // Same invoice number on two distinct invoices: each payment keeps its own stored IDs.
   expect(row.querySelector(`a[href="/pembelian/faktur/${inv1}#payment-${pay1}"]`)?.textContent).toContain("FB-SAME");
   expect(row.querySelector(`a[href="/pembelian/faktur/${inv2}#payment-${pay2}"]`)?.textContent).toContain("FB-SAME");
-  expect(row.querySelector(`a[href="/pembelian/${po}#legacy-payment-${legacy}"]`)).not.toBeNull();
+  expect(fixture.filters.some(([table]) => table === "po_payments")).toBe(false);
   expect(fixture.filters).toContainEqual(["purchase_invoice_payments", "advance_id", [dp]]);
 });
 
@@ -72,18 +71,17 @@ it("opens a sales DP's order and each split receipt that used it", async () => {
 });
 
 it.each([
-  ["purchase", "purchase_invoice_payments"], ["purchase", "po_payments"], ["sales", "sales_receipts"],
+  ["purchase", "purchase_invoice_payments"], ["sales", "sales_receipts"],
 ] as const)("does not present a %s DP as unused when %s cannot be read", async (kind, table) => {
   fixture.fail.add(table);
   const row = await render(kind === "purchase" ? PurchaseAdvances : SalesAdvances);
   expect(row.querySelector('[role="alert"]')?.textContent).toContain("belum dapat diperiksa");
-  expect(row.querySelector('a[href*="#payment-"], a[href*="#receipt-"], a[href*="#legacy-payment-"]')).toBeNull();
+  expect(row.querySelector('a[href*="#payment-"], a[href*="#receipt-"]')).toBeNull();
 });
 
 it("does not link a usage whose document is not readable or mismatched, and says a used DP has no readable usage", async () => {
   fixture.rows.purchase_invoice_payments[0].purchase_invoices = null;
   fixture.rows.purchase_invoice_payments[1].purchase_invoices = { id: inv1, no_faktur: "FB-OTHER" };
-  fixture.rows.po_payments = [];
   let row = await render(PurchaseAdvances);
   expect(row.querySelector('a[href*="/pembelian/faktur/"]')).toBeNull();
   expect(row.textContent).toContain("tidak tersedia untuk akses Anda");

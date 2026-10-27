@@ -10,6 +10,12 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const HIDDEN = "Dokumen pemakaian tidak tersedia untuk akses Anda";
 
+/** Columns read per source table; a schema test pins them to the stored schema snapshot. */
+export const ADVANCE_USAGE_SELECTS = {
+  purchase_invoice_payments: "id,invoice_id,advance_id,tanggal,dari_uang_muka,reversal_of,voided_at,purchase_invoices(id,no_faktur)",
+  sales_receipts: "id,no_terima,invoice_id,advance_id,tanggal,dari_uang_muka,sales_invoices(id,no_faktur)",
+} as const;
+
 async function byAdvance<T extends { id: string; advance_id: string; tanggal: string }>(
   client: SupabaseClient, table: string, columns: string, advanceIds: string[], label: string,
 ): Promise<T[]> {
@@ -31,34 +37,19 @@ function group(usages: (AdvanceUsage & { advanceId: string })[]) {
 
 type PurchasePayment = { id: string; invoice_id: string; advance_id: string; tanggal: string; dari_uang_muka: number;
   reversal_of: string | null; voided_at: string | null; purchase_invoices: Rel<{ id: string; no_faktur: string }> };
-type LegacyPayment = { id: string; po_id: string; advance_id: string; tanggal: string; amount: number;
-  purchase_orders: Rel<{ id: string; no_po: string }> };
 
 export async function loadPurchaseAdvanceUsage(client: SupabaseClient, advanceIds: string[]) {
-  const [payments, legacy] = await Promise.all([
-    byAdvance<PurchasePayment>(client, "purchase_invoice_payments",
-      "id,invoice_id,advance_id,tanggal,dari_uang_muka,reversal_of,voided_at,purchase_invoices(id,no_faktur)", advanceIds, "Pemakaian uang muka di faktur"),
-    byAdvance<LegacyPayment>(client, "po_payments",
-      "id,po_id,advance_id,tanggal,amount,purchase_orders(id,no_po)", advanceIds, "Pemakaian uang muka di PO"),
-  ]);
-  return group([
-    ...payments.map(p => {
+  // DP is applied on invoice payments only; the legacy po_payments link column was dropped in 0095.
+  const payments = await byAdvance<PurchasePayment>(client, "purchase_invoice_payments",
+    ADVANCE_USAGE_SELECTS.purchase_invoice_payments, advanceIds, "Pemakaian uang muka di faktur");
+  return group(payments.map(p => {
       const invoice = one(p.purchase_invoices);
       const readable = invoice?.id === p.invoice_id;
       return { advanceId: p.advance_id, id: p.id, tanggal: p.tanggal,
         label: readable ? `Faktur ${invoice.no_faktur}` : HIDDEN,
         href: readable ? relatedDocumentHref("purchase-payment", p.id, p.invoice_id) : null,
         note: p.reversal_of ? "pembatalan pemakaian" : p.voided_at ? "dibatalkan" : `dari DP ${rp(Number(p.dari_uang_muka))}` };
-    }),
-    ...legacy.map(p => {
-      const order = one(p.purchase_orders);
-      const readable = order?.id === p.po_id;
-      return { advanceId: p.advance_id, id: p.id, tanggal: p.tanggal,
-        label: readable ? `Pembayaran PO ${order.no_po}` : HIDDEN,
-        href: readable ? relatedDocumentHref("legacy-purchase-payment", p.id, p.po_id) : null,
-        note: `pembayaran lama ${rp(Number(p.amount))}` };
-    }),
-  ]);
+  }));
 }
 
 type SalesReceipt = { id: string; no_terima: string; invoice_id: string; advance_id: string; tanggal: string;
@@ -66,7 +57,7 @@ type SalesReceipt = { id: string; no_terima: string; invoice_id: string; advance
 
 export async function loadSalesAdvanceUsage(client: SupabaseClient, advanceIds: string[]) {
   const receipts = await byAdvance<SalesReceipt>(client, "sales_receipts",
-    "id,no_terima,invoice_id,advance_id,tanggal,dari_uang_muka,sales_invoices(id,no_faktur)", advanceIds, "Pemakaian uang muka penjualan");
+    ADVANCE_USAGE_SELECTS.sales_receipts, advanceIds, "Pemakaian uang muka penjualan");
   return group(receipts.map(r => {
     const invoice = one(r.sales_invoices);
     const readable = invoice?.id === r.invoice_id;
