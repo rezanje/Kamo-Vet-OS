@@ -33,7 +33,10 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
     <strong style={{fontSize:12}}>Obat racik dari Barang &amp; Jasa ({items.length})</strong>
     <input className="fi" aria-label="Cari obat racik" placeholder="Cari nama / kode obat racik…" value={search} onChange={event=>{setSearch(event.target.value);setPage(1);}} />
     {showList&&items.length>0&&<div style={{maxHeight:200,overflowY:"auto",display:"grid",gap:4}}>
-      {matches.slice((currentPage-1)*40,currentPage*40).map(item=>{const count=formulaCount(item.id);return <button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{onChange({...value,saleItemId:item.id,formulaId:value.saleItemId===item.id?value.formulaId:""});setSearch("");}} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
+      {matches.slice((currentPage-1)*40,currentPage*40).map(item=>{const count=formulaCount(item.id);return <button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{
+        onChange(value.saleItemId===item.id?value:{...value,saleItemId:item.id,formulaId:"",dosageForm:"sirup",instruction:"",ingredients:[]});
+        setSearch("");setMaterialSearch("");setMaterialPage(1);
+      }} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
         <span>{item.name}<small style={{display:"block",color:"var(--tm)"}}>{item.code?`${item.code} · `:""}{count?`${count} resep resmi`:allowCustom?"Belum ada resep resmi · racikan khusus pasien":"Belum ada resep resmi"}{onAddStock?` · Stok obat jadi ${item.stok} ${item.unit}`:""}</small></span><span>{rp(item.sell_price)}</span>
       </button>;})}
       {!matches.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Tidak ada obat racik yang cocok.</span>}

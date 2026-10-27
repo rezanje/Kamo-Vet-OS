@@ -200,18 +200,25 @@ $$;
 reset role;
 insert into auth.users(id,raw_user_meta_data) values
   ('fa000000-0000-4000-8000-000000000003','{}'),
-  ('fa000000-0000-4000-8000-000000000004','{}');
+  ('fa000000-0000-4000-8000-000000000004','{}'),
+  ('fa000000-0000-4000-8000-000000000005','{}');
 update public.profiles set role='DOCTOR' where id='fa000000-0000-4000-8000-000000000003';
 update public.profiles set role='STAFF' where id='fa000000-0000-4000-8000-000000000004';
+update public.profiles set role='DOCTOR',is_active=false where id='fa000000-0000-4000-8000-000000000005';
 insert into public.user_branches(user_id,branch_id) values
   ('fa000000-0000-4000-8000-000000000003','fc000000-0000-4000-8000-000000000001'),
-  ('fa000000-0000-4000-8000-000000000004','fc000000-0000-4000-8000-000000000001');
+  ('fa000000-0000-4000-8000-000000000004','fc000000-0000-4000-8000-000000000001'),
+  ('fa000000-0000-4000-8000-000000000005','fc000000-0000-4000-8000-000000000001');
+insert into public.branches(id,code,name,type)
+values('fc000000-0000-4000-8000-000000000002','CAT-OTHER','Cabang lain uji','KLINIK');
 insert into public.visits(id,branch_id,customer_id,pet_id) values
   ('fd000000-0000-4000-8000-000000000002','fc000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001'),
-  ('fd000000-0000-4000-8000-000000000003','fc000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001');
+  ('fd000000-0000-4000-8000-000000000003','fc000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001'),
+  ('fd000000-0000-4000-8000-000000000004','fc000000-0000-4000-8000-000000000002','ff000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001');
 insert into public.medical_records(id,visit_id) values
   ('fe000000-0000-4000-8000-000000000002','fd000000-0000-4000-8000-000000000002'),
-  ('fe000000-0000-4000-8000-000000000003','fd000000-0000-4000-8000-000000000003');
+  ('fe000000-0000-4000-8000-000000000003','fd000000-0000-4000-8000-000000000003'),
+  ('fe000000-0000-4000-8000-000000000004','fd000000-0000-4000-8000-000000000004');
 insert into public.items(id,code,name,unit,item_type,is_active,is_compound_material,sell_price)
 values('fb000000-0000-4000-8000-000000000004','CAT-ING-B','Bahan variabel B','gram','Persediaan',true,true,25);
 insert into public.stock(warehouse_id,item_id,qty)
@@ -243,6 +250,27 @@ begin
     perform public.clinic_issue_compound('fe000000-0000-4000-8000-000000000002','fd000000-0000-4000-8000-000000000002',composition_a,'doctor-legacy-denied');
   exception when sqlstate 'P0001' then denied:=sqlerrm like 'ACCESS_DENIED:%'; end;
   if not denied or pg_temp.binding_state() is distinct from before_state then raise exception 'doctor reached legacy freeform RPC'; end if;
+  perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000005',true);
+  denied:=false;
+  begin
+    perform public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000002','fd000000-0000-4000-8000-000000000002',
+      'fb000000-0000-4000-8000-000000000003',composition_a,'inactive-doctor',null,null);
+  exception when sqlstate 'P0001' then denied:=sqlerrm like 'ACCESS_DENIED:%'; end;
+  if not denied or pg_temp.binding_state() is distinct from before_state then raise exception 'inactive doctor issued compound'; end if;
+  perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000003',true);
+  denied:=false;
+  begin
+    perform public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000004','fd000000-0000-4000-8000-000000000004',
+      'fb000000-0000-4000-8000-000000000003',composition_a,'other-branch-doctor',null,null);
+  exception when sqlstate 'P0001' then denied:=sqlerrm like 'ACCESS_DENIED:%'; end;
+  if not denied or pg_temp.binding_state() is distinct from before_state then raise exception 'doctor crossed branch'; end if;
+  denied:=false;
+  begin
+    perform public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000002','fd000000-0000-4000-8000-000000000003',
+      'fb000000-0000-4000-8000-000000000003',composition_a,'mismatched-record-doctor',null,null);
+  exception when sqlstate 'P0001' then denied:=sqlerrm like 'ACCESS_DENIED:%'; end;
+  if not denied or pg_temp.binding_state() is distinct from before_state then raise exception 'doctor crossed visit and record'; end if;
+  perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000002',true);
   select qty into before_a from public.stock where warehouse_id='f2000000-0000-4000-8000-000000000001' and item_id='fb000000-0000-4000-8000-000000000001';
   select qty into before_b from public.stock where warehouse_id='f2000000-0000-4000-8000-000000000001' and item_id='fb000000-0000-4000-8000-000000000004';
   recipe_a:=public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000002','fd000000-0000-4000-8000-000000000002',
@@ -265,6 +293,16 @@ begin
   if public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000003','fd000000-0000-4000-8000-000000000003',
     'fb000000-0000-4000-8000-000000000003',composition_b,'doctor-variable-b',null,null) is distinct from recipe_b
     or pg_temp.binding_state() is distinct from after_state then raise exception 'doctor retry duplicated material issue'; end if;
+  update public.visits set status='Selesai',checked_out_at=now() where id='fd000000-0000-4000-8000-000000000003';
+  denied:=false;
+  begin
+    perform public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000003','fd000000-0000-4000-8000-000000000003',
+      'fb000000-0000-4000-8000-000000000003',composition_b,'doctor-after-checkout',null,null);
+  exception when sqlstate 'P0001' then denied:=sqlerrm like 'RECIPE_POSTED:%'; end;
+  if not denied or pg_temp.binding_state() is distinct from after_state then raise exception 'doctor issued after checkout'; end if;
+  if public.clinic_issue_master_compound('fe000000-0000-4000-8000-000000000003','fd000000-0000-4000-8000-000000000003',
+    'fb000000-0000-4000-8000-000000000003',composition_b,'doctor-variable-b',null,null) is distinct from recipe_b
+    or pg_temp.binding_state() is distinct from after_state then raise exception 'posted doctor retry changed history'; end if;
   perform set_config('request.jwt.claim.sub','fa000000-0000-4000-8000-000000000004',true);
   denied:=false;
   begin
