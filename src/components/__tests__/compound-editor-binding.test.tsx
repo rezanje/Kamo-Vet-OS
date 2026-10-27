@@ -105,3 +105,27 @@ it('K03 keeps every active compound SKU visible before typing and selects it int
   expect(host.querySelector('[aria-label="Pilih Obat Racik A"]')).toBeNull();
   expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(true);
 });
+
+it('clears patient materials and directions when a different finished SKU is chosen', async () => {
+  root = createRoot(host);
+  const second = { ...item, id: 'sku-b', name: 'Obat Racik B' };
+  let draft: CompoundDraft = { saleItemId: item.id, formulaId: '', dosageForm: 'kapsul',
+    instruction: 'Instruksi untuk A', ingredients: [
+      { item_id: 'material', nama: 'Bahan untuk A', qty: 2, satuan: 'gram', harga: 10 },
+    ] };
+  function Harness() {
+    const [value, setValue] = useState(draft);
+    return <CompoundEditor items={[item, second]} materials={[]} catalog={[]} allowCustom value={value}
+      onChange={next => { draft = next; setValue(next); }} />;
+  }
+  await act(async () => root.render(<Harness />));
+  expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(false);
+  const search = host.querySelector<HTMLInputElement>('[aria-label="Cari obat racik"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Obat Racik B');
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Pilih Obat Racik B"]')!.click());
+  expect(draft).toMatchObject({ saleItemId: 'sku-b', formulaId: '', dosageForm: 'sirup', instruction: '', ingredients: [] });
+  expect(host.querySelector<HTMLButtonElement>('.btn-acc')?.disabled).toBe(true);
+});
