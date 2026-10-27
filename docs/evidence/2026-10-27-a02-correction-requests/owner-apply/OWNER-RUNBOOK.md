@@ -10,7 +10,7 @@ production ke repo/PR.** Catat semuanya di catatan rilis privat (lihat "Catatan 
 
 Semua langkah sudah dilatih ujung-ke-ujung pada cluster sementara PostgreSQL 16.15 dan **17.6** (versi production)
 dengan 270 migrasi repo sebelumnya + riwayat migrasi tiruan: preflight → apply tertahan kunci (gagal aman) →
-apply → readback → readback menangkap 13 penyimpangan katalog (satu per satu, di-rollback) → suite A02 → teardown
+apply sebagai role lain ditolak (gagal aman) → apply → readback → readback menangkap 13 penyimpangan katalog (satu per satu, di-rollback) → suite A02 → teardown
 saat kosong → preflight → apply ulang → readback → request fiktif → freeze → teardown ditolak (ada baris) →
 teardown ditolak (baris dihapus manual tetapi jejak log ada). Log: `rehearsal-pg16.log`, `rehearsal-pg17.6.log`. Ulangi dengan
 `build-and-verify.py` (lihat docstring); file 01–03 dihasilkan ulang dan harus identik byte demi byte.
@@ -21,8 +21,8 @@ teardown ditolak (baris dihapus manual tetapi jejak log ada). Log: `rehearsal-pg
 |---|---|---|
 | `supabase/migrations/20261027153000_purchase_correction_requests.sql` | (isi dari 02) | `923bb7420acd35ecaee2ba80ff54b201e9beb3d8fce65ff8fae21d11e5909081` |
 | `01-preflight-readonly.sql` | tidak | `e5c7d09bdc237420292ffd266b665179fefb14130cb65401b031f5d5dfb54f4f` |
-| `02-apply.sql` | **ya** — migrasi + baris riwayat, satu transaksi | `9b0ba4fcb8bb492a4086123f89a1dc460d46fa4e04c0bd747db00f006733a6a0` |
-| `03-readback-readonly.sql` | tidak | `6699bb23cf969d144d3e41e57f39a299e31733a30ea74fad1b43e92c259fbd94` |
+| `02-apply.sql` | **ya** — migrasi + baris riwayat, satu transaksi | `2dcc403d53607e7ed7580e78dd28137dd96c1764dfea27553633448b52dcc8de` |
+| `03-readback-readonly.sql` | tidak | `5b3b2d0adaef759f3eaf340878fdd2b1eb7b42e04730ce34533821d44eea0aeb` |
 | `04-freeze-if-decided.sql` | **ya** — hanya pada keputusan rollback | `725d5a12cd8b46a73edfd1534834b68212bd4855175b3a487baee8b370ef546f` |
 | `05-teardown-empty-only.sql` | **ya** — hanya bila belum ada request | `479589f91c2377a9ce6b54b8d986007203a963edcb74659135b42f6c525178f9` |
 
@@ -66,8 +66,10 @@ Berhenti dan kirim hasilnya ke developer bila: ada `ok = false`; Query B error (
 
 ## Langkah 3 — pasang (menulis): `02-apply.sql`
 
-Jalankan **seluruh isi file sebagai satu skrip** (SQL Editor; atau Management API tanpa `read_only`). Satu transaksi:
-isi migrasi persis + `insert` riwayat `20261027153000`. Jangan memakai `supabase db push`/terapkan-semua: migrasi
+Jalankan **seluruh isi file sebagai satu skrip** sebagai role `postgres` (SQL Editor; atau Management API tanpa
+`read_only` — jalur `read_only` memakai role baca-saja dan memang tidak bisa memasang). Satu transaksi: pengecekan
+role, isi migrasi persis, `insert` riwayat `20261027153000`. Bila dijalankan sebagai role lain, skrip menolak sebelum
+membuat objek apa pun (pemilik semua objek A02 harus `postgres`, sama seperti objek pembelian/A01 yang ada). Jangan memakai `supabase db push`/terapkan-semua: migrasi
 lain yang belum terpasang di production (mis. C04/R05) bisa ikut terpasang.
 
 - Error `lock timeout` / error lain: tidak ada yang berubah. Jalankan ulang Langkah 2 (harus tetap `0 failed`),
@@ -80,7 +82,8 @@ lain yang belum terpasang di production (mis. C04/R05) bisa ikut terpasang.
   `authenticated:EXECUTE` saja — anon, service_role, PUBLIC tidak ada), RLS aktif/tidak dipaksa, seluruh policy
   (nama, permissive, cmd, roles, aturan), seluruh trigger (definisi + aktif), constraint, index, kolom, sidik jari
   isi 4 fungsi, sifat fungsi (volatility, security definer, `search_path=""`), pembaca log `{OWNER}`.
-  `info: request rows` = 0. Bila pemilik berbeda (dipasang lewat role lain) atau baris lain gagal: berhenti dan
+  `info: request rows` = 0. Jalankan dengan `search_path` bawaan Supabase (berisi `public`); bila `search_path` kosong,
+  nama policy/trigger/constraint tampil lengkap dengan skema dan barisnya gagal (gagal aman). Bila pemilik berbeda (dipasang lewat role lain) atau baris lain gagal: berhenti dan
   kirim hasilnya ke developer.
 - **Query B**: `a02_rows` = 1.
 
