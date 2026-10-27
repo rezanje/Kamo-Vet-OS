@@ -17,7 +17,6 @@ Coordinator note (Wowo, approved by Reza): C04 first, then A02; R05 queued. This
 | Production preflight (read-only) | Query A `0 failed` at 03:32Z; Query B: no C04 row, newest K02, R05 not applied; 0 long transactions. |
 | Flag state | `PROMO_PACKAGE_TOTAL_ENABLED` absent in Vercel project env (off). |
 | PostgreSQL 17 | Full rehearsal on 17.6 passes; SQL files byte-identical to the 16.15 run. |
-
 | App → database link | Public `/booking` request at 03:37:41Z appears as its exact query in `koaglxcyjqfmgfzxszkj` edge log at 03:37:41.867Z (`BACKUP-OPTIONS.md`). |
 
 ## Facts checked, gate not yet met
