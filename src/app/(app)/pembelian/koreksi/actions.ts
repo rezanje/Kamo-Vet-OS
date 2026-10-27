@@ -9,10 +9,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KINDS: CorrectionSourceKind[] = ["purchase_order", "purchase_invoice"];
 const ANCHOR = "#request-purchase-correction";
 
-function message(error: { message?: string } | null, fallback: string) {
+// SQLSTATEs raised by the request RPCs' own guards (Indonesian, user-facing text).
+const GUARD_CODES = new Set(["42501", "22023", "23505", "55000"]);
+
+function message(error: { message?: string; code?: string } | null, fallback: string) {
   const text = error?.message?.trim();
-  // Database guards already return user-facing Indonesian text; anything else stays generic.
-  return text && /^[A-Z][^\n]{3,200}$/.test(text) && !/violates|syntax|relation|function/i.test(text) ? text : fallback;
+  // Only the RPC guards' own messages are shown; infrastructure errors stay generic.
+  return text && GUARD_CODES.has(error?.code ?? "") && /^[A-Z][^\n]{3,200}$/.test(text)
+    && !/violates|syntax|relation|function|permission denied/i.test(text) ? text : fallback;
 }
 
 /** Simpan permintaan koreksi. Tidak mengubah PO/faktur; hanya mengantre untuk Super Admin. */

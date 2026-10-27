@@ -100,7 +100,11 @@ begin
   else
     raise exception 'Jenis dokumen asal tidak dikenal' using errcode='22023';
   end if;
-  if (v_po is null and v_invoice is null) or (branch is not null and not public.user_can_access_branch(branch)) then
+  -- Sama dengan RLS baca dokumen asal: PO tanpa cabang terbuka; faktur selalu lewat
+  -- user_can_access_branch (cabang faktur, atau cabang PO-nya), termasuk bila kosong.
+  if (v_po is null and v_invoice is null)
+     or (v_po is not null and branch is not null and not public.user_can_access_branch(branch))
+     or (v_invoice is not null and not public.user_can_access_branch(branch)) then
     raise exception 'Dokumen asal tidak ditemukan atau tidak dapat diakses' using errcode='42501';
   end if;
 
@@ -153,9 +157,10 @@ end$$;
 revoke all on function public.process_purchase_correction_request(uuid,text) from public,anon,service_role;
 grant execute on function public.process_purchase_correction_request(uuid,text) to authenticated;
 
--- A01: request ikut log aktivitas dan riwayat dokumen asalnya.
-insert into public.activity_log_sources(entity,module_id,label_key,value_keys,scope_kind,identity_keys,branch_columns,scope_parents,metadata_only)
+-- A01: request ikut log aktivitas dan riwayat dokumen asalnya. Pembaca log sama dengan
+-- pembaca antrean: hanya Super Admin yang melihat request milik orang lain.
+insert into public.activity_log_sources(entity,module_id,label_key,value_keys,scope_kind,identity_keys,branch_columns,scope_parents,metadata_only,reader_roles)
   values ('purchase_correction_requests','pembelian','source_label',array['status'],'refs',array['id'],'{}',
-    '[{"entity":"purchase_orders","key":"po_id"},{"entity":"purchase_invoices","key":"invoice_id"}]',false);
+    '[{"entity":"purchase_orders","key":"po_id"},{"entity":"purchase_invoices","key":"invoice_id"}]',false,array['OWNER']);
 create trigger a01_activity_change after insert or update on public.purchase_correction_requests for each row execute function public.capture_activity_log();
 create trigger a01_activity_delete before delete on public.purchase_correction_requests for each row execute function public.capture_activity_log();

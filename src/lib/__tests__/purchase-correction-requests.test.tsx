@@ -8,7 +8,7 @@ const po = "20000000-0000-4000-8000-000000000001";
 const invoice = "20000000-0000-4000-8000-000000000002";
 const state = vi.hoisted(() => ({
   role: "OWNER", active: true, fail: false, rows: [] as unknown[],
-  filters: [] as [string, unknown][], rpc: [] as [string, Record<string, unknown>][], rpcError: null as null | { message: string },
+  filters: [] as [string, unknown][], rpc: [] as [string, Record<string, unknown>][], rpcError: null as null | { message: string; code?: string },
 }));
 
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));
@@ -138,11 +138,23 @@ describe("request actions", () => {
   });
 
   it("returns the database guard message on failure without claiming success", async () => {
-    state.rpcError = { message: "Dokumen asal tidak ditemukan atau tidak dapat diakses" };
+    state.rpcError = { code: "42501", message: "Dokumen asal tidak ditemukan atau tidak dapat diakses" };
     await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_order", source_id: po, request_key: "fixture-key-0003", detail: "x" })))
       .rejects.toThrow(`REDIRECT /pembelian/${po}?koreksi_error=${encodeURIComponent("Dokumen asal tidak ditemukan atau tidak dapat diakses")}#request-purchase-correction`);
-    state.rpcError = { message: 'new row violates check constraint "x"' };
+    state.rpcError = { code: "23514", message: 'new row violates check constraint "x"' };
     await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_order", source_id: po, request_key: "k", detail: "x" })))
+      .rejects.toThrow("koreksi_error=" + encodeURIComponent("Permintaan koreksi belum tersimpan. Coba lagi."));
+  });
+
+  it.each([
+    { code: "PGRST301", message: "JWT expired" },
+    { code: "", message: "TypeError: fetch failed" },
+    { code: "P0001", message: "Audit source identity is missing: purchase_correction_requests" },
+    { code: "PGRST002", message: "Could not query the database for the schema cache. Retrying." },
+    { code: "42501", message: "permission denied for function create_purchase_correction_request" },
+  ])("keeps infrastructure errors generic: $message", async error => {
+    state.rpcError = error;
+    await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_order", source_id: po, request_key: "fixture-key-0005", detail: "Rincian cukup panjang" })))
       .rejects.toThrow("koreksi_error=" + encodeURIComponent("Permintaan koreksi belum tersimpan. Coba lagi."));
   });
 
@@ -156,7 +168,7 @@ describe("request actions", () => {
     const id = "30000000-0000-4000-8000-000000000001";
     await expect(prosesKoreksiPembelian(form({ id, resolution: "Faktur diganti" }))).rejects.toThrow("REDIRECT /pembelian/koreksi?status=selesai");
     expect(state.rpc).toEqual([["process_purchase_correction_request", { p_id: id, p_resolution: "Faktur diganti" }]]);
-    state.rpcError = { message: "Hanya Super Admin aktif yang dapat memproses permintaan koreksi" };
+    state.rpcError = { code: "42501", message: "Hanya Super Admin aktif yang dapat memproses permintaan koreksi" };
     await expect(prosesKoreksiPembelian(form({ id, resolution: "x" }))).rejects.toThrow("error=" + encodeURIComponent("Hanya Super Admin aktif yang dapat memproses permintaan koreksi"));
   });
 });

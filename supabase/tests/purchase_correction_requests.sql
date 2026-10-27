@@ -105,4 +105,29 @@ do $$begin
  if exists(select 1 from activity_log where row_entity='purchase_correction_requests' and (after_state ? 'detail' or after_state ? 'resolution')) then raise exception 'Free text copied into activity log values';end if;
  if not exists(select 1 from activity_log where row_entity='purchase_correction_requests' and branch_ids @> array[md5('a02-branch')::uuid]) then raise exception 'Request log not scoped to source branch';end if;
 end$$;
+
+-- Activity history follows the queue rule: only Super Admin reads other people's requests.
+set local role authenticated;
+do $$begin
+ perform set_config('request.jwt.claim.sub',md5('a02-admin')::uuid::text,true);
+ if exists(select 1 from activity_log where row_entity='purchase_correction_requests') then raise exception 'ADMIN reads correction request activity';end if;
+ perform set_config('request.jwt.claim.sub',md5('a02-owner')::uuid::text,true);
+ if not exists(select 1 from activity_log where row_entity='purchase_correction_requests') then raise exception 'Super Admin cannot read correction request activity';end if;
+end$$;
+
+-- A no-branch invoice stays hidden from branch-restricted users (existing invoice RLS),
+-- so they cannot file a request on it either; branch-wide roles still can.
+reset role;
+insert into purchase_orders(id,no_po,branch_id,to_warehouse_id,supplier_id,status,total)values(md5('a02-po-nobranch')::uuid,'PO.A02.NB',null,md5('a02-wh')::uuid,md5('a02-supplier')::uuid,'Diterima',10);
+insert into purchase_invoices(id,no_faktur,po_id,supplier_id,total,branch_id)values(md5('a02-invoice-nobranch')::uuid,'FB.A02.NB',md5('a02-po-nobranch')::uuid,md5('a02-supplier')::uuid,10,null);
+set local role authenticated;
+do $$declare blocked boolean:=false;begin
+ perform set_config('request.jwt.claim.sub',md5('a02-staff')::uuid::text,true);
+ if exists(select 1 from purchase_invoices where id=md5('a02-invoice-nobranch')::uuid) then raise exception 'Fixture: staff should not see the no-branch invoice';end if;
+ begin perform create_purchase_correction_request('purchase_invoice',md5('a02-invoice-nobranch')::uuid,'a02-key-0009','Faktur tanpa cabang yang tidak terlihat');
+ exception when insufficient_privilege then blocked:=true;end;
+ if not blocked then raise exception 'Staff filed a request on an invoice hidden by RLS';end if;
+ perform set_config('request.jwt.claim.sub',md5('a02-admin')::uuid::text,true);
+ perform create_purchase_correction_request('purchase_invoice',md5('a02-invoice-nobranch')::uuid,'a02-key-0010','Admin melihat faktur tanpa cabang');
+end$$;
 rollback;
