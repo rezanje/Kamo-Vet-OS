@@ -8,6 +8,7 @@ import { CORRECTION_QUEUE_PATH, sourceHref, type CorrectionSourceKind } from "@/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KINDS: CorrectionSourceKind[] = ["purchase_order", "purchase_invoice"];
 const ANCHOR = "#request-purchase-correction";
+const RETURN_PATHS = new Set(["/keuangan/hutang"]);
 
 // SQLSTATEs raised by the request RPCs' own guards (Indonesian, user-facing text).
 const GUARD_CODES = new Set(["42501", "22023", "23505", "55000"]);
@@ -23,7 +24,11 @@ function message(error: { message?: string; code?: string } | null, fallback: st
 export async function ajukanKoreksiPembelian(formData: FormData) {
   const kind = String(formData.get("source_kind") ?? "") as CorrectionSourceKind;
   const id = String(formData.get("source_id") ?? "");
-  const back = KINDS.includes(kind) && UUID.test(id) ? sourceHref({ source_kind: kind, po_id: id, invoice_id: id })! : "/pembelian";
+  // P01: pengaju tanpa modul Pembelian (mis. FINANCE dari layar Hutang) kembali ke layar
+  // asalnya, bukan ke halaman dokumen yang tidak bisa ia buka. Hanya jalur yang terdaftar.
+  const from = String(formData.get("back") ?? "");
+  const back = RETURN_PATHS.has(from) ? from
+    : KINDS.includes(kind) && UUID.test(id) ? sourceHref({ source_kind: kind, po_id: id, invoice_id: id })! : "/pembelian";
   const supabase = await createClient();
   const { error } = await supabase.rpc("create_purchase_correction_request", {
     p_source_kind: kind, p_source_id: UUID.test(id) ? id : null,

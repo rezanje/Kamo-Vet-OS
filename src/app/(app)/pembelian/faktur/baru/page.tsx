@@ -35,9 +35,9 @@ type SourceLine = { id: string; po_item_id: string | null; item_id: string | nul
 export default async function FakturBaruPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; replace_invoice?: string; po_no?: string; hal?: string }>;
+  searchParams: Promise<{ error?: string; replace_invoice?: string; po_no?: string; hal?: string; harga_cek?: string }>;
 }) {
-  const { error, replace_invoice, po_no, hal } = await searchParams;
+  const { error, replace_invoice, po_no, hal, harga_cek } = await searchParams;
   const poNo = (po_no ?? "").trim().slice(0, 24);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -196,7 +196,7 @@ export default async function FakturBaruPage({
       {!loadError && poNo && poPage?.count === 0 && <div role="status" className="p2ban">PO diterima dengan nomor itu tidak ditemukan.</div>}
       {!initial && !poNo && poPage && loadError === undefined && <ListPagination path="/pembelian/faktur/baru" query={{}} total={poPage.count} pageInfo={poPage.pageInfo} />}
 
-      <FakturForm initial={initial} options={options} userId={userId} />
+      <FakturForm initial={initial} options={options} userId={userId} priceWarning={harga_cek} />
     </>
   );
 }

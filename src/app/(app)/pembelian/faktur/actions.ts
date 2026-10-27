@@ -9,6 +9,7 @@ import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { cekPersetujuan } from "@/lib/persetujuan-server";
+import { priceCheckBeforeSave } from "@/lib/purchase-price-check";
 
 type ItemInput = { po_item_id: string; qty: number; harga: number };
 
@@ -38,6 +39,11 @@ export async function buatFaktur(formData: FormData) {
   const { data: recovered, error: recoveryError } = await supabase.rpc("recover_purchase_operation", { p_kind: "invoice", p_request_key: requestKey, p_payload: payload });
   if (recoveryError) fail(recoveryError.message);
   if (recovered?.invoice_id) finish(recovered.invoice_id);
+  // P04: harga faktur per satuan PO ÷ faktor baris PO, dibanding harga pokok acuan. Gagal baca = tanpa peringatan.
+  const { data: poLines } = await supabase.from("purchase_order_items").select("id,item_id,faktor").in("id", payload.items.map(r => r.po_item_id));
+  const poLine = new Map(((poLines ?? []) as { id: string; item_id: string | null; faktor: number | null }[]).map(r => [r.id, r]));
+  const hargaCek = await priceCheckBeforeSave(supabase, formData, payload.items.map(r => ({ item_id: poLine.get(r.po_item_id)?.item_id, harga: r.harga, factor: poLine.get(r.po_item_id)?.faktor })));
+  if (hargaCek) redirect(`${back}harga_cek=${encodeURIComponent(hargaCek)}`);
   const { prefix, digit } = await nomorBerikutnya(supabase, "FB", tanggal, { table: "purchase_invoices", column: "no_faktur" });
   const total = items.reduce((sum, row) => sum + row.qty * row.harga, 0);
   const { ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
