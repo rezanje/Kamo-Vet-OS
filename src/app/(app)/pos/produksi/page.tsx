@@ -37,6 +37,8 @@ const qtyId = (n: number) => n.toLocaleString("id-ID", { maximumFractionDigits: 
 // I08: pekerjaan (bahan keluar) -> penyelesaian (barang jadi masuk) dalam satu nomor
 // produksi; dua jurnal tahapnya dapat diklik.
 function JobCompletion({source,unit}:{source:{start_journal?:string|null;completion?:{qty:number;tanggal:string;value:number;journal:string|null;received_qty:number;received_value:number}|null};unit:string|null}){
+  // Older source readers omit these fields: show nothing rather than a false "belum ada".
+  if (!("completion" in source)) return null;
   const c = source.completion;
   const ok = c && typeof c.qty === "number" && typeof c.received_qty === "number" && typeof c.received_value === "number";
   return <div aria-label="Pekerjaan dan penyelesaian">

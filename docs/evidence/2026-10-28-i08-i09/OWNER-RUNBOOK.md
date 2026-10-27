@@ -16,7 +16,7 @@ sudah ada, di SQL editor Supabase production, berurutan; berhenti bila ada langk
    bila isi fungsi produksi di production berbeda dari main.
 3. `readback.sql`: semua baris `ok = true`.
 4. Deploy aplikasi sesudah langkah 3. Urutan sebaliknya aman: layar jejak racikan menampilkan "belum
-   dapat diperiksa" dan panel penyelesaian produksi menampilkan "belum ada" sampai DB diterapkan.
+   dapat diperiksa" dan panel pekerjaan→penyelesaian produksi baru muncul setelah DB diterapkan.
 
 Rollback: mengembalikan isi fungsi tepat seperti sebelum apply (diuji dengan sidik md5), menghapus RPC
 jejak racikan. Tidak menyentuh baris data. Menolak bila metode average aktif dan ada produksi berjalan.
