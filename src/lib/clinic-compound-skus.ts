@@ -37,6 +37,8 @@ export async function loadClinicCompoundSkus(client: any, categories?: ClinicIte
     .order("name").order("id").range(from, to), "Obat racik dari Barang & Jasa");
 }
 
+const SKU_BATCH_CONCURRENCY = 6;
+
 /** Match clinic posting's warehouse and check every lookup page. Small ID batches
  * keep request URLs bounded even when the compound catalogue exceeds 1,000. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,9 +51,11 @@ export async function loadClinicSkuDetails(client: any, itemIds: string[], branc
     .order("created_at").order("id").limit(1).maybeSingle() : { data: null, error: null };
   if (error) throw new ListLoadError("Gudang klinik belum dapat dimuat. Coba muat ulang.");
   const ids = [...new Set(itemIds)];
-  for (let start = 0; start < ids.length; start += 200) {
-    const batch = ids.slice(start, start + 200);
-    const [stockRows, unitRows, priceRows] = await Promise.all([
+  const batches: string[][] = [];
+  for (let start = 0; start < ids.length; start += 200) batches.push(ids.slice(start, start + 200));
+  // U07: batches used to run one after another (±19 sequential trips for the full
+  // clinic catalogue). Run a few at once; results are still applied in order.
+  const loadBatch = (batch: string[]) => Promise.all([
       warehouse ? readCompleteList<{ id: string; item_id: string; qty: number }>((from, to) => client.from("stock")
         .select("id,item_id,qty", { count: "exact" }).eq("warehouse_id", warehouse.id).in("item_id", batch)
         .order("id").range(from, to), "Stok gudang klinik") : [],
@@ -61,7 +65,12 @@ export async function loadClinicSkuDetails(client: any, itemIds: string[], branc
       branchId ? readCompleteList<{ id: string; item_id: string; unit: string; sell_price: number }>((from, to) => client.from("item_branch_prices")
         .select("id,item_id,unit,sell_price", { count: "exact" }).eq("branch_id", branchId).in("item_id", batch)
         .order("id").range(from, to), "Harga barang cabang") : [],
-    ]);
+  ]);
+  const results: Awaited<ReturnType<typeof loadBatch>>[] = [];
+  for (let start = 0; start < batches.length; start += SKU_BATCH_CONCURRENCY) {
+    results.push(...await Promise.all(batches.slice(start, start + SKU_BATCH_CONCURRENCY).map(loadBatch)));
+  }
+  for (const [stockRows, unitRows, priceRows] of results) {
     for (const row of stockRows) stock.set(row.item_id, (stock.get(row.item_id) ?? 0) + Number(row.qty));
     for (const row of unitRows) {
       const list = units.get(row.item_id) ?? [];
