@@ -161,7 +161,7 @@ it("enforces branch access and fails closed on incomplete event pages", async ()
   await expect(loadHistoricalInventory(clientFixture({ deniedBranch: "b2", tables: tables() }).client,
     { tanggal: "2026-10-23", cabang: ["b2"] })).rejects.toMatchObject({ status: 403 });
   const limited = await loadHistoricalInventory(clientFixture({ deniedBranch: "b2", tables: tables() }).client, { tanggal: "2026-10-23" });
-  expect(limited.summary).toEqual([{ id: "b1", name: "Satu", count: 1, value: "300", ledgerValue: "300", difference: "0", negativeCount: 0 }]);
+  expect(limited.summary).toEqual([{ id: "b1", name: "Satu", count: 1, value: "300", ledgerValue: "300", difference: "0", negativeCount: 0, estimatedCount: 0 }]);
   expect(limited.fullBranchAccess).toBe(false);
   await expect(loadHistoricalInventory(clientFixture({ missingCountTable: "inventory_cost_events", tables: tables() }).client,
     { tanggal: "2026-10-23" })).rejects.toThrow("jumlah pasti");
@@ -223,4 +223,49 @@ it("reads all event pages before choosing the last event and total", async () =>
   expect(report.rows).toHaveLength(1);
   expect(report.rows[0].value).toBe("500");
   expect(report.total).toBe("500");
+});
+
+it("R04: values a minus position with unknown value at the last known average, flags it, and keeps totals = sum of branches", async () => {
+  // Fictional: known average 10, stock sold to zero, then a sale goes minus with
+  // no recorded value. The last known average (10) values the minus qty.
+  const minus = [
+    { id: 10, warehouse_id: "w2", item_id: "m", tanggal: "2026-10-22", source: "average-activation", source_ref: null, qty_delta: "2", value_delta: "20", qty_after: "2", value_after: "20", average_after: "10" },
+    { id: 11, warehouse_id: "w2", item_id: "m", tanggal: "2026-10-22", source: "sale", source_ref: "SALE-M1", qty_delta: "-2", value_delta: "-20", qty_after: "0", value_after: "0", average_after: "10" },
+    { id: 12, warehouse_id: "w2", item_id: "m", tanggal: "2026-10-23", source: "sale", source_ref: "SALE-M2", qty_delta: "-3", value_delta: null, qty_after: "-3", value_after: null, average_after: null },
+  ];
+  const fixture = { ...tables(), inventory_cost_events: [...events, ...minus], items: [
+    { id: "i", code: "SKU", name: "Obat lama", unit: "ml" },
+    { id: "m", code: "SKU-M", name: "Barang minus", unit: "pcs" },
+  ] };
+  const report = await loadHistoricalInventory(clientFixture({ tables: fixture }).client, { tanggal: "2026-10-23" });
+  expect(report.rows.find(row => row.itemCode === "SKU-M")).toMatchObject({
+    qty: "-3", value: "-30", negative: true, estimated: true, valueBasis: "last-average", estimateAverage: "10",
+  });
+  expect(report.rows.find(row => row.itemCode === "SKU")).toMatchObject({ estimated: false, valueBasis: "event" });
+  expect(report.summary.map(row => [row.value, row.negativeCount, row.estimatedCount])).toEqual([["300", 0, 0], ["63.125", 1, 1]]);
+  expect(report.total).toBe("363.125");
+  expect(report.summary.reduce((sum, branch) => sum.plus(branch.value!), new Decimal(0)).toFixed()).toBe(report.total);
+  // Selecting one branch gives the same branch value as the all-branch report.
+  const only = await loadHistoricalInventory(clientFixture({ tables: fixture }).client, { tanggal: "2026-10-23", cabang: ["b2"] });
+  expect(only.total).toBe("63.125");
+});
+
+it("R04: a minus position whose recorded value chain broke uses the last known average; never-costed stays unavailable", async () => {
+  const broken = [
+    { id: 20, warehouse_id: "w1", item_id: "n", tanggal: "2026-10-22", source: "average-activation", source_ref: null, qty_delta: "0", value_delta: "0", qty_after: "0", value_after: "0", average_after: null },
+    { id: 21, warehouse_id: "w1", item_id: "n", tanggal: "2026-10-22", source: "sale", source_ref: "SALE-N1", qty_delta: "-5", value_delta: null, qty_after: "-5", value_after: null, average_after: null },
+    { id: 22, warehouse_id: "w1", item_id: "n", tanggal: "2026-10-23", source: "purchase", source_ref: "PO-N1", qty_delta: "2", value_delta: null, qty_after: "-3", value_after: "-36", average_after: "12" },
+  ];
+  const fixture = { ...tables(), inventory_cost_events: [...events, ...broken], items: [
+    { id: "i", code: "SKU", name: "Obat lama", unit: "ml" },
+    { id: "n", code: "SKU-N", name: "Barang minus 2", unit: "pcs" },
+  ] };
+  const during = await loadHistoricalInventory(clientFixture({ tables: fixture }).client, { tanggal: "2026-10-22" });
+  // No cost was ever known: still unavailable, never shown as zero.
+  expect(during.rows.find(row => row.itemCode === "SKU-N")).toMatchObject({ value: null, estimated: false, valueBasis: null });
+  expect(during.total).toBeNull();
+  const after = await loadHistoricalInventory(clientFixture({ tables: fixture }).client, { tanggal: "2026-10-23" });
+  expect(after.rows.find(row => row.itemCode === "SKU-N")).toMatchObject({ qty: "-3", value: "-36", estimated: true });
+  expect(after.summary.map(row => row.value)).toEqual(["264", "93.125"]);
+  expect(after.total).toBe("357.125");
 });

@@ -76,3 +76,22 @@ it("keeps the cutoff and every selected branch in paging and per-branch ledger l
   expect(html).toContain("Rp 220");
   expect(html).toContain("Jurnal 1301 tanpa cabang: Rp 7");
 });
+
+it("R04: shows a minus position valued at the last known average with a visible estimate flag", async () => {
+  fixture.client = clientFixture({ tables: {
+    inventory_costing_settings: [{ id: true, method: "moving_average", activated_at: "2026-10-22T03:00:00Z" }],
+    warehouses: [{ id: "w1", branch_id: "b1", name: "Gudang A", code: "A" }],
+    inventory_cost_events: [
+      { id: 1, warehouse_id: "w1", item_id: "i", tanggal: "2026-10-22", source: "average-activation", source_ref: null, qty_delta: "1", value_delta: "10", qty_after: "1", value_after: "10", average_after: "10" },
+      { id: 2, warehouse_id: "w1", item_id: "i", tanggal: "2026-10-22", source: "sale", source_ref: "SALE-1", qty_delta: "-4", value_delta: null, qty_after: "-3", value_after: null, average_after: null },
+    ],
+    items: [{ id: "i", code: "K1", name: "Barang minus fiktif", unit: "PCS" }],
+    coa_accounts: [{ id: "a1301", code: "1301" }],
+    journal_lines: [],
+  } }).client;
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1"] }) }));
+  expect(html).toContain("Rp -30 · taksiran HPP terakhir Rp 10");
+  expect(html).toContain("Nilai minus taksiran");
+  expect(html).toContain("Kebijakan stok minus (R04)");
+  expect(html).not.toContain("Belum tersedia</td><td>Rp 0");
+});
