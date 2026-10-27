@@ -169,3 +169,23 @@ it.each(['exam','inpatient'])('K02 %s procedure rows record optional BMHP from s
   expect(host.querySelector('input[aria-label="Tambah BMHP Makanan kucing"]')).toBeNull();
 });
 
+it.each(['exam','inpatient'])('K02 %s action cart keeps chosen BMHP after reopening the draft', async kind => {
+  await render(kind); await tab('Tindakan');
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  const picker = host.querySelector<HTMLInputElement>('input[aria-label="Tambah BMHP Steril"]')!;
+  expect(picker).toBeTruthy();
+  await act(async () => {
+    picker.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(picker, 'Makanan');
+    picker.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+  await act(async () => picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  expect(cart()).toEqual([expect.objectContaining({
+    item_id: 'steril', jenis: 'jasa', bmhp: [{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }],
+  })]);
+  await act(async () => root.unmount()); root = createRoot(host); await render(kind);
+  expect(cart()[0].bmhp).toEqual([{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }]);
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Makanan kucing"]')?.value).toBe('1');
+});
+
