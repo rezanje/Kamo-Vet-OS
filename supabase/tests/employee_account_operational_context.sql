@@ -51,7 +51,9 @@ do $$ begin
   update profiles set role='OWNER' where id=auth.uid(); raise exception 'self promotion accepted';
  exception when raise_exception then if sqlerrm<>'ACCOUNT_ADMIN_REQUIRED' then raise; end if; end;
  begin
-  update employees set profile_id=auth.uid() where id='eb500000-0000-4000-8000-000000000002'; raise exception 'self link accepted';
+  -- HRIS pilot RLS hides the row from STAFF writes (0 rows); the link guard is the second line.
+  update employees set profile_id=auth.uid() where id='eb500000-0000-4000-8000-000000000002';
+  if found then raise exception 'self link accepted'; end if;
  exception when raise_exception then if sqlerrm<>'ACCOUNT_ADMIN_REQUIRED' then raise; end if; end;
  begin
   perform link_employee_account('eb100000-0000-4000-8000-000000000003','eb500000-0000-4000-8000-000000000002'); raise exception 'staff link accepted';

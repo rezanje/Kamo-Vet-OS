@@ -5,7 +5,8 @@ import { parseEmployeeBranches } from "@/lib/employee-branch-input";
 import { hariIniWIB } from "@/lib/tanggal";
 import { bacaEditKaryawan } from "@/lib/karyawan-edit";
 import { redirect } from "next/navigation";
-import { assertHrisManager, assertMasterAdmin } from "@/lib/master-guard";
+import { assertHrisManager, assertMasterAdmin, bolehKelolaPayroll } from "@/lib/master-guard";
+import { simpanGajiPokok } from "@/lib/employee-salary";
 import { employeeOccupationInput } from "@/lib/employee-occupation";
 
 export async function simpanKaryawan(formData: FormData) {
@@ -43,7 +44,6 @@ export async function simpanKaryawan(formData: FormData) {
     phone,
     email,
     tgl_masuk: tglMasuk,
-    gaji_pokok: gajiPokok,
     status,
   }).select("id").single();
 
@@ -53,6 +53,12 @@ export async function simpanKaryawan(formData: FormData) {
         ? "NIK sudah terdaftar, gunakan NIK lain"
         : "Gagal menyimpan data karyawan";
     redirect(`/hris/karyawan?error=${encodeURIComponent(msg)}`);
+  }
+
+  if (gajiPokok > 0 && created?.id && (await bolehKelolaPayroll())) {
+    if (!(await simpanGajiPokok(supabase, created.id, gajiPokok))) {
+      redirect(`/hris/karyawan?error=${encodeURIComponent("Karyawan tersimpan, tetapi gaji pokok belum tersimpan")}`);
+    }
   }
 
   if (branchId && created?.id) {
@@ -97,10 +103,14 @@ export async function editKaryawan(formData: FormData) {
   let row;
   try { row = bacaEditKaryawan(formData); }
   catch (error) { redirect(`${back}?edit=1&error=${encodeURIComponent(error instanceof Error ? error.message : "Data tidak valid")}`); }
-  const { status: _status, ...fields } = row;
+  const { status: _status, gaji_pokok, ...fields } = row;
   void _status; // Status uses the separate audited lifecycle action.
   const { data, error } = await supabase.from("employees").update(fields).eq("id", id).select("id").maybeSingle();
   if (error || !data) redirect(`${back}?edit=1&error=${encodeURIComponent(error?.code === "23505" ? "NIK sudah terdaftar" : "Data karyawan gagal diperbarui")}`);
+  // Gaji pokok hanya diubah OWNER; field-nya memang tidak tampil untuk peran lain.
+  if (gaji_pokok !== null && (await bolehKelolaPayroll()) && !(await simpanGajiPokok(supabase, id, gaji_pokok))) {
+    redirect(`${back}?edit=1&error=${encodeURIComponent("Data tersimpan, tetapi gaji pokok belum tersimpan")}`);
+  }
   revalidatePath("/hris/karyawan");
   revalidatePath(back);
   revalidatePath("/hris/penggajian");

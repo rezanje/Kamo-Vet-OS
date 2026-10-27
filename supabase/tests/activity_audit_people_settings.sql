@@ -40,9 +40,9 @@ select set_config('request.jwt.claim.sub',md5('a01p-owner')::uuid::text,true);
 insert into branches(id,code,name,type) values
  (md5('a01p-a')::uuid,'A01P-A','PRIVATE branch A','PETSHOP'),
  (md5('a01p-b')::uuid,'A01P-B','PRIVATE branch B','PETSHOP');
-insert into employees(id,nik,nama,branch_id,gaji_pokok) values
- (md5('a01p-employee-a')::uuid,'A01P-A','PRIVATE employee A',md5('a01p-a')::uuid,12345),
- (md5('a01p-employee-b')::uuid,'A01P-B','PRIVATE employee B',md5('a01p-b')::uuid,12345);
+insert into employees(id,nik,nama,branch_id) values
+ (md5('a01p-employee-a')::uuid,'A01P-A','PRIVATE employee A',md5('a01p-a')::uuid),
+ (md5('a01p-employee-b')::uuid,'A01P-B','PRIVATE employee B',md5('a01p-b')::uuid);
 insert into work_shifts(id,nama,is_libur,branch_id) values
  (md5('a01p-shift-a')::uuid,'PRIVATE shift',true,md5('a01p-a')::uuid),
  (md5('a01p-shift-b')::uuid,'PRIVATE shift',true,md5('a01p-b')::uuid);
@@ -94,7 +94,7 @@ begin
   raise exception 'Payload, changed field or actor leak for %',p_entity;end if;
 end$$;
 
-select pg_temp.people_exercise('employees',jsonb_build_object('id',md5('a01p-crud-employee')::uuid,'nik','A01P-CRUD','nama','PRIVATE employee','branch_id',md5('a01p-a')::uuid,'gaji_pokok',12345),'{"nama":"PRIVATE edited employee","gaji_pokok":98765}');
+select pg_temp.people_exercise('employees',jsonb_build_object('id',md5('a01p-crud-employee')::uuid,'nik','A01P-CRUD','nama','PRIVATE employee','branch_id',md5('a01p-a')::uuid),'{"nama":"PRIVATE edited employee","jabatan":"PRIVATE edited role"}');
 select pg_temp.people_exercise('branches',jsonb_build_object('id',md5('a01p-crud-branch')::uuid,'code','A01P-CRUD','name','PRIVATE branch','type','PETSHOP'),'{"name":"PRIVATE edited branch","lat":12.345678}');
 select pg_temp.people_exercise('warehouses',jsonb_build_object('id',md5('a01p-warehouse')::uuid,'branch_id',md5('a01p-a')::uuid,'code','A01P-WH','name','PRIVATE warehouse','type','RETAIL'),'{"name":"PRIVATE edited warehouse"}');
 select pg_temp.people_exercise('employee_branch_assignments',jsonb_build_object('employee_id',md5('a01p-employee-a')::uuid,'branch_id',md5('a01p-b')::uuid,'role','SECONDARY','effective_date','2035-01-01'),'{"effective_date":"2035-01-02"}');

@@ -273,8 +273,8 @@ join coa_accounts a on a.code=v.code
 where not exists (select 1 from journal_lines jl where jl.entry_id=e.id);
 
 -- HRIS demo karyawan (branch via code).
-insert into employees (nik, nama, jabatan, departemen, branch_id, phone, email, tgl_masuk, gaji_pokok, status)
-select v.nik, v.nama, v.jabatan, v.dept, b.id, v.phone, v.email, v.masuk::date, v.gaji, v.status
+insert into employees (nik, nama, jabatan, departemen, branch_id, phone, email, tgl_masuk, status)
+select v.nik, v.nama, v.jabatan, v.dept, b.id, v.phone, v.email, v.masuk::date, v.status
 from (values
   ('K-2024018901','Drh. Haidar Rafi Ananta','Dokter Hewan','Medis','VET_CMGG','0812-9001-1111','haidar@klinik.com','2024-01-15',9000000,'Aktif'),
   ('K-2024032210','Drh. Handitya Prasetyo','Dokter Hewan','Medis','VET_TKI','0813-5522-3344','handitya@klinik.com','2024-03-22',8500000,'Aktif'),
@@ -284,6 +284,13 @@ from (values
 ) as v(nik,nama,jabatan,dept,code,phone,email,masuk,gaji,status)
 join branches b on b.code=v.code
 where not exists (select 1 from employees e where e.nik=v.nik);
+
+-- Gaji pokok tinggal di employee_base_salaries (hanya OWNER/FINANCE yang bisa baca).
+insert into employee_base_salaries (employee_id, gaji_pokok)
+select e.id, v.gaji
+from (values ('K-2024018901',9000000),('K-2024032210',8500000),('K-2025055023',4200000),('K-2025041105',4000000),('K-2026001032',3500000)) v(nik,gaji)
+join employees e on e.nik=v.nik
+on conflict (employee_id) do nothing;
 
 -- HRIS demo: absensi hari ini, pengajuan cuti/lembur, KPI.
 insert into attendance(employee_id,tanggal,jam_masuk,jam_pulang,status,keterangan)

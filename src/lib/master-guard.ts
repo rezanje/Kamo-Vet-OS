@@ -47,6 +47,12 @@ export async function bolehKelolaPayroll(): Promise<boolean> {
   return peranBolehKelolaPayroll(role);
 }
 
+// Angka gaji: OWNER (kelola) dan FINANCE (baca). ADMIN tidak melihat.
+export async function bolehLihatGaji(): Promise<boolean> {
+  const { role } = await roleSaya();
+  return role === "OWNER" || role === "FINANCE";
+}
+
 // Kas & Bank: transaksi, bukan master data — FINANCE ikut boleh.
 export async function bolehTransaksiKas(): Promise<boolean> {
   const { role } = await roleSaya();

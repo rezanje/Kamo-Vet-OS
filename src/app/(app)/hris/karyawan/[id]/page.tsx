@@ -4,7 +4,8 @@ import Link from "next/link";
 import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { bolehKelolaMaster, bolehKelolaPayroll } from "@/lib/master-guard";
+import { bacaGajiPokok } from "@/lib/employee-salary";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { editKaryawan } from "../actions";
@@ -21,8 +22,9 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const { id } = await params;
   const { edit, error, success } = await searchParams;
   const supabase = await createClient();
+  const aturGaji = await bolehKelolaPayroll();
   const [empResult, detailResult, componentsResult, assignedResult, branchesResult] = await Promise.all([
-    supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, gaji_pokok, status, branch_id, trashed_at").eq("id", id).maybeSingle(),
+    supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, status, branch_id, trashed_at").eq("id", id).maybeSingle(),
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("nama"),
     supabase.from("employee_salary_components").select("id, component_id, nominal").eq("employee_id", id),
@@ -32,6 +34,9 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const employee = empResult.data;
   if (employee?.trashed_at) redirect("/hris/karyawan?view=trash");
   if (!employee) notFound();
+  const gajiPokok = aturGaji ? ((await bacaGajiPokok(supabase, [id])).get(id) ?? 0) : null;
+  const nilai = (key: string): string | number | null =>
+    key === "gaji_pokok" ? gajiPokok : (employee as Record<string, string | number | null>)[key];
   const primaryBranch = branchesResult.data?.find(branch => branch.id === employee.branch_id);
   const primaryBranchName = primaryBranch ? branchDisplayName(primaryBranch, branchesResult.data ?? []) : "Belum ditentukan";
   const detail = detailResult.data;
@@ -44,7 +49,8 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const inputs = [
     ["nik", "NIK", "text"], ["nama", "Nama *", "text"], ["jabatan", "Jabatan", "text"],
     ["departemen", "Departemen", "text"], ["phone", "No. HP", "tel"], ["email", "Email", "email"],
-    ["tgl_masuk", "Tanggal Masuk", "date"], ["gaji_pokok", "Gaji Pokok (Rp)", "number"],
+    ["tgl_masuk", "Tanggal Masuk", "date"],
+    ...(aturGaji ? [["gaji_pokok", "Gaji Pokok (Rp)", "number"] as const] : []),
   ] as const;
   return <>
     <Link href="/hris/karyawan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Karyawan</Link>
@@ -57,20 +63,20 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
         <div className="grid2">
           {inputs.map(([key, label, type]) => key === 'jabatan' ? <EmployeeOccupationField key={key} value={employee.jabatan} /> : <div key={key}>
             <label className="flab" htmlFor={key}>{label}</label>
-            <NumberInput id={key} className="fi" name={key} type={type} defaultValue={employee[key] ?? ""} required={key === "nama" || key === "gaji_pokok"} min={type === "number" ? 0 : undefined} step={type === "number" ? "any" : undefined} />
+            <NumberInput id={key} className="fi" name={key} type={type} defaultValue={nilai(key) ?? ""} required={key === "nama" || key === "gaji_pokok"} min={type === "number" ? 0 : undefined} step={type === "number" ? "any" : undefined} />
           </div>)}
           <div><label className="flab">Status</label><input type="hidden" name="status" value={employee.status} />{employee.status}<p>Gunakan aksi di daftar karyawan untuk mengubah status dengan alasan. Status ini tidak mencabut akses login.</p></div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}><SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan Perubahan</SubmitButton><Link className="btn-def" href={`/hris/karyawan/${id}`}>Batal</Link></div>
       </form> : <dl className="grid2">
-        {inputs.map(([key, label]) => <div key={key}><dt className="flab">{label.replace(" *", "")}</dt><dd style={{ margin: 0 }}>{key === "gaji_pokok" ? rp(employee.gaji_pokok) : employee[key] || "—"}</dd></div>)}
+        {inputs.map(([key, label]) => <div key={key}><dt className="flab">{label.replace(" *", "")}</dt><dd style={{ margin: 0 }}>{key === "gaji_pokok" ? rp(gajiPokok ?? 0) : nilai(key) || "—"}</dd></div>)}
         <div><dt className="flab">Status</dt><dd style={{ margin: 0 }}>{employee.status}</dd></div>
       </dl>}
       <p>Cabang utama: {branchesResult.error ? "Gagal dimuat" : primaryBranchName}. <Link href="/hris/karyawan">Kelola penugasan cabang</Link></p>
     </div>
-    <div className="crm-sec">
+    {aturGaji && <div className="crm-sec">
       <SecHeader num="02" title="BENEFIT & KOMPONEN GAJI" desc="Gaji pokok, tunjangan, insentif tetap, dan potongan yang berlaku untuk karyawan ini." action={<Link className="btn-def" href={`/hris/komponen-gaji?emp=${id}`}>Master Komponen</Link>} />
-      <p>Gaji pokok: <b>{rp(employee.gaji_pokok)}</b>. Insentif tetap dapat dibuat sebagai komponen tunjangan. Nominal kosong mengikuti nominal master. Perubahan berlaku pada perhitungan gaji berikutnya; slip yang telah disahkan tetap tersimpan.</p>
+      <p>Gaji pokok: <b>{rp(gajiPokok ?? 0)}</b>. Insentif tetap dapat dibuat sebagai komponen tunjangan. Nominal kosong mengikuti nominal master. Perubahan berlaku pada perhitungan gaji berikutnya; slip yang telah disahkan tetap tersimpan.</p>
       {benefitError ? <p role="alert">Komponen gaji gagal dimuat. Muat ulang halaman sebelum mengubah benefit.</p> : <>
         <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Komponen</th><th>Jenis</th><th>Nominal</th><th>Aksi</th></tr></thead><tbody>
           {assigned.map(a => { const c = componentMap.get(a.component_id); return <tr key={a.id}><td>{c?.nama ?? "Komponen tidak tersedia"}{c && !c.is_active && " (Nonaktif)"}</td><td>{c?.tipe ?? "—"}</td><td>{rp(a.nominal ?? c?.nominal ?? 0)}{a.nominal === null && " (ikut master)"}</td><td><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{c && <Link className="btn-def" href={`/hris/komponen-gaji?${new URLSearchParams({ emp: id, edit: c.id })}`} style={{ fontSize: 10.5 }}>Edit nama / nominal master</Link>}<form action={lepasKomponen}><input type="hidden" name="id" value={a.id} /><input type="hidden" name="employee_id" value={id} /><input type="hidden" name="return_to" value="profil" /><SubmitButton className="btn-def" pendingText="Melepas…">Lepas</SubmitButton></form></div></td></tr>; })}
@@ -83,7 +89,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
         </form>
       </>}
       <p><Link href="/hris/penggajian">Buka Penggajian & Slip Gaji</Link></p>
-    </div>
+    </div>}
     <div className="crm-sec"><SecHeader num="03" title="RINCIAN IMPOR EXCEL" desc="Data tambahan dari sumber impor." />
       {detailResult.error ? <p>Rincian impor gagal dimuat.</p> : !detail ? <p>Belum ada rincian dari unggahan Excel.</p> : <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12 }}>{Object.entries(fields).map(([label, value]) => <div key={label}><dt className="flab">{label}</dt><dd style={{ margin: 0, overflowWrap: "anywhere" }}>{value || "—"}</dd></div>)}</dl>}
     </div>
