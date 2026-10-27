@@ -77,6 +77,41 @@ describe("potonganBaris", () => {
   });
 });
 
+describe("hitungPromoKeranjang total per paket", () => {
+  const paket = promo({ id: "pkg", itemIds: ["a"], discountType: "nominal", discountValue: 10_000, discountMode: "package_total", minQty: 5, maxQty: 5 });
+  const total = (rules: PromoHitung[], cart: { item_id: string; qty: number; harga: number; satuan?: string }[]) =>
+    totalPotonganPromo(hitungPromoKeranjang(rules, cart));
+
+  it("counts one package budget per transaction across repeated same-SKU rows", () => {
+    expect(total([paket], [{ item_id: "a", qty: 5, harga: 10_000 }, { item_id: "a", qty: 5, harga: 10_000 }])).toBe(10_000);
+    expect(total([paket], [{ item_id: "a", qty: 3, harga: 10_000 }, { item_id: "a", qty: 3, harga: 10_000 }])).toBe(10_000);
+    expect(total([paket], [{ item_id: "a", qty: 2, harga: 10_000 }, { item_id: "a", qty: 2, harga: 10_000 }])).toBe(0);
+    const ulang = { ...paket, maxQty: null, kelipatan: true };
+    expect(total([ulang], [{ item_id: "a", qty: 3, harga: 10_000 }, { item_id: "a", qty: 7, harga: 10_000 }])).toBe(20_000);
+    const rows = hitungPromoKeranjang([paket], [{ item_id: "a", qty: 2, harga: 10_000 }, { item_id: "a", qty: 3, harga: 10_000 }]);
+    expect(rows.map(r => r.potongan)).toEqual([4_000, 6_000]);
+  });
+
+  it("does not combine different units or prices and never doubles the package", () => {
+    const cart = [{ item_id: "a", satuan: "PCS", qty: 5, harga: 10_000 }, { item_id: "a", satuan: "STRIP", qty: 5, harga: 50_000 }];
+    expect(total([paket], cart)).toBe(10_000);
+    expect(total([paket], [{ item_id: "a", qty: 5, harga: 10_000 }, { item_id: "a", qty: 5, harga: 9_000 }])).toBe(10_000);
+  });
+
+  it("keeps one promo per row and leaves legacy per-unit promotions unchanged", () => {
+    const perUnit = promo({ id: "unit", itemIds: ["a"], discountType: "nominal", discountValue: 3_000 });
+    const cart = [{ item_id: "a", qty: 5, harga: 10_000 }];
+    expect(hitungPromoKeranjang([perUnit, paket], cart)).toMatchObject([{ promoId: "unit", potongan: 15_000 }]);
+    expect(hitungPromoKeranjang([{ ...perUnit, discountValue: 1_000 }, paket], cart)).toMatchObject([{ promoId: "pkg", potongan: 10_000 }]);
+    expect(total([perUnit], [{ item_id: "a", qty: 5, harga: 10_000 }, { item_id: "a", qty: 5, harga: 10_000 }])).toBe(30_000);
+  });
+
+  it("gives no package when a direct row caps below the minimum", () => {
+    expect(qtyDapatPotongan(10, { ...paket, maxQty: 3 })).toBe(0);
+    expect(total([{ ...paket, maxQty: 3 }], [{ item_id: "a", qty: 10, harga: 10_000 }])).toBe(0);
+  });
+});
+
 describe("hitungPromoKeranjang", () => {
   it("limits an imported SKU promotion to its selected sale unit", () => {
     const rule = promo({ itemIds: ["sku"], unit: "DUS", discountType: "nominal", discountValue: 2000 });

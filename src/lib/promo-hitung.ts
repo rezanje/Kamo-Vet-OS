@@ -67,7 +67,10 @@ export function qtyDapatPotongan(qty: number, p: PromoHitung): number {
   const kena = p.kelipatan ? Math.floor(q / min) * min : q;
   const batas = p.maxQty && p.maxQty > 0 ? p.maxQty : Infinity;
   const capped = Math.min(kena, batas);
-  return p.discountMode === "package_total" ? (p.kelipatan ? Math.floor(capped / min) * min : Math.min(min,capped)) : capped;
+  // Package mode counts complete packages only. A cap below min_qty (blocked by
+  // the editors, possible in direct rows) therefore yields no package at all.
+  if (p.discountMode !== "package_total") return capped;
+  return p.kelipatan ? Math.floor(capped / min) * min : capped >= min ? min : 0;
 }
 
 // Potongan rupiah untuk satu baris. Tidak pernah melebihi nilai barisnya —
@@ -117,24 +120,60 @@ export function hitungPromoKeranjang(promos: PromoHitung[], cart: BarisKeranjang
     (p.minSubtotal == null || subtotal >= p.minSubtotal),
   );
 
-  const hasil: PotonganBaris[] = [];
-  for (const baris of cart) {
-    let terbaik: PotonganBaris | null = null;
+  const terbaik: (PotonganBaris | null)[] = cart.map((baris) => {
+    let pilih: PotonganBaris | null = null;
     for (const p of aktif) {
-      if (!kenaPromo(p, baris.item_id, baris.satuan)) continue;
+      if (p.discountMode === "package_total" || !kenaPromo(p, baris.item_id, baris.satuan)) continue;
       const potongan = potonganBaris(baris, p);
       if (potongan <= 0) continue;
-      if (!terbaik || potongan > terbaik.potongan) {
-        terbaik = {
+      if (!pilih || potongan > pilih.potongan) {
+        pilih = {
           item_id: baris.item_id, potongan,
           qtyKena: qtyDapatPotongan(baris.qty, p),
           promoId: p.id, promoName: p.name,
         };
       }
     }
-    if (terbaik) hasil.push(terbaik);
+    return pilih;
+  });
+
+  // Total per paket punya SATU jatah per transaksi: "sekali" dan maks. qty
+  // berlaku untuk keranjang, bukan per baris. Baris SKU/satuan/harga yang sama
+  // (mis. obat yang sama diresepkan dua kali di satu kunjungan) dihitung bersama;
+  // baris beda satuan/harga tidak digabung, hanya kelompok terbaik yang dapat paket.
+  for (const p of aktif) {
+    if (p.discountMode !== "package_total") continue;
+    const kelompok = new Map<string, number[]>();
+    cart.forEach((baris, index) => {
+      if (!kenaPromo(p, baris.item_id, baris.satuan)) return;
+      const key = JSON.stringify([baris.item_id, baris.satuan ?? "", Number(baris.harga) || 0]);
+      kelompok.set(key, [...(kelompok.get(key) ?? []), index]);
+    });
+    let pilihan: { indexes: number[]; qty: number; potongan: number; qtyKena: number; selisih: number } | null = null;
+    for (const indexes of kelompok.values()) {
+      const qty = indexes.reduce((a, i) => a + (Number(cart[i].qty) || 0), 0);
+      const potongan = potonganBaris({ ...cart[indexes[0]], qty }, p);
+      // Satu baris tetap satu promo: paket menggantikan promo lain di baris itu
+      // hanya kalau total potongannya lebih besar.
+      const selisih = potongan - indexes.reduce((a, i) => a + (terbaik[i]?.potongan ?? 0), 0);
+      if (potongan > 0 && selisih > 0 && (!pilihan || selisih > pilihan.selisih)) {
+        pilihan = { indexes, qty, potongan, qtyKena: qtyDapatPotongan(qty, p), selisih };
+      }
+    }
+    if (!pilihan) continue;
+    let sisa = pilihan.potongan;
+    pilihan.indexes.forEach((index, urutan) => {
+      const porsi = (Number(cart[index].qty) || 0) / pilihan.qty;
+      const potongan = urutan === pilihan.indexes.length - 1 ? sisa : Math.min(sisa, Math.floor(pilihan.potongan * porsi));
+      sisa -= potongan;
+      terbaik[index] = {
+        item_id: cart[index].item_id, potongan,
+        qtyKena: pilihan.qtyKena * porsi,
+        promoId: p.id, promoName: p.name,
+      };
+    });
   }
-  return hasil;
+  return terbaik.filter((hasil): hasil is PotonganBaris => !!hasil && hasil.potongan > 0);
 }
 
 // Ringkasan untuk ditampilkan di layar kasir.
