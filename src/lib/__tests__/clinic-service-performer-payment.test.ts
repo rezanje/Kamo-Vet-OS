@@ -51,6 +51,18 @@ it('carries independent performer IDs and existing case attribution through one 
  ]}});
  expect(JSON.stringify(state.calls)).not.toContain('Forged');
 });
+it('passes only selected per-line seller IDs on medicine and service invoices',async()=>{
+ const data=form();data.set('items',JSON.stringify([
+  {deskripsi:'Obat',qty:1,harga:50,jenis:'obat',item_id:'medicine',salesperson_id:'doctor-a',salesperson_name:'FORGED'},
+  {deskripsi:'Tindakan',qty:1,harga:50,jenis:'jasa',item_id:'procedure',salesperson_id:'staff-b',salesperson_name:'FORGED'},
+ ]));
+ await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
+ expect(state.calls[0]).toMatchObject({name:'clinic_post_invoice',params:{p_lines:[
+  expect.objectContaining({salesperson_id:'doctor-a'}),
+  expect.objectContaining({salesperson_id:'staff-b'}),
+ ]}});
+ expect(JSON.stringify(state.calls)).not.toContain('FORGED');
+});
 it('preserves unrecorded legacy source attribution and explicit empty new-service attribution',async()=>{
  const data=form();data.set('items',JSON.stringify([
   {deskripsi:'Lama',qty:1,harga:50,jenis:'jasa',prescription_item_id:'prescription',service_performers:null},

@@ -10,7 +10,7 @@ vi.mock("@/components/PetPhotoUpload", () => ({ PetPhotoUpload: () => null }));
 vi.mock("@/components/PenunjangUpload", () => ({ PenunjangUpload: () => null }));
 import { RekamForm } from "@/app/(app)/klinik/rekam-medis/[visitId]/RekamForm";
 vi.mock("@/app/(app)/klinik/pembayaran/[visitId]/actions", () => ({ bayarVisit: vi.fn() }));
-import { PembayaranForm } from "@/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm";
+import { ItemTable, PembayaranForm } from "@/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm";
 import { CatatanForm } from "@/app/(app)/klinik/rawat-inap/[id]/catatan/CatatanForm";
 
 let host: HTMLDivElement;
@@ -85,7 +85,7 @@ it.each(["exam", "inpatient"])("%s offers performers only for services and prese
   expect(cart()[0].service_performers ?? null).toBeNull();
   await tab("Jasa");
   for(let i=0;i<2;i++)await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
-  const selects=()=>[...host.querySelectorAll<HTMLSelectElement>('select')].filter(select=>[...select.options].some(option=>option.value==="doctor-a"));
+  const selects=()=>[...host.querySelectorAll<HTMLSelectElement>('select')].filter(select=>select.closest('fieldset') && [...select.options].some(option=>option.value==="doctor-a"));
   expect(selects()).toHaveLength(3);
   await act(async()=>{selects()[0].value="doctor-a";selects()[0].dispatchEvent(new Event("change",{bubbles:true}));});
   const bulkStaff=[...host.querySelectorAll<HTMLSelectElement>('select')].find(select=>select.closest('fieldset')?.textContent?.includes('Isi pelaksana')&&[...select.options].some(option=>option.value==='staff-a'))!;
@@ -98,11 +98,14 @@ it.each(["exam", "inpatient"])("%s offers performers only for services and prese
 
 it('payment shows persisted snapshots and login cashier, without editable global salesperson or source performers',async()=>{
  await act(async()=>root.render(<PembayaranForm visitId="visit" requestKey="pay" patient={{...patient,jenisLayanan:'Klinik',noInvoice:'baru',tanggal:'hari ini'}} initialObat={[]} initialJasa={[
-  {deskripsi:'Jasa tersimpan',qty:1,harga:100,prescription_item_id:'source',service_performers:{version:1,doctor_id:'doctor-a',doctor_name:'Dokter Saat Transaksi',staff_id:null}},
+  {deskripsi:'Jasa tersimpan',qty:1,harga:100,prescription_item_id:'source',salesperson_id:'doctor-a',salesperson_name:'Penjual Saat Resep',service_performers:{version:1,doctor_id:'doctor-a',doctor_name:'Dokter Saat Transaksi',staff_id:null}},
   {deskripsi:'Jasa lama',qty:1,harga:100,prescription_item_id:'legacy',service_performers:null},
  ]} serviceStaff={common.serviceStaff} cashierName="Kasir Login" catatanResep={null} bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-23',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
  expect(host.querySelector('[name=salesperson_id]')).toBeNull();
  expect(host.textContent).toContain('Kasir Login');expect(host.textContent).toContain('Dokter Saat Transaksi');
+ expect(host.textContent).toContain('Penjual Saat Resep');
+ expect(host.querySelector('[aria-label="Penjual Jasa tersimpan"]')).toBeNull();
+ expect(host.querySelector('[aria-label="Penjual Jasa lama"]')).not.toBeNull();
  expect(host.textContent).toContain('data lama');
  expect([...host.querySelectorAll('fieldset')].filter(field=>field.textContent?.includes('Pelaksana Jasa tersimpan'))).toHaveLength(0);
 });
@@ -187,5 +190,60 @@ it.each(['exam','inpatient'])('K02 %s action cart keeps chosen BMHP after reopen
   await act(async () => root.unmount()); root = createRoot(host); await render(kind);
   expect(cart()[0].bmhp).toEqual([{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }]);
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Makanan kucing"]')?.value).toBe('1');
+});
+
+it.each(['exam','inpatient'])('%s records separate clinic sellers for medicine and procedure in its recoverable cart', async kind => {
+  await render(kind);
+  const foodRow=[...host.querySelectorAll('tr')].find(row=>row.textContent?.includes('Makanan kucing'))!;
+  await act(async()=>foodRow.querySelector<HTMLButtonElement>('button')!.click());
+  await tab('Tindakan');
+  await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  const medicine=host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Makanan kucing"]');
+  const procedure=host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Steril"]');
+  expect(medicine).toBeTruthy();expect(procedure).toBeTruthy();
+  await act(async()=>{medicine!.value='doctor-a';medicine!.dispatchEvent(new Event('change',{bubbles:true}));});
+  await act(async()=>{procedure!.value='staff-a';procedure!.dispatchEvent(new Event('change',{bubbles:true}));});
+  expect(cart().map((row:{salesperson_id:string})=>row.salesperson_id)).toEqual(['doctor-a','staff-a']);
+  await act(async()=>root.unmount());root=createRoot(host);await render(kind);
+  expect(cart().map((row:{salesperson_id:string})=>row.salesperson_id)).toEqual(['doctor-a','staff-a']);
+});
+
+it('clinic payment records a different salesperson on medicine and procedure lines', async () => {
+  await act(async () => root.render(<PembayaranForm visitId="line-seller" requestKey="pay" draftUserId="cashier"
+    patient={{...patient, jenisLayanan:'Klinik', noInvoice:'baru', tanggal:'hari ini'}}
+    initialObat={[{deskripsi:'Obat A',qty:1,harga:100,item_id:'medicine'}]}
+    initialJasa={[{deskripsi:'Tindakan B',qty:1,harga:200,item_id:'procedure'}]}
+    serviceStaff={common.serviceStaff} catatanResep={null}
+    bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-27',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
+  const medicine = host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Obat A"]');
+  const procedure = host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Tindakan B"]');
+  expect(medicine).toBeTruthy();
+  expect(procedure).toBeTruthy();
+  await act(async () => { medicine!.value='doctor-a'; medicine!.dispatchEvent(new Event('change',{bubbles:true})); });
+  await act(async () => { procedure!.value='staff-a'; procedure!.dispatchEvent(new Event('change',{bubbles:true})); });
+  const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
+  expect(lines.map((line:{salesperson_id:string})=>line.salesperson_id)).toEqual(['doctor-a','staff-a']);
+});
+
+it('clinic invoice correction displays the stored seller name on a sealed source line', async () => {
+  await act(async () => root.render(<PembayaranForm visitId="seller-edit" requestKey="edit" editMode
+    patient={{...patient, jenisLayanan:'Klinik', noInvoice:'saved', tanggal:'hari ini'}}
+    initialObat={[{deskripsi:'Obat A',qty:1,harga:100,item_id:'medicine',source_invoice_item_id:'old-line',salesperson_id:'doctor-a',salesperson_name:'Nama saat transaksi'}]}
+    initialJasa={[]} serviceStaff={common.serviceStaff} catatanResep={null}
+    bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-27',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
+  expect(host.textContent).toContain('Penjual: Nama saat transaksi');
+  expect(host.querySelector('select[aria-label="Penjual Obat A"]')).toBeNull();
+  const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
+  expect(lines[0]).toMatchObject({source_invoice_item_id:'old-line',salesperson_id:'doctor-a'});
+});
+it('clears saved seller and source when a clinic payment line switches SKU',async()=>{
+ const Harness=()=>{const [rows,setRows]=React.useState<React.ComponentProps<typeof ItemTable>['rows']>([{deskripsi:'Obat A',qty:1,harga:100,item_id:'sku-a',prescription_item_id:'prescribed',source_invoice_item_id:'original-line',salesperson_id:'doctor-a',salesperson_name:'Original'}]);
+  return <><ItemTable title="OBAT" icon="ti-pill" color="purple" rows={rows} setRows={setRows}
+   master={[{id:'sku-a',code:'A',name:'Obat A',unit:'pcs',harga:100},{id:'sku-b',code:'B',name:'Obat B',unit:'pcs',harga:200}]}
+   listId="switch-sku" serviceStaff={common.serviceStaff}/><input name="rows" readOnly value={JSON.stringify(rows)}/></>;};
+ await act(async()=>root.render(<Harness/>));
+ const input=host.querySelector<HTMLInputElement>('[aria-label="Nama obat baris 1"]')!;
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Obat B');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ expect(JSON.parse(host.querySelector<HTMLInputElement>('[name=rows]')!.value)[0]).toMatchObject({item_id:'sku-b',prescription_item_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null});
 });
 

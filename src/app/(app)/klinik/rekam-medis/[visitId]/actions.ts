@@ -16,6 +16,7 @@ import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
   service_performers?: ServicePerformersInput | null;
+  salesperson_id?: string | null;
   bmhp?: BmhpInput[];
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
@@ -153,6 +154,7 @@ export async function simpanRekamMedis(formData: FormData) {
       aturan_pakai: r.aturan_pakai?.trim() || null,
       // racikan ditagih sebagai baris "obat" (invoice/struk existing tak berubah, nama-only otomatis).
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
+      ...(typeof r.salesperson_id === "string" && r.salesperson_id.trim() ? {salesperson_id:r.salesperson_id.trim()} : {}),
       ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
       // Kategori tindakan (§6.3) — dasar penentuan wajib/tidaknya form persetujuan.
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
@@ -168,9 +170,11 @@ export async function simpanRekamMedis(formData: FormData) {
         ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
         request_key: r.key ?? "",
         dosage_instruction: r.aturan_pakai ?? null,
+        ...(typeof r.salesperson_id === "string" && r.salesperson_id.trim() ? {salesperson_id:r.salesperson_id.trim()} : {}),
       }
     : {
         request_key: r.key ?? "",
+        ...(typeof r.salesperson_id === "string" && r.salesperson_id.trim() ? {salesperson_id:r.salesperson_id.trim()} : {}),
         ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
         recipe: toClinicCompoundRecipeInput({
           recipeName: r.nama_obat,
