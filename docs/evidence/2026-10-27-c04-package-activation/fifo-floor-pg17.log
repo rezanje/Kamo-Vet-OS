@@ -1,4 +1,4 @@
-Applied 270 repository migrations to isolated PostgreSQL 16 with fictional auth/storage shims.
+Applied 270 repository migrations to isolated PostgreSQL 17.6 with fictional auth/storage shims.
 Server: PostgreSQL 17.6
 PASS engine from stored promos: package 30/30(capped)/50/60/100 and legacy 10% quoted as expected
 PASS FIFO floor: package sales above/equal floor post with FIFO HPP; below floor and zero net rejected, nothing issued

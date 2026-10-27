@@ -115,7 +115,8 @@ price for a stock line falls below FIFO cost, or to zero, is rejected and nothin
      fingerprint and targets.
    - If any frozen promo was edited, retargeted, deleted, re-activated, or toggled on and off again, nothing is
      re-activated, and `C04_THAW_DRIFT` lists it.
-   - A `VACUUM FREEZE` of a frozen row also counts as drift. That is fail-safe: it only means a manual decision.
+   - `VACUUM FREEZE` leaves the recorded row version unchanged (checked by the independent reviewer), so it does
+     not cause false drift.
    - `06` and `07` lock the record table, so they never interleave. Record a decision per listed promo:
      `update ops_c04.frozen_package_promos set thawed_at = now(), resolution = '<decision>' where promo_id = '<id>';`
      Then re-run `07`.

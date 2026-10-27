@@ -67,7 +67,15 @@ Non-blocking notes handled:
 
 Accepted as fail-safe, no change:
 - A target change committed while `06` waits on its lock is recorded stale, so thaw reports drift.
-- `VACUUM FREEZE` counts as drift.
+
+Corrected after the re-review:
+- An earlier note said `VACUUM FREEZE` counts as drift. It does not: the reviewer showed the recorded row version
+  is unchanged after `VACUUM FREEZE`, so a thaw still goes through.
+- Older log banners printed "PostgreSQL 16" for every server. The shared test helper now prints the real server
+  version.
+
+Re-review of the final containment head: both must-fix findings were confirmed fixed, with the on/off case
+reproduced independently. No new blocking issue was found.
 
 Verified by the reviewer:
 - Neither script writes outside `promos.is_active` and `ops_c04`.
