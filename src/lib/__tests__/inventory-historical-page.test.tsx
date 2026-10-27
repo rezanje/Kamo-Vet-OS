@@ -92,6 +92,8 @@ it("R04: shows a minus position valued at the last known average with a visible 
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1"] }) }));
   expect(html).toContain("Rp -30 · taksiran HPP terakhir Rp 10");
   expect(html).toContain("Nilai minus taksiran");
+  // Summary column is a rupiah amount (per branch and total), not a bare row count.
+  expect(html.match(/<td>Rp -30 \(1 baris\)<\/td>/g)).toHaveLength(2);
   expect(html).toContain("Kebijakan stok minus (R04)");
   expect(html).not.toContain("Belum tersedia</td><td>Rp 0");
 });
