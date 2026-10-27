@@ -84,14 +84,20 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   for(const item of master){const key=item.name.trim().toLowerCase();byName.set(key,byName.has(key)?null:item);}
   const chooseMaster = (i:number,id:string) => {
     const item=master.find(row=>row.id===id);
-    if(item)set(i,{deskripsi:item.name,item_id:item.id,harga:item.harga,satuan:item.unit,kategori:item.tindakan_kategori,prescription_item_id:null,recipe_id:null});
+    if(item){
+      const changed=rows[i]?.item_id!==item.id || !!rows[i]?.recipe_id;
+      set(i,{deskripsi:item.name,item_id:item.id,harga:item.harga,satuan:item.unit,kategori:item.tindakan_kategori,
+        ...(changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null} : {})});
+    }
   };
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v) ?? byName.get(v.trim().toLowerCase());
+    const changed=it ? rows[i]?.item_id!==it.id || !!rows[i]?.recipe_id : v!==rows[i]?.deskripsi;
+    const clearSource=changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null} : {};
     set(i, it
-      ? { deskripsi: it.name, item_id: it.id, harga: it.harga, satuan: it.unit, kategori:it.tindakan_kategori, prescription_item_id: null, recipe_id: null }
+      ? { deskripsi: it.name, item_id: it.id, harga: it.harga, satuan: it.unit, kategori:it.tindakan_kategori, ...clearSource }
       : {
-          deskripsi: v, item_id: null, kategori:null, prescription_item_id: null, recipe_id: null,
+          deskripsi: v, item_id: null, kategori:null, ...clearSource,
           satuan: rows[i]?.satuan === "racikan" || rows[i]?.recipe_id ? "racikan" : null,
         });
   };
@@ -128,7 +134,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                 {((sealedSalespeople && !!r.source_invoice_item_id) || (!!r.prescription_item_id && !!r.salesperson_id)) ? <div style={{fontSize:10,color:'var(--tm)'}}>Penjual: {r.salesperson_name || 'Belum tercatat'}</div>
                   : <label style={{display:'block',fontSize:10,marginTop:4}}>Penjual SKU
                     <select className="fi" aria-label={`Penjual ${r.deskripsi}`} value={r.salesperson_id ?? ''}
-                      onChange={event => set(i,{salesperson_id:event.target.value || null})} style={{height:25,fontSize:10}}>
+                      onChange={event => set(i,{salesperson_id:event.target.value || null,salesperson_name:null})} style={{height:25,fontSize:10}}>
                       <option value="">Ikuti penjual invoice</option>
                       {serviceStaff.map(person => <option key={person.id} value={person.id}>{person.nama}</option>)}
                     </select>

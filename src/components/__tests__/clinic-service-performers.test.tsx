@@ -10,7 +10,7 @@ vi.mock("@/components/PetPhotoUpload", () => ({ PetPhotoUpload: () => null }));
 vi.mock("@/components/PenunjangUpload", () => ({ PenunjangUpload: () => null }));
 import { RekamForm } from "@/app/(app)/klinik/rekam-medis/[visitId]/RekamForm";
 vi.mock("@/app/(app)/klinik/pembayaran/[visitId]/actions", () => ({ bayarVisit: vi.fn() }));
-import { PembayaranForm } from "@/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm";
+import { ItemTable, PembayaranForm } from "@/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm";
 import { CatatanForm } from "@/app/(app)/klinik/rawat-inap/[id]/catatan/CatatanForm";
 
 let host: HTMLDivElement;
@@ -235,5 +235,15 @@ it('clinic invoice correction displays the stored seller name on a sealed source
   expect(host.querySelector('select[aria-label="Penjual Obat A"]')).toBeNull();
   const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
   expect(lines[0]).toMatchObject({source_invoice_item_id:'old-line',salesperson_id:'doctor-a'});
+});
+it('clears saved seller and source when a clinic payment line switches SKU',async()=>{
+ const Harness=()=>{const [rows,setRows]=React.useState<React.ComponentProps<typeof ItemTable>['rows']>([{deskripsi:'Obat A',qty:1,harga:100,item_id:'sku-a',prescription_item_id:'prescribed',source_invoice_item_id:'original-line',salesperson_id:'doctor-a',salesperson_name:'Original'}]);
+  return <><ItemTable title="OBAT" icon="ti-pill" color="purple" rows={rows} setRows={setRows}
+   master={[{id:'sku-a',code:'A',name:'Obat A',unit:'pcs',harga:100},{id:'sku-b',code:'B',name:'Obat B',unit:'pcs',harga:200}]}
+   listId="switch-sku" serviceStaff={common.serviceStaff}/><input name="rows" readOnly value={JSON.stringify(rows)}/></>;};
+ await act(async()=>root.render(<Harness/>));
+ const input=host.querySelector<HTMLInputElement>('[aria-label="Nama obat baris 1"]')!;
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Obat B');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ expect(JSON.parse(host.querySelector<HTMLInputElement>('[name=rows]')!.value)[0]).toMatchObject({item_id:'sku-b',prescription_item_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null});
 });
 
