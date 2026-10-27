@@ -38,4 +38,4 @@ with native.NativePostgres(BIN) as database:
         sys.exit(0)
     prefix = (ROOT / 'supabase/tests/clinic_invoice_post.sql').read_text().split('set local role authenticated;')[0]
     print(database.sql(prefix + (ROOT / 'supabase/tests/h_payroll_incentives.sql').read_text()), flush=True)
-    print('PASS H05 package origin, H04 groups, H06 visit rate, H03 turnover components, H02 templates + history + access', flush=True)
+    print('PASS H05 package origin + qty guard, H04 groups + OWNER-only access, H06 visit rate + tamper guard, H03 turnover components, H02 templates + history + access', flush=True)

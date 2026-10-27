@@ -172,7 +172,9 @@ export async function kumpulkanDataGaji(
       const c = e.master;
       // Monetary values apply only to fixed components; turnover components use their rate.
       const turnover = c.calculation_basis === "net_turnover"
-        ? hitungKomponenOmzet(komisi.baris, {
+        // Employee scope credits performers like commission does (split share / both full),
+        // so it reads the per-actor calculation rows; branch/all scopes count each source line once.
+        ? hitungKomponenOmzet(c.sales_scope === "employee" ? komisi.barisHitung ?? komisi.baris : komisi.baris, {
           source: c.sales_source as TurnoverComponent["source"], scope: c.sales_scope as TurnoverComponent["scope"],
           ratePercent: e.ratePercent,
         }, employeeId, branchPer.get(employeeId) ?? null)

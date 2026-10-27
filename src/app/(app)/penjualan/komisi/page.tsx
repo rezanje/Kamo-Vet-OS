@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { bolehKelolaMaster, bolehKelolaPayroll } from "@/lib/master-guard";
 import { komisiPeriode, muatKebijakanKomisiJasa } from "@/lib/komisi-data";
 import { hapusAturanKomisi, simpanAturanKomisi, simpanKebijakanKomisiJasa, simpanKelompokKomisi, toggleAturanKomisi } from "./actions";
 import { readCompleteList } from "@/lib/checked-list";
@@ -41,6 +41,8 @@ export default async function KomisiPage({
 
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
+  // Group membership and personal/group/exception rules are pay configuration: OWNER only.
+  const bolehAturGaji = await bolehKelolaPayroll();
 
   let loaded;
   try { loaded = await Promise.all([
@@ -144,7 +146,7 @@ export default async function KomisiPage({
           {karyawan.map(k => <form key={k.id} action={simpanKelompokKomisi} style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input type="hidden" name="employee_id" value={k.id} />
             <label className="flab" htmlFor={`group-${k.id}`}>{k.nama}</label>
-            {bolehKelola ? <><input id={`group-${k.id}`} className="fi" name="commission_group" maxLength={40} pattern="[a-z0-9][a-z0-9_\-]{0,39}" defaultValue={k.commission_group ?? ""} placeholder="kode kelompok" style={{ width: 145 }} />
+            {bolehAturGaji ? <><input id={`group-${k.id}`} className="fi" name="commission_group" maxLength={40} pattern="[a-z0-9][a-z0-9_\-]{0,39}" defaultValue={k.commission_group ?? ""} placeholder="kode kelompok" style={{ width: 145 }} />
               <SubmitButton className="btn-def" pendingText="Menyimpan…">Simpan</SubmitButton></> : <span>{k.commission_group ?? "—"}</span>}
           </form>)}
         </div>
@@ -217,7 +219,7 @@ export default async function KomisiPage({
                   <option value="">— semua kelompok —</option>
                   {kodeKelompok.map(code => <option key={code} value={code}>{code}</option>)}
                 </select>
-                <div style={{ fontSize: 10, color: "var(--tm)" }}>Pilih kelompok atau karyawan khusus.</div>
+                <div style={{ fontSize: 10, color: "var(--tm)" }}>Pilih kelompok atau karyawan khusus (hanya OWNER).</div>
               </div>
               <div>
                 <label className="flab">Pengecualian individu: ganti aturan kelompok</label>
@@ -351,6 +353,12 @@ export default async function KomisiPage({
           <b style={{ color: "#15803d" }}>{rp(totalKomisi)}</b>
         </div>
 
+        {(hitungan.peringatanAturan ?? []).length > 0 && (
+          <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+            <i className="ti ti-alert-triangle" /> Aturan yang saat ini tidak membayar apa pun:
+            <ul style={{ margin: "4px 0 0 18px" }}>{hitungan.peringatanAturan.map((w) => <li key={w}>{w}</li>)}</ul>
+          </div>
+        )}
         {hitungan.omzetTanpaPenjual !== 0 && (
           <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
             <i className="ti ti-alert-triangle" /> {rp(hitungan.omzetTanpaPenjual)} penjualan tidak punya penerima komisi —

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { assertMasterAdmin } from "@/lib/master-guard";
+import { assertMasterAdmin, assertRole } from "@/lib/master-guard";
 
 const BASE = "/penjualan/komisi";
 const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
@@ -19,7 +19,8 @@ const groupCode = (value: FormDataEntryValue | null): string | null => {
 };
 
 export async function simpanKelompokKomisi(formData: FormData) {
-  const supabase = await assertMasterAdmin(BASE, "kelompok komisi karyawan");
+  // Pay configuration: only OWNER may move people between groups (DB-enforced too).
+  const supabase = await assertRole(BASE, "kelompok komisi karyawan", ["OWNER"]);
   const employeeId = String(formData.get("employee_id") ?? "");
   if (!/^[0-9a-f-]{36}$/i.test(employeeId)) gagal("Karyawan tidak valid");
   const code = groupCode(formData.get("commission_group"));
@@ -43,6 +44,8 @@ export async function simpanAturanKomisi(formData: FormData) {
   const employeeId = opsional(formData.get("employee_id"));
   const commissionGroup = groupCode(formData.get("commission_group"));
   const overrideGroupRuleId = opsional(formData.get("override_group_rule_id"));
+  // Personal, group and exception rules are pay configuration: OWNER only (DB-enforced too).
+  if (employeeId || commissionGroup || overrideGroupRuleId) await assertRole(BASE, "aturan komisi khusus karyawan/kelompok", ["OWNER"]);
 
   if (!nama) gagal("Nama aturan wajib diisi");
   if (tipe !== "persen" && tipe !== "nominal") gagal("Jenis aturan tidak dikenal");
@@ -99,7 +102,8 @@ export async function toggleAturanKomisi(formData: FormData) {
   const aktif = String(formData.get("aktif") ?? "") === "1";
   if (!id) gagal("Aturan tidak valid");
 
-  const { error } = await supabase.from("commission_rules").update({ is_active: !aktif }).eq("id", id);
+  const { data, error } = await supabase.from("commission_rules").update({ is_active: !aktif }).eq("id", id).select("id");
+  if (!error && !(data ?? []).length) gagal("Aturan khusus karyawan/kelompok hanya bisa diubah OWNER");
   redirect(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`);
 }
 
@@ -108,7 +112,8 @@ export async function hapusAturanKomisi(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Aturan tidak valid");
 
-  const { error } = await supabase.from("commission_rules").delete().eq("id", id);
+  const { data, error } = await supabase.from("commission_rules").delete().eq("id", id).select("id");
+  if (!error && !(data ?? []).length) gagal("Aturan khusus karyawan/kelompok hanya bisa dihapus OWNER");
   redirect(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`);
 }
 

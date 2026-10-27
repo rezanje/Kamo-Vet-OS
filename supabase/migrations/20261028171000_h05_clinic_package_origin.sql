@@ -20,11 +20,14 @@ comment on column public.invoice_items.package_item_id is
 comment on column public.invoice_items.package_qty is
   'H05: jumlah paket yang dijual untuk asal ini; aturan komisi paket menghitung qty ini.';
 
--- Server-side guard: the package must be an active Grup whose recipe contains the line SKU.
+-- Server-side guard: the package must be an active Grup whose recipe contains the line SKU,
+-- and the line quantity must be exactly package qty x recipe quantity (in base units), so a
+-- cashier cannot inflate package qty for commission. A plain package line and tagged
+-- components of the same package on one invoice are refused (that would count omzet twice).
 -- Corrections and reissues inherit the exact source line tag, like the line seller.
 create or replace function public.guard_clinic_line_package() returns trigger
 language plpgsql security definer set search_path = '' as $$
-declare v_source public.invoice_items%rowtype;
+declare v_source public.invoice_items%rowtype; v_recipe_base numeric; v_line_base numeric;
 begin
   if tg_op = 'UPDATE' then
     if new.package_item_id is distinct from old.package_item_id or new.package_qty is distinct from old.package_qty then
@@ -41,7 +44,15 @@ begin
   end if;
   if new.package_item_id is null then
     new.package_qty := null;
+    -- A plain package (Grup) line next to components already tagged with that package.
+    if new.item_id is not null and exists(select 1 from public.invoice_items x
+        where x.invoice_id = new.invoice_id and x.package_item_id = new.item_id) then
+      raise exception using errcode = 'P0001', message = 'CARE_INVALID: paket ini sudah ditagih lewat komponennya di invoice yang sama';
+    end if;
     return new;
+  end if;
+  if exists(select 1 from public.invoice_items x where x.invoice_id = new.invoice_id and x.item_id = new.package_item_id) then
+    raise exception using errcode = 'P0001', message = 'CARE_INVALID: paket ini sudah ditagih sebagai satu baris di invoice yang sama';
   end if;
   if new.package_qty is null or new.package_qty <= 0 then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: jumlah paket wajib lebih dari 0';
@@ -49,11 +60,16 @@ begin
   if new.item_id is null then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: komponen paket harus barang dari master';
   end if;
-  perform 1 from public.items g
+  select sum(c.qty * c.factor) into v_recipe_base from public.items g
     join public.item_group_components c on c.group_item_id = g.id and c.component_item_id = new.item_id
-    where g.id = new.package_item_id and g.item_type = 'Grup';
-  if not found then
-    raise exception using errcode = 'P0001', message = 'CARE_INVALID: barang ini bukan komponen paket yang dipilih';
+    where g.id = new.package_item_id and g.item_type = 'Grup' and g.is_active;
+  if v_recipe_base is null then
+    raise exception using errcode = 'P0001', message = 'CARE_INVALID: barang ini bukan komponen paket aktif yang dipilih';
+  end if;
+  v_line_base := new.qty * coalesce(new.faktor, 1);
+  if abs(v_line_base - new.package_qty * v_recipe_base) > 0.0001 then
+    raise exception using errcode = 'P0001',
+      message = format('CARE_INVALID: jumlah komponen harus %s (jumlah paket x isi resep), bukan %s', trim_scale(new.package_qty * v_recipe_base), trim_scale(v_line_base));
   end if;
   return new;
 end $$;

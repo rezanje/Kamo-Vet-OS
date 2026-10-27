@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
-vi.mock("../komisi-data", () => ({ komisiPeriode: async () => ({ hasil: [], baris: [] }) }));
+const komisi = vi.hoisted(() => ({ baris: [] as unknown[], barisHitung: [] as unknown[] }));
+vi.mock("../komisi-data", () => ({ komisiPeriode: async () => ({ hasil: [], baris: komisi.baris, barisHitung: komisi.barisHitung }) }));
 import { kumpulkanDataGaji } from "../payroll-data";
 
 const rules = {
@@ -75,4 +76,19 @@ it("H02: applies the linked payslip template and an explicit employee exception"
   const [result] = await kumpulkanDataGaji(client, "2026-10");
   expect(result.rincian.tunjangan).toBe(350);
   expect(result.componentBreakdown.map(c => [c.name, c.amount, c.origin])).toEqual([["Makan", 300, "pengecualian"], ["Transport", 50, "template"]]);
+});
+
+it("H03: employee-scope turnover credits a two-performer service like commission does (per-actor rows)", async () => {
+  const line = { tanggal: "2026-10-05", sumber: "klinik", branchId: "b", itemId: "jasa", kategoriIds: [], laba: null };
+  // Source row: one revenue line, no single owner. Calculation rows: the saved split policy.
+  komisi.baris = [{ ...line, employeeId: null, qty: 1, omzet: 100_000, commissionPolicy: "split" }];
+  komisi.barisHitung = [{ ...line, employeeId: "employee", qty: 0.6, omzet: 60_000 }, { ...line, employeeId: "nurse", qty: 0.4, omzet: 40_000 }];
+  const turnover = { nama: "Omzet", tipe: "tunjangan", nominal: 0, is_active: true, calculation_basis: "net_turnover", sales_source: "klinik", sales_scope: "employee", rate_percent: 10 };
+  const { client } = fixture("", "", {
+    employee_salary_components: [{ id: "esc", employee_id: "employee", component_id: "omzet", nominal: null, rate_percent_override: null, salary_components: turnover }],
+  });
+  try {
+    const [result] = await kumpulkanDataGaji(client, "2026-10");
+    expect(result.componentBreakdown).toEqual([expect.objectContaining({ basis: 60_000, amount: 6_000 })]);
+  } finally { komisi.baris = []; komisi.barisHitung = []; }
 });

@@ -8,6 +8,14 @@ with checks(check_name, ok) as (
     pg_get_constraintdef((select oid from pg_constraint where conname='commission_rules_sumber_check')) like '%visit_ranap%'
   union all select 'H06 visit rule is nominal-only', exists(select 1 from pg_constraint where conname='commission_rules_visit_nominal_check')
   union all select 'H06 visit log index', to_regclass('public.inpatient_daily_logs_doctor_visit_idx') is not null
+  union all select 'H06 visit tamper guard', exists(select 1 from pg_trigger where tgname='h06_doctor_visit_guard' and tgrelid='public.inpatient_daily_logs'::regclass)
+  union all select 'H04 group change OWNER-only', exists(select 1 from pg_trigger where tgname='h04_commission_group_owner' and tgrelid='public.employees'::regclass)
+  union all select 'H04 personal rules OWNER-only', (select count(*) = 3 from pg_policies where tablename='commission_rules'
+    and policyname in ('commission_rules_select_general','commission_rules_write_owner','commission_rules_write_admin_general'))
+    and not exists(select 1 from pg_policies where tablename='commission_rules' and policyname in ('commission_rules_select_all','commission_rules_write_admin'))
+  union all select 'H04 exception follows its group rule on delete',
+    (select confdeltype = 'c' from pg_constraint where conrelid='public.commission_rules'::regclass and contype='f'
+      and conkey = array[(select attnum from pg_attribute where attrelid='public.commission_rules'::regclass and attname='override_group_rule_id')])
   union all select 'H05 invoice_items package columns',
     (select count(*) = 2 from information_schema.columns where table_schema='public' and table_name='invoice_items' and column_name in ('package_item_id','package_qty'))
   union all select 'H05 package guard trigger', exists(select 1 from pg_trigger where tgname='clinic_line_package' and tgrelid='public.invoice_items'::regclass)

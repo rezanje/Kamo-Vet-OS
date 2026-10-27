@@ -1,3 +1,4 @@
+import { tanggalWIB } from "./tanggal";
 // Hitungan komisi penjual (migrasi 0091) — murni, dites di __tests__/komisi.test.ts.
 //
 // Masukan: baris penjualan satu periode (retur ikut, bernilai negatif) + aturan komisi.
@@ -255,19 +256,24 @@ export function mergeSharedIncentives(hasil: HasilKomisi[], allocations: readonl
 export function ringkasPaket(rows: readonly BarisJual[]): BarisJual[] {
   const out: BarisJual[] = [];
   const groups = new Map<string, BarisJual>();
+  const qtyCounted = new Set<string>();
   for (const row of rows) {
-    const asal = row.paketAsal;
+    const { paketAsal: asal, ...rest } = row;
     if (!asal) { out.push(row); continue; }
-    const key = `${row.sumber}:${row.sourceDocumentId ?? ""}:${row.tanggal}:${asal.itemId}`;
+    const sign = row.qty < 0 ? -1 : 1;
+    const paketKey = `${row.sumber}:${row.sourceDocumentId ?? ""}:${row.tanggal}:${asal.itemId}:${sign}`;
+    // Components keep their own attribution: a service component with two performers keeps
+    // its S04 split, and components sold by different people are never merged into one seller.
+    const actorKey = `${row.employeeId ?? ""}|${row.commissionPending ? 1 : 0}|${JSON.stringify(row.servicePerformers ?? null)}`;
+    const key = `${paketKey}|${actorKey}`;
     const existing = groups.get(key);
     if (!existing) {
-      const folded: BarisJual = {
-        tanggal: row.tanggal, sumber: row.sumber, employeeId: row.employeeId, branchId: row.branchId,
-        itemId: asal.itemId, kategoriIds: asal.kategoriIds, qty: row.qty < 0 ? -asal.qty : asal.qty,
-        omzet: row.omzet, laba: row.laba, paketKomponen: 1, fixedCommission: row.fixedCommission,
-        sourceDocumentId: row.sourceDocumentId, sourceDocumentNumber: row.sourceDocumentNumber,
-        sourceDocumentHref: row.sourceDocumentHref,
-      };
+      // The package qty is counted once per package sale, on its first attribution group;
+      // further groups carry their omzet share with qty 0 so a per-package rule never doubles.
+      const first = !qtyCounted.has(paketKey);
+      qtyCounted.add(paketKey);
+      const folded: BarisJual = { ...rest, itemId: asal.itemId, kategoriIds: asal.kategoriIds,
+        qty: first ? sign * asal.qty : 0, paketKomponen: 1 };
       groups.set(key, folded);
       out.push(folded);
       continue;
@@ -275,10 +281,30 @@ export function ringkasPaket(rows: readonly BarisJual[]): BarisJual[] {
     existing.omzet += row.omzet;
     existing.laba = existing.laba === null || row.laba === null ? null : existing.laba + row.laba;
     existing.paketKomponen = (existing.paketKomponen ?? 0) + 1;
-    // Component lines of one package keep the same package qty; a disagreement keeps the larger.
-    if (Math.abs(asal.qty) > Math.abs(existing.qty)) existing.qty = row.qty < 0 ? -asal.qty : asal.qty;
-    // Different sellers on one package cannot be split by guesswork: it stays unassigned.
-    if (existing.employeeId !== row.employeeId) existing.employeeId = null;
+  }
+  return out;
+}
+
+/**
+ * H04: configuration that silently pays nothing — an individual exception whose group rule
+ * is gone/inactive or whose employee left that group, and group rules nobody belongs to.
+ * `aturan` holds active rules only.
+ */
+export function peringatanAturanKomisi(aturan: readonly AturanKomisi[], groups: KelompokKaryawan,
+  namaKaryawan: ReadonlyMap<string, string> = new Map()): string[] {
+  const byId = new Map(aturan.map((rule) => [rule.id, rule]));
+  const anggota = new Set([...groups.values()].filter((code): code is string => !!code));
+  const out: string[] = [];
+  for (const rule of aturan) {
+    if (rule.overrideGroupRuleId) {
+      const base = byId.get(rule.overrideGroupRuleId);
+      const nama = rule.employeeId ? namaKaryawan.get(rule.employeeId) ?? "karyawan" : "karyawan";
+      if (!base?.commissionGroup) out.push(`Pengecualian "${rule.nama}" tidak dibayar: aturan kelompok yang diganti sudah nonaktif atau terhapus.`);
+      else if (!rule.employeeId || groups.get(rule.employeeId) !== base.commissionGroup)
+        out.push(`Pengecualian "${rule.nama}" tidak dibayar: ${nama} tidak lagi di kelompok ${base.commissionGroup}.`);
+    }
+    if (rule.commissionGroup && !anggota.has(rule.commissionGroup))
+      out.push(`Aturan kelompok "${rule.nama}" tidak dibayar: belum ada karyawan di kelompok ${rule.commissionGroup}.`);
   }
   return out;
 }
@@ -305,7 +331,7 @@ export function barisVisitRanap(logs: readonly LogVisitDokter[]): { baris: Baris
   const dobel: VisitDobel[] = [];
   for (const log of sorted) {
     if (!log.doctorId) continue;
-    const tanggal = tanggalJakarta(log.createdAt);
+    const tanggal = tanggalWIB(log.createdAt);
     const key = `${log.doctorId}:${log.inpatientRecordId}:${tanggal}`;
     const first = counted.get(key);
     if (first) { dobel.push({ ...log, tanggal, dihitungLogId: first }); continue; }
@@ -319,10 +345,4 @@ export function barisVisitRanap(logs: readonly LogVisitDokter[]): { baris: Baris
     });
   }
   return { baris, dobel };
-}
-
-/** Asia/Jakarta has no daylight saving: UTC+7 all year. */
-function tanggalJakarta(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
 }

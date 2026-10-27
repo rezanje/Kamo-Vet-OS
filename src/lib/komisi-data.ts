@@ -11,12 +11,22 @@ import { prepareServiceCommission, type ServiceCommissionPolicy } from "./servic
 // sumber angka yang sama persis.
 
 import { lineSubtotal } from "./pos-calc";
-import { barisVisitRanap, mergeSharedIncentives, hitungKomisi, ringkasPaket, type AturanKomisi, type BarisJual, type HasilKomisi, type LogVisitDokter, type VisitDobel } from "./komisi";
+import { tanggalWIB } from "./tanggal";
+import { barisVisitRanap, mergeSharedIncentives, hitungKomisi, peringatanAturanKomisi, ringkasPaket, type AturanKomisi, type BarisJual, type HasilKomisi, type LogVisitDokter, type VisitDobel } from "./komisi";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
 export const awalPeriode = (periode: string) => `${periode}-01`;
+
+/**
+ * One Asia/Jakarta (UTC+7, no DST) boundary for every timestamp period filter: struk kasir,
+ * pelunasan klinik, visit ranap, pool DEMO. A sale at 00:30 WIB on the 1st belongs to that month.
+ */
+export const batasWIB = (periode: string) => ({
+  dari: `${awalPeriode(periode)}T00:00:00+07:00`,
+  sampai: `${akhirPeriode(periode)}T23:59:59.999+07:00`,
+});
 
 export const akhirPeriode = (periode: string): string => {
   const [thn, bln] = periode.split("-").map(Number);
@@ -108,7 +118,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
       .select("id, no_struk, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, harga, item_discount_type, item_discount_value, hpp, service_performers)", { count: "exact" })
-      .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`)),
+      .gte("created_at", batasWIB(periode).dari).lte("created_at", batasWIB(periode).sampai)),
     completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
     completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
     completeReportQuery(supabase.from("item_categories").select("id, parent_id", { count: "exact" })),
@@ -162,7 +172,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       // tidak boleh kehilangan omzet cuma karena kasirnya belum terhubung ke
       // data karyawan. `hitungKomisi` yang menyaringnya.
       baris.push({
-        tanggal: s.created_at.slice(0, 10),
+        tanggal: tanggalWIB(s.created_at),
         sumber: "kasir",
         ...attribution,
         branchId: s.branch_id,
@@ -174,7 +184,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       });
     }
 
-    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk,sourceDate:s.created_at.slice(0,10) });
+    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk,sourceDate:tanggalWIB(s.created_at) });
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
@@ -221,7 +231,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     .from("invoices")
     .select("id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers, salesperson_id, package_item_id, package_qty), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)", { count: "exact" })
     .eq("paid_status", "Lunas").is("voided_at", null)
-    .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
+    .gte("paid_at", batasWIB(periode).dari).lte("paid_at", batasWIB(periode).sampai));
 
   for (const inv of (invData ?? []) as InvoiceRow[]) {
     const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
@@ -239,18 +249,16 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       // A selected line seller overrides the legacy invoice seller. Existing
       // service performer attribution retains its precedence and payout policy.
       const href=inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined;
-      // H05: a package component is sold as the package. Its seller is the line/invoice
-      // seller; per-performer service splitting does not apply to a package.
+      // H05: a package component is sold as the package (folded by ringkasPaket below).
       const paketAsal = it.package_item_id && Number(it.package_qty) > 0
         ? { itemId: it.package_item_id, qty: Number(it.package_qty), kategoriIds: rantaiKategori(katPerItem.get(it.package_item_id) ?? null, indukPerKat) }
         : undefined;
-      const attribution:SourceAttribution=paketAsal
-        ? {employeeId:it.salesperson_id ?? employeeId,sourceLineId:it.id,sourceDocumentId:inv.id,sourceDocumentNumber:inv.invoice_no,sourceDocumentHref:href}
-        : serviceAttribution(it,it.salesperson_id ?? employeeId,inv.id,inv.invoice_no,href);
+      // A package component keeps its own attribution, including a two-performer service split.
+      const attribution=serviceAttribution(it,it.salesperson_id ?? employeeId,inv.id,inv.invoice_no,href);
       if (!attribution.employeeId) omzetTanpaPenjual += omzet;
 
       baris.push({
-        tanggal: inv.paid_at.slice(0, 10),
+        tanggal: tanggalWIB(inv.paid_at),
         sumber: "klinik",
         fixedCommission: Array.isArray(inv.clinic_demo_invoice_snapshots) ? inv.clinic_demo_invoice_snapshots.length>0 : !!inv.clinic_demo_invoice_snapshots,
         ...attribution,
@@ -363,7 +371,7 @@ async function infoStrukLuarPeriode(
     branchId: data.branch_id,
     hppPerUnit,
     sale: data,
-    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,sourceDate:String(data.created_at??"").slice(0,10),
+    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,sourceDate:data.created_at?tanggalWIB(String(data.created_at)):"",
   };
 }
 
@@ -404,7 +412,7 @@ export async function muatVisitRanap(supabase: AnyClient, periode: string): Prom
   const { data } = await completeReportQuery(supabase.from("inpatient_daily_logs")
     .select("id, inpatient_record_id, visit_doctor_id, created_at, inpatient_records(branch_id)", { count: "exact" })
     .eq("log_kind", "doctor_visit").not("visit_doctor_id", "is", null)
-    .gte("created_at", `${awalPeriode(periode)}T00:00:00+07:00`).lte("created_at", `${akhirPeriode(periode)}T23:59:59.999+07:00`));
+    .gte("created_at", batasWIB(periode).dari).lte("created_at", batasWIB(periode).sampai));
   const logs: LogVisitDokter[] = ((data ?? []) as Row[]).map((row) => {
     const record = Array.isArray(row.inpatient_records) ? row.inpatient_records[0] ?? null : row.inpatient_records;
     return { id: row.id, inpatientRecordId: row.inpatient_record_id, doctorId: row.visit_doctor_id,
@@ -417,6 +425,15 @@ export async function muatVisitRanap(supabase: AnyClient, periode: string): Prom
 export async function muatKelompokKomisi(supabase: AnyClient): Promise<Map<string, string | null>> {
   const { data } = await completeReportQuery(supabase.from("employees").select("id, commission_group", { count: "exact" }));
   return new Map(((data ?? []) as { id: string; commission_group: string | null }[]).map((row) => [row.id, row.commission_group]));
+}
+
+/** H04: configuration that pays nothing (stale exception / empty group), for komisi & payroll screens. */
+export async function muatPeringatanAturanKomisi(supabase: AnyClient): Promise<string[]> {
+  const [aturan, groups, { data: emp }] = await Promise.all([
+    muatAturanKomisi(supabase), muatKelompokKomisi(supabase),
+    completeReportQuery(supabase.from("employees").select("id, nama", { count: "exact" })),
+  ]);
+  return peringatanAturanKomisi(aturan, groups, new Map(((emp ?? []) as { id: string; nama: string }[]).map((e) => [e.id, e.nama])));
 }
 
 /** Komisi seluruh karyawan untuk satu periode — dipakai layar komisi & penggajian. */
@@ -459,7 +476,7 @@ export async function muatKebijakanKomisiJasa(supabase: AnyClient, sampai?: stri
 export async function komisiPeriode(
   supabase: AnyClient,
   periode: string,
-): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; omzetTanpaPenjual: number; visitDobel: VisitDobel[] }> {
+): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; barisHitung: BarisJual[]; omzetTanpaPenjual: number; visitDobel: VisitDobel[]; peringatanAturan: string[] }> {
   const [{ baris: barisJual, omzetTanpaPenjual }, aturan, { policies }, visit, groups] = await Promise.all([
     kumpulkanBarisKomisi(supabase, periode),
     muatAturanKomisi(supabase),
@@ -473,10 +490,12 @@ export async function komisiPeriode(
   const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
     .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})
     .eq("invoices.paid_status","Lunas").is("invoices.voided_at",null)
-    .gte("clinic_demo_invoice_snapshots.earned_at",`${awalPeriode(periode)}T00:00:00`).lte("clinic_demo_invoice_snapshots.earned_at",`${akhirPeriode(periode)}T23:59:59`));
+    .gte("clinic_demo_invoice_snapshots.earned_at",batasWIB(periode).dari).lte("clinic_demo_invoice_snapshots.earned_at",batasWIB(periode).sampai));
   type Allocation = {invoice_id:string;employee_id:string;amount:number;clinic_demo_invoice_snapshots:{service_basis:number}|{service_basis:number}[]};
   const shared = (allocations as Allocation[]).map(row=>({employeeId:row.employee_id,invoiceId:row.invoice_id,amount:Number(row.amount),
     basis:Number((Array.isArray(row.clinic_demo_invoice_snapshots) ? row.clinic_demo_invoice_snapshots[0] : row.clinic_demo_invoice_snapshots).service_basis)}));
   return { hasil: mergeSharedIncentives(hitungKomisi(prepared.calculationRows, aturan, groups),shared),
-    baris:prepared.rows, omzetTanpaPenjual:omzetTanpaPenjual-prepared.resolvedUnassignedOmzet, visitDobel: visit.dobel };
+    baris:prepared.rows, barisHitung:prepared.calculationRows,
+    omzetTanpaPenjual:omzetTanpaPenjual-prepared.resolvedUnassignedOmzet, visitDobel: visit.dobel,
+    peringatanAturan: peringatanAturanKomisi(aturan, groups) };
 }

@@ -4,10 +4,12 @@ create function pg_temp.assert_h(ok boolean, msg text) returns void language plp
 begin if ok is distinct from true then raise exception 'Assertion failed: %',msg;end if;end$$;
 insert into public.items (id, code, name, unit, item_type, is_active)
 values ('fa000000-0000-4000-8000-000000000001', 'PKG-VAKS', 'Paket vaksin fiktif', 'paket', 'Grup', true),
-       ('fa000000-0000-4000-8000-000000000002', 'PKG-OTHER', 'Paket lain fiktif', 'paket', 'Grup', true);
+       ('fa000000-0000-4000-8000-000000000002', 'PKG-OTHER', 'Paket lain fiktif', 'paket', 'Grup', true),
+       ('fa000000-0000-4000-8000-000000000003', 'PKG-OFF', 'Paket nonaktif fiktif', 'paket', 'Grup', false);
 insert into public.item_group_components (group_item_id, component_item_id, qty, unit, factor)
 values ('fa000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001', 1, 'pcs', 1),
-       ('fa000000-0000-4000-8000-000000000002', 'd8000000-0000-4000-8000-000000000004', 1, 'pcs', 1);
+       ('fa000000-0000-4000-8000-000000000002', 'd8000000-0000-4000-8000-000000000004', 1, 'pcs', 1),
+       ('fa000000-0000-4000-8000-000000000003', 'd8000000-0000-4000-8000-000000000001', 1, 'pcs', 1);
 set local role authenticated;
 select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000001',true);
 select set_config('request.jwt.claim.role','authenticated',true);
@@ -34,6 +36,11 @@ begin
     jsonb_set(lines,'{0,package_qty}','0'));
   raise exception 'Expected zero package qty rejection';
  exception when others then if sqlerrm not like 'CARE_INVALID:%' and sqlstate<>'23514' then raise;end if;end;
+ begin
+  perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000002','h05.package.inflated',header,
+    jsonb_set(lines,'{0,package_qty}','5'));
+  raise exception 'Expected inflated package qty rejection';
+ exception when others then if sqlerrm not like 'CARE_INVALID: jumlah komponen harus%' then raise;end if;end;
  -- Correction: the line linked to its source keeps the package origin without resending it.
  -- (Existing correction rule: one SKU appears once per corrected invoice, so the normal line is dropped.)
  select jsonb_agg(jsonb_build_object('source_invoice_item_id',id,'description',deskripsi,'qty',qty,'price',harga,
@@ -46,6 +53,32 @@ begin
  perform pg_temp.assert_h((select count(*)=1 and min(package_qty)=3 from public.invoice_items where invoice_id=reissued and package_item_id is not null),'reissue inherits package origin');
 end $$;
 reset role;
+select set_config('request.jwt.claim.role','',true);
+select set_config('request.jwt.claim.sub','',true);
+do $$
+declare inv uuid;
+begin
+ select invoice_id into inv from public.invoice_items where package_item_id='fa000000-0000-4000-8000-000000000001' limit 1;
+ begin
+  insert into public.invoice_items(invoice_id,deskripsi,qty,harga,jenis,item_id) values (inv,'Paket polos',1,0,'obat','fa000000-0000-4000-8000-000000000001');
+  raise exception 'Expected plain package line next to its components rejection';
+ exception when others then if sqlerrm not like 'CARE_INVALID: paket ini sudah ditagih%' then raise;end if;end;
+end $$;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claim.role','authenticated',true);
+do $$begin
+ perform public.clinic_post_invoice('d6000000-0000-4000-8000-000000000003','h05.package.inactive',
+  jsonb_build_object('tanggal',current_date::text,'subtotal',60,'discount',0,'tax',0,'total',60,'dp_amount',0,'dp_date',null,
+   'paid_status','Belum Lunas','metode_bayar','Tunai','shift_id','da000000-0000-4000-8000-000000000001'),
+  jsonb_build_array(jsonb_build_object('description','Vaksin (paket)','qty',3,'price',20,'kind','obat','item_id','d8000000-0000-4000-8000-000000000001','unit','pcs','discount_percent',0,
+    'package_item_id','fa000000-0000-4000-8000-000000000003','package_qty',3)));
+ raise exception 'Expected inactive package rejection';
+exception when others then if sqlerrm not like 'CARE_INVALID: barang ini bukan komponen paket aktif%' then raise;end if;
+end $$;
+reset role;
+select set_config('request.jwt.claim.role','',true);
+select set_config('request.jwt.claim.sub','',true);
 do $$begin
  begin
   update public.invoice_items set package_item_id=null,package_qty=null
@@ -82,6 +115,47 @@ begin
   raise exception 'Expected visit item rejection';
  exception when check_violation then null;end;
 end $$;
+-- H04 exceptions follow their group rule on delete; access is OWNER-only for pay configuration.
+do $$begin
+ delete from public.commission_rules where nama='Fictional group rule';
+ perform pg_temp.assert_h(not exists(select 1 from public.commission_rules where nama='Fictional exception'),'deleting a group rule removes its exceptions');
+end $$;
+insert into auth.users(id) values ('fc000000-0000-4000-8000-000000000004'),('fc000000-0000-4000-8000-000000000005');
+insert into public.profiles(id, full_name, role, is_active) values
+ ('fc000000-0000-4000-8000-000000000004','Fiksi Admin G','ADMIN',true),
+ ('fc000000-0000-4000-8000-000000000005','Fiksi Staf G','STAFF',true)
+on conflict (id) do update set role=excluded.role,is_active=true;
+insert into public.user_branches(user_id,branch_id) values ('fc000000-0000-4000-8000-000000000004','d2000000-0000-4000-8000-000000000001');
+insert into public.commission_rules(nama,tipe,nominal,sumber,employee_id) values ('Fictional personal','nominal',1,'klinik','fb000000-0000-4000-8000-000000000001');
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000004',true);
+do $$begin
+ begin
+  update public.employees set commission_group='naik_sendiri' where id='fb000000-0000-4000-8000-000000000001';
+  raise exception 'Expected ADMIN group change rejection';
+ exception when insufficient_privilege then null;end;
+ begin
+  insert into public.commission_rules(nama,tipe,nominal,sumber,employee_id) values ('Self raise','nominal',1,'klinik','fb000000-0000-4000-8000-000000000001');
+  raise exception 'Expected ADMIN personal rule rejection';
+ exception when insufficient_privilege then null;end;
+ begin
+  insert into public.commission_rules(nama,tipe,nominal,sumber,commission_group) values ('Group raise','nominal',1,'klinik','dokter_lama');
+  raise exception 'Expected ADMIN group rule rejection';
+ exception when insufficient_privilege then null;end;
+ insert into public.commission_rules(nama,tipe,nominal,sumber) values ('Fictional general by admin','nominal',1,'klinik');
+ perform pg_temp.assert_h((select count(*)=0 from public.commission_rules where nama='Fictional personal' and nominal=1) is false,'ADMIN still reads personal rules');
+ update public.commission_rules set nominal=99 where nama='Fictional personal';
+ perform pg_temp.assert_h(not exists(select 1 from public.commission_rules where nominal=99),'ADMIN cannot change personal rule');
+end $$;
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000005',true);
+do $$begin
+ perform pg_temp.assert_h(not exists(select 1 from public.commission_rules where employee_id is not null or commission_group is not null),'STAFF cannot read personal/group rules');
+ perform pg_temp.assert_h(exists(select 1 from public.commission_rules where nama='Fictional general by admin'),'STAFF still reads general rules');
+end $$;
+reset role;
+select set_config('request.jwt.claim.role','',true);
+select set_config('request.jwt.claim.sub','',true);
 -- H03 turnover components and H02 templates/history/access.
 insert into auth.users(id) values ('fc000000-0000-4000-8000-000000000001'),('fc000000-0000-4000-8000-000000000002'),('fc000000-0000-4000-8000-000000000003');
 insert into public.profiles(id, full_name, role, is_active) values
@@ -134,6 +208,38 @@ do $$begin
   update public.payslip_template_components set nominal=9;
   perform pg_temp.assert_h((select min(nominal)=2 from public.payslip_template_components),'FINANCE cannot change template');
  exception when insufficient_privilege then null;end;
+end $$;
+reset role;
+-- H06: a doctor visit's time is server-set; only OWNER/ADMIN may move its time/doctor/kind.
+reset role;
+select set_config('request.jwt.claim.role','',true);
+select set_config('request.jwt.claim.sub','',true);
+update public.visits set doctor_id='fb000000-0000-4000-8000-000000000001' where id='d6000000-0000-4000-8000-000000000004';
+insert into public.user_branches(user_id,branch_id) values ('d1000000-0000-4000-8000-000000000002','d2000000-0000-4000-8000-000000000001') on conflict do nothing;
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000001',true);
+-- Admission itself goes through the consent RPC in the app; the fixture inserts it directly.
+insert into public.inpatient_records(id,branch_id,visit_id) values ('ff000000-0000-4000-8000-000000000001','d2000000-0000-4000-8000-000000000001','d6000000-0000-4000-8000-000000000004');
+set local role authenticated;
+insert into public.inpatient_daily_logs(id,inpatient_record_id,condition_note,log_kind,visit_doctor_id,created_at,log_date)
+ values ('ff000000-0000-4000-8000-000000000002','ff000000-0000-4000-8000-000000000001','Fiksi visit','doctor_visit','fb000000-0000-4000-8000-000000000001','2020-01-01T00:00:00Z','2020-01-01');
+do $$begin
+ perform pg_temp.assert_h((select created_at > now() - interval '1 minute' and log_date=(now() at time zone 'Asia/Jakarta')::date
+   from public.inpatient_daily_logs where id='ff000000-0000-4000-8000-000000000002'),'visit time is server-set on save');
+ begin
+  perform public.clinic_update_inpatient_log('ff000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000002',
+   jsonb_build_object('created_at','2026-01-01T00:00:00Z'),'Fiksi geser');
+  raise exception 'Expected non-admin visit time change rejection';
+ exception when others then if sqlerrm not like 'ACCESS_DENIED: waktu, dokter, atau jenis visit%' then raise;end if;end;
+ perform public.clinic_update_inpatient_log('ff000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000002',
+   jsonb_build_object('condition_note','Fiksi visit dikoreksi'),'Fiksi catatan');
+ perform pg_temp.assert_h((select condition_note='Fiksi visit dikoreksi' from public.inpatient_daily_logs where id='ff000000-0000-4000-8000-000000000002'),'non-admin can still correct the note');
+end $$;
+select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000002',true);
+do $$begin
+ perform public.clinic_update_inpatient_log('ff000000-0000-4000-8000-000000000001','ff000000-0000-4000-8000-000000000002',
+   jsonb_build_object('created_at','2026-01-01T03:00:00Z','log_date','2026-01-01'),'Fiksi koreksi owner');
+ perform pg_temp.assert_h((select created_at='2026-01-01T03:00:00Z'::timestamptz from public.inpatient_daily_logs where id='ff000000-0000-4000-8000-000000000002'),'OWNER can correct visit time');
 end $$;
 reset role;
 select 'h_payroll_incentives: all assertions passed';

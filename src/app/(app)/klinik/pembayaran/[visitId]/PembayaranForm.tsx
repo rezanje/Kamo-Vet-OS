@@ -47,7 +47,7 @@ type Line = {
   package_item_id?: string | null;
   package_qty?: number | null;
 };
-export type PackageOption = { id: string; name: string; componentIds: string[] };
+export type PackageOption = { id: string; name: string; componentIds: string[]; perPaket?: Record<string, number> };
 const NO_PACKAGES: PackageOption[] = [];
 export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number; units?: ItemUnit[]; tindakan_kategori?: string | null };
 type Patient = {
@@ -149,16 +149,23 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                 {(() => {
                   const choices = r.item_id && !r.recipe_id && !r.terkunci ? packages.filter(option => option.componentIds.includes(r.item_id!)) : [];
                   if (choices.length === 0) return null;
+                  // Line qty follows the recipe: packages x component qty per package (in the line's unit).
+                  const qtyUntuk = (packageId: string, jumlah: number) => {
+                    const base = choices.find(option => option.id === packageId)?.perPaket?.[r.item_id!];
+                    const factor = master.find(it => it.id === r.item_id)?.units?.find(unit => unit.unit === r.satuan)?.factor ?? 1;
+                    return base ? { qty: Math.round((jumlah * base / factor) * 10000) / 10000 } : {};
+                  };
                   return <div style={{display:'flex',gap:4,alignItems:'flex-end',marginTop:4}}>
                     <label style={{display:'block',fontSize:10,flex:1}}>Asal paket
                       <select className="fi" aria-label={`Asal paket ${r.deskripsi}`} value={r.package_item_id ?? ''}
-                        onChange={event => set(i,{package_item_id:event.target.value || null,package_qty:event.target.value ? (r.package_qty ?? 1) : null})} style={{height:25,fontSize:10}}>
+                        onChange={event => set(i,{package_item_id:event.target.value || null,package_qty:event.target.value ? (r.package_qty ?? 1) : null,
+                          ...(event.target.value ? qtyUntuk(event.target.value, r.package_qty ?? 1) : {})})} style={{height:25,fontSize:10}}>
                         <option value="">Bukan paket (penjualan biasa)</option>
                         {choices.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
                       </select></label>
                     {r.package_item_id && <label style={{display:'block',fontSize:10,width:70}}>Jml paket
                       <NumberInput className="fi" type="number" min={1} step="1" aria-label={`Jumlah paket ${r.deskripsi}`} value={r.package_qty ?? 1}
-                        onChange={event => set(i,{package_qty:Math.max(1,Number(event.target.value) || 1)})} style={{height:25,fontSize:10}} /></label>}
+                        onChange={event => { const jumlah = Math.max(1, Number(event.target.value) || 1); set(i,{package_qty:jumlah,...qtyUntuk(r.package_item_id!, jumlah)}); }} style={{height:25,fontSize:10}} /></label>}
                   </div>;
                 })()}
               </td>

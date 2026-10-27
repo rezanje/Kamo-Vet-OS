@@ -8,6 +8,7 @@ import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaPayroll } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
 import { getAturanGaji } from "@/lib/payroll-aturan";
+import { muatPeringatanAturanKomisi } from "@/lib/komisi-data";
 import { hitungPenggajian, sahkanPenggajian, simpanKoreksi } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(Number(n)).toLocaleString("id-ID");
@@ -46,13 +47,14 @@ export default async function PenggajianPage({
 
   const periode = /^\d{4}-\d{2}$/.test(sp.periode ?? "") ? sp.periode! : hariIniWIB().slice(0, 7);
 
-  const [{ data: slipData }, { data: riwayatData }, rekening, aturan] = await Promise.all([
+  const [{ data: slipData }, { data: riwayatData }, rekening, aturan, peringatanKomisi] = await Promise.all([
     supabase.from("payrolls")
       .select("employee_id, gaji_pokok, tunjangan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, employees(nama, jabatan)")
       .eq("periode", periode),
     supabase.from("payrolls").select("periode, total, status").order("periode", { ascending: false }),
     loadRekeningAktif(supabase),
     getAturanGaji(supabase),
+    muatPeringatanAturanKomisi(supabase),
   ]);
 
   const slip = ((slipData ?? []) as unknown as Slip[])
@@ -100,6 +102,13 @@ export default async function PenggajianPage({
       {sp.success === "sah" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-lock" /> Penggajian disahkan &amp; masuk pembukuan. Slip siap dicetak.
+        </div>
+      )}
+      {peringatanKomisi.length > 0 && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+          <i className="ti ti-alert-triangle" /> Aturan komisi yang tidak membayar apa pun — periksa di{" "}
+          <Link href="/penjualan/komisi" style={{ textDecoration: "underline" }}>Komisi Penjual</Link> sebelum menghitung gaji:
+          <ul style={{ margin: "4px 0 0 18px" }}>{peringatanKomisi.map((w) => <li key={w}>{w}</li>)}</ul>
         </div>
       )}
       {aturanKosong && (

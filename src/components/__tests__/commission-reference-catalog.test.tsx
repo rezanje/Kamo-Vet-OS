@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 type Row = Record<string, unknown>;
 const state = vi.hoisted(() => ({ edit: true, policyInstalled: true, failed: "", truncated: "", report: false, reads: [] as { table: string; orders: string[]; from: number }[] }));
-vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => state.edit }));
+vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => state.edit, bolehKelolaPayroll: async () => state.edit }));
 vi.mock("@/lib/komisi-data", () => ({ komisiPeriode: async () => ({
   hasil: state.report ? [{ employeeId: "employees-0", omzet: 75_000, laba: 50_000, komisi: 8_125, barisTanpaHpp: 0, rincian: [
     { aturanId: "sku", nama: "Tindakan", dasar: 0.5, komisi: 2_500, cair: true },

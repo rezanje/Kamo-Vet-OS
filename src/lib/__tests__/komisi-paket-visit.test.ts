@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barisVisitRanap, hitungKomisi, ringkasPaket, type AturanKomisi, type BarisJual, type LogVisitDokter } from "../komisi";
+import { barisVisitRanap, hitungKomisi, peringatanAturanKomisi, ringkasPaket, type AturanKomisi, type BarisJual, type LogVisitDokter } from "../komisi";
 
 // Fictional fixture values only; no production tariff is configured here.
 const baris = (o: Partial<BarisJual> = {}): BarisJual => ({
@@ -36,13 +36,31 @@ describe("H05 package components", () => {
     expect(rows[0]).toMatchObject({ itemId: "paket-vaksin", qty: 3, omzet: 240_000, laba: 140_000, paketKomponen: 2, kategoriIds: ["kat-paket"] });
   });
 
-  it("a component without HPP keeps the package profit unknown, and mixed sellers stay unassigned", () => {
-    const rows = ringkasPaket([
-      baris({ paketAsal: paket, laba: null }),
-      baris({ paketAsal: paket, employeeId: "other" }),
-    ]);
+  it("a component without HPP keeps the package profit unknown", () => {
+    const rows = ringkasPaket([baris({ paketAsal: paket, laba: null }), baris({ paketAsal: paket })]);
+    expect(rows).toHaveLength(1);
     expect(rows[0].laba).toBeNull();
-    expect(rows[0].employeeId).toBeNull();
+  });
+
+  it("components sold by different people keep their seller; the package qty is counted once", () => {
+    const rows = ringkasPaket([
+      baris({ paketAsal: paket, omzet: 60_000 }),
+      baris({ paketAsal: paket, employeeId: "other", omzet: 40_000 }),
+    ]);
+    expect(rows.map(r => [r.employeeId, r.qty, r.omzet])).toEqual([["doc", 3, 60_000], ["other", 0, 40_000]]);
+    const [doc, other] = hitungKomisi(rows, [aturan({ itemId: "paket-vaksin" })]);
+    expect(doc.komisi + other.komisi).toBe(3_000);
+  });
+
+  it("a service component with two performers keeps its own row for the S04 split", () => {
+    const performers = { doctor_id: "doc", staff_id: "nurse" } as unknown as BarisJual["servicePerformers"];
+    const rows = ringkasPaket([
+      baris({ paketAsal: paket, employeeId: "seller" }),
+      baris({ paketAsal: paket, employeeId: null, commissionPending: true, servicePerformers: performers, itemId: "jasa-suntik" }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ itemId: "paket-vaksin", qty: 0, commissionPending: true, servicePerformers: performers });
+    expect(rows[1].paketAsal).toBeUndefined();
   });
 
   it("a component line that slipped past folding is never paid as a normal SKU", () => {
@@ -89,5 +107,20 @@ describe("H06 inpatient visit incentive", () => {
 
   it("a log without a doctor never counts", () => {
     expect(barisVisitRanap([log({ doctorId: null })]).baris).toHaveLength(0);
+  });
+});
+
+describe("H04 stale configuration warnings", () => {
+  it("flags an exception whose employee left the group, one without an active group rule, and an empty group", () => {
+    const group = aturan({ id: "g", nama: "Dokter lama", commissionGroup: "dokter_lama" });
+    const moved = aturan({ id: "e1", nama: "Khusus A", employeeId: "a", overrideGroupRuleId: "g" });
+    const orphan = aturan({ id: "e2", nama: "Khusus B", employeeId: "b", overrideGroupRuleId: "gone" });
+    const empty = aturan({ id: "g2", nama: "Groomer", commissionGroup: "groomer" });
+    const warnings = peringatanAturanKomisi([group, moved, orphan, empty], new Map([["a", "dokter_baru"], ["c", "dokter_lama"]]), new Map([["a", "Ana"]]));
+    expect(warnings).toEqual([
+      expect.stringContaining("Ana tidak lagi di kelompok dokter_lama"),
+      expect.stringContaining("Khusus B"),
+      expect.stringContaining("belum ada karyawan di kelompok groomer"),
+    ]);
   });
 });

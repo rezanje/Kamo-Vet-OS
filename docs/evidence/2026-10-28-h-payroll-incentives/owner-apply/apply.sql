@@ -6,9 +6,10 @@ begin;
 -- H04: business-configured commission groups/grades + explicit individual exceptions.
 -- H06: inpatient doctor-visit incentive rate lives in commission settings (sumber visit_ranap).
 -- No tariff is seeded. Null group keeps every legacy rule and employee unchanged.
--- Access: commission_rules writes stay OWNER/ADMIN (20261027030000); employees writes stay
--- branch managers. Both tables already write the A01 activity log, so every group change
--- and every exception is recorded with before/after values.
+-- Access (pay configuration, like H02): only OWNER may set an employee's commission group or
+-- write rules that name an employee, a group, or an exception (no ADMIN self-raise). ADMIN keeps
+-- general rules. Such rules are readable by OWNER/ADMIN/FINANCE only. Both tables already write
+-- the A01 activity log, so every group change and every exception is recorded.
 
 alter table public.employees
   add column if not exists commission_group varchar(40);
@@ -21,7 +22,9 @@ end $$;
 
 alter table public.commission_rules
   add column if not exists commission_group varchar(40),
-  add column if not exists override_group_rule_id uuid references public.commission_rules(id) on delete set null;
+  -- Deleting a group rule deletes its exceptions: an orphaned exception must never become
+  -- a standalone personal rule.
+  add column if not exists override_group_rule_id uuid references public.commission_rules(id) on delete cascade;
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'commission_rules_group_format') then
     alter table public.commission_rules add constraint commission_rules_group_format
@@ -60,6 +63,75 @@ create index if not exists inpatient_daily_logs_doctor_visit_idx
   on public.inpatient_daily_logs (created_at, visit_doctor_id)
   where log_kind = 'doctor_visit';
 
+-- H04 access: commission group is OWNER-only pay configuration (DB-enforced; the server
+-- action guard is not the only line of defence).
+create or replace function public.guard_employee_commission_group() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if coalesce(auth.role(), '') = 'authenticated'
+     and new.commission_group is distinct from (case when tg_op = 'UPDATE' then old.commission_group end)
+     and not private.is_hris_owner() then
+    raise exception using errcode = '42501', message = 'ACCESS_DENIED: kelompok komisi hanya dapat diubah OWNER';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_employee_commission_group() from public, anon, authenticated, service_role;
+drop trigger if exists h04_commission_group_owner on public.employees;
+create trigger h04_commission_group_owner before insert or update of commission_group on public.employees
+  for each row execute function public.guard_employee_commission_group();
+
+drop policy if exists commission_rules_select_all on public.commission_rules;
+drop policy if exists commission_rules_select_general on public.commission_rules;
+drop policy if exists commission_rules_write_admin on public.commission_rules;
+drop policy if exists commission_rules_write_owner on public.commission_rules;
+drop policy if exists commission_rules_write_admin_general on public.commission_rules;
+-- General rules stay readable by every signed-in account (unchanged); personal/group/exception
+-- rules reveal individual pay and are readable by OWNER/ADMIN/FINANCE only.
+create policy commission_rules_select_general on public.commission_rules
+  for select to authenticated
+  using ((employee_id is null and commission_group is null and override_group_rule_id is null)
+    or (select private.hris_role()) in ('OWNER', 'ADMIN', 'FINANCE'));
+create policy commission_rules_write_owner on public.commission_rules
+  for all to authenticated
+  using ((select private.is_hris_owner())) with check ((select private.is_hris_owner()));
+create policy commission_rules_write_admin_general on public.commission_rules
+  for all to authenticated
+  using ((select private.hris_role()) = 'ADMIN' and employee_id is null and commission_group is null and override_group_rule_id is null)
+  with check ((select private.hris_role()) = 'ADMIN' and employee_id is null and commission_group is null and override_group_rule_id is null);
+
+-- ===== 20261028170500_h06_doctor_visit_tamper_guard.sql =====
+-- H06: the doctor-visit incentive pays from inpatient_daily_logs rows with log_kind='doctor_visit'.
+-- Those rows must not be steerable from the browser:
+--  * on save, a visit's time is the server's time (any client created_at/log_date is replaced);
+--  * after save, only OWNER/ADMIN may change a visit's time, date, doctor or kind (also turning a
+--    monitoring note into a visit or a visit into a monitoring note). Everyone else is refused.
+-- Monitoring notes keep their current behaviour (backdated entry still allowed). Edits remain
+-- audited by audit_inpatient_care_edit (before-row + reason).
+create or replace function public.guard_inpatient_doctor_visit() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.log_kind = 'doctor_visit' then
+      new.created_at := now();
+      new.log_date := (now() at time zone 'Asia/Jakarta')::date;
+    end if;
+    return new;
+  end if;
+  if (old.log_kind = 'doctor_visit' or new.log_kind = 'doctor_visit')
+     and (new.created_at is distinct from old.created_at or new.log_date is distinct from old.log_date
+       or new.visit_doctor_id is distinct from old.visit_doctor_id or new.log_kind is distinct from old.log_kind)
+     and coalesce(auth.role(), '') = 'authenticated'
+     and coalesce(private.hris_role(), '') not in ('OWNER', 'ADMIN') then
+    raise exception using errcode = 'P0001',
+      message = 'ACCESS_DENIED: waktu, dokter, atau jenis visit dokter hanya dapat dikoreksi OWNER/ADMIN';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_inpatient_doctor_visit() from public, anon, authenticated, service_role;
+drop trigger if exists h06_doctor_visit_guard on public.inpatient_daily_logs;
+create trigger h06_doctor_visit_guard before insert or update on public.inpatient_daily_logs
+  for each row execute function public.guard_inpatient_doctor_visit();
+
 -- ===== 20261028171000_h05_clinic_package_origin.sql =====
 -- H05: clinic invoice lines that come from a package carry their package origin.
 -- A tagged line is a package component: commission/omzet count it under the package
@@ -83,11 +155,14 @@ comment on column public.invoice_items.package_item_id is
 comment on column public.invoice_items.package_qty is
   'H05: jumlah paket yang dijual untuk asal ini; aturan komisi paket menghitung qty ini.';
 
--- Server-side guard: the package must be an active Grup whose recipe contains the line SKU.
+-- Server-side guard: the package must be an active Grup whose recipe contains the line SKU,
+-- and the line quantity must be exactly package qty x recipe quantity (in base units), so a
+-- cashier cannot inflate package qty for commission. A plain package line and tagged
+-- components of the same package on one invoice are refused (that would count omzet twice).
 -- Corrections and reissues inherit the exact source line tag, like the line seller.
 create or replace function public.guard_clinic_line_package() returns trigger
 language plpgsql security definer set search_path = '' as $$
-declare v_source public.invoice_items%rowtype;
+declare v_source public.invoice_items%rowtype; v_recipe_base numeric; v_line_base numeric;
 begin
   if tg_op = 'UPDATE' then
     if new.package_item_id is distinct from old.package_item_id or new.package_qty is distinct from old.package_qty then
@@ -104,7 +179,15 @@ begin
   end if;
   if new.package_item_id is null then
     new.package_qty := null;
+    -- A plain package (Grup) line next to components already tagged with that package.
+    if new.item_id is not null and exists(select 1 from public.invoice_items x
+        where x.invoice_id = new.invoice_id and x.package_item_id = new.item_id) then
+      raise exception using errcode = 'P0001', message = 'CARE_INVALID: paket ini sudah ditagih lewat komponennya di invoice yang sama';
+    end if;
     return new;
+  end if;
+  if exists(select 1 from public.invoice_items x where x.invoice_id = new.invoice_id and x.item_id = new.package_item_id) then
+    raise exception using errcode = 'P0001', message = 'CARE_INVALID: paket ini sudah ditagih sebagai satu baris di invoice yang sama';
   end if;
   if new.package_qty is null or new.package_qty <= 0 then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: jumlah paket wajib lebih dari 0';
@@ -112,11 +195,16 @@ begin
   if new.item_id is null then
     raise exception using errcode = 'P0001', message = 'CARE_INVALID: komponen paket harus barang dari master';
   end if;
-  perform 1 from public.items g
+  select sum(c.qty * c.factor) into v_recipe_base from public.items g
     join public.item_group_components c on c.group_item_id = g.id and c.component_item_id = new.item_id
-    where g.id = new.package_item_id and g.item_type = 'Grup';
-  if not found then
-    raise exception using errcode = 'P0001', message = 'CARE_INVALID: barang ini bukan komponen paket yang dipilih';
+    where g.id = new.package_item_id and g.item_type = 'Grup' and g.is_active;
+  if v_recipe_base is null then
+    raise exception using errcode = 'P0001', message = 'CARE_INVALID: barang ini bukan komponen paket aktif yang dipilih';
+  end if;
+  v_line_base := new.qty * coalesce(new.faktor, 1);
+  if abs(v_line_base - new.package_qty * v_recipe_base) > 0.0001 then
+    raise exception using errcode = 'P0001',
+      message = format('CARE_INVALID: jumlah komponen harus %s (jumlah paket x isi resep), bukan %s', trim_scale(new.package_qty * v_recipe_base), trim_scale(v_line_base));
   end if;
   return new;
 end $$;

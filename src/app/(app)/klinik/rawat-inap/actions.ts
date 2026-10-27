@@ -299,7 +299,11 @@ export async function updateDailyLog(formData: FormData) {
     .from("inpatient_records").select("discharged_at").eq("id", recordId).maybeSingle();
   if (rec?.discharged_at) redirect(`${back}?error=${encodeURIComponent("Rawat inap sudah ditutup — catatan tidak bisa diubah lagi")}`);
 
-  const stamp = waktuInputWIB(logDate, logTime);
+  // Send the time only when it really changed (minute resolution): a doctor visit keeps its
+  // server-set time, and only OWNER/ADMIN may move it (H06, enforced by the database).
+  const beforeStamp = before.created_at ? new Date(new Date(before.created_at).getTime() + 7 * 3600_000).toISOString() : "";
+  const sameTime = beforeStamp.slice(0, 10) === logDate && beforeStamp.slice(11, 16) === logTime;
+  const stamp = sameTime ? null : waktuInputWIB(logDate, logTime);
   const { error: upErr } = await supabase.rpc('clinic_update_inpatient_log',{
     p_inpatient_id:recordId,p_log_id:logId,p_reason:alasan,p_patch:{
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
@@ -308,7 +312,7 @@ export async function updateDailyLog(formData: FormData) {
     // Angka pemantauan ikut bisa dikoreksi; nilai lamanya tersimpan di snapshot
     // `before` — berat/suhu yang salah ketik tidak boleh berubah tanpa jejak.
     ...bacaPemantauan(formData),
-    ...(logDate ? { log_date: logDate } : {}),
+    ...(logDate && logDate !== before.log_date ? { log_date: logDate } : {}),
     ...(stamp && !Number.isNaN(stamp.getTime()) ? { created_at: stamp.toISOString() } : {}),
     },
   });

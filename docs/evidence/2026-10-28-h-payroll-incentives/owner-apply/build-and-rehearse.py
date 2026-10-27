@@ -14,6 +14,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 MIGRATIONS = [
     '20261028170000_h04_h06_commission_groups_visit_rate.sql',
+    '20261028170500_h06_doctor_visit_tamper_guard.sql',
     '20261028171000_h05_clinic_package_origin.sql',
     '20261028173000_h03_turnover_salary_components.sql',
     '20261028174000_h02_payslip_templates.sql',
@@ -62,10 +63,18 @@ with native.NativePostgres(BIN) as db:
     out, last = summary(db, 'preflight.sql')
     assert last.startswith('SUMMARY|t|0 failed'), out
     print('re-apply is idempotent; preflight after apply:', last)
-    db.sql((HERE / 'rollback.sql').read_text())
+    # Rollback must refuse while configuration exists, and run only with the explicit owner flag.
+    db.sql("insert into public.payslip_templates(kode,nama) values ('fiksi','Fiksi template')")
+    try:
+        db.sql((HERE / 'rollback.sql').read_text())
+        raise AssertionError('rollback ran although data exists')
+    except RuntimeError as error:
+        assert 'H_ROLLBACK_REFUSED' in str(error), error
+    print('rollback refused while data exists')
+    db.sql("set kamo.h_rollback_discard_data = 'yes';\n" + (HERE / 'rollback.sql').read_text())
     gone = db.sql("select to_regclass('public.payslip_templates') is null and not exists(select 1 from information_schema.columns where table_name='invoice_items' and column_name='package_item_id') and position('package_item_id' in pg_get_functiondef('public.clinic_post_invoice(uuid,text,jsonb,jsonb)'::regprocedure))=0")
     assert gone.splitlines()[-1] == 't', gone
-    print('rollback: objects removed, clinic_post_invoice restored')
+    print('rollback with owner flag: objects removed, clinic_post_invoice restored')
     db.sql(apply_sql)
     out, last = summary(db, 'readback.sql')
     assert last == 'SUMMARY|t', out
