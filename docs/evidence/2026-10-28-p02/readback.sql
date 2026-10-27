@@ -7,4 +7,5 @@ union all select 'preview RPC callable by authenticated', has_function_privilege
 union all select 'commit RPC callable by authenticated', has_function_privilege('authenticated','public.correct_purchase_invoice_line(text,uuid,integer,numeric,numeric,date,text,jsonb)','execute')
 union all select 'internal runner not callable', not has_function_privilege('authenticated','public.purchase_invoice_line_correction_run(uuid,numeric,numeric,date,text,text,jsonb,boolean)','execute')
 union all select 'journal guard triggers', (select count(*) from pg_trigger where tgname in ('purchase_invoice_correction_journal_guard','purchase_invoice_correction_journal_lines_guard'))=2
+union all select 'history policy limited to OWNER/FINANCE', (select pg_get_expr(polqual,polrelid) like '%OWNER%FINANCE%' from pg_policy where polname='purchase_invoice_corrections_read')
 union all select 'no corrections recorded yet', (select count(*) from public.purchase_invoice_corrections)=0;

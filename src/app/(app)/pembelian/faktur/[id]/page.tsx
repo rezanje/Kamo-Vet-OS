@@ -61,10 +61,12 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   ];
   const owner = profile?.role === "OWNER" && profile.is_active;
   const canReprice = !!owner && !invoice.voided_at && !invoice.opening_batch_id;
-  // Riwayat koreksi harga (P02). Gagal baca tidak menyembunyikan faktur; tabel hanya tampil bila terbaca.
-  const { data: corrections } = await supabase.from("purchase_invoice_corrections")
+  // Riwayat koreksi harga (P02) memuat selisih HPP/nilai stok: hanya OWNER/FINANCE (database juga membatasi).
+  // Gagal baca tidak menyembunyikan faktur; tabel hanya tampil bila terbaca.
+  const financeView = !!profile?.is_active && (profile.role === "OWNER" || profile.role === "FINANCE");
+  const { data: corrections } = financeView ? await supabase.from("purchase_invoice_corrections")
     .select("id,invoice_item_id,tanggal,old_qty,new_qty,old_harga,new_harga,inventory_delta,hpp_delta,reason")
-    .eq("invoice_id", id).order("created_at");
+    .eq("invoice_id", id).order("created_at") : { data: null };
   const paid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
   return <>
     <DocumentBackLink from={sp.from} />

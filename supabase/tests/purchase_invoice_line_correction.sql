@@ -1,15 +1,19 @@
 -- P02 koreksi harga faktur pembelian setelah barang terjual. Fiksi lokal, selalu di-rollback.
 -- Runner mengganti __MODE__ dengan 'fifo' atau 'average'.
 begin;
-insert into auth.users(id) values('f2000000-0000-4000-8000-000000000001'),('f2000000-0000-4000-8000-000000000002');
+insert into auth.users(id) values('f2000000-0000-4000-8000-000000000001'),('f2000000-0000-4000-8000-000000000002'),('f2000000-0000-4000-8000-000000000003');
 update profiles set role='OWNER' where id='f2000000-0000-4000-8000-000000000001';
 update profiles set role='ADMIN' where id='f2000000-0000-4000-8000-000000000002';
+update profiles set role='FINANCE' where id='f2000000-0000-4000-8000-000000000003';
 insert into branches(id,code,name,type) values('f2100000-0000-4000-8000-000000000001','P02-FIC','P02 fiction','KLINIK');
 insert into warehouses(id,branch_id,code,name,type) values('f2200000-0000-4000-8000-000000000001','f2100000-0000-4000-8000-000000000001','P02-WH','P02 warehouse','VET');
 insert into suppliers(id,nama) values('f2300000-0000-4000-8000-000000000001','P02 supplier');
 insert into items(id,code,name,unit,item_type) values
  ('f2400000-0000-4000-8000-000000000001','P02-PCS','Meeting goods','pcs','Persediaan'),
- ('f2400000-0000-4000-8000-000000000002','P02-BOX','PO goods','pcs','Persediaan');
+ ('f2400000-0000-4000-8000-000000000002','P02-BOX','PO goods','pcs','Persediaan'),
+ ('f2400000-0000-4000-8000-000000000003','P02-TRF','Transferred goods','pcs','Persediaan'),
+ ('f2400000-0000-4000-8000-000000000004','P02-VOID','Voided sale goods','pcs','Persediaan'),
+ ('f2400000-0000-4000-8000-000000000005','P02-ZERO','Average zero goods','pcs','Persediaan');
 insert into item_units(item_id,unit,factor) values('f2400000-0000-4000-8000-000000000002','box',10);
 insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,status) values('f2500000-0000-4000-8000-000000000001','PO.P02.FIC','f2300000-0000-4000-8000-000000000001','f2100000-0000-4000-8000-000000000001','f2200000-0000-4000-8000-000000000001','Dipesan');
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor) values('f2600000-0000-4000-8000-000000000001','f2500000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000002','PO goods',4,111,'box',10);
@@ -30,11 +34,17 @@ create function pg_temp.stock_value(item uuid) returns numeric language sql as $
   else (select coalesce(sum(qty_left*unit_cost),0) from stock_layers where item_id=item) end
 $$;
 create function pg_temp.lines(ref text,src text) returns jsonb language sql as $$
- select jsonb_object_agg(a.code,l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id
- where e.source=src and e.source_ref=ref
+ select jsonb_object_agg(code,amount) from (select a.code,sum(l.debit-l.credit) amount from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id
+ where e.source=src and e.source_ref=ref group by a.code) x
 $$;
 create function pg_temp.expected(p jsonb) returns jsonb language sql as $$
  select jsonb_build_object('remaining_qty',p->'remaining_qty','sold_qty',p->'sold_qty','removed_qty',p->'removed_qty','ap_delta',p->'ap_delta','ppn_delta',p->'ppn_delta','inventory_delta',p->'inventory_delta','hpp_delta',p->'hpp_delta')
+$$;
+create table p02_ids(name text primary key,id uuid);
+grant all on p02_ids to authenticated;
+create function pg_temp.direct(key text,item uuid,qty numeric,price numeric) returns jsonb language sql as $$
+ select create_direct_purchase_invoice(key,jsonb_build_object('supplier_id','f2300000-0000-4000-8000-000000000001','warehouse_id','f2200000-0000-4000-8000-000000000001','tanggal',current_date,'jatuh_tempo',current_date+30,'no_faktur_pemasok','SUP-P02','surat_jalan',null,'keterangan','P02','lampiran','[]'::jsonb,
+  'items',jsonb_build_array(jsonb_build_object('item_id',item,'qty',qty,'harga',price,'satuan','pcs','exp_date',null))))
 $$;
 grant execute on all functions in schema pg_temp to authenticated;
 select set_config('request.jwt.claim.role','authenticated',true);
@@ -132,5 +142,86 @@ do $$declare inv record;line uuid;pv jsonb;res jsonb;begin
  pv:=preview_purchase_invoice_line_correction(line,4,166.5,current_date);
  perform pg_temp.ok((pv->>'remaining_qty_base')::numeric=15 and (pv->>'inventory_delta')::numeric=-75 and (pv->>'old_unit_cost')::numeric=20 and (pv->>'new_unit_cost')::numeric=15,'second correction '||pv::text);
  perform pg_temp.expect_error(format('select cancel_purchase_invoice(%L,1,''p02-po-cancel'',''Coba batal'')',inv.invoice_id),'Rekonsiliasi');
+end$$;
+-- ===== Riwayat koreksi hanya untuk OWNER/FINANCE =====
+do $$begin
+ perform pg_temp.ok((select count(*) from purchase_invoice_corrections)>0,'owner reads history');
+ perform pg_temp.as_user('f2000000-0000-4000-8000-000000000003');
+ perform pg_temp.ok((select count(*) from purchase_invoice_corrections)>0,'finance reads history');
+ perform pg_temp.as_user('f2000000-0000-4000-8000-000000000002');
+ perform pg_temp.ok((select count(*) from purchase_invoice_corrections)=0,'admin cannot read HPP history');
+ perform pg_temp.as_user('f2000000-0000-4000-8000-000000000001');
+end$$;
+
+reset role;
+update company_settings set mode_pkp=false;
+set local role authenticated;
+-- ===== Barang dipindah gudang (bukan terjual): koreksi ditolak =====
+do $$declare inv jsonb;begin
+ inv:=pg_temp.direct('p02-trf','f2400000-0000-4000-8000-000000000003',10,100);
+ insert into p02_ids select 'trf-line',id from purchase_invoice_items where invoice_id=(inv->>'invoice_id')::uuid;
+end$$;
+reset role;
+select stock_out_fifo('f2200000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000003',3,'transfer','P02.TRF',current_date);
+set local role authenticated;
+do $$begin
+ perform pg_temp.expect_error(format('select preview_purchase_invoice_line_correction(%L,10,120,current_date)',(select id from p02_ids where name='trf-line')),'dipindah gudang');
+end$$;
+
+-- ===== Koreksi -> batal jual (qty kembali ke lapisan lama) -> koreksi lagi =====
+do $$declare inv jsonb;begin
+ inv:=pg_temp.direct('p02-void','f2400000-0000-4000-8000-000000000004',10,100);
+ insert into p02_ids select 'void-line',id from purchase_invoice_items where invoice_id=(inv->>'invoice_id')::uuid;
+end$$;
+-- Lapisan asal sengaja dibuat lebih tua supaya salinan created_at bisa dibuktikan.
+reset role;
+update stock_layers set created_at=created_at-interval '1 day' where item_id='f2400000-0000-4000-8000-000000000004';
+set local role authenticated;
+do $$declare line uuid:=(select id from p02_ids where name='void-line');pv jsonb;begin
+ perform stock_out_fifo('f2200000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000004',6,'test-consume','P02.SALE3',current_date);
+ pv:=preview_purchase_invoice_line_correction(line,10,110,current_date);
+ perform pg_temp.ok((pv->>'inventory_delta')::numeric=40 and (pv->>'hpp_delta')::numeric=60,'void first '||pv::text);
+ perform correct_purchase_invoice_line('p02-void-1',line,0,10,110,current_date,'Harga naik',pg_temp.expected(pv));
+end$$;
+reset role;
+-- Pembatalan penjualan mengembalikan 2 unit ke lapisan asli (yang sudah dipensiunkan koreksi).
+do $$declare retired uuid;begin
+ select c.layer_id into retired from purchase_invoice_correction_layers c where c.item_id='f2400000-0000-4000-8000-000000000004' and c.role='retired';
+ if (select created_at from stock_layers where id=retired) is distinct from (select l.created_at from stock_layers l join purchase_invoice_correction_layers c on c.layer_id=l.id where c.item_id='f2400000-0000-4000-8000-000000000004' and c.role='created') then
+  raise exception 'Assertion failed: replacement layer keeps FIFO created_at';end if;
+ if (select created_at from stock_layers where id=retired)>=now()-interval '1 hour' then raise exception 'Assertion failed: fixture layer not aged';end if;
+ update stock_layers set qty_left=qty_left+2 where id=retired;
+ update stock set qty=qty+2 where item_id='f2400000-0000-4000-8000-000000000004';
+ insert into stock_moves(tanggal,warehouse_id,item_id,qty,unit_cost,source,source_ref) values(current_date,'f2200000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000004',2,100,'sale-void','P02.SALE3');
+end$$;
+set local role authenticated;
+do $$declare line uuid:=(select id from p02_ids where name='void-line');pv jsonb;begin
+ pv:=preview_purchase_invoice_line_correction(line,10,120,current_date);
+ perform pg_temp.ok((pv->>'remaining_qty')::numeric=6 and (pv->>'sold_qty')::numeric=4,'restored units counted '||pv::text);
+ perform pg_temp.ok((pv->>'inventory_delta')::numeric=80 and (pv->>'hpp_delta')::numeric=20,'restored units revalued '||pv::text);
+ perform correct_purchase_invoice_line('p02-void-2',line,1,10,120,current_date,'Harga naik lagi',pg_temp.expected(pv));
+ perform pg_temp.ok(pg_temp.stock_value('f2400000-0000-4000-8000-000000000004')=720,'void item value 6 x 120');
+ perform pg_temp.ok(pg_temp.lines((select no_faktur from purchase_invoices i join purchase_invoice_items ii on ii.invoice_id=i.id where ii.id=line),'purchase-inv-correction')='{"1301":120,"5101":80,"2101":-200}'::jsonb,'void journals sum');
+end$$;
+
+-- ===== Average: rata-rata gudang (75) beda dari harga faktur (100) dan qty turun mengosongkan stok =====
+do $$declare inv jsonb;line uuid;pv jsonb;begin
+ perform stock_in_fifo('f2200000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000005',10,50,'purchase','P02.OLD',current_date,current_date+30);
+ inv:=pg_temp.direct('p02-zero','f2400000-0000-4000-8000-000000000005',10,100);
+ select id into line from purchase_invoice_items where invoice_id=(inv->>'invoice_id')::uuid;
+ perform stock_out_fifo('f2200000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000005',14,'test-consume','P02.SALE4',current_date);
+ if '__MODE__'='average' then
+  perform pg_temp.expect_error(format('select preview_purchase_invoice_line_correction(%L,4,100,current_date)',line),'mengosongkan stok');
+  -- Harga saja (stok tetap 6) tetap bisa: sisa 6 dinilai ulang tepat 6 x 20.
+  pv:=preview_purchase_invoice_line_correction(line,10,120,current_date);
+  perform pg_temp.ok((pv->>'inventory_delta')::numeric=120 and (pv->>'hpp_delta')::numeric=80,'avg price only '||pv::text);
+  perform correct_purchase_invoice_line('p02-zero-avg',line,0,10,120,current_date,'Harga naik',pg_temp.expected(pv));
+  perform pg_temp.ok(round(pg_temp.stock_value('f2400000-0000-4000-8000-000000000005'),6)=570,'avg value 450+120');
+ else
+  pv:=preview_purchase_invoice_line_correction(line,4,100,current_date);
+  perform pg_temp.ok((pv->>'removed_qty')::numeric=6 and (pv->>'inventory_delta')::numeric=-600 and (pv->>'hpp_delta')::numeric=0 and (pv->>'ap_delta')::numeric=-600,'fifo zero '||pv::text);
+  perform correct_purchase_invoice_line('p02-zero-fifo',line,0,4,100,current_date,'Kurang kirim',pg_temp.expected(pv));
+  perform pg_temp.ok((select qty from stock where item_id='f2400000-0000-4000-8000-000000000005')=0 and pg_temp.stock_value('f2400000-0000-4000-8000-000000000005')=0,'fifo emptied');
+ end if;
 end$$;
 rollback;

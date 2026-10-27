@@ -53,9 +53,10 @@ alter table public.purchase_invoice_correction_layers enable row level security;
 revoke all on public.purchase_invoice_corrections,public.purchase_invoice_correction_layers from public,anon,authenticated,service_role;
 grant select on public.purchase_invoice_corrections to authenticated;
 drop policy if exists purchase_invoice_corrections_read on public.purchase_invoice_corrections;
--- Riwayat terbaca oleh siapa pun yang boleh membaca fakturnya (RLS faktur ikut berlaku).
+-- Riwayat berisi selisih HPP/nilai stok: hanya OWNER/FINANCE aktif yang juga boleh membaca fakturnya.
 create policy purchase_invoice_corrections_read on public.purchase_invoice_corrections for select to authenticated
- using (exists(select 1 from public.purchase_invoices i where i.id=invoice_id));
+ using (exists(select 1 from public.profiles p where p.id=auth.uid() and p.is_active and p.role::text in ('OWNER','FINANCE'))
+  and exists(select 1 from public.purchase_invoices i where i.id=invoice_id));
 
 create or replace function public.guard_purchase_invoice_correction_journal() returns trigger
 language plpgsql set search_path='' as $$
@@ -83,7 +84,7 @@ declare
  v_qty_base numeric;v_new_qty_base numeric;v_remaining numeric;v_sold numeric;v_removed numeric;v_take numeric;v_left numeric;
  v_old_dpp numeric;v_old_ppn numeric;v_new_total numeric;v_new_dpp numeric;v_ap numeric;v_dpp numeric;v_ppn numeric;
  v_paid numeric;v_reserved numeric;v_before numeric;v_after numeric;v_target numeric;v_adj numeric;v_inv numeric;v_hpp numeric;
- v_cut date;v_new_layer uuid;v_takes jsonb:='[]';v_retired uuid[]:='{}';v_set uuid[];v_created uuid[]:='{}';
+ v_cut date;v_new_layer uuid;v_remaining_value numeric;v_removed_value numeric:=0;v_takes jsonb:='[]';v_retired uuid[]:='{}';v_set uuid[];v_created uuid[]:='{}';
  v_lines jsonb;v_journal uuid;v_correction uuid:=gen_random_uuid();result jsonb;
 begin
  perform public.inventory_assert_open_date(p_tanggal);
@@ -143,11 +144,13 @@ begin
  -- Stok dan lapisan milik baris ini.
  insert into public.stock(warehouse_id,item_id,qty) values(proof.warehouse_id,li.item_id,0) on conflict(warehouse_id,item_id) do nothing;
  select * into st from public.stock where warehouse_id=proof.warehouse_id and item_id=li.item_id for update;
+ -- Semua lapisan asal baris ini (asli + hasil koreksi). Lapisan yang pernah dipensiunkan TETAP ikut:
+ -- pembatalan penjualan bisa mengembalikan qty ke lapisan itu, dan unit itu tetap milik faktur ini.
  select coalesce(array_agg(x.id order by x.id),'{}') into v_set from (
   select l.id from public.stock_layers l where inv.po_id is null and l.warehouse_id=proof.warehouse_id and l.item_id=li.item_id and l.source='faktur-langsung' and l.source_ref=inv.no_faktur
   union select p.layer_id from public.purchase_invoice_layer_proofs p join public.stock_layers l on l.id=p.layer_id where p.invoice_id=inv.id and p.allocated and l.item_id=li.item_id
   union select c.layer_id from public.purchase_invoice_correction_layers c where c.invoice_id=inv.id and c.item_id=li.item_id and c.role='created'
- ) x where not exists(select 1 from public.purchase_invoice_correction_layers c where c.layer_id=x.id and c.role='retired');
+ ) x;
  perform 1 from public.stock_layers l where l.id =any(v_set) order by l.id for update;
 
  v_faktor:=coalesce(nullif(li.faktor,0),1);
@@ -161,9 +164,17 @@ begin
   if v_count<>1 then raise exception 'Harga pokok asal baris faktur tidak tunggal atau tidak ditemukan. Rekonsiliasi manual';end if;
  end if;
  v_qty_base:=li.qty*v_faktor;v_new_qty_base:=p_qty*v_faktor;
- select coalesce(sum(l.qty_left),0) into v_remaining from public.stock_layers l where l.id =any(v_set);
+ select coalesce(sum(l.qty_left),0),coalesce(sum(l.qty_left*l.unit_cost),0) into v_remaining,v_remaining_value from public.stock_layers l where l.id =any(v_set);
  if v_remaining>v_qty_base then raise exception 'Sisa stok asal faktur melebihi qty faktur. Rekonsiliasi manual';end if;
  v_sold:=v_qty_base-v_remaining;
+ -- Unit yang keluar lewat pindah gudang, produksi, atau retur pembelian masih tercatat sebagai persediaan/
+ -- hutang di tempat lain, bukan HPP. Lapisan tidak mencatat siapa pemakainya, jadi tolak dengan aman bila
+ -- ada pengeluaran semacam itu dari gudang+barang ini sejak faktur dibukukan.
+ if v_sold>0 and exists(select 1 from public.stock_moves m where m.warehouse_id=proof.warehouse_id and m.item_id=li.item_id and m.qty<0
+   and m.created_at>=inv.created_at
+   and (m.source like 'transfer%' or m.source in ('terima-permintaan','produksi','retur-beli'))) then
+  raise exception 'Sebagian barang ini sudah dipindah gudang, dipakai produksi, atau diretur sejak faktur dibukukan (bukan terjual). Koreksi otomatis ditolak; rekonsiliasi manual';
+ end if;
  v_removed:=v_qty_base-v_new_qty_base;
  if v_removed>v_remaining then
   raise exception 'Qty hanya bisa dikurangi sebanyak sisa stok faktur ini (% %); sisanya sudah terjual/terpakai',
@@ -171,12 +182,18 @@ begin
  if v_removed>st.qty then raise exception 'Stok gudang tidak cukup untuk mengurangi qty faktur';end if;
  v_new_cost:=p_harga/v_faktor*v_new_dpp/v_new_total;
  v_avg:=public.inventory_is_average();
+ -- Perubahan nilai unit faktur ini (per lapisan, termasuk unit yang dikeluarkan), dibulatkan ke sen.
+ v_target:=round((v_remaining-v_removed)*v_new_cost-v_remaining_value,2);
+ if v_avg and v_remaining>0 and (st.qty<=0 or st.average_cost is null) then
+  raise exception 'Harga pokok rata-rata gudang belum tersedia atau stok gudang tidak positif. Rekonsiliasi stok sebelum koreksi';end if;
 
  v_before:=case when v_avg then case when st.qty=0 then 0 else st.qty*coalesce(st.average_cost,0) end
   else (select coalesce(sum(l.qty_left*l.unit_cost),0) from public.stock_layers l where l.warehouse_id=proof.warehouse_id and l.item_id=li.item_id) end;
 
  -- 1) Qty turun: keluarkan barang dari lapisan faktur ini sendiri.
  if v_removed>0 then
+  if v_avg and st.qty-v_removed=0 and abs(v_before+v_target)>=0.005 then
+   raise exception 'Pengurangan qty akan mengosongkan stok gudang yang nilai rata-ratanya berbeda dari harga faktur ini. Koreksi otomatis ditolak; rekonsiliasi manual';end if;
   v_left:=v_removed;
   for layer in select l.* from public.stock_layers l where l.id =any(v_set) and l.qty_left>0
    order by l.exp_date nulls last,l.tanggal,l.created_at,l.id loop
@@ -184,42 +201,41 @@ begin
    v_take:=least(v_left,layer.qty_left);
    update public.stock_layers set qty_left=qty_left-v_take where id=layer.id;
    v_takes:=v_takes||jsonb_build_array(jsonb_build_object('id',layer.id,'qty',v_take,'unit_cost',layer.unit_cost,'exp_date',layer.exp_date));
-   v_left:=v_left-v_take;
+   v_removed_value:=v_removed_value+v_take*layer.unit_cost;v_left:=v_left-v_take;
   end loop;
   update public.stock set qty=qty-v_removed,updated_at=now() where id=st.id;
   insert into public.stock_moves(tanggal,warehouse_id,item_id,qty,unit_cost,source,source_ref,fifo_takes)
-  values(p_tanggal,proof.warehouse_id,li.item_id,-v_removed,case when v_avg then coalesce(st.average_cost,v_old_cost) else v_old_cost end,'purchase-correction',inv.no_faktur,v_takes);
+  values(p_tanggal,proof.warehouse_id,li.item_id,-v_removed,case when v_avg then st.average_cost else v_removed_value/v_removed end,'purchase-correction',inv.no_faktur,v_takes);
  end if;
 
  -- 2) Sisa stok faktur pindah ke lapisan baru berharga baru (lapisan lama dipensiunkan, riwayat utuh).
+ --    created_at disalin supaya urutan FIFO tidak bergeser.
  select greatest(coalesce((select closed_until from public.accounting_locks where id),'-infinity'::date),
   coalesce((select closed_through from public.inventory_costing_settings where id),'-infinity'::date)) into v_cut;
- if v_new_cost<>v_old_cost then
-  for layer in select l.* from public.stock_layers l where l.id =any(v_set) and l.qty_left>0 order by l.id loop
-   update public.stock_layers set qty_left=0 where id=layer.id;
-   insert into public.stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source,source_ref,exp_date,batch_no)
-   values(layer.warehouse_id,layer.item_id,case when layer.tanggal>v_cut then layer.tanggal else p_tanggal end,layer.qty_left,layer.qty_left,v_new_cost,'purchase-correction',inv.no_faktur,layer.exp_date,layer.batch_no)
-   returning id into v_new_layer;
-   v_retired:=array_append(v_retired,layer.id);v_created:=array_append(v_created,v_new_layer);
-  end loop;
- end if;
+ for layer in select l.* from public.stock_layers l where l.id =any(v_set) and l.qty_left>0 and l.unit_cost<>v_new_cost order by l.id loop
+  update public.stock_layers set qty_left=0 where id=layer.id;
+  insert into public.stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source,source_ref,exp_date,batch_no,created_at)
+  values(layer.warehouse_id,layer.item_id,case when layer.tanggal>v_cut then layer.tanggal else p_tanggal end,layer.qty_left,layer.qty_left,v_new_cost,'purchase-correction',inv.no_faktur,layer.exp_date,layer.batch_no,layer.created_at)
+  returning id into v_new_layer;
+  v_retired:=array_append(v_retired,layer.id);v_created:=array_append(v_created,v_new_layer);
+ end loop;
 
- -- 3) Average: sisa stok faktur dinilai ulang ke harga baru (rata-rata ulang gudang).
+ -- 3) Average: bawa nilai gudang tepat ke (nilai awal + target dibulatkan). Tidak pernah dilewati diam-diam.
  if v_avg then
   select * into st from public.stock where id=st.id;
-  v_target:=(v_remaining-v_removed)*v_new_cost-v_remaining*v_old_cost;
-  v_adj:=v_target-((case when st.qty=0 then 0 else st.qty*coalesce(st.average_cost,0) end)-v_before);
-  if v_adj<>0 and st.qty>0 and st.average_cost is not null then
+  v_adj:=(v_before+v_target)-(case when st.qty=0 then 0 else st.qty*coalesce(st.average_cost,0) end);
+  if abs(v_adj)>=0.000001 then
+   if st.qty<=0 or st.average_cost is null then
+    raise exception 'Nilai rata-rata tidak bisa disesuaikan tepat (stok gudang habis). Koreksi otomatis ditolak; rekonsiliasi manual';end if;
    perform public.inventory_apply_cost_adjustment(proof.warehouse_id,li.item_id,v_adj,p_tanggal,'purchase-correction',inv.no_faktur);
   end if;
-  select * into st from public.stock where id=st.id;
-  v_after:=case when st.qty=0 then 0 else st.qty*coalesce(st.average_cost,0) end;
+  v_inv:=v_target;
  else
   v_after:=(select coalesce(sum(l.qty_left*l.unit_cost),0) from public.stock_layers l where l.warehouse_id=proof.warehouse_id and l.item_id=li.item_id);
+  v_inv:=round(v_after-v_before,2);
  end if;
 
- -- 4) Jurnal: persediaan = perubahan nilai stok yang benar-benar terjadi; HPP = sisa selisih DPP.
- v_inv:=round(v_after-v_before,2);
+ -- 4) Jurnal: persediaan = perubahan nilai stok; HPP = sisa selisih DPP.
  v_hpp:=v_dpp-v_inv;
  select coalesce(jsonb_agg(x order by x.ord),'[]') into v_lines from (
   select 1 ord,'1301' code,greatest(v_inv,0) debit,greatest(-v_inv,0) credit
