@@ -38,3 +38,26 @@ it("attributes clinic SKU revenue to its saved line seller while retaining the e
  expect(result.baris.map(row=>row.employeeId)).toEqual(["line-medicine","header","performer","line-service"]);
  expect(result.baris.map(row=>row.omzet)).toEqual([100,100,100,100]);
 });
+it("J03: a clinic refund reduces the original line owner's revenue in the refund period",async()=>{
+ const invoice={id:"clinic",invoice_no:"FICT-CLINIC",visit_id:"visit",paid_at:"2026-09-20T10:00:00Z",total:200,salesperson_id:"header",
+  visits:{branch_id:"branch",doctor_id:"doctor"},invoice_items:[
+   {id:"med",item_id:"medicine",qty:2,harga:50,hpp:20,salesperson_id:"line-medicine",service_performers:null},
+   {id:"svc",item_id:null,qty:1,harga:100,hpp:null,salesperson_id:null,service_performers:null}]};
+ const refund={id:"rf",invoice_id:"clinic",tanggal:"2026-10-05",clinic_refund_items:[{invoice_item_id:"med",qty:1},{invoice_item_id:"svc",qty:1}]};
+ const fake={from(table:string){const data=table==="invoices"?[invoice]:table==="clinic_refunds"?[refund]:[];
+  const q={select:()=>q,eq:()=>q,is:()=>q,not:()=>q,neq:()=>q,gte:()=>q,lte:()=>q,in:()=>q,order:()=>q,
+   range:async()=>({data,count:data.length,error:null}),then:(resolve:(result:unknown)=>unknown)=>Promise.resolve({data,count:data.length,error:null}).then(resolve)};return q;}};
+ const result=await kumpulkanBarisKomisi(fake,"2026-10");
+ const refunds=result.baris.filter(row=>row.omzet<0);
+ expect(refunds).toEqual([
+  expect.objectContaining({tanggal:"2026-10-05",commissionPolicyDate:"2026-09-20",employeeId:"line-medicine",qty:-1,omzet:-50,laba:-40,sumber:"klinik"}),
+  expect.objectContaining({tanggal:"2026-10-05",employeeId:"header",qty:-1,omzet:-100,laba:-100}),
+ ]);
+});
+it("J03: commission still reads when the clinic refund table is not installed yet",async()=>{
+ const fake={from(table:string){const missing=table==="clinic_refunds";const data:unknown[]=[];
+  const result=missing?{data:null,count:null,error:{code:"PGRST205",message:"missing"}}:{data,count:0,error:null};
+  const q={select:()=>q,eq:()=>q,is:()=>q,not:()=>q,neq:()=>q,gte:()=>q,lte:()=>q,in:()=>q,order:()=>q,
+   range:async()=>result,then:(resolve:(r:unknown)=>unknown)=>Promise.resolve(result).then(resolve)};return q;}};
+ await expect(kumpulkanBarisKomisi(fake,"2026-10")).resolves.toMatchObject({baris:[]});
+});
