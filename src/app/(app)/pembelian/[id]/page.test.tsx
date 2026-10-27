@@ -73,7 +73,10 @@ it.each(["STAFF", "ADMIN"])("gives %s a correction handoff on an editable PO wit
   });
   const html = renderToStaticMarkup(page);
   expect(html).toContain("Minta koreksi PO-TEST");
-  expect(html).toContain("Sampaikan kepada Super Admin");
+  expect(html).toContain("Kirim permintaan koreksi");
+  expect(html).toContain('name="source_kind" value="purchase_order"');
+  expect(html).toContain('name="source_id" value="20000000-0000-4000-8000-000000000001"');
+  expect(html).not.toContain("belum dikirim atau dicatat");
   expect(html).not.toContain('id="edit-po"');
   expect(html).not.toContain('id="cancel-po"');
 });
