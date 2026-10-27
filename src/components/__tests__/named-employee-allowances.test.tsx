@@ -6,7 +6,7 @@ const employeeId = "10000000-0000-4000-8000-000000000001";
 const state = vi.hoisted(() => ({ denied: false, failed: "", writes: [] as { table: string; kind: string; row: Row }[], components: [] as Row[], assignments: [] as Row[], reads: [] as string[] }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (href: string) => { throw new Error(href); }, notFound: () => { throw new Error("NOT_FOUND"); } }));
-vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => !state.denied, assertMasterAdmin: async () => { if (state.denied) throw new Error("DENIED"); return client(); } }));
+vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => !state.denied, assertMasterAdmin: async () => { if (state.denied) throw new Error("DENIED"); return client(); }, assertPayrollOwner: async () => { if (state.denied) throw new Error("DENIED"); return client(); } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => client() }));
 vi.mock("@/app/(app)/hris/karyawan/actions", () => ({ editKaryawan: vi.fn() }));
 function client() {
