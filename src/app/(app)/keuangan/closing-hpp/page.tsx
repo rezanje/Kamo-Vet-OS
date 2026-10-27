@@ -13,6 +13,7 @@ import { ActivationForm, ClosingForm } from "./ClosingForms";
 import { SnapshotFilters } from "./SnapshotFilters";
 
 const money = (value: number | string | null) => value === null ? "Belum tersedia" : `Rp ${Number(value).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const differenceMoney = (value: number | null) => value === null ? "Belum tersedia" : `Rp ${value.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`;
 const qty = (value: number | string) => Number(value).toLocaleString("id-ID", { maximumFractionDigits: 8 });
 
 export default async function InventoryClosingPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; snapshot?: string; halaman?: string; cabang?: string | string[] }> }) {
@@ -34,6 +35,11 @@ export default async function InventoryClosingPage({ searchParams }: { searchPar
     return `${INVENTORY_CLOSING_PATH}?${query}`;
   };
   const pageHref = (page: number) => snapshotHref(report?.activeClose?.id ?? "",page);
+  const ledgerHref = (branch?: string) => {
+    const query = new URLSearchParams({ akun: "1301", sampai: report?.activeClose?.closed_through ?? "" });
+    if (branch) query.set("cabang", branch);
+    return `/keuangan/buku-besar?${query}`;
+  };
   return <>
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><Link href="/keuangan/tutup-buku" className="back-btn">← Tutup Buku</Link><span>Closing HPP Bulanan</span></div>
     {params.success && <div role="status" className="p2ban" style={{ color: "#15803d", background: "#e8f5ee" }}>{params.success}</div>}
@@ -65,10 +71,12 @@ export default async function InventoryClosingPage({ searchParams }: { searchPar
       {report.activeClose && <div className="crm-sec">
         <SecHeader num="04" title={`RINCIAN ${labelBulan(report.activeClose.period.slice(0, 7)).toUpperCase()}`} desc="Qty dalam satuan dasar. HPP dan nilai berasal dari snapshot tersimpan." />
         <h3 style={{fontSize:13}}>RINGKASAN PER CABANG</h3>
-        <div style={{overflowX:"auto",marginBottom:14}}><table className="tbl"><thead><tr><th>Cabang</th><th>Barang / gudang</th><th>Nilai snapshot</th></tr></thead><tbody>
-          {report.branchSummary.map(branch=><tr key={branch.id}><td>{branch.name}</td><td>{branch.count}</td><td>{money(branch.value)}</td></tr>)}
-          <tr><th>Total cabang terpilih</th><td>{report.activeClose.scopedCount}</td><td>{money(report.activeClose.scopedValue)}</td></tr>
+        <p style={{fontSize:12}}>Kolom GL 1301 adalah saldo jurnal bertanggal sampai {report.activeClose.closed_through} yang terbaca sekarang. Jurnal yang ditambahkan atau dikoreksi sesudah closing dapat mengubah kolom GL, tetapi tidak mengubah snapshot. Selisih = snapshot dikurangi GL; periksa dokumen sumber sebelum membukukan koreksi.</p>
+        <div style={{overflowX:"auto",marginBottom:14}}><table className="tbl"><thead><tr><th>Cabang</th><th>Barang / gudang</th><th>Nilai snapshot</th><th>GL 1301 as-of</th><th>Selisih</th><th>Buku besar</th></tr></thead><tbody>
+          {report.branchSummary.map(branch=><tr key={branch.id}><td>{branch.name}</td><td>{branch.count}</td><td>{money(branch.value)}</td><td>{money(branch.ledgerValue)}</td><td>{differenceMoney(branch.difference)}</td><td><Link href={ledgerHref(branch.id)}>Lihat jurnal</Link></td></tr>)}
+          <tr><th>Total cabang terpilih</th><td>{report.activeClose.scopedCount}</td><td>{money(report.activeClose.scopedValue)}</td><td>{money(report.scopedLedgerValue)}</td><td>{differenceMoney(report.scopedDifference)}</td><td /></tr>
         </tbody></table></div>
+        {report.allBranches && report.selectedBranchIds.length === 0 && report.unallocatedLedger !== null && report.unallocatedLedger !== 0 && <p style={{fontSize:12,color:"#b45309"}}>Jurnal 1301 tanpa cabang: {money(report.unallocatedLedger)}. Nilai ini tidak dialokasikan ke cabang dan tidak termasuk total GL cabang di atas. <Link href={ledgerHref()}>Periksa buku besar</Link>.</p>}
         <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 850, width: "100%" }}><thead><tr><th>Cabang</th><th>Gudang</th><th>Kode</th><th>Barang</th><th>Satuan</th><th>Qty</th><th>HPP rata-rata</th><th>Nilai</th></tr></thead><tbody>
           {pagination.rows.map(value => <tr key={`${value.warehouse_id}:${value.item_id}`}><td>{value.branch}</td><td>{value.warehouse}</td><td>{value.code}</td><td>{value.item}</td><td>{value.unit}</td><td>{qty(value.qty)}</td><td>{money(value.average_cost)}</td><td>{money(value.value)}</td></tr>)}
           {!pagination.rows.length && <tr><td colSpan={8}>Tidak ada saldo snapshot pada cabang yang dapat Anda akses.</td></tr>}

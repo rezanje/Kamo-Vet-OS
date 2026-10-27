@@ -1,0 +1,6 @@
+Host: macOS, Node v22.22.3, npm ci from package-lock, commit df3a72ac + docs
+ Test Files  502 passed | 1 skipped (503)
+      Tests  3635 passed | 1 skipped (3636)
+npm run lint: exit 0, 0 errors (warnings only; CatatanForm 2x @next/next/no-img-element also present on origin/main)
+npx tsc --noEmit: exit 0
+npm run build: exit 0

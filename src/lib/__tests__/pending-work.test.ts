@@ -9,14 +9,21 @@ const approvals = [
 const orders = [{ id: "draft", status: "draft" }, { id: "paid", status: "dibayar" }];
 const corrections = [{ id: "c1", status: "pending" }, { id: "c2", status: "pending" }, { id: "c3", status: "selesai" }];
 
-function fixture() {
+function fixture(roleModules: { role: string; module_id: string }[] = [], rulesError: unknown = null) {
   const db = {
     from: vi.fn((table: string) => {
       const filters: [string, unknown][] = [];
       const query = {
-        select: (_columns: string, options: { count: string; head: boolean }) => { expect(options).toEqual({ count: "exact", head: true }); return query; },
+        select: (_columns: string, options?: { count: string; head: boolean }) => {
+          if (table !== "role_modules") expect(options).toEqual({ count: "exact", head: true });
+          return query;
+        },
         eq: (column: string, value: unknown) => { filters.push([column, value]); return query; },
         then: (resolve: (value: unknown) => unknown) => {
+          if (table === "role_modules") return Promise.resolve({
+            data: rulesError ? null : roleModules.filter(row => filters.every(([column, value]) => row[column as keyof typeof row] === value)),
+            error: rulesError,
+          }).then(resolve);
           const rows = (table === "approval_requests" ? approvals : table === "purchase_correction_requests" ? corrections : orders)
             .filter(row => filters.every(([column, value]) => row[column as keyof typeof row] === value));
           return Promise.resolve({ count: rows.length, error: null }).then(resolve);
@@ -43,12 +50,38 @@ describe("pending action alerts", () => {
     expect(db.rpc).toHaveBeenCalledWith("get_sales_refund_requests", expect.objectContaining({ p_office: true, p_status: "pending" }));
   });
 
-  it("scopes finance approvals to its role and does not show owner-only payment orders", async () => {
+  it("does not link default FINANCE to approval or payment-order pages it cannot open", async () => {
     const db = fixture();
     const items = await loadPendingWork(db, "FINANCE");
-    expect(items.map(item => item.count)).toEqual([1, 1]);
+    expect(items).toEqual([{ label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: 1, hasMore: false }]);
+    expect(db.from).not.toHaveBeenCalledWith("approval_requests");
+  });
+
+  it("scopes approvals to FINANCE only when Akses Grup lets FINANCE open the approval page", async () => {
+    const db = fixture([{ role: "FINANCE", module_id: "pengaturan" }, { role: "FINANCE", module_id: "kas-bank" }]);
+    const items = await loadPendingWork(db, "FINANCE");
+    expect(items.map(item => [item.href, item.count])).toEqual([["/pengaturan/penyetuju", 1], ["/kas-bank/refund", 1]]);
     expect(items.some(item => item.href.includes("perintah-bayar"))).toBe(false);
     expect(items.some(item => item.href === "/pembelian/koreksi")).toBe(false);
+  });
+
+  it("follows Akses Grup removals for ADMIN instead of showing dead links", async () => {
+    const db = fixture([{ role: "ADMIN", module_id: "pembelian" }]);
+    const items = await loadPendingWork(db, "ADMIN");
+    expect(items.map(item => item.href)).toEqual(["/pembelian/perintah-bayar?pending=1"]);
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(db.from).not.toHaveBeenCalledWith("approval_requests");
+  });
+
+  it("shows queues as unknown when Akses Grup cannot be read", async () => {
+    const items = await loadPendingWork(fixture([], { message: "offline" }), "OWNER");
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every(item => item.count === null)).toBe(true);
+  });
+
+  it("keeps the unknown fallback within the role's default pages", async () => {
+    expect(await loadPendingWork(fixture([], { message: "offline" }), "FINANCE"))
+      .toEqual([{ label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: null }]);
   });
 
   it("does not query privileged queues for staff", async () => {

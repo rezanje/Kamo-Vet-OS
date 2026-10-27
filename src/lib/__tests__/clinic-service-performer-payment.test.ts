@@ -62,6 +62,16 @@ it('preserves unrecorded legacy source attribution and explicit empty new-servic
  ]);
 });
 
+it('S01 forwards a cashier-assigned performer on an unassigned recorded service source to the posting call',async()=>{
+ const data=form();data.set('items',JSON.stringify([
+  {deskripsi:'Jasa dari rekam medis',qty:1,harga:50,jenis:'jasa',item_id:'service',prescription_item_id:'prescription',service_performers:{doctor_id:null,staff_id:'staff-b',staff_name:'Forged'}},
+ ]));await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
+ expect(state.calls[0].params.p_lines).toEqual([
+  expect.objectContaining({prescription_item_id:'prescription',service_performers:{doctor_id:null,staff_id:'staff-b'}}),
+ ]);
+ expect(JSON.stringify(state.calls)).not.toContain('Forged');
+});
+
 it('uses the exact existing invoice line ID for snapshot inheritance during correction',async()=>{
  state.existing=true;const data=form();data.set('items',JSON.stringify([{deskripsi:'Jasa manual historis',qty:1,harga:100,jenis:'jasa',source_invoice_item_id:'source-line',service_performers:{doctor_id:'doctor-old',staff_id:null,doctor_name:'Nama Lama'}}]));
  await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});

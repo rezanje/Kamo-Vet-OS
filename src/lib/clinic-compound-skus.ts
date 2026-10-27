@@ -14,11 +14,22 @@ export type CompoundSkuRow = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadClinicCompoundSkus(client: any, categories?: ClinicItemCategory[]): Promise<CompoundSkuRow[]> {
   categories ??= await loadClinicItemCategories(client);
-  const categoryIds = categories.filter(c => ["OBAT RACIK", "OBAT RACIKAN", "RACIKAN"].includes(
+  const categoryIds = new Set(categories.filter(c => ["OBAT RACIK", "OBAT RACIKAN", "RACIKAN"].includes(
     c.name.trim().replace(/\s+/g, " ").toUpperCase(),
-  )).map(c => c.id);
+  )).map(c => c.id));
+  // Finished medicines may be filed under a child of the Racikan category.
+  // Keep the same active/inventory/non-material eligibility for every child.
+  for (let added = true; added;) {
+    added = false;
+    for (const category of categories) {
+      if (category.parent_id && categoryIds.has(category.parent_id) && !categoryIds.has(category.id)) {
+        categoryIds.add(category.id);
+        added = true;
+      }
+    }
+  }
   const choices = ["name.ilike.Obat Racik *", "name.ilike.Obat Racikan *"];
-  if (categoryIds.length) choices.push(`category_id.in.(${categoryIds.join(",")})`);
+  if (categoryIds.size) choices.push(`category_id.in.(${[...categoryIds].join(",")})`);
   return readCompleteList<CompoundSkuRow>((from, to) => client.from("items")
     .select("id,code,name,unit,sell_price,is_compound_material,item_type,tindakan_kategori,category_id", { count: "exact" })
     .or(choices.join(",")).eq("is_active", true)

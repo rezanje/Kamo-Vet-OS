@@ -1,0 +1,19 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: <tmp-cluster>
+Applied 266 repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.
+Traceback (most recent call last):
+  File "<scratch-copy-red>/docs/evidence/2026-10-26-k02-bmhp/run-native-pg.py", line 69, in <module>
+    runpy.run_path(str(ROOT / 'scripts/test-procedure-bmhp-postgres.py'), run_name='__main__')
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 268, in run_path
+    return _run_module_code(code, init_globals, run_name,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 97, in _run_module_code
+    _run_code(code, mod_globals, init_globals,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "<scratch-copy-red>/scripts/test-procedure-bmhp-postgres.py", line 55, in <module>
+    sql((tests / name).read_text())
+  File "<scratch-copy-red>/scripts/test-procedure-bmhp-postgres.py", line 19, in sql
+    raise RuntimeError(result.stderr)
+RuntimeError: ERROR:  column "bmhp_components" of relation "prescription_items" does not exist
+LINE 1: ...obat, qty, harga, satuan, faktor, jenis, item_id, bmhp_compo...
+                                                             ^
+

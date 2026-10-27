@@ -2,7 +2,10 @@ import { NumberInput } from "@/components/NumberInput";
 import type {PromoRow} from "@/lib/promo";
 import type {MultiSelectItem,MultiSelectCategory} from "@/components/SearchableMultiSelect";
 import {PromoTargets} from "./PromoTargets";
-export function PromoFields({userId,items,branches,categories,today,promo,itemIds,scope}:{userId:string;items:MultiSelectItem[];branches:MultiSelectItem[];categories:MultiSelectCategory[];today?:string;promo?:PromoRow;itemIds?:string[];scope?:string}) {
+export function PromoFields({userId,items,branches,categories,today,promo,itemIds,scope,packageTotal=false}:{userId:string;items:MultiSelectItem[];branches:MultiSelectItem[];categories:MultiSelectCategory[];today?:string;promo?:PromoRow;itemIds?:string[];scope?:string;packageTotal?:boolean}) {
+ const savedMode=promo?.rule?.discount_mode ?? "per_unit";
+ // Without the C04 database release only the legacy per-unit meaning is offered.
+ const showMode=packageTotal || savedMode==="package_total";
  return <>
           <div style={{ gridColumn: "1 / -1" }}>
             <label className="flab">Nama promo *</label>
@@ -25,13 +28,22 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
             <select className="fi" name="discount_type" defaultValue={promo?.discount_type ?? ""}>
               <option value="">—</option>
               <option value="percent">Persen</option>
-              <option value="nominal">Nominal per satuan</option>
+              <option value="nominal">{showMode?"Nominal":"Nominal per satuan"}</option>
             </select>
           </div>
+          {promo&&<input type="hidden" name="discount_mode_saved" value={savedMode}/>}
+          {showMode&&<div>
+            <label className="flab">Cara hitung diskon nominal</label>
+            <select className="fi" name="discount_mode" defaultValue={savedMode}>
+              <option value="per_unit">Per satuan (aturan lama)</option>
+              <option value="package_total">Total per paket minimum</option>
+            </select>
+            <div style={{fontSize:9.5,color:"var(--td)",marginTop:3}}>Total per paket: pilih tepat satu barang, isi min. qty dan nominal. Potongan sekali; centang kelipatan untuk tiap paket lengkap. Maks. qty membatasi jumlah yang dihitung.</div>
+          </div>}
           <div>
             <label className="flab">Nilai diskon</label>
             <NumberInput className="fi" name="discount_value" defaultValue={promo?.discount_value ?? ""} type="number" min={0} step="any" placeholder="0" />
-            <div style={{fontSize:9.5,color:"var(--td)",marginTop:3}}>Nominal adalah potongan per satuan yang mendapat promo, bukan total potongan paket.</div>
+            <div style={{fontSize:9.5,color:"var(--td)",marginTop:3}}>{showMode?"Makna nominal mengikuti cara hitung yang dipilih. Promo lama tetap per satuan.":"Nominal adalah potongan per satuan yang mendapat promo, bukan total potongan paket."}</div>
           </div>
           <div>
             <label className="flab">Min. subtotal</label>

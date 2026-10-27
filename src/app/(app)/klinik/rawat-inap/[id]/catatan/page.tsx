@@ -39,9 +39,9 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   ]);
 
   const masterRows = await readCompleteList<{
-    id: string; code: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string; category_id: string | null; tindakan_kategori: string | null;
+    id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean; item_type: string; category_id: string | null; tindakan_kategori: string | null;
   }>((from, to) => supabase
-    .from("items").select("id, code, name, unit, sell_price, is_compound_material, item_type, category_id, tindakan_kategori", { count: "exact" })
+    .from("items").select("id, code, upc, name, unit, sell_price, is_compound_material, item_type, category_id, tindakan_kategori", { count: "exact" })
     .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
   const categories = await loadClinicItemCategories(supabase);
   const compoundRows = await loadClinicCompoundSkus(supabase, categories);
@@ -50,7 +50,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   const ids = (itemRows ?? []).map((i) => i.id);
   const { stock: stok, units: unitMap, prices: hargaMap } = await loadClinicSkuDetails(supabase, ids, visit?.branch_id ?? null);
   const items = (itemRows ?? []).map((i) => ({
-    id: i.id as string, code: "code" in i ? i.code as string | null : null, name: i.name as string, unit: (i.unit as string) ?? "pcs",
+    id: i.id as string, code: "code" in i ? i.code as string | null : null, upc: "upc" in i ? i.upc as string | null : null, name: i.name as string, unit: (i.unit as string) ?? "pcs",
     sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
     stok: stok.get(i.id as string) ?? 0,
     is_compound_material: !!i.is_compound_material,
