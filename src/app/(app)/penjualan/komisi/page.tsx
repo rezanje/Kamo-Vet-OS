@@ -7,7 +7,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { komisiPeriode } from "@/lib/komisi-data";
-import { hapusAturanKomisi, simpanAturanKomisi, toggleAturanKomisi } from "./actions";
+import { hapusAturanKomisi, simpanAturanKomisi, simpanKebijakanKomisiJasa, toggleAturanKomisi } from "./actions";
 import { readCompleteList } from "@/lib/checked-list";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { ItemReferenceField } from "@/components/ItemReferenceField";
@@ -27,6 +27,7 @@ type Aturan = {
   employee_id: string | null; branch_id: string | null; category_id: string | null; item_id: string | null;
   min_omzet: number; berlaku_dari: string | null; berlaku_sampai: string | null; is_active: boolean;
 };
+type KebijakanJasa = {id:string;branch_id:string|null;effective_from:string;mode:string;doctor_share_pct:number|null;staff_share_pct:number|null;created_at:string};
 
 export default async function KomisiPage({
   searchParams,
@@ -52,9 +53,12 @@ export default async function KomisiPage({
         .select("id, name, parent_id", { count: "exact" }).order("name").order("id").range(from, to), "Kategori komisi", { maxRows: null }),
       readCompleteList<{ id: string; code: string | null; name: string }>((from, to) => supabase.from("items")
         .select("id, code, name", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Produk komisi", { maxRows: null }),
+      readCompleteList<KebijakanJasa>((from,to)=>supabase.from("service_commission_policies")
+        .select("id,branch_id,effective_from,mode,doctor_share_pct,staff_share_pct,created_at",{count:"exact"})
+        .order("effective_from",{ascending:false}).order("created_at",{ascending:false}).order("id",{ascending:false}).range(from,to),"Kebijakan jasa",{maxRows:null}),
       komisiPeriode(supabase, periode),
     ]); } catch (loadError) { return <ListLoadFailure error={loadError} label="Referensi komisi" />; }
-  const [aturan, karyawan, cabang, kategori, barang, hitungan] = loaded;
+  const [aturan, karyawan, cabang, kategori, barang, kebijakanJasa, hitungan] = loaded;
 
   const namaEmp = new Map(karyawan.map((k) => [k.id, k.nama]));
   const namaCab = new Map(cabang.map((c) => [c.id, c.name]));
@@ -73,7 +77,8 @@ export default async function KomisiPage({
 
   const hasil = [...hitungan.hasil].sort((a, b) => b.komisi - a.komisi);
   const totalKomisi = hasil.reduce((a, h) => a + h.komisi, 0);
-  const totalOmzet = hasil.reduce((a, h) => a + h.omzet, 0);
+  // Each source line is counted once even when an explicit policy gives two actors a full commission basis.
+  const totalOmzet = hitungan.baris.reduce((a, row) => a + row.omzet, 0);
   const tanpaHpp = hasil.reduce((a, h) => a + h.barisTanpaHpp, 0);
   const adaAturanLaba = aturan.some((a) => a.is_active && a.basis === "laba");
 
@@ -90,6 +95,39 @@ export default async function KomisiPage({
         </Link>
       ) : null}
     >
+      <div className="crm-sec">
+        <SecHeader num="00" title="KEBIJAKAN JASA DUA PELAKSANA"
+          desc="Pilih cara memakai tarif komisi existing saat satu baris jasa dikerjakan dokter dan non-dokter. Tanpa pilihan yang cocok, komisi dan penggajian baris itu tetap tertahan." />
+        <p style={{fontSize:11}}>Pilihan bertanggal tersimpan sebagai riwayat. Cabang khusus mengalahkan pilihan semua cabang; pilihan terbaru pada tanggal yang sama berlaku. Retur mengikuti pilihan pada tanggal struk asal. Pool DEMO tetap memakai snapshot yang sudah ada.</p>
+        {bolehKelola && <form action={simpanKebijakanKomisiJasa}>
+          <div className="frow">
+            <div><label className="flab" htmlFor="service-policy-mode">Cara menghitung *</label>
+              <select className="fi" id="service-policy-mode" name="mode" defaultValue="" required>
+                <option value="" disabled>Pilih kebijakan</option>
+                <option value="pending">Tahan komisi dua pelaksana sampai diputuskan</option>
+                <option value="personal_rules">Hanya aturan khusus masing-masing karyawan</option>
+                <option value="both_full">Masing-masing memakai dasar penuh</option>
+                <option value="split">Bagi dasar menurut persentase yang diisi</option>
+              </select></div>
+            <div><label className="flab" htmlFor="service-policy-branch">Cabang</label>
+              <select className="fi" id="service-policy-branch" name="branch_id" defaultValue=""><option value="">Semua cabang</option>
+                {cabang.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+            <div><label className="flab" htmlFor="service-policy-date">Berlaku mulai *</label>
+              <input className="fi" id="service-policy-date" type="date" name="effective_from" required /></div>
+            <div><label className="flab" htmlFor="service-policy-doctor">Bagian dasar dokter (%)</label>
+              <NumberInput className="fi" id="service-policy-doctor" name="doctor_share_pct" type="number" min={0} max={100} step="0.01" placeholder="isi hanya untuk Bagi dasar" /></div>
+            <div><label className="flab" htmlFor="service-policy-staff">Bagian dasar non-dokter (%)</label>
+              <NumberInput className="fi" id="service-policy-staff" name="staff_share_pct" type="number" min={0} max={100} step="0.01" placeholder="total bersama dokter 100" /></div>
+            <div style={{display:"flex",alignItems:"flex-end"}}><SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan kebijakan</SubmitButton></div>
+          </div>
+        </form>}
+        {kebijakanJasa.length===0?<p style={{fontSize:11}}>Belum ada kebijakan tersimpan. Baris dua pelaksana tetap perlu keputusan sebelum masuk penggajian.</p>
+          :<div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Mulai</th><th>Cabang</th><th>Cara hitung</th></tr></thead><tbody>
+            {kebijakanJasa.slice(0,20).map(row=><tr key={row.id}><td>{row.effective_from}</td><td>{row.branch_id?namaCab.get(row.branch_id)??"Cabang tidak aktif":"Semua cabang"}</td>
+              <td>{row.mode==="pending"?"Ditahan — perlu keputusan":row.mode==="personal_rules"?"Aturan khusus karyawan":row.mode==="both_full"?"Masing-masing dasar penuh":row.mode==="split"?`Dokter ${row.doctor_share_pct}% · non-dokter ${row.staff_share_pct}%`:"Tidak dikenal — tertahan"}</td></tr>)}</tbody></table>
+            {kebijakanJasa.length>20&&<p style={{fontSize:11}}>Menampilkan 20 pilihan terbaru dari {kebijakanJasa.length} riwayat.</p>}
+          </div>}
+      </div>
       <div className="crm-sec">
         <SecHeader
           num="01" title="DAFTAR ATURAN"
@@ -271,15 +309,15 @@ export default async function KomisiPage({
         />
 
         <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 10 }}>
-          Periode <b>{periode}</b> · omzet terhitung <b>{rp(totalOmzet)}</b> · total komisi{" "}
+          Periode <b>{periode}</b> · omzet sumber (sekali per baris) <b>{rp(totalOmzet)}</b> · total komisi{" "}
           <b style={{ color: "#15803d" }}>{rp(totalKomisi)}</b>
         </div>
 
         {hitungan.omzetTanpaPenjual !== 0 && (
           <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
             <i className="ti ti-alert-triangle" /> {rp(hitungan.omzetTanpaPenjual)} penjualan tidak punya penerima komisi —
-            kasirnya belum terhubung ke data karyawan, kunjungan kliniknya belum dipilih dokternya, atau pembuat faktur
-            resellernya bukan karyawan terdaftar.
+            kasirnya belum terhubung ke data karyawan, pelaksana jasa belum memiliki kebijakan yang cocok,
+            kunjungan kliniknya belum dipilih dokternya, atau pembuat faktur resellernya bukan karyawan terdaftar.
           </div>
         )}
         {adaAturanLaba && tanpaHpp > 0 && (
@@ -294,7 +332,7 @@ export default async function KomisiPage({
             <thead>
               <tr>
                 <th>Karyawan</th>
-                <th style={{ width: 150, textAlign: "right" }}>Omzet</th>
+                <th style={{ width: 150, textAlign: "right" }}>Dasar omzet atribusi</th>
                 <th style={{ width: 150, textAlign: "right" }}>Laba kotor</th>
                 <th style={{ width: 150, textAlign: "right" }}>Komisi</th>
               </tr>
