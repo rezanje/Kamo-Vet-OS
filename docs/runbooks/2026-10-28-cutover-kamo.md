@@ -27,7 +27,7 @@ Posting persediaan awal, saldo awal, dan saldo utang/piutang memerlukan akun **O
 
 ## 2. Prasyarat (paling lambat 28 Okt pagi)
 
-- [ ] Semua rilis gelombang 1 sudah live di Production: K03 (PR264) dan M05 (PR266). **M05: paket migrasi owner (`docs/evidence/2026-10-27-m05-opening-invoices/owner-apply/` 01 preflight → 02 apply → 03 readback) dijalankan dulu, baru PR di-merge**; kalau terbalik, halaman Hutang/Piutang/faktur ikut gagal dibuka.
+- [ ] Semua rilis gelombang 1 sudah live di Production: K03 (PR264) dan M05 (PR266). **M05: paket migrasi owner (`docs/evidence/2026-10-27-m05-opening-invoices/owner-apply/` 01 preflight → 02 apply → 03 readback) dijalankan dulu, baru PR di-merge**; kalau terbalik, halaman Hutang/Piutang/faktur ikut gagal dibuka. **M05 lanjutan (tanggal faktur/jatuh tempo boleh kosong):** PR di-merge dan live **dulu**, baru paket `docs/evidence/2026-10-27-m05-optional-dates/owner-apply/` (01 → 02 → 03) dijalankan; harus selesai sebelum impor saldo per faktur.
 - [ ] **Data uji coba di Production sudah dipastikan.** Selama fase develop, Production berisi akun dan transaksi uji. Sebelum saldo pembuka diposting, koordinator dan tim VetOS harus menyepakati: transaksi uji mana yang ada, apakah dibatalkan lewat fitur aplikasi, dan bahwa laporan Oktober tidak tercampur. **Tidak ada reset/hapus data tanpa persetujuan tertulis pemilik.**
 - [ ] Master cabang, gudang, pengguna/peran, rekening kas-bank, bagan akun sudah final.
 - [ ] Master pemasok dan pelanggan B2B lengkap, karena impor utang/piutang **menolak** pihak yang belum ada di master (tidak membuat pihak otomatis). Pencocokan pihak memakai **nama persis** (master belum punya kolom kode Accurate), jadi samakan ejaan nama di export Accurate dengan master VetOS.
@@ -69,7 +69,7 @@ Urutan wajib. Jangan lanjut ke langkah berikut sebelum total kontrol langkah seb
    - Total kontrol: qty dan nilai per gudang **sama dengan** laporan persediaan Accurate. Kalau ada selisih pembulatan sen, finance memutuskan sebelum posting; sistem menolak nilai yang tidak tepat dua desimal.
    - **Posting ini hanya sekali.** Setelah diposting, dasar stok terkunci dan koreksi hanya lewat stok opname.
 5. **Saldo utang & piutang per faktur** (M05):
-   - Buku Besar › Saldo Awal per Faktur: unduh template `Format-Saldo-Awal-Faktur-VetOS.xlsx` (sheet `Saldo Awal Faktur`, atau dua sheet `Hutang` dan `Piutang`), isi Jenis, Kode Pihak (opsional), Nama Pihak, No Faktur, Tanggal Faktur, Jatuh Tempo, **Sisa Tagihan** (bukan total asli), Total Faktur Asli (opsional), Keterangan.
+   - Buku Besar › Saldo Awal per Faktur: unduh template `Format-Saldo-Awal-Faktur-VetOS.xlsx` (sheet `Saldo Awal Faktur`, atau dua sheet `Hutang` dan `Piutang`), isi Jenis, Kode Pihak (opsional), Nama Pihak, No Faktur, Tanggal Faktur dan Jatuh Tempo (**bila tersedia** — kosong disimpan kosong, tidak diganti tanggal lain; kolomnya tetap ada), **Sisa Tagihan** (bukan total asli), Total Faktur Asli (opsional), Keterangan.
    - Upload **per cabang** (satu batch = satu cabang), isi total kontrol dari Accurate, cek pratinjau (pihak, nomor faktur ganda, total), lalu posting oleh OWNER dengan alasan audit.
    - **Teliti sebelum posting:** faktur saldo awal tidak bisa dibatalkan setelah diposting.
    - Total kontrol: total per pihak dan total keseluruhan **sama dengan** daftar Accurate, dan sama dengan saldo akun utang usaha/piutang usaha di neraca Accurate.

@@ -85,7 +85,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
       {sp.error && <div className="p2ban" role="alert">{sp.error}</div>}
       {sp.success && <div className="p2ban" role="status">{sp.success}</div>}
-      <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal} · jatuh tempo {invoice.jatuh_tempo} · {invoice.status}</p>
+      <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal ?? "tanggal faktur tidak ada"} · jatuh tempo {invoice.jatuh_tempo ?? "tidak ada"} · {invoice.status}</p>
       <p>Total {rp(invoice.total)} · Pembayaran terbawa {rp(invoice.carried_paid)} · Penerimaan faktur ini {rp(ownPaid)} · Sisa piutang {rp(invoice.status === "batal" ? 0 : Math.max(0, Number(invoice.total) - paid))}</p>
       {invoice.opening_batch_id && <p><span className="bge b">Saldo awal</span> {invoice.catatan} — sisa tagihan dari Accurate per tanggal cutover, tanpa barang, PPN, atau pendapatan periode ini. Terima pembayarannya dari daftar Faktur &amp; Penerimaan; pembatalan/koreksi tidak tersedia.</p>}
       {invoice.order_id && <p><Link href={`/penjualan/pesanan/${invoice.order_id}`}>Buka pesanan dan bukti pengiriman fisik</Link></p>}

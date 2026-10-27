@@ -84,6 +84,42 @@ describe("bacaWorkbookSaldoAwalFaktur", () => {
     expect(ringkasFile(hasil.rows).HUTANG).toEqual({ jumlah: 1, total: 0 });
   });
 
+  it("tanggal faktur dan jatuh tempo bila tersedia: kosong tetap kosong, tidak diganti tanggal lain", async () => {
+    const hasil = await bacaWorkbookSaldoAwalFaktur(await buku({ "Saldo Awal Faktur": [
+      judul,
+      ["HUTANG", null, "PT Fiksi", "D-2", "01/09/2026", "01/10/2026", 100, null, null],
+      ["HUTANG", null, "PT Fiksi", "D-1", "01/09/2026", null, 100, null, null],
+      ["HUTANG", null, "PT Fiksi", "D-0", null, "01/10/2026", 100, null, null],
+      ["PIUTANG", null, "Toko Fiksi", "N-0", null, null, 200, null, null],
+      ["PIUTANG", null, "Toko Fiksi", "N-1", "   ", "", 300, null, null],
+    ] }));
+    expect(hasil.errors).toEqual([]);
+    expect(hasil.rows.map((r) => [r.no_faktur, r.tanggal, r.jatuh_tempo])).toEqual([
+      ["D-2", "2026-09-01", "2026-10-01"],
+      ["D-1", "2026-09-01", ""],
+      ["D-0", "", "2026-10-01"],
+      ["N-0", "", ""],
+      ["N-1", "", ""],
+    ]);
+    expect(ringkasFile(hasil.rows)).toEqual({ HUTANG: { jumlah: 3, total: 300 }, PIUTANG: { jumlah: 2, total: 500 } });
+  });
+
+  it("tanggal terisi tapi tidak valid tetap dikirim mentah, termasuk error Excel #N/A", async () => {
+    const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet("Saldo Awal Faktur");
+    sheet.addRow([...KOLOM_SALDO_AWAL_FAKTUR]);
+    sheet.addRow(["HUTANG", null, "PT Fiksi", "E-1", null, "31/02/2026", 100, null, null]);
+    sheet.addRow(["HUTANG", null, "PT Fiksi", "E-2", null, null, 100, null, null]);
+    sheet.getCell("E3").value = { error: "#N/A" } as ExcelJS.CellErrorValue;
+    sheet.getCell("F3").value = { formula: "1/0", result: { error: "#DIV/0!" } } as ExcelJS.CellFormulaValue;
+    const hasil = await bacaWorkbookSaldoAwalFaktur(new Uint8Array(await book.xlsx.writeBuffer()));
+    expect(hasil.errors).toEqual([]);
+    expect(hasil.rows.map((r) => [r.no_faktur, r.tanggal, r.jatuh_tempo])).toEqual([
+      ["E-1", "", "31/02/2026"],
+      ["E-2", "#N/A", "#DIV/0!"],
+    ]);
+  });
+
   it("menerima dua sheet Hutang/Piutang tanpa kolom Jenis, nomor baris tetap unik", async () => {
     const tanpaJenis = judul.filter((j) => j !== "Jenis");
     const hasil = await bacaWorkbookSaldoAwalFaktur(await buku({

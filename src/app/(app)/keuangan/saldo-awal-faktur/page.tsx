@@ -40,7 +40,7 @@ export default async function SaldoAwalFakturPage() {
       <SecHeader num="01" title="IMPOR FAKTUR TERBUKA DARI ACCURATE"
         desc="Setiap faktur yang belum lunas per tanggal cutover masuk sebagai faktur sendiri, jadi pembayaran nanti bisa dialokasikan ke faktur lama yang tepat lewat layar Pembayaran Hutang dan Faktur Penjualan." />
       <ol style={{ fontSize: 12, lineHeight: 1.7, margin: "0 0 10px 18px" }}>
-        <li>Unduh <a href="/keuangan/saldo-awal-faktur/template">{TEMPLATE_SALDO_AWAL_FAKTUR}</a>, isi satu baris per faktur terbuka dengan <strong>sisa tagihan</strong> (bukan total faktur).</li>
+        <li>Unduh <a href="/keuangan/saldo-awal-faktur/template">{TEMPLATE_SALDO_AWAL_FAKTUR}</a>, isi satu baris per faktur terbuka dengan <strong>sisa tagihan</strong> (bukan total faktur). Tanggal faktur dan jatuh tempo diisi bila tersedia; yang kosong disimpan kosong.</li>
         <li>Pastikan semua pemasok dan pelanggan sudah ada di master VetOS. Nama yang belum ada ditolak, tidak dibuat otomatis.</li>
         <li>Unggah, isi total kontrol dari laporan umur hutang/piutang Accurate, lalu periksa. Semua baris salah ditandai sebelum ada yang tersimpan.</li>
         <li>OWNER memposting sekali. Hasilnya satu jurnal saldo awal; tidak ada stok, HPP, PPN, pembelian, atau pendapatan periode berjalan.</li>

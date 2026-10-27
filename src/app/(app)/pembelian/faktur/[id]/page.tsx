@@ -68,7 +68,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
     {sp.success && <div role="status" className="p2ban">{sp.success}</div>}
     {sp.error && <div role="alert" className="p2ban">{sp.error}</div>}
     <section className="crm-sec">
-      <SecHeader num="01" title={invoice.no_faktur} desc={`Tanggal ${invoice.tanggal} · jatuh tempo ${invoice.jatuh_tempo}`} />
+      <SecHeader num="01" title={invoice.no_faktur} desc={`Tanggal ${invoice.tanggal ?? "tidak ada"} · jatuh tempo ${invoice.jatuh_tempo ?? "tidak ada"}`} />
       <p><strong>{invoice.voided_at ? "Faktur dibatalkan" : "Faktur aktif"}</strong></p>
       {invoice.opening_batch_id && <p><span className="bge b">Saldo awal</span> Sisa hutang dari Accurate per tanggal cutover, tanpa barang, stok, atau PPN. Bayar lewat Pembayaran Hutang; pembatalan/koreksi faktur tidak tersedia.</p>}
       {invoice.void_reason && <p>Alasan: {invoice.void_reason}</p>}
