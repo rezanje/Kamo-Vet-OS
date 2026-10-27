@@ -250,6 +250,11 @@ create policy employees_update_manager on public.employees
   for update to authenticated
   using ((select private.can_manage_hris_employee(id)))
   with check ((select private.can_manage_hris_branch(branch_id)) or (select private.can_manage_hris_employee(id)));
+-- `select ... for share` dari fungsi klinik (set_visit_service_state, dsb.) wajib lolos
+-- USING policy UPDATE. Policy ini hanya membuka penguncian baris; WITH CHECK false
+-- membuat UPDATE nyata oleh non-pengelola tetap ditolak.
+create policy employees_lock_directory on public.employees
+  for update to authenticated using (true) with check (false);
 create policy employees_delete_owner on public.employees
   for delete to authenticated using ((select private.is_hris_owner()));
 

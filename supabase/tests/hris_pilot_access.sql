@@ -93,8 +93,10 @@ do $$ declare n int; begin
   assert (select count(*) from public.work_shifts where id::text like 'f0000000%') = 2, 'staff: shifts visible';
   assert (select count(*) from public.employee_schedules) = 1, 'staff: schedules visible (clinic doctor roster)';
 
-  update public.employees set nama = 'X' where id = 'e0000000-0000-4000-8000-000000000002';
-  get diagnostics n = row_count; assert n = 0, 'staff: cannot edit employees';
+  assert (select count(*) from (select id from public.employees where id = 'e0000000-0000-4000-8000-000000000002' for share) x) = 1,
+    'staff: clinic functions can lock a provider row';
+  begin update public.employees set nama = 'X' where id = 'e0000000-0000-4000-8000-000000000002';
+    raise exception 'staff: employee edit must fail'; exception when insufficient_privilege then null; end;
   update public.cash_advances set status = 'Disetujui' where id = 'c0000000-0000-4000-8000-000000000001';
   get diagnostics n = row_count; assert n = 0, 'staff: cannot approve own kasbon';
 
@@ -161,8 +163,8 @@ do $$ declare n int; begin
   assert (select count(*) from public.attendance) >= 3, 'finance: reads attendance';
   update public.payrolls set total = 1; get diagnostics n = row_count; assert n = 0, 'finance: cannot edit payroll';
   update public.employee_base_salaries set gaji_pokok = 1; get diagnostics n = row_count; assert n = 0, 'finance: cannot edit salary';
-  update public.employees set nama = 'X' where id = 'e0000000-0000-4000-8000-000000000001';
-  get diagnostics n = row_count; assert n = 0, 'finance: cannot edit employees';
+  begin update public.employees set nama = 'X' where id = 'e0000000-0000-4000-8000-000000000001';
+    raise exception 'finance: employee edit must fail'; exception when insufficient_privilege then null; end;
 end $$;
 
 -- ------------------------------------------------------------ ADMIN (default: all branches)
@@ -198,8 +200,8 @@ do $$ declare n int; begin
   begin insert into public.attendance(employee_id, tanggal, status) values ('e0000000-0000-4000-8000-000000000004', '2026-10-07', 'Izin');
     raise exception 'scoped admin: other-branch write must fail'; exception when insufficient_privilege then null; end;
   insert into public.attendance(employee_id, tanggal, status) values ('e0000000-0000-4000-8000-000000000003', '2026-10-07', 'Izin');
-  update public.employees set jabatan = 'X' where id = 'e0000000-0000-4000-8000-000000000004';
-  get diagnostics n = row_count; assert n = 0, 'scoped admin: cannot edit other-branch employee';
+  begin update public.employees set jabatan = 'X' where id = 'e0000000-0000-4000-8000-000000000004';
+    raise exception 'scoped admin: other-branch employee edit must fail'; exception when insufficient_privilege then null; end;
 end $$;
 reset role;
 delete from public.role_capabilities where role = 'ADMIN';

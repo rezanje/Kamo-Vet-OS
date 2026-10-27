@@ -35,6 +35,9 @@ migration that report returns no rows for them.
   closed less than 15 minutes ago, `selisih < 0`, and no shortage kasbon exists yet for that shift. The amount is taken
   from the shift row. `cancel_shift_cash_shortage(shift_id)` undoes it when the journal fails (refused once a journal
   exists). The reason text matches `ALASAN_SELISIH_KAS` in `src/lib/kasbon.ts`.
+- `employees_lock_directory` (`for update using (true) with check (false)`) keeps `select ... for share` working for
+  invoker clinic functions such as `set_visit_service_state`. Row locks must pass UPDATE `USING`, and without this
+  policy a STAFF provider lookup returns no row. Real updates by non-managers are still refused by `WITH CHECK`.
 - The audit log for these tables is metadata-only (`activity_log_sources.metadata_only = true`), so it never carries amounts.
 
 ## App changes
@@ -53,7 +56,7 @@ migration that report returns no rows for them.
   fictional fixtures. It proves the old exposure (STAFF reads 3 salaries), the salary move, and the per-role read/write
   matrix above (including ADMIN with all-branches switched off, the shift-shortage function, and anon). A mutation check
   (adding a `using (true)` salary policy) makes it fail at `staff: no salaries`.
-- Unit tests: 3,672 pass (`npm test`).
+- Unit tests: 3,854 pass (`npm test`) after merging `main` 7090f98.
 - Other SQL suites: `activity_audit_people_settings`, `master_data_lifecycle` and the dedicated runners listed in the PR
   were run with the migration. Suites that already fail on `main` fail at the same statement with and without it.
 
