@@ -1,4 +1,5 @@
 import { servicePerformerInput, type ServicePerformersInput } from "./service-performers";
+import { pesanGagalKampanye } from "./kode-kampanye";
 
 /** Keep legacy payload keys absent so retries retain their original request hash. */
 export function clinicServicePerformerInput(kind: string | undefined, value: unknown): ServicePerformersInput | undefined {
@@ -42,6 +43,8 @@ export type ClinicInvoiceInput = {
   metode_bayar: string;
   shift_id: string;
   voucher_code: string | null;
+  /** Kode kampanye yang diketik (C05); batas pemakaiannya dijaga database. */
+  campaign_code?: string | null;
   salesperson_id: string | null;
 };
 
@@ -106,6 +109,8 @@ export function toClinicCompoundRecipeInput(input: {
 }
 
 export function parseClinicPostingError(error: { code?: string; message: string } | null, uncertainFallback?: string): string {
+  const kampanye = pesanGagalKampanye(error?.message);
+  if (kampanye) return kampanye;
   if (error?.code === "P0001") {
     if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
     const detailMessages: Record<string, string> = {

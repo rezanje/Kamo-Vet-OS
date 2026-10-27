@@ -23,7 +23,8 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
 import { hitungPromoKeranjang } from "@/lib/promo-hitung";
 import { diskonGolonganKeranjang } from "@/lib/harga-golongan";
-import { normalizeKode, pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
+import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
+import { bacaKode, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 
 type Line = {
@@ -253,16 +254,23 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   ].filter(row => row.deskripsi.trim() && row.qty > 0).map(row => ({
     item_id:row.item_id ?? "", qty:row.qty, harga:hargaNetto(row), satuan:row.satuan, item_type:row.item_type,
   })));
-  const promoVal = editMode ? 0 : hitungPromoKeranjang(bekal.promos, barisPotongan).reduce((a, p) => a + p.potongan, 0);
+  // Kode kampanye (C05): terikat voucher → syarat voucher itu; terikat promo → promo itu ikut dipotong.
+  const kodeTerbaca = bacaKode(voucher, bekal.kodeKampanye ?? []);
+  const kampanye = kodeTerbaca.kampanye;
+  const promoEfektif = promoDenganKode(bekal.promos, kodeTerbaca.promoId);
+  const hasilPromo = editMode ? [] : hitungPromoKeranjang(promoEfektif, barisPotongan);
+  const promoVal = hasilPromo.reduce((a, p) => a + p.potongan, 0);
   const golonganVal = editMode ? 0 : diskonGolonganKeranjang(
     barisPotongan, bekal.aturanDiskon, bekal.golonganPersen, new Map(Object.entries(bekal.infoBarang)),
   );
   const dasarVoucher = Math.max(0, subtotal - promoVal);
-  const voucherRow = bekal.vouchers.find((v) => v.code === normalizeKode(voucher));
-  const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
+  const voucherRow = kodeTerbaca.voucherCode ? bekal.vouchers.find((v) => v.code === kodeTerbaca.voucherCode) : undefined;
+  const tolakKampanye = kampanye && !editMode ? pesanKampanyeDitolak(kampanye,
+    promoEfektif.some((p) => p.id === kodeTerbaca.promoId), hasilPromo.some((p) => p.promoId === kodeTerbaca.promoId)) : null;
+  const tolakVoucher = voucher.trim() === "" ? null : tolakKampanye ?? (kampanye && !kampanye.voucher_code ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
     dasar: dasarVoucher, adaPromoOtomatis: promoVal > 0,
     customerId: bekal.customerId, categoryId: bekal.categoryId,
-  });
+  }));
   const voucherVal = !editMode && voucherRow && !tolakVoucher ? potonganVoucher(dasarVoucher, voucherRow) : 0;
   const potonganOtomatis = Math.min(subtotal, promoVal + golonganVal + voucherVal);
 
@@ -445,7 +453,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
 
               {/* Kode voucher: mesin & syaratnya sama dengan kasir petshop. */}
               {!editMode && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", gap: 8 }}>
-                <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Kode voucher</span>
+                <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Kode voucher / kampanye</span>
                 <input className="fi" value={voucher} placeholder="opsional"
                   onChange={(e) => setVoucher(e.target.value)}
                   style={{ width: 120, textAlign: "right", textTransform: "uppercase", borderColor: tolakVoucher ? "#fca5a5" : undefined }} />

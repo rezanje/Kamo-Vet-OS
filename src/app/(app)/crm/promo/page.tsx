@@ -102,6 +102,9 @@ export default async function PromoAdminPage({
         <Link href="/crm/voucher" className="back-btn" style={tabAktif(false)}>
           <i className="ti ti-ticket" /> Kode Voucher
         </Link>
+        <Link href="/crm/kampanye" className="back-btn" style={tabAktif(false)}>
+          <i className="ti ti-tag" /> Kode Kampanye
+        </Link>
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}

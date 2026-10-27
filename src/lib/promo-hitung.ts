@@ -186,7 +186,9 @@ type AnyClient = any;
 
 // Promo yang aktif hari ini di cabang ini, siap dipakai hitungPromoKeranjang.
 // Dipakai SERVER saat checkout — angka promo dari keranjang tidak dipercaya.
-export async function loadPromoAktif(supabase: AnyClient, branchId: string): Promise<PromoHitung[]> {
+// `promoKodeIds`: promo milik kode kampanye (C05) ikut dibaca walau bukan "potong
+// otomatis"; autoApply-nya tetap false sampai kodenya diketik (lib/kode-kampanye).
+export async function loadPromoAktif(supabase: AnyClient, branchId: string, promoKodeIds: string[] = []): Promise<PromoHitung[]> {
   const wibToday = hariIniWIB();
 
   type Row = {
@@ -196,9 +198,16 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string): Pro
     discount_type: "percent" | "nominal" | null; discount_value: number | null;
   };
 
+  const kolom = "id, name, rule, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value";
   const data = await readCompleteList<Row>((from,to) => supabase.from("promos")
-    .select("id, name, rule, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value", {count:"exact"})
+    .select(kolom, {count:"exact"})
     .eq("is_active",true).eq("auto_apply",true).order("id").range(from,to), "Promo aktif");
+  const kodeIds = [...new Set(promoKodeIds)].filter((id) => !data.some((p) => p.id === id));
+  if (kodeIds.length > 0) {
+    const { data: kodeRows, error } = await supabase.from("promos").select(kolom).eq("is_active",true).in("id", kodeIds);
+    if (error) throw new Error("Promo kode kampanye belum dapat dibaca. Muat ulang.");
+    data.push(...((kodeRows ?? []) as Row[]));
+  }
 
   const aktif = ((data ?? []) as Row[]).filter((p) => {
     if (p.branch_ids && p.branch_ids.length > 0 && !p.branch_ids.includes(branchId)) return false;
@@ -234,7 +243,7 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string): Pro
       unit: typeof p.rule?.unit === "string" ? p.rule.unit : null,
       minQty: p.min_qty == null ? null : Number(p.min_qty),
       maxQty: p.max_qty == null ? null : Number(p.max_qty),
-      kelipatan: !!p.kelipatan, autoApply: true,
+      kelipatan: !!p.kelipatan, autoApply: !!p.auto_apply,
       discountType: p.discount_type,
       discountValue: p.discount_value == null ? null : Number(p.discount_value),
       discountMode: mode, minSubtotal: p.rule?.min_subtotal ?? null,

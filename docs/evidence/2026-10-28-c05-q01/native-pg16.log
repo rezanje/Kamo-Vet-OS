@@ -1,0 +1,15 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: /tmp/vetos-c05q01-08w6f1ii
+Applied 278 repository migrations to isolated PostgreSQL with auth/storage shims.
+Re-applied both new migrations: idempotent.
+c05_campaign_codes.sql: passed.
+q01_new_customer_quest.sql: passed.
+clinic_invoice_post.sql: passed.
+clinic_billing_lifecycle.sql: passed.
+clinic_demo_financial_policy.sql: passed.
+quest_config_write_guard.sql: passed.
+pos_payment_method_corrections.sql: passed.
+clinic_manual_invoice_units.sql: passed.
+clinic_procedure_bmhp.sql: passed.
+C05 concurrency: two simultaneous checkouts at cap 1 -> 1 accepted, 1 refused.
+Q01 concurrency: one new customer paid at two counters simultaneously -> 1 claim.
+cleanup: temp cluster removed
