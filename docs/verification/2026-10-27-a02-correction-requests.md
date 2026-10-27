@@ -73,26 +73,19 @@ PR248 belum di-merge/deploy dan migrasinya belum diterapkan ke production. Sheet
 
 ## Migrasi persis, urutan rilis, backup & rollback
 
-- Satu migrasi: `supabase/migrations/20261027153000_purchase_correction_requests.sql` (aditif: 1 tabel baru, 4 fungsi baru,
-  1 policy, 1 baris `activity_log_sources`, 2 trigger pada tabel baru). Tidak mengubah tabel/fungsi lama, tidak ada grant global,
-  tidak ada backfill. PR221 dan PR233 tidak punya migrasi.
-- Nomor versi semula `20261027090000` bentrok dengan `20261027090000_private_report_promo_history_presets.sql` di main;
-  sudah dipindah ke `20261027153000` dan dijaga tes (gagal pada kode lama + main, lulus sekarang).
-- Urutan rilis yang disarankan (slot rilis terpisah dari Wowo; tidak bersamaan dengan C04 atau migrasi klinis PR251
-  `20261027100000_doctor_patient_compound.sql`):
-  1. Technical checks hijau di head final PR248 + review independen tanpa blocker (status: lihat laporan PR248).
-  2. Review backup/target/preflight: catat titik backup/PITR production; pastikan target project benar; preflight read-only
-     memastikan `20261027153000` belum ada di riwayat migrasi dan tabel/fungsi bernama sama belum ada.
-  3. Terapkan **hanya** file migrasi A02 (jangan `db push` massal: migrasi C04 `20261026002100`, R05 `20261027090000` dan
-     PR251 `20261027100000` bisa ikut terpasang). Verifikasi pasca-terap: versi `20261027153000` tercatat sekali; RLS aktif;
-     `anon` tanpa EXECUTE; `authenticated` hanya SELECT tabel + EXECUTE 4 fungsi; 2 trigger aktif; baris
-     `activity_log_sources` dengan `reader_roles={OWNER}`.
-  4. Merge PR248 (deploy aplikasi Production). Migrasi duluan aman untuk aplikasi lama (aditif). Bila aplikasi terlanjur jalan
-     tanpa migrasi, layar gagal tertutup: "status belum dapat dimuat", form disembunyikan, tidak ada angka palsu.
-  5. Komentar pasca-deploy di PR248 sesuai AGENTS.md.
-- Rollback: `docs/rollback/2026-10-27-a02-purchase-correction-requests.sql` (belum dijalankan di target). Langkah 1 membekukan
-  pembuatan/pemrosesan dan menyimpan semua request + log; diuji di database sementara. Langkah 2 (hapus total) dikomentari dan
-  menolak jalan bila ada request nyata.
+- Satu migrasi aditif: `supabase/migrations/20261027153000_purchase_correction_requests.sql`
+  (sha256 `923bb7420acd35ecaee2ba80ff54b201e9beb3d8fce65ff8fae21d11e5909081`). PR221/PR233 tanpa migrasi (sudah live).
+- **Paket owner:** `docs/evidence/2026-10-27-a02-correction-requests/owner-apply/` — `OWNER-RUNBOOK.md`, preflight dan
+  readback read-only, `02-apply.sql` (migrasi persis + baris riwayat dalam satu transaksi, `lock_timeout 5s`,
+  `statement_timeout 60s`), `04-freeze-if-decided.sql` (rollback default, data tetap), `05-teardown-empty-only.sql`
+  (hanya saat kosong), dan `build-and-verify.py` yang menghasilkan ulang 01–03 dan melatih seluruh alur.
+- **Backup:** tidak ada aturan repo yang mewajibkan backup penuh/on-demand baru (AGENTS.md/CLAUDE.md tidak mengaturnya;
+  runbook req2 dan K02 hanya untuk rilis masing-masing). Catat waktu backup lengkap terbaru di catatan rilis privat
+  saat slot. Rollback A02 tidak memakai restore.
+- **Data production tidak masuk repo:** ID project, waktu backup, keluaran query production dicatat privat saja.
+- Urutan rilis (slot DB eksklusif dari koordinator): runbook Langkah 0–5 — target & catatan privat, cocokkan sha256,
+  preflight `0 failed`, `02-apply.sql`, readback `0 failed`, merge PR248, verifikasi Production READY, komentar pasca-deploy.
+  Jangan `supabase db push`: migrasi lain yang belum terpasang (mis. C04 `20261026002100`, R05 `20261027090000`) bisa ikut.
 - Catatan: fungsi lama `reset_simulasi_barang_dan_stok` tidak diperluas untuk tabel ini (sama seperti tabel request lain
   yang ditambahkan setelahnya); FK default akan menahan reset bila ada request.
 
@@ -115,6 +108,14 @@ PR248 belum di-merge/deploy dan migrasinya belum diterapkan ke production. Sheet
 - Regresi SQL terkait identik main vs main+A02 (`purchase_invoice_lifecycle`, `purchase_short_close`, 13 suite PASS di
   `test-activity-audit-postgres.py`).
 - Technical checks GitHub di head final PR248: lihat laporan PR248 (URL dan langkah per head).
+- Paket owner dilatih penuh pada PostgreSQL 16.15 dan **17.6** (versi production), 270 migrasi sebelumnya + riwayat:
+  preflight `0 failed`; apply tertahan kunci tulis pada `purchase_orders` menyerah setelah 5,0 s tanpa perubahan;
+  apply + readback `0 failed`; suite A02 lulus; teardown saat kosong berhasil lalu preflight kembali `0 failed`;
+  apply ulang; freeze menolak pembuatan/pemrosesan sementara data tetap terbaca; teardown saat berisi ditolak tanpa
+  perubahan. File 01–03 identik byte demi byte di kedua versi. Log: `owner-apply/rehearsal-pg16.log`,
+  `owner-apply/rehearsal-pg17.6.log`.
+- Preflight read-only ke production (akses yang sudah ada, `read_only: true`, penulisan terbukti ditolak):
+  `SUMMARY 0 failed`, A02 belum terpasang. Detail hanya di catatan privat.
 
 ### Kegagalan baseline (sama persis di main murni; bukan dari A02)
 - `test-activity-audit-postgres.py`: 6 suite gagal identik di main murni dan main+A02 (`activity_audit_framework` batas

@@ -24,10 +24,10 @@ def main():
         left = db.sql('select count(*) from purchase_correction_requests;')
         assert left == '0', 'Fixture rows leaked: ' + left
         print('PASS fixture rolled back (0 request rows remain)', flush=True)
-        # Rehearse rollback step 1 exactly as documented: freeze writes, keep stored requests readable.
+        # Rehearse the owner package freeze exactly as written: writes refused, stored requests readable.
         suite = (ROOT / 'supabase/tests/purchase_correction_requests.sql').read_text()
         fixture_sql = suite[:suite.index('set local role authenticated;')]
-        doc = (ROOT / 'docs/rollback/2026-10-27-a02-purchase-correction-requests.sql').read_text()
+        doc = (ROOT / 'docs/evidence/2026-10-27-a02-correction-requests/owner-apply/04-freeze-if-decided.sql').read_text()
         freeze = doc[doc.index('begin;') + len('begin;'):doc.index('commit;')]
         db.sql(fixture_sql + """
 set local role authenticated;set local request.jwt.claim.role='authenticated';
@@ -50,7 +50,7 @@ do $$declare blocked boolean:=false;begin
 end$$;
 rollback;
 """)
-        print('PASS documented rollback step 1 freezes writes and keeps stored requests readable', flush=True)
+        print('PASS owner package freeze (04) refuses writes and keeps stored requests readable', flush=True)
 
 
 if __name__ == '__main__':
