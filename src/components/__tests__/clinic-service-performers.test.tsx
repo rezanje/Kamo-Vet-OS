@@ -189,3 +189,32 @@ it.each(['exam','inpatient'])('K02 %s action cart keeps chosen BMHP after reopen
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Makanan kucing"]')?.value).toBe('1');
 });
 
+it('clinic payment records a different salesperson on medicine and procedure lines', async () => {
+  await act(async () => root.render(<PembayaranForm visitId="line-seller" requestKey="pay" draftUserId="cashier"
+    patient={{...patient, jenisLayanan:'Klinik', noInvoice:'baru', tanggal:'hari ini'}}
+    initialObat={[{deskripsi:'Obat A',qty:1,harga:100,item_id:'medicine'}]}
+    initialJasa={[{deskripsi:'Tindakan B',qty:1,harga:200,item_id:'procedure'}]}
+    serviceStaff={common.serviceStaff} catatanResep={null}
+    bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-27',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
+  const medicine = host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Obat A"]');
+  const procedure = host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Tindakan B"]');
+  expect(medicine).toBeTruthy();
+  expect(procedure).toBeTruthy();
+  await act(async () => { medicine!.value='doctor-a'; medicine!.dispatchEvent(new Event('change',{bubbles:true})); });
+  await act(async () => { procedure!.value='staff-a'; procedure!.dispatchEvent(new Event('change',{bubbles:true})); });
+  const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
+  expect(lines.map((line:{salesperson_id:string})=>line.salesperson_id)).toEqual(['doctor-a','staff-a']);
+});
+
+it('clinic invoice correction displays the stored seller name on a sealed source line', async () => {
+  await act(async () => root.render(<PembayaranForm visitId="seller-edit" requestKey="edit" editMode
+    patient={{...patient, jenisLayanan:'Klinik', noInvoice:'saved', tanggal:'hari ini'}}
+    initialObat={[{deskripsi:'Obat A',qty:1,harga:100,item_id:'medicine',source_invoice_item_id:'old-line',salesperson_id:'doctor-a',salesperson_name:'Nama saat transaksi'}]}
+    initialJasa={[]} serviceStaff={common.serviceStaff} catatanResep={null}
+    bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-27',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
+  expect(host.textContent).toContain('Penjual: Nama saat transaksi');
+  expect(host.querySelector('select[aria-label="Penjual Obat A"]')).toBeNull();
+  const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
+  expect(lines[0]).toMatchObject({source_invoice_item_id:'old-line',salesperson_id:'doctor-a'});
+});
+

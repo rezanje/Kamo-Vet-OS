@@ -28,6 +28,8 @@ import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik
 
 type Line = {
   key?: string;
+  salesperson_id?: string | null;
+  salesperson_name?: string | null;
   source_invoice_item_id?: string | null;
   service_performers?: ServicePerformersSnapshot | null;
   kategori?: string | null;
@@ -59,10 +61,10 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, sealedSalespeople = false, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
-  serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; groomingDoctorRequired?: boolean;
+  serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; sealedSalespeople?: boolean; groomingDoctorRequired?: boolean;
   groomingApplies?: boolean;
   /** S01: source rows saved with an explicit empty performer snapshot stay assignable by the cashier. */
   openSourceIds?: ReadonlySet<string>;
@@ -123,6 +125,14 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                   : <ServicePerformersField label={`Pelaksana ${r.deskripsi || `jasa baris ${i+1}`}`} value={r.service_performers} staff={serviceStaff}
                     grooming={groomingApplies && (r.kategori === "Grooming" || master.some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                     doctorRequired={groomingDoctorRequired} onChange={value => set(i,{service_performers:value})} />)}
+                {sealedSalespeople && r.source_invoice_item_id ? <div style={{fontSize:10,color:'var(--tm)'}}>Penjual: {r.salesperson_name || 'Belum tercatat'}</div>
+                  : <label style={{display:'block',fontSize:10,marginTop:4}}>Penjual SKU
+                    <select className="fi" aria-label={`Penjual ${r.deskripsi}`} value={r.salesperson_id ?? ''}
+                      onChange={event => set(i,{salesperson_id:event.target.value || null})} style={{height:25,fontSize:10}}>
+                      <option value="">Ikuti penjual invoice</option>
+                      {serviceStaff.map(person => <option key={person.id} value={person.id}>{person.nama}</option>)}
+                    </select>
+                  </label>}
               </td>
               <td>
                 <NumberInput className="fi" type="number" min={1} value={r.qty}
@@ -409,8 +419,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           </div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
-          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} />
+          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedSalespeople={editMode} />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} sealedSalespeople={editMode} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12 }}>

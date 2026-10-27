@@ -96,8 +96,8 @@ export default async function PembayaranPage({
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
   const { data: invItems, error: itemsError } = invoice
-    ? await supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers").eq("invoice_id", invoice.id).order("created_at")
-    : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
+    ? await supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")
+    : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
   const { data: paymentRows, error: paymentsError } = invoice
     ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
     : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
@@ -175,6 +175,7 @@ export default async function PembayaranPage({
         jenis: l.jenis ?? "obat", item_id: l.item_id ?? null, satuan: l.satuan ?? null,
         prescription_item_id: l.prescription_item_id ?? null, recipe_id: l.compound_recipe_id ?? null,
         ...(l.id ? {source_invoice_item_id:l.id} : {}),
+        salesperson_id:l.salesperson_id ?? null, salesperson_name:l.salesperson_name ?? null,
         diskon_persen: Number(l.diskon_persen) || 0,
         ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:l.service_performers} : {}),
       }))
@@ -198,7 +199,7 @@ export default async function PembayaranPage({
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
   // terjual tapi persediaan tidak pernah berkurang.
   const { obat: masterObat, jasa: masterJasa, all: master } = await loadClinicPaymentMaster(supabase, visit.branch_id ?? null);
-  const serviceStaff = invoice ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
+  const serviceStaff = invoice && !canEdit ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
   const groomingPolicy = visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
   const cashier = invoice ? {name:invoice.cashier_name ?? "Kasir belum tercatat"} : draftUser ? await loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null) : {name:"Akun kasir"};
@@ -448,6 +449,7 @@ export default async function PembayaranPage({
           initialMetode={invoice.metode_bayar ?? "Tunai"}
           sealedSalespersonName={sealedSalespersonName}
           cashierName={cashier.name}
+          serviceStaff={serviceStaff}
           editMode
         />
       ) : invoice ? (
@@ -493,7 +495,7 @@ export default async function PembayaranPage({
               <tbody>
                 {(invItems ?? []).map((l, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div>}</td>
+                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.salesperson_name && <div style={{fontSize:10}}>Penjual SKU: {l.salesperson_name}</div>}{l.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div>}</td>
                     <td style={{ textAlign: "center" }}>{l.qty}</td>
                     <td style={{ textAlign: "right" }}>{rp(l.harga)}</td>
                     <td style={{ textAlign: "center" }}>{Number(l.diskon_persen) > 0 ? `${Number(l.diskon_persen)}%` : "—"}</td>
