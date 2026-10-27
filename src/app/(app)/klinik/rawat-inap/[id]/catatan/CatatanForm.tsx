@@ -47,7 +47,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true }: {
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, petHotel = false }: {
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
@@ -61,6 +61,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   serviceStaff?: ServiceStaff[];
   groomingDoctorRequired?: boolean;
   groomingApplies?: boolean;
+  /** K14: pet hotel = catatan makan, kondisi, catatan bebas oleh paramedis; dokter/suhu tidak wajib. */
+  petHotel?: boolean;
 }) {
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
   const [tab, setTab] = useState<Tab>("Obat");
@@ -295,7 +297,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
             <span style={{ fontSize: 11.5, fontWeight: 700, color: "#16a34a" }}>PEMANTAUAN HARIAN</span>
             <span style={{ fontSize: 9.5, color: "var(--td)" }}>kosongkan yang belum diperiksa</span>
           </div>
-          <div className="frow">
+          {!petHotel && <div className="frow">
             <div>
               <label className="flab">Berat badan (kg)</label>
               <NumberInput className="fi" type="number" name="berat" min={0} max={200} step="0.01" placeholder="mis. 12.5" />
@@ -304,7 +306,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
               <label className="flab">Suhu tubuh (°C)</label>
               <NumberInput className="fi" type="number" name="suhu" min={25} max={45} step="0.1" placeholder="mis. 38.6" />
             </div>
-          </div>
+          </div>}
           <div className="frow">
             <div>
               <label className="flab">Makan</label>
@@ -313,15 +315,15 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                 {OPSI_MAKAN.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
-            <div>
+            {!petHotel && <div>
               <label className="flab">Minum</label>
               <select className="fi" name="minum" defaultValue="">
                 <option value="">— belum dinilai —</option>
                 {OPSI_MINUM.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
-            </div>
+            </div>}
           </div>
-          <div className="frow">
+          {!petHotel && <div className="frow">
             <div>
               <label className="flab">BAB</label>
               <select className="fi" name="bab" defaultValue="">
@@ -336,7 +338,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                 {OPSI_PIPIS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
-          </div>
+          </div>}
 
           <div className="fg">
             <label className="flab">Foto pasien hari ini</label>
@@ -360,15 +362,15 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
             <label className="flab">Kondisi umum pasien *</label>
             <textarea className="fi" name="condition_note" required rows={2} placeholder="mis. Lemas berkurang, respons membaik, masih batuk sesekali" style={{ resize: "vertical" }} />
           </div>
-          <div className="fg">
+          {!petHotel && <div className="fg">
             <label className="flab">Tindakan / perawatan</label>
             <textarea className="fi" name="tindakan" rows={2} placeholder="mis. Wound dressing, terapi cairan, injeksi antibiotik, observasi" style={{ resize: "vertical" }} />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
               Obat yang ditagihkan cukup dipilih di panel kanan — kolom ini untuk tindakan medisnya.
             </div>
-          </div>
+          </div>}
           <div className="fg">
-            <label className="flab">Keterangan</label>
+            <label className="flab">{petHotel ? "Catatan" : "Keterangan"}</label>
             <textarea className="fi" name="keterangan" rows={2} placeholder="mis. Nafsu makan mulai kembali, rencana cek darah ulang besok" style={{ resize: "vertical" }} />
           </div>
 
@@ -390,7 +392,12 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
           </div>
           <div className="frow">
             <div>
-              <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics}/>
+              {petHotel ? <>
+                <input type="hidden" name="log_kind" value="monitoring" />
+                <label className="flab">Paramedis yang mencatat *<select className="fi" name="paramedic_id" aria-label="Paramedis yang mencatat" required value={staff.paramedic_id ?? ""} onChange={event => setStaff({ log_kind: "monitoring", visit_doctor_id: null, paramedic_id: event.target.value || null })}>
+                  <option value="">— pilih paramedis —</option>{paramedics.map(row => <option key={row.id} value={row.id}>{row.nama}</option>)}
+                </select></label>
+              </> : <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics}/>}
             </div>
             <div>
               <label className="flab">Ubah kondisi</label>

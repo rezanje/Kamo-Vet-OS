@@ -13,6 +13,7 @@ import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
 import { inpatientStaffInput } from '@/lib/clinical-staff';
+import { isMissingRpc, parseStayType, readStayTypes } from "@/lib/inpatient-stay";
 
 function bacaPetugas(formData:FormData,back:string,allowLegacy=false) {
   try{return formData.has('log_kind')?inpatientStaffInput(formData,allowLegacy):{};}
@@ -26,12 +27,39 @@ export async function admitInpatient(formData: FormData) {
   const treatmentPlan = String(formData.get("treatment_plan") ?? "").trim();
   const requestKey = String(formData.get("request_key") ?? "").trim();
   const back = `/klinik/rekam-medis/${visitId}`;
+  const stayType = parseStayType(formData.get("stay_type"));
   if (!visitId || !treatmentPlan || !requestKey) redirect(`${back}?error=${encodeURIComponent("Isi rencana tindakan dan muat ulang formulir rawat inap")}`);
-  const { data: recordId, error } = await supabase.rpc("clinic_admit_inpatient", {
-    p_visit_id: visitId, p_treatment_plan: treatmentPlan, p_request_key: requestKey,
+  if (!stayType) redirect(`${back}?error=${encodeURIComponent("Pilih tipe rawat inap")}`);
+  // K14: tipe dipilih saat masuk. Sebelum migrasi K14 terpasang, "sakit" tetap
+  // berjalan lewat jalur lama; pet hotel ditolak jelas, bukan diam-diam jadi "sakit".
+  let { data: recordId, error } = await supabase.rpc("clinic_admit_inpatient_typed", {
+    p_visit_id: visitId, p_treatment_plan: treatmentPlan, p_request_key: requestKey, p_stay_type: stayType,
   });
+  if (isMissingRpc(error)) {
+    if (stayType !== "sakit") redirect(`${back}?error=${encodeURIComponent("Tipe pet hotel belum aktif di database. Hubungi admin.")}`);
+    ({ data: recordId, error } = await supabase.rpc("clinic_admit_inpatient", {
+      p_visit_id: visitId, p_treatment_plan: treatmentPlan, p_request_key: requestKey,
+    }));
+  }
   if (error || !recordId) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal masuk rawat inap")}`);
   redirect(`/klinik/rawat-inap/${recordId}?success=admit${transactionDraftAck(formData)}`);
+}
+
+// K06: kunjungan rawat jalan yang sudah lunas/selesai dilanjutkan ke rawat inap lewat
+// kunjungan lanjutan (tertaut ke kunjungan & rekam medis asal). Tagihan lama tidak
+// disentuh; biaya rawat inap nanti ditagih di invoice kunjungan lanjutan.
+export async function continueToInpatient(formData: FormData) {
+  const supabase = await createClient();
+  const visitId = String(formData.get("visitId") ?? "");
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  const back = `/klinik/rekam-medis/${visitId}`;
+  if (!visitId || !requestKey) redirect(`${back}?error=${encodeURIComponent("Muat ulang formulir rawat inap")}`);
+  const { data: nextVisitId, error } = await supabase.rpc("clinic_continue_visit_to_inpatient", {
+    p_visit_id: visitId, p_request_key: requestKey,
+  });
+  if (isMissingRpc(error)) redirect(`${back}?error=${encodeURIComponent("Lanjutan rawat inap belum aktif di database. Hubungi admin.")}`);
+  if (error || !nextVisitId) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal membuka lanjutan rawat inap")}`);
+  redirect(`/klinik/rekam-medis/${nextVisitId}?success=lanjutan${transactionDraftAck(formData)}`);
 }
 
 // Kolom pemantauan harian (migrasi 0106). Kosong disimpan sebagai NULL — "belum
@@ -112,6 +140,11 @@ export async function addDailyLogPos(formData: FormData) {
   const { data: rec } = await supabase
     .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
   if (!rec) redirect(`${back}/catatan?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
+  // K14: catatan harian pet hotel diisi paramedis; dokter/suhu tidak wajib.
+  if ((await readStayTypes(supabase, [recordId])).get(recordId) === "pet_hotel"
+    && !String(formData.get("paramedic_id") ?? "").trim()) {
+    redirect(`${back}/catatan?error=${encodeURIComponent("Pilih paramedis yang mengisi catatan pet hotel")}`);
+  }
 
   const stamp = waktuInputWIB(logDate, logTime);
   const log = {

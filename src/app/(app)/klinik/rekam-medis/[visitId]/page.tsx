@@ -16,7 +16,8 @@ import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
 import { clinicAdmissionReadiness } from "@/lib/clinic-admission-readiness";
 import { templatesForBranch } from "@/lib/consent";
-import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
+import { admitInpatient, continueToInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
+import { readVisitContinuation, STAY_TYPE_LABEL, STAY_TYPES } from "@/lib/inpatient-stay";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 import { ReferralPanel } from "./ReferralPanel";
@@ -221,8 +222,19 @@ export default async function RekamMedisPage({
   );
   const { data: inpatientConsentRule, error: ruleError } = await supabase.from("consent_rules")
     .select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle();
+  // K06: kunjungan yang sudah punya tagihan aktif juga dianggap tutup — rawat inap
+  // tidak boleh menumpuk biaya ke tagihan itu.
+  const [activeInvoiceCheck, continuation] = await Promise.all([
+    !inpatient && menungguBayar
+      ? supabase.from("invoices").select("id, voided_at").eq("visit_id", visitId)
+      : Promise.resolve({ data: [] as { id: string; voided_at: string | null }[], error: null }),
+    readVisitContinuation(supabase, visitId),
+  ]);
+  const hasActiveInvoice = Array.isArray(activeInvoiceCheck.data)
+    && (activeInvoiceCheck.data as { voided_at: string | null }[]).some((row) => !row.voided_at);
   const admission = clinicAdmissionReadiness({
-    readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed),
+    readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed || activeInvoiceCheck.error),
+    hasActiveInvoice,
     status: visit.status, checkedOutAt: visit.checked_out_at ?? null, doctorId: visit.doctor_id ?? null,
     medicalRecordId: mrId, rule: inpatientConsentRule, consents: consentRows ?? [],
   });
@@ -275,6 +287,17 @@ export default async function RekamMedisPage({
         </div>
       )}
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {success === "lanjutan" && (
+        <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Kunjungan lanjutan rawat inap dibuka. Tandatangani persetujuan rawat inap, lalu masukkan pasien di bagian Rawat inap di bawah.
+        </div>
+      )}
+      {continuation.sourceVisit && (
+        <div className="p2ban" style={{ justifyContent: "space-between" }}>
+          <span><i className="ti ti-link" /> Lanjutan rawat inap dari kunjungan rawat jalan{continuation.sourceVisit.created_at ? ` ${fmtDaftar(continuation.sourceVisit.created_at)}` : ""}. Tagihan kunjungan asal tidak diubah; biaya rawat inap ditagih di kunjungan ini.</span>
+          <Link href={`/klinik/rekam-medis/${continuation.sourceVisit.id}`} className="btn-def" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>Rekam medis asal</Link>
+        </div>
+      )}
       {edit && !editing && <div className="p2ban" role="alert">Koreksi belum dapat dibuka. Periksa akses, status kunjungan, dan muat ulang data pemeriksaan.</div>}
       {racikan === "dibuat" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
@@ -490,10 +513,32 @@ export default async function RekamMedisPage({
                   {inpatient.condition_status}
                 </span>
               </div>
+            ) : null}
+            {!inpatient && continuation.continuations.length > 0 && (
+              <div style={{ fontSize: 11.5, color: "var(--tm)", marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                Lanjutan rawat inap dari kunjungan ini:
+                {continuation.continuations.map((c) => (
+                  <Link key={c.id} href={`/klinik/rekam-medis/${c.id}`}>{fmtDaftar(c.created_at)}</Link>
+                ))}
+              </div>
+            )}
+            {inpatient ? null : admission.continueFromClosed ? (
+              <TransactionForm userId={draftUserId} scope={`inpatient-continue:${visitId}`} action={continueToInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <input type="hidden" name="visitId" value={visit.id} />
+                <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
+                <div role="status" style={{ width: "100%", fontSize: 12, color: "var(--tm)" }}><p>{admission.reason}</p></div>
+                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…">Lanjutkan ke Rawat Inap</SubmitButton>
+              </TransactionForm>
             ) : (
               <TransactionForm userId={draftUserId} scope={`inpatient-admit:${visitId}`} action={admitInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <input type="hidden" name="visitId" value={visit.id} />
                 <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
+                <div style={{ flex: 1, minWidth: 170 }}>
+                  <label className="flab">Tipe rawat inap *</label>
+                  <select className="fi" name="stay_type" defaultValue="sakit" required>
+                    {STAY_TYPES.map((t) => <option key={t} value={t}>{STAY_TYPE_LABEL[t]}</option>)}
+                  </select>
+                </div>
                 <div style={{ flex: 2, minWidth: 240 }}>
                   <label className="flab">Rencana tindakan dari dokter PIC *</label>
                   <input className="fi" name="treatment_plan" required maxLength={4000} placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />
