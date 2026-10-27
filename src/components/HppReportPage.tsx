@@ -88,6 +88,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
     </>}
     ringkasan={report ? <KartuAngka items={cards} /> : undefined}
   >
+    {kind === "inventory" && <p className="crm-sec" style={{ fontSize: 12 }}><Link href="/laporan/nilai-persediaan/historis">Lihat valuasi akhir tanggal dari event rata-rata bergerak →</Link> · Tanggal FIFO sebelum aktivasi belum dapat direkonstruksi.</p>}
     {message ? <div className="p2ban" style={{ color: "#b91c1c" }}>{message}</div> : table && report ? <div className="crm-sec">
       <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <span style={{ fontSize: 11, color: "var(--td)" }}>Dibaca {reportWIB(report.readAt)} WIB</span>

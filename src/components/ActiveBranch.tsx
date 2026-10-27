@@ -14,7 +14,7 @@ export async function ActiveBranch({ catalog = [] }: { catalog?: BranchForDispla
     ? { data: { code: "ALL", name: "Semua cabang", type: null } }
     : await client.from("branches").select("name, code, type").eq("id", branchId).maybeSingle();
   const name = branch && mode === "klinik" && branchId !== ALL_BRANCHES ? branchDisplayName(branch, catalog) : branch?.name;
-  return <div role="status" className="p2ban" style={{ padding: "8px 16px", margin: 0 }}>
+  return <div role="status" className="p2ban no-print" style={{ padding: "8px 16px", margin: 0 }}>
     <strong>Cabang aktif: {branch?.code} · {name ?? "Gagal dimuat"}</strong>
     <Link href={branchSelectionUrl(mode)} prefetch={false} className="back-btn">Ganti cabang</Link>
   </div>;

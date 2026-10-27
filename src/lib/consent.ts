@@ -1,4 +1,8 @@
 // Form persetujuan (consent) — render template & status. Pure, dipakai server action + view.
+import { TINDAKAN_KATEGORI } from "./tindakan";
+
+// Pulang Paksa adalah formulir khusus, bukan kategori jasa yang dapat ditagihkan.
+export const TEMPLATE_CATEGORIES = ["Umum", ...TINDAKAN_KATEGORI, "Pulang Paksa"] as const;
 
 export type ConsentStatus = "belum_ttd" | "sudah_ttd";
 

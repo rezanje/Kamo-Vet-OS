@@ -4,11 +4,14 @@ Requires Docker and the postgres:16 image. Auth/storage are test-only shims.
 """
 from pathlib import Path
 import subprocess
+import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[1]
+if sys.argv[1:] not in ([], ['--inpatient-only']):
+    raise SystemExit('Only --inpatient-only is supported')
 CONTAINER = 'vetos-clinic-demo-test-' + uuid.uuid4().hex[:8]
 
 def sql(source, check=True, tuples=False):
@@ -21,7 +24,7 @@ def sql(source, check=True, tuples=False):
     return result
 
 try:
-    subprocess.run(['docker', 'run', '-d', '--name', CONTAINER, '-e', 'POSTGRES_PASSWORD=fictional-sales-test', 'postgres:16'], check=True, capture_output=True)
+    subprocess.run(['docker', 'run', '-d', '--name', CONTAINER, '--tmpfs', '/var/lib/postgresql/data:rw,size=512m', '-e', 'POSTGRES_PASSWORD=fictional-sales-test', 'postgres:16'], check=True, capture_output=True)
     for _ in range(100):
         logs = subprocess.run(['docker', 'logs', CONTAINER], text=True, capture_output=True)
         if 'PostgreSQL init process complete' in logs.stdout and subprocess.run(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres'], capture_output=True).returncode == 0:
@@ -32,6 +35,7 @@ create schema auth; create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
 create function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;
 create function auth.role() returns text language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
+create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
 create table storage.buckets(id text primary key,name text,public boolean);
 create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,owner uuid);
 create publication supabase_realtime;
@@ -49,9 +53,12 @@ alter default privileges in schema public grant all on sequences to authenticate
         except RuntimeError as error:
             raise RuntimeError(migration.name + ': ' + str(error)) from error
     print(f'Applied {len(migrations)} repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.')
-    for name in ['inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql', 'clinic_inpatient_action_category.sql']:
+    names = ['inpatient_consent.sql'] if sys.argv[1:] == ['--inpatient-only'] else ['inpatient_consent.sql', 'clinic_demo_financial_policy.sql', 'clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinical_occupation_selection.sql', 'compound_catalog_sku_binding.sql', 'clinic_inpatient_action_category.sql']
+    for name in names:
         sql((ROOT / 'supabase/tests' / name).read_text())
         print(name + ': passed with real FIFO and prescription triggers.')
+    if sys.argv[1:] == ['--inpatient-only']:
+        raise SystemExit(0)
     # Commit test-only CA fixtures inside this disposable container, then race
     # signing against both visit identity changes and a second conditional sign.
     fixture = (ROOT / 'supabase/tests/inpatient_consent.sql').read_text()

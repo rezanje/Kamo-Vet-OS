@@ -1,5 +1,6 @@
 "use server";
 import { servicePerformerInput, type ServicePerformersInput } from "@/lib/service-performers";
+import { bmhpInput, type BmhpInput } from "@/lib/procedure-bmhp";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
@@ -84,6 +85,7 @@ export async function addDailyLog(formData: FormData) {
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
   service_performers?: ServicePerformersInput | null;
+  bmhp?: BmhpInput[];
   nama_obat: string; qty: number; satuan?: string; harga?: number; jenis?: string; kategori?: string;
   aturan_pakai?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
@@ -136,11 +138,18 @@ export async function addDailyLogPos(formData: FormData) {
   if (resep.length && !mrId) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
-  let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string; kategori: string | null; service_performers?: ServicePerformersInput | null }[] = [];
+  let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string; kategori: string | null; service_performers?: ServicePerformersInput | null; bmhp_components?: BmhpInput[] }[] = [];
+  // K02: BMHP is only sent once the database exposes the migrated contract.
+  let bmhpRows: (BmhpInput[] | null)[];
+  try { bmhpRows = resep.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
+  catch (error) { return redirect(`${back}/catatan?error=${encodeURIComponent(error instanceof Error ? error.message : "BMHP tidak valid")}`); }
+  if (bmhpRows.some(row => row?.length) && (await supabase.rpc("clinic_bmhp_supported")).data !== true) {
+    return redirect(`${back}/catatan?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
+  }
   if (mrId && resep.length) {
     // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
     const unitOpts = await loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x));
-    rows = resep.filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan").map((r) => ({
+    rows = resep.map((r, index) => ({ r, bmhp: bmhpRows[index] })).filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan").map(({ r, bmhp }) => ({
       nama_obat: r.nama_obat.trim(), item_id: r.item_id ?? null,
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
       satuan: r.satuan?.trim() || "pcs",
@@ -151,6 +160,7 @@ export async function addDailyLogPos(formData: FormData) {
       jenis: r.jenis === "jasa" ? "jasa" : "obat",
       ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
+      ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
     }));
   }
 
@@ -169,7 +179,7 @@ export async function addDailyLogPos(formData: FormData) {
     }),
     request_key: r.key ?? "",
   });
-  if (newStatus && !["stabil", "kritis", "sembuh", "rip"].includes(newStatus)) {
+  if (newStatus && !["stabil", "kritis", "sembuh", "rip", "pulang_paksa"].includes(newStatus)) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Status kondisi tidak valid")}`);
   }
   if (newStatus && newStatus !== rec!.condition_status) {
@@ -195,7 +205,7 @@ export async function addDailyLogPos(formData: FormData) {
   return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log` };
 }
 
-// Ubah kondisi (stabil/kritis/sembuh/rip) — rip hanya dokter, wajib tercatat di status log.
+// Ubah kondisi — perubahan status wajib tercatat di status log.
 export async function changeCondition(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -203,7 +213,7 @@ export async function changeCondition(formData: FormData) {
   const newStatus = String(formData.get("new_status") ?? "") as Condition;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const back = `/klinik/rawat-inap/${recordId}`;
-  if (!recordId || !["stabil", "kritis", "sembuh", "rip"].includes(newStatus)) {
+  if (!recordId || !["stabil", "kritis", "sembuh", "rip", "pulang_paksa"].includes(newStatus)) {
     redirect(`${back}?error=${encodeURIComponent("Status tidak valid")}`);
   }
 

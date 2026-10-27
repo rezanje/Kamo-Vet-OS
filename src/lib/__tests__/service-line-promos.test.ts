@@ -19,3 +19,11 @@ it("uses full-cart min subtotal, stable original indexes and never applies one S
  expect(result.reduce((sum,row)=>sum+row.potongan,0)).toBe(40);expect(result.map(row=>row.lineIndex)).toEqual([0,1]);
  expect(serviceLinePromos([{...promo,minSubtotal:301}],rows)).toEqual([]);
 });
+it("allocates one package-total amount across repeated service rows without doubling it",()=>{
+ const packagePromo:PromoHitung={...promo,minQty:5,maxQty:5,discountType:"nominal",discountValue:10000,discountMode:"package_total"};
+ const repeated=[{...rows[0],qty:2,harga:10000},{...rows[1],qty:3,harga:10000}];
+ const result=serviceLinePromos([packagePromo],repeated);
+ expect(result.map(row=>row.potongan)).toEqual([4000,6000]);
+ expect(result.reduce((sum,row)=>sum+row.potongan,0)).toBe(10000);
+ expect(repeated.map(row=>row.qty)).toEqual([2,3]);
+});

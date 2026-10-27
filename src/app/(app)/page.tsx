@@ -6,6 +6,8 @@ import { bacaSudut, LABEL_SUDUT, SUDUT, type Sudut } from "@/lib/dashboard-peran
 import { hariIniWIB } from "@/lib/tanggal";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 import { queueDayBounds } from "@/lib/queue";
+import { loadPendingWork } from "@/lib/pending-work";
+import { PendingWorkAlerts } from "@/components/PendingWorkAlerts";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const rpJt = (n: number) => {
@@ -35,10 +37,12 @@ export default async function Dashboard({
   const sudut = bacaSudut(sudutParam, profile?.role ?? null);
 
   if (sudut !== "keuangan") {
-    return <DashboardLain sudut={sudut} />;
+    return <DashboardLain sudut={sudut} role={profile?.role ?? null} />;
   }
 
-  const d = await getDashboard(supabase as never, today);
+  const [d, pendingWork] = await Promise.all([
+    getDashboard(supabase as never, today), loadPendingWork(supabase, profile?.role ?? null),
+  ]);
 
   const lr = d.labaRugi;
   const totalBeban = d.beban.reduce((a, b) => a + b.amount, 0);
@@ -49,6 +53,7 @@ export default async function Dashboard({
       <div className="pg-hd">Dashboard</div>
       <div className="pg-sub">PT Kamo Group · Semua Cabang · Tahun {tahun}</div>
       <PilihSudut aktif={sudut} />
+      <PendingWorkAlerts items={pendingWork} />
 
       {/* KPI ringkas */}
       <div className="kgrid">
@@ -198,8 +203,9 @@ function PilihSudut({ aktif }: { aktif: Sudut }) {
  * Angkanya sengaja HARI INI / BULAN INI, bukan setahun: yang dipakai orang
  * lapangan adalah "hari ini sudah berapa", bukan akumulasi tahunan.
  */
-async function DashboardLain({ sudut }: { sudut: Sudut }) {
+async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | null }) {
   const supabase = await createClient();
+  const pendingWork = role ? await loadPendingWork(supabase, role) : [];
   const hariIni = hariIniWIB();
   const mulai = `${hariIni}T00:00:00+07:00`;
   const akhir = `${hariIni}T23:59:59+07:00`;
@@ -235,6 +241,7 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
         <div className="pg-hd">Dashboard</div>
         <div className="pg-sub">Operasional hari ini · {hariIni} WIB</div>
         <PilihSudut aktif={sudut} />
+        <PendingWorkAlerts items={pendingWork} />
 
         <div className="kgrid">
           <Kpi label="Kunjungan klinik hari ini" value={kunjunganError || kunjungan == null ? "—" : `${kunjungan}`} tone="b" />
@@ -293,6 +300,7 @@ async function DashboardLain({ sudut }: { sudut: Sudut }) {
       <div className="pg-hd">Dashboard</div>
       <div className="pg-sub">Marketing · bulan berjalan</div>
       <PilihSudut aktif={sudut} />
+      <PendingWorkAlerts items={pendingWork} />
 
       <div className="kgrid">
         <Kpi label="Promo aktif" value={`${promo ?? 0}`} tone="g" />

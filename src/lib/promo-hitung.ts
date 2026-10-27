@@ -12,6 +12,8 @@ import { readCompleteList } from "./checked-list";
 //              true  → potongan berulang tiap kelipatan min_qty.
 //                      Contoh min 2, beli 5: yang dapat 4, sisa 1 harga normal.
 //   diskon     'percent' = persen dari harga satuan; 'nominal' = rupiah per satuan.
+//   discountMode 'package_total' = nominal untuk satu paket min_qty pada satu SKU.
+//                  Absen berarti aturan lama: potongan per satuan.
 //
 // Promo tanpa daftar barang berlaku untuk semua barang.
 
@@ -26,8 +28,23 @@ export type PromoHitung = {
   autoApply: boolean;
   discountType: "percent" | "nominal" | null;
   discountValue: number | null;
+  discountMode?: "per_unit" | "package_total";
   minSubtotal?: number | null;           // syarat nilai belanja (dari rule lama)
 };
+
+export type PromoDiscountMode = "per_unit" | "package_total";
+export function promoDiscountMode(value: unknown): PromoDiscountMode {
+  if (value == null || value === "" || value === "per_unit") return "per_unit";
+  if (value === "package_total") return value;
+  throw new Error("Cara hitung diskon promo tidak valid");
+}
+
+export function validatePackageDiscount(mode: PromoDiscountMode, discountType: string | null, minQty: number | null, itemIds: string[]): void {
+  if (mode !== "package_total") return;
+  if (discountType !== "nominal") throw new Error("Total per paket hanya untuk diskon nominal");
+  if (minQty == null || !Number.isFinite(minQty) || minQty <= 0) throw new Error("Total per paket memerlukan min. qty");
+  if (itemIds.length !== 1) throw new Error("Total per paket memerlukan tepat satu barang target");
+}
 
 export type BarisKeranjang = { item_id: string; qty: number; harga: number; satuan?: string | null };
 
@@ -49,7 +66,11 @@ export function qtyDapatPotongan(qty: number, p: PromoHitung): number {
   // kelipatan: hanya kelipatan penuh dari min_qty yang dapat (beli 5, min 2 → 4).
   const kena = p.kelipatan ? Math.floor(q / min) * min : q;
   const batas = p.maxQty && p.maxQty > 0 ? p.maxQty : Infinity;
-  return Math.min(kena, batas);
+  const capped = Math.min(kena, batas);
+  // Package mode counts complete packages only. A cap below min_qty (blocked by
+  // the editors, possible in direct rows) therefore yields no package at all.
+  if (p.discountMode !== "package_total") return capped;
+  return p.kelipatan ? Math.floor(capped / min) * min : capped >= min ? min : 0;
 }
 
 // Potongan rupiah untuk satu baris. Tidak pernah melebihi nilai barisnya —
@@ -59,6 +80,18 @@ export function potonganBaris(baris: BarisKeranjang, p: PromoHitung): number {
   const harga = Math.max(0, Number(baris.harga) || 0);
   const kena = qtyDapatPotongan(baris.qty, p);
   if (kena <= 0 || harga <= 0) return 0;
+
+  if (p.discountMode === "package_total") {
+    // A configured package is counted only when all of its min_qty units fit
+    // under max_qty. One-time campaigns pay one package; repeating ones pay
+    // each complete package. Extra non-qualifying units never enlarge the cap.
+    // The stored master is validated as one SKU. Clinical pricing may map that
+    // SKU to several synthetic rows, so only the monetary shape is checked here.
+    if (p.discountType !== "nominal" || !p.minQty || p.minQty <= 0) throw new Error("Total per paket memerlukan diskon nominal dan min. qty");
+    const min = p.minQty!;
+    const groups = p.kelipatan ? Math.floor(kena / min) : 1;
+    return Math.min(Math.round(p.discountValue * groups), Math.round(harga * min * groups));
+  }
 
   const perUnit = p.discountType === "percent"
     ? Math.round((harga * Math.min(p.discountValue, 100)) / 100)
@@ -87,24 +120,60 @@ export function hitungPromoKeranjang(promos: PromoHitung[], cart: BarisKeranjang
     (p.minSubtotal == null || subtotal >= p.minSubtotal),
   );
 
-  const hasil: PotonganBaris[] = [];
-  for (const baris of cart) {
-    let terbaik: PotonganBaris | null = null;
+  const terbaik: (PotonganBaris | null)[] = cart.map((baris) => {
+    let pilih: PotonganBaris | null = null;
     for (const p of aktif) {
-      if (!kenaPromo(p, baris.item_id, baris.satuan)) continue;
+      if (p.discountMode === "package_total" || !kenaPromo(p, baris.item_id, baris.satuan)) continue;
       const potongan = potonganBaris(baris, p);
       if (potongan <= 0) continue;
-      if (!terbaik || potongan > terbaik.potongan) {
-        terbaik = {
+      if (!pilih || potongan > pilih.potongan) {
+        pilih = {
           item_id: baris.item_id, potongan,
           qtyKena: qtyDapatPotongan(baris.qty, p),
           promoId: p.id, promoName: p.name,
         };
       }
     }
-    if (terbaik) hasil.push(terbaik);
+    return pilih;
+  });
+
+  // Total per paket punya SATU jatah per transaksi: "sekali" dan maks. qty
+  // berlaku untuk keranjang, bukan per baris. Baris SKU/satuan/harga yang sama
+  // (mis. obat yang sama diresepkan dua kali di satu kunjungan) dihitung bersama;
+  // baris beda satuan/harga tidak digabung, hanya kelompok terbaik yang dapat paket.
+  for (const p of aktif) {
+    if (p.discountMode !== "package_total") continue;
+    const kelompok = new Map<string, number[]>();
+    cart.forEach((baris, index) => {
+      if (!kenaPromo(p, baris.item_id, baris.satuan)) return;
+      const key = JSON.stringify([baris.item_id, baris.satuan ?? "", Number(baris.harga) || 0]);
+      kelompok.set(key, [...(kelompok.get(key) ?? []), index]);
+    });
+    let pilihan: { indexes: number[]; qty: number; potongan: number; qtyKena: number; selisih: number } | null = null;
+    for (const indexes of kelompok.values()) {
+      const qty = indexes.reduce((a, i) => a + (Number(cart[i].qty) || 0), 0);
+      const potongan = potonganBaris({ ...cart[indexes[0]], qty }, p);
+      // Satu baris tetap satu promo: paket menggantikan promo lain di baris itu
+      // hanya kalau total potongannya lebih besar.
+      const selisih = potongan - indexes.reduce((a, i) => a + (terbaik[i]?.potongan ?? 0), 0);
+      if (potongan > 0 && selisih > 0 && (!pilihan || selisih > pilihan.selisih)) {
+        pilihan = { indexes, qty, potongan, qtyKena: qtyDapatPotongan(qty, p), selisih };
+      }
+    }
+    if (!pilihan) continue;
+    let sisa = pilihan.potongan;
+    pilihan.indexes.forEach((index, urutan) => {
+      const porsi = (Number(cart[index].qty) || 0) / pilihan.qty;
+      const potongan = urutan === pilihan.indexes.length - 1 ? sisa : Math.min(sisa, Math.floor(pilihan.potongan * porsi));
+      sisa -= potongan;
+      terbaik[index] = {
+        item_id: cart[index].item_id, potongan,
+        qtyKena: pilihan.qtyKena * porsi,
+        promoId: p.id, promoName: p.name,
+      };
+    });
   }
-  return hasil;
+  return terbaik.filter((hasil): hasil is PotonganBaris => !!hasil && hasil.potongan > 0);
 }
 
 // Ringkasan untuk ditampilkan di layar kasir.
@@ -121,7 +190,7 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string): Pro
   const wibToday = hariIniWIB();
 
   type Row = {
-    id: string; name: string; rule: { min_subtotal?: number; unit?: string } | null;
+    id: string; name: string; rule: { min_subtotal?: number; unit?: string; discount_mode?: unknown } | null;
     branch_ids: string[] | null; valid_from: string | null; valid_until: string | null;
     min_qty: number | null; max_qty: number | null; kelipatan: boolean; auto_apply: boolean;
     discount_type: "percent" | "nominal" | null; discount_value: number | null;
@@ -156,16 +225,19 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string): Pro
     }
   }
 
-  return aktif.map((p) => ({
-    id: p.id, name: p.name,
-    itemIds: perPromo.get(p.id) ?? [],
-    unit: typeof p.rule?.unit === "string" ? p.rule.unit : null,
-    minQty: p.min_qty == null ? null : Number(p.min_qty),
-    maxQty: p.max_qty == null ? null : Number(p.max_qty),
-    kelipatan: !!p.kelipatan,
-    autoApply: true,
-    discountType: p.discount_type,
-    discountValue: p.discount_value == null ? null : Number(p.discount_value),
-    minSubtotal: p.rule?.min_subtotal ?? null,
-  }));
+  return aktif.map((p) => {
+    const itemIds=perPromo.get(p.id) ?? [];
+    const mode=promoDiscountMode(p.rule?.discount_mode);
+    validatePackageDiscount(mode,p.discount_type,p.min_qty == null ? null : Number(p.min_qty),itemIds);
+    return {
+      id: p.id, name: p.name, itemIds,
+      unit: typeof p.rule?.unit === "string" ? p.rule.unit : null,
+      minQty: p.min_qty == null ? null : Number(p.min_qty),
+      maxQty: p.max_qty == null ? null : Number(p.max_qty),
+      kelipatan: !!p.kelipatan, autoApply: true,
+      discountType: p.discount_type,
+      discountValue: p.discount_value == null ? null : Number(p.discount_value),
+      discountMode: mode, minSubtotal: p.rule?.min_subtotal ?? null,
+    };
+  });
 }

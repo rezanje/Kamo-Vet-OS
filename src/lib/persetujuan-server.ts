@@ -7,6 +7,7 @@
 // antrean persetujuan — apa yang dieksekusi selalu apa yang diisi di layar saat itu,
 // bukan angka lama yang mengendap di antrean.
 import { aturanBerlaku, putuskan, type AturanPersetujuan, type StatusPengajuan } from "@/lib/persetujuan";
+import { readCompleteList } from "@/lib/checked-list";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -27,12 +28,17 @@ export async function cekPersetujuan(
     deferConsumption?: boolean;
   },
 ): Promise<HasilCek> {
-  const { data: rulesRaw } = await supabase
-    .from("approval_rules")
-    .select("id, jenis, min_nilai, penyetuju_role, is_active")
-    .eq("jenis", o.jenis).eq("is_active", true);
+  let rulesRaw: { id: string; jenis: string; min_nilai: number; penyetuju_role: string; is_active: boolean }[];
+  try {
+    rulesRaw = await readCompleteList((from, to) => supabase
+      .from("approval_rules")
+      .select("id, jenis, min_nilai, penyetuju_role, is_active", { count: "exact" })
+      .eq("jenis", o.jenis).eq("is_active", true).order("id").range(from, to), "Aturan persetujuan");
+  } catch {
+    return { boleh: false, pesan: "Aturan persetujuan belum dapat diverifikasi. Transaksi ditahan; coba muat ulang." };
+  }
 
-  const aturan: AturanPersetujuan[] = ((rulesRaw ?? []) as {
+  const aturan: AturanPersetujuan[] = (rulesRaw as {
     id: string; jenis: string; min_nilai: number; penyetuju_role: string; is_active: boolean;
   }[]).map((r) => ({
     id: r.id, jenis: r.jenis, minNilai: Number(r.min_nilai) || 0,
@@ -43,13 +49,16 @@ export async function cekPersetujuan(
   const berlaku = aturanBerlaku(aturan, o.jenis, o.nilai);
   if (!berlaku) return { boleh: true };
 
-  const { data: adaRaw } = await supabase
+  const { data: adaRaw, error: readError } = await supabase
     .from("approval_requests")
     .select("id, status, catatan")
     .eq("jenis", o.jenis).eq("ref_id", o.refId)
     .in("status", ["menunggu", "disetujui", "ditolak"])
     .order("diajukan_at", { ascending: false })
     .limit(1);
+  if (readError || !Array.isArray(adaRaw)) {
+    return { boleh: false, pesan: "Pengajuan persetujuan belum dapat diverifikasi. Transaksi ditahan; coba muat ulang." };
+  }
 
   const ada = ((adaRaw ?? []) as { id: string; status: StatusPengajuan; catatan: string | null }[])[0] ?? null;
   const keputusan = putuskan(berlaku, ada, berlaku.penyetujuRole);
@@ -58,10 +67,10 @@ export async function cekPersetujuan(
     // Persetujuan dipakai sekali. Kalau penandaan gagal, transaksinya TIDAK dilanjutkan —
     // lebih baik pembayaran tertahan daripada satu persetujuan dipakai berkali-kali.
     if (ada && !o.deferConsumption) {
-      const { error } = await supabase
-        .from("approval_requests").update({ status: "terpakai" }).eq("id", ada.id).eq("status", "disetujui");
-      if (error) {
-        return { boleh: false, pesan: `Gagal memakai persetujuan: ${error.message}` };
+      const { data: used, error } = await supabase
+        .from("approval_requests").update({ status: "terpakai" }).eq("id", ada.id).eq("status", "disetujui").select("id");
+      if (error || used?.length !== 1 || used[0].id !== ada.id) {
+        return { boleh: false, pesan: "Persetujuan belum dapat dipakai. Transaksi ditahan; muat ulang statusnya." };
       }
     }
     return { boleh: true };

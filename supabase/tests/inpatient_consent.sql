@@ -90,4 +90,68 @@ do $$ begin
     raise exception 'Changed unsigned identity could be signed';
   exception when raise_exception then if sqlerrm not like 'CONSENT_INVALID:%' then raise;end if;end;
 end $$;
+-- K09: a distinct form signed after admission is required for forced discharge.
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','ca100000-0000-4000-8000-000000000001',true);
+insert into public.items(code,name,unit,item_type,is_active,tindakan_kategori,sell_price)
+values ('K09-DEMO-FEE','AAA DEMO Rawat Inap','hari','Jasa',true,'Rawat Inap',100000);
+do $$ declare v_id uuid;v_failed boolean;
+begin
+  select id into v_id from public.inpatient_records where visit_id='ca600000-0000-4000-8000-000000000001';
+  v_failed:=false;
+  begin update public.inpatient_records set condition_status='pulang_paksa',discharged_at=now() where id=v_id;
+  exception when insufficient_privilege then v_failed:=true;
+    when sqlstate 'P0001' then v_failed:=sqlerrm like 'INPATIENT_ATOMIC_REQUIRED:%';end;
+  if not v_failed then raise exception 'direct status update bypassed signed consent';end if;
+  v_failed:=false;
+  begin perform public.clinic_change_inpatient_condition(v_id,'pulang_paksa','DEMO');
+  exception when sqlstate 'P0001' then
+    if sqlerrm not like 'CONSENT_REQUIRED:%' then raise exception 'unexpected forced discharge error: %',sqlerrm;end if;
+    v_failed:=true;
+  end;
+  if not v_failed then raise exception 'admission consent incorrectly allowed forced discharge';end if;
+end $$;
+insert into public.consent_templates(id,nama,isi,branch_id,kategori) values
+('ca800000-0000-4000-8000-000000000004','DEMO Forced Discharge','DEMO configured terms',null,'Pulang Paksa');
+insert into public.consents(id,visit_id,template_id,tindakan,isi_snapshot) values
+('ca900000-0000-4000-8000-000000000004','ca600000-0000-4000-8000-000000000001','ca800000-0000-4000-8000-000000000004','DEMO force discharge','DEMO configured terms');
+do $$ declare v_id uuid;v_failed boolean;
+begin
+  select id into v_id from public.inpatient_records where visit_id='ca600000-0000-4000-8000-000000000001';
+  v_failed:=false;
+  begin perform public.clinic_change_inpatient_condition(v_id,'pulang_paksa','DEMO');
+  exception when sqlstate 'P0001' then v_failed:=sqlerrm like 'CONSENT_REQUIRED:%';end;
+  if not v_failed then raise exception 'unsigned forced discharge consent was accepted';end if;
+end $$;
+update public.consents set status='sudah_ttd',signer_name='DEMO Owner',signature_data='data:image/png;base64,demo',signed_at=now()-interval '1 hour'
+where id='ca900000-0000-4000-8000-000000000004';
+do $$ declare v_id uuid;v_failed boolean;
+begin
+  select id into v_id from public.inpatient_records where visit_id='ca600000-0000-4000-8000-000000000001';
+  v_failed:=false;
+  begin perform public.clinic_change_inpatient_condition(v_id,'pulang_paksa','DEMO');
+  exception when sqlstate 'P0001' then v_failed:=sqlerrm like 'CONSENT_REQUIRED:%';end;
+  if not v_failed then raise exception 'pre-admission signature was accepted';end if;
+end $$;
+insert into public.consents(id,visit_id,template_id,tindakan,isi_snapshot) values
+('ca900000-0000-4000-8000-000000000005','ca600000-0000-4000-8000-000000000001','ca800000-0000-4000-8000-000000000004','DEMO force discharge','DEMO configured terms');
+update public.consents set status='sudah_ttd',signer_name='DEMO Owner',signature_data='data:image/png;base64,demo',signed_at=now()
+where id='ca900000-0000-4000-8000-000000000005';
+do $$ declare v_id uuid;
+begin
+  select id into v_id from public.inpatient_records where visit_id='ca600000-0000-4000-8000-000000000001';
+  if not public.clinic_change_inpatient_condition(v_id,'pulang_paksa','DEMO signed discharge') then raise exception 'signed forced discharge failed';end if;
+  if (select condition_status from public.inpatient_records where id=v_id)<>'pulang_paksa'
+    or (select discharged_at from public.inpatient_records where id=v_id) is null
+    or (select count(*) from public.inpatient_status_log where inpatient_record_id=v_id and new_status='pulang_paksa')<>1
+    or not exists(select 1 from public.prescription_items where medical_record_id='ca700000-0000-4000-8000-000000000001' and kategori='Rawat Inap') then
+    raise exception 'forced discharge did not persist status, history and existing billing fee';end if;
+  if public.clinic_change_inpatient_condition(v_id,'pulang_paksa','DEMO retry') then raise exception 'retry changed forced discharge';end if;
+  begin
+    perform public.clinic_change_inpatient_condition(v_id,'stabil','DEMO invalid reopen');
+    raise exception 'forced discharge was reopened';
+  exception when sqlstate 'P0001' then
+    if sqlerrm not like 'INPATIENT_CLOSED:%' then raise;end if;
+  end;
+end $$;
 rollback;

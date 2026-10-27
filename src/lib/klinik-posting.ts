@@ -148,6 +148,9 @@ export function parseClinicPostingError(error: { code?: string; message: string 
 
 export function parseClinicRecordError(error: { code?: string; message: string } | null): string {
   if (error?.code === "P0001") {
+    if (error.message.startsWith("CONSENT_REQUIRED: tandatangani form Pulang Paksa")) return "Buat dan tandatangani form khusus Pulang Paksa untuk cabang pasien sebelum mengubah kondisi.";
+    if (error.message.startsWith("INPATIENT_CLOSED:")) return "Pasien sudah keluar dari rawat inap; kondisi kepulangan tidak dapat diubah di sini.";
+    if (error.message.startsWith("INPATIENT_ATOMIC_REQUIRED:")) return "Ubah kondisi melalui aksi rawat inap agar formulir dan biaya diperiksa bersama.";
     if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
     if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";

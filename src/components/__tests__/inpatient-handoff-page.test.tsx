@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handoffSourceStatus, type InpatientHandoff } from '@/lib/inpatient-handoff';
-const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
+const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('@/lib/branch-access',()=>({allowedBranchIds:async()=>s.allowed,canUseBranch:(allowed:string[]|null,id:string)=>allowed===null||allowed.includes(id)}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/PapanPemantauan',()=>({PapanPemantauan:()=> <div>DAILY MONITORING</div>}));
@@ -13,6 +13,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
   let data:unknown=[];
   if(table==='inpatient_records')data={id:'inpat',branch_id:s.branch,visit_id:'visit-a',admitted_at:'2026-10-22T10:00:00Z',condition_status:'stabil',discharged_at:null,treatment_plan:'Fictional care',doctor_name:'Drh Inap',branches:{name:'Branch A'},visits:{id:'visit-a',poli:'Umum',keluhan:'Fictional complaint',created_at:'2026-10-22T08:00:00Z',pets:{name:'Fictional pet'},customers:{name:'Fictional owner'}}};
   if(table==='profiles')data={role:'DOCTOR'};
+  if(table==='consents'&&s.forcedConsent)data=[{status:'sudah_ttd',kategori:'Pulang Paksa',signed_at:'2026-10-22T12:00:00Z'}];
   if(table==='visits')data={id:'visit-a',branch_id:s.branch,dokter:'Drh Konsultasi',keluhan:'Fictional complaint',created_at:'2026-10-22T08:00:00Z',status:'Pembayaran'};
   if(table==='medical_records')data=[{id:'mr-a',visit_id:'visit-a',created_at:'2026-10-22T09:00:00Z',anamnesis:'Fictional consultation note',diagnosis:'Fictional finding',catatan_resep:'Global prescription note'}];
   if(table==='prescription_items')data=[{id:'rx-a',medical_record_id:'mr-a',nama_obat:'Fictional tablet',qty:2,satuan:'tablet',jenis:'obat',aturan_pakai:'Fictional instructions',compound_recipe_id:null,created_at:'2026-10-22T09:00:00Z'},{id:'rx-later',medical_record_id:'mr-a',nama_obat:'Later fictional procedure',qty:1,satuan:'kali',jenis:'jasa',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22T11:00:00Z'}];
@@ -26,7 +27,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/rawat-inap/[id]/page';
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.broken='';s.authReads=0;s.reads=[]});
+beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.broken='';s.authReads=0;s.reads=[]});
 it('shows consultation, prescriptions and compound status before daily visit notes with explicit source links',async()=>{
  const html=await render();expect(html).toContain('Ringkasan konsultasi dan resep');expect(html).toContain('Keluhan awal kunjungan');expect(html).toContain('Fictional complaint');expect(html).toContain('Fictional consultation note');expect(html).toContain('Fictional tablet');expect(html).toContain('Fictional mixture instructions');expect(html).toContain('Drh Konsultasi');
  expect(html.indexOf('Ringkasan konsultasi dan resep')).toBeLessThan(html.indexOf('DAILY MONITORING'));expect(html).toContain('/klinik/rekam-medis/visit-a');expect(html).toContain('/klinik/racik/recipe-a');
@@ -65,12 +66,16 @@ it('keeps source billing, invoice payment, pharmacy handover and administration 
  expect(html).toContain('Faktur lunas; pembayaran belum dialokasikan per baris');
  expect(html).toContain('Belum ada bukti pemberian per resep');
  expect(html).toContain('Hanya pada faktur dibatalkan');
- expect(html).toContain('Penyerahan obat biasa belum memiliki bukti per resep');
+ expect(html).toContain('Pemberian obat biasa hanya terbukti dari catatan pemberian per resep');
+ expect(html).toContain('Belum ada bukti penyerahan atau pemberian untuk resep ini.');
+ expect(html).toContain('name="recordId" value="inpat"');
+ expect(html).toContain('Catat penyerahan');
+ expect(html).toContain('Catat pemberian');
  expect(html.match(/data-inpatient-handoff/g)).toHaveLength(1);
 });
 
 it('warns when an exact prescription source is on two active invoices without claiming a second charge was prevented',()=>{
- const data:InpatientHandoff={doctor:null,complaint:null,records:[],recipes:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional',qty:1,satuan:'tab',jenis:'obat',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22'}],invoices:[{id:'i1',invoice_no:'A',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22'},{id:'i2',invoice_no:'B',paid_status:'DP',voided_at:null,created_at:'2026-10-22'}],invoiceLines:[{id:'l1',invoice_id:'i1',prescription_item_id:'rx',compound_recipe_id:null,qty:1},{id:'l2',invoice_id:'i2',prescription_item_id:'rx',compound_recipe_id:null,qty:1}]};
+ const data:InpatientHandoff={doctor:null,complaint:null,records:[],recipes:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional',qty:1,satuan:'tab',jenis:'obat',aturan_pakai:null,compound_recipe_id:null,created_at:'2026-10-22'}],invoices:[{id:'i1',invoice_no:'A',paid_status:'Lunas',voided_at:null,created_at:'2026-10-22'},{id:'i2',invoice_no:'B',paid_status:'DP',voided_at:null,created_at:'2026-10-22'}],invoiceLines:[{id:'l1',invoice_id:'i1',prescription_item_id:'rx',compound_recipe_id:null,qty:1},{id:'l2',invoice_id:'i2',prescription_item_id:'rx',compound_recipe_id:null,qty:1}],evidence:[]};
  const [row]=handoffSourceStatus(data).rows;
  expect(row.duplicateActiveInvoices).toBe(true);
  expect(row.billing).toContain('A · qty faktur 1; B · qty faktur 1');
@@ -83,15 +88,27 @@ it('shows the duplicate active invoice warning inside the existing handoff panel
  expect(html).toContain('Tertaut ke lebih dari satu faktur aktif. Periksa sebelum menagih ulang.');
  expect(html).toContain('Faktur DP: pembayaran belum dialokasikan per baris');
 });
+it('offers forced discharge with a separate signed form step and keeps cross-branch reads guarded',async()=>{
+ const unsigned=await render();
+ expect(unsigned).toContain('value="pulang_paksa"');
+ expect(unsigned).toContain('buat dan tandatangani form khusus kategori Pulang Paksa');
+ expect(unsigned).toContain('/klinik/rekam-medis/visit-a');
+ s.forcedConsent=true;
+ const signed=await render();
+ expect(signed).not.toContain('buat dan tandatangani form khusus kategori Pulang Paksa');
+ s.allowed=['branch-b'];s.reads=[];
+ await expect(render()).rejects.toThrow('NOT_FOUND');
+ expect(s.reads.some(r=>r.table==='consents')).toBe(false);
+});
 it('shows explicit gaps for a verified empty source without inferring paid inpatient days',()=>{
- const empty:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[],recipes:[],invoices:[],invoiceLines:[]};
+ const empty:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[],recipes:[],invoices:[],invoiceLines:[],evidence:[]};
  const status=handoffSourceStatus(empty);
  expect(status.rows).toEqual([]);
  expect(status.gaps).toContain('Lama inap terbayar tidak dihitung: tagihan belum menyimpan tanggal cakupan rawat inap.');
  expect(status.gaps.some(gap=>gap.includes('baris resep/racikan belum punya tautan'))).toBe(false);
 });
 it('keeps a linked compound available in its recipe card without counting one missing bill twice',()=>{
- const linked:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional compound',qty:1,satuan:'btl',jenis:'obat',aturan_pakai:null,compound_recipe_id:'recipe',created_at:'2026-10-22'}],recipes:[{id:'recipe',medical_record_id:'mr',recipe_name:'Fictional recipe',total_volume:'30 ml',dosage_form:'sirup',dosage_instruction:'Fictional instruction',status:'handed_over',created_at:'2026-10-22'}],invoices:[],invoiceLines:[]};
+ const linked:InpatientHandoff={doctor:null,complaint:null,records:[],prescriptions:[{id:'rx',medical_record_id:'mr',nama_obat:'Fictional compound',qty:1,satuan:'btl',jenis:'obat',aturan_pakai:null,compound_recipe_id:'recipe',created_at:'2026-10-22'}],recipes:[{id:'recipe',medical_record_id:'mr',recipe_name:'Fictional recipe',total_volume:'30 ml',dosage_form:'sirup',dosage_instruction:'Fictional instruction',status:'handed_over',created_at:'2026-10-22'}],invoices:[],invoiceLines:[],evidence:[]};
  const status=handoffSourceStatus(linked);
  expect(status.rows.map(row=>row.key)).toEqual(['rx:rx','recipe:recipe']);
  expect(status.rows[1].handover).toBe('Diserahkan oleh farmasi');

@@ -25,14 +25,16 @@ const snapshot = { version: 1, method: "fifo", scope: "Sebagian", branch_id: "b1
       harga_jual_cabang: "70", nilai_selisih_jual: "140" },
   ] };
 
-function fixture(options: { role?: string; active?: boolean; snapshot?: unknown; deniedBranch?: string; resultCount?: number; errorTable?: string; otherBranch?: boolean } = {}) {
+function fixture(options: { role?: string; active?: boolean; snapshot?: unknown; deniedBranch?: string; resultCount?: number; errorTable?: string; otherBranch?: boolean;
+  journals?: Record<string, unknown>[] } = {}) {
   const rows = Array.from({ length: options.resultCount ?? 1 }, (_, n) => ({ id: n ? `result-${n}` : RESULT, order_id: ORDER,
     no_hasil: n ? `OPR-${n}` : "OPR-I05", tanggal: "2026-10-25",
     opname_orders: { no_opname: "OPO-I05", warehouse_id: "w1", warehouses: { name: "VET", branch_id: "b1" } } }));
   if (options.otherBranch) rows.push({ id: "other-result", order_id: "other-order", no_hasil: "OPR-OTHER", tanggal: "2026-10-25",
     opname_orders: { no_opname: "OPO-OTHER", warehouse_id: "w2", warehouses: { name: "OTHER", branch_id: "b2" } } });
   const base = clientFixture({ role: options.role, active: options.active, deniedBranch: options.deniedBranch, errorTable: options.errorTable,
-    tables: { opname_results: rows, warehouses: [{ id: "w1", branch_id: "b1", name: "VET" }, { id: "w2", branch_id: "b2", name: "OTHER" }] } });
+    tables: { opname_results: rows, warehouses: [{ id: "w1", branch_id: "b1", name: "VET" }, { id: "w2", branch_id: "b2", name: "OTHER" }],
+      journal_entries: options.journals ?? [] } });
   const rpc = base.client.rpc.bind(base.client);
   (base.client as unknown as { rpc: (name: string, args: unknown) => unknown }).rpc = (name, args) =>
     name === "read_opname_price_report" ? Promise.resolve({ data: "snapshot" in options ? options.snapshot : snapshot, error: null }) : rpc(name as never, args as never);
@@ -41,6 +43,34 @@ function fixture(options: { role?: string; active?: boolean; snapshot?: unknown;
 }
 
 describe("I05 posted price report", () => {
+  const journal = (id: string, lines: { debit: number; credit: number; code: string }[]) => ({
+    id, no_jurnal: `JRN-${id}`, tanggal: "2026-10-25", branch_id: "b1", source: "opname", source_ref: "OPR-I05", voided_at: null,
+    journal_lines: lines.map(line => ({ debit: line.debit, credit: line.credit, coa_accounts: { code: line.code, name: line.code } })),
+  });
+
+  it("reconciles original gain and shortage against source journal 1301, independent of report filter", async () => {
+    const journals = [
+      journal("gain", [{ debit: 100, credit: 0, code: "1301" }, { debit: 0, credit: 100, code: "5902" }]),
+      journal("loss", [{ debit: 200, credit: 0, code: "5902" }, { debit: 0, credit: 200, code: "1301" }]),
+    ];
+    const { client, records } = fixture({ journals });
+    const report = await loadOpnamePriceReport(client, { ...period, arah: "lebih", dasar: "jual" });
+    expect(report.shown).toHaveLength(1);
+    expect(report.journalReview).toMatchObject({ status: "cocok", expectedGain: "100", expectedLoss: "200", ledgerGain: "100", ledgerLoss: "200" });
+    expect(report.journalReview?.journals.map(row => row.id)).toEqual(["gain", "loss"]);
+    expect(records).toContainEqual(expect.objectContaining({ table: "journal_entries", method: "eq", args: ["source_ref", "OPR-I05"] }));
+  });
+
+  it("marks absent, wrong-branch, unbalanced and incomplete source journals for review", async () => {
+    expect((await loadOpnamePriceReport(fixture().client, period)).journalReview?.status).toBe("perlu-periksa");
+    const wrongBranch = journal("wrong", [{ debit: 100, credit: 0, code: "1301" }, { debit: 0, credit: 100, code: "5902" }]);
+    wrongBranch.branch_id = "b2";
+    expect((await loadOpnamePriceReport(fixture({ journals: [wrongBranch] }).client, period)).journalReview?.status).toBe("perlu-periksa");
+    const unbalanced = journal("broken", [{ debit: 100, credit: 0, code: "1301" }]);
+    expect((await loadOpnamePriceReport(fixture({ journals: [unbalanced] }).client, period)).journalReview?.status).toBe("perlu-periksa");
+    await expect(loadOpnamePriceReport(fixture({ errorTable: "journal_entries" }).client, period)).rejects.toThrow("Data laporan gagal dibaca");
+  });
+
   it("preserves the selected original snapshot, mode and plus/minus totals", async () => {
     const { client } = fixture();
     const modal = await loadOpnamePriceReport(client, period);

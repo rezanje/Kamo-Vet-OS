@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
-import type { PromoHitung } from "@/lib/promo-hitung";
+import { promoDiscountMode, validatePackageDiscount, type PromoHitung } from "@/lib/promo-hitung";
 import { type AturanDiskon } from "@/lib/harga-golongan";
 import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions } from "@/lib/satuan";
@@ -90,9 +90,13 @@ export default async function KasirPage({
   for (const r of promoItemRows) {
     itemsPerPromo.set(r.promo_id, [...(itemsPerPromo.get(r.promo_id) ?? []), r.item_id]);
   }
-  const promoHitung: PromoHitung[] = promosActive.map((p) => ({
+  const promoHitung: PromoHitung[] = promosActive.map((p) => {
+    const itemIds=itemsPerPromo.get(p.id) ?? [];
+    const discountMode=promoDiscountMode(p.rule?.discount_mode);
+    validatePackageDiscount(discountMode,p.discount_type,p.min_qty,itemIds);
+    return ({
     id: p.id, name: p.name,
-    itemIds: itemsPerPromo.get(p.id) ?? [],
+    itemIds,
     unit: typeof p.rule?.unit === "string" ? p.rule.unit : null,
     minQty: p.min_qty == null ? null : Number(p.min_qty),
     maxQty: p.max_qty == null ? null : Number(p.max_qty),
@@ -100,8 +104,10 @@ export default async function KasirPage({
     autoApply: !!p.auto_apply,
     discountType: p.discount_type,
     discountValue: p.discount_value == null ? null : Number(p.discount_value),
+    discountMode,
     minSubtotal: p.rule?.min_subtotal ?? null,
-  }));
+  });
+  });
 
   // Voucher yang sudah lewat/belum mulai tidak dikirim ke layar: kalau dikirim,
   // kasir melihat potongan yang nanti ditolak server saat tombol bayar ditekan.
