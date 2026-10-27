@@ -44,7 +44,8 @@ EXPECT = {  # ref: (promo_discount, net, posts, rejection text)
 CLAIMS = lambda user: f"""select set_config('request.jwt.claim.sub','{user}',true);
 select set_config('request.jwt.claims','{{"role":"authenticated","sub":"{user}"}}',true);
 """
-LEDGER = ['sales', 'sale_items', 'sale_payments', 'stock_moves', 'stock_layers', 'journal_entries', 'journal_lines']
+LEDGER = ['sales', 'sale_items', 'sale_item_group_components', 'sale_payments', 'stock', 'stock_moves', 'stock_layers',
+          'inventory_cost_events', 'cash_entries', 'journal_entries', 'journal_lines']
 FINGERPRINT = ' union all '.join(
     f"select '{t}', count(*)::text, coalesce(md5(string_agg(to_jsonb(x)::text, '|' order by to_jsonb(x)::text)), '') from public.{t} x"
     for t in LEDGER)
@@ -97,8 +98,9 @@ def main():
                                 capture_output=True, input=json.dumps({'branchId': BRANCH, 'promos': promos, 'targets': targets, 'carts': carts}))
         quotes = {q['ref']: q for q in json.loads(quoted.stdout)}
         for ref, (discount, net, _, _) in EXPECT.items():
-            got = (quotes[ref]['lines'][0]['promo_discount'], quotes[ref]['net'])
-            assert got == (discount, net), (ref, got)
+            line = quotes[ref]['lines'][0]
+            got = (line['promo_discount'], quotes[ref]['net'], line['promo_id'])
+            assert got == (discount, net, PROMO[next(k for r, k, _ in CARTS if r == ref)]), (ref, got)
         print('PASS engine from stored promos: package 30/30(capped)/50/60/100 and legacy 10% quoted as expected', flush=True)
 
         sales = '\n'.join(f"""insert into sales(branch_id,no_struk,subtotal,discount,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint)
@@ -119,11 +121,12 @@ set local role authenticated;
 {CLAIMS(CASHIER)}{sales}
 select json_agg(json_build_object('ref',o.ref,'posted',o.posted,'message',o.message,
  'moves',(select count(*) from stock_moves m where m.source_ref=o.ref),
- 'hpp',(select sum(i.hpp) from sale_items i join sales s on s.id=i.sale_id where s.no_struk=o.ref))) from c04_outcome o;
+ 'hpp',(select sum(i.hpp) from sale_items i join sales s on s.id=i.sale_id where s.no_struk=o.ref),
+ 'stored',(select sum(i.promo_discount) from sale_items i join sales s on s.id=i.sale_id where s.no_struk=o.ref))) from c04_outcome o;
 commit;""").splitlines()[-1]
         for row in json.loads(out):
             discount, net, posts, text = EXPECT[row['ref']]
-            assert row['posted'] is posts, row
+            assert row['posted'] is posts and float(row['stored']) == discount, row
             if posts:
                 assert row['moves'] == 1 and float(row['hpp']) == quotes[row['ref']]['lines'][0]['qty'] * 10, row
             else:
@@ -134,51 +137,75 @@ commit;""").splitlines()[-1]
         contain = (PKG / '06-contain-package-promos-writes.sql').read_text()
         thaw = (PKG / '07-thaw-unchanged-package-promos-writes.sql').read_text()
         ledger_before = db.sql(FINGERPRINT)
-        edit = lambda key, name: f"""begin;
-set local role authenticated;
-{CLAIMS(OWNER)}do $$declare snap jsonb:=read_promo_edit('{PROMO[key]}'); p jsonb:=snap->'promo';begin
+        as_owner = lambda sql: db.sql(f"begin;\nset local role authenticated;\n{CLAIMS(OWNER)}{sql}\ncommit;")
+        edit = lambda key, name: as_owner(f"""do $$declare snap jsonb:=read_promo_edit('{PROMO[key]}'); p jsonb:=snap->'promo';begin
  perform edit_promo('{PROMO[key]}',snap->>'version',jsonb_build_object('name','{name}','promo_type',p->>'promo_type',
   'suggest',p->'rule'->>'suggest','min_subtotal',null,'min_qty',(p->>'min_qty')::numeric,'max_qty',(p->>'max_qty')::numeric,
   'kelipatan',(p->>'kelipatan')::boolean,'auto_apply',(p->>'auto_apply')::boolean,'discount_type',p->>'discount_type',
   'discount_value',(p->>'discount_value')::numeric,'branch_ids',null,'valid_from',null,'valid_until',null),
   array(select jsonb_array_elements_text(snap->'item_ids'))::uuid[]);
-end$$;commit;"""
-        db.sql(edit('A', 'Fiction package A renamed before freeze'))
-        run(contain)
+end$$;""")
+        toggle = lambda key, on: as_owner(f"update promos set is_active={str(on).lower()} where id='{PROMO[key]}';")
         state = lambda: dict(line.split('|', 1) for line in db.sql(
-            "select id || '|' || is_active || '|' || name from promos where id in (" + ','.join(f"'{v}'" for v in PROMO.values()) + ")").splitlines())
+            "select id || '|' || is_active || '|' || name from promos").splitlines())
+        frozen_ids = lambda: db.sql("select coalesce(string_agg(promo_id::text, ',' order by promo_id), '') "
+                                    "from ops_c04.frozen_package_promos where thawed_at is null").split(',')
+
+        toggle('D', False)                              # a package promo a manager had already switched off
+        edit('A', 'Fiction package A renamed before freeze')
+        run(contain)
         frozen = state()
-        assert all(frozen[PROMO[k]].startswith('false|') for k in PACKAGE) and frozen[PROMO['E']].startswith('true|'), frozen
+        assert all(frozen[PROMO[k]].startswith('false|') for k in 'ABCD') and frozen[PROMO['E']].startswith('true|'), frozen
         assert frozen[PROMO['A']] == 'false|Fiction package A renamed before freeze', frozen
+        assert sorted(frozen_ids()) == sorted(PROMO[k] for k in 'ABC'), frozen_ids()
         assert db.sql(FINGERPRINT) == ledger_before
         run(contain)
-        assert db.sql(FINGERPRINT) == ledger_before and state() == frozen
-        assert db.sql("select bool_or(has_table_privilege(r,'ops_c04.frozen_package_promos','SELECT')) from unnest(array['anon','authenticated','service_role']) r") == 'f'
-        print('PASS contain: only active package promos frozen, legacy untouched, earlier edit kept, re-run idempotent, sales/stock/journals identical', flush=True)
+        assert db.sql(FINGERPRINT) == ledger_before and state() == frozen and sorted(frozen_ids()) == sorted(PROMO[k] for k in 'ABC')
+        assert db.sql("select bool_or(has_table_privilege(r,'ops_c04.frozen_package_promos','SELECT')) "
+                      "from unnest(array['anon','authenticated','service_role']) r") == 'f'
+        print('PASS contain: only active package promos frozen (already-off package and legacy untouched), earlier edit kept, '
+              're-run changes nothing, sales/stock/cost/cash/journals identical', flush=True)
 
-        db.sql(edit('B', 'Fiction package B repaired after freeze'))
+        edit('B', 'Fiction package B repaired after freeze')
+        toggle('C', True)
+        toggle('C', False)                              # manager turned it on and deliberately off again
         r = run(thaw, check=False)
-        assert r.returncode and 'C04_THAW_DRIFT' in r.stderr and PROMO['B'] in r.stderr and PROMO['A'] not in r.stderr, r.stderr
-        assert state()[PROMO['A']].startswith('false|') and state()[PROMO['B']] == 'false|Fiction package B repaired after freeze'
-        db.sql(f"update ops_c04.frozen_package_promos set thawed_at=now(), resolution='kept: repaired after freeze' where promo_id='{PROMO['B']}';")
+        assert r.returncode and 'C04_THAW_DRIFT' in r.stderr and PROMO['B'] in r.stderr and PROMO['C'] in r.stderr \
+            and PROMO['A'] not in r.stderr, r.stderr
+        assert state() == {**frozen, PROMO['B']: 'false|Fiction package B repaired after freeze'}
+        db.sql("update ops_c04.frozen_package_promos set thawed_at=now(), resolution='kept by manager' "
+               f"where promo_id in ('{PROMO['B']}','{PROMO['C']}');")
         run(thaw)
         after = state()
-        assert all(after[PROMO[k]].startswith('true|') for k in 'ACD') and after[PROMO['B']] == 'false|Fiction package B repaired after freeze', after
-        assert after[PROMO['A']] == 'true|Fiction package A renamed before freeze'
+        assert after[PROMO['A']] == 'true|Fiction package A renamed before freeze', after
+        assert all(after[PROMO[k]].startswith('false|') for k in 'BCD') and after[PROMO['B']].endswith('repaired after freeze'), after
         assert db.sql(FINGERPRINT) == ledger_before
-        print('PASS thaw: stops on a promo edited after freeze, keeps that edit; after a recorded decision re-activates only unchanged promos; ledger identical', flush=True)
+        print('PASS thaw: stops on a promo edited, or toggled on and off, after freeze and keeps those decisions; after '
+              'recording them re-activates only the unchanged promo; ledger identical', flush=True)
 
-        db.sql(f"update promos set is_active=false where id='{PROMO['C']}';")
+        # Second incident: a re-activated promo, a deleted promo and a removed target all block thaw.
+        db.sql(f"""begin;
+insert into promos(id,name,promo_type,rule,discount_type,discount_value,min_qty,auto_apply,is_active) values
+ ('{uid(6, 7)}','Fiction package F','diskon_produk','{{"suggest":"Fiction","discount_mode":"package_total"}}','nominal',30,5,true,true),
+ ('{uid(6, 8)}','Fiction package G','diskon_produk','{{"suggest":"Fiction","discount_mode":"package_total"}}','nominal',30,5,true,true);
+insert into promo_items(promo_id,item_id) values('{uid(6, 7)}','{ITEM['B']}'),('{uid(6, 8)}','{ITEM['C']}');
+commit;""")
         run(contain)
-        db.sql(f"delete from promo_items where promo_id='{PROMO['D']}';")
+        assert sorted(frozen_ids()) == sorted([PROMO['A'], uid(6, 7), uid(6, 8)]), frozen_ids()
+        toggle('A', True)
+        db.sql(f"delete from promos where id='{uid(6, 7)}';")
+        db.sql(f"delete from promo_items where promo_id='{uid(6, 8)}';")
         r = run(thaw, check=False)
-        assert r.returncode and 'C04_THAW_DRIFT' in r.stderr and PROMO['D'] in r.stderr, r.stderr
+        assert r.returncode and all(x in r.stderr for x in (PROMO['A'], uid(6, 7), uid(6, 8))), r.stderr
+        assert state()[uid(6, 8)].startswith('false|') and state()[PROMO['A']].startswith('true|')
+        assert db.sql(FINGERPRINT) == ledger_before
         db.sql("create or replace function public.assert_active_package_promo_target() returns trigger language plpgsql "
                "security definer set search_path='' as $$begin return null; end$$;")
         for script, name in ((contain, '06'), (thaw, '07')):
             r = run(script, check=False)
             assert r.returncode and 'C04_INSTALL_DRIFT' in r.stderr, (name, r.stderr)
-        print('PASS drift: a removed target blocks thaw; a changed C04 guard stops both 06 and 07 before any write', flush=True)
+        print('PASS drift: re-activated, deleted and untargeted promos block thaw; a changed C04 guard stops 06 and 07 '
+              'before any write', flush=True)
 
 
 if __name__ == '__main__':

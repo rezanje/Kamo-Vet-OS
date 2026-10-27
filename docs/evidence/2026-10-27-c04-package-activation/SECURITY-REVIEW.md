@@ -31,8 +31,47 @@ gate still needs the integrator's sign-off before Step 3 of `owner-apply/OWNER-R
 - `lock_timeout 5s` in `02-apply-writes.sql` so the apply cannot queue behind a long transaction and stall checkout reads.
 - Guard function grants checked after apply (readback) before the flag is turned on.
 
-## Production comparison (read-only, 27 Oct 03:32Z)
+## Production comparison
 
-Production `edit_promo` fingerprint equals the repository (`f4a53d51…`), SECURITY DEFINER, `search_path=""`,
-grants authenticated-only, owner `postgres`; no promo stores `discount_mode`; C04 objects absent. Rehearsed on
-PostgreSQL 17.6 and 16.15 with identical results. Remaining gate: integrator sign-off of this review.
+Read-only preflight on the target passed with `0 failed` (details kept private). Rehearsed on PostgreSQL 17.6 and
+16.15 with identical results. Human sign-off is not a repository gate: the `main` ruleset requires 0 approvals plus
+the `Technical checks` status.
+
+Note: the NULL fix edits the migration in place. Production has not applied it, which preflight proves. Any
+non-production database that applied the earlier text keeps the NULL gap until it re-applies the migration.
+
+## Post-change review — containment (06/07) and FIFO-floor test
+
+Second independent agent review of `owner-apply/06…`, `07…`, `scripts/test-promo-package-fifo-floor-postgres.py`
+and `scripts/promo-package-quote.mjs`.
+
+Must-fix findings, both fixed:
+1. **Thaw re-activated a promo a manager deliberately turned off.** The drift check ignored `is_active`, so
+   toggling a frozen promo on and then off again looked unchanged. Fix: `06` records the row version (`xmin`),
+   and `07` treats any later write as drift. Test: toggling on then off now blocks thaw.
+2. **`READINESS.md` cited a review that was not on file.** Fixed by this section.
+
+Non-blocking notes handled:
+- Time zone pinned to UTC in both scripts.
+- The install guard no longer checks the editor body; it checks the guard, its triggers bound to the right
+  tables and function, and the constraint.
+- `06` and `07` lock the record table and do not interleave.
+- Re-run semantics are documented.
+- The ledger check now also covers `stock`, `inventory_cost_events`, `cash_entries` and
+  `sale_item_group_components`.
+- Test coverage added:
+  - deleted, re-activated and on-off drift;
+  - an already-inactive package promo that must stay unrecorded;
+  - `promo_id` in the quote;
+  - the stored `promo_discount` read back after posting.
+
+Accepted as fail-safe, no change:
+- A target change committed while `06` waits on its lock is recorded stale, so thaw reports drift.
+- `VACUUM FREEZE` counts as drift.
+
+Verified by the reviewer:
+- Neither script writes outside `promos.is_active` and `ops_c04`.
+- Engine discounts reach the floor check.
+- Floor assertions are not vacuous.
+- References are schema-qualified.
+- Grants are revoked.

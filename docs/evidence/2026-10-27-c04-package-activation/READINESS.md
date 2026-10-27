@@ -34,10 +34,15 @@ Stored package promos are priced by the app's own engine (`scripts/promo-package
 - `06` freezes only active package promos. Legacy promos stay active, and a manager's earlier edit is kept.
 - Re-running `06` changes nothing.
 - Sales, sale lines, payments, stock moves/layers, journals and journal lines are byte-identical before and after.
-- `07` stops on a promo edited after the freeze, and keeps that edit.
-- After the decision is recorded, `07` re-activates only unchanged promos, with the ledger still identical.
-- A promo whose target was removed blocks `07`.
+- An already-inactive package promo is neither frozen nor recorded.
+- `07` stops on a promo that was edited after the freeze, or toggled on and then off again, and keeps those
+  decisions.
+- After the decisions are recorded, `07` re-activates only the unchanged promo, with the ledger still identical.
+- A re-activated, deleted or untargeted promo blocks `07`.
 - A changed C04 guard stops both `06` and `07` before any write.
+- Ledger compared byte for byte: sales, sale lines and group components, payments, stock, stock moves and
+  layers, cost events, cash entries, journals and journal lines.
+- Logs: `fifo-floor-pg17.log`, `fifo-floor-pg16.log`.
 
 ## Gates (see `owner-apply/OWNER-RUNBOOK.md` for sources)
 
