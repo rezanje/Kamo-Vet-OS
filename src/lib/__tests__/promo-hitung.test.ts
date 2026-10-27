@@ -38,6 +38,20 @@ describe("qtyDapatPotongan", () => {
 });
 
 describe("potonganBaris", () => {
+  it("uses an explicit total-per-package amount with minimum, cap and optional repeats", () => {
+    const once = promo({ itemIds:["a"], discountType: "nominal", discountValue: 10_000, discountMode: "package_total", minQty: 5, maxQty: 5 });
+    const repeat = { ...once, maxQty: null, kelipatan: true };
+    expect([4, 5, 6, 10].map(qty => potonganBaris({ item_id: "a", qty, harga: 10_000 }, once))).toEqual([0, 10_000, 10_000, 10_000]);
+    expect([4, 5, 6, 10].map(qty => potonganBaris({ item_id: "a", qty, harga: 10_000 }, repeat))).toEqual([0, 10_000, 10_000, 20_000]);
+    expect(qtyDapatPotongan(6, once)).toBe(5);
+    expect(qtyDapatPotongan(10, repeat)).toBe(10);
+    expect(qtyDapatPotongan(10, {...once,maxQty:null})).toBe(5);
+  });
+
+  it("never discounts more than the qualifying package gross", () => {
+    const rule = promo({ itemIds:["a"], discountType: "nominal", discountValue: 100_000, discountMode: "package_total", minQty: 5, maxQty: 5 });
+    expect(potonganBaris({ item_id: "a", qty: 10, harga: 1_000 }, rule)).toBe(5_000);
+  });
   it("persen dihitung per satuan lalu dikali qty yang kena", () => {
     expect(potonganBaris({ item_id: "a", qty: 3, harga: 10_000 }, promo())).toBe(3_000);
   });
@@ -60,6 +74,41 @@ describe("potonganBaris", () => {
   it("qty di bawah minimum tidak memotong", () => {
     const p = promo({ minQty: 3 });
     expect(potonganBaris({ item_id: "a", qty: 2, harga: 10_000 }, p)).toBe(0);
+  });
+});
+
+describe("hitungPromoKeranjang total per paket", () => {
+  const paket = promo({ id: "pkg", itemIds: ["a"], discountType: "nominal", discountValue: 10_000, discountMode: "package_total", minQty: 5, maxQty: 5 });
+  const total = (rules: PromoHitung[], cart: { item_id: string; qty: number; harga: number; satuan?: string }[]) =>
+    totalPotonganPromo(hitungPromoKeranjang(rules, cart));
+
+  it("counts one package budget per transaction across repeated same-SKU rows", () => {
+    expect(total([paket], [{ item_id: "a", qty: 5, harga: 10_000 }, { item_id: "a", qty: 5, harga: 10_000 }])).toBe(10_000);
+    expect(total([paket], [{ item_id: "a", qty: 3, harga: 10_000 }, { item_id: "a", qty: 3, harga: 10_000 }])).toBe(10_000);
+    expect(total([paket], [{ item_id: "a", qty: 2, harga: 10_000 }, { item_id: "a", qty: 2, harga: 10_000 }])).toBe(0);
+    const ulang = { ...paket, maxQty: null, kelipatan: true };
+    expect(total([ulang], [{ item_id: "a", qty: 3, harga: 10_000 }, { item_id: "a", qty: 7, harga: 10_000 }])).toBe(20_000);
+    const rows = hitungPromoKeranjang([paket], [{ item_id: "a", qty: 2, harga: 10_000 }, { item_id: "a", qty: 3, harga: 10_000 }]);
+    expect(rows.map(r => r.potongan)).toEqual([4_000, 6_000]);
+  });
+
+  it("does not combine different units or prices and never doubles the package", () => {
+    const cart = [{ item_id: "a", satuan: "PCS", qty: 5, harga: 10_000 }, { item_id: "a", satuan: "STRIP", qty: 5, harga: 50_000 }];
+    expect(total([paket], cart)).toBe(10_000);
+    expect(total([paket], [{ item_id: "a", qty: 5, harga: 10_000 }, { item_id: "a", qty: 5, harga: 9_000 }])).toBe(10_000);
+  });
+
+  it("keeps one promo per row and leaves legacy per-unit promotions unchanged", () => {
+    const perUnit = promo({ id: "unit", itemIds: ["a"], discountType: "nominal", discountValue: 3_000 });
+    const cart = [{ item_id: "a", qty: 5, harga: 10_000 }];
+    expect(hitungPromoKeranjang([perUnit, paket], cart)).toMatchObject([{ promoId: "unit", potongan: 15_000 }]);
+    expect(hitungPromoKeranjang([{ ...perUnit, discountValue: 1_000 }, paket], cart)).toMatchObject([{ promoId: "pkg", potongan: 10_000 }]);
+    expect(total([perUnit], [{ item_id: "a", qty: 5, harga: 10_000 }, { item_id: "a", qty: 5, harga: 10_000 }])).toBe(30_000);
+  });
+
+  it("gives no package when a direct row caps below the minimum", () => {
+    expect(qtyDapatPotongan(10, { ...paket, maxQty: 3 })).toBe(0);
+    expect(total([{ ...paket, maxQty: 3 }], [{ item_id: "a", qty: 10, harga: 10_000 }])).toBe(0);
   });
 });
 

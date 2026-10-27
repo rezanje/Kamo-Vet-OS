@@ -20,7 +20,8 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
-const base = { unit: "pcs", stok: 5, sell_price: 10000, category_id: null as string | null, is_compound_material: false };
+const base = { unit: "pcs", stok: 5, sell_price: 10000, category_id: null as string | null, is_compound_material: false,
+  code: null as string | null, upc: null as string | null };
 const service = { ...base, id: "consult", name: "Konsultasi", item_type: "Jasa" };
 const action = { ...base, id: "steril", name: "Steril", sell_price: 75000, item_type: "Jasa", category_id: "actions", tindakan_kategori: "Operasi" };
 const vaccine = { ...base, id: "vaccine", name: "Vaksin", sell_price: 35000, item_type: "Jasa", category_id: "medicine", tindakan_kategori: "Vaksinasi" };
@@ -112,6 +113,20 @@ it.each(["exam", "inpatient"])("%s searches the whole inventory before paginatio
   expect(medicineTable.querySelectorAll("tbody tr")).toHaveLength(2);
   expect(medicineTable.textContent).toContain("Stock 80");
   expect(medicineTable.textContent).toContain("Anthel fixture");
+});
+
+it.each(["exam", "inpatient"])("%s finds an inventory medicine by master code or scanned UPC", async kind => {
+  await render(kind, [{ ...food, code: "OBT-42", upc: "8900012345678" }]);
+  const control = host.querySelector<HTMLInputElement>('input[placeholder="Cari nama obat / scan barcode…"]')!;
+  const change = async (value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(control, value);
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await change("OBT-42");
+  expect(host.textContent).toContain("Makanan kucing");
+  await change("8900012345678");
+  expect(host.textContent).toContain("Makanan kucing");
+  expect(host.textContent).toContain("1 obat · 1/1");
 });
 
 it.each(["exam", "inpatient"])("%s searches only finished compounds and designated ingredients in Racikan", async kind => {

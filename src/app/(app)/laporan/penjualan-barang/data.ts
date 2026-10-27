@@ -45,7 +45,18 @@ export type Baris = {
   id: string; waktu: string; dokumen: string; href: string; kanal: "POS" | "Online" | "Klinik";
   jenis: JenisBarisPenjualan; cabang: string; cabangId: string | null; pelanggan: string; hewan: string;
   nama: string; pelaksana: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
+  pelaksanaIds?: string[];
 };
+export type PilihanPelaksana = { id: string; nama: string };
+
+function pelaksanaBaris(value: ServicePerformersSnapshot | null | undefined): { ids: string[]; pilihan: PilihanPelaksana[] } {
+  if (!value) return { ids: [], pilihan: [] };
+  const pilihan = [
+    value.doctor_id ? { id: value.doctor_id, nama: `Dokter: ${value.doctor_name || `ID ${value.doctor_id.slice(-8)}`}` } : null,
+    value.staff_id ? { id: value.staff_id, nama: `Pelaksana: ${value.staff_name || `ID ${value.staff_id.slice(-8)}`}` } : null,
+  ].filter((row): row is PilihanPelaksana => row !== null);
+  return { ids: pilihan.map(row => row.id), pilihan };
+}
 
 function potong<T>(items: T[], ukuran = 100): T[][] {
   const hasil: T[][] = [];
@@ -78,13 +89,14 @@ function alokasiNetoBaris(bases: InstanceType<typeof PosDecimal>[], target: Inst
 }
 
 
-export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "" }: {
+export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "", pelaksanaId = "" }: {
   dari: string; sampai: string; kanal: "POS" | "Online" | "Klinik";
-  jenis: string; q: string; cabangId?: string;
-}): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pesanError: string; nilaiTotal: number; qtyTotal: number }> {
+  jenis: string; q: string; cabangId?: string; pelaksanaId?: string;
+}): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pelaksanaOptions: PilihanPelaksana[]; pesanError: string; nilaiTotal: number; qtyTotal: number }> {
   const tanggalSalah = !tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai;
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
   const rows: Baris[] = [];
+  const pilihanPelaksana = new Map<string, PilihanPelaksana>();
   let pesanError = tanggalSalah ? "Rentang tanggal tidak valid. Periksa tanggal awal dan akhir." : "";
   if (!tanggalSalah) {
     try {
@@ -197,6 +209,8 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
         const nilai = netoKlinik.get(item.id);
         if (nilai == null) throw new Error("Alokasi nilai baris invoice klinik tidak tersedia.");
         const jenis = feeLineIds.has(item.id) ? "Biaya Admin" : jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
+        const pelaksana = jenis === "Jasa" ? pelaksanaBaris(item.service_performers) : { ids: [], pilihan: [] };
+        pelaksana.pilihan.forEach(pilihan => pilihanPelaksana.set(pilihan.id, pilihan));
         rows.push({
           id: `klinik-${item.id}`, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",
           href: `/klinik/pembayaran/${invoice.visit_id}/invoice?invoice_id=${encodeURIComponent(invoice.id)}`, kanal: "Klinik",
@@ -206,6 +220,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           pelanggan: one(visit?.customers ?? null)?.name ?? "—",
           hewan: one(visit?.pets ?? null)?.name ?? "—",
           nama: item.deskripsi, pelaksana: jenis === "Jasa" ? servicePerformerNames(item.service_performers).join(" · ") : "—",
+          pelaksanaIds: pelaksana.ids,
           qty: Number(item.qty) || 0, harga: Number(item.harga) || 0,
           diskon: Math.max(0, (Number(item.qty) || 0) * (Number(item.harga) || 0) - nilai),
           nilai, status: invoice.paid_status,
@@ -224,6 +239,8 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
         });
         const nilai = itemKanal === "POS" ? netoPos.get(item.id) : qty * harga - diskon;
         if (nilai == null) throw new Error("Alokasi nilai baris POS tidak tersedia.");
+        const pelaksana = pelaksanaBaris(item.service_performers);
+        pelaksana.pilihan.forEach(pilihan => pilihanPelaksana.set(pilihan.id, pilihan));
         rows.push({
           id: `kasir-${item.id}`, waktu: sale.created_at, dokumen: sale.no_struk ?? "—",
           href: `/penjualan/${sale.id}`, kanal: itemKanal, jenis: "Barang",
@@ -231,6 +248,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           cabangId: sale.branch_id ?? null,
           hewan: "—", nama: item.nama,
           pelaksana: item.service_performers ? servicePerformerNames(item.service_performers).join(" · ") : "—",
+          pelaksanaIds: pelaksana.ids,
           qty, harga, diskon: new PosDecimal(qty).times(harga).minus(nilai).toNumber(), nilai, status: "—",
         });
       }
@@ -245,11 +263,13 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
   const cabangOptions = pesanError ? [] : [...new Map(rows.filter(row => row.cabangId)
     .map(row => [row.cabangId!, { id: row.cabangId!, name: row.cabang }] as const)).values()]
     .sort((a, b) => a.name.localeCompare(b.name, "id") || a.id.localeCompare(b.id));
+  const pelaksanaOptions = pesanError ? [] : [...pilihanPelaksana.values()]
+    .sort((a, b) => a.nama.localeCompare(b.nama, "id") || a.id.localeCompare(b.id));
   const terpilih = pesanError ? [] : rows.filter((row) =>
-    row.jenis === jenis && (!cabangId || row.cabangId === cabangId) && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
+    row.jenis === jenis && (!cabangId || row.cabangId === cabangId) && (!pelaksanaId || row.pelaksanaIds?.includes(pelaksanaId)) && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
       .some((value) => value.toLocaleLowerCase("id-ID").includes(cari))),
   ).sort((a, b) => b.waktu.localeCompare(a.waktu) || a.id.localeCompare(b.id));
   const nilaiTotal = terpilih.reduce((sum, row) => sum + row.nilai, 0);
   const qtyTotal = terpilih.reduce((sum, row) => sum + row.qty, 0);
-  return { rows: terpilih, cabangOptions, pesanError, nilaiTotal, qtyTotal };
+  return { rows: terpilih, cabangOptions, pelaksanaOptions, pesanError, nilaiTotal, qtyTotal };
 }

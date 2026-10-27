@@ -87,7 +87,7 @@ export default async function PosStrukPage({ params, searchParams }: {
         {Number(sale.kembali) > 0 && <Row k="Kembali" v={rp(sale.kembali)} />}
         {sale.poin_earned > 0 && <Row k="Poin didapat" v={`+${sale.poin_earned}`} />}
         <Hr />
-        <div style={{ fontSize: 9 }}>Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.</div>
+        <div className="no-print" style={{ fontSize: 9 }}>Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.</div>
         <div style={{ textAlign: "center", fontSize: 10, marginTop: 6 }}>Terima kasih 🐾<br />Barang dibeli tidak dapat dikembalikan</div>
       </div>
     </>

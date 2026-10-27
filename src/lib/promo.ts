@@ -8,6 +8,7 @@ export type PromoRule = {
   discount_type?: string;
   discount_value?: number;
   unit?: string;
+  discount_mode?: "per_unit" | "package_total";
 };
 
 export type PromoRow = {

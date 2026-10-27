@@ -157,7 +157,7 @@ export default async function RekamMedisPage({
   // Daftar obat (form pemeriksaan) + bahan baku (racikan inline, dipakai juga di recorded view)
   // + jasa. Jasa wajib dari master SKU — dokter tidak boleh mengetik jasa bebas.
   type ItemLiteFull = {
-    id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
+    id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number;
     is_compound_material: boolean; item_type?: string; tindakan_kategori?: string | null;
     units?: ItemUnit[];
   };
@@ -170,10 +170,10 @@ export default async function RekamMedisPage({
   const bolehManual = await bolehRacikKhusus();
   if (!recorded) {
     const masterRows = await readCompleteList<{
-      id: string; code: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean;
+      id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean;
       item_type: string; tindakan_kategori: string | null; category_id: string | null;
     }>((from, to) => supabase
-      .from("items").select("id, code, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
+      .from("items").select("id, code, upc, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
       .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik");
     const categories = await loadClinicItemCategories(supabase);
     const compoundRows = await loadClinicCompoundSkus(supabase, categories);
@@ -183,7 +183,7 @@ export default async function RekamMedisPage({
 
     const { stock: stokByItem, units: unitMap, prices: hargaMap } = await loadClinicSkuDetails(supabase, ids, visit.branch_id);
     const all = (itemRows ?? []).map((i) => ({
-      id: i.id as string, code: "code" in i ? i.code as string | null : null, name: i.name as string, unit: (i.unit as string) ?? "pcs",
+      id: i.id as string, code: "code" in i ? i.code as string | null : null, upc: "upc" in i ? i.upc as string | null : null, name: i.name as string, unit: (i.unit as string) ?? "pcs",
       sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
       stok: stokByItem.get(i.id as string) ?? 0,
       units: applyHargaCabang(

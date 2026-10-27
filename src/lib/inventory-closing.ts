@@ -6,6 +6,33 @@ import { inventoryMethod, readReportRows, ReportAccessError } from "./hpp-report
 export const INVENTORY_CLOSING_PATH = "/keuangan/closing-hpp";
 type Close = { id: string; period: string; closed_through: string; closed_at: string };
 type Value = { close_id: string; warehouse_id: string; item_id: string; qty: number | string; average_cost: number | string | null; value: number | string | null };
+type InventoryJournalLine = { id: string; debit: number | string; credit: number | string; journal_entries: { branch_id: string | null } | { branch_id: string | null }[] | null };
+
+function finiteMoney(value: number | string): Decimal {
+  const amount = new Decimal(value);
+  if (!amount.isFinite() || amount.isNegative()) throw new Error("Nilai jurnal persediaan tidak sah; rekonsiliasi diperlukan.");
+  return amount;
+}
+
+async function inventoryLedgerAtClose(client: SupabaseClient, close: Close, branchIds: string[]) {
+  const { data: account, error } = await client.from("coa_accounts").select("id").eq("code", "1301").maybeSingle();
+  if (error) throw new Error(`Akun persediaan gagal dibaca: ${error.message}`);
+  if (!account) return null;
+  const lines = await readReportRows<InventoryJournalLine>(async (from, to) => client.from("journal_lines")
+    .select("id,debit,credit,journal_entries!inner(tanggal,branch_id)", { count: "exact" })
+    .eq("account_id", account.id).lte("journal_entries.tanggal", close.closed_through)
+    .order("id").range(from, to));
+  const balances = new Map(branchIds.map(id => [id, new Decimal(0)]));
+  let unallocated = new Decimal(0);
+  for (const line of lines) {
+    const entry = Array.isArray(line.journal_entries) ? line.journal_entries[0] : line.journal_entries;
+    if (!entry || (entry.branch_id !== null && typeof entry.branch_id !== "string")) throw new Error("Cabang jurnal persediaan tidak lengkap; rekonsiliasi diperlukan.");
+    const amount = finiteMoney(line.debit).minus(finiteMoney(line.credit));
+    if (entry.branch_id === null) unallocated = unallocated.plus(amount);
+    else if (balances.has(entry.branch_id)) balances.set(entry.branch_id, balances.get(entry.branch_id)!.plus(amount));
+  }
+  return { balances, unallocated: unallocated.toNumber() };
+}
 
 function snapshotTotal(values: Value[]): number | null {
   try {
@@ -56,6 +83,7 @@ export async function loadInventoryClosing(client: SupabaseClient, selectedClose
   }).sort((a, b) => b.period.localeCompare(a.period));
   const activeClose = history.find(close => close.id === selectedClose) ?? history[0];
   const activeValues = snapshots.filter(value => value.close_id === activeClose?.id);
+  const ledger = activeClose ? await inventoryLedgerAtClose(client, activeClose, reportBranches.map(branch => branch.id)) : null;
   const itemIds = [...new Set(activeValues.map(value => value.item_id))];
   const items: { id: string; code: string; name: string; unit: string }[] = [];
   for (let start = 0; start < itemIds.length; start += 100) {
@@ -70,7 +98,15 @@ export async function loadInventoryClosing(client: SupabaseClient, selectedClose
   });
   const branchSummary = reportBranches.map(branch => {
     const scoped = activeValues.filter(value => warehouseMap.get(value.warehouse_id)?.branch_id === branch.id);
-    return { ...branch, count: scoped.length, value: snapshotTotal(scoped) };
+    const value = snapshotTotal(scoped);
+    const ledgerValue = ledger?.balances.get(branch.id)?.toNumber() ?? null;
+    return { ...branch, count: scoped.length, value, ledgerValue,
+      difference: value === null || ledgerValue === null ? null : new Decimal(value).minus(ledgerValue).toNumber() };
   });
-  return { method, activatedAt: (settings?.activated_at as string | null | undefined) ?? null, branches: availableBranches, selectedBranchIds, branchSummary, allBranches: branches.length > 0 && availableBranches.length === branches.length, history, activeClose, values };
+  const scopedLedgerValue = ledger ? reportBranches.reduce((sum, branch) => sum.plus(ledger.balances.get(branch.id) ?? 0), new Decimal(0)).toNumber() : null;
+  const scopedDifference = activeClose?.scopedValue === null || activeClose?.scopedValue === undefined || scopedLedgerValue === null
+    ? null : new Decimal(activeClose.scopedValue).minus(scopedLedgerValue).toNumber();
+  return { method, activatedAt: (settings?.activated_at as string | null | undefined) ?? null, branches: availableBranches, selectedBranchIds, branchSummary,
+    scopedLedgerValue, scopedDifference, unallocatedLedger: ledger?.unallocated ?? null,
+    allBranches: branches.length > 0 && availableBranches.length === branches.length, history, activeClose, values };
 }

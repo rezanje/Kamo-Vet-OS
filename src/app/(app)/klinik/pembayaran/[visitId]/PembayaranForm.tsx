@@ -51,13 +51,23 @@ type Patient = {
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 const labelMaster = (it: MasterItem) => `${it.code} — ${it.name}`;
+const NO_OPEN_SOURCES: ReadonlySet<string> = new Set();
+/** A recorded source with an explicit empty snapshot (no doctor/staff) was left for the cashier.
+ * Recorded performers and pre-feature NULL snapshots stay sealed exactly as before. */
+export function openServiceSourceIds(rows: Line[]): Set<string> {
+  return new Set(rows.filter(row => row.prescription_item_id && !row.terkunci && row.service_performers != null
+    && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
+}
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, groomingDoctorRequired = false, groomingApplies = true }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; groomingDoctorRequired?: boolean;
   groomingApplies?: boolean;
+  /** S01: source rows saved with an explicit empty performer snapshot stay assignable by the cashier. */
+  openSourceIds?: ReadonlySet<string>;
 }) {
+  const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: serviceRows ? emptyServicePerformers() : null }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
@@ -108,7 +118,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                     <i className="ti ti-alert-triangle" title="Bukan dari master — stok tidak akan berkurang" style={{ color: "#d97706", fontSize: 13, flexShrink: 0 }} />
                   )}
                 </div>
-                {serviceRows && (sealedPerformers || r.prescription_item_id || r.terkunci
+                {serviceRows && (sealedPerformers || performerLocked(r)
                   ? <div style={{fontSize:10,color:"var(--tm)"}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>
                   : <ServicePerformersField label={`Pelaksana ${r.deskripsi || `jasa baris ${i+1}`}`} value={r.service_performers} staff={serviceStaff}
                     grooming={groomingApplies && (r.kategori === "Grooming" || master.some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
@@ -164,7 +174,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
         </tbody>
       </table>
       </div>
-      {serviceRows && !sealedPerformers && rows.some(row=>!row.prescription_item_id && !row.terkunci) && <ServicePerformersBulk rows={rows} setRows={setRows} staff={serviceStaff} />}
+      {serviceRows && !sealedPerformers && rows.some(row=>!performerLocked(row)) && <ServicePerformersBulk rows={rows} setRows={setRows} staff={serviceStaff} locked={performerLocked} />}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 6, fontSize: 11.5 }}>
         <span style={{ fontWeight: 600, color: "var(--tm)" }}>Subtotal {title.split(" ")[0]}</span>
@@ -174,11 +184,11 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   );
 }
 
-function ServicePerformersBulk({rows,setRows,staff}:{rows:Line[];setRows:(rows:Line[])=>void;staff:ServiceStaff[]}) {
+function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:(rows:Line[])=>void;staff:ServiceStaff[];locked:(row:Line)=>boolean}) {
   const [value,setValue]=useState(emptyServicePerformers);
   return <div>
     <ServicePerformersField label="Isi pelaksana jasa sekaligus" value={value} staff={staff} onChange={setValue} />
-    <button type="button" className="btn-def" onClick={()=>setRows(bulkFillServicePerformers(rows.map(row=>({...row,jenis:"jasa"})),value).map((row,index)=>rows[index].prescription_item_id || rows[index].terkunci ? rows[index] : row))}>Isi baris jasa kosong</button>
+    <button type="button" className="btn-def" onClick={()=>setRows(bulkFillServicePerformers(rows.map(row=>({...row,jenis:"jasa"})),value).map((row,index)=>locked(rows[index]) ? rows[index] : row))}>Isi baris jasa kosong</button>
   </div>;
 }
 
@@ -200,6 +210,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const latestSourceSubtotal = [...initialObat, ...initialJasa].reduce((sum,row)=>sum+nilaiBaris(row),0);
   const [obat, setObat] = useState<Line[]>(initialObat);
   const [jasa, setJasa] = useState<Line[]>(initialJasa);
+  const [openSourceIds] = useState(() => openServiceSourceIds(initialJasa));
   const [discount, setDiscount] = useState(initialDiscount);
   const [metode, setMetode] = useState(initialMetode);
   const [reason, setReason] = useState("");
@@ -399,7 +410,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
           <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12 }}>
