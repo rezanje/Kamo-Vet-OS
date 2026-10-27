@@ -22,6 +22,8 @@ import subprocess
 import sys
 import tempfile
 
+sys.dont_write_bytecode = True
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 VERSION, NAME = '20261026002100', 'promo_package_total_mode'
