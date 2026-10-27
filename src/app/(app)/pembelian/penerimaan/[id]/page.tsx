@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
+import { ReceiptCancelForm } from "./ReceiptCancelForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
@@ -16,14 +17,17 @@ type Baris = {
   harga: number; catatan: string | null;
 };
 
-export default async function DetailPenerimaanPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ from?: string }> }) {
+export default async function DetailPenerimaanPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ from?: string; success?: string; error?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
+  const owner = !!user && profile?.role === "OWNER" && profile.is_active === true;
 
   const { data, error } = await supabase
     .from("goods_receipts")
-    .select("id, po_id, no_terima, tanggal, surat_jalan, catatan, purchase_orders(id,no_po,status, branches(name), warehouses(name), suppliers(nama)), profiles(full_name), goods_receipt_items(id, nama, satuan, qty_pesan, qty_sisa_sebelum, qty_terima, qty_rusak, harga, catatan)")
+    .select("id, po_id, no_terima, tanggal, surat_jalan, catatan, voided_at, voided_on, void_reason, purchase_orders(id,no_po,status, branches(name), warehouses(name), suppliers(nama)), profiles(full_name), goods_receipt_items(id, nama, satuan, qty_pesan, qty_sisa_sebelum, qty_terima, qty_rusak, harga, catatan)")
     .eq("id", id)
     .maybeSingle();
 
@@ -46,6 +50,8 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
     <>
       <DocumentBackLink from={sp?.from} />
       <RelatedDocuments documents={related} from={`/pembelian/penerimaan/${id}`} error={!!invoices.error} note={po ? "Faktur pada PO yang sama. Alokasi faktur per penerimaan tidak tersimpan." : "PO terkait tidak tersedia atau tidak dapat diakses. Hubungan faktur tidak ditebak dari nomor dokumen."} />
+      {sp?.success && <div role="status" className="p2ban no-print">{sp.success}</div>}
+      {sp?.error && <div role="alert" className="p2ban no-print">{sp.error}</div>}
       <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/pembelian/penerimaan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
@@ -56,6 +62,12 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: "var(--sb)" }}>TANDA TERIMA BARANG</div>
         <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 12 }}>{data.no_terima} · {tgl(data.tanggal)}</div>
+        {data.voided_at && (
+          <div role="status" className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#991b1b", marginBottom: 12 }}>
+            <strong>DIBATALKAN</strong>{data.voided_on ? ` pada ${tgl(data.voided_on)}` : ""}. Stok dan jurnal persediaan sudah dibalik; sisa PO dibuka lagi.
+            {data.void_reason && <> Alasan: {data.void_reason}</>}
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 18px", fontSize: 11, marginBottom: 14 }}>
           <KV k="Pemasok" v={one(po?.suppliers ?? null)?.nama ?? "—"} />
@@ -115,6 +127,13 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
 
         {data.catatan && (
           <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 10 }}>Catatan: {data.catatan}</div>
+        )}
+
+        {owner && !data.voided_at && (
+          <details className="no-print" style={{ marginTop: 14 }}>
+            <summary className="btn-def">Batalkan penerimaan (Super Admin)</summary>
+            <ReceiptCancelForm userId={user!.id} receiptId={data.id} />
+          </details>
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, marginTop: 34, fontSize: 10.5 }}>
