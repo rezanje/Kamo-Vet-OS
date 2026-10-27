@@ -1,4 +1,4 @@
-PostgreSQL 17.6: 268 history versions applied, everything on main except 20261026002100 (production-like).
+PostgreSQL 17.6: 269 history versions applied, everything on main except 20261026002100 (production-like).
 fingerprints: editor before f4a53d51521eecb175dd646f66ee82e9, after bb4be6aa95d240230324275f2e7723f3; guard 56845e957b2bdeac4e84d2e852623cf6
 before-tests: PASS promo_edit.sql, promo_excel_batch.sql, pos_split_payments.sql, clinic_billing_lifecycle.sql
 before-tests: PASS live-app legacy edit payload accepted; package payload refused (editor without C04)
