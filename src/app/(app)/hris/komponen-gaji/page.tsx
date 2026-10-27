@@ -4,7 +4,8 @@ import Link from "next/link";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { bolehKelolaPayroll } from "@/lib/master-guard";
+import { bacaGajiPokok } from "@/lib/employee-salary";
 import { lepasKomponen, pasangKomponen, simpanKomponen, toggleKomponen } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -19,11 +20,11 @@ export default async function KomponenGajiPage({
 }) {
   const { error, success, emp, edit } = await searchParams;
   const supabase = await createClient();
-  const bolehKelola = await bolehKelolaMaster();
+  const bolehKelola = await bolehKelolaPayroll();
 
   const [{ data: kompData, error: componentError }, { data: empData, error: employeeError }, { data: pasangData, error: assignmentError }] = await Promise.all([
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active").order("tipe").order("nama"),
-    supabase.from("employees").select("id, nama, jabatan, gaji_pokok").eq("status", "Aktif").order("nama"),
+    supabase.from("employees").select("id, nama, jabatan").eq("status", "Aktif").order("nama"),
     supabase.from("employee_salary_components").select("id, employee_id, component_id, nominal"),
   ]);
   if (componentError || employeeError || assignmentError) return <div role="alert" className="p2ban">Komponen gaji belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>;
@@ -31,7 +32,11 @@ export default async function KomponenGajiPage({
   const komponen = (kompData ?? []) as Komponen[];
   const editing = edit ? komponen.find(component => component.id === edit) : undefined;
   if (edit && !editing) return <div role="alert" className="p2ban">Komponen untuk diedit tidak tersedia. <Link href="/hris/komponen-gaji">Kembali ke komponen gaji</Link></div>;
-  const karyawan = (empData ?? []) as { id: string; nama: string; jabatan: string | null; gaji_pokok: number }[];
+  const direktori = (empData ?? []) as { id: string; nama: string; jabatan: string | null }[];
+  let gajiPer: Map<string, number>;
+  try { gajiPer = await bacaGajiPokok(supabase, direktori.map((k) => k.id)); }
+  catch { return <div role="alert" className="p2ban">Komponen gaji belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>; }
+  const karyawan = direktori.map((k) => ({ ...k, gaji_pokok: gajiPer.get(k.id) ?? 0 }));
   const pasangan = (pasangData ?? []) as Pasangan[];
 
   const kompById = new Map(komponen.map((k) => [k.id, k]));

@@ -2,6 +2,7 @@
 // tempat: OWNER/ADMIN boleh mengubah master data, FINANCE ikut untuk Kas & Bank.
 import { loadRoleCapabilities } from "./role-capabilities";
 import { redirect } from "next/navigation";
+import { bolehKelolaPayroll as peranBolehKelolaPayroll } from "@/lib/hris-access";
 import { createClient } from "@/lib/supabase/server";
 
 const ADMIN = ["OWNER", "ADMIN"];
@@ -27,10 +28,29 @@ export async function assertMasterAdmin(back: string, apa: string) {
   return assertRole(back, apa, ADMIN);
 }
 
+export async function assertHrisManager(back: string) {
+  return assertRole(back, "data HRIS cabang ini", ["OWNER", "ADMIN"]);
+}
+
+export async function assertPayrollOwner(back: string) {
+  return assertRole(back, "data HRIS cabang ini", ["OWNER"]);
+}
+
 // Dipakai server component: staf tetap boleh LIHAT daftarnya, form-nya saja disembunyikan.
 export async function bolehKelolaMaster(): Promise<boolean> {
   const { role } = await roleSaya();
   return ADMIN.includes(role);
+}
+
+export async function bolehKelolaPayroll(): Promise<boolean> {
+  const { role } = await roleSaya();
+  return peranBolehKelolaPayroll(role);
+}
+
+// Angka gaji: OWNER (kelola) dan FINANCE (baca). ADMIN tidak melihat.
+export async function bolehLihatGaji(): Promise<boolean> {
+  const { role } = await roleSaya();
+  return role === "OWNER" || role === "FINANCE";
 }
 
 // Kas & Bank: transaksi, bukan master data — FINANCE ikut boleh.

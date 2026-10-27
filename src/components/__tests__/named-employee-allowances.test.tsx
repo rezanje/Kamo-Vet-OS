@@ -6,7 +6,7 @@ const employeeId = "10000000-0000-4000-8000-000000000001";
 const state = vi.hoisted(() => ({ denied: false, failed: "", writes: [] as { table: string; kind: string; row: Row }[], components: [] as Row[], assignments: [] as Row[], reads: [] as string[] }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (href: string) => { throw new Error(href); }, notFound: () => { throw new Error("NOT_FOUND"); } }));
-vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => !state.denied, assertMasterAdmin: async () => { if (state.denied) throw new Error("DENIED"); return client(); } }));
+vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => !state.denied, bolehKelolaPayroll: async () => !state.denied, assertMasterAdmin: async () => { if (state.denied) throw new Error("DENIED"); return client(); }, assertPayrollOwner: async () => { if (state.denied) throw new Error("DENIED"); return client(); } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => client() }));
 vi.mock("@/app/(app)/hris/karyawan/actions", () => ({ editKaryawan: vi.fn() }));
 function client() {
@@ -15,7 +15,8 @@ function client() {
     const filters: Record<string, unknown> = {};
     let mutation: { kind: string; row: Row } | undefined;
     const rows = () => table === "salary_components" ? state.components : table === "employee_salary_components" ? state.assignments
-      : table === "employees" ? [{ id: employeeId, nama: "Fictional employee", gaji_pokok: 3500000, status: "Aktif", branch_id: "branch" }]
+      : table === "employees" ? [{ id: employeeId, nama: "Fictional employee", status: "Aktif", branch_id: "branch" }]
+      : table === "employee_base_salaries" ? [{ employee_id: employeeId, gaji_pokok: 3500000 }]
       : table === "branches" ? [{ id: "branch", name: "Fictional branch" }] : [];
     const result = () => {
       if (mutation && state.failed !== table) {
@@ -33,7 +34,7 @@ function client() {
       return { data: rows().filter(row => Object.entries(filters).every(([key, value]) => row[key] === value)), error: state.failed === table ? { message: "private benefit fixture" } : null };
     };
     const query = {
-      select() { return query; }, order() { return query; }, eq(key: string, value: unknown) { filters[key] = value; return query; },
+      select() { return query; }, order() { return query; }, in() { return query; }, eq(key: string, value: unknown) { filters[key] = value; return query; },
       update(row: Row) { mutation = { kind: "update", row }; return query; }, insert(row: Row) { mutation = { kind: "insert", row }; return query; },
       upsert(row: Row) { mutation = { kind: "upsert", row }; return query; }, delete() { mutation = { kind: "delete", row: {} }; return query; },
       maybeSingle: async () => ({ ...result(), data: result().data[0] ?? null }),

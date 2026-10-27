@@ -1,14 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { assertMasterAdmin } from "@/lib/master-guard";
+import { assertHrisManager } from "@/lib/master-guard";
 import { validasiShift } from "@/lib/shift-master";
 
 const BACK = "/hris/shift";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 
 export async function simpanShift(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "master shift");
+  const supabase = await assertHrisManager(BACK);
 
   const id = String(formData.get("id") ?? "").trim();
   const nama = String(formData.get("nama") ?? "").trim();
@@ -37,7 +37,7 @@ export async function simpanShift(formData: FormData) {
 
 // Shift tidak dihapus: jadwal yang sudah terlanjur memakainya akan ikut hilang.
 export async function toggleShift(formData: FormData) {
-  const supabase = await assertMasterAdmin(BACK, "master shift");
+  const supabase = await assertHrisManager(BACK);
   const id = String(formData.get("id") ?? "").trim();
   const aktif = String(formData.get("aktif") ?? "") === "1";
   if (!id) gagal("Shift tidak valid");

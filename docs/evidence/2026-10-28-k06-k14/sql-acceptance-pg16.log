@@ -1,5 +1,5 @@
-server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: /var/folders/xr/gmtpnd917t3bpy6jj70hz9p80000gn/T/vetos-k06-k14-native-u22re34_
-Applied 276 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: /var/folders/xr/gmtpnd917t3bpy6jj70hz9p80000gn/T/vetos-k06-k14-native-_2n24lm5
+Applied 279 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
 PASS K06/K14 continuation, idempotency, one live stay per patient, role gate, pet hotel log, separate billing
 PASS K06 race: two continuation visits of one patient admitted concurrently -> exactly one live stay
 Removed owned PostgreSQL test container and volumes.

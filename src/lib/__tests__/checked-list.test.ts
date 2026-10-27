@@ -36,6 +36,19 @@ describe("checked complete list", () => {
       return { data: rows(1200).slice(from, to + 1), count: 1200, error: null };
     }, "Pelanggan")).rejects.toThrow("Pelanggan belum dapat dimuat lengkap. Coba muat ulang.");
   });
+  it("fetches the pages after the first concurrently and keeps stable order (U07)", async () => {
+    let inFlight = 0; let peak = 0;
+    const all = rows(3600);
+    const result = await readCompleteList(async (from, to) => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return { data: all.slice(from, to + 1), count: all.length, error: null };
+    }, "Barang klinik");
+    expect(result.map((row) => row.id)).toEqual(all.map((row) => row.id));
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(6);
+  });
   it("rejects above the explicit 10000-source cap", async () => {
     await expect(readCompleteList(async () => ({ data: rows(500), count: 10001, error: null }), "Pelanggan")).rejects.toThrow(/10.000/);
   });

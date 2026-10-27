@@ -118,7 +118,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const {
     attachForm: draftAttachForm, submissionKey: draftSubmissionKey, recovered: draftRecovered,
     storageError: draftStorageError, saveError: draftSaveError,
-    capture: draftCapture, discard: draftDiscard, submit: draftSubmit,
+    capture: draftCapture, discard: draftDiscard, submit: draftSubmit, leaving: draftLeaving,
   } = useClinicDraft({
     userId: draftUserId, scope: `inpatient:${recordId}`, requestKey,
     optionalSnapshotKeys: ["saleItemId","staff","procedureDraft"],
@@ -414,7 +414,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
 
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <Link href={backHref} className="btn-def">Batal</Link>
-            <SubmitButton className="pay-btn" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ width: "auto", flex: 1 }}>Simpan Catatan Rawat Inap</SubmitButton>
+            <SubmitButton className="pay-btn" icon="ti-device-floppy" pendingText="Menyimpan…" busy={draftLeaving} style={{ width: "auto", flex: 1 }}>Simpan Catatan Rawat Inap</SubmitButton>
           </div>
         </div>
 
@@ -588,8 +588,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 6, marginTop: 12 }}>
-                <SubmitButton className="btn-def" icon="ti-printer" name="cetak" value="1" pendingText="…" style={{ padding: "9px 0", fontSize: 11.5 }}>Simpan &amp; Cetak</SubmitButton>
-                <SubmitButton className="btn-acc" icon="ti-circle-check" name="cetak" value="0" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", fontSize: 12, background: "#16a34a" }}>Simpan Catatan &amp; Lanjut</SubmitButton>
+                <SubmitButton className="btn-def" icon="ti-printer" name="cetak" value="1" pendingText="…" busy={draftLeaving} style={{ padding: "9px 0", fontSize: 11.5 }}>Simpan &amp; Cetak</SubmitButton>
+                <SubmitButton className="btn-acc" icon="ti-circle-check" name="cetak" value="0" pendingText="Menyimpan…" busy={draftLeaving} style={{ justifyContent: "center", padding: "9px 0", fontSize: 12, background: "#16a34a" }}>Simpan Catatan &amp; Lanjut</SubmitButton>
               </div>
             </div>
           </div>

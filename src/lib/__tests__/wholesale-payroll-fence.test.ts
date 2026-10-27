@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({ rpc: vi.fn(), upsert: vi.fn(), calculate: vi.fn(), calls: [] as string[] }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
-vi.mock("@/lib/master-guard", () => ({ assertRole: async () => ({
+vi.mock("@/lib/master-guard", () => ({ assertPayrollOwner: async () => ({
   rpc: fixture.rpc,
   from: () => ({ select: () => ({ eq: async () => ({ data: [], error: null }) }), upsert: fixture.upsert }),
 }) }));
