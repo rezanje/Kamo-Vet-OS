@@ -8,7 +8,7 @@ const BACK = "/pengaturan/gaji";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 
 export async function simpanAturanGaji(formData: FormData) {
-  const supabase = await assertRole(BACK, "aturan gaji", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "aturan gaji", ["OWNER"]);
 
   const angka = (n: string) => Number(formData.get(n)) || 0;
   const row = {

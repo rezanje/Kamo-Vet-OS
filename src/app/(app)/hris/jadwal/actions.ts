@@ -1,10 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { assertRole } from "@/lib/master-guard";
+import { assertHrisManager } from "@/lib/master-guard";
 
 const BACK = "/hris/jadwal";
-const BOLEH = ["OWNER", "ADMIN"];
 
 type Perubahan = { employee_id: string; tanggal: string; shift_id: string | null };
 
@@ -15,7 +14,7 @@ export async function simpanJadwal(formData: FormData) {
   const kembali = `${BACK}?cabang=${cabang}&bulan=${bulan}`;
   const gagal = (msg: string): never => redirect(`${kembali}&error=${encodeURIComponent(msg)}`);
 
-  const supabase = await assertRole(kembali, "jadwal shift", BOLEH);
+  const supabase = await assertHrisManager(kembali);
 
   let rows: Perubahan[] = [];
   try {
