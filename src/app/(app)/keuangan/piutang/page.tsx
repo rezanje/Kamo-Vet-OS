@@ -3,19 +3,22 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { AGING_BUCKETS, AGING_LABEL, agingBucket, agingDays, type AgingBucket } from "@/lib/aging";
+import { AGING_BUCKETS, AGING_LABEL, TANPA_TANGGAL, agingFaktur, type AgingBucket, type AgingBucketFaktur } from "@/lib/aging";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { terimaPelunasan } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
+const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type Row = {
-  id: string; invoice_no: string | null; tanggal: string; customer: string;
-  total: number; dibayar: number; sisa: number; days: number; bucket: AgingBucket;
+  /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal faktur (M05). */
+  id: string; invoice_no: string | null; tanggal: string | null; customer: string;
+  total: number; dibayar: number; sisa: number; days: number | null; bucket: AgingBucketFaktur;
   /** klinik = tagihan kunjungan (dilunasi di layar ini) · reseller = faktur penjualan B2B. */
   sumber: "klinik" | "reseller";
+  /** Faktur saldo awal impor Accurate (M05): nomor faktur Accurate ada di catatan. */
+  saldoAwal?: string | null;
 };
 
 export default async function PiutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
@@ -38,7 +41,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
       .order("created_at"),
     supabase
       .from("sales_invoices")
-      .select("id, no_faktur, tanggal, total, carried_paid, customers(name)")
+      .select("id, no_faktur, tanggal, total, carried_paid, opening_batch_id, catatan, customers(name)")
       .neq("status", "batal")
       .order("tanggal"),
     supabase.from("sales_receipts").select("invoice_id, jumlah"),
@@ -58,7 +61,8 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   }
 
   const barisReseller: Row[] = ((fjs ?? []) as unknown as {
-    id: string; no_faktur: string; tanggal: string; total: number; carried_paid: number;
+    id: string; no_faktur: string; tanggal: string | null; total: number; carried_paid: number;
+    opening_batch_id: string | null; catatan: string | null;
     customers: { name: string } | { name: string }[] | null;
   }[])
     .map((f) => {
@@ -68,8 +72,9 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
         id: f.id, invoice_no: f.no_faktur, tanggal: f.tanggal,
         customer: cust?.name ?? "—",
         total: Number(f.total), dibayar, sisa: Math.max(0, Number(f.total) - dibayar),
-        days: agingDays(f.tanggal, today), bucket: agingBucket(f.tanggal, today),
+        ...agingFaktur(f.tanggal, today),
         sumber: "reseller" as const,
+        saldoAwal: f.opening_batch_id ? (f.catatan ?? "Saldo awal") : null,
       };
     })
     .filter((r) => r.sisa > 0);
@@ -85,17 +90,22 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
         id: i.id, invoice_no: i.invoice_no, tanggal,
         customer: cust?.name ?? "—",
         total: Number(i.total), dibayar, sisa,
-        days: agingDays(tanggal, today), bucket: agingBucket(tanggal, today),
+        ...agingFaktur(tanggal, today),
         sumber: "klinik",
       };
     })
     .filter((r) => r.sisa > 0);
 
-  const rows: Row[] = [...barisKlinik, ...barisReseller].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+  // Tanpa tanggal faktur diletakkan paling bawah: urutannya tidak ditebak.
+  const rows: Row[] = [...barisKlinik, ...barisReseller].sort((a, b) =>
+    a.tanggal === null || b.tanggal === null ? Number(a.tanggal === null) - Number(b.tanggal === null) : a.tanggal.localeCompare(b.tanggal));
 
   const totalSisa = rows.reduce((a, r) => a + r.sisa, 0);
   const sisaReseller = barisReseller.reduce((a, r) => a + r.sisa, 0);
   const perBucket = Object.fromEntries(AGING_BUCKETS.map((b) => [b, rows.filter((r) => r.bucket === b).reduce((a, r) => a + r.sisa, 0)])) as Record<AgingBucket, number>;
+  // Faktur saldo awal tanpa tanggal faktur: ikut total piutang, tapi tidak dimasukkan ke kelompok umur mana pun.
+  const tanpaTanggal = rows.filter((r) => r.bucket === TANPA_TANGGAL);
+  const sisaTanpaTanggal = tanpaTanggal.reduce((a, r) => a + r.sisa, 0);
 
   return (
     <>
@@ -128,6 +138,13 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
               <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{rp(perBucket[b])}</div>
             </div>
           ))}
+          {tanpaTanggal.length > 0 && (
+            <div className="card" style={{ textAlign: "center", background: "#f3f4f6" }}
+              title="Faktur saldo awal yang di Accurate tidak punya tanggal faktur. Umurnya belum dihitung sampai ada keputusan aturan.">
+              <div style={{ fontSize: 10, color: "var(--tm)", fontWeight: 600 }}>Tanpa tanggal faktur · {tanpaTanggal.length}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{rp(sisaTanpaTanggal)}</div>
+            </div>
+          )}
           <div className="card" style={{ textAlign: "center", background: "#eff6ff" }}>
             <div style={{ fontSize: 10, color: "#2563eb", fontWeight: 600 }}>TOTAL PIUTANG</div>
             <div style={{ fontSize: 13, fontWeight: 800, marginTop: 2, color: "#2563eb" }}>{rp(totalSisa)}</div>
@@ -152,14 +169,16 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{r.invoice_no ?? "—"}</td>
-                  <td><span className={`bge ${r.sumber === "reseller" ? "b" : ""}`}>{r.sumber === "reseller" ? "Reseller" : "Klinik"}</span></td>
-                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(r.tanggal)}</td>
+                  <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{r.invoice_no ?? "—"}{r.saldoAwal && <div style={{ fontFamily: "inherit", fontSize: 9.5, color: "var(--td)" }}>{r.saldoAwal}</div>}</td>
+                  <td><span className={`bge ${r.sumber === "reseller" ? "b" : ""}`}>{r.saldoAwal ? "Saldo awal" : r.sumber === "reseller" ? "Reseller" : "Klinik"}</span></td>
+                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.tanggal ? fmtDate(r.tanggal) : "Tidak ada"}</td>
                   <td style={{ fontSize: 12 }}>{r.customer}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.total)}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.dibayar)}</td>
                   <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(r.sisa)}</td>
-                  <td><span className={`bge ${r.bucket === "current" || r.bucket === "d1_30" ? "g" : "r"}`}>{r.days} hari</span></td>
+                  <td>{r.days === null
+                    ? <span className="bge x">Tanpa tanggal</span>
+                    : <span className={`bge ${r.bucket === "current" || r.bucket === "d1_30" ? "g" : "r"}`}>{r.days} hari</span>}</td>
                   <td>
                     {/* Faktur reseller dilunasi di layar Faktur Penjualan — di sana pelunasan
                         bisa memotong uang muka pelanggan, yang form ini tidak tahu. */}

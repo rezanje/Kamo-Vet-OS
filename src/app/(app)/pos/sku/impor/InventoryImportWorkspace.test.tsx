@@ -111,3 +111,45 @@ it("shows saved per-row failures with bounded navigation and no import retry", (
   expect(host.querySelector('a[href="/pos/sku/impor?master_run_id=saved-master-run&master_page=3"]')).not.toBeNull();
   expect(host.querySelector('[data-testid="master-import"]')).toBeNull();
 });
+
+const savedStock = { ok: true, phase: "preview" as const, message: "Batch tersimpan dipulihkan. Stok dan jurnal belum diposting; lanjutkan review OWNER.",
+  branch_id: "fiction-branch", warehouse_id: "fiction-wh", as_of: "2026-01-01", run_id: "11111111-1111-4111-8111-111111111111",
+  master_run_id: null, source_hash: "fiction-hash", rows: [], source_qty: 5, source_value: 50, checks: [], scope_clarification: null };
+
+it("reopens a saved stock batch after navigating away and back, labelled by stage, without preparing again", () => {
+  const batches = [
+    { id: savedStock.run_id, source_name: "fiction.xlsx", status: "previewed", as_of_date: "2026-01-01" },
+    { id: "22222222-2222-4222-8222-222222222222", source_name: "fiction-old.xlsx", status: "posted", as_of_date: null },
+  ];
+  for (let visit = 0; visit < 2; visit += 1) {
+    const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+    act(() => root?.render(<InventoryImportWorkspace batches={batches} masterBatches={[]} masterError={null} recovered={savedStock} initialReceipt={null} />));
+    expect(host.textContent).toContain("menunggu review OWNER; stok dan jurnal belum diposting");
+    expect(host.textContent).toContain("Stok sudah diposting");
+    expect(host.textContent).toContain("tanpa tanggal");
+    expect(host.textContent).not.toMatch(/· previewed ·|· posted ·/);
+    expect(host.textContent).toContain("File di browser tidak ikut tersimpan");
+    expect(host.querySelector(`a[href="/keuangan/persediaan-awal?run_id=${savedStock.run_id}"]`)).not.toBeNull();
+    expect(host.querySelector('[data-testid="stock-import"]')).toBeNull();
+    act(() => root?.unmount()); root = null; host.remove();
+  }
+});
+
+it("distinguishes a posted batch from a prepared one on recovery", () => {
+  const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[]} masterError={null} initialReceipt={null}
+    recovered={{ ...savedStock, phase: "done", message: "Batch sudah diposting. Buka bukti posting di Keuangan / Persediaan Awal." }} />));
+  expect(host.textContent).toContain("sudah diposting");
+  expect(host.textContent).not.toContain("menunggu review OWNER");
+});
+
+it("discloses a failed batch recovery instead of showing a review link", () => {
+  const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[]} masterError={null} initialReceipt={null}
+    recoveredRunId={savedStock.run_id}
+    recovered={{ ...savedStock, ok: false, run_id: null, message: "Batch tidak dapat diakses atau belum lengkap." }} />));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("tidak dapat diakses");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Batch 11111111");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Jangan siapkan ulang");
+  expect(host.querySelector('a[href*="persediaan-awal"]')).toBeNull();
+});

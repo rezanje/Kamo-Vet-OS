@@ -64,7 +64,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PETSHOP</div>
           <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Petshop"}</div>
         </div>
-        <p style={{fontSize:9}}>Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.</p>
+        <p className="no-print" style={{fontSize:9}}>Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.</p>
         <Hr />
         <Row k="No" v={sale.no_struk ?? "-"} />
         <Row k="Tgl" v={tgl} />

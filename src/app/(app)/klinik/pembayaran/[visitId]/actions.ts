@@ -29,6 +29,7 @@ type Line = {
   diskon_persen?: number;
   source_invoice_item_id?: string | null;
   service_performers?: ServicePerformersInput | null;
+  salesperson_id?: string | null;
 };
 
 const uncertainPayment = "Hasil pembayaran belum dapat dipastikan. Periksa invoice yang sudah tersimpan sebelum mencoba lagi dengan permintaan yang sama; jangan menerima pembayaran ulang.";
@@ -47,6 +48,7 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
     recipe_id: row.recipe_id ?? null,
     discount_percent: row.diskon_persen ?? 0,
     ...(row.service_performers != null ? {service_performers:row.service_performers} : {}),
+    ...(row.salesperson_id ? {salesperson_id:row.salesperson_id} : {}),
   }));
 }
 
@@ -150,6 +152,7 @@ export async function bayarVisit(formData: FormData) {
       prescription_item_id: l.prescription_item_id ?? null,
       ...(existing && l.source_invoice_item_id ? {source_invoice_item_id:l.source_invoice_item_id} : {}),
       recipe_id: l.recipe_id ?? null,
+      ...(typeof l.salesperson_id === "string" && l.salesperson_id.trim() ? {salesperson_id:l.salesperson_id.trim()} : {}),
       ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:clinicServicePerformerInput(l.jenis, l.service_performers)} : {}),
     }));
 

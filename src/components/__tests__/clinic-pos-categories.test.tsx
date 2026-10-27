@@ -20,7 +20,8 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
-const base = { unit: "pcs", stok: 5, sell_price: 10000, category_id: null as string | null, is_compound_material: false };
+const base = { unit: "pcs", stok: 5, sell_price: 10000, category_id: null as string | null, is_compound_material: false,
+  code: null as string | null, upc: null as string | null };
 const service = { ...base, id: "consult", name: "Konsultasi", item_type: "Jasa" };
 const action = { ...base, id: "steril", name: "Steril", sell_price: 75000, item_type: "Jasa", category_id: "actions", tindakan_kategori: "Operasi" };
 const vaccine = { ...base, id: "vaccine", name: "Vaksin", sell_price: 35000, item_type: "Jasa", category_id: "medicine", tindakan_kategori: "Vaksinasi" };
@@ -65,6 +66,8 @@ it.each(["exam", "inpatient"])("%s picks catalog actions and restores unchanged 
   expect(host.textContent).not.toContain("Steril");
   await search("Cari tindakan", "Steril");
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  expect(cart()).toEqual([]);
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah tindakan Steril ke keranjang"]')!.click());
   expect(cart()).toEqual([expect.objectContaining({ item_id: "steril", harga: 75000, qty: 1, jenis: "jasa", kategori: "Operasi" })]);
   await tab("Jasa");
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
@@ -114,6 +117,20 @@ it.each(["exam", "inpatient"])("%s searches the whole inventory before paginatio
   expect(medicineTable.textContent).toContain("Anthel fixture");
 });
 
+it.each(["exam", "inpatient"])("%s finds an inventory medicine by master code or scanned UPC", async kind => {
+  await render(kind, [{ ...food, code: "OBT-42", upc: "8900012345678" }]);
+  const control = host.querySelector<HTMLInputElement>('input[placeholder="Cari nama obat / scan barcode…"]')!;
+  const change = async (value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(control, value);
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await change("OBT-42");
+  expect(host.textContent).toContain("Makanan kucing");
+  await change("8900012345678");
+  expect(host.textContent).toContain("Makanan kucing");
+  expect(host.textContent).toContain("1 obat · 1/1");
+});
+
 it.each(["exam", "inpatient"])("%s searches only finished compounds and designated ingredients in Racikan", async kind => {
   await render(kind); await tab("Racikan");
   await search("Cari obat racik", "Obat");
@@ -123,6 +140,27 @@ it.each(["exam", "inpatient"])("%s searches only finished compounds and designat
   expect(host.querySelector('button[aria-label="Pilih bahan Bahan diizinkan"]')).not.toBeNull();
   await search("Cari bahan racikan", "Makanan");
   expect(host.querySelector('button[aria-label="Pilih bahan Makanan kucing"]')).toBeNull();
+});
+
+it.each(["exam", "inpatient"])("%s retains a doctor-selected patient composition for a finished compound after draft reload", async kind => {
+  await render(kind); await tab("Racikan");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Obat Racik Sirup"]')!.click());
+  await search("Cari bahan racikan", "Bahan");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih bahan Bahan diizinkan"]')!.click());
+  const quantity = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah bahan Bahan diizinkan"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(quantity, "2");
+    quantity.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Tambah racikan ke keranjang"))!;
+  await act(async () => add.click());
+  const expected = [expect.objectContaining({ sale_item_id: "compound", item_id: null, jenis: "racikan",
+    ingredients: [expect.objectContaining({ item_id: "ingredient", qty: 2 })] })];
+  expect(cart()).toEqual(expected);
+  expect(cart()[0]).not.toHaveProperty("official_version_id");
+  await act(async () => root.unmount()); root = createRoot(host); await render(kind);
+  expect(cart()).toEqual(expected);
+  expect(cart()[0]).not.toHaveProperty("official_version_id");
 });
 
 it('places optional therapy below diagnosis and restores the note without adding billable items',async()=>{

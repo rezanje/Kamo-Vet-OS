@@ -18,6 +18,13 @@ export type BarisJual = {
   sourceDocumentNumber?: string;
   sourceDocumentHref?: string;
   commissionPending?: boolean;
+  /** A chosen policy is evidence on the original source row, never another sale. */
+  commissionPolicy?: "personal_rules" | "both_full" | "split";
+  commissionPolicyWarning?: string;
+  /** Returns use the original sale date to select the same two-person policy. */
+  commissionPolicyDate?: string;
+  /** Calculation-only actor row: a personal rule must name this employee. */
+  personalRulesOnly?: boolean;
   /** Posted DEMO allocation replaces legacy commission while retaining target revenue. */
   fixedCommission?: boolean;
   tanggal: string;              // YYYY-MM-DD
@@ -96,8 +103,9 @@ export function realisasiTarget(baris: BarisJual[], t: TargetPenjualan): { reali
   return { realisasi, persen: t.target > 0 ? Math.round((realisasi / t.target) * 100) : 0 };
 }
 
-function cocok(b: BarisJual, a: AturanKomisi): boolean {
+export function cocokAturanKomisi(b: BarisJual, a: AturanKomisi): boolean {
   if (b.fixedCommission) return false;
+  if (b.personalRulesOnly && a.employeeId !== b.employeeId) return false;
   // Tanpa saringan sumber, aturan "insentif dokter" ikut membayar penjualan petshop
   // begitu dokternya sekali saja menutup struk kasir.
   if (a.sumber !== "semua" && a.sumber !== b.sumber) return false;
@@ -131,7 +139,7 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilK
     const rincian: RincianAturan[] = [];
 
     for (const a of aturan) {
-      const kena = milikDia.filter((b) => cocok(b, a));
+      const kena = milikDia.filter((b) => cocokAturanKomisi(b, a));
       if (kena.length === 0) continue;
 
       let dasar = 0;

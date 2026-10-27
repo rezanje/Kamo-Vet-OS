@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { bolehBukaPath } from "@/lib/akses";
 import { reportCsv } from "@/lib/csv-report";
 import { hariIniWIB } from "@/lib/tanggal";
+import { jenisLaporan } from "@/lib/laporan-penjualan-barang";
 import { ambilPenjualanBarang, waktuWIB } from "../data";
 
 export async function GET(request: Request) {
@@ -24,8 +25,7 @@ export async function GET(request: Request) {
   const sampai = params.get("sampai") || hariIni;
   const kanalInput = params.get("kanal");
   const kanal = kanalInput === "POS" || kanalInput === "Online" ? kanalInput : "Klinik";
-  const jenisInput = params.get("jenis");
-  const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan", "Biaya Admin"].includes(jenisInput ?? "") ? jenisInput! : kanal === "Klinik" ? "Racikan" : "Barang";
+  const jenis = jenisLaporan(kanal, params.get("jenis"));
   const q = (params.get("q") ?? "").trim().slice(0, 120);
   const cabangId = (params.get("cabang_id") ?? "").slice(0, 80);
   const pelaksanaId = (params.get("pelaksana_id") ?? "").slice(0, 80);

@@ -6,9 +6,9 @@ import { useState } from "react";
 import type { CompoundDraft, CompoundSaleSku } from "@/lib/master-compound-cart";
 import type { KatalogRacikan } from "@/lib/katalog-racikan";
 const rp=(value:number)=>"Rp "+Math.round(value).toLocaleString("id-ID");
-export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, catalog, allowCustom, value, onChange, onAdd, onAddStock, submitLabel="Tambah racikan ke keranjang" }: {
+export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, catalog, allowCustom, value, onChange, onAdd, submitLabel="Tambah racikan ke keranjang" }: {
   items:T[];materials:CompoundSaleSku[];catalog:KatalogRacikan[];allowCustom:boolean;
-  value:CompoundDraft;onChange:(value:CompoundDraft)=>void;onAdd?:()=>void;onAddStock?:(item:T)=>void;submitLabel?:string;
+  value:CompoundDraft;onChange:(value:CompoundDraft)=>void;onAdd?:()=>void;submitLabel?:string;
 }) {
   const [search,setSearch]=useState(""),[materialSearch,setMaterialSearch]=useState(""),[page,setPage]=useState(1),[materialPage,setMaterialPage]=useState(1);
   const sku=items.find(item=>item.id===value.saleItemId);
@@ -33,8 +33,11 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
     <strong style={{fontSize:12}}>Obat racik dari Barang &amp; Jasa ({items.length})</strong>
     <input className="fi" aria-label="Cari obat racik" placeholder="Cari nama / kode obat racik…" value={search} onChange={event=>{setSearch(event.target.value);setPage(1);}} />
     {showList&&items.length>0&&<div style={{maxHeight:200,overflowY:"auto",display:"grid",gap:4}}>
-      {matches.slice((currentPage-1)*40,currentPage*40).map(item=>{const count=formulaCount(item.id);return <button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{onChange({...value,saleItemId:item.id,formulaId:value.saleItemId===item.id?value.formulaId:""});setSearch("");}} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
-        <span>{item.name}<small style={{display:"block",color:"var(--tm)"}}>{item.code?`${item.code} · `:""}{count?`${count} resep resmi`:allowCustom?"Belum ada resep resmi · racikan khusus pasien":"Belum ada resep resmi"}{onAddStock?` · Stok obat jadi ${item.stok} ${item.unit}`:""}</small></span><span>{rp(item.sell_price)}</span>
+      {matches.slice((currentPage-1)*40,currentPage*40).map(item=>{const count=formulaCount(item.id);return <button key={item.id} type="button" className="btn-def" aria-label={`Pilih ${item.name}`} onClick={()=>{
+        onChange(value.saleItemId===item.id?value:{...value,saleItemId:item.id,formulaId:"",dosageForm:"sirup",instruction:"",ingredients:[]});
+        setSearch("");setMaterialSearch("");setMaterialPage(1);
+      }} style={{display:"flex",justifyContent:"space-between",textAlign:"left"}}>
+        <span>{item.name}<small style={{display:"block",color:"var(--tm)"}}>{item.code?`${item.code} · `:""}{count?`${count} resep resmi`:allowCustom?"Belum ada resep resmi · racikan khusus pasien":"Belum ada resep resmi"}</small></span><span>{rp(item.sell_price)}</span>
       </button>;})}
       {!matches.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Tidak ada obat racik yang cocok.</span>}
       {pages>1&&<div style={{display:"flex",gap:8}}><button type="button" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>Sebelumnya</button><span>{currentPage}/{pages}</span><button type="button" disabled={currentPage===pages} onClick={()=>setPage(currentPage+1)}>Berikutnya</button></div>}
@@ -42,7 +45,6 @@ export function CompoundEditor<T extends CompoundSaleSku>({ items, materials, ca
     {!items.length&&<span style={{fontSize:11,color:"var(--tm)"}}>Belum ada SKU aktif pada kategori Obat Racik di Barang &amp; Jasa.</span>}
     {sku&&<div style={{padding:10,border:".5px solid var(--bd)",borderRadius:8}}>
       <strong>{sku.name}</strong><div style={{fontSize:12}}>Harga jual {rp(sku.sell_price)} · satu hasil racikan</div>
-      {onAddStock&&<button type="button" className="btn-def" style={{marginTop:8}} onClick={()=>onAddStock(sku)}>Ambil stok obat jadi</button>}
     </div>}
     <label className="flab">Komposisi racikan</label>
     <SearchableItemPicker items={boundCatalog.map(row=>({id:row.version_id,code:row.code,name:`${row.name} (v${row.version})`}))}

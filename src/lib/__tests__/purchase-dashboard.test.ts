@@ -6,7 +6,7 @@ vi.mock("../kas-akun", () => ({ kodeSemuaRekening: vi.fn(async () => []) }));
 
 const po = { id: "po", purchase_order_items: [{ id: "line", item_id: "sku", qty: 4, qty_terima: 4, harga_beli: 100, faktor: 10 }] };
 const invoice = (qty: number, total: number, voided_at: string | null = null) => ({
-  po_id: "po", total, voided_at,
+  po_id: "po", total, voided_at, opening_batch_id: null,
   purchase_invoice_items: [{ po_item_id: "line", item_id: "sku", qty, faktor: 10 }],
   purchase_invoice_payments: [] as { amount: number }[],
 });
@@ -30,8 +30,12 @@ describe("purchase dashboard keeps received but unbilled liability", () => {
   });
   it("adds only the unbilled PO portion to repriced partial and direct invoices", async () => {
     const partial = { ...invoice(1, 120), purchase_invoice_payments: [{ amount: 20 }] };
-    const direct = { po_id: null, total: 50, voided_at: null, purchase_invoice_items: [], purchase_invoice_payments: [{ amount: 10 }] };
+    const direct = { po_id: null, total: 50, voided_at: null, opening_batch_id: null, purchase_invoice_items: [], purchase_invoice_payments: [{ amount: 10 }] };
     expect(await purchase([partial, direct])).toEqual({ total: 470, lunas: 30, belumLunas: 440 });
+  });
+  it("leaves Accurate opening payables (M05) out of this period's purchases", async () => {
+    const opening = { po_id: null, total: 900, voided_at: null, opening_batch_id: "batch", purchase_invoice_items: [], purchase_invoice_payments: [] };
+    expect(await purchase([opening])).toEqual({ total: 400, lunas: 0, belumLunas: 400 });
   });
   it("reopens the received obligation after the only invoice is cancelled", async () => {
     expect(await purchase([invoice(4, 480, "2026-10-21")])).toEqual({ total: 400, lunas: 0, belumLunas: 400 });

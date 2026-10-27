@@ -18,7 +18,10 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       lte: (column: string, value: unknown) => { read.filters.push(["lte", column, value]); return query; },
       order: () => query,
       range: (from: number, to: number) => { start = from; end = to; fixture.ranges.push([from, to]); return query; },
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "items" ? items.slice(start, end + 1) : table === "warehouses" ? [{ id: "wh-1", code: "WH1", name: "Gudang Uji" }] : table === "stock_moves" && fixture.move && read.filters.some(f => f[0] === "gte") ? [fixture.move] : [], error: null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => {
+        const data = table === "items" ? items.slice(start, end + 1) : table === "warehouses" ? [{ id: "wh-1", code: "WH1", name: "Gudang Uji" }] : table === "stock_moves" && fixture.move && read.filters.some(f => f[0] === "gte") ? [fixture.move] : [];
+        return Promise.resolve({ data, count: data.length, error: null }).then(resolve);
+      },
     };
     return query;
   },
@@ -117,7 +120,7 @@ it("rejects unknown item/warehouse query IDs on the server", async () => {
 
 it("opens the exact racikan source from a material stock movement", async () => {
   const recipeId = "11111111-2222-4333-8444-555555555555";
-  fixture.move = { tanggal: "2026-10-19", qty: -2, unit_cost: 5, source: "racik", source_ref: recipeId, warehouse_id: "wh-1", warehouses: { code: "WH1", name: "Gudang Uji" } };
+  fixture.move = { id: "move-1", tanggal: "2026-10-19", qty: -2, unit_cost: 5, source: "racik", source_ref: recipeId, warehouse_id: "wh-1", warehouses: { code: "WH1", name: "Gudang Uji" } };
   await render({ item: "item-1204", dari: "2026-10-01", sampai: "2026-10-20" });
   expect(host.querySelector(`a[href="/klinik/racik/${recipeId}"]`)?.textContent).toBe(recipeId);
 });

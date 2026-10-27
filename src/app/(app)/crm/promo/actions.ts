@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import {transactionDraftAck} from "@/lib/transaction-draft-ack";
 import { createClient } from "@/lib/supabase/server";
 
-import {promoEditInput} from "@/lib/promo-edit";
+import {assertPackageTotalReleased,promoEditInput} from "@/lib/promo-edit";
+import {promoDiscountMode,validatePackageDiscount} from "@/lib/promo-hitung";
 
 const BACK = "/crm/promo";
 
@@ -35,6 +36,9 @@ export async function createPromo(formData: FormData) {
   const promoType = String(formData.get("promo_type") ?? "diskon_produk");
   const suggest = String(formData.get("suggest") ?? "").trim();
   const discountType = String(formData.get("discount_type") ?? "") || null;
+  let discountMode: ReturnType<typeof promoDiscountMode>;
+  try { discountMode=promoDiscountMode(formData.get("discount_mode")); }
+  catch { redirect(`${BACK}?error=${encodeURIComponent("Cara hitung diskon promo tidak valid")}`); }
   const discountValue = angkaOpsional(formData.get("discount_value"));
   const minQty = angkaOpsional(formData.get("min_qty"));
   const maxQty = angkaOpsional(formData.get("max_qty"));
@@ -70,17 +74,22 @@ export async function createPromo(formData: FormData) {
   if (autoApply && kelipatan && minQty == null) {
     gagal("Aturan kelipatan butuh min. qty terisi");
   }
+  try { assertPackageTotalReleased(discountMode); validatePackageDiscount(discountMode, discountType, minQty, itemIds); }
+  catch(error) { gagal(error instanceof Error?error.message:"Aturan total per paket tidak valid"); }
 
   // `rule` dipertahankan untuk teks saran & min. subtotal (dibaca reminder lama).
   const rule: Record<string, unknown> = { suggest };
   if (minSubtotal != null) rule.min_subtotal = minSubtotal;
+  if (discountMode === "package_total") rule.discount_mode = discountMode;
 
   const { data: promo, error } = await supabase.from("promos").insert({
     name, promo_type: promoType, rule,
     min_qty: minQty, max_qty: maxQty, kelipatan, auto_apply: autoApply,
     discount_type: discountType, discount_value: discountValue,
     branch_ids: branchIds.length ? branchIds : null, // kosong = semua cabang
-    valid_from: validFrom, valid_until: validUntil, is_active: true,
+    // Package targets are a second API write. Keep this row invisible to
+    // checkout until those targets have been stored and verified by the DB.
+    valid_from: validFrom, valid_until: validUntil, is_active: discountMode !== "package_total",
   }).select("id").single();
 
   if (error || !promo) gagal(error?.message ?? "Gagal simpan promo");
@@ -95,6 +104,14 @@ export async function createPromo(formData: FormData) {
       await supabase.from("promos").delete().eq("id", promo!.id);
       gagal(`Gagal simpan daftar barang promo: ${itErr.message}`);
     }
+  }
+
+  if (discountMode === "package_total") {
+    const {data:activated,error:activationError}=await supabase.from("promos")
+      .update({is_active:true}).eq("id",promo!.id).select("id").single();
+    // A lost response can follow a committed activation. Do not tell the
+    // manager it is inactive until the saved state has been read again.
+    if(activationError||!activated)gagal(`Status aktivasi promo belum terkonfirmasi; muat ulang daftar sebelum mencoba lagi: ${activationError?.message??"aktivasi tidak terkonfirmasi"}`);
   }
 
   revalidatePath(BACK);

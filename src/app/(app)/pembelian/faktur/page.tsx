@@ -15,15 +15,17 @@ type Row = {
   voided_at: string | null;
   no_faktur_pemasok: string | null;
   surat_jalan: string | null;
-  tanggal: string;
-  jatuh_tempo: string;
+  /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal ini (M05). */
+  tanggal: string | null;
+  jatuh_tempo: string | null;
   total: number;
   suppliers: Rel<{ nama: string }>;
   purchase_orders: Rel<{ no_po: string | null }>;
+  opening_batch_id: string | null;
 };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-const fmtD = (d: string) =>
+const fmtD = (d: string | null) => !d ? "Tidak ada" :
   new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 export default async function FakturBeliPage({
@@ -41,7 +43,7 @@ export default async function FakturBeliPage({
   const paidByInvoice = new Map<string, number>();
   try {
     invoicePage = await readListPage<Row>((from, to) => supabase.from("purchase_invoices")
-      .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po)", { count: "exact" })
+      .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, opening_batch_id, suppliers(nama), purchase_orders(no_po)", { count: "exact" })
       .order("created_at", { ascending: false }).order("id").range(from, to), "Daftar faktur pembelian", hal);
     const ids = invoicePage.rows.map(row => row.id);
     if (ids.length) {
@@ -106,7 +108,7 @@ export default async function FakturBeliPage({
               {rows.map((r) => {
                 const dibayar = paidByInvoice.get(r.id) ?? 0;
                 const sisa = r.voided_at ? 0 : Math.max(0, Number(r.total) - dibayar);
-                const telat = sisa > 0 && r.jatuh_tempo < today;
+                const telat = sisa > 0 && !!r.jatuh_tempo && r.jatuh_tempo < today;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/pembelian/faktur/${r.id}`}>{r.no_faktur}</Link>{r.voided_at && <span> · Dibatalkan</span>}</td>
@@ -119,7 +121,7 @@ export default async function FakturBeliPage({
                       {fmtD(r.jatuh_tempo)}{telat ? " !" : ""}
                     </td>
                     <td style={{ fontSize: 11.5 }}>{one(r.suppliers)?.nama ?? "—"}</td>
-                    <td style={{ fontSize: 11.5 }}>{one(r.purchase_orders)?.no_po ?? "—"}</td>
+                    <td style={{ fontSize: 11.5 }}>{r.opening_batch_id ? <span className="bge b">Saldo awal</span> : one(r.purchase_orders)?.no_po ?? "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(r.total))}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: sisa > 0 ? "#b91c1c" : "#15803d" }}>
                       {sisa > 0 ? rp(sisa) : "Lunas"}

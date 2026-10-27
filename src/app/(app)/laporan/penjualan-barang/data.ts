@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { lineDiscount } from "@/lib/pos-calc";
 import { PosDecimal } from "@/lib/pos-money";
-import { jenisBarisKlinik, kunciRacikan, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { jenisBarisKlinik, kunciRacikan, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 
@@ -266,7 +266,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
   const pelaksanaOptions = pesanError ? [] : [...pilihanPelaksana.values()]
     .sort((a, b) => a.nama.localeCompare(b.nama, "id") || a.id.localeCompare(b.id));
   const terpilih = pesanError ? [] : rows.filter((row) =>
-    row.jenis === jenis && (!cabangId || row.cabangId === cabangId) && (!pelaksanaId || row.pelaksanaIds?.includes(pelaksanaId)) && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
+    (jenis === SEMUA_JENIS_KLINIK || row.jenis === jenis) && (!cabangId || row.cabangId === cabangId) && (!pelaksanaId || row.pelaksanaIds?.includes(pelaksanaId)) && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
       .some((value) => value.toLocaleLowerCase("id-ID").includes(cari))),
   ).sort((a, b) => b.waktu.localeCompare(a.waktu) || a.id.localeCompare(b.id));
   const nilaiTotal = terpilih.reduce((sum, row) => sum + row.nilai, 0);

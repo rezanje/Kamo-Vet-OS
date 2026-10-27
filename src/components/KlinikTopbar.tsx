@@ -6,7 +6,7 @@ import Link from "next/link";
 export function KlinikTopbar({ fullName, branchName }: { fullName: string; branchName: string }) {
   const initial = (fullName.trim()[0] ?? "S").toUpperCase();
   return (
-    <div className="klinik-topbar">
+    <div className="klinik-topbar no-print">
       <div className="kt-brand">
         <div className="kt-logo"><i className="ti ti-paw" /></div>
         <div>

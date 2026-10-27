@@ -144,6 +144,7 @@ export const TILES: Record<string, Tile[]> = {
     // "Jurnal Berulang" dihapus dari menu (meeting 14 Agustus): layar yang sama
     // sudah berdiri sebagai "Transaksi Berulang" di modul Perusahaan.
     { label: "Saldo Awal", icon: "ti-flag", ...G, href: "/keuangan/saldo-awal" },
+    { label: "Saldo Awal per Faktur", icon: "ti-file-invoice", ...G, nw: true, href: "/keuangan/saldo-awal-faktur" },
     { label: "Tutup Buku", icon: "ti-lock", ...G, href: "/keuangan/tutup-buku" },
     { label: "Sinkronisasi Jurnal", icon: "ti-refresh-dot", ...A, href: "/keuangan/sinkron" },
   ],
@@ -186,6 +187,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Kategori Pemasok", icon: "ti-tag", ...B, href: "/pembelian/kategori-pemasok" },
     { label: "Pemasok", icon: "ti-building-store", ...B, href: "/pembelian?tab=supplier" },
     { label: "Perintah Pembayaran", icon: "ti-send", ...G, href: "/pembelian/perintah-bayar" },
+    { label: "Permintaan Koreksi", icon: "ti-message-2", ...G, nw: true, href: "/pembelian/koreksi" },
   ],
   // id `pos` dipertahankan supaya route /pos/* lama tidak perlu dipindah.
   pos: [

@@ -26,7 +26,8 @@ export function StockOnlyImport() {
       const result = await previewSaldoAwalAccurate(data);
       if (token !== generation.current) return;
       setState(result);
-      if (result.ok && result.run_id) window.history.replaceState(window.history.state, "", `/pos/sku/impor?run_id=${encodeURIComponent(result.run_id)}`);
+      // A saved batch keeps its URL even when its rows were not read back, so reload reopens it.
+      if (result.run_id) window.history.replaceState(window.history.state, "", `/pos/sku/impor?run_id=${encodeURIComponent(result.run_id)}`);
     } catch {
       if (token === generation.current) setError("Hasil persiapan belum dapat dipastikan. Periksa batch tersimpan dengan muat ulang halaman; pilih ulang file yang sama bila belum ditemukan. Jangan menganggap stok/jurnal sudah masuk.");
     } finally {
@@ -43,6 +44,7 @@ export function StockOnlyImport() {
     <button type="button" className="btn-acc" disabled={!file||!date||busy||Boolean(state?.ok)} onClick={()=>void prepare()}>Siapkan batch saldo</button>
     {busy&&<p role="status">Persiapan: menyiapkan batch. Stok dan jurnal belum diposting.</p>}
     {(error||(state&&!state.ok))&&<p role="alert">{error||state?.message}</p>}
+    {state&&!state.ok&&state.run_id&&<Link className="btn-def" href={`/pos/sku/impor?run_id=${encodeURIComponent(state.run_id)}`}>Buka batch tersimpan</Link>}
     <InitialStockDecimalPreview preview={state?.decimal_preview}/>
     {state?.scope_clarification&&<div role="group" aria-label="Pilih tujuan saldo">
       <p>Konfirmasi alias sumber: {state.scope_clarification.sourceBranch} / {state.scope_clarification.sourceWarehouse}. Pilih hanya jika tujuan berikut adalah gudang yang sama.</p>
