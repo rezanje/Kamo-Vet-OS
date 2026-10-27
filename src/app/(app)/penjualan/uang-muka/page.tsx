@@ -1,6 +1,8 @@
 import { NumberInput } from "@/components/NumberInput";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
-import { DocumentBackLink } from "@/components/RelatedDocuments";
+import { DocumentBackLink, DocumentLink } from "@/components/RelatedDocuments";
+import { AdvanceUsageList } from "@/components/AdvanceUsageList";
+import { loadSalesAdvanceUsage, type AdvanceUsage } from "@/lib/advance-usage";
 import { documentAnchor } from "@/lib/related-document-routes";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
@@ -21,7 +23,7 @@ type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
 type UM = {
-  id: string; no_um: string; tanggal: string; jumlah: number; terpakai: number;
+  id: string; order_id: string | null; no_um: string; tanggal: string; jumlah: number; terpakai: number;
   catatan: string | null; status: string;
   customers: Rel<{ name: string }>;
   sales_orders: Rel<{ no_pesanan: string }>;
@@ -39,7 +41,7 @@ export default async function UangMukaJualPage({
 
   const [umResult, { data: custData }, { data: soData }, rekening] = await Promise.all([
     readCompleteList<UM>((from, to) => supabase.from("sales_advances")
-      .select("id, no_um, tanggal, jumlah, terpakai, catatan, status, customers(name), sales_orders(no_pesanan)", { count: "exact" })
+      .select("id, order_id, no_um, tanggal, jumlah, terpakai, catatan, status, customers(name), sales_orders(no_pesanan)", { count: "exact" })
       .order("tanggal", { ascending: false }).order("id").range(from, to),
     "Daftar uang muka penjualan", { maxRows: null })
       .then((rows) => ({ rows, error: "" }))
@@ -53,6 +55,10 @@ export default async function UangMukaJualPage({
   ]);
 
   const daftar = umResult.rows;
+  const { usage, usageError } = daftar.length
+    ? await loadSalesAdvanceUsage(supabase, daftar.map(u => u.id))
+      .then(usage => ({ usage, usageError: false }), () => ({ usage: new Map<string, AdvanceUsage[]>(), usageError: true }))
+    : { usage: new Map<string, AdvanceUsage[]>(), usageError: false };
   const pelanggan = (custData ?? []) as { id: string; name: string; phone: string }[];
   const pesanan = (soData ?? []) as { id: string; no_pesanan: string }[];
 
@@ -149,10 +155,13 @@ export default async function UangMukaJualPage({
                       {u.no_um}
                       <div><ActivityHistoryLink entity="sales_advances" id={u.id} /></div>
                       {u.catatan && <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{u.catatan}</div>}
+                      <AdvanceUsageList usages={usage.get(u.id) ?? []} error={usageError} terpakai={Number(u.terpakai)} />
                     </td>
                     <td style={{ fontSize: 11 }}>{tgl(u.tanggal)}</td>
                     <td style={{ fontSize: 11.5 }}>{one(u.customers)?.name ?? "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{one(u.sales_orders)?.no_pesanan ?? "—"}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{u.order_id && one(u.sales_orders)?.no_pesanan
+                      ? <DocumentLink kind="sales-order" id={u.order_id}>{one(u.sales_orders)!.no_pesanan}</DocumentLink>
+                      : one(u.sales_orders)?.no_pesanan ?? "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(u.jumlah))}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: sisa > 0 ? "#15803d" : "var(--td)" }}>
                       {u.status === "batal" ? "—" : rp(sisa)}

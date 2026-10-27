@@ -1,5 +1,7 @@
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
-import { DocumentBackLink } from "@/components/RelatedDocuments";
+import { DocumentBackLink, DocumentLink } from "@/components/RelatedDocuments";
+import { AdvanceUsageList } from "@/components/AdvanceUsageList";
+import { loadPurchaseAdvanceUsage, type AdvanceUsage } from "@/lib/advance-usage";
 import { documentAnchor } from "@/lib/related-document-routes";
 import { TransactionDraftComplete } from "@/components/LocalTransactionDraft";
 import { createClient } from "@/lib/supabase/server";
@@ -48,6 +50,10 @@ export default async function UangMukaPage({
       readCompleteList<{id:string;po_id:string}>((from,to)=>supabase.from("goods_receipts").select("id,po_id",{count:"exact"}).order("id").range(from,to),"Penerimaan PO uang muka",{maxRows:null}),
     ]);
   }catch(error){if(!(error instanceof ListLoadError))throw error;loadError=error.message;}
+  const { usage, usageError } = daftar.length
+    ? await loadPurchaseAdvanceUsage(supabase, daftar.map(u => u.id))
+      .then(usage => ({ usage, usageError: false }), () => ({ usage: new Map<string, AdvanceUsage[]>(), usageError: true }))
+    : { usage: new Map<string, AdvanceUsage[]>(), usageError: false };
   const receivedPOs = new Set(receipts.map(row=>row.po_id));
   po = po.map(row=>({...row,hasReceipt:receivedPOs.has(row.id)}));
 
@@ -103,10 +109,13 @@ export default async function UangMukaPage({
                       {u.no_um}
                       <div><ActivityHistoryLink entity="purchase_advances" id={u.id} /></div>
                       {u.catatan && <div style={{ fontSize: 9.5, color: "var(--td)", fontWeight: 400 }}>{u.catatan}</div>}
+                      <AdvanceUsageList usages={usage.get(u.id) ?? []} error={usageError} terpakai={Number(u.terpakai)} />
                     </td>
                     <td style={{ fontSize: 11 }}>{tgl(u.tanggal)}</td>
                     <td style={{ fontSize: 11.5 }}>{one(u.suppliers)?.nama ?? "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{one(u.purchase_orders)?.no_po ?? "—"}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{u.po_id && one(u.purchase_orders)?.no_po
+                      ? <DocumentLink kind="purchase-order" id={u.po_id}>{one(u.purchase_orders)!.no_po}</DocumentLink>
+                      : one(u.purchase_orders)?.no_po ?? "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(u.jumlah))}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: sisa > 0 ? "#15803d" : "var(--td)" }}>
                       {u.status === "batal" ? "—" : rp(sisa)}
