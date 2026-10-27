@@ -1,5 +1,5 @@
 server: postgres (PostgreSQL) 16.14 (Homebrew)
-baseline: 276 earlier migrations applied
+baseline: 280 earlier migrations applied
 preflight (before): 6 rows ok
 readback: 10 rows ok
 readback after re-apply (idempotent): 10 rows ok

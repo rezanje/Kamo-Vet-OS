@@ -1,5 +1,5 @@
-server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: /tmp/vetos-c05q01-08w6f1ii
-Applied 278 repository migrations to isolated PostgreSQL with auth/storage shims.
+server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: /tmp/vetos-c05q01-2wirain3
+Applied 282 repository migrations to isolated PostgreSQL with auth/storage shims.
 Re-applied both new migrations: idempotent.
 c05_campaign_codes.sql: passed.
 q01_new_customer_quest.sql: passed.
