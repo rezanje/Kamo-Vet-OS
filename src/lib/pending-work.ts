@@ -2,6 +2,7 @@
 // A failed read is shown as unknown; it must not look like an empty queue.
 // Each alert is shown only when the role may open its queue under Akses Grup
 // (same rule as the middleware), so the dashboard never links to a blocked page.
+// If Akses Grup cannot be read, the role's default modules decide the links.
 import { bolehBukaPath } from "@/lib/akses";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -10,10 +11,12 @@ export type PendingWork = { label: string; href: string; count: number | null; h
 
 export async function loadPendingWork(db: AnyClient, role: string | null): Promise<PendingWork[]> {
   if (!role || !["OWNER", "ADMIN", "FINANCE"].includes(role)) return [];
-  try {
-  const { data: rules, error: rulesError } = await db.from("role_modules").select("role, module_id").eq("role", role);
-  if (rulesError || !Array.isArray(rules)) throw new Error("Akses Grup belum dapat dibaca");
+  let rules: { role: string; module_id: string }[] = [];
   const canOpen = (href: string) => bolehBukaPath(role, href.split("?")[0], rules);
+  try {
+  const { data, error: rulesError } = await db.from("role_modules").select("role, module_id").eq("role", role);
+  if (rulesError || !Array.isArray(data)) throw new Error("Akses Grup belum dapat dibaca");
+  rules = data;
   const requests: Promise<PendingWork>[] = [];
 
   if (canOpen("/pengaturan/penyetuju")) {
@@ -50,6 +53,6 @@ export async function loadPendingWork(db: AnyClient, role: string | null): Promi
       { label: "Pengajuan menunggu persetujuan", href: "/pengaturan/penyetuju", count: null },
       ...(["OWNER", "ADMIN"].includes(role) ? [{ label: "Perintah bayar menunggu persetujuan", href: "/pembelian/perintah-bayar?pending=1", count: null }] : []),
       { label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: null },
-    ];
+    ].filter(item => canOpen(item.href));
   }
 }

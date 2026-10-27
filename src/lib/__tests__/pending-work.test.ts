@@ -76,6 +76,11 @@ describe("pending action alerts", () => {
     expect(items.every(item => item.count === null)).toBe(true);
   });
 
+  it("keeps the unknown fallback within the role's default pages", async () => {
+    expect(await loadPendingWork(fixture([], { message: "offline" }), "FINANCE"))
+      .toEqual([{ label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: null }]);
+  });
+
   it("does not query privileged queues for staff", async () => {
     const db = fixture();
     expect(await loadPendingWork(db, "STAFF")).toEqual([]);
