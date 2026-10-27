@@ -102,6 +102,9 @@ export async function simpanKebijakanKomisiJasa(formData: FormData) {
     branch_id:branchId,effective_from:effectiveFrom,mode,
     doctor_share_pct:doctorShare,staff_share_pct:staffShare,
   });
-  if (error) gagal(error.message);
+  // Before the S04 migration is applied there is nowhere to save a choice; say so instead of a raw database error.
+  if (error) gagal(error.code === "PGRST205" || error.code === "42P01"
+    ? "Penyimpanan kebijakan komisi jasa belum terpasang di database. Hubungi pengelola rilis."
+    : error.message);
   redirect(`${BASE}?success=1`);
 }

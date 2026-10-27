@@ -3,10 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
 type Row = Record<string, unknown>;
-const state = vi.hoisted(() => ({ edit: true, failed: "", truncated: "", reads: [] as { table: string; orders: string[]; from: number }[] }));
+const state = vi.hoisted(() => ({ edit: true, policyInstalled: true, failed: "", truncated: "", reads: [] as { table: string; orders: string[]; from: number }[] }));
 vi.mock("@/lib/master-guard", () => ({ bolehKelolaMaster: async () => state.edit }));
-vi.mock("@/lib/komisi-data", () => ({ komisiPeriode: async () => ({ hasil: [], aturan: [] }) }));
-vi.mock("@/app/(app)/penjualan/komisi/actions", () => ({ hapusAturanKomisi: vi.fn(), simpanAturanKomisi: vi.fn(), toggleAturanKomisi: vi.fn() }));
+vi.mock("@/lib/komisi-data", () => ({ komisiPeriode: async () => ({ hasil: [], baris: [], omzetTanpaPenjual: 0 }),
+  muatKebijakanKomisiJasa: async () => ({ policies: [], installed: state.policyInstalled }) }));
+vi.mock("@/app/(app)/penjualan/komisi/actions", () => ({ hapusAturanKomisi: vi.fn(), simpanAturanKomisi: vi.fn(), toggleAturanKomisi: vi.fn(), simpanKebijakanKomisiJasa: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(table: string) {
   const read = { table, orders: [], from: 0 } as { table: string; orders: string[]; from: number }; state.reads.push(read);
   let to = 999, counted = false;
@@ -34,7 +35,7 @@ function elements(node: React.ReactNode): React.ReactElement<Record<string, unkn
   return [node, ...React.Children.toArray(node.props.children as React.ReactNode).flatMap(elements)];
 }
 const page = () => Page({ searchParams: Promise.resolve({ periode: "2026-10" }) });
-beforeEach(() => { state.edit = true; state.failed = ""; state.truncated = ""; state.reads = []; });
+beforeEach(() => { state.edit = true; state.policyInstalled = true; state.failed = ""; state.truncated = ""; state.reads = []; });
 it("offers every active exact product target with separate code and complete existing branch/category/employee references", async () => {
   const nodes = elements(await page());
   const products = nodes.find(node => node.props.name === "item_id")?.props.items as { id: string; name: string; code: string }[];
@@ -58,4 +59,14 @@ it("retains readonly visibility without exposing mutation controls", async () =>
   state.edit = false;
   const html = renderToStaticMarkup(await page());
   expect(html).toContain("Hanya OWNER/ADMIN"); expect(html).not.toContain('name="item_id"'); expect(html).not.toContain('name="nama"');
+});
+
+it("before the S04 migration explains that two-performer rows stay pending and offers no policy form", async () => {
+  const installed = renderToStaticMarkup(await page());
+  expect(installed).toContain("Simpan kebijakan");
+  state.policyInstalled = false;
+  const html = renderToStaticMarkup(await page());
+  expect(html).toContain("Penyimpanan kebijakan belum terpasang di database");
+  expect(html).not.toContain("Simpan kebijakan");
+  expect(html).toContain("Simpan");
 });

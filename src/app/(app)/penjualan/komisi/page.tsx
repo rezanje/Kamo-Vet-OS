@@ -6,7 +6,7 @@ import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { komisiPeriode } from "@/lib/komisi-data";
+import { komisiPeriode, muatKebijakanKomisiJasa } from "@/lib/komisi-data";
 import { hapusAturanKomisi, simpanAturanKomisi, simpanKebijakanKomisiJasa, toggleAturanKomisi } from "./actions";
 import { readCompleteList } from "@/lib/checked-list";
 import { ListLoadFailure } from "@/components/ListPagination";
@@ -27,7 +27,6 @@ type Aturan = {
   employee_id: string | null; branch_id: string | null; category_id: string | null; item_id: string | null;
   min_omzet: number; berlaku_dari: string | null; berlaku_sampai: string | null; is_active: boolean;
 };
-type KebijakanJasa = {id:string;branch_id:string|null;effective_from:string;mode:string;doctor_share_pct:number|null;staff_share_pct:number|null;created_at:string};
 
 export default async function KomisiPage({
   searchParams,
@@ -53,12 +52,11 @@ export default async function KomisiPage({
         .select("id, name, parent_id", { count: "exact" }).order("name").order("id").range(from, to), "Kategori komisi", { maxRows: null }),
       readCompleteList<{ id: string; code: string | null; name: string }>((from, to) => supabase.from("items")
         .select("id, code, name", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Produk komisi", { maxRows: null }),
-      readCompleteList<KebijakanJasa>((from,to)=>supabase.from("service_commission_policies")
-        .select("id,branch_id,effective_from,mode,doctor_share_pct,staff_share_pct,created_at",{count:"exact"})
-        .order("effective_from",{ascending:false}).order("created_at",{ascending:false}).order("id",{ascending:false}).range(from,to),"Kebijakan jasa",{maxRows:null}),
+      muatKebijakanKomisiJasa(supabase),
       komisiPeriode(supabase, periode),
     ]); } catch (loadError) { return <ListLoadFailure error={loadError} label="Referensi komisi" />; }
-  const [aturan, karyawan, cabang, kategori, barang, kebijakanJasa, hitungan] = loaded;
+  const [aturan, karyawan, cabang, kategori, barang, kebijakanTersimpan, hitungan] = loaded;
+  const kebijakanJasa = kebijakanTersimpan.policies;
 
   const namaEmp = new Map(karyawan.map((k) => [k.id, k.nama]));
   const namaCab = new Map(cabang.map((c) => [c.id, c.name]));
@@ -99,7 +97,8 @@ export default async function KomisiPage({
         <SecHeader num="00" title="KEBIJAKAN JASA DUA PELAKSANA"
           desc="Pilih cara memakai tarif komisi existing saat satu baris jasa dikerjakan dokter dan non-dokter. Tanpa pilihan yang cocok, komisi dan penggajian baris itu tetap tertahan." />
         <p style={{fontSize:11}}>Pilihan bertanggal tersimpan sebagai riwayat. Cabang khusus mengalahkan pilihan semua cabang; pilihan terbaru pada tanggal yang sama berlaku. Retur mengikuti pilihan pada tanggal struk asal. Pool DEMO tetap memakai snapshot yang sudah ada.</p>
-        {bolehKelola && <form action={simpanKebijakanKomisiJasa}>
+        {!kebijakanTersimpan.installed && <p style={{fontSize:11}}>Penyimpanan kebijakan belum terpasang di database. Baris dua pelaksana tetap tertahan; komisi lain tetap dihitung.</p>}
+        {bolehKelola && kebijakanTersimpan.installed && <form action={simpanKebijakanKomisiJasa}>
           <div className="frow">
             <div><label className="flab" htmlFor="service-policy-mode">Cara menghitung *</label>
               <select className="fi" id="service-policy-mode" name="mode" defaultValue="" required>
@@ -121,10 +120,10 @@ export default async function KomisiPage({
             <div style={{display:"flex",alignItems:"flex-end"}}><SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan kebijakan</SubmitButton></div>
           </div>
         </form>}
-        {kebijakanJasa.length===0?<p style={{fontSize:11}}>Belum ada kebijakan tersimpan. Baris dua pelaksana tetap perlu keputusan sebelum masuk penggajian.</p>
+        {!kebijakanTersimpan.installed?null:kebijakanJasa.length===0?<p style={{fontSize:11}}>Belum ada kebijakan tersimpan. Baris dua pelaksana tetap perlu keputusan sebelum masuk penggajian.</p>
           :<div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Mulai</th><th>Cabang</th><th>Cara hitung</th></tr></thead><tbody>
-            {kebijakanJasa.slice(0,20).map(row=><tr key={row.id}><td>{row.effective_from}</td><td>{row.branch_id?namaCab.get(row.branch_id)??"Cabang tidak aktif":"Semua cabang"}</td>
-              <td>{row.mode==="pending"?"Ditahan — perlu keputusan":row.mode==="personal_rules"?"Aturan khusus karyawan":row.mode==="both_full"?"Masing-masing dasar penuh":row.mode==="split"?`Dokter ${row.doctor_share_pct}% · non-dokter ${row.staff_share_pct}%`:"Tidak dikenal — tertahan"}</td></tr>)}</tbody></table>
+            {kebijakanJasa.slice(0,20).map(row=><tr key={row.id}><td>{row.effectiveFrom}</td><td>{row.branchId?namaCab.get(row.branchId)??"Cabang tidak aktif":"Semua cabang"}</td>
+              <td>{row.mode==="pending"?"Ditahan — perlu keputusan":row.mode==="personal_rules"?"Aturan khusus karyawan":row.mode==="both_full"?"Masing-masing dasar penuh":row.mode==="split"?`Dokter ${row.doctorSharePct}% · non-dokter ${row.staffSharePct}%`:"Tidak dikenal — tertahan"}</td></tr>)}</tbody></table>
             {kebijakanJasa.length>20&&<p style={{fontSize:11}}>Menampilkan 20 pilihan terbaru dari {kebijakanJasa.length} riwayat.</p>}
           </div>}
       </div>

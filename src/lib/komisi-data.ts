@@ -1,4 +1,5 @@
 import { completeReportQuery } from "./report-query";
+import { readReportRows } from "./hpp-reports-server";
 import { isCompletedSale, saleMerchandiseTotal, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
 import { PosDecimal } from "./pos-money";
 import type { ServicePerformersSnapshot } from "./service-performers";
@@ -380,22 +381,51 @@ export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomis
 }
 
 /** Komisi seluruh karyawan untuk satu periode — dipakai layar komisi & penggajian. */
+// PostgREST "table not found" and PostgreSQL "undefined table": only these mean the S04 migration is absent.
+const MISSING_TABLE_CODES = new Set(["PGRST205", "42P01"]);
+class MissingServicePolicyTable extends Error {}
+
+/**
+ * Saved two-performer policies. Before the S04 migration is applied the table is absent: that reads as "no policy",
+ * so two-performer rows stay pending and keep blocking payroll while every other row still calculates.
+ * Any other read failure (auth, RLS error, incomplete page) stays fatal.
+ */
+export async function muatKebijakanKomisiJasa(supabase: AnyClient, sampai?: string):
+  Promise<{ policies: ServiceCommissionPolicy[]; installed: boolean }> {
+  type Row = { id: string; branch_id: string | null; effective_from: string; mode: string;
+    doctor_share_pct: number | string | null; staff_share_pct: number | string | null; created_at: string };
+  let rows: Row[];
+  try {
+    rows = await readReportRows<Row>(async (from, to) => {
+      let query = supabase.from("service_commission_policies")
+        .select("id,branch_id,effective_from,mode,doctor_share_pct,staff_share_pct,created_at", { count: "exact" });
+      if (sampai) query = query.lte("effective_from", sampai);
+      const result = await query.order("effective_from", { ascending: false }).order("created_at", { ascending: false })
+        .order("id", { ascending: false }).range(from, to);
+      if (MISSING_TABLE_CODES.has(result.error?.code)) throw new MissingServicePolicyTable();
+      return { data: result.data, error: result.error, count: result.count };
+    });
+  } catch (error) {
+    if (error instanceof MissingServicePolicyTable) return { policies: [], installed: false };
+    throw error;
+  }
+  return { installed: true, policies: rows.map((row): ServiceCommissionPolicy => ({
+    id: String(row.id), branchId: row.branch_id ?? null, effectiveFrom: String(row.effective_from),
+    mode: row.mode as ServiceCommissionPolicy["mode"],
+    doctorSharePct: row.doctor_share_pct === null ? null : Number(row.doctor_share_pct),
+    staffSharePct: row.staff_share_pct === null ? null : Number(row.staff_share_pct), createdAt: String(row.created_at),
+  })) };
+}
+
 export async function komisiPeriode(
   supabase: AnyClient,
   periode: string,
 ): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; omzetTanpaPenjual: number }> {
-  const [{ baris, omzetTanpaPenjual }, aturan, policyResult] = await Promise.all([
+  const [{ baris, omzetTanpaPenjual }, aturan, { policies }] = await Promise.all([
     kumpulkanBarisKomisi(supabase, periode),
     muatAturanKomisi(supabase),
-    completeReportQuery(supabase.from("service_commission_policies")
-      .select("id,branch_id,effective_from,mode,doctor_share_pct,staff_share_pct,created_at", {count:"exact"})
-      .lte("effective_from", akhirPeriode(periode)).order("effective_from",{ascending:false}).order("created_at",{ascending:false}).order("id",{ascending:false})),
+    muatKebijakanKomisiJasa(supabase, akhirPeriode(periode)),
   ]);
-  const policies = ((policyResult.data ?? []) as Record<string, unknown>[]).map((row): ServiceCommissionPolicy => ({
-    id:String(row.id),branchId:(row.branch_id as string|null)??null,effectiveFrom:String(row.effective_from),
-    mode:row.mode as ServiceCommissionPolicy["mode"],doctorSharePct:row.doctor_share_pct===null?null:Number(row.doctor_share_pct),
-    staffSharePct:row.staff_share_pct===null?null:Number(row.staff_share_pct),createdAt:String(row.created_at),
-  }));
   const prepared = prepareServiceCommission(baris, aturan, policies);
   const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
     .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})
