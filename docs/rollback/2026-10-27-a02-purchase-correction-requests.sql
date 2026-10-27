@@ -1,0 +1,5 @@
+-- A02 purchase correction requests — rollback lives in the owner package (single source, rehearsed on
+-- PostgreSQL 16 and 17.6): docs/evidence/2026-10-27-a02-correction-requests/owner-apply/
+--   04-freeze-if-decided.sql   default rollback: stop new requests/processing, keep every request and log
+--   05-teardown-empty-only.sql removal only while no request row exists; refuses otherwise
+-- See OWNER-RUNBOOK.md there. Nothing in this file is meant to be executed.

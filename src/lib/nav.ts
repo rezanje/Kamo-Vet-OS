@@ -186,6 +186,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Kategori Pemasok", icon: "ti-tag", ...B, href: "/pembelian/kategori-pemasok" },
     { label: "Pemasok", icon: "ti-building-store", ...B, href: "/pembelian?tab=supplier" },
     { label: "Perintah Pembayaran", icon: "ti-send", ...G, href: "/pembelian/perintah-bayar" },
+    { label: "Permintaan Koreksi", icon: "ti-message-2", ...G, nw: true, href: "/pembelian/koreksi" },
   ],
   // id `pos` dipertahankan supaya route /pos/* lama tidak perlu dipindah.
   pos: [
