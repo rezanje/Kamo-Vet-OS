@@ -3,6 +3,7 @@
 --   so the stay is admitted on a *continuation visit* that is linked to the
 --   original visit and its medical record. The original invoice is never touched;
 --   inpatient charges are billed on the continuation visit's own invoice.
+--   A visit still in Pembayaran whose invoice is not Lunas keeps the direct admission path.
 -- K14: an inpatient stay has a type chosen at admission: 'sakit' (default,
 --   unchanged flow) or 'pet_hotel' (healthy boarding; daily care log by paramedic).
 -- Idempotent: safe to run more than once.
@@ -52,9 +53,42 @@ drop trigger if exists protect_inpatient_continuation_link on public.medical_rec
 create trigger protect_inpatient_continuation_link before insert or update on public.medical_records
   for each row execute function public.protect_inpatient_continuation_link();
 
+-- Same clinic-module rule the app uses (lib/akses.ts): OWNER always; a role with saved
+-- Akses Grup rows needs the 'klinik' module; without saved rows ADMIN/DOCTOR/STAFF have it.
+create or replace function public.inpatient_clinic_module_access() returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists(select 1 from public.profiles p where p.id = auth.uid() and p.is_active is true and (
+    p.role = 'OWNER'
+    or exists(select 1 from public.role_modules m where m.role = p.role and m.module_id = 'klinik')
+    or (p.role in ('ADMIN','DOCTOR','STAFF') and not exists(select 1 from public.role_modules m where m.role = p.role))
+  ));
+$$;
+revoke all on function public.inpatient_clinic_module_access() from public, anon, authenticated, service_role;
+
+-- One live stay per patient, enforced on every admission path (old RPC, typed RPC).
+-- The pet row lock serializes concurrent admissions of the same patient from different
+-- visits; the re-check runs right before the insert. Lock order everywhere: visit, then pet.
+create or replace function public.guard_one_live_stay_per_pet() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare v_pet uuid;
+begin
+  select pet_id into v_pet from public.visits where id = new.visit_id;
+  if v_pet is null then return new; end if;
+  perform 1 from public.pets where id = v_pet for no key update;
+  if exists(select 1 from public.inpatient_records r join public.visits v on v.id = r.visit_id
+            where v.pet_id = v_pet and r.discharged_at is null and r.id <> new.id) then
+    raise exception 'ADMISSION_INVALID: pasien sudah memiliki rawat inap aktif';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_one_live_stay_per_pet() from public, anon, authenticated, service_role;
+drop trigger if exists guard_one_live_stay_per_pet on public.inpatient_records;
+create trigger guard_one_live_stay_per_pet before insert on public.inpatient_records
+  for each row execute function public.guard_one_live_stay_per_pet();
+
 -- K06: open (or reuse) the continuation visit of a closed outpatient visit.
--- Returns the continuation visit id. The caller then signs the inpatient consent
--- and admits on that visit through the normal admission RPC.
+-- "Closed" = Selesai, checked out, or its invoice is Lunas. Returns the continuation
+-- visit id; the caller then signs the inpatient consent and admits on that visit.
 create or replace function public.clinic_continue_visit_to_inpatient(p_visit_id uuid, p_request_key text)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
@@ -69,14 +103,17 @@ begin
   if coalesce(auth.role(), '') <> 'authenticated' or auth.uid() is null or not exists(
     select 1 from public.profiles where id = auth.uid() and is_active
   ) then raise exception 'ACCESS_DENIED: pengguna tidak aktif atau tidak terautentikasi'; end if;
+  if not public.inpatient_clinic_module_access() then
+    raise exception 'ACCESS_DENIED: peran ini tidak memiliki akses modul klinik'; end if;
   if v_key is null or length(v_key) > 100 then
     raise exception 'ADMISSION_INVALID: muat ulang formulir rawat inap'; end if;
   v_submission := 'k06-continue:' || v_key;
 
-  -- Locking the source visit serializes concurrent clicks on the same visit.
+  -- Visit then pet: serializes concurrent clicks on this visit and admissions of this patient.
   select * into v_visit from public.visits where id = p_visit_id for update;
   if not found or not public.user_can_access_branch(v_visit.branch_id) then
     raise exception 'ACCESS_DENIED: kunjungan atau cabang tidak dapat diakses'; end if;
+  perform 1 from public.pets where id = v_visit.pet_id for no key update;
 
   select * into v_existing from public.medical_records where submission_key = v_submission;
   if found then
@@ -87,7 +124,7 @@ begin
   end if;
 
   if not (v_visit.status = 'Selesai' or v_visit.checked_out_at is not null or exists(
-    select 1 from public.invoices where visit_id = p_visit_id and voided_at is null
+    select 1 from public.invoices where visit_id = p_visit_id and voided_at is null and paid_status = 'Lunas'
   )) then
     raise exception 'ADMISSION_INVALID: kunjungan belum selesai; masukkan rawat inap langsung dari kunjungan ini';
   end if;
@@ -96,7 +133,6 @@ begin
   if v_medical.id is null or v_visit.doctor_id is null then
     raise exception 'ADMISSION_INVALID: selesaikan pemeriksaan dan pilih dokter terlebih dahulu'; end if;
 
-  -- Double admission guard: one live stay per patient, wherever it was opened.
   if exists(select 1 from public.inpatient_records r join public.visits v on v.id = r.visit_id
             where v.pet_id = v_visit.pet_id and r.discharged_at is null) then
     raise exception 'ADMISSION_INVALID: pasien sudah memiliki rawat inap aktif'; end if;
@@ -134,12 +170,28 @@ create or replace function public.clinic_admit_inpatient_typed(
 ) returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   v_key text := nullif(btrim(p_request_key), '');
+  v_visit public.visits%rowtype;
   v_prior public.inpatient_records%rowtype;
   v_id uuid;
+  v_stored text;
 begin
+  if coalesce(auth.role(), '') <> 'authenticated' or auth.uid() is null then
+    raise exception 'ACCESS_DENIED: pengguna tidak aktif atau tidak terautentikasi'; end if;
+  if not public.inpatient_clinic_module_access() then
+    raise exception 'ACCESS_DENIED: peran ini tidak memiliki akses modul klinik'; end if;
   if p_stay_type is null or p_stay_type not in ('sakit', 'pet_hotel') then
     raise exception 'ADMISSION_INVALID: pilih tipe rawat inap'; end if;
-  select * into v_prior from public.inpatient_records where admission_request_key = v_key;
+  if v_key is null or length(v_key) > 100 then
+    raise exception 'ADMISSION_INVALID: isi rencana tindakan dan muat ulang formulir'; end if;
+  -- Same-key retries are serialized before anything is read, whatever visit they name.
+  perform pg_advisory_xact_lock(hashtextextended('inpatient-admission:' || v_key, 0));
+  -- Visit then pet: same order as the base RPC and the per-patient guard.
+  select * into v_visit from public.visits where id = p_visit_id for update;
+  if not found or not public.user_can_access_branch(v_visit.branch_id) then
+    raise exception 'ACCESS_DENIED: kunjungan atau cabang tidak dapat diakses'; end if;
+  perform 1 from public.pets where id = v_visit.pet_id for no key update;
+
+  select * into v_prior from public.inpatient_records where admission_request_key = v_key for update;
   v_id := public.clinic_admit_inpatient(p_visit_id, p_treatment_plan, p_request_key);
   if v_prior.id is not null then
     if v_prior.stay_type is distinct from p_stay_type then
@@ -149,6 +201,9 @@ begin
   if p_stay_type <> 'sakit' then
     update public.inpatient_records set stay_type = p_stay_type where id = v_id;
   end if;
+  select stay_type into v_stored from public.inpatient_records where id = v_id;
+  if v_stored is distinct from p_stay_type then
+    raise exception 'IDEMPOTENCY_CONFLICT: kunci masuk rawat inap dipakai untuk data berbeda'; end if;
   return v_id;
 end $$;
 revoke all on function public.clinic_admit_inpatient_typed(uuid, text, text, text) from public, anon, service_role;

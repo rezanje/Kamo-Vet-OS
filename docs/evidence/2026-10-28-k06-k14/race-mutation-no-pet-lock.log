@@ -1,0 +1,16 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: /var/folders/xr/gmtpnd917t3bpy6jj70hz9p80000gn/T/vetos-k06-k14-native-pch1zhv1
+Applied 276 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+PASS K06/K14 continuation, idempotency, one live stay per patient, role gate, pet hotel log, separate billing
+Removed owned PostgreSQL test container and volumes.
+Traceback (most recent call last):
+  File "/Users/rezanje/Gen_Dev_Studio/VET_OS/.claude/worktrees/agent-a615af54622227cc9/docs/evidence/2026-10-28-k06-k14/run-native-pg.py", line 71, in <module>
+    runpy.run_path(str(ROOT / os.environ.get('K06_TARGET', 'scripts/test-inpatient-continuation-postgres.py')), run_name='__main__')
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 268, in run_path
+    return _run_module_code(code, init_globals, run_name,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 97, in _run_module_code
+    _run_code(code, mod_globals, init_globals,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/Users/rezanje/Gen_Dev_Studio/VET_OS/.claude/worktrees/agent-a615af54622227cc9/scripts/test-inpatient-continuation-postgres.py", line 59, in <module>
+    raise RuntimeError(f'Concurrent admissions of one patient were not serialized: {results}')
+RuntimeError: Concurrent admissions of one patient were not serialized: [('ok', '23b60cb3-acaa-4755-8749-80d1ce726f27'), ('ok', '92bbe39a-71c3-4bfb-846f-b91611f063df')]

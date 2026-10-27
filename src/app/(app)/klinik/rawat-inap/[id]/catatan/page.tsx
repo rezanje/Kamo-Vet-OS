@@ -11,7 +11,7 @@ import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-serv
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
 import { daftarDokter } from '@/lib/dokter';
-import { readStayTypes } from "@/lib/inpatient-stay";
+import { readStayTypesChecked } from "@/lib/inpatient-stay";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -34,7 +34,8 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
   const serviceStaff = await loadServiceStaff(supabase, visit?.branch_id ?? null);
-  const petHotel = (await readStayTypes(supabase, [id])).get(id) === "pet_hotel";
+  const stay = await readStayTypesChecked(supabase, [id]);
+  const petHotel = stay.types.get(id) === "pet_hotel";
   const [doctors,paramedics]=await Promise.all([
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'doctor'}),
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'paramedic'}),
@@ -95,6 +96,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
       </div>
 
       {error && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
+      {stay.failed && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>Tipe rawat inap belum dapat diverifikasi. Muat ulang sebelum mengisi catatan.</div>}
 
       <CatatanForm
         key={`${user?.id ?? ""}:${id}`}

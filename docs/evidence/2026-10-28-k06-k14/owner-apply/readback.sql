@@ -9,6 +9,10 @@ with checks(name, ok) as (values
   ('stay_type check constraint present', exists(select 1 from pg_constraint where conname='inpatient_records_stay_type_check')),
   ('continuation link guard on visits', exists(select 1 from pg_trigger where tgname='protect_inpatient_continuation_link' and tgrelid='public.visits'::regclass)),
   ('continuation link guard on medical_records', exists(select 1 from pg_trigger where tgname='protect_inpatient_continuation_link' and tgrelid='public.medical_records'::regclass)),
+  ('one-live-stay-per-patient guard on inpatient_records', exists(select 1 from pg_trigger where tgname='guard_one_live_stay_per_pet' and tgrelid='public.inpatient_records'::regclass)),
+  ('clinic-role gate helper present and not callable by authenticated directly',
+    to_regprocedure('public.inpatient_clinic_module_access()') is not null
+    and not has_function_privilege('authenticated','public.inpatient_clinic_module_access()','execute')),
   ('clinic_continue_visit_to_inpatient executable by authenticated',
     has_function_privilege('authenticated','public.clinic_continue_visit_to_inpatient(uuid,text)','execute')),
   ('clinic_admit_inpatient_typed executable by authenticated',

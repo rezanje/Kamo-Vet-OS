@@ -13,7 +13,7 @@ import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
 import { inpatientStaffInput } from '@/lib/clinical-staff';
-import { isMissingRpc, parseStayType, readStayTypes } from "@/lib/inpatient-stay";
+import { isMissingRpc, parseStayType, readStayTypesChecked } from "@/lib/inpatient-stay";
 
 function bacaPetugas(formData:FormData,back:string,allowLegacy=false) {
   try{return formData.has('log_kind')?inpatientStaffInput(formData,allowLegacy):{};}
@@ -141,8 +141,9 @@ export async function addDailyLogPos(formData: FormData) {
     .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
   if (!rec) redirect(`${back}/catatan?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
   // K14: catatan harian pet hotel diisi paramedis; dokter/suhu tidak wajib.
-  if ((await readStayTypes(supabase, [recordId])).get(recordId) === "pet_hotel"
-    && !String(formData.get("paramedic_id") ?? "").trim()) {
+  const stay = await readStayTypesChecked(supabase, [recordId]);
+  if (stay.failed) redirect(`${back}/catatan?error=${encodeURIComponent("Tipe rawat inap belum dapat diverifikasi. Muat ulang lalu simpan lagi.")}`);
+  if (stay.types.get(recordId) === "pet_hotel" && !String(formData.get("paramedic_id") ?? "").trim()) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Pilih paramedis yang mengisi catatan pet hotel")}`);
   }
 

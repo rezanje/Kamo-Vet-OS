@@ -28,13 +28,28 @@ export function isMissingRpc(error: { code?: string; message?: string } | null |
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
-export async function readStayTypes(db: Db, ids: string[]): Promise<Map<string, StayType>> {
-  const map = new Map<string, StayType>();
-  if (!ids.length) return map;
+/** Kolom stay_type belum ada = migrasi K14 belum terpasang, jadi belum mungkin ada pet hotel. */
+function isMissingStayColumn(error: { code?: string; message?: string }): boolean {
+  return error.code === "42703" || /stay_type.*does not exist|column .*stay_type/i.test(error.message ?? "");
+}
+
+/**
+ * Tipe per rawat inap. `failed` = tipe tidak terbaca karena alasan lain (koneksi, izin):
+ * pemanggil yang memakai tipe untuk menegakkan aturan wajib menolak (fail closed).
+ */
+export async function readStayTypesChecked(db: Db, ids: string[]): Promise<{ types: Map<string, StayType>; failed: boolean }> {
+  const types = new Map<string, StayType>();
+  if (!ids.length) return { types, failed: false };
   const { data, error } = await db.from("inpatient_records").select("id, stay_type").in("id", ids);
-  if (error || !Array.isArray(data)) return map;
-  for (const row of data as { id: string; stay_type?: unknown }[]) map.set(row.id, stayTypeOf(row.stay_type));
-  return map;
+  if (error) return { types, failed: !isMissingStayColumn(error) };
+  if (!Array.isArray(data)) return { types, failed: true };
+  for (const row of data as { id: string; stay_type?: unknown }[]) types.set(row.id, stayTypeOf(row.stay_type));
+  return { types, failed: false };
+}
+
+/** Untuk tampilan saja: gagal baca = tampil sebagai bawaan "sakit". */
+export async function readStayTypes(db: Db, ids: string[]): Promise<Map<string, StayType>> {
+  return (await readStayTypesChecked(db, ids)).types;
 }
 
 export type VisitContinuation = {

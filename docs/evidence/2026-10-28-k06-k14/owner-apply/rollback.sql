@@ -13,6 +13,9 @@ begin
 end $guard$;
 drop function if exists public.clinic_admit_inpatient_typed(uuid,text,text,text);
 drop function if exists public.clinic_continue_visit_to_inpatient(uuid,text);
+drop trigger if exists guard_one_live_stay_per_pet on public.inpatient_records;
+drop function if exists public.guard_one_live_stay_per_pet();
+drop function if exists public.inpatient_clinic_module_access();
 drop trigger if exists protect_inpatient_continuation_link on public.visits;
 drop trigger if exists protect_inpatient_continuation_link on public.medical_records;
 drop function if exists public.protect_inpatient_continuation_link();

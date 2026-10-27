@@ -222,19 +222,20 @@ export default async function RekamMedisPage({
   );
   const { data: inpatientConsentRule, error: ruleError } = await supabase.from("consent_rules")
     .select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle();
-  // K06: kunjungan yang sudah punya tagihan aktif juga dianggap tutup — rawat inap
-  // tidak boleh menumpuk biaya ke tagihan itu.
+  // K06: kunjungan yang tagihannya sudah Lunas dianggap tutup — rawat inap lewat
+  // kunjungan lanjutan. Tagihan yang belum lunas tetap memakai jalur langsung seperti dulu.
   const [activeInvoiceCheck, continuation] = await Promise.all([
     !inpatient && menungguBayar
-      ? supabase.from("invoices").select("id, voided_at").eq("visit_id", visitId)
-      : Promise.resolve({ data: [] as { id: string; voided_at: string | null }[], error: null }),
+      ? supabase.from("invoices").select("id, voided_at, paid_status").eq("visit_id", visitId)
+      : Promise.resolve({ data: [] as { id: string; voided_at: string | null; paid_status: string }[], error: null }),
     readVisitContinuation(supabase, visitId),
   ]);
-  const hasActiveInvoice = Array.isArray(activeInvoiceCheck.data)
-    && (activeInvoiceCheck.data as { voided_at: string | null }[]).some((row) => !row.voided_at);
+  const hasPaidInvoice = Array.isArray(activeInvoiceCheck.data)
+    && (activeInvoiceCheck.data as { voided_at: string | null; paid_status?: string }[])
+      .some((row) => !row.voided_at && row.paid_status === "Lunas");
   const admission = clinicAdmissionReadiness({
     readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed || activeInvoiceCheck.error),
-    hasActiveInvoice,
+    hasPaidInvoice,
     status: visit.status, checkedOutAt: visit.checked_out_at ?? null, doctorId: visit.doctor_id ?? null,
     medicalRecordId: mrId, rule: inpatientConsentRule, consents: consentRows ?? [],
   });
