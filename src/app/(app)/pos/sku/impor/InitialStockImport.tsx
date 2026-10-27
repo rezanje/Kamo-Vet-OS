@@ -140,7 +140,14 @@ export function InitialStockImport({
         </>
       )}
 
-      {displayedState?.phase === "preview" && displayedState.run_id && (
+      {displayedState && !displayedState.ok && displayedState.run_id && (
+        <div role="alert" style={{ marginTop: 12, fontSize: 11 }}>
+          {displayedState.message}{" "}
+          <Link href={`/pos/sku/impor?run_id=${encodeURIComponent(displayedState.run_id)}`}>Buka batch tersimpan</Link>
+        </div>
+      )}
+
+      {displayedState?.ok && displayedState.phase === "preview" && displayedState.run_id && (
         <div style={{ marginTop: 12 }}>
           <p style={{ fontSize: 11 }}>Batch ini belum masuk stok atau buku besar. OWNER perlu meninjau jumlah, cabang, tanggal, dan akun lawan sebelum posting.</p>
           <Link className="btn-acc" href={`/keuangan/persediaan-awal?run_id=${encodeURIComponent(displayedState.run_id)}`}>
