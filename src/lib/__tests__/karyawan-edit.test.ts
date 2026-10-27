@@ -8,6 +8,10 @@ const form = (extra: Record<string, string> = {}) => {
 describe("validasi edit karyawan", () => {
   it("menyimpan nominal nol dan merapikan data opsional", () => expect(bacaEditKaryawan(form({ gaji_pokok: "0", phone: " 08123 " }))).toMatchObject({ nama: "Aldi", gaji_pokok: 0, phone: "08123", nik: null }));
   it.each(["-1", "NaN", "Infinity", "abc"])("menolak gaji %s", gaji_pokok => expect(() => bacaEditKaryawan(form({ gaji_pokok }))).toThrow());
+  it("tanpa field gaji (form non-OWNER) tidak menyentuh gaji", () => {
+    const data = form(); data.delete("gaji_pokok");
+    expect(bacaEditKaryawan(data)).toMatchObject({ nama: "Aldi", gaji_pokok: null });
+  });
   it("menolak nama kosong dan status tidak valid", () => {
     expect(() => bacaEditKaryawan(form({ nama: " " }))).toThrow();
     expect(() => bacaEditKaryawan(form({ status: "Lain" }))).toThrow();

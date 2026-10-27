@@ -6,7 +6,8 @@ import Link from "next/link";
 import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { bolehKelolaMaster, bolehKelolaPayroll, bolehLihatGaji } from "@/lib/master-guard";
+import { bacaGajiPokok } from "@/lib/employee-salary";
 import { simpanKaryawan } from "./actions";
 import { PenugasanCabangForm } from "./PenugasanCabangForm";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -21,7 +22,6 @@ type EmployeeRow = {
   nama: string;
   jabatan: string | null;
   departemen: string | null;
-  gaji_pokok: number;
   status: string;
   branch_id: string | null;
 } & LifecycleRow;
@@ -37,6 +37,7 @@ export default async function KaryawanPage({
   const view = masterView(viewRaw);
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
+  const [lihatGaji, aturGaji] = await Promise.all([bolehLihatGaji(), bolehKelolaPayroll()]);
 
   const { data: branches } = await supabase
     .from("branches")
@@ -49,7 +50,7 @@ export default async function KaryawanPage({
   const [{ data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
     supabase
       .from("employees")
-      .select("id, nik, nama, jabatan, departemen, gaji_pokok, status, branch_id, trashed_at, lifecycle_revision")
+      .select("id, nik, nama, jabatan, departemen, status, branch_id, trashed_at, lifecycle_revision")
       // `cari` datang dari pencarian global di topbar.
       .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
       .order("nama"),
@@ -66,6 +67,8 @@ export default async function KaryawanPage({
     displayBranches,
     (assignmentsRaw ?? []) as { employee_id: string; branch_id: string; role: "PRIMARY" | "SECONDARY"; effective_date: string }[],
   );
+
+  const gajiPer = lihatGaji ? await bacaGajiPokok(supabase, rows.map((r) => r.id)) : new Map<string, number>();
 
   const total = rows.length;
   const aktif = rows.filter((r) => r.status === "Aktif").length;
@@ -148,10 +151,12 @@ export default async function KaryawanPage({
               <label className="flab">Tanggal Masuk</label>
               <input className="fi" name="tgl_masuk" type="date" />
             </div>
-            <div>
-              <label className="flab">Gaji Pokok (Rp)</label>
-              <NumberInput className="fi" name="gaji_pokok" type="number" min={0} step={50000} placeholder="3000000" />
-            </div>
+            {aturGaji && (
+              <div>
+                <label className="flab">Gaji Pokok (Rp)</label>
+                <NumberInput className="fi" name="gaji_pokok" type="number" min={0} step={50000} placeholder="3000000" />
+              </div>
+            )}
             <div>
               <label className="flab">Status</label>
               <select className="fi" name="status" defaultValue="Aktif">
@@ -194,7 +199,7 @@ export default async function KaryawanPage({
                 <th>Departemen</th>
                 <th>Cabang</th>
                 <th>Penugasan</th>
-                <th style={{ textAlign: "right" }}>Gaji Pokok</th>
+                {lihatGaji && <th style={{ textAlign: "right" }}>Gaji Pokok</th>}
                 <th>Status</th>
                 {bolehKelola && <th>Aksi</th>}
               </tr>
@@ -216,9 +221,11 @@ export default async function KaryawanPage({
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
                       {tugas.length ? tugas.map((t) => `${t.branchName}${t.role === "PRIMARY" ? " (utama)" : ""}`).join(", ") : "—"}
                     </td>
-                    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
-                      {rp(Number(r.gaji_pokok))}
-                    </td>
+                    {lihatGaji && (
+                      <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
+                        {gajiPer.has(r.id) ? rp(gajiPer.get(r.id)!) : "—"}
+                      </td>
+                    )}
                     <td>
                       <span className={`bge ${r.status === "Aktif" ? "g" : "x"}`}>
                         {r.trashed_at ? "Sampah" : r.status}
@@ -235,7 +242,7 @@ export default async function KaryawanPage({
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={bolehKelola ? 9 : 8}
+                    colSpan={(bolehKelola ? 9 : 8) - (lihatGaji ? 0 : 1)}
                     style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}
                   >
                     Belum ada data karyawan. Tambahkan karyawan pertama di atas.

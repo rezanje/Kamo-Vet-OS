@@ -28,6 +28,21 @@ function makeClient(db: Db) {
     { id: "a1101", code: "1101" }, { id: "a1203", code: "1203" }, { id: "a5901", code: "5901" }, { id: "a4303", code: "4303" },
   ];
   return {
+    // Kasbon selisih kas dibuat fungsi database (record_shift_cash_shortage) yang
+    // menautkan pembuka shift ke kartu karyawannya; tiruannya memakai db.employees.
+    async rpc(name: string, args: Any) {
+      if (name === "record_shift_cash_shortage") {
+        const emp = (db.employees ?? [])[0];
+        if (!emp) return { data: [], error: null };
+        (db.cash_advances_inserted ??= []).push({ employee_id: emp.id, shift_id: args.p_shift_id, status: "Disetujui" });
+        return { data: [{ advance_id: "ADV1", employee_id: emp.id, employee_name: emp.nama }], error: null };
+      }
+      if (name === "cancel_shift_cash_shortage") {
+        db.cash_advances_inserted = [];
+        return { data: null, error: null };
+      }
+      return { data: null, error: { message: `unexpected rpc ${name}` } };
+    },
     from(table: string) {
       const f: Record<string, Any> = {};
       // `update(...).select("id")` dipakai untuk membaca berapa baris yang kena;
@@ -248,7 +263,7 @@ describe("selisih kas kurang jadi piutang kasir", () => {
     const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 250_000 });
     expect(hasil).toMatchObject({ ok: true, selisih: -50_000, dibebankanKe: "Siti" });
     expect(db.cash_advances_inserted).toHaveLength(1);
-    expect(db.cash_advances_inserted![0]).toMatchObject({ employee_id: "E1", jumlah: 50_000, status: "Disetujui" });
+    expect(db.cash_advances_inserted![0]).toMatchObject({ employee_id: "E1", shift_id: "S1", status: "Disetujui" });
     // Jurnalnya ke Piutang Karyawan, bukan Selisih Kas.
     const akun = (db.journalLines ?? []).map((l: Any) => l.account_id);
     expect(akun).toContain("a1203");
