@@ -33,3 +33,12 @@ it('submits an explicitly chosen destination when source aliases need clarificat
  expect(choice).toBeDefined();await act(async()=>choice!.click());
  const d=action.mock.calls[1][0] as FormData;expect(d.get('scope_branch_id')).toBe('explicit-b');expect(d.get('scope_warehouse_id')).toBe('explicit-w');
 });
+it('keeps a saved but unreadable batch reachable by URL and never offers it for posting review',async()=>{
+ window.history.replaceState(null,'','/pos/sku/impor');
+ action.mockResolvedValue({...prepared,ok:false,valuation:undefined,message:'Batch tersimpan, tetapi rinciannya belum dapat dibaca (fiction). Muat ulang halaman untuk membuka batch yang sama; stok dan jurnal belum diposting.'});
+ await file();await date('2026-01-01');await act(async()=>button().click());
+ expect(window.location.search).toBe('?run_id=fiction-run');
+ expect(host.querySelector('[role=alert]')?.textContent).toContain('belum diposting');
+ expect(host.querySelector('a[href="/pos/sku/impor?run_id=fiction-run"]')).not.toBeNull();
+ expect(host.querySelector('a[href*="persediaan-awal"]')).toBeNull();
+});

@@ -118,3 +118,41 @@ it("ignores a report response after its equity selection changes",async()=>{
  await select('Akun ekuitas','other');await act(async()=>resolve({ok:true,report}));
  expect(container.querySelector('[aria-label="Laporan rekonsiliasi"]')).toBeNull();
 });
+
+async function confirmReason() {
+  const reason = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Alasan audit"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(reason, "Dasar ekuitas dikonfirmasi");
+    reason.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+}
+
+it("latches a double click on posting into one stock + journal request", async () => {
+  await preview(); await confirmReason();
+  let resolve!: (value: unknown) => void;
+  actions.postInventoryAccounting.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+  await act(async () => { const post = button("Posting stok + jurnal cabang"); post.click(); post.click(); });
+  await act(async () => resolve({ ok: true, receipt: { entry_id: "journal" } }));
+  expect(actions.postInventoryAccounting).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("Bukti posting batch tersimpan");
+});
+
+it("resolves an ambiguous posting by reading the saved receipt instead of posting again", async () => {
+  await preview(); await confirmReason();
+  actions.postInventoryAccounting.mockRejectedValueOnce(new Error("Lost response"));
+  await act(async () => button("Posting stok + jurnal cabang").click());
+  expect(container.textContent).not.toContain("Bukti posting batch tersimpan");
+  actions.previewInventoryAccounting.mockResolvedValueOnce({ ok: true, report: { ...report, status: "posted", can_post: false, receipt: { entry_id: "journal-saved" } } });
+  await act(async () => button("Periksa hasil batch").click());
+  expect(actions.postInventoryAccounting).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("journal-saved");
+  expect(container.textContent).toContain("Bukti posting batch tersimpan");
+  expect(Array.from(container.querySelectorAll("button")).some(item => item.textContent?.includes("Posting stok + jurnal"))).toBe(false);
+});
+
+it("labels saved batches by stage instead of a raw database status", () => {
+  const option = container.querySelector<HTMLSelectElement>('select[aria-label="Batch Accurate"]')!.options[1];
+  expect(option.textContent).toContain("menunggu review OWNER");
+  expect(option.textContent).not.toContain("previewed");
+});

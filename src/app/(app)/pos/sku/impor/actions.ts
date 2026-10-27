@@ -1314,7 +1314,14 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
       revalidatePath(BACK);
       return mappingWarning ? { ...recovered, message: `${recovered.message}${mappingWarning}` } : recovered;
     }
-    return recovered;
+    // The batch exists even when its rows cannot be read back; keep its ID so the
+    // browser can reopen this exact batch instead of reporting a plain failure.
+    revalidatePath(BACK);
+    return {
+      ...recovered,
+      run_id: String(prepared.data),
+      message: `Batch tersimpan, tetapi rinciannya belum dapat dibaca (${recovered.message}). Muat ulang halaman untuk membuka batch yang sama; stok dan jurnal belum diposting.`,
+    };
   } catch (error) {
     return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal dibaca.");
   }

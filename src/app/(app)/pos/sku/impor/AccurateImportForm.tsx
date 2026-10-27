@@ -295,6 +295,8 @@ export function AccurateImportForm({
       if (token !== generation.current) return;
       setOneClickStockState(stockPreview);
       if (!stockPreview.ok || !stockPreview.run_id || !stockPreview.branch_id || !stockPreview.warehouse_id || !stockPreview.as_of) {
+        // A saved but unreadable batch keeps its URL so reload reopens that exact batch.
+        if (stockPreview.run_id) window.history.replaceState(window.history.state, "", `/pos/sku/impor?run_id=${encodeURIComponent(stockPreview.run_id)}`);
         setOneClickStatus(stockPreview.message);
         return;
       }
