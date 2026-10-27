@@ -12,7 +12,8 @@ function fixture(fail = "", truncate = "") {
   const reads: { table: string; from: number }[] = [];
   const tables: Record<string, Record<string, unknown>[]> = {
     payroll_settings: [rules],
-    employees: [{ id: "employee", nama: "Fictional", jabatan: "Dokter", gaji_pokok: 1000, status: "Aktif" }],
+    employees: [{ id: "employee", nama: "Fictional", jabatan: "Dokter", status: "Aktif" }],
+    employee_base_salaries: [{ employee_id: "employee", gaji_pokok: 1000 }],
     employee_schedules: [{ id: "schedule", employee_id: "employee", tanggal: "2026-10-01", work_shifts: { is_libur: false, jam_masuk: "08:00" } }],
     attendance: [{ id: "attendance", employee_id: "employee", tanggal: "2026-10-01", jam_masuk: "08:00" }],
     leave_requests: Array.from({ length: 501 }, (_, i) => ({ id: `leave-${i}`, employee_id: "employee", tanggal_mulai: "2026-10-02", tanggal_selesai: "2026-10-02", status: "Disetujui" })),
@@ -28,6 +29,7 @@ function fixture(fail = "", truncate = "") {
       in: (key: string, values: string[]) => { rows = rows.filter(row => values.includes(String(row[key]))); return q; },
       gte: (key: string, value: string) => { rows = rows.filter(row => String(row[key]) >= value); return q; },
       lte: (key: string, value: string) => { rows = rows.filter(row => String(row[key]) <= value); return q; },
+      then: (resolve: (value: unknown) => unknown) => resolve({ data: rows, error: table === fail ? { message: "fixture error" } : null }),
       is: (key: string, value: null) => { rows = rows.filter(row => row[key] == value); return q; },
       order: (key: string) => { rows = [...rows].sort((a, b) => String(a[key]).localeCompare(String(b[key]))); return q; },
       maybeSingle: async () => ({ data: rows[0] ?? null, error: table === fail ? { message: "fixture error" } : null }),
