@@ -15,8 +15,9 @@ type Row = {
   voided_at: string | null;
   no_faktur_pemasok: string | null;
   surat_jalan: string | null;
-  tanggal: string;
-  jatuh_tempo: string;
+  /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal ini (M05). */
+  tanggal: string | null;
+  jatuh_tempo: string | null;
   total: number;
   suppliers: Rel<{ nama: string }>;
   purchase_orders: Rel<{ no_po: string | null }>;
@@ -24,7 +25,7 @@ type Row = {
 };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-const fmtD = (d: string) =>
+const fmtD = (d: string | null) => !d ? "Tidak ada" :
   new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 export default async function FakturBeliPage({
@@ -107,7 +108,7 @@ export default async function FakturBeliPage({
               {rows.map((r) => {
                 const dibayar = paidByInvoice.get(r.id) ?? 0;
                 const sisa = r.voided_at ? 0 : Math.max(0, Number(r.total) - dibayar);
-                const telat = sisa > 0 && r.jatuh_tempo < today;
+                const telat = sisa > 0 && !!r.jatuh_tempo && r.jatuh_tempo < today;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 500, fontSize: 11.5 }}><Link href={`/pembelian/faktur/${r.id}`}>{r.no_faktur}</Link>{r.voided_at && <span> · Dibatalkan</span>}</td>

@@ -57,6 +57,9 @@ export function SaldoAwalFakturForm({ branches, defaultAsOf, isOwner }: { branch
 
   const salah = report?.rows.filter(r => r.errors.length) ?? [];
   const benar = report?.rows.filter(r => !r.errors.length) ?? [];
+  // Tanggal "bila tersedia": yang kosong disimpan kosong, tidak diganti tanggal lain.
+  const tanpaTanggal = benar.filter(r => !r.tanggal).length;
+  const tanpaJatuhTempo = benar.filter(r => !r.jatuh_tempo).length;
   return <div style={{ display: "grid", gap: 12 }}>
     <form onSubmit={event => { event.preventDefault(); periksa(event.currentTarget); }} onChange={() => { if (report) reset(); }}
       style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 10, alignItems: "end" }}>
@@ -94,6 +97,11 @@ export function SaldoAwalFakturForm({ branches, defaultAsOf, isOwner }: { branch
         </div>
       </div>
 
+      {(tanpaTanggal > 0 || tanpaJatuhTempo > 0) && <div className="p2ban" role="status" style={{ background: "#f3f4f6", border: ".5px solid var(--bd)" }}>
+        {tanpaTanggal > 0 && <>{tanpaTanggal} faktur tanpa tanggal faktur. </>}
+        {tanpaJatuhTempo > 0 && <>{tanpaJatuhTempo} faktur tanpa jatuh tempo. </>}
+        Tanggalnya disimpan kosong (tidak diganti tanggal lain). Nilainya tetap masuk total dan tetap bisa dibayar, tetapi umur hutang/piutangnya tampil terpisah sebagai &quot;tanpa tanggal&quot;.
+      </div>}
       {report.status === "posted" && <div className="p2ban" role="status">File yang sama sudah pernah diposting. Tidak ada yang akan dicatat ulang.</div>}
       {report.blockers.length > 0 && <div className="p2ban" role="alert" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
         <strong>Belum bisa diposting:</strong>
@@ -135,7 +143,8 @@ export function SaldoAwalFakturForm({ branches, defaultAsOf, isOwner }: { branch
           <tbody>{benar.map(r => <tr key={r.baris}>
             <td style={{ fontSize: 11 }}>{r.baris > 100000 ? `Piutang ${r.baris - 100000}` : r.baris}</td><td style={{ fontSize: 11 }}>{r.jenis}</td>
             <td style={{ fontSize: 11 }}>{r.party_name}</td><td style={{ fontSize: 11 }}>{r.no_faktur}</td>
-            <td style={{ fontSize: 11 }}>{r.tanggal}</td><td style={{ fontSize: 11 }}>{r.jatuh_tempo}</td>
+            <td style={{ fontSize: 11, color: r.tanggal ? undefined : "var(--td)" }}>{r.tanggal ?? "kosong"}</td>
+            <td style={{ fontSize: 11, color: r.jatuh_tempo ? undefined : "var(--td)" }}>{r.jatuh_tempo ?? "kosong"}</td>
             <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.sisa)}</td>
           </tr>)}</tbody>
         </table></div>

@@ -71,7 +71,7 @@ export default async function PerintahBayarPage({
   }
   const pemasok = (supData ?? []) as { id: string; nama: string }[];
   const faktur = (invData ?? []) as unknown as {
-    id: string; no_faktur: string; tanggal: string; jatuh_tempo: string; total: number;
+    id: string; no_faktur: string; tanggal: string | null; jatuh_tempo: string | null; total: number;
     supplier_id: string | null; suppliers: Rel<{ nama: string }>;
   }[];
 

@@ -19,7 +19,11 @@ export const TANGGAL_CUTOVER_DEFAULT = "2026-10-31";
 
 export type JenisSaldoAwal = "HUTANG" | "PIUTANG";
 
-/** Baris yang dikirim ke database. Nilai yang gagal dibaca tetap dikirim mentah supaya database menandainya. */
+/**
+ * Baris yang dikirim ke database. Nilai yang gagal dibaca tetap dikirim mentah supaya database menandainya.
+ * Tanggal faktur dan jatuh tempo diisi "bila tersedia": sel kosong dikirim "" dan disimpan kosong, tidak diganti
+ * tanggal lain. Sel yang terisi tapi bukan tanggal (termasuk error Excel seperti #N/A) tetap ditolak.
+ */
 export type BarisSaldoAwalFaktur = {
   baris: number;
   jenis: string;
@@ -123,6 +127,14 @@ function teksSel(cell: ExcelJS.Cell): unknown {
 
 const teks = (value: unknown) => (value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "").trim());
 
+/** Kode error Excel (#N/A, #REF!, …) pada sel, langsung atau sebagai hasil rumus; selain itu null. */
+function errorSel(cell: ExcelJS.Cell): string | null {
+  const value = cell.value as unknown;
+  if (!value || typeof value !== "object") return null;
+  const hasil = "result" in value ? (value as { result: unknown }).result : value;
+  return hasil && typeof hasil === "object" && "error" in hasil ? String((hasil as { error: unknown }).error) || "#ERROR" : null;
+}
+
 function bacaSheet(sheet: ExcelJS.Worksheet, jenisTetap: JenisSaldoAwal | null, rows: BarisSaldoAwalFaktur[], errors: string[]) {
   const kolom = new Map<Kunci, number>();
   sheet.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => {
@@ -138,6 +150,8 @@ function bacaSheet(sheet: ExcelJS.Worksheet, jenisTetap: JenisSaldoAwal | null, 
   for (let rowNo = 2; rowNo <= sheet.rowCount; rowNo += 1) {
     const row = sheet.getRow(rowNo);
     const ambil = (k: Kunci) => (kolom.has(k) ? teksSel(row.getCell(kolom.get(k)!)) : "");
+    // Sel tanggal yang error tidak boleh terbaca sebagai "tanggal tidak tersedia".
+    const ambilTanggal = (k: "tanggal" | "jatuh_tempo") => (kolom.has(k) ? errorSel(row.getCell(kolom.get(k)!)) : null) ?? ambil(k);
     const mentah = (["jenis", "kode", "nama", "no", "tanggal", "jatuh_tempo", "sisa", "total_asli", "keterangan"] as Kunci[]).map(ambil);
     if (mentah.every((v) => teks(v) === "")) continue;
     if (rows.length >= MAKS_BARIS_SALDO_AWAL_FAKTUR) {
@@ -153,8 +167,8 @@ function bacaSheet(sheet: ExcelJS.Worksheet, jenisTetap: JenisSaldoAwal | null, 
       kode_pihak: teks(ambil("kode")) || null,
       nama_pihak: teks(ambil("nama")),
       no_faktur: teks(ambil("no")),
-      tanggal: tanggalSel(ambil("tanggal")) ?? teks(ambil("tanggal")),
-      jatuh_tempo: tanggalSel(ambil("jatuh_tempo")) ?? teks(ambil("jatuh_tempo")),
+      tanggal: tanggalSel(ambilTanggal("tanggal")) ?? teks(ambilTanggal("tanggal")),
+      jatuh_tempo: tanggalSel(ambilTanggal("jatuh_tempo")) ?? teks(ambilTanggal("jatuh_tempo")),
       sisa: sisa === null ? teks(ambil("sisa")) : String(sisa),
       total_asli: teks(ambil("total_asli")) === "" ? null : asli === null ? teks(ambil("total_asli")) : String(asli),
       keterangan: teks(ambil("keterangan")) || null,
@@ -223,8 +237,9 @@ export async function buatTemplateSaldoAwalFaktur(): Promise<Uint8Array> {
     ["Kode Pihak", "Opsional, kode pemasok/pelanggan di Accurate untuk jejak audit. Pencocokan ke master VetOS memakai Nama Pihak."],
     ["Nama Pihak", "Harus sama dengan nama di master pemasok/pelanggan VetOS (huruf besar/kecil dan spasi ganda diabaikan). Pihak yang belum ada ditolak: buat dulu di master."],
     ["No Faktur", "Nomor faktur di Accurate. Hutang: nomor dari pemasok, tidak boleh ganda per pemasok. Piutang: nomor faktur kita, tidak boleh ganda sama sekali."],
-    ["Tanggal Faktur", "Tanggal faktur asli (format tanggal Excel atau DD/MM/YYYY). Umur hutang/piutang dihitung dari sini dan dari jatuh tempo."],
-    ["Jatuh Tempo", "Tidak boleh sebelum tanggal faktur."],
+    ["Tanggal Faktur", "Isi bila tersedia: tanggal faktur asli (format tanggal Excel atau DD/MM/YYYY), tidak boleh sesudah tanggal saldo awal. Boleh dikosongkan bila Accurate tidak punya; VetOS tidak mengisi tanggal pengganti. Kolomnya tetap harus ada."],
+    ["Jatuh Tempo", "Isi bila tersedia; tidak boleh sebelum tanggal faktur. Boleh dikosongkan bila tidak ada. Kolomnya tetap harus ada."],
+    ["Tanpa tanggal", "Faktur tanpa tanggal tetap masuk total hutang/piutang dan tetap bisa dibayar. Umurnya tidak dihitung: tampil di kelompok \"Tanpa jatuh tempo\" (hutang) atau \"Tanpa tanggal faktur\" (piutang). Isi yang salah ketik atau error Excel (mis. #N/A) tetap ditolak."],
     ["Sisa Tagihan", "SISA yang belum dibayar per tanggal cutover, bukan total faktur. Rupiah bulat, lebih dari 0. Titik/koma ribuan boleh."],
     ["Total Faktur Asli", "Opsional, untuk referensi. Tidak boleh lebih kecil dari sisa."],
     ["Total kontrol", "Di layar impor, isi total hutang dan total piutang dari laporan umur hutang/piutang Accurate. Posting ditolak kalau jumlah file tidak sama persis."],

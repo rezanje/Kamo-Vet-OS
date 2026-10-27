@@ -11,20 +11,21 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
-import { agingBucket, agingDays, AGING_LABEL } from "@/lib/aging";
+import { agingFaktur, AGING_LABEL, TANPA_TANGGAL } from "@/lib/aging";
 import { sisaTagihan } from "@/lib/penjualan-dokumen";
 import { terimaPembayaranJual } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import Link from "next/link";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
+const tgl = (s: string | null) => !s ? "Tidak ada" : new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
 type Faktur = {
-  id: string; no_faktur: string; tanggal: string; jatuh_tempo: string;
+  /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal ini (M05). */
+  id: string; no_faktur: string; tanggal: string | null; jatuh_tempo: string | null;
   dpp: number; ppn: number; total: number; carried_paid: number; status: string; customer_id: string | null;
   kategori: string | null;
   catatan: string | null;
@@ -88,7 +89,8 @@ export default async function FakturJualPage({
 
   const rows = faktur.map((f) => {
     const sisa = f.status === "batal" ? 0 : sisaTagihan(Number(f.total) - Number(f.carried_paid ?? 0), (f.sales_receipts ?? []) as { jumlah: number }[]);
-    return { f, sisa, hari: agingDays(f.jatuh_tempo, today), bucket: agingBucket(f.jatuh_tempo, today) };
+    const { days: hari, bucket } = agingFaktur(f.jatuh_tempo, today);
+    return { f, sisa, hari, bucket };
   });
   const berjalan = rows.filter((r) => r.sisa > 0 && r.f.status !== "batal");
   const totalPiutang = berjalan.reduce((a, r) => a + r.sisa, 0);
@@ -194,7 +196,9 @@ export default async function FakturJualPage({
                     </td>
                     <td style={{ fontSize: 10.5 }}>
                       {sisa > 0
-                        ? <span className={`bge ${bucket === "current" ? "g" : bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[bucket]}</span>
+                        ? bucket === TANPA_TANGGAL
+                          ? <span className="bge x">Tanpa jatuh tempo</span>
+                          : <span className={`bge ${bucket === "current" ? "g" : bucket === "d1_30" ? "o" : "r"}`}>{AGING_LABEL[bucket]}</span>
                         : <span className={`bge ${f.status === "batal" ? "x" : "g"}`}>{f.status === "batal" ? "Batal" : "Lunas"}</span>}
                     </td>
                     {boleh && (

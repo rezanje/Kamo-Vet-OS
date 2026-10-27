@@ -26,6 +26,17 @@ export function agingBucket(tanggal: string, asOf: string): AgingBucket {
   return "d90plus";
 }
 
+// Faktur saldo awal (M05) boleh tanpa tanggal faktur / jatuh tempo karena di Accurate
+// hanya diisi "bila tersedia". Umurnya tidak dihitung dan tidak ditebak: masuk kelompok
+// sendiri sampai ada keputusan aturan umurnya. Faktur biasa selalu bertanggal.
+export const TANPA_TANGGAL = "tanpa_tanggal" as const;
+export type AgingBucketFaktur = AgingBucket | typeof TANPA_TANGGAL;
+
+export function agingFaktur(tanggal: string | null, asOf: string): { days: number | null; bucket: AgingBucketFaktur } {
+  if (!tanggal) return { days: null, bucket: TANPA_TANGGAL };
+  return { days: agingDays(tanggal, asOf), bucket: agingBucket(tanggal, asOf) };
+}
+
 // Penyusutan garis lurus per bulan. 0 kalau umur tidak valid.
 export function depreciationPerMonth(hargaPerolehan: number, nilaiSisa: number, umurBulan: number): number {
   if (umurBulan <= 0) return 0;

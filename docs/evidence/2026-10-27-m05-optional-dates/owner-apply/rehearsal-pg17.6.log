@@ -1,0 +1,19 @@
+sha256 66338b4584befd9646e96eba52e1fe79e949f78f7ba9f1e9b31fae889dcbca14  01-preflight-readonly.sql
+sha256 cef4c8e975af5ebe7ad4e2bcec5aba186cb7c7a4a14c67235a1d3a935e9fe96d  02-apply.sql
+sha256 a3826dbbfca7d8e25827fea418124ed35b43e748d5151a0725a0a399620858e0  03-readback-readonly.sql
+sha256 98eebaa6f2658ad605b8dc87ca926bf4e27b2db175976f4ce52947437c297300  04-rollback-only-if-unused.sql
+sha256 247e3dfd8b7e3ab38342be20a82963a9d010265b6588a5327ba0840f8aa2cc07  supabase/migrations/20261027210000_opening_invoice_optional_dates.sql
+Bootstrapped 274 repository migrations on PostgreSQL 17.6
+Simulated migration history (all versions recorded) and fictional COA 2101/1201/3101
+PASS 04 rollback without undated invoices: back to the M05 base (6 columns NOT NULL, review function md5 = M05)
+PASS optional-date SQL suite FAILS on the M05 base (undated rows rejected) — the suite detects the change
+PASS M05 SQL suite on the M05 base (rolled back)
+Committed the M05 fixture as old transactions (dated batch, payment, receipt, journals); fingerprinted 8 tables
+PASS 01 preflight: 0 failed
+PASS 02 apply
+PASS 03 readback: 0 failed
+PASS old transactions byte-identical after apply (row count and md5 of every row, 8 tables)
+PASS second 02 apply refused (M05D_ALREADY_APPLIED); readback unchanged
+PASS optional-date SQL suite after apply (rolled back), next to the committed M05 batch
+Committed one fictional batch with undated invoices (3 payables, 1 receivable without a date)
+PASS 04 rollback refused once undated invoices exist (M05D_ROLLBACK_REFUSED); data and readback intact

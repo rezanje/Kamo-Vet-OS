@@ -2,8 +2,9 @@
 """M05 opening AP/AR per invoice: fictional fixture on a throwaway PostgreSQL.
 
 Never accepts a database URL. Applies every repository migration, then runs the rolled-back
-SQL suite supabase/tests/opening_ap_ar_invoices.sql (preview/post access, validation, balanced
-journal, idempotent re-post, fail-closed double count, payment allocation, protection).
+SQL suites supabase/tests/opening_ap_ar_invoices.sql (preview/post access, validation, balanced
+journal, idempotent re-post, fail-closed double count, payment allocation, protection) and
+supabase/tests/opening_invoice_optional_dates.sql (invoice/due date optional, never substituted).
 
 Usage:
   python3 scripts/test-opening-invoices-postgres.py                # Docker postgres:16, network none
@@ -20,13 +21,14 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('fixture', ROOT / 'scripts/test-accurate-inventory-accounting-postgres.py')
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
-SUITE = 'opening_ap_ar_invoices.sql'
+SUITES = ['opening_ap_ar_invoices.sql', 'opening_invoice_optional_dates.sql']
 
 
 def run(db, bootstrap):
     bootstrap(db)
-    db.sql((ROOT / 'supabase/tests' / SUITE).read_text())
-    print('PASS ' + SUITE, flush=True)
+    for suite in SUITES:
+        db.sql((ROOT / 'supabase/tests' / suite).read_text())
+        print('PASS ' + suite, flush=True)
     left = db.sql('select (select count(*) from opening_invoice_batches)+(select count(*) from opening_invoice_lines);')
     assert left == '0', 'Fixture rows leaked: ' + left
     print('PASS fixture rolled back (0 opening rows remain)', flush=True)

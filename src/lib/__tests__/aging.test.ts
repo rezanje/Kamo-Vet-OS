@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { agingBucket, agingDays, depreciationPerMonth, monthsElapsed } from "../aging";
+import { agingBucket, agingDays, agingFaktur, depreciationPerMonth, monthsElapsed, TANPA_TANGGAL } from "../aging";
 
 describe("aging buckets", () => {
   it("hari yang sama = current", () => {
@@ -17,6 +17,17 @@ describe("aging buckets", () => {
   });
   it("tanggal masa depan tidak negatif", () => {
     expect(agingDays("2026-08-01", "2026-07-15")).toBe(0);
+  });
+});
+
+describe("agingFaktur (tanggal faktur saldo awal boleh kosong)", () => {
+  it("tanggal ada: sama persis dengan bucket biasa", () => {
+    expect(agingFaktur("2026-06-01", "2026-07-15")).toEqual({ days: 44, bucket: "d31_60" });
+    expect(agingFaktur("2026-07-15", "2026-07-15")).toEqual({ days: 0, bucket: "current" });
+  });
+  it("tanggal kosong: tidak dihitung, tidak jatuh ke > 90 hari atau Berjalan", () => {
+    expect(agingFaktur(null, "2026-07-15")).toEqual({ days: null, bucket: TANPA_TANGGAL });
+    expect(agingFaktur("", "2026-07-15")).toEqual({ days: null, bucket: TANPA_TANGGAL });
   });
 });
 
