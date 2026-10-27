@@ -298,7 +298,7 @@ export default async function RawatInapDetailPage({
         )}
       </div>
 
-      <HandoffPanel data={handoff} visitId={String(rec.visit_id)} admittedAt={String(rec.admitted_at)} recordId={String(rec.id)} active={!rec.discharged_at}/>
+      <HandoffPanel data={handoff} visitId={String(rec.visit_id)} admittedAt={String(rec.admitted_at)} recordId={String(rec.id)} active={!rec.discharged_at} stayedDays={hariRawatInap(rec.admitted_at, rec.discharged_at ?? new Date().toISOString())}/>
 
       <PapanPemantauan laporan={laporanPemantauan} />
 
