@@ -60,6 +60,11 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
     ...(returns.data ?? []).map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur PO ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),
   ];
   const owner = profile?.role === "OWNER" && profile.is_active;
+  const canReprice = !!owner && !invoice.voided_at && !invoice.opening_batch_id;
+  // Riwayat koreksi harga (P02). Gagal baca tidak menyembunyikan faktur; tabel hanya tampil bila terbaca.
+  const { data: corrections } = await supabase.from("purchase_invoice_corrections")
+    .select("id,invoice_item_id,tanggal,old_qty,new_qty,old_harga,new_harga,inventory_delta,hpp_delta,reason")
+    .eq("invoice_id", id).order("created_at");
   const paid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
   return <>
     <DocumentBackLink from={sp.from} />
@@ -78,9 +83,18 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
       <p>Total {rp(invoice.total)} · Pembayaran bersih {rp(paid)}</p>
       <p>{invoice.no_faktur_pemasok && `Nomor pemasok: ${invoice.no_faktur_pemasok}. `}{invoice.keterangan}</p>
       {invoice.po_id && !po && <p>PO terkait tidak tersedia atau tidak dapat diakses.</p>}
-      <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Barang</th><th>Jumlah</th><th>Harga</th></tr></thead><tbody>
-        {items.map(line => <tr key={line.id}><td>{line.nama}</td><td>{line.qty} {line.satuan}</td><td>{rp(line.harga)}</td></tr>)}
+      <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Barang</th><th>Jumlah</th><th>Harga</th>{canReprice && <th></th>}</tr></thead><tbody>
+        {items.map(line => <tr key={line.id}><td>{line.nama}</td><td>{line.qty} {line.satuan}</td><td>{rp(line.harga)}</td>
+          {canReprice && <td><Link href={`/pembelian/faktur/${id}/koreksi?baris=${line.id}`}>Koreksi harga</Link></td>}</tr>)}
       </tbody></table></div>
+      {corrections && corrections.length > 0 && <>
+        <h4>Riwayat koreksi harga</h4>
+        <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Tanggal</th><th>Barang</th><th>Lama → baru</th><th>Stok / HPP</th><th>Alasan</th></tr></thead><tbody>
+          {corrections.map(c => <tr key={c.id}><td>{c.tanggal}</td><td>{items.find(i => i.id === c.invoice_item_id)?.nama ?? "—"}</td>
+            <td>{c.old_qty} × {rp(c.old_harga)} → {c.new_qty} × {rp(c.new_harga)}</td>
+            <td>Stok {rp(c.inventory_delta)} · HPP {rp(c.hpp_delta)}</td><td>{c.reason}</td></tr>)}
+        </tbody></table></div>
+      </>}
       {!invoice.voided_at && <Link className="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</Link>}
       {owner && !invoice.opening_batch_id && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} />}
     </section>
