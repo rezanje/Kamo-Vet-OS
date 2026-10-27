@@ -4,7 +4,6 @@ import { NumberInput } from "@/components/NumberInput";
 
 import { useMemo, useRef, useState } from "react";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
-import { ProcedureBmhpField } from "@/components/ProcedureBmhpField";
 import { ProcedureBmhpComposer } from "@/components/ProcedureBmhpComposer";
 import { ClinicLineSellerField } from "@/components/ClinicLineSellerField";
 import type { BmhpRow } from "@/lib/procedure-bmhp";
@@ -515,8 +514,10 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                               <span>BMHP: {(r.bmhp ?? []).map(material => `${material.nama} × ${material.qty} ${material.unit}`).join(", ") || "belum diisi"}</span>{" "}
                               <button type="button" className="btn-def" aria-label={`Ubah BMHP ${r.nama_obat}`} onClick={() => editProcedure(r)}>Ubah BMHP</button>
                             </div>}
-                            {r.jenis === "jasa" && r.item_id && !tindakanItems.some(item => item.id === r.item_id) && <ProcedureBmhpField label={r.nama_obat} value={r.bmhp} items={items}
-                              onChange={bmhp => setCart(rows => rows.map(row => row.key === r.key ? {...row, bmhp} : row))} />}
+                            {/* BMHP is composed only for clinic procedures (TINDAKAN); other services keep any stored BMHP read-only. */}
+                            {r.jenis === "jasa" && r.item_id && !tindakanItems.some(item => item.id === r.item_id) && (r.bmhp?.length ?? 0) > 0 && <div style={{ fontSize: 10 }}>
+                              BMHP tersimpan: {r.bmhp!.map(material => `${material.nama} × ${material.qty} ${material.unit}`).join(", ")}
+                            </div>}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (
