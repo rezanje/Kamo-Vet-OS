@@ -1,14 +1,15 @@
--- I08/I09 PREFLIGHT — read-only. Every row must say ok=true before apply.sql.
+-- I08/I09 PREFLIGHT — read-only. Every row of the first query must say ok=true before apply.sql.
 -- Safe to run any time; it changes nothing.
-select 'post_production_atomic body matches main (average still blocked)' as check_name,
-  position('Produksi ini memerlukan rekonsiliasi metode average tersendiri' in pg_get_functiondef('public.post_production_atomic(text,text,jsonb)'::regprocedure))>0
-  or position('Valuasi average barang jadi' in pg_get_functiondef('public.post_production_atomic(text,text,jsonb)'::regprocedure))>0 as ok
+-- Exact md5 of pg_get_functiondef: main's body (= hosted PG17.6, local PG16/17),
+-- or the exact body this package produces (already applied). Nothing else passes.
+select 'post_production_atomic is main or already applied' as check_name,
+  md5(pg_get_functiondef('public.post_production_atomic(text,text,jsonb)'::regprocedure)) in('9081430156be400a3e9d562dea6c3e5d','75af6e84a3f76468b8ef300029094b88') as ok
 union all
-select 'post_production_adhoc_atomic body matches main',
-  position('Pekerjaan FIFO ini memerlukan kontrak average tersendiri' in pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure))>0
-  or position('Valuasi average bahan' in pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure))>0
+select 'post_production_adhoc_atomic is main or already applied',
+  md5(pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure)) in('7281aba74319c810720a6df1389a1be0','dcb556e965cb59dedb11ccb5867577ec')
 union all
-select 'read_production_atomic_sources exists', to_regprocedure('public.read_production_atomic_sources(uuid[])') is not null
+select 'read_production_atomic_sources is main or already applied',
+  md5(pg_get_functiondef('public.read_production_atomic_sources(uuid[])'::regprocedure)) in('ceeacc6fb3d31d67e5fc21b1f8da4f33','f905d9ae280797512058d7184883190f')
 union all
 select 'compound_issues ledger exists', to_regclass('public.compound_issues') is not null
 union all

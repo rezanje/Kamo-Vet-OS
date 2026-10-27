@@ -112,6 +112,29 @@ select pg_temp.reject('select read_compound_trace((select recipe from i09_ctx))'
 select set_config('request.jwt.claim.sub','',true);
 select pg_temp.reject('select read_compound_trace((select recipe from i09_ctx))','Akses jejak racikan ditolak');
 reset role;
+-- Origin numbers of other documents: a transfer from another branch stays
+-- unnamed for a branch-limited doctor; a same-branch purchase is shown.
+insert into items(id,code,name,unit,item_type,buy_price,sell_price,is_compound_material) values
+ (md5('i09-moved')::uuid,'I09M','Fictional transferred powder','gram','Persediaan',1,2,true),
+ (md5('i09-bought')::uuid,'I09F','Fictional bought powder','gram','Persediaan',1,2,true);
+insert into visits(id,branch_id,customer_id,pet_id) values(md5('i09-visit-2')::uuid,md5('i09-branch')::uuid,md5('i09-customer')::uuid,md5('i09-pet')::uuid);
+insert into medical_records(id,visit_id) values(md5('i09-record-2')::uuid,md5('i09-visit-2')::uuid);
+select stock_in_fifo(md5('i08-other-wh')::uuid,md5('i09-moved')::uuid,3,2,'fixture','I09-OTHER',current_date-1,null);
+select stock_out_fifo(md5('i08-other-wh')::uuid,md5('i09-moved')::uuid,3,'transfer','TRF.I09.00001',current_date-1);
+select stock_in_fifo(md5('i09-vet')::uuid,md5('i09-moved')::uuid,3,2,'transfer','TRF.I09.00001',current_date-1,null);
+select stock_in_fifo(md5('i09-vet')::uuid,md5('i09-bought')::uuid,3,2,'faktur-langsung','FB.I09.00001',current_date-1,null);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-owner')::uuid::text,true);
+create temp table i09_second as select clinic_issue_compound(md5('i09-record-2')::uuid,md5('i09-visit-2')::uuid,
+ jsonb_build_object('recipe_name','Fictional second racikan','dosage_form','puyer','ingredients',jsonb_build_array(
+  jsonb_build_object('item_id',md5('i09-moved')::uuid,'quantity',1,'unit','gram','unit_price',10),
+  jsonb_build_object('item_id',md5('i09-bought')::uuid,'quantity',1,'unit','gram','unit_price',10))),'i09-issue-second') recipe;
+select pg_temp.ok((select x->'origin'->>'ref' from jsonb_array_elements(read_compound_trace((select recipe from i09_second))->'materials')x where x->>'item_name'='Fictional transferred powder')='TRF.I09.00001','owner sees cross-branch transfer number');
+select set_config('request.jwt.claim.sub',md5('i09-doctor')::uuid::text,true);
+select pg_temp.ok((select x->'origin'->'ref' from jsonb_array_elements(read_compound_trace((select recipe from i09_second))->'materials')x where x->>'item_name'='Fictional transferred powder')='null'::jsonb,'doctor does not get cross-branch transfer number');
+select pg_temp.ok((select x->'origin'->>'source' from jsonb_array_elements(read_compound_trace((select recipe from i09_second))->'materials')x where x->>'item_name'='Fictional transferred powder')='transfer','doctor still sees the origin kind');
+select pg_temp.ok((select x->'origin'->>'ref' from jsonb_array_elements(read_compound_trace((select recipe from i09_second))->'materials')x where x->>'item_name'='Fictional bought powder')='FB.I09.00001','doctor sees same-branch purchase number');
+reset role;
 -- After a void the restore is visible and stock is back; still no parent stock.
 update compound_issues set posted_invoice_item_id=null where recipe_id=(select recipe from i09_ctx);
 set local role authenticated;

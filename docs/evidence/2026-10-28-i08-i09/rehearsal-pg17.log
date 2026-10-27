@@ -1,10 +1,12 @@
 server: postgres (PostgreSQL) 17.11 (Homebrew)
-apply.sql sha256 72c3fba63f864867e244d67191b7ae74cc0951ed400b90f9d54627e5eada65b4
+apply.sql sha256 c608a78fb88709e83440f129a9de49f41dbb314d46233ea0325a174b0db11cfb
 Applied 277 repository migrations to isolated PostgreSQL 17.11 (Homebrew) with fictional auth/storage shims.
+PASS drifted body refused by preflight and apply (exact md5)
 PASS preflight.sql (7 checks)
 PASS readback.sql (6 checks)
 PASS readback.sql (6 checks)
 PASS apply is idempotent
+PASS rollback refused while moving average is active
 PASS rollback restores exact pre-apply function bodies
 PASS preflight.sql (7 checks)
 PASS readback.sql (6 checks)

@@ -2,14 +2,14 @@
 -- One transaction. It restores main's behaviour: average production blocked
 -- again, source reader without completion links, trace RPC removed. No data
 -- rows are touched (the I08/I09 change wrote none).
--- Refuses while moving average is active and a job is running, because that job
--- could then never be completed; finish or reconcile it first.
+-- Refuses whenever the inventory method is moving_average: main blocks every
+-- production posting under average, so rolling back would stop all production
+-- permanently (average activation is irreversible). Roll forward instead.
 begin;
 do $guard$
 begin
- if (select method='moving_average' from public.inventory_costing_settings where id)
-  and exists(select 1 from public.production_orders where status='berjalan') then
-  raise exception 'Rollback ditolak: produksi average masih berjalan. Selesaikan dulu.';
+ if (select method='moving_average' from public.inventory_costing_settings where id) then
+  raise exception 'Rollback ditolak: metode average aktif; mundur akan menghentikan seluruh produksi. Perbaiki maju dengan migrasi baru.';
  end if;
 end$guard$;
 
@@ -23,7 +23,7 @@ declare definition text;anchor text:='update public.production_orders set nilai_
     <> (select count(*) from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0)
    or exists(select 1 from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0
      and (e.value_delta is null or e.value_after is null or (e.qty_after>0 and e.average_after is null)))
-   or abs((select coalesce(sum(e.value_delta),0) from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0)+total)>=0.005
+   or abs((select coalesce(sum(e.value_delta),0) from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0)+total)>0.000001
   ) then raise exception 'Valuasi average bahan tidak sesuai WIP; seluruh pekerjaan dibatalkan';end if;
 $guard$;
  output_guard text:=$guard$
@@ -38,7 +38,7 @@ $guard$;
     - (select coalesce(sum(l.debit-l.credit),0) from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id
        where j.source='inventory-variance' and a.code='1301' and j.source_ref in
         (select m.id::text from public.stock_moves m where m.source='produksi' and m.source_ref=ref and m.item_id=output_id and m.qty>0))
-   )>=0.005
+   )>0.005
   ) then raise exception 'Valuasi average barang jadi tidak sesuai jurnal persediaan; penyelesaian dibatalkan';end if;
 $guard$;
 begin
@@ -75,4 +75,12 @@ language plpgsql security definer set search_path='' as $$declare result jsonb:=
  end loop;return result;end$$;
 
 drop function if exists public.read_compound_trace(uuid);
+
+do $verify$begin
+ if md5(pg_get_functiondef('public.post_production_atomic(text,text,jsonb)'::regprocedure))<>'9081430156be400a3e9d562dea6c3e5d'
+  or md5(pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure))<>'7281aba74319c810720a6df1389a1be0'
+  or md5(pg_get_functiondef('public.read_production_atomic_sources(uuid[])'::regprocedure))<>'ceeacc6fb3d31d67e5fc21b1f8da4f33' then
+  raise exception 'Rollback tidak mengembalikan isi fungsi main persis; dibatalkan';
+ end if;
+end$verify$;
 commit;

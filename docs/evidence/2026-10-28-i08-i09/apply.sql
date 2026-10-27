@@ -10,13 +10,22 @@ begin;
 -- * Material issues keep using stock_out_fifo, which returns the active average
 --   cost; output receipts keep using stock_in_fifo. Frozen material cost moves
 --   1301 -> 1302 (WIP) -> 1301 exactly as under FIFO.
--- * Each stage reconciles the inventory valuation events against the WIP value
---   (difference >= Rp0.005 aborts the whole stage). Unknown/zero average cost
---   therefore fails closed instead of guessing a price.
+-- * Each stage reconciles the inventory valuation events against the WIP value.
+--   Material issue: any gap above 0.000001 aborts the job (the engine values an
+--   issue at exactly qty x average, so no gap may accumulate between GL and
+--   stock valuation). Output receipt: gap above Rp0.005 aborts (12-digit
+--   average rounding and the existing cent-rounded negative-stock variance
+--   journal). Unknown/zero average cost therefore fails closed, never guessed.
 -- * Same-branch rule, function identity, ACLs, search_path and RLS unchanged.
--- Provenance anchors abort the migration if either RPC body differs from main.
+-- Provenance: each body must match main's exact md5 (pg_get_functiondef, same
+-- on PG16/17 and the hosted PG17.6) or this migration's own result; anything
+-- else aborts. The patched body is checked against its expected md5 too.
 do $upgrade$
-declare definition text;old_guard text;anchor text;
+declare definition text;h text;
+ anchor text:='update public.production_orders set nilai_bahan=total where id=oid returning * into doc;';
+ lock_line text:='perform pg_advisory_xact_lock_shared(1962072401::bigint);'||E'\n '||'average:=public.inventory_is_average();';
+ main_recipe text:='9081430156be400a3e9d562dea6c3e5d';applied_recipe text:='75af6e84a3f76468b8ef300029094b88';
+ main_adhoc text:='7281aba74319c810720a6df1389a1be0';applied_adhoc text:='dcb556e965cb59dedb11ccb5867577ec';
  output_anchor text:=$mark$if total>0 then journal:=public.production_atomic_journal(dt,branch,ref,'Barang jadi masuk produksi '$mark$;
  material_guard text:=$guard$
   if average and (
@@ -24,7 +33,7 @@ declare definition text;old_guard text;anchor text;
     <> (select count(*) from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0)
    or exists(select 1 from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0
      and (e.value_delta is null or e.value_after is null or (e.qty_after>0 and e.average_after is null)))
-   or abs((select coalesce(sum(e.value_delta),0) from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0)+total)>=0.005
+   or abs((select coalesce(sum(e.value_delta),0) from public.inventory_cost_events e join public.stock_moves m on m.id=e.movement_id where m.source='produksi' and m.source_ref=ref and m.qty<0)+total)>0.000001
   ) then raise exception 'Valuasi average bahan tidak sesuai WIP; seluruh pekerjaan dibatalkan';end if;
 $guard$;
  output_guard text:=$guard$
@@ -39,39 +48,36 @@ $guard$;
     - (select coalesce(sum(l.debit-l.credit),0) from public.journal_entries j join public.journal_lines l on l.entry_id=j.id join public.coa_accounts a on a.id=l.account_id
        where j.source='inventory-variance' and a.code='1301' and j.source_ref in
         (select m.id::text from public.stock_moves m where m.source='produksi' and m.source_ref=ref and m.item_id=output_id and m.qty>0))
-   )>=0.005
+   )>0.005
   ) then raise exception 'Valuasi average barang jadi tidak sesuai jurnal persediaan; penyelesaian dibatalkan';end if;
 $guard$;
 begin
- definition:=pg_get_functiondef('public.post_production_atomic(text,text,jsonb)'::regprocedure);
- -- Idempotent: a body that already carries the guard is left as is.
- if position('Valuasi average barang jadi' in definition)=0 then
- old_guard:='if average then raise exception ''Produksi ini memerlukan rekonsiliasi metode average tersendiri; tidak ada posting yang dilakukan'';end if;';
- anchor:='update public.production_orders set nilai_bahan=total where id=oid returning * into doc;';
- if position(old_guard in definition)=0 or position('average:=public.inventory_is_average();' in definition)=0 or position(anchor in definition)=0
-  or position(output_anchor in definition)=0 then
-  raise exception 'Production recipe source mismatch; review average rollout';
- end if;
- -- Shared costing-method lock: activation (exclusive) cannot interleave a stage.
- definition:=replace(definition,'average:=public.inventory_is_average();',
-  'perform pg_advisory_xact_lock_shared(1962072401::bigint);'||E'\n '||'average:=public.inventory_is_average();');
- definition:=replace(definition,old_guard,'-- Average issues and receipts use the existing inventory costing functions.');
- definition:=replace(definition,anchor,anchor||material_guard);
- definition:=replace(definition,output_anchor,output_guard||output_anchor);
- execute definition;
+ definition:=pg_get_functiondef('public.post_production_atomic(text,text,jsonb)'::regprocedure);h:=md5(definition);
+ if h=applied_recipe then null; -- already applied
+ elsif h<>main_recipe then raise exception 'post_production_atomic differs from main (md5 %); stop and review',h;
+ else
+  -- Shared costing-method lock: activation (exclusive) cannot interleave a stage.
+  definition:=replace(definition,'average:=public.inventory_is_average();',lock_line);
+  definition:=replace(definition,'if average then raise exception ''Produksi ini memerlukan rekonsiliasi metode average tersendiri; tidak ada posting yang dilakukan'';end if;',
+   '-- Average issues and receipts use the existing inventory costing functions.');
+  definition:=replace(definition,anchor,anchor||material_guard);
+  definition:=replace(definition,output_anchor,output_guard||output_anchor);
+  execute definition;
+  h:=md5(pg_get_functiondef('public.post_production_atomic(text,text,jsonb)'::regprocedure));
+  if h<>applied_recipe then raise exception 'post_production_atomic patch result unexpected (md5 %)',h;end if;
  end if;
 
- definition:=pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure);
- if position('Valuasi average bahan' in definition)=0 then
- old_guard:='if average then raise exception ''Pekerjaan FIFO ini memerlukan kontrak average tersendiri; tidak ada posting'';end if;';
- if position(old_guard in definition)=0 or position('average:=public.inventory_is_average();' in definition)=0 or position(anchor in definition)=0 then
-  raise exception 'Production ad hoc source mismatch; review average rollout';
- end if;
- definition:=replace(definition,'average:=public.inventory_is_average();',
-  'perform pg_advisory_xact_lock_shared(1962072401::bigint);'||E'\n '||'average:=public.inventory_is_average();');
- definition:=replace(definition,old_guard,'-- Source warehouses use the existing average issue valuation.');
- definition:=replace(definition,anchor,anchor||material_guard);
- execute definition;
+ definition:=pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure);h:=md5(definition);
+ if h=applied_adhoc then null;
+ elsif h<>main_adhoc then raise exception 'post_production_adhoc_atomic differs from main (md5 %); stop and review',h;
+ else
+  definition:=replace(definition,'average:=public.inventory_is_average();',lock_line);
+  definition:=replace(definition,'if average then raise exception ''Pekerjaan FIFO ini memerlukan kontrak average tersendiri; tidak ada posting'';end if;',
+   '-- Source warehouses use the existing average issue valuation.');
+  definition:=replace(definition,anchor,anchor||material_guard);
+  execute definition;
+  h:=md5(pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure));
+  if h<>applied_adhoc then raise exception 'post_production_adhoc_atomic patch result unexpected (md5 %)',h;end if;
  end if;
 end$upgrade$;
 
@@ -80,6 +86,12 @@ end$upgrade$;
 -- Same authorization and 100-ID ceiling as the existing source reader; it only
 -- adds the two stage journals and the completion receipt so the screen can show
 -- job -> completion with clickable document numbers. Read-only, no new grants.
+-- Provenance: replaces only main's exact body (md5) or this migration's own.
+do $guard$declare h text:=md5(pg_get_functiondef('public.read_production_atomic_sources(uuid[])'::regprocedure));begin
+ if h not in('ceeacc6fb3d31d67e5fc21b1f8da4f33','f905d9ae280797512058d7184883190f') then
+  raise exception 'read_production_atomic_sources differs from main (md5 %); stop and review',h;
+ end if;
+end$guard$;
 create or replace function public.read_production_atomic_sources(p_order_ids uuid[]) returns jsonb
 language plpgsql security definer set search_path='' as $$declare result jsonb:='{}';r record;branch uuid;fin public.production_atomic_postings%rowtype;begin
  if auth.uid() is null or coalesce(auth.role(),'')<>'authenticated' or not exists(select 1 from public.profiles where id=auth.uid() and is_active and role in('OWNER','ADMIN')) then raise exception 'Akses sumber produksi ditolak' using errcode='42501';end if;
@@ -101,6 +113,9 @@ language plpgsql security definer set search_path='' as $$declare result jsonb:=
  end loop;return result;end$$;
 revoke all on function public.read_production_atomic_sources(uuid[]) from public,anon,service_role;
 grant execute on function public.read_production_atomic_sources(uuid[]) to authenticated;
+do $check$declare h text:=md5(pg_get_functiondef('public.read_production_atomic_sources(uuid[])'::regprocedure));begin
+ if h<>'f905d9ae280797512058d7184883190f' then raise exception 'read_production_atomic_sources result unexpected (md5 %)',h;end if;
+end$check$;
 
 -- ===== 20261028202000_i09_compound_trace.sql =====
 -- I09: read-only trace for a clinic racikan whose selling parent is non-stock.
@@ -114,7 +129,9 @@ grant execute on function public.read_production_atomic_sources(uuid[]) to authe
 -- Access: active user with the clinic module (same default rule as
 -- stock_document_access, without the open-shift requirement because this is a
 -- read) and access to the visit branch. A production job number is returned
--- only to OWNER/ADMIN users who can access the production warehouse branch.
+-- only to OWNER/ADMIN users who can access the production warehouse branch;
+-- other origin document numbers only when the caller can access every branch
+-- that origin document touched.
 create or replace function public.read_compound_trace(p_recipe_id uuid) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
 declare me public.profiles%rowtype;clinic_branch uuid;rec record;materials jsonb;moves jsonb;
@@ -144,7 +161,13 @@ begin
    'ingredient_id',ci.ingredient_id,'item_id',ci.item_id,'item_name',i.name,'unit',coalesce(nullif(i.unit,''),'pcs'),
    'warehouse_name',w.name,'qty',ci.qty,'exp_date',ci.exp_date,
    'restored',ci.restored_at is not null,
-   'origin',jsonb_build_object('source',l.source,'ref',case when l.source='produksi' then null else l.source_ref end,'tanggal',l.tanggal,
+   -- Purchase/transfer/other origin numbers only when every warehouse that
+   -- document moved stock in belongs to a branch the caller can access (a
+   -- transfer from another branch stays unnamed for a branch-limited user).
+   'origin',jsonb_build_object('source',l.source,'ref',case when l.source='produksi' or l.source_ref is null then null
+     when exists(select 1 from public.stock_moves om join public.warehouses ow on ow.id=om.warehouse_id
+       where om.item_id=l.item_id and om.source=l.source and om.source_ref=l.source_ref and not public.user_can_access_branch(ow.branch_id)) then null
+     else l.source_ref end,'tanggal',l.tanggal,
      'production_order_id',case when po.id is not null and me.role in('OWNER','ADMIN') and public.user_can_access_branch(pw.branch_id) then po.id end,
      'no_produksi',case when po.id is not null and me.role in('OWNER','ADMIN') and public.user_can_access_branch(pw.branch_id) then po.no_produksi end),
    'invoice',case when inv.id is null then null else jsonb_build_object('id',inv.id,'visit_id',inv.visit_id,'invoice_no',inv.invoice_no,'voided',inv.voided_at is not null) end
@@ -167,7 +190,9 @@ begin
  from public.stock_moves sm
  join public.items i on i.id=sm.item_id
  join public.warehouses w on w.id=sm.warehouse_id
- where sm.source='racik' and sm.source_ref=p_recipe_id::text;
+ where sm.source='racik' and sm.source_ref=p_recipe_id::text
+  -- item filter lets the planner use the stock_moves(item_id, tanggal) index
+  and sm.item_id in(select ci.item_id from public.compounding_ingredients ci where ci.recipe_id=p_recipe_id and ci.item_id is not null);
 
  return jsonb_build_object('recipe_id',rec.id,'recipe_name',rec.recipe_name,'status',rec.status,'visit_id',rec.visit_id,
   'materials',materials,'moves',moves);

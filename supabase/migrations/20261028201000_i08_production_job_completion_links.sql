@@ -2,6 +2,12 @@
 -- Same authorization and 100-ID ceiling as the existing source reader; it only
 -- adds the two stage journals and the completion receipt so the screen can show
 -- job -> completion with clickable document numbers. Read-only, no new grants.
+-- Provenance: replaces only main's exact body (md5) or this migration's own.
+do $guard$declare h text:=md5(pg_get_functiondef('public.read_production_atomic_sources(uuid[])'::regprocedure));begin
+ if h not in('ceeacc6fb3d31d67e5fc21b1f8da4f33','f905d9ae280797512058d7184883190f') then
+  raise exception 'read_production_atomic_sources differs from main (md5 %); stop and review',h;
+ end if;
+end$guard$;
 create or replace function public.read_production_atomic_sources(p_order_ids uuid[]) returns jsonb
 language plpgsql security definer set search_path='' as $$declare result jsonb:='{}';r record;branch uuid;fin public.production_atomic_postings%rowtype;begin
  if auth.uid() is null or coalesce(auth.role(),'')<>'authenticated' or not exists(select 1 from public.profiles where id=auth.uid() and is_active and role in('OWNER','ADMIN')) then raise exception 'Akses sumber produksi ditolak' using errcode='42501';end if;
@@ -23,3 +29,6 @@ language plpgsql security definer set search_path='' as $$declare result jsonb:=
  end loop;return result;end$$;
 revoke all on function public.read_production_atomic_sources(uuid[]) from public,anon,service_role;
 grant execute on function public.read_production_atomic_sources(uuid[]) to authenticated;
+do $check$declare h text:=md5(pg_get_functiondef('public.read_production_atomic_sources(uuid[])'::regprocedure));begin
+ if h<>'f905d9ae280797512058d7184883190f' then raise exception 'read_production_atomic_sources result unexpected (md5 %)',h;end if;
+end$check$;

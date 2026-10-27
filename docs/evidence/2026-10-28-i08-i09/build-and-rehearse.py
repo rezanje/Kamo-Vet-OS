@@ -56,12 +56,37 @@ class Pre(m.DisposablePostgres):
 with Pre() as db:
     db.bootstrap()
     before = db.sql(FINGERPRINT)
+    # A body that differs from main (even by one character) must fail preflight and apply.
+    tamper = ("do $t$begin execute replace(pg_get_functiondef('public.post_production_adhoc_atomic(text,text,jsonb)'::regprocedure),"
+              "'Permintaan pekerjaan tidak valid','{}');end$t$;")
+    db.sql(tamper.format('Permintaan pekerjaan tidak valid!'))
+    if '|f' not in db.sql((HERE / 'preflight.sql').read_text()):
+        raise AssertionError('preflight accepted a drifted function body')
+    try:
+        db.sql(apply_sql)
+        raise AssertionError('apply accepted a drifted function body')
+    except RuntimeError as error:
+        if 'differs from main' not in str(error):
+            raise
+    db.sql(tamper.replace("'Permintaan pekerjaan tidak valid','{}'", "'Permintaan pekerjaan tidak valid!','Permintaan pekerjaan tidak valid'"))
+    if db.sql(FINGERPRINT) != before:
+        raise AssertionError('tamper not reverted')
+    print('PASS drifted body refused by preflight and apply (exact md5)', flush=True)
     all_ok(db, 'preflight.sql')
     db.sql(apply_sql)
     all_ok(db, 'readback.sql')
     db.sql(apply_sql)
     all_ok(db, 'readback.sql')
     print('PASS apply is idempotent', flush=True)
+    db.sql("update inventory_costing_settings set method='moving_average' where id;")
+    try:
+        db.sql((HERE / 'rollback.sql').read_text())
+        raise AssertionError('rollback ran while moving average is active')
+    except RuntimeError as error:
+        if 'metode average aktif' not in str(error):
+            raise
+    db.sql("update inventory_costing_settings set method='fifo' where id;")
+    print('PASS rollback refused while moving average is active', flush=True)
     db.sql((HERE / 'rollback.sql').read_text())
     if db.sql(FINGERPRINT) != before:
         raise AssertionError('rollback did not restore the exact pre-apply function bodies')

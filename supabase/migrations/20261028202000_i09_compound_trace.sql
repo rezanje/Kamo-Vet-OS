@@ -9,7 +9,9 @@
 -- Access: active user with the clinic module (same default rule as
 -- stock_document_access, without the open-shift requirement because this is a
 -- read) and access to the visit branch. A production job number is returned
--- only to OWNER/ADMIN users who can access the production warehouse branch.
+-- only to OWNER/ADMIN users who can access the production warehouse branch;
+-- other origin document numbers only when the caller can access every branch
+-- that origin document touched.
 create or replace function public.read_compound_trace(p_recipe_id uuid) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
 declare me public.profiles%rowtype;clinic_branch uuid;rec record;materials jsonb;moves jsonb;
@@ -39,7 +41,13 @@ begin
    'ingredient_id',ci.ingredient_id,'item_id',ci.item_id,'item_name',i.name,'unit',coalesce(nullif(i.unit,''),'pcs'),
    'warehouse_name',w.name,'qty',ci.qty,'exp_date',ci.exp_date,
    'restored',ci.restored_at is not null,
-   'origin',jsonb_build_object('source',l.source,'ref',case when l.source='produksi' then null else l.source_ref end,'tanggal',l.tanggal,
+   -- Purchase/transfer/other origin numbers only when every warehouse that
+   -- document moved stock in belongs to a branch the caller can access (a
+   -- transfer from another branch stays unnamed for a branch-limited user).
+   'origin',jsonb_build_object('source',l.source,'ref',case when l.source='produksi' or l.source_ref is null then null
+     when exists(select 1 from public.stock_moves om join public.warehouses ow on ow.id=om.warehouse_id
+       where om.item_id=l.item_id and om.source=l.source and om.source_ref=l.source_ref and not public.user_can_access_branch(ow.branch_id)) then null
+     else l.source_ref end,'tanggal',l.tanggal,
      'production_order_id',case when po.id is not null and me.role in('OWNER','ADMIN') and public.user_can_access_branch(pw.branch_id) then po.id end,
      'no_produksi',case when po.id is not null and me.role in('OWNER','ADMIN') and public.user_can_access_branch(pw.branch_id) then po.no_produksi end),
    'invoice',case when inv.id is null then null else jsonb_build_object('id',inv.id,'visit_id',inv.visit_id,'invoice_no',inv.invoice_no,'voided',inv.voided_at is not null) end
@@ -62,7 +70,9 @@ begin
  from public.stock_moves sm
  join public.items i on i.id=sm.item_id
  join public.warehouses w on w.id=sm.warehouse_id
- where sm.source='racik' and sm.source_ref=p_recipe_id::text;
+ where sm.source='racik' and sm.source_ref=p_recipe_id::text
+  -- item filter lets the planner use the stock_moves(item_id, tanggal) index
+  and sm.item_id in(select ci.item_id from public.compounding_ingredients ci where ci.recipe_id=p_recipe_id and ci.item_id is not null);
 
  return jsonb_build_object('recipe_id',rec.id,'recipe_name',rec.recipe_name,'status',rec.status,'visit_id',rec.visit_id,
   'materials',materials,'moves',moves);

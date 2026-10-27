@@ -199,3 +199,36 @@ do $$declare a jsonb;b jsonb;oid uuid;ref text;src jsonb;begin
  perform pg_temp.ok((src#>>'{completion,received_qty}')::numeric=5 and (src#>>'{completion,received_value}')::numeric=11 and src#>>'{completion,journal}' is not null,'job links to its completion');
 end$$;
 rollback;
+
+-- I08 tolerances: a material valuation gap of 0.001 (formerly tolerated) now
+-- aborts the job; an output gap of exactly Rp0.005 is accepted, above it aborts.
+begin;
+select stock_in_fifo(md5('i08-avg-a')::uuid,md5('i08-avg-material')::uuid,2,2.5,'fixture','I08AVG.TOL.M',current_date-1,null);
+update stock set average_cost=2.5 where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-material')::uuid;
+update inventory_costing_settings set method='moving_average',activated_at=now() where id;
+create function pg_temp.small_material_gap() returns trigger language plpgsql as $$begin if new.source='produksi' and new.qty_delta<0 then new.value_delta:=new.value_delta+0.001;end if;return new;end$$;
+create trigger fictional_i08_small_gap before insert on inventory_cost_events for each row execute function pg_temp.small_material_gap();
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-avg-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+select pg_temp.reject($q$select post_production_atomic('start','avg-small-gap',jsonb_build_object('recipe_id',md5('i08-avg-recipe')::uuid,'warehouse_id',md5('i08-avg-a')::uuid,'batch',1,'tanggal',current_date-1))$q$,'Valuasi average bahan tidak sesuai WIP');
+reset role;
+select pg_temp.ok(not exists(select 1 from production_orders),'0.001 material gap leaves no order');
+rollback;
+
+begin;
+select stock_in_fifo(md5('i08-avg-a')::uuid,md5('i08-avg-material')::uuid,2,2.5,'fixture','I08AVG.TOL.O',current_date-1,null);
+update stock set average_cost=2.5 where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-material')::uuid;
+update inventory_costing_settings set method='moving_average',activated_at=now() where id;
+create function pg_temp.output_gap() returns trigger language plpgsql as $$begin if new.source='produksi' and new.qty_delta>0 then new.value_delta:=new.value_delta+current_setting('test.i08_gap')::numeric;end if;return new;end$$;
+create trigger fictional_i08_output_gap before insert on inventory_cost_events for each row execute function pg_temp.output_gap();
+set local role authenticated;
+select set_config('request.jwt.claim.sub',md5('i08-avg-owner')::uuid::text,true);
+select set_config('request.jwt.claim.role','authenticated',true);
+create temp table i08_tol as select post_production_atomic('start','avg-tol-start',jsonb_build_object('recipe_id',md5('i08-avg-recipe')::uuid,'warehouse_id',md5('i08-avg-a')::uuid,'batch',1,'tanggal',current_date-1)) receipt;
+select set_config('test.i08_gap','0.0051',true);
+select pg_temp.reject(format('select post_production_atomic(''finish'',''avg-tol-finish'',%L::jsonb)',jsonb_build_object('id',(select receipt->>'order_id' from i08_tol),'qty_jadi',1,'tanggal_selesai',current_date)),'Valuasi average barang jadi tidak sesuai jurnal persediaan');
+select set_config('test.i08_gap','0.005',true);
+select pg_temp.ok((post_production_atomic('finish','avg-tol-finish',jsonb_build_object('id',(select receipt->>'order_id' from i08_tol),'qty_jadi',1,'tanggal_selesai',current_date))->>'qty_jadi')::numeric=1,'exact Rp0.005 output residual does not abort');
+reset role;
+rollback;
