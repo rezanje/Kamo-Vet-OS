@@ -78,16 +78,51 @@ export async function simpanRekamMedis(formData: FormData) {
   }
 
   const back = `/klinik/rekam-medis/${visitId}`;
-  // Kedua pemeriksaan hanya membaca data dan tidak saling bergantung.
-  const [{ doctorId, nama: dokter }, { data: clinicalVisit, error: clinicalVisitError }] = await Promise.all([
+
+  // Keranjang obat & jasa (POS) datang sebagai JSON dari form client.
+  let resep: ResepItem[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("resep") ?? "[]"));
+    resep = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    resep = [];
+  }
+  // K02: BMHP is only sent once the database exposes the migrated contract;
+  // older databases keep the exact previous payload instead of failing saves.
+  let bmhpRows: (BmhpInput[] | null)[] = [];
+  let bmhpError: string | null = null;
+  try { bmhpRows = resep.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
+  catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
+  const needsBmhp = bmhpRows.some(row => row?.length);
+
+  // U07: semua bacaan sebelum simpan saling lepas — dulu dijalankan berurutan
+  // (sampai 5 perjalanan ke database sebelum RPC simpan). Sekarang satu putaran.
+  // Urutan pesan galat di bawah tetap sama seperti sebelumnya.
+  const [
+    { doctorId, nama: dokter },
+    { data: clinicalVisit, error: clinicalVisitError },
+    { data: pet },
+    unitResult,
+    bmhpSupport,
+  ] = await Promise.all([
     resolveDokter(supabase, selectedDoctorId),
     supabase.from("visits").select("poli").eq("id", visitId).maybeSingle(),
+    berat !== null
+      ? supabase.from("pets").select("species").eq("id", petId).maybeSingle()
+      : Promise.resolve({ data: null as { species: string | null } | null }),
+    // Faktor satuan dibaca ulang dari master — angka dari form cuma menandai satuan mana
+    // yang dipilih dokter, bukan sumber kebenaran konversi.
+    loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x))
+      .then((map) => ({ map, error: null as string | null }))
+      .catch((error: unknown) => ({ map: null, error: error instanceof Error ? error.message : "Satuan barang belum dapat dibaca" })),
+    needsBmhp && !bmhpError
+      ? supabase.rpc("clinic_bmhp_supported").then(({ data }: { data: unknown }) => data === true)
+      : Promise.resolve(false),
   ]);
   if (clinicalVisitError || !clinicalVisit) redirect(`${back}?error=${encodeURIComponent("Kunjungan tidak dapat dibaca. Muat ulang dan coba lagi.")}`);
   const clinicalError = validateClinicalCompletion(clinicalVisit.poli, doctorId, keluhan);
   if (clinicalError) redirect(`${back}?error=${encodeURIComponent(clinicalError)}`);
   if (berat !== null) {
-    const { data: pet } = await supabase.from("pets").select("species").eq("id", petId).maybeSingle();
     const pesanBerat = pesanBeratTidakWajar(pet?.species ?? null, berat);
     if (pesanBerat) redirect(`${back}?error=${encodeURIComponent(pesanBerat)}`);
   }
@@ -103,20 +138,10 @@ export async function simpanRekamMedis(formData: FormData) {
     penunjangUrls = [];
   }
 
-  // Keranjang obat & jasa (POS) datang sebagai JSON dari form client.
-  let resep: ResepItem[] = [];
-  try {
-    const parsed = JSON.parse(String(formData.get("resep") ?? "[]"));
-    resep = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    resep = [];
-  }
-  // Faktor satuan dibaca ulang dari master — angka dari form cuma menandai satuan mana
-  // yang dipilih dokter, bukan sumber kebenaran konversi.
-  const unitOpts = await loadUnitOptions(
-    supabase,
-    resep.map((r) => r.item_id).filter((x): x is string => !!x),
-  );
+  // Dulu galat master satuan lolos sebagai error mentah dan layar bilang "periksa
+  // koneksi" padahal datanya tersimpan aman di draf — sekarang pesan yang jelas.
+  if (unitResult.error || !unitResult.map) redirect(`${back}?error=${encodeURIComponent(unitResult.error ?? "Satuan barang belum dapat dibaca")}`);
+  const unitOpts = unitResult.map;
   const faktorDari = (r: ResepItem) => {
     if (r.jenis === "racikan" || !r.item_id) return 1;
     const opts = unitOpts.get(r.item_id);
@@ -128,14 +153,8 @@ export async function simpanRekamMedis(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
 
-  // K02: BMHP is only sent once the database exposes the migrated contract;
-  // older databases keep the exact previous payload instead of failing saves.
-  let bmhpRows: (BmhpInput[] | null)[];
-  try { bmhpRows = resep.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
-  catch (error) { return redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "BMHP tidak valid")}`); }
-  const bmhpSupported = bmhpRows.some(row => row?.length)
-    ? (await supabase.rpc("clinic_bmhp_supported")).data === true : false;
-  if (bmhpRows.some(row => row?.length) && !bmhpSupported) {
+  if (bmhpError) return redirect(`${back}?error=${encodeURIComponent(bmhpError)}`);
+  if (needsBmhp && !bmhpSupport) {
     return redirect(`${back}?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
   }
   const rows = resep

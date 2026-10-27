@@ -17,7 +17,7 @@
 // Semua rumusnya sekarang di sini, dan jenis shift menentukan sumber angkanya.
 
 import { kodeAkunBayar } from "./kas-akun";
-import { AKUN_PIUTANG_KARYAWAN, ALASAN_SELISIH_KAS } from "./kasbon";
+import { AKUN_PIUTANG_KARYAWAN } from "./kasbon";
 import { jurnalTersimpan } from "./jurnal-guard";
 import { postJournal } from "./posting";
 import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "./shift-calc";
@@ -157,36 +157,31 @@ export async function tutupShift(
     // Utangnya ditulis sebagai kasbon berstatus Disetujui supaya ikut terpotong
     // otomatis dari gaji berikutnya — kalau cuma dijurnal ke 1203 tanpa dokumen,
     // tagihannya jadi hantu yang tidak pernah bisa ditagih sistem.
-    const karyawan = selisih < 0 ? await karyawanShift(supabase, shift.opened_by) : null;
+    // Kasbon dibuat lewat fungsi database yang memeriksa shift ini memang baru ditutup
+    // dengan kas kurang — akun kasir tidak lagi boleh menulis kasbon langsung.
+    let kasbon: { advance_id: string; employee_name: string } | null = null;
+    if (selisih < 0) {
+      const { data: rows, error: shortageError } = await supabase.rpc("record_shift_cash_shortage", { p_shift_id: shift.id });
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (!shortageError && row?.advance_id) kasbon = row as { advance_id: string; employee_name: string };
+    }
 
-    if (selisih < 0 && karyawan) {
-      const { data: adv, error } = await supabase.from("cash_advances").insert({
-        employee_id: karyawan.id,
+    if (kasbon) {
+      await postJournal(supabase, {
         tanggal: hariIniWIB(),
-        jumlah: abs,
-        tenor_bulan: 1,
-        status: "Disetujui",
-        alasan: `${ALASAN_SELISIH_KAS} ${shift.id.slice(0, 8)}`,
-        disbursed_at: new Date().toISOString(),
-      }).select("id").single();
-
-      if (!error && adv) {
-        await postJournal(supabase, {
-          tanggal: hariIniWIB(),
-          deskripsi: `Selisih kas kurang — ditanggung ${karyawan.nama}`,
-          source: "shift", sourceRef: shift.id, branchId: shift.branch_id ?? null,
-          lines: [
-            { code: AKUN_PIUTANG_KARYAWAN, debit: abs, credit: 0 },
-            { code: kas, debit: 0, credit: abs },
-          ],
-        });
-        // postJournal menelan error. Utang tanpa jurnal lebih buruk daripada gagal
-        // terang-terangan, jadi dokumennya dibatalkan kalau jurnalnya tidak ada.
-        if (await jurnalTersimpan(supabase, "shift", shift.id)) {
-          dibebankanKe = karyawan.nama;
-        } else {
-          await supabase.from("cash_advances").delete().eq("id", adv.id);
-        }
+        deskripsi: `Selisih kas kurang — ditanggung ${kasbon.employee_name}`,
+        source: "shift", sourceRef: shift.id, branchId: shift.branch_id ?? null,
+        lines: [
+          { code: AKUN_PIUTANG_KARYAWAN, debit: abs, credit: 0 },
+          { code: kas, debit: 0, credit: abs },
+        ],
+      });
+      // postJournal menelan error. Utang tanpa jurnal lebih buruk daripada gagal
+      // terang-terangan, jadi dokumennya dibatalkan kalau jurnalnya tidak ada.
+      if (await jurnalTersimpan(supabase, "shift", shift.id)) {
+        dibebankanKe = kasbon.employee_name;
+      } else {
+        await supabase.rpc("cancel_shift_cash_shortage", { p_shift_id: shift.id });
       }
     }
 
@@ -223,17 +218,3 @@ export async function bacaShift(
   return (data ?? null) as ShiftTutup | null;
 }
 
-/**
- * Kasir shift sebagai KARYAWAN. Tidak semua akun login punya kartu karyawan
- * (`employees.profile_id` boleh kosong) — kalau tidak tertaut, selisihnya tidak
- * bisa dibebankan ke siapa pun dan tetap masuk Selisih Kas.
- */
-async function karyawanShift(
-  supabase: AnyClient, openedBy: string | null,
-): Promise<{ id: string; nama: string } | null> {
-  if (!openedBy) return null;
-  const { data } = await supabase
-    .from("employees").select("id, nama")
-    .eq("profile_id", openedBy).eq("status", "Aktif").maybeSingle();
-  return (data ?? null) as { id: string; nama: string } | null;
-}

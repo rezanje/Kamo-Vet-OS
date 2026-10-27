@@ -5,6 +5,7 @@ type Result<T> = { data: T[] | null; count?: number | null; error: unknown };
 type Fetch<T> = (from: number, to: number) => PromiseLike<Result<T>>;
 const SOURCE_PAGE_SIZE = 500;
 const SOURCE_CAP = 10_000;
+const PAGE_CONCURRENCY = 6;
 export const TABLE_PAGE_SIZE = 50;
 export class ListLoadError extends Error {}
 
@@ -31,13 +32,22 @@ function checked<T extends Identified>(result: Result<T>, label: string, from: n
 /** Stable caller ordering must end in a unique id; never return partial totals. */
 export async function readCompleteList<T extends Identified>(fetch: Fetch<T>, label: string, options: { maxRows?: number | null } = {}): Promise<T[]> {
   const cap = options.maxRows === undefined ? SOURCE_CAP : options.maxRows;
-  let count: number | undefined;
+  const first = checked(await fetchResult(fetch, 0, SOURCE_PAGE_SIZE - 1, label), label, 0, SOURCE_PAGE_SIZE);
+  const count = first.count;
+  if (cap !== null && count > cap) throw new ListLoadError(`${label} melebihi batas ${cap.toLocaleString("id-ID")} baris dan belum dapat ditampilkan lengkap.`);
+  // U07: the first page fixes the exact count; the remaining pages are independent,
+  // so fetch them a few at a time instead of one round-trip each. Every page is
+  // still verified against that count, and rows keep their stable order.
+  const pages = [first];
+  const offsets: number[] = [];
+  for (let from = SOURCE_PAGE_SIZE; from < count; from += SOURCE_PAGE_SIZE) offsets.push(from);
+  for (let i = 0; i < offsets.length; i += PAGE_CONCURRENCY) {
+    pages.push(...await Promise.all(offsets.slice(i, i + PAGE_CONCURRENCY).map(async (from) =>
+      checked(await fetchResult(fetch, from, from + SOURCE_PAGE_SIZE - 1, label), label, from, SOURCE_PAGE_SIZE, count))));
+  }
   const rows: T[] = [];
   const ids = new Set<string>();
-  for (let from = 0; count === undefined || from < count; from += SOURCE_PAGE_SIZE) {
-    const page = checked(await fetchResult(fetch, from, from + SOURCE_PAGE_SIZE - 1, label), label, from, SOURCE_PAGE_SIZE, count);
-    count = page.count;
-    if (cap !== null && count > cap) throw new ListLoadError(`${label} melebihi batas ${cap.toLocaleString("id-ID")} baris dan belum dapat ditampilkan lengkap.`);
+  for (const page of pages) {
     for (const row of page.rows) {
       if (ids.has(row.id)) throw new ListLoadError(`${label}: ID data duplikat saat dimuat. Coba muat ulang.`);
       ids.add(row.id);

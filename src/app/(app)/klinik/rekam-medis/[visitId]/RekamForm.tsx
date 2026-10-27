@@ -105,7 +105,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const {
     attachForm: draftAttachForm, submissionKey: draftSubmissionKey, recovered: draftRecovered,
     storageError: draftStorageError, saveError: draftSaveError,
-    capture: draftCapture, discard: draftDiscard, submit: draftSubmit,
+    capture: draftCapture, discard: draftDiscard, submit: draftSubmit, leaving: draftLeaving,
   } = useClinicDraft({
     userId: draftUserId, scope: correction ? `correction:${visitId}:${correction.recordId}:v${correction.revision}` : `exam:${visitId}`, requestKey,
     optionalSnapshotKeys: ["saleItemId", "procedureDraft"],
@@ -510,10 +510,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
       {/* Aksi */}
       {correction ? <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
         <button type="button" className="btn-def" onClick={() => { draftDiscard(); router.push(`/klinik/rekam-medis/${visitId}`); }}>Batal</button>
-        <SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan koreksi</SubmitButton>
+        <SubmitButton className="btn-acc" pendingText="Menyimpan…" busy={draftLeaving}>Simpan koreksi</SubmitButton>
       </div> : <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <SubmitButton className="btn-acc" icon="ti-printer" name="next" value="resep" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Cetak Resep</SubmitButton>
-        <SubmitButton className="btn-acc" icon="ti-bed" name="next" value="rawatinap" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…">Simpan &amp; Lanjut Rawat Inap</SubmitButton>
+        <SubmitButton className="btn-acc" icon="ti-printer" name="next" value="resep" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…" busy={draftLeaving}>Simpan &amp; Cetak Resep</SubmitButton>
+        <SubmitButton className="btn-acc" icon="ti-bed" name="next" value="rawatinap" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…" busy={draftLeaving}>Simpan &amp; Lanjut Rawat Inap</SubmitButton>
       </div>}
     </form>
   );

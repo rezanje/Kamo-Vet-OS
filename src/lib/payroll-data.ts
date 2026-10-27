@@ -3,6 +3,7 @@
 // Dipisah dari server action supaya layar "Hitung" dan "Sahkan" memakai sumber
 // angka yang sama persis.
 
+import { bacaGajiPokok } from "./employee-salary";
 import { hitungGaji, type HariJadwal, type InputGaji, type RincianGaji } from "./payroll";
 import { getAturanGaji } from "./payroll-aturan";
 import { komisiPeriode } from "./komisi-data";
@@ -37,13 +38,15 @@ export async function kumpulkanDataGaji(
 
   const [aturan, { data: empData }, komisi] = await Promise.all([
     getAturanGaji(supabase),
-    supabase.from("employees").select("id, nama, jabatan, gaji_pokok").eq("status", "Aktif").order("nama"),
+    supabase.from("employees").select("id, nama, jabatan").eq("status", "Aktif").order("nama"),
     komisiPeriode(supabase, periode),
   ]);
   assertServiceAttributionReady(komisi.baris ?? []);
   const komisiPer = new Map(komisi.hasil.map((h) => [h.employeeId, h.komisi]));
-  const karyawan = (empData ?? []) as { id: string; nama: string; jabatan: string | null; gaji_pokok: number }[];
-  if (karyawan.length === 0) return [];
+  const direktori = (empData ?? []) as { id: string; nama: string; jabatan: string | null }[];
+  if (direktori.length === 0) return [];
+  const gajiPer = await bacaGajiPokok(supabase, direktori.map((k) => k.id));
+  const karyawan = direktori.map((k) => ({ ...k, gaji_pokok: gajiPer.get(k.id) ?? 0 }));
 
   const ids = karyawan.map((k) => k.id);
 
