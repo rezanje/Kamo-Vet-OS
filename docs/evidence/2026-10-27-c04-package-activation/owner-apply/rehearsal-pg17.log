@@ -1,0 +1,23 @@
+PostgreSQL 17.6: 269 history versions applied, everything on main except 20261026002100 (production-like).
+fingerprints: editor before f4a53d51521eecb175dd646f66ee82e9, after bb4be6aa95d240230324275f2e7723f3; guard 56845e957b2bdeac4e84d2e852623cf6
+before-tests: PASS promo_edit.sql, promo_excel_batch.sql, pos_split_payments.sql, clinic_billing_lifecycle.sql
+before-tests: PASS live-app legacy edit payload accepted; package payload refused (editor without C04)
+preflight: SUMMARY|0 failed|0 failed|t
+readback before apply (must fail): SUMMARY|0 failed|14 failed|f  failing: ['applied: constraint promos_discount_mode_valid (not validated)|false||f', 'applied: public.assert_active_package_promo_target() present|true|false|f', 'guard security definer|true||f', 'guard search_path empty|true||f', 'guard grant: anon|false||f', 'guard grant: authenticated|false||f', 'guard grant: service_role|false||f', 'applied: C04 triggers enabled, deferrable, initially deferred|2|0|f', 'fingerprint (same as tested): public.edit_promo(uuid,text,jsonb,uuid[])|bb4be6aa95d240230324275f2e7723f3|f4a53d51521eecb175dd646f66ee82e9|f', 'fingerprint (same as tested): public.assert_active_package_promo_target()|56845e957b2bdeac4e84d2e852623cf6||f', 'patch 1 present exactly once|1|0|f', 'patch 2 present exactly once|1|0|f', 'patch 3 present exactly once|1|0|f', 'patch 4 present exactly once|1|0|f', 'SUMMARY|0 failed|14 failed|f']
+apply: committed (migration + history row)
+readback: SUMMARY|0 failed|0 failed|t
+preflight after apply (must fail): SUMMARY|0 failed|6 failed|f  failing: ['not yet applied: constraint promos_discount_mode_valid|0|1|f', 'not yet applied: public.assert_active_package_promo_target() absent|true|false|f', 'not yet applied: C04 triggers|0|2|f', 'fingerprint (same as repository): public.edit_promo(uuid,text,jsonb,uuid[])|f4a53d51521eecb175dd646f66ee82e9|bb4be6aa95d240230324275f2e7723f3|f', 'anchor 1 found exactly once|1|0|f', 'anchor 2 found exactly once|1|0|f', 'SUMMARY|0 failed|6 failed|f']
+after-tests: PASS promo_edit.sql, promo_package_total.sql, promo_excel_batch.sql, pos_split_payments.sql, clinic_billing_lifecycle.sql
+after-tests: PASS live-app legacy edit payload accepted; package payload accepted
+after-tests: PASS active package promo without its one target refused at commit (C04_PACKAGE_TARGET_INCOMPLETE)
+second apply: refused, nothing changed
+rollback refused while a package promo exists; readback still: SUMMARY|0 failed|0 failed|t
+rollback: committed
+preflight after rollback: SUMMARY|0 failed|0 failed|t
+after-rollback tests: PASS promo_edit.sql, promo_excel_batch.sql, pos_split_payments.sql, clinic_billing_lifecycle.sql
+after-rollback tests: PASS live-app legacy edit payload accepted; package payload refused (editor without C04)
+re-apply readback: SUMMARY|0 failed|0 failed|t
+re-apply tests: PASS promo_package_total.sql, promo_edit.sql
+re-apply tests: PASS active package promo without its one target refused at commit (C04_PACKAGE_TARGET_INCOMPLETE)
+sha256: 01-preflight-readonly.sql 252e7416467923821a2650cc13dc9a68bb55c567f5fbaf37dfe7ab7502ee9cbb, 02-apply-writes.sql 616cf5ed48e09a8d4a1b718fb6ec8ebbf7d81fc110c237ea6ca883ad6201aff7, 03-readback-readonly.sql 1cc17d0bf07941be2d9fa7ffa011e303699f6d8f28ac0ccf47ac3452bde0df71, 04-rollback-only-if-decided.sql 19b1c711212eec038b30b24124dfba348dad536b61792b857a800ac32f27b9a0, 06-contain-package-promos-writes.sql e79f76a2229886cff7520b4b796eef0515c142758eaebc467d78f484d82d2ed0, 07-thaw-unchanged-package-promos-writes.sql b18965630fb637746f92aa8baff4fd582d6d934a80c8cc49f1df739d82c5214f, migration 5aa9cae66fdc02f79fdac57e067a951b95b0cf0b09cd039edb8810a0ff8f0a7e
+RESULT: all rehearsal steps passed

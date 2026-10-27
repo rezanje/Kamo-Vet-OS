@@ -66,6 +66,8 @@ it.each(["exam", "inpatient"])("%s picks catalog actions and restores unchanged 
   expect(host.textContent).not.toContain("Steril");
   await search("Cari tindakan", "Steril");
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  expect(cart()).toEqual([]);
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah tindakan Steril ke keranjang"]')!.click());
   expect(cart()).toEqual([expect.objectContaining({ item_id: "steril", harga: 75000, qty: 1, jenis: "jasa", kategori: "Operasi" })]);
   await tab("Jasa");
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());

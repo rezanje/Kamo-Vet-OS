@@ -23,3 +23,18 @@ it("retains a two-performer service once for branch revenue and flags the unreso
  const result=await kumpulkanBarisKomisi(client(),"2026-10");expect(result.baris[2]).toMatchObject({commissionPending:true,employeeId:null,sourceLineId:"c"});
  expect(realisasiTarget(result.baris,{id:"target",employeeId:null,branchId:"branch",categoryId:null,basis:"omzet",target:200}).realisasi).toBe(200);
 });
+it("attributes clinic SKU revenue to its saved line seller while retaining the existing service performer rule",async()=>{
+ const invoice={id:"clinic",invoice_no:"FICT-CLINIC",visit_id:"visit",paid_at:"2026-10-23T10:00:00Z",total:400,salesperson_id:"header",
+  visits:{branch_id:"branch",doctor_id:"doctor"},invoice_items:[
+   {id:"med",item_id:"medicine",qty:1,harga:100,hpp:10,salesperson_id:"line-medicine",service_performers:null},
+   {id:"legacy",item_id:"medicine",qty:1,harga:100,hpp:10,salesperson_id:null,service_performers:null},
+   {id:"procedure",item_id:"service",qty:1,harga:100,hpp:0,salesperson_id:"line-procedure",service_performers:{version:1,doctor_id:"performer",staff_id:null}},
+   {id:"procedure-no-performer",item_id:"service",qty:1,harga:100,hpp:0,salesperson_id:"line-service",service_performers:null},
+  ]};
+ const fake={from(table:string){const data=table==="invoices"?[invoice]:[];
+  const q={select:()=>q,eq:()=>q,is:()=>q,not:()=>q,neq:()=>q,gte:()=>q,lte:()=>q,in:()=>q,order:()=>q,
+   range:async()=>({data,count:data.length,error:null}),then:(resolve:(result:unknown)=>unknown)=>Promise.resolve({data,count:data.length,error:null}).then(resolve)};return q;}};
+ const result=await kumpulkanBarisKomisi(fake,"2026-10");
+ expect(result.baris.map(row=>row.employeeId)).toEqual(["line-medicine","header","performer","line-service"]);
+ expect(result.baris.map(row=>row.omzet)).toEqual([100,100,100,100]);
+});

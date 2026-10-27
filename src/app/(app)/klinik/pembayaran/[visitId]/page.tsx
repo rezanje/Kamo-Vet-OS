@@ -96,8 +96,8 @@ export default async function PembayaranPage({
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
   const { data: invItems, error: itemsError } = invoice
-    ? await supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers").eq("invoice_id", invoice.id).order("created_at")
-    : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
+    ? await supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")
+    : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
   const { data: paymentRows, error: paymentsError } = invoice
     ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
     : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
@@ -123,8 +123,8 @@ export default async function PembayaranPage({
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
   const { data: resep, error: prescriptionError } = mr
-    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).order("created_at")
-    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
+    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name").eq("medical_record_id", mr.id).order("created_at")
+    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
   if (prescriptionError) throw unverifiedBilling();
   // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
   // saat pasien menebus, dan modalnya tidak pernah tercatat.
@@ -132,6 +132,7 @@ export default async function PembayaranPage({
     deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0,
     jenis: r.jenis ?? "obat", item_id: r.item_id ?? null, satuan: r.satuan ?? null,
     prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
+    ...(r.salesperson_id ? {salesperson_id:r.salesperson_id, salesperson_name:r.salesperson_name ?? null} : {}),
     ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers:r.service_performers} : {}),
   }));
 
@@ -175,6 +176,7 @@ export default async function PembayaranPage({
         jenis: l.jenis ?? "obat", item_id: l.item_id ?? null, satuan: l.satuan ?? null,
         prescription_item_id: l.prescription_item_id ?? null, recipe_id: l.compound_recipe_id ?? null,
         ...(l.id ? {source_invoice_item_id:l.id} : {}),
+        salesperson_id:l.salesperson_id ?? null, salesperson_name:l.salesperson_name ?? null,
         diskon_persen: Number(l.diskon_persen) || 0,
         ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:l.service_performers} : {}),
       }))
@@ -198,7 +200,7 @@ export default async function PembayaranPage({
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
   // terjual tapi persediaan tidak pernah berkurang.
   const { obat: masterObat, jasa: masterJasa, all: master } = await loadClinicPaymentMaster(supabase, visit.branch_id ?? null);
-  const serviceStaff = invoice ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
+  const serviceStaff = invoice && !canEdit ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
   const groomingPolicy = visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
   const cashier = invoice ? {name:invoice.cashier_name ?? "Kasir belum tercatat"} : draftUser ? await loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null) : {name:"Akun kasir"};
@@ -448,6 +450,7 @@ export default async function PembayaranPage({
           initialMetode={invoice.metode_bayar ?? "Tunai"}
           sealedSalespersonName={sealedSalespersonName}
           cashierName={cashier.name}
+          serviceStaff={serviceStaff}
           editMode
         />
       ) : invoice ? (
@@ -493,7 +496,7 @@ export default async function PembayaranPage({
               <tbody>
                 {(invItems ?? []).map((l, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div>}</td>
+                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.salesperson_name && <div style={{fontSize:10}}>Penjual SKU: {l.salesperson_name}</div>}{l.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div>}</td>
                     <td style={{ textAlign: "center" }}>{l.qty}</td>
                     <td style={{ textAlign: "right" }}>{rp(l.harga)}</td>
                     <td style={{ textAlign: "center" }}>{Number(l.diskon_persen) > 0 ? `${Number(l.diskon_persen)}%` : "—"}</td>
