@@ -229,14 +229,17 @@ begin
     resolution text
   );
   revoke all on table ops_c04.frozen_package_promos from public, anon, authenticated, service_role;
-  perform 1 from public.promos where rule->>'discount_mode' = 'package_total' and is_active order by id for update;
+  -- One statement: exactly the rows deactivated are recorded (fingerprint excludes is_active, so the
+  -- returned post-update row fingerprints the same as before the flip).
+  with frozen as (
+    update public.promos p set is_active = false
+    where p.rule->>'discount_mode' = 'package_total' and p.is_active
+    returning p.id, {fingerprint} as row_fingerprint, {targets} as targets
+  )
   insert into ops_c04.frozen_package_promos as f (promo_id, row_fingerprint, targets)
-  select p.id, {fingerprint}, {targets}
-  from public.promos p where p.rule->>'discount_mode' = 'package_total' and p.is_active
+  select id, row_fingerprint, targets from frozen
   on conflict (promo_id) do update set frozen_at = now(), row_fingerprint = excluded.row_fingerprint,
     targets = excluded.targets, thawed_at = null, resolution = null;
-  update public.promos set is_active = false
-  where rule->>'discount_mode' = 'package_total' and is_active;
 end $contain$;
 -- Result: frozen promos still waiting for a decision (ids stay in this SQL Editor session only).
 select promo_id, frozen_at from ops_c04.frozen_package_promos where thawed_at is null order by promo_id;
