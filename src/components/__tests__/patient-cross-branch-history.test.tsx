@@ -1,6 +1,6 @@
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,afterEach,expect,it,vi} from 'vitest';
-const s=vi.hoisted(()=>({allowed:['A','B'] as string[],active:true,visibleAnchor:true,sessionMismatch:false,stalePet:false,anchorReads:0,spill:'',longHistory:false,broken:'',calls:[] as {scope:string;table:string;select:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[],factories:[] as Record<string,unknown>[],keys:[] as string[]}));
+const s=vi.hoisted(()=>({rpc:null as null|{data:unknown;error:unknown},rpcArgs:[] as unknown[],allowed:['A','B'] as string[],active:true,visibleAnchor:true,sessionMismatch:false,stalePet:false,anchorReads:0,spill:'',longHistory:false,broken:'',calls:[] as {scope:string;table:string;select:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[],factories:[] as Record<string,unknown>[],keys:[] as string[]}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('next/headers',()=>({cookies:async()=>({getAll:()=>[{name:'session',value:'fictional-session'}],set:vi.fn()}),headers:async()=>new Headers({'x-kamo-operational-branch':'B'})}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>client('operational')}));
@@ -16,7 +16,7 @@ const visits=[
 const records=[{id:'record-A',visit_id:'old-A',created_at:'2026-10-23T01:10:00Z',diagnosis:'Historical finding A',anamnesis:'Historical assessment A',therapy:'Historical therapy A'}];
 const prescriptions=[{id:'rx-A',medical_record_id:'record-A',nama_obat:'Fictional prior medicine',qty:2,satuan:'tablet',jenis:'obat',aturan_pakai:'Historical instructions'}];
 function client(scope:string){
- return {auth:{getUser:async()=>({data:{user:{id:scope==='history'&&s.sessionMismatch?'other-account':'actor'}},error:null})},from(table:string){
+ return {rpc:async(name:string,args:unknown)=>{s.rpcArgs.push({name,args});return s.rpc??{data:null,error:{code:'PGRST202',message:'not installed'}}},auth:{getUser:async()=>({data:{user:{id:scope==='history'&&s.sessionMismatch?'other-account':'actor'}},error:null})},from(table:string){
   const request={scope,table,select:'',eq:{},in:{}} as typeof s.calls[number];s.calls.push(request);let single=false;let from=0,to=999;
   const q={select(fields:string){request.select=fields;return q},eq(k:string,v:unknown){request.eq[k]=v;return q},in(k:string,v:unknown[]){request.in[k]=v;return q},is(){return q},order(){return q},range(a:number,b:number){from=a;to=b;request.from=a;return q},limit(n:number){to=n-1;return q},maybeSingle(){single=true;return q},then(done:(r:unknown)=>unknown){
    const visible=(v:typeof visits[number])=>s.allowed.includes(v.branch_id)&&(scope==='history'||v.branch_id==='B')&&(s.visibleAnchor||v.id!=='anchor-B');
@@ -34,7 +34,7 @@ function client(scope:string){
   }};return q;
  }};
 }
-beforeEach(()=>{s.allowed=['A','B'];s.active=true;s.visibleAnchor=true;s.sessionMismatch=false;s.stalePet=false;s.anchorReads=0;s.spill='';s.longHistory=false;s.broken='';s.calls=[];s.factories=[];s.keys=[];vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL','http://127.0.0.1:54399');vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY','fictional-public-key');});
+beforeEach(()=>{s.rpc=null;s.rpcArgs=[];s.allowed=['A','B'];s.active=true;s.visibleAnchor=true;s.sessionMismatch=false;s.stalePet=false;s.anchorReads=0;s.spill='';s.longHistory=false;s.broken='';s.calls=[];s.factories=[];s.keys=[];vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL','http://127.0.0.1:54399');vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY','fictional-public-key');});
 afterEach(()=>vi.unstubAllEnvs());
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'anchor-B'})}));
 it('shows the same pet clinical history from both already-authorized branches despite current branch B',async()=>{
@@ -70,4 +70,26 @@ it('keeps unrelated patients and foreign operational/payment links out of clinic
 it.each(['inactive','session mismatch','child read error'])('fails closed with an honest unavailable message for %s',async reason=>{
  if(reason==='inactive')s.active=false;if(reason==='session mismatch')s.sessionMismatch=true;if(reason==='child read error')s.broken='medical_records';
  const html=await render();expect(html).toContain('Riwayat klinis belum dapat dimuat lengkap');expect(html).not.toContain('Historical finding A');expect(html).not.toContain('PRIVATE backend failure');
+});
+
+const rpcVisit=(over:Record<string,unknown>={})=>({id:'anchor-B',pet_id:'pet',branch_id:'B',branch_name:'Branch B',created_at:'2026-10-24T01:00:00Z',poli:'Poli Umum',dokter:'Fictional vet B',keluhan:'Clinical B',can_open:true,records:[],...over});
+it('K13: single-branch doctor sees branch A history through the checked reader, labelled and read-only',async()=>{
+ s.allowed=['B'];
+ s.rpc={data:{pet_id:'pet',visits:[rpcVisit(),rpcVisit({id:'old-A',branch_id:'A',branch_name:'Branch A',can_open:false,keluhan:'Clinical A',
+  records:[{id:'record-A',created_at:'2026-10-23T01:10:00Z',diagnosis:'Historical finding A',anamnesis:'x',therapy:'Historical therapy A',
+   prescriptions:[{id:'rx-A',nama_obat:'Fictional prior medicine',qty:2,satuan:'tablet',jenis:'obat',aturan_pakai:null}],
+   addenda:[{id:'ad-1',created_at:'2026-10-25T01:00:00Z',author:'Fictional vet A',diagnosis:'Addendum finding',therapy:null,reason:null}]}]})]},error:null};
+ const html=await render();
+ expect(s.rpcArgs).toEqual([{name:'clinic_patient_clinical_history',args:{p_pet_id:'pet',p_anchor_visit_id:'anchor-B'}}]);
+ expect(html).toContain('Historical finding A');expect(html).toContain('Branch A');expect(html).toContain('Addendum finding');
+ expect(html).not.toContain('href="/klinik/rekam-medis/old-A"');
+ expect(s.factories).toHaveLength(0);
+});
+it('K13: rejects a reader payload that mixes another patient (same name or not)',async()=>{
+ s.rpc={data:{pet_id:'pet',visits:[rpcVisit(),rpcVisit({id:'unrelated',pet_id:'other-pet',keluhan:'UNRELATED PRIVATE'})]},error:null};
+ const html=await render();expect(html).toContain('Riwayat klinis belum dapat dimuat lengkap');expect(html).not.toContain('UNRELATED PRIVATE');
+});
+it('K13: a denied reader fails closed instead of falling back',async()=>{
+ s.rpc={data:null,error:{code:'42501',message:'denied'}};
+ const html=await render();expect(html).toContain('Riwayat klinis belum dapat dimuat lengkap');expect(s.factories).toHaveLength(0);
 });

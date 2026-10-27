@@ -69,6 +69,26 @@ alter default privileges in schema public grant all on sequences to authenticate
     for name in ['clinic_record_addenda_history.sql', 'clinic_therapy_note.sql']:
         sql((tests / name).read_text())
         print(name + ': passed.')
+    # Owner package rehearsal: readback -> rollback -> preflight -> apply -> readback -> tests again.
+    pkg = ROOT / 'docs/evidence/2026-10-28-k13-k01/owner-apply'
+
+    def all_ok(name):
+        out = subprocess.run([BIN / 'psql', '-h', str(SOCK), '-p', PORT, '-U', 'postgres', '-d', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1', '-f', str(pkg / name)],
+                             text=True, capture_output=True, check=True).stdout.strip().splitlines()
+        bad = [line for line in out if line and not line.endswith('|t')]
+        if bad:
+            raise RuntimeError(f'{name}: failed checks {bad}')
+        return len(out)
+
+    print('readback after migrations:', all_ok('readback.sql'), 'checks ok')
+    sql((pkg / 'rollback.sql').read_text())
+    if sql("select to_regclass('public.clinic_record_addenda') is null and to_regprocedure('public.clinic_patient_clinical_history(uuid,uuid)') is null").returncode:
+        raise RuntimeError('rollback incomplete')
+    print('preflight after rollback:', all_ok('preflight.sql'), 'checks ok')
+    sql((pkg / 'apply.sql').read_text())
+    print('readback after apply.sql:', all_ok('readback.sql'), 'checks ok')
+    sql((tests / 'clinic_record_addenda_history.sql').read_text())
+    print('clinic_record_addenda_history.sql: passed again after owner package apply.')
 finally:
     if (DATA / 'postmaster.pid').exists():
         subprocess.run([BIN / 'pg_ctl', '-D', DATA, '-m', 'immediate', 'stop'], capture_output=True)
