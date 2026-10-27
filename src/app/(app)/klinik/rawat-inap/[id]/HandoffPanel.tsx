@@ -1,6 +1,6 @@
 import { servicePerformerNames } from "@/lib/service-performers";
 import Link from 'next/link';
-import { handoffSourceStatus, isRegularDrug, type InpatientHandoff, type HandoffInvoice } from '@/lib/inpatient-handoff';
+import { handoffSourceStatus, isRegularDrug, paidStayDays, type InpatientHandoff, type HandoffInvoice } from '@/lib/inpatient-handoff';
 import { ObatBiasaEvidence } from './ObatBiasaEvidence';
 function recorded(when:string,admittedAt:string){
  const time=Date.parse(when),admitted=Date.parse(admittedAt);
@@ -12,9 +12,10 @@ function InvoiceTag({invoice,qty}:{invoice:HandoffInvoice;qty?:number}){
  return <span className="back-btn" style={{fontSize:11,whiteSpace:'normal',overflowWrap:'anywhere'}}>{invoice.invoice_no??'Nomor faktur tidak tersedia'} · {invoice.voided_at?'Dibatalkan':invoice.paid_status||'Status belum tersedia'}{qty!==undefined?` · qty faktur ${qty}`:''}</span>;
 }
 /** recordId/active are optional wiring from the page: without them evidence is read-only (no forms). */
-export function HandoffPanel({data,visitId,admittedAt,recordId,active}:{data:InpatientHandoff|null;visitId:string;admittedAt:string;recordId?:string;active?:boolean}){
+export function HandoffPanel({data,visitId,admittedAt,recordId,active,stayedDays}:{data:InpatientHandoff|null;visitId:string;admittedAt:string;recordId?:string;active?:boolean;stayedDays?:number}){
  if(!data)return <section className="crm-sec" data-inpatient-handoff><h2 style={{fontSize:15}}>Ringkasan konsultasi dan resep</h2><p role="alert">Ringkasan belum dapat dimuat lengkap. Muat ulang atau periksa rekam medis asal sebelum melanjutkan perawatan.</p></section>;
  const sourceStatus=handoffSourceStatus(data);
+ const paidStay=recordId&&stayedDays!==undefined?paidStayDays(data,recordId,stayedDays):null;
  const sourceByKey=new Map(sourceStatus.rows.map(row=>[row.key,row]));
  const regularDrugs=data.prescriptions.filter(isRegularDrug);
  const evidence=data.evidence;
@@ -28,6 +29,14 @@ export function HandoffPanel({data,visitId,admittedAt,recordId,active}:{data:Inp
    {record.catatan_resep&&<p style={{whiteSpace:'pre-wrap'}}>Catatan resep: {record.catatan_resep}</p>}
   </article>)}
   {!data.records.length&&<p>Belum ada rekam medis tersimpan untuk kunjungan ini.</p>}
+  {paidStay&&<div data-paid-stay={paidStay.kind} style={{border:'1px solid var(--bd)',borderRadius:7,padding:10,marginTop:10}}>
+   <h3 style={{fontSize:13}}>Lama rawat inap: dibayar vs sisa</h3>
+   {paidStay.kind==='unverified'
+    ?<p role="alert">Sudah menginap {paidStay.stayed} hari. Hari yang sudah dibayar belum dapat dipastikan: kunjungan ini punya lebih dari satu periode/baris jasa rawat inap atau tagihannya tidak cocok. Cek rincian di halaman pembayaran.</p>
+    :<p>Sudah menginap <b>{paidStay.stayed} hari</b> · sudah dibayar <b>{paidStay.paid} hari</b> · sisa belum dibayar <b>{paidStay.remaining} hari</b>{paidStay.invoiceNo?` · ${paidStay.invoiceNo}`:''}.</p>}
+   {paidStay.kind==='unbilled'&&<p style={{fontSize:12}}>Biaya hari inap belum masuk faktur lunas. Sistem menghitung jasa rawat inap otomatis saat pasien dipulangkan, lalu ditagih di pembayaran.</p>}
+   {paidStay.kind==='unpaid'&&<p style={{fontSize:12}}>Faktur rawat inap masih DP/belum lunas; DP tidak dihitung sebagai hari tertentu.</p>}
+  </div>}
   <h3 style={{fontSize:13}}>Status sumber per baris</h3>
   <p style={{fontSize:12}}>Diresepkan, ditagih, status faktur, diserahkan, dan diberikan adalah bukti yang berbeda. Pembayaran faktur tidak dialokasikan ke obat/tindakan tertentu.</p>
   <div style={{overflowX:'auto'}}><table className="tbl" style={{minWidth:920}}><thead><tr><th>Obat / tindakan</th><th>Diresepkan / aturan pakai</th><th>Ditagih</th><th>Status faktur</th><th>Diserahkan</th><th>Diberikan</th></tr></thead><tbody>{data.prescriptions.map(row=>{const status=sourceByKey.get(`rx:${row.id}`);return <tr key={row.id}><td>{row.nama_obat}{row.jenis === "jasa" && <div style={{fontSize:11}}>{servicePerformerNames(row.service_performers).join(" · ")}</div>}<div style={{fontSize:11,color:'var(--tm)'}}>{row.jenis} · {recorded(row.created_at,admittedAt)}</div></td><td>{row.qty} {row.satuan??''}<div style={{whiteSpace:'pre-wrap'}}>{row.aturan_pakai||'Aturan pakai belum tercatat'}</div></td><td>{status?.billing}{status?.duplicateActiveInvoices&&<div role="alert">Tertaut ke lebih dari satu faktur aktif. Periksa sebelum menagih ulang.</div>}</td><td>{status?.payment}</td><td>{status?.handover}</td><td>{status?.administration}</td></tr>})}{!data.prescriptions.length&&<tr><td colSpan={6}>Belum ada obat/tindakan dalam resep tersimpan.</td></tr>}</tbody></table></div>
@@ -39,6 +48,6 @@ export function HandoffPanel({data,visitId,admittedAt,recordId,active}:{data:Inp
   {!regularDrugs.length&&<p>Belum ada obat biasa dalam resep tersimpan untuk kunjungan ini.</p>}
   <p style={{fontSize:12}}>Status resep, penyerahan farmasi dan pembayaran bukan bukti obat sudah diberikan kepada pasien. Pemberian obat biasa hanya terbukti dari catatan pemberian per resep di atas; catatan pemberian obat berprotokol berada pada <a href="#obat-khusus">Obat Khusus</a>.</p>
   <details><summary>Batas data handoff yang belum tersambung</summary><ul>{sourceStatus.gaps.map(gap=><li key={gap}>{gap}</li>)}</ul></details>
-  <details><summary>Faktur kunjungan dan batas informasi pembayaran</summary><div style={{display:'flex',gap:5,flexWrap:'wrap',marginTop:8}}>{data.invoices.map(invoice=><InvoiceTag key={invoice.id} invoice={invoice}/>)}</div>{!data.invoices.length&&<p>Belum ada faktur tersimpan untuk kunjungan ini.</p>}<p><Link className="back-btn" href={`/klinik/pembayaran/${encodeURIComponent(visitId)}`}>Buka pembayaran kunjungan</Link></p><p>Faktur tanpa tautan per baris tidak dipasangkan ke obat/tindakan. Status dan qty faktur ditampilkan sesuai dokumen asal.</p><p>Lama inap terbayar belum dapat dipastikan. Periksa rincian tagihan; tanggal masuk bukan bukti pembayaran durasi rawat inap.</p></details>
+  <details><summary>Faktur kunjungan dan batas informasi pembayaran</summary><div style={{display:'flex',gap:5,flexWrap:'wrap',marginTop:8}}>{data.invoices.map(invoice=><InvoiceTag key={invoice.id} invoice={invoice}/>)}</div>{!data.invoices.length&&<p>Belum ada faktur tersimpan untuk kunjungan ini.</p>}<p><Link className="back-btn" href={`/klinik/pembayaran/${encodeURIComponent(visitId)}`}>Buka pembayaran kunjungan</Link></p><p>Faktur tanpa tautan per baris tidak dipasangkan ke obat/tindakan. Status dan qty faktur ditampilkan sesuai dokumen asal.</p><p>Lama inap terbayar hanya dari baris jasa rawat inap pada faktur lunas; tanggal masuk bukan bukti pembayaran durasi rawat inap.</p></details>
  </section>;
 }
