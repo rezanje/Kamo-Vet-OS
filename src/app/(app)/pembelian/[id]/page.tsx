@@ -59,6 +59,8 @@ export default async function PODetailPage({
   if (poError) throw new Error("PO dan transaksi terkait belum dapat dimuat. Coba muat ulang.");
   if (!po) notFound();
 
+  // A failed read stays visible as unknown; it is never shown as "no request".
+  const correctionRequestsRead: Promise<PurchaseCorrectionRequest[] | null> = loadRequestsForSource(supabase, "purchase_order", id).catch(() => null);
   const [{ data: suppliers }, { data: warehouses }, { data: profile }, items, invoices, receipts, payments, returns, advances, { data: closureData, error: closureError }] = await Promise.all([
     supabase.from("suppliers").select("id, nama").order("nama"),
     supabase.from("warehouses").select("id, name, branch_id").eq("branch_id", po.branch_id).eq("is_active", true).order("name"),
@@ -71,8 +73,7 @@ export default async function PODetailPage({
     readCompleteList<{id:string;no_um:string;status:string;jumlah:number;terpakai:number}>((from,to)=>supabase.from("purchase_advances").select("id,no_um,status,jumlah,terpakai",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Uang muka PO",{maxRows:null}),
     supabase.from("purchase_order_receipt_closures").select("po_id,actor_id,actor_name,closed_at,reason,lines").eq("po_id", id).maybeSingle(),
   ]);
-  // A failed read stays visible as unknown; it is never shown as "no request".
-  const correctionRequests: PurchaseCorrectionRequest[] | null = await loadRequestsForSource(supabase, "purchase_order", id).catch(() => null);
+  const correctionRequests = await correctionRequestsRead;
 
   const closure = one(closureData as unknown as Rel<ReceiptClosure>);
   const partial = items.some(row => Number(row.qty_terima ?? 0) > 0) && items.some(row => Number(row.qty_terima ?? 0) < Number(row.qty));

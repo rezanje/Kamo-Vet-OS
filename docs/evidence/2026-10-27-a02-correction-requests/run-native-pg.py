@@ -2,7 +2,7 @@
 """Run a Docker-based repository Postgres test script on a throwaway native cluster (no Docker).
 
 Usage: python3 docs/evidence/2026-10-27-a02-correction-requests/run-native-pg.py \
-         [--bin /usr/lib/postgresql/16/bin] scripts/test-purchase-correction-requests-postgres.py
+         [--bin /usr/lib/postgresql/16/bin] scripts/test-purchase-correction-requests-postgres.py [script args]
 
 Each `docker ...` call is translated to a local equivalent. The cluster lives in a fresh temp
 dir, listens on a unix socket only (listen_addresses=''), and is deleted afterwards. It never
@@ -15,13 +15,14 @@ import os
 import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
 parser = argparse.ArgumentParser()
 parser.add_argument('--bin', default='/usr/lib/postgresql/16/bin')
 parser.add_argument('script')
-args = parser.parse_args()
+args, script_args = parser.parse_known_args()
 BIN = Path(args.bin)
 WORK = Path(tempfile.mkdtemp(prefix='vetos-native-pg-'))
 DATA, SOCK, PORT = WORK / 'data', WORK / 'sock', '54331'
@@ -82,6 +83,7 @@ subprocess.run = fake_run
 subprocess.Popen = FakePopen
 print('server:', real_run([BIN / 'postgres', '--version'], capture_output=True, text=True).stdout.strip(), '| cluster:', WORK, flush=True)
 try:
+    sys.argv = [str(ROOT / args.script), *script_args]
     runpy.run_path(str(ROOT / args.script), run_name='__main__')
 finally:
     if WORK.exists():

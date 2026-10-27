@@ -77,7 +77,7 @@ describe("pending action alerts", () => {
     const db = fixture();
     const from = db.from.getMockImplementation()!;
     db.from.mockImplementation((table: string) => table === "purchase_correction_requests"
-      ? { select: () => ({ eq: () => Promise.resolve({ count: null, error: { message: "offline" } }) }) }
+      ? { select: () => ({ eq: () => Promise.resolve({ count: null, error: { message: "offline" } }) }) } as never
       : from(table));
     expect((await loadPendingWork(db, "OWNER")).find(item => item.href === "/pembelian/koreksi")?.count).toBeNull();
   });

@@ -31,6 +31,8 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   if (!invoice) notFound();
   // Embedded relations may stop at the API row limit without reporting a partial result.
   // Verify every page before displaying a payment total or offering correction controls.
+  // A failed read stays visible as unknown; it is never shown as "no request".
+  const correctionRequestsRead: Promise<PurchaseCorrectionRequest[] | null> = loadRequestsForSource(supabase, "purchase_invoice", id).catch(() => null);
   const [items, payments] = await Promise.all([
     readCompleteList<InvoiceItem>((from, to) => supabase.from("purchase_invoice_items")
       .select("id,nama,qty,satuan,harga", { count: "exact" }).eq("invoice_id", id).order("id").range(from, to), "Baris faktur pembelian", { maxRows: null }),
@@ -39,8 +41,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
       .eq("invoice_id", id).order("tanggal").order("id").range(from, to), "Riwayat pembayaran faktur pembelian", { maxRows: null }),
   ]);
   const po = one(invoice.purchase_orders);
-  // A failed read stays visible as unknown; it is never shown as "no request".
-  const correctionRequests: PurchaseCorrectionRequest[] | null = await loadRequestsForSource(supabase, "purchase_invoice", id).catch(() => null);
+  const correctionRequests = await correctionRequestsRead;
   const [replacementResult, originalResult, receipts, returns] = await Promise.all([
     supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('replaces_invoice_id',id).maybeSingle(),
     invoice.replaces_invoice_id ? supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('id',invoice.replaces_invoice_id).maybeSingle() : {data:null,error:null},
