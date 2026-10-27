@@ -22,7 +22,7 @@ describe('activity viewer navigation', () => {
 });
 
 it('matches every explicitly registered source and module with localized labels', () => {
- const files=['20261022070000_activity_audit.sql','20261022081000_activity_audit_financial.sql','20261022082000_activity_audit_inventory.sql','20261022083000_activity_audit_people_settings.sql','20261022084000_activity_audit_remaining_modules.sql','20261023193000_sales_refund_payout.sql'];
+ const files=['20261022070000_activity_audit.sql','20261022081000_activity_audit_financial.sql','20261022082000_activity_audit_inventory.sql','20261022083000_activity_audit_people_settings.sql','20261022084000_activity_audit_remaining_modules.sql','20261023193000_sales_refund_payout.sql','20261027090000_purchase_correction_requests.sql'];
  const sources=files.flatMap(file=>[...readFileSync(`supabase/migrations/${file}`,'utf8').matchAll(/(?:^\s*|values\s*)\('([^']+)'\s*,\s*'([^']+)'/gm)].map(match=>({entity:match[1],module:match[2]})));
  expect(sources.length).toBeGreaterThan(170);
  expect(Object.keys(ACTIVITY_ENTITIES).sort()).toEqual(sources.map(s=>s.entity).sort());

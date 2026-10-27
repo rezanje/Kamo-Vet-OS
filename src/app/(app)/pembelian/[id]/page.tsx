@@ -12,6 +12,8 @@ import { POShortCloseForm } from "./POShortCloseForm";
 import type { ReceiptClosure } from "@/lib/purchase-short-close";
 import { POEditForm, POCancelForm } from "./POCorrectionForm";
 import { readCompleteList } from "@/lib/checked-list";
+import { PurchaseCorrectionRequestPanel } from "@/components/PurchaseCorrectionRequestPanel";
+import { loadRequestsForSource, type PurchaseCorrectionRequest } from "@/lib/purchase-correction-requests";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -45,10 +47,10 @@ export default async function PODetailPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ success?: string; error?: string; from?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; from?: string; koreksi?: string; koreksi_error?: string }>;
 }) {
   const { id } = await params;
-  const { success, error, from } = await searchParams;
+  const { success, error, from, koreksi, koreksi_error } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -69,6 +71,8 @@ export default async function PODetailPage({
     readCompleteList<{id:string;no_um:string;status:string;jumlah:number;terpakai:number}>((from,to)=>supabase.from("purchase_advances").select("id,no_um,status,jumlah,terpakai",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Uang muka PO",{maxRows:null}),
     supabase.from("purchase_order_receipt_closures").select("po_id,actor_id,actor_name,closed_at,reason,lines").eq("po_id", id).maybeSingle(),
   ]);
+  // A failed read stays visible as unknown; it is never shown as "no request".
+  const correctionRequests: PurchaseCorrectionRequest[] | null = await loadRequestsForSource(supabase, "purchase_order", id).catch(() => null);
 
   const closure = one(closureData as unknown as Rel<ReceiptClosure>);
   const partial = items.some(row => Number(row.qty_terima ?? 0) > 0) && items.some(row => Number(row.qty_terima ?? 0) < Number(row.qty));
@@ -102,7 +106,7 @@ export default async function PODetailPage({
         {priceEditable && <a href="#edit-po-prices" className="btn-def">Koreksi harga PO</a>}
         {editable && <><a href="#edit-po" className="btn-def">Edit PO</a><a href="#cancel-po" className="btn-def" style={{ color: "#b91c1c" }}>Batalkan PO</a></>}
         {owner && ((hasChildren && !priceEditable) || po.status === "Diterima") && <a href="#purchase-correction" className="btn-def">Koreksi pembelian</a>}
-        {!owner && <a href="#request-purchase-correction" className="btn-def">Panduan minta koreksi</a>}
+        {!owner && <a href="#request-purchase-correction" className="btn-def">Minta koreksi</a>}
         {po.status !== "Diterima" && po.status !== "Batal" && (
           <Link href={`/pembelian/${po.id}/terima`} className="btn-acc" style={{ textDecoration: "none" }}>
             <i className="ti ti-package-import" /> Terima barang
@@ -201,11 +205,9 @@ export default async function PODetailPage({
         </div>
       )}
 
-      {!owner && <section className="crm-sec" id="request-purchase-correction">
-        <h2 style={{ fontSize: 14, marginBottom: 8 }}>Minta koreksi {po.no_po ?? "PO ini"}</h2>
-        <p>Catat nomor PO, barang, satuan, jumlah atau harga yang salah, nilai yang seharusnya, dan bukti pendukung. Sampaikan kepada Super Admin melalui jalur komunikasi tim agar ia dapat meninjau dokumen serta transaksi terkait sebelum melakukan koreksi resmi.</p>
-        <p style={{ color: "var(--tm)", fontSize: 11 }}>Halaman ini hanya memberi panduan; permintaan belum dikirim atau dicatat oleh aplikasi.</p>
-      </section>}
+      <PurchaseCorrectionRequestPanel kind="purchase_order" sourceId={po.id} label={po.no_po ?? "PO ini"} owner={owner}
+        requests={correctionRequests} requestKey={crypto.randomUUID()}
+        notice={koreksi === "terkirim" ? "Permintaan koreksi tersimpan dan masuk antrean Super Admin." : undefined} error={koreksi_error} />
 
       {((hasChildren && !priceEditable) || po.status === "Diterima") && <div className="crm-sec" id="purchase-correction">
         <SecHeader num="02" title="KOREKSI PEMBELIAN" desc="PO dengan transaksi turunan mempertahankan riwayat penerimaan, stok, dan pembukuan." />

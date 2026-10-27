@@ -51,6 +51,8 @@ it.each(["STAFF", "ADMIN"])("shows %s how to request an invoice correction witho
   state.role = role;
   const html = await render();
   expect(html).toContain("Minta koreksi FP-TEST");
-  expect(html).toContain("Sampaikan kepada Super Admin");
+  expect(html).toContain("Kirim permintaan koreksi");
+  expect(html).toContain('name="source_kind" value="purchase_invoice"');
+  expect(html).not.toContain("belum dikirim atau dicatat");
   expect(html).not.toContain("Koreksi pembayaran</summary>");
 });
