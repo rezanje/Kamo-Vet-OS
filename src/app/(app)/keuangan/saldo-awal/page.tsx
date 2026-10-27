@@ -15,7 +15,15 @@ export default async function SaldoAwalPage({
   const { success, error } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
-  const { usulan, sudahAda, akun } = await bacaSaldoAwal(supabase);
+  const [{ usulan, sudahAda, akun }, { data: batchPerFaktur }] = await Promise.all([
+    bacaSaldoAwal(supabase),
+    supabase.from("opening_invoice_batches").select("ap_total, ar_total"),
+  ]);
+  // M05: hutang/piutang usaha yang sudah diimpor per faktur tidak boleh diisi lagi sebagai satu total
+  // (database juga menolaknya). Akunnya disembunyikan dari pilihan supaya tidak tercatat ganda.
+  const hutangPerFaktur = (batchPerFaktur ?? []).some((b) => Number(b.ap_total) > 0);
+  const piutangPerFaktur = (batchPerFaktur ?? []).some((b) => Number(b.ar_total) > 0);
+  const akunForm = akun.filter((a) => !(a.code === "2101" && hutangPerFaktur) && !(a.code === "1201" && piutangPerFaktur));
 
   return (
     <>
@@ -82,7 +90,14 @@ export default async function SaldoAwalPage({
           title="ISI SALDO AWAL"
           desc="Baris di bawah sudah terisi dari hitungan di atas. Tambahkan sendiri kas, piutang, dan utang yang sudah ada sebelum sistem dipakai."
         />
-        {!sudahAda && <SaldoAwalForm key={user?.id} userId={user?.id ?? ""} akun={akun} usulan={usulan} />}
+        <div className="p2ban" style={{ background: hutangPerFaktur || piutangPerFaktur ? "#fffbeb" : "#eff6ff", border: ".5px solid #93c5fd", color: "#1e3a8a", fontSize: 11.5 }}>
+          <i className="ti ti-info-circle" /> Hutang Usaha (2101) dan Piutang Usaha (1201) dari Accurate diisi <strong>per faktur</strong> di{" "}
+          <Link href="/keuangan/saldo-awal-faktur">Saldo Awal per Faktur</Link>, supaya pembayaran nanti bisa dialokasikan ke faktur lama.
+          {hutangPerFaktur || piutangPerFaktur
+            ? ` Sudah diimpor per faktur: ${[hutangPerFaktur && "hutang (2101)", piutangPerFaktur && "piutang (1201)"].filter(Boolean).join(" dan ")} — akun itu tidak bisa diisi lagi di sini agar tidak tercatat ganda.`
+            : " Jangan isi kedua akun itu di sini kalau akan memakai impor per faktur; impor akan ditolak supaya tidak tercatat ganda."}
+        </div>
+        {!sudahAda && <SaldoAwalForm key={user?.id} userId={user?.id ?? ""} akun={akunForm} usulan={usulan} />}
         {sudahAda && <p>Saldo awal sudah tercatat. Buka rekening kas/bank untuk preview dan koreksi saldo pembukanya.</p>}
       </div>
     </>

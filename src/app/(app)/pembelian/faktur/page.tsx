@@ -20,6 +20,7 @@ type Row = {
   total: number;
   suppliers: Rel<{ nama: string }>;
   purchase_orders: Rel<{ no_po: string | null }>;
+  opening_batch_id: string | null;
 };
 
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -41,7 +42,7 @@ export default async function FakturBeliPage({
   const paidByInvoice = new Map<string, number>();
   try {
     invoicePage = await readListPage<Row>((from, to) => supabase.from("purchase_invoices")
-      .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, suppliers(nama), purchase_orders(no_po)", { count: "exact" })
+      .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, opening_batch_id, suppliers(nama), purchase_orders(no_po)", { count: "exact" })
       .order("created_at", { ascending: false }).order("id").range(from, to), "Daftar faktur pembelian", hal);
     const ids = invoicePage.rows.map(row => row.id);
     if (ids.length) {
@@ -119,7 +120,7 @@ export default async function FakturBeliPage({
                       {fmtD(r.jatuh_tempo)}{telat ? " !" : ""}
                     </td>
                     <td style={{ fontSize: 11.5 }}>{one(r.suppliers)?.nama ?? "—"}</td>
-                    <td style={{ fontSize: 11.5 }}>{one(r.purchase_orders)?.no_po ?? "—"}</td>
+                    <td style={{ fontSize: 11.5 }}>{r.opening_batch_id ? <span className="bge b">Saldo awal</span> : one(r.purchase_orders)?.no_po ?? "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(r.total))}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: sisa > 0 ? "#b91c1c" : "#15803d" }}>
                       {sisa > 0 ? rp(sisa) : "Lunas"}

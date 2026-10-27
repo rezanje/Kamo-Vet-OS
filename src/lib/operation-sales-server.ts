@@ -280,7 +280,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
   if (filter.channel === "all" || filter.channel === "reseller") {
     const resellerResult = await read(supabase.from("sales_invoices")
       .select("id,branch_id,customer_id,dpp,tanggal,status,sales_invoice_items(item_id,qty,harga)")
-      .in("branch_id", scope.branchIds).neq("status", "batal")
+      .in("branch_id", scope.branchIds).neq("status", "batal").is("opening_batch_id", null)
       .gte("tanggal", filter.from).lte("tanggal", filter.to));
     queryError(resellerResult);
     for (const invoice of (resellerResult.data ?? []) as ResellerRow[]) {

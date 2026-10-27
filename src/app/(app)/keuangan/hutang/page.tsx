@@ -14,7 +14,7 @@ const fmtDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString
 type FakturRow = {
   id: string; no_faktur: string; no_faktur_pemasok: string | null; po_no: string | null; po_id: string | null;
   tanggal: string; jatuh_tempo: string; supplier: string; supplier_id: string | null;
-  total: number; dibayar: number; retur: number; sisa: number; days: number; bucket: AgingBucket;
+  total: number; dibayar: number; retur: number; sisa: number; days: number; bucket: AgingBucket; saldoAwal: boolean;
 };
 
 type UangMukaSiap = { id: string; no_um: string; sisa: number };
@@ -32,7 +32,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const [{ data: invs }, { data: pos }, { data: rets }] = await Promise.all([
     supabase
       .from("purchase_invoices")
-      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)").is("voided_at", null)
+      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, opening_batch_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)").is("voided_at", null)
       .order("jatuh_tempo").order("id"),
     supabase
       .from("purchase_orders")
@@ -47,7 +47,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
 
   const rows: FakturRow[] = ((invs ?? []) as unknown as {
     id: string; no_faktur: string; no_faktur_pemasok: string | null; tanggal: string; jatuh_tempo: string;
-    total: number; po_id: string; supplier_id: string | null; suppliers: { nama: string } | null;
+    total: number; po_id: string; supplier_id: string | null; opening_batch_id: string | null; suppliers: { nama: string } | null;
     purchase_orders: { no_po: string | null } | null; purchase_invoice_payments: { amount: number }[] | null;
   }[])
     .map((v) => {
@@ -65,6 +65,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         supplier: v.suppliers?.nama ?? "—", supplier_id: v.supplier_id,
         total: Number(v.total), dibayar, retur, sisa,
         days: agingDays(v.jatuh_tempo, today), bucket: agingBucket(v.jatuh_tempo, today),
+        saldoAwal: !!v.opening_batch_id,
       };
     })
     .filter((r) => r.sisa > 0);
@@ -211,7 +212,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                   <td style={{ fontSize: 11 }}>
                     {r.po_id
                       ? <Link href={`/pembelian/${r.po_id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{r.po_no ?? "Lihat PO"}</Link>
-                      : (r.po_no ?? "—")}
+                      : r.saldoAwal ? <span className="bge b">Saldo awal</span> : (r.po_no ?? "—")}
                   </td>
                   <td style={{ fontSize: 11.5 }}>{r.supplier}</td>
                   <td style={{ fontSize: 11, color: r.days > 0 ? "#b91c1c" : "var(--tm)", fontWeight: r.days > 0 ? 700 : 400 }}>
