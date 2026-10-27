@@ -67,6 +67,14 @@ describe("H05 package components", () => {
     expect(hitungKomisi([baris({ paketAsal: paket })], [aturan({ itemId: "vaksin" })])[0].komisi).toBe(0);
   });
 
+  it("a clinic refund of half a package component reverses half the package qty and its omzet", () => {
+    const rows = ringkasPaket([
+      baris({ qty: 3, omzet: 300_000, paketAsal: paket }),
+      baris({ tanggal: "2026-11-02", qty: -1.5, omzet: -150_000, paketAsal: { ...paket, qty: 1.5 } }),
+    ]);
+    expect(rows.map(r => [r.qty, r.omzet])).toEqual([[3, 300_000], [-1.5, -150_000]]);
+  });
+
   it("packages on different invoices stay separate", () => {
     const rows = ringkasPaket([baris({ paketAsal: paket }), baris({ paketAsal: paket, sourceDocumentId: "inv2" })]);
     expect(rows.map(r => r.qty)).toEqual([3, 3]);

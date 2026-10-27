@@ -1,4 +1,4 @@
-Applied 285 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+Applied 291 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
 d1000000-0000-4000-8000-000000000001
 authenticated
 
