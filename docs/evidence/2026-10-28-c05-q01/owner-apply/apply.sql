@@ -11,6 +11,8 @@ begin;
 --   * a customer card created before the quest period (day/month of the sale, WIB) is not new,
 --     nor is a card created before the quest itself was set up (protects against bulk imports);
 --   * a duplicate card with the same phone as an older card is not new;
+--   * a card created by the bulk customer import (customers.imported_at) is not new;
+--   * an earlier paid clinic invoice (same card or phone) means the customer is not new;
 --   * a full return without void keeps the claim; a void (cancel_posted_sale) releases it and
 --     the existing staff-effect reversal removes the quest progress, as for every other quest.
 --
@@ -47,6 +49,23 @@ grant execute on function public.quest_customer_phone_key(text) to authenticated
 create index if not exists customers_quest_phone_key_idx
   on public.customers (public.quest_customer_phone_key(phone));
 
+-- Cards created by the bulk import (Pengaturan > Impor) are existing customers, never "new".
+alter table public.customers add column if not exists imported_at timestamptz;
+comment on column public.customers.imported_at is
+  'Q01: set by the bulk customer import; such cards never count as a new customer. Immutable once set.';
+create or replace function public.guard_customer_imported_at() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if old.imported_at is not null and new.imported_at is distinct from old.imported_at then
+    raise exception 'Penanda impor pelanggan tidak boleh diubah' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_customer_imported_at() from public, anon, authenticated, service_role;
+drop trigger if exists q01_customer_imported_at on public.customers;
+create trigger q01_customer_imported_at before update of imported_at on public.customers
+  for each row execute function public.guard_customer_imported_at();
+
 create table if not exists public.quest_new_customer_claims (
   customer_id uuid primary key references public.customers(id) on delete cascade,
   sale_id uuid not null unique references public.sales(id) on delete cascade,
@@ -64,7 +83,7 @@ comment on table public.quest_new_customer_claims is
 
 create or replace function public.quest_claim_new_customer() returns trigger
 language plpgsql security definer set search_path = '' as $$
-declare v_phone text; v_created timestamptz;
+declare v_phone text; v_created timestamptz; v_imported timestamptz;
 begin
   if old.payments_finalized_at is not null or new.payments_finalized_at is null
      or new.channel is not null or not new.quest_effects_tracked
@@ -72,9 +91,9 @@ begin
      or coalesce(new.total, 0) - coalesce(new.merchant_fee_total, 0) <= 0 then
     return null;                                   -- Rp0 receipts never claim
   end if;
-  select public.quest_customer_phone_key(c.phone), c.created_at into v_phone, v_created
+  select public.quest_customer_phone_key(c.phone), c.created_at, c.imported_at into v_phone, v_created, v_imported
     from public.customers c where c.id = new.customer_id;
-  if not found then return null; end if;
+  if not found or v_imported is not null then return null; end if;   -- imported cards are not new
   -- Serialize all claims for one identity (card or phone) inside this transaction.
   perform pg_advisory_xact_lock(hashtextextended('vetos:q01:' || coalesce(v_phone, new.customer_id::text), 0));
   if exists (select 1 from public.quest_new_customer_claims c
@@ -96,6 +115,15 @@ begin
        where p.id <> new.id and p.voided_at is null
          and (p.payments_finalized_at is not null or not p.quest_effects_tracked)
          and coalesce(p.total, 0) - coalesce(p.merchant_fee_total, 0) > 0
+         and (o.id = new.customer_id or (v_phone is not null and public.quest_customer_phone_key(o.phone) = v_phone))) then
+    return null;
+  end if;
+  -- A paid (Lunas/DP), non-void, non-zero clinic invoice for this identity also means not new.
+  if exists (
+       select 1 from public.invoices i
+       join public.visits vi on vi.id = i.visit_id
+       join public.customers o on o.id = vi.customer_id
+       where i.voided_at is null and i.paid_status in ('Lunas', 'DP') and coalesce(i.total, 0) > 0
          and (o.id = new.customer_id or (v_phone is not null and public.quest_customer_phone_key(o.phone) = v_phone))) then
     return null;
   end if;
@@ -159,9 +187,11 @@ $patch$;
 -- One code field at checkout: the cashier types the campaign code where a voucher code goes.
 -- Voucher-bound: the bound voucher's own rules and formula apply unchanged.
 -- Promo-bound: that promo is applied to this transaction (also when it is not "potong otomatis").
--- Usage = non-void POS receipts + non-void clinic invoices that carry the code. The cap is
--- enforced by a trigger that locks the code row before counting, so concurrent checkouts are
--- serialized and can never exceed it. A void frees the use; a clinic reissue keeps the
+-- Usage = paid (finalized) non-void POS receipts + posted non-void clinic invoices that carry
+-- the code; an unfinished receipt left by a crashed checkout does not use the code. The cap is
+-- checked when the document is written (early refusal) and again, authoritatively, when a POS
+-- receipt is finalized. Both checks lock the code row before counting, so concurrent checkouts
+-- are serialized and can never exceed it. A void frees the use; a clinic reissue keeps the
 -- original use (it is never counted twice).
 
 create table if not exists public.campaign_codes (
@@ -230,6 +260,15 @@ alter table public.invoices add column if not exists campaign_code varchar(24);
 create index if not exists sales_campaign_code_idx on public.sales (campaign_code) where campaign_code is not null;
 create index if not exists invoices_campaign_code_idx on public.invoices (campaign_code) where campaign_code is not null;
 
+-- One definition of "a use": finalized non-void receipts + posted non-void invoices.
+create or replace function public.campaign_code_used(p_code text) returns bigint
+language sql stable security definer set search_path = '' as $$
+  select (select count(*) from public.sales s where s.campaign_code = p_code
+            and s.voided_at is null and s.payments_finalized_at is not null)
+       + (select count(*) from public.invoices i where i.campaign_code = p_code and i.voided_at is null)
+$$;
+revoke all on function public.campaign_code_used(text) from public, anon, authenticated, service_role;
+
 create or replace function public.guard_campaign_code_use() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare k public.campaign_codes%rowtype; v_voucher text; v_used bigint; src_id uuid; src_code text; src_voucher text;
@@ -280,9 +319,7 @@ begin
     raise exception 'KODE_KAMPANYE: Kode promo % tidak bisa digabung dengan voucher', k.code using errcode = '23514';
   end if;
   if k.max_uses is not null then
-    select (select count(*) from public.sales s where s.campaign_code = k.code and s.voided_at is null)
-         + (select count(*) from public.invoices i where i.campaign_code = k.code and i.voided_at is null)
-      into v_used;
+    v_used := public.campaign_code_used(k.code);
     if v_used >= k.max_uses then
       raise exception 'KODE_KAMPANYE: Kode % sudah mencapai batas pemakaian (% kali)', k.code, k.max_uses
         using errcode = 'P0001';
@@ -298,6 +335,26 @@ drop trigger if exists c05_invoice_campaign_code on public.invoices;
 create trigger c05_invoice_campaign_code before insert or update of campaign_code, voucher_code on public.invoices
   for each row execute function public.guard_campaign_code_use();
 
+-- Authoritative cap check at payment finalization (same transaction as the finalizer).
+create or replace function public.guard_campaign_code_finalize() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare k public.campaign_codes%rowtype;
+begin
+  if new.campaign_code is null or old.payments_finalized_at is not null or new.payments_finalized_at is null then
+    return new;
+  end if;
+  select * into k from public.campaign_codes c where c.code = new.campaign_code for update;
+  if found and k.max_uses is not null and public.campaign_code_used(k.code) >= k.max_uses then
+    raise exception 'KODE_KAMPANYE: Kode % sudah mencapai batas pemakaian (% kali)', k.code, k.max_uses
+      using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_campaign_code_finalize() from public, anon, authenticated, service_role;
+drop trigger if exists c05_sale_campaign_code_finalize on public.sales;
+create trigger c05_sale_campaign_code_finalize before update of payments_finalized_at on public.sales
+  for each row execute function public.guard_campaign_code_finalize();
+
 -- Usage per code for the manager screen (counts only; documents stay under their own RLS).
 create or replace function public.campaign_code_usage()
 returns table(code text, used bigint)
@@ -308,9 +365,7 @@ begin
     raise exception 'Akses ditolak' using errcode = '42501';
   end if;
   return query
-    select c.code::text,
-      (select count(*) from public.sales s where s.campaign_code = c.code and s.voided_at is null)
-      + (select count(*) from public.invoices i where i.campaign_code = c.code and i.voided_at is null)
+    select c.code::text, public.campaign_code_used(c.code)
     from public.campaign_codes c order by c.code;
 end $$;
 revoke all on function public.campaign_code_usage() from public, anon, service_role;

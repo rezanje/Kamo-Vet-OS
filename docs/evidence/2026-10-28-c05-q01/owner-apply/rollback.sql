@@ -1,6 +1,7 @@
 -- C05 + Q01 rollback. WRITES. Run only if the owner decides to undo the release.
--- Restores both patched functions byte-for-byte, then removes every object the two migrations added.
--- Campaign codes typed on receipts/invoices (campaign_code columns) and Q01 claims are dropped with them.
+-- Restores both patched functions byte-for-byte and removes every trigger/function the two migrations
+-- added. Tables/columns that already hold data are archived (renamed), not dropped, unless the owner
+-- sets the explicit flag described below.
 begin;
 
 do $restore$
@@ -26,26 +27,69 @@ $restore$;
 -- treat an unknown kind like "qty of all products".
 update public.staff_quest_definitions set is_active = false where target_kind = 'new_customer';
 
+-- Behaviour (triggers/functions) is always removed.
 drop trigger if exists q01_claim_new_customer on public.sales;
 drop trigger if exists q01_release_new_customer on public.sales;
+drop trigger if exists q01_customer_imported_at on public.customers;
 drop function if exists public.quest_claim_new_customer();
 drop function if exists public.quest_release_new_customer();
-drop table if exists public.quest_new_customer_claims;
+drop function if exists public.guard_customer_imported_at();
 drop index if exists public.customers_quest_phone_key_idx;
-drop function if exists public.quest_customer_phone_key(text);
-
 drop trigger if exists c05_sale_campaign_code on public.sales;
+drop trigger if exists c05_sale_campaign_code_finalize on public.sales;
 drop trigger if exists c05_invoice_campaign_code on public.invoices;
 drop trigger if exists c05_campaign_code_collision on public.campaign_codes;
 drop trigger if exists c05_voucher_code_collision on public.vouchers;
 drop function if exists public.guard_campaign_code_use();
+drop function if exists public.guard_campaign_code_finalize();
 drop function if exists public.guard_campaign_code_collision();
 drop function if exists public.campaign_code_usage();
+drop function if exists public.campaign_code_used(text);
 drop index if exists public.sales_campaign_code_idx;
 drop index if exists public.invoices_campaign_code_idx;
-alter table public.sales drop column if exists campaign_code;
-alter table public.invoices drop column if exists campaign_code;
-drop table if exists public.campaign_codes;
+
+-- Data is never destroyed by default: a table/column that holds data is RENAMED to *_archived_c05q01
+-- (still readable by the owner, invisible to the app). Empty ones are dropped. To really delete the
+-- data, run this first in the same session:  select set_config('vetos.rollback_drop_data', 'yes', false);
+do $data$
+declare
+  drop_data boolean := coalesce(current_setting('vetos.rollback_drop_data', true), '') = 'yes';
+  has_data boolean;
+  c record;
+  ix record;
+begin
+  for c in select * from (values
+      ('sales', 'campaign_code'), ('invoices', 'campaign_code'), ('customers', 'imported_at')) v(tbl, col) loop
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = c.tbl and column_name = c.col) then
+      execute format('select exists (select 1 from public.%I where %I is not null)', c.tbl, c.col) into has_data;
+      if has_data and not drop_data then
+        execute format('alter table public.%I rename column %I to %I', c.tbl, c.col, c.col || '_archived_c05q01');
+        raise notice 'kept data: public.%.% renamed to %_archived_c05q01', c.tbl, c.col, c.col;
+      else
+        execute format('alter table public.%I drop column %I', c.tbl, c.col);
+      end if;
+    end if;
+  end loop;
+  for c in select * from (values ('campaign_codes'), ('quest_new_customer_claims')) v(tbl) loop
+    if to_regclass('public.' || c.tbl) is not null then
+      execute format('select exists (select 1 from public.%I)', c.tbl) into has_data;
+      if has_data and not drop_data then
+        -- Index names live in the schema namespace: rename them too so a later re-apply can recreate them.
+        for ix in select i.relname from pg_index x join pg_class i on i.oid = x.indexrelid
+                  where x.indrelid = ('public.' || c.tbl)::regclass loop
+          execute format('alter index public.%I rename to %I', ix.relname, left(ix.relname, 46) || '_archived_c05q01');
+        end loop;
+        execute format('alter table public.%I rename to %I', c.tbl, c.tbl || '_archived_c05q01');
+        execute format('revoke all on public.%I from public, anon, authenticated, service_role', c.tbl || '_archived_c05q01');
+        raise notice 'kept data: public.% renamed to %_archived_c05q01', c.tbl, c.tbl;
+      else
+        execute format('drop table public.%I', c.tbl);
+      end if;
+    end if;
+  end loop;
+end
+$data$;
+drop function if exists public.quest_customer_phone_key(text);
 
 -- The new_customer constraint stays only while such definitions exist; otherwise restore the original.
 do $c$

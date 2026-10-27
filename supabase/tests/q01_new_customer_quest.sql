@@ -122,6 +122,32 @@ insert into public.sales (branch_id, customer_id, no_struk, subtotal, total, bay
 select pg_temp.paid('Q01-AFTER-LEGACY', 'b1500000-0000-4000-8000-000000000004', :B, 50000);
 select pg_temp.ok(not pg_temp.claimed('Q01-AFTER-LEGACY'), 'legacy paid receipt makes the customer not new');
 
+-- 4b. A card from the bulk import is not new (and the import mark cannot be removed).
+insert into public.customers (id, name, phone, created_at, imported_at) values
+  ('b1500000-0000-4000-8000-000000000007', 'Impor massal', '0813-0000-4444', now(), now());
+select pg_temp.paid('Q01-IMPORTED', 'b1500000-0000-4000-8000-000000000007', :B, 50000);
+select pg_temp.ok(not pg_temp.claimed('Q01-IMPORTED'), 'imported customer card is not a new customer');
+do $$ begin
+  begin
+    update public.customers set imported_at = null where id = 'b1500000-0000-4000-8000-000000000007';
+    raise exception 'import mark was cleared';
+  exception when insufficient_privilege then null; end;
+end $$;
+
+-- 4c. A paid clinic invoice means the customer is not new at the petshop counter.
+insert into public.customers (id, name, phone, created_at) values
+  ('b1500000-0000-4000-8000-000000000008', 'Pasien klinik', '0813-0000-5555', now());
+insert into public.pets (id, customer_id, name) values ('b1600000-0000-4000-8000-000000000001', 'b1500000-0000-4000-8000-000000000008', 'Anabul');
+insert into public.visits (id, branch_id, customer_id, pet_id) values
+  ('b1700000-0000-4000-8000-000000000001', 'b1200000-0000-4000-8000-000000000001', 'b1500000-0000-4000-8000-000000000008', 'b1600000-0000-4000-8000-000000000001');
+set local session_replication_role = replica;   -- fixture only: a posted, paid clinic invoice
+insert into public.invoices (visit_id, invoice_no, subtotal, discount, tax, total, paid_status)
+  values ('b1700000-0000-4000-8000-000000000001', 'INV-Q01-1', 150000, 0, 0, 150000, 'Lunas');
+set local session_replication_role = origin;
+select pg_temp.paid('Q01-AFTER-CLINIC', 'b1500000-0000-4000-8000-000000000008', :B, 50000);
+select pg_temp.ok(not pg_temp.claimed('Q01-AFTER-CLINIC'), 'customer with a paid clinic invoice is not new');
+select pg_temp.ok(pg_temp.progress(:B) = 0, 'no progress from imported or clinic customers');
+
 -- 5. Full return without void keeps the claim (returns never touch voided_at).
 select pg_temp.paid('Q01-RETUR', 'b1500000-0000-4000-8000-000000000005', :B, 75000);
 select pg_temp.reward('Q01-RETUR');

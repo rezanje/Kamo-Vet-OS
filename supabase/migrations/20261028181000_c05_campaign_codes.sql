@@ -8,9 +8,11 @@
 -- One code field at checkout: the cashier types the campaign code where a voucher code goes.
 -- Voucher-bound: the bound voucher's own rules and formula apply unchanged.
 -- Promo-bound: that promo is applied to this transaction (also when it is not "potong otomatis").
--- Usage = non-void POS receipts + non-void clinic invoices that carry the code. The cap is
--- enforced by a trigger that locks the code row before counting, so concurrent checkouts are
--- serialized and can never exceed it. A void frees the use; a clinic reissue keeps the
+-- Usage = paid (finalized) non-void POS receipts + posted non-void clinic invoices that carry
+-- the code; an unfinished receipt left by a crashed checkout does not use the code. The cap is
+-- checked when the document is written (early refusal) and again, authoritatively, when a POS
+-- receipt is finalized. Both checks lock the code row before counting, so concurrent checkouts
+-- are serialized and can never exceed it. A void frees the use; a clinic reissue keeps the
 -- original use (it is never counted twice).
 
 create table if not exists public.campaign_codes (
@@ -79,6 +81,15 @@ alter table public.invoices add column if not exists campaign_code varchar(24);
 create index if not exists sales_campaign_code_idx on public.sales (campaign_code) where campaign_code is not null;
 create index if not exists invoices_campaign_code_idx on public.invoices (campaign_code) where campaign_code is not null;
 
+-- One definition of "a use": finalized non-void receipts + posted non-void invoices.
+create or replace function public.campaign_code_used(p_code text) returns bigint
+language sql stable security definer set search_path = '' as $$
+  select (select count(*) from public.sales s where s.campaign_code = p_code
+            and s.voided_at is null and s.payments_finalized_at is not null)
+       + (select count(*) from public.invoices i where i.campaign_code = p_code and i.voided_at is null)
+$$;
+revoke all on function public.campaign_code_used(text) from public, anon, authenticated, service_role;
+
 create or replace function public.guard_campaign_code_use() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare k public.campaign_codes%rowtype; v_voucher text; v_used bigint; src_id uuid; src_code text; src_voucher text;
@@ -129,9 +140,7 @@ begin
     raise exception 'KODE_KAMPANYE: Kode promo % tidak bisa digabung dengan voucher', k.code using errcode = '23514';
   end if;
   if k.max_uses is not null then
-    select (select count(*) from public.sales s where s.campaign_code = k.code and s.voided_at is null)
-         + (select count(*) from public.invoices i where i.campaign_code = k.code and i.voided_at is null)
-      into v_used;
+    v_used := public.campaign_code_used(k.code);
     if v_used >= k.max_uses then
       raise exception 'KODE_KAMPANYE: Kode % sudah mencapai batas pemakaian (% kali)', k.code, k.max_uses
         using errcode = 'P0001';
@@ -147,6 +156,26 @@ drop trigger if exists c05_invoice_campaign_code on public.invoices;
 create trigger c05_invoice_campaign_code before insert or update of campaign_code, voucher_code on public.invoices
   for each row execute function public.guard_campaign_code_use();
 
+-- Authoritative cap check at payment finalization (same transaction as the finalizer).
+create or replace function public.guard_campaign_code_finalize() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare k public.campaign_codes%rowtype;
+begin
+  if new.campaign_code is null or old.payments_finalized_at is not null or new.payments_finalized_at is null then
+    return new;
+  end if;
+  select * into k from public.campaign_codes c where c.code = new.campaign_code for update;
+  if found and k.max_uses is not null and public.campaign_code_used(k.code) >= k.max_uses then
+    raise exception 'KODE_KAMPANYE: Kode % sudah mencapai batas pemakaian (% kali)', k.code, k.max_uses
+      using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_campaign_code_finalize() from public, anon, authenticated, service_role;
+drop trigger if exists c05_sale_campaign_code_finalize on public.sales;
+create trigger c05_sale_campaign_code_finalize before update of payments_finalized_at on public.sales
+  for each row execute function public.guard_campaign_code_finalize();
+
 -- Usage per code for the manager screen (counts only; documents stay under their own RLS).
 create or replace function public.campaign_code_usage()
 returns table(code text, used bigint)
@@ -157,9 +186,7 @@ begin
     raise exception 'Akses ditolak' using errcode = '42501';
   end if;
   return query
-    select c.code::text,
-      (select count(*) from public.sales s where s.campaign_code = c.code and s.voided_at is null)
-      + (select count(*) from public.invoices i where i.campaign_code = c.code and i.voided_at is null)
+    select c.code::text, public.campaign_code_used(c.code)
     from public.campaign_codes c order by c.code;
 end $$;
 revoke all on function public.campaign_code_usage() from public, anon, service_role;

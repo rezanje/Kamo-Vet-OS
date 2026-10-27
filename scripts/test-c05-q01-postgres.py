@@ -108,22 +108,26 @@ alter default privileges in schema public grant all on sequences to authenticate
         sql((tests / name).read_text())
         print(name + ': passed.')
 
-    # Race 1 (C05): cap 1, two cashiers submit the same code at once -> exactly one receipt.
+    # Race 1 (C05): cap 1, two cashiers' receipts with the same code are both written (unfinished
+    # receipts do not use the code) and then paid at the same moment -> exactly one is finalized.
     sql(SEED)
-    a = sale('RACE-A', 'cc000000-0000-4000-8000-000000000001', 'cc200000-0000-4000-8000-000000000001', ', campaign_code, voucher_code', ", 'RACE1', 'RACEV'")
-    b = sale('RACE-B', 'cc000000-0000-4000-8000-000000000002', 'cc200000-0000-4000-8000-000000000002', ', campaign_code, voucher_code', ", 'RACE1', 'RACEV'")
-    first, second = race([a, b])
-    used = sql("select count(*) from public.sales where campaign_code = 'RACE1'", tuples=True).stdout.strip()
+    sql(sale('RACE-A', 'cc000000-0000-4000-8000-000000000001', 'cc200000-0000-4000-8000-000000000001', ', campaign_code, voucher_code', ", 'RACE1', 'RACEV'")
+        + sale('RACE-B', 'cc000000-0000-4000-8000-000000000002', 'cc200000-0000-4000-8000-000000000002', ', campaign_code, voucher_code', ", 'RACE1', 'RACEV'"))
+    pay = "update public.sales set payments_finalized_at = clock_timestamp() where no_struk = '{}';"
+    first, second = race([pay.format('RACE-A'), pay.format('RACE-B')])
+    used = sql("select public.campaign_code_used('RACE1')", tuples=True).stdout.strip()
     if first.returncode or not second.returncode or 'batas pemakaian' not in second.stderr or used != '1':
         raise RuntimeError(f'C05 race failed: used={used} first={first.stderr} second={second.stderr}')
-    print('C05 concurrency: two simultaneous checkouts at cap 1 -> 1 accepted, 1 refused.')
+    print('C05 concurrency: two simultaneous payments at cap 1 -> 1 finalized, 1 refused.')
 
     # Race 2 (Q01): the same new customer paid at two counters at once -> exactly one claim.
-    sql(sale('RACE-Q1', 'cc000000-0000-4000-8000-000000000001', 'cc200000-0000-4000-8000-000000000001')
-        + sale('RACE-Q2', 'cc000000-0000-4000-8000-000000000002', 'cc200000-0000-4000-8000-000000000002'))
+    sql("insert into public.customers (id, name, phone) values ('cc400000-0000-4000-8000-000000000002', 'Race new', '081299990002');"
+        + (sale('RACE-Q1', 'cc000000-0000-4000-8000-000000000001', 'cc200000-0000-4000-8000-000000000001')
+           + sale('RACE-Q2', 'cc000000-0000-4000-8000-000000000002', 'cc200000-0000-4000-8000-000000000002'))
+        .replace('cc400000-0000-4000-8000-000000000001', 'cc400000-0000-4000-8000-000000000002'))
     fin = "update public.sales set payments_finalized_at = clock_timestamp() where no_struk = '{}';"
     first, second = race([fin.format('RACE-Q1'), fin.format('RACE-Q2')])
-    claims = sql("select count(*) from public.quest_new_customer_claims where customer_id = 'cc400000-0000-4000-8000-000000000001'",
+    claims = sql("select count(*) from public.quest_new_customer_claims where customer_id = 'cc400000-0000-4000-8000-000000000002'",
                  tuples=True).stdout.strip()
     if first.returncode or second.returncode or claims != '1':
         raise RuntimeError(f'Q01 race failed: claims={claims} {first.stderr} {second.stderr}')

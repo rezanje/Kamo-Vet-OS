@@ -3,10 +3,12 @@ baseline: 280 earlier migrations applied
 preflight (before): 6 rows ok
 readback: 10 rows ok
 readback after re-apply (idempotent): 10 rows ok
-rollback: both patched functions identical to baseline; new tables/columns removed
+rollback (default): functions identical to baseline; campaign code row kept in campaign_codes_archived_c05q01
 preflight (after rollback): 6 rows ok
+readback (re-apply over archive): 10 rows ok
+rollback (owner flag): functions identical to baseline; new tables/columns dropped
 readback (re-apply): 10 rows ok
 C05 campaign codes: passed
 Q01 new customer quest: passed
-apply.sql sha256 7e60439873e5f5d894ecab2e2c66f1f9ad2780b47ee94792b2653975b20499da
+apply.sql sha256 772d0461da8d0c48eedbeee4b4312e4257bff65359470fd0f27891ac5453f011
 cleanup: temp cluster removed

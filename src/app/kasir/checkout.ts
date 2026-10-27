@@ -504,7 +504,7 @@ export async function checkoutKasir(formData: FormData) {
       }
     }
   } catch (error) {
-    checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
+    checkoutFailure = error instanceof Error ? pesanGagalKampanye(error.message) ?? error.message : "Gagal memproses stok atau rincian transaksi";
     console.error(`[checkout] gagal menyimpan ${noStruk}:`, error);
   }
   if (checkoutFailure) {
@@ -524,7 +524,7 @@ export async function checkoutKasir(formData: FormData) {
     await resumePosCheckout(supabase, user.id, checkout, "cashier", sale.id, replacementId);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
-    redirect(`${failureUrl}${encodeURIComponent(finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
+    redirect(`${failureUrl}${encodeURIComponent(pesanGagalKampanye(finalizationErr?.message) ?? finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
   }
 
   // Saldo/ledger poin disimpan atomik oleh finalizer; golongan mengikuti penjualan selesai.

@@ -6,6 +6,8 @@
 --   * a customer card created before the quest period (day/month of the sale, WIB) is not new,
 --     nor is a card created before the quest itself was set up (protects against bulk imports);
 --   * a duplicate card with the same phone as an older card is not new;
+--   * a card created by the bulk customer import (customers.imported_at) is not new;
+--   * an earlier paid clinic invoice (same card or phone) means the customer is not new;
 --   * a full return without void keeps the claim; a void (cancel_posted_sale) releases it and
 --     the existing staff-effect reversal removes the quest progress, as for every other quest.
 --
@@ -42,6 +44,23 @@ grant execute on function public.quest_customer_phone_key(text) to authenticated
 create index if not exists customers_quest_phone_key_idx
   on public.customers (public.quest_customer_phone_key(phone));
 
+-- Cards created by the bulk import (Pengaturan > Impor) are existing customers, never "new".
+alter table public.customers add column if not exists imported_at timestamptz;
+comment on column public.customers.imported_at is
+  'Q01: set by the bulk customer import; such cards never count as a new customer. Immutable once set.';
+create or replace function public.guard_customer_imported_at() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if old.imported_at is not null and new.imported_at is distinct from old.imported_at then
+    raise exception 'Penanda impor pelanggan tidak boleh diubah' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_customer_imported_at() from public, anon, authenticated, service_role;
+drop trigger if exists q01_customer_imported_at on public.customers;
+create trigger q01_customer_imported_at before update of imported_at on public.customers
+  for each row execute function public.guard_customer_imported_at();
+
 create table if not exists public.quest_new_customer_claims (
   customer_id uuid primary key references public.customers(id) on delete cascade,
   sale_id uuid not null unique references public.sales(id) on delete cascade,
@@ -59,7 +78,7 @@ comment on table public.quest_new_customer_claims is
 
 create or replace function public.quest_claim_new_customer() returns trigger
 language plpgsql security definer set search_path = '' as $$
-declare v_phone text; v_created timestamptz;
+declare v_phone text; v_created timestamptz; v_imported timestamptz;
 begin
   if old.payments_finalized_at is not null or new.payments_finalized_at is null
      or new.channel is not null or not new.quest_effects_tracked
@@ -67,9 +86,9 @@ begin
      or coalesce(new.total, 0) - coalesce(new.merchant_fee_total, 0) <= 0 then
     return null;                                   -- Rp0 receipts never claim
   end if;
-  select public.quest_customer_phone_key(c.phone), c.created_at into v_phone, v_created
+  select public.quest_customer_phone_key(c.phone), c.created_at, c.imported_at into v_phone, v_created, v_imported
     from public.customers c where c.id = new.customer_id;
-  if not found then return null; end if;
+  if not found or v_imported is not null then return null; end if;   -- imported cards are not new
   -- Serialize all claims for one identity (card or phone) inside this transaction.
   perform pg_advisory_xact_lock(hashtextextended('vetos:q01:' || coalesce(v_phone, new.customer_id::text), 0));
   if exists (select 1 from public.quest_new_customer_claims c
@@ -91,6 +110,15 @@ begin
        where p.id <> new.id and p.voided_at is null
          and (p.payments_finalized_at is not null or not p.quest_effects_tracked)
          and coalesce(p.total, 0) - coalesce(p.merchant_fee_total, 0) > 0
+         and (o.id = new.customer_id or (v_phone is not null and public.quest_customer_phone_key(o.phone) = v_phone))) then
+    return null;
+  end if;
+  -- A paid (Lunas/DP), non-void, non-zero clinic invoice for this identity also means not new.
+  if exists (
+       select 1 from public.invoices i
+       join public.visits vi on vi.id = i.visit_id
+       join public.customers o on o.id = vi.customer_id
+       where i.voided_at is null and i.paid_status in ('Lunas', 'DP') and coalesce(i.total, 0) > 0
          and (o.id = new.customer_id or (v_phone is not null and public.quest_customer_phone_key(o.phone) = v_phone))) then
     return null;
   end if;

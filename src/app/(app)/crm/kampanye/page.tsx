@@ -109,7 +109,7 @@ export default async function KodeKampanyePage({
             </div>
           </form>
           <div style={{ fontSize: 10.5, color: "var(--td)", marginTop: 6 }}>
-            Batas pemakaian dihitung per struk/invoice yang memakai kode ini (struk yang dibatalkan tidak dihitung).
+            Batas pemakaian dihitung per struk yang sudah dibayar dan invoice klinik yang memakai kode ini (yang dibatalkan tidak dihitung).
             Kode voucher tujuannya tetap bisa dipakai langsung — buat voucher khusus kampanye bila kodenya tidak boleh bocor.
             Promo tujuan yang tidak &quot;potong otomatis&quot; hanya terpotong bila kode ini diketik.
           </div>

@@ -92,8 +92,14 @@ update public.campaign_codes set max_uses = 99 where code = 'PROMO10';  -- RLS: 
 select pg_temp.ok((select max_uses from public.campaign_codes where code = 'PROMO10') = 2, 'cap unchanged by cashier');
 select pg_temp.rejects($$select * from public.campaign_code_usage()$$, 'Akses ditolak', 'cashier cannot read usage report');
 
--- POS receipts (the checkout inserts the header as the signed-in cashier).
-create function pg_temp.sale(no text, campaign text, voucher text) returns uuid language plpgsql as $$
+-- POS receipts: the checkout inserts the header as the signed-in cashier, then the server
+-- finalizer (database owner) sets payments_finalized_at. Only finalized receipts use a code.
+reset role;
+create function public.test_c05_finalize(p_id uuid) returns void language plpgsql security definer set search_path = '' as $$
+begin update public.sales set payments_finalized_at = clock_timestamp() where id = p_id; end $$;
+grant execute on function public.test_c05_finalize(uuid) to authenticated;
+set local role authenticated;
+create function pg_temp.pending(no text, campaign text, voucher text) returns uuid language plpgsql as $$
 declare id uuid;
 begin
   insert into public.sales (branch_id, customer_id, no_struk, subtotal, total, bayar, cashier_id, shift_id, campaign_code, voucher_code)
@@ -102,7 +108,9 @@ begin
   returning sales.id into id;
   return id;
 end $$;
-grant execute on function pg_temp.sale(text, text, text) to authenticated;
+create function pg_temp.sale(no text, campaign text, voucher text) returns uuid language plpgsql as $$
+declare id uuid := pg_temp.pending(no, campaign, voucher);
+begin perform public.test_c05_finalize(id); return id; end $$;
 
 select pg_temp.rejects($$select pg_temp.sale('C05-MISMATCH', 'PROMO10', 'LAIN5K')$$, 'harus memakai voucher HEMAT10', 'campaign code must carry its own voucher');
 select pg_temp.rejects($$select pg_temp.sale('C05-NOVOUCHER', 'PROMO10', null)$$, 'harus memakai voucher HEMAT10', 'voucher-bound code without voucher is rejected');
@@ -111,6 +119,8 @@ select pg_temp.rejects($$select pg_temp.sale('C05-UNKNOWN', 'TIDAKADA', null)$$,
 select pg_temp.rejects($$select pg_temp.sale('C05-PROMO-V', 'DISKON20', 'HEMAT10')$$, 'tidak bisa digabung', 'promo code cannot carry a voucher');
 select pg_temp.sale('C05-PROMO-1', 'DISKON20', null);
 select pg_temp.sale('C05-USE-1', 'PROMO10', 'HEMAT10');
+-- An unfinished receipt (e.g. a crashed checkout) does not use the code.
+select pg_temp.pending('C05-PENDING', 'PROMO10', 'HEMAT10');
 select pg_temp.rejects($$update public.sales set campaign_code = null where no_struk = 'C05-USE-1'$$, null, 'campaign snapshot is immutable');
 reset role;
 
@@ -136,6 +146,9 @@ select pg_temp.ok(not exists (select 1 from public.invoices where visit_id = 'c5
   'refused clinic checkout left no invoice behind');
 select set_config('request.jwt.claim.sub', 'c5000000-0000-4000-8000-000000000003', true);
 select pg_temp.rejects($$select pg_temp.sale('C05-USE-3', 'PROMO10', 'HEMAT10')$$, 'sudah mencapai batas pemakaian', 'POS respects the cap');
+-- The pending receipt cannot be finalized past the cap either (authoritative check at payment).
+select pg_temp.rejects($$select public.test_c05_finalize((select id from public.sales where no_struk = 'C05-PENDING'))$$,
+  'sudah mencapai batas pemakaian', 'finalizing a pending receipt re-checks the cap');
 -- The underlying voucher itself is not capped by the campaign.
 select pg_temp.sale('C05-PLAIN', null, 'HEMAT10');
 select set_config('request.jwt.claim.sub', 'c5000000-0000-4000-8000-000000000001', true);

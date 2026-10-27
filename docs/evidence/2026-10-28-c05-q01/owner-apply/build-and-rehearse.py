@@ -3,7 +3,8 @@
 native PostgreSQL cluster (no Docker, no database URL, fictional data only):
 
   all earlier repository migrations -> preflight -> apply -> readback -> apply again (idempotent)
-  -> rollback (functions restored byte-for-byte) -> preflight -> apply -> readback -> C05/Q01 SQL suites.
+  -> rollback without flag (data archived) -> preflight -> apply -> rollback with owner flag (dropped)
+  -> apply -> readback -> C05/Q01 SQL suites.
 
 Usage: LC_ALL=en_US.UTF-8 python3 docs/evidence/2026-10-28-c05-q01/owner-apply/build-and-rehearse.py [pg bin dir]
 """
@@ -83,13 +84,29 @@ alter default privileges in schema public grant all on sequences to authenticate
     all_ok('readback', psql((HERE / 'readback.sql').read_text()))
     psql((HERE / 'apply.sql').read_text())
     all_ok('readback after re-apply (idempotent)', psql((HERE / 'readback.sql').read_text()))
+    SEED = ("insert into public.vouchers (id, code, tipe, nilai) values ('{v}', 'RB{n}', 'nominal', 1000);"
+            "insert into public.campaign_codes (code, voucher_id) values ('RBKODE{n}', '{v}');")
+    ARCHIVED = "select count(*) from pg_class where relname = 'campaign_codes_archived_c05q01'"
+    LIVE = "select count(*) from pg_class where relname in ('campaign_codes', 'quest_new_customer_claims')"
+    # Rollback without the owner flag: behaviour removed, data archived (renamed), not dropped.
+    psql(SEED.format(v='0b000000-0000-4000-8000-000000000001', n=1))
     psql((HERE / 'rollback.sql').read_text())
     if psql(FN).strip() != base:
         raise RuntimeError('rollback did not restore patched functions byte-for-byte')
-    if psql("select count(*) from pg_class where relname in ('campaign_codes','quest_new_customer_claims')").strip() != '0':
-        raise RuntimeError('rollback left tables behind')
-    print('rollback: both patched functions identical to baseline; new tables/columns removed')
+    if psql(LIVE).strip() != '0' or psql(ARCHIVED).strip() != '1' \
+            or psql("select count(*) from public.campaign_codes_archived_c05q01").strip() != '1':
+        raise RuntimeError('rollback without flag must archive data-bearing tables: ' + psql(LIVE) + psql(ARCHIVED) + psql("select relname from pg_class where relname like '%archived%'"))
+    print('rollback (default): functions identical to baseline; campaign code row kept in campaign_codes_archived_c05q01')
     all_ok('preflight (after rollback)', psql((HERE / 'preflight.sql').read_text()))
+    psql((HERE / 'apply.sql').read_text())
+    all_ok('readback (re-apply over archive)', psql((HERE / 'readback.sql').read_text()))
+    # Rollback with the explicit owner flag: data-bearing objects are dropped.
+    psql(SEED.format(v='0b000000-0000-4000-8000-000000000002', n=2))
+    psql("select set_config('vetos.rollback_drop_data', 'yes', false);\n" + (HERE / 'rollback.sql').read_text())
+    if psql(FN).strip() != base or psql(LIVE).strip() != '0' \
+            or psql("select count(*) from information_schema.columns where table_schema = 'public' and (table_name, column_name) in (('sales', 'campaign_code'), ('invoices', 'campaign_code'), ('customers', 'imported_at'))").strip() != '0':
+        raise RuntimeError('rollback with flag must drop data-bearing objects')
+    print('rollback (owner flag): functions identical to baseline; new tables/columns dropped')
     psql((HERE / 'apply.sql').read_text())
     all_ok('readback (re-apply)', psql((HERE / 'readback.sql').read_text()))
     for suite in ['c05_campaign_codes.sql', 'q01_new_customer_quest.sql']:

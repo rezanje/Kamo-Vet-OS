@@ -4,9 +4,11 @@ select 'Q01 claim table exists, RLS on, no client grants' as check_name,
   and not has_table_privilege('authenticated', 'public.quest_new_customer_claims', 'SELECT')
   and not has_table_privilege('anon', 'public.quest_new_customer_claims', 'SELECT') as ok
 union all
-select 'Q01 triggers on sales (claim on finalize, release on void)',
-  (select count(*) from pg_trigger where tgrelid = 'public.sales'::regclass
-     and tgname in ('q01_claim_new_customer', 'q01_release_new_customer') and tgenabled = 'O') = 2
+select 'Q01 triggers (claim on finalize, release on void, import mark immutable)',
+  (select count(*) from pg_trigger where tgname in ('q01_claim_new_customer', 'q01_release_new_customer',
+     'q01_customer_imported_at') and tgenabled = 'O') = 3
+  and exists (select 1 from information_schema.columns where table_schema = 'public'
+     and table_name = 'customers' and column_name = 'imported_at')
 union all
 select 'Q01 quest effect function reads claims; ACL unchanged (authenticated only)',
   position('quest_new_customer_claims' in pg_get_functiondef('public.apply_sale_staff_effects(uuid)'::regprocedure)) > 0
@@ -25,12 +27,14 @@ select 'C05 columns on sales and invoices',
   (select count(*) from information_schema.columns where table_schema = 'public'
     and table_name in ('sales', 'invoices') and column_name = 'campaign_code') = 2
 union all
-select 'C05 triggers (use guard on sales/invoices, collision on codes/vouchers)',
+select 'C05 triggers (use guard on sales/invoices, cap re-check at payment, collision on codes/vouchers)',
   (select count(*) from pg_trigger where tgname in ('c05_sale_campaign_code', 'c05_invoice_campaign_code',
-     'c05_campaign_code_collision', 'c05_voucher_code_collision') and tgenabled = 'O') = 4
+     'c05_sale_campaign_code_finalize', 'c05_campaign_code_collision', 'c05_voucher_code_collision') and tgenabled = 'O') = 5
 union all
 select 'C05 trigger functions not callable by clients',
   not has_function_privilege('authenticated', 'public.guard_campaign_code_use()', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.guard_campaign_code_finalize()', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.campaign_code_used(text)', 'EXECUTE')
   and not has_function_privilege('authenticated', 'public.guard_campaign_code_collision()', 'EXECUTE')
 union all
 select 'C05 clinic posting stores campaign_code; ACL unchanged',

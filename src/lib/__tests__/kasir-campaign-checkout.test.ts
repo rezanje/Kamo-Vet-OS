@@ -83,6 +83,13 @@ it("refuses an inactive campaign code before creating a receipt", async () => {
   expect(state.headers).toHaveLength(0);
 });
 
+it("shows the cap message when payment finalization re-checks the cap and refuses", async () => {
+  state.finalizationError = "KODE_KAMPANYE: Kode PROMO10 sudah mencapai batas pemakaian (2 kali)";
+  const outcome = await checkoutKasir(form("PROMO10")).then(() => "unexpected success", error => error.message);
+  expect(decodeURIComponent(outcome)).toContain("error=Kode PROMO10 sudah mencapai batas pemakaian (2 kali)");
+  expect(state.removed).toBe(true);                      // unfinished receipt is cleaned up
+});
+
 it("shows the database cap message when the code is used up", async () => {
   state.saleError = "KODE_KAMPANYE: Kode PROMO10 sudah mencapai batas pemakaian (2 kali)";
   const outcome = await checkoutKasir(form("PROMO10")).then(() => "unexpected success", error => error.message);
