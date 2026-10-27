@@ -84,7 +84,9 @@ it("keeps the prepared batch ID when its saved rows cannot be read back", async 
     expect(fixture.prepare).toHaveBeenCalledOnce();
     expect(result).toMatchObject({ ok: false, run_id: "11111111-1111-4111-8111-111111111111" });
     expect(result.message).toMatch(/batch tersimpan/i);
-    expect(result.message).toMatch(/belum diposting/i);
+    // An identical hash can name an already posted batch, so posting status is not claimed.
+    expect(result.message).toMatch(/status posting belum dapat dipastikan/i);
+    expect(result.message).not.toMatch(/belum diposting/i);
   } finally {
     fixture.recoverError = false;
   }

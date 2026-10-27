@@ -169,12 +169,18 @@ it("latches a double click on Import Sekali into one master save and one stock p
 
 it("keeps a saved but unreadable stock batch reachable after reload without offering posting review", async () => {
   window.history.replaceState(null, "", "/pos/sku/impor");
-  actions.previewSaldoAwalAccurate.mockResolvedValue({ ...prepared, ok: false, branch_id: null, warehouse_id: null, as_of: null,
-    message: "Batch tersimpan, tetapi rinciannya belum dapat dibaca (fiction). Muat ulang halaman untuk membuka batch yang sama; stok dan jurnal belum diposting." });
+  actions.previewSaldoAwalAccurate.mockResolvedValue({ ...prepared, ok: false, branch_id: null, warehouse_id: null, as_of: null, rows: [], source_qty: 0, source_value: 0,
+    message: "Batch tersimpan, tetapi rinciannya belum dapat dibaca (fiction). Status posting belum dapat dipastikan; muat ulang halaman." });
   await check(); await act(async () => button("Import Sekali")!.click());
   expect(window.location.search).toBe("?run_id=fiction-stock");
   expect(reviewLinks()).toHaveLength(0);
   expect(host.querySelector('a[href="/pos/sku/impor?run_id=fiction-stock"]')).not.toBeNull();
-  expect(host.textContent).toContain("belum diposting");
+  const stages = host.querySelector('[aria-label="Status tahap impor"]')!.textContent;
+  expect(stages).toContain("Persiapan saldo: batch tersimpan");
+  expect(stages).toContain("menunggu batch tersimpan terbaca");
+  expect(stages).not.toContain("lanjutkan ke OWNER");
+  expect(stages).toContain("Posting stok + jurnal: belum dapat dipastikan");
   expect(host.textContent).not.toContain("Import selesai");
+  // A saved batch must not be relabelled as "stock not imported" through the master-only path.
+  expect([...host.querySelectorAll("button")].some(node => /stok nanti|saja/i.test(node.textContent ?? ""))).toBe(false);
 });

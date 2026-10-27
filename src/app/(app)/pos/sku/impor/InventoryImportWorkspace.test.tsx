@@ -146,7 +146,10 @@ it("distinguishes a posted batch from a prepared one on recovery", () => {
 it("discloses a failed batch recovery instead of showing a review link", () => {
   const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   act(() => root?.render(<InventoryImportWorkspace batches={[]} masterBatches={[]} masterError={null} initialReceipt={null}
+    recoveredRunId={savedStock.run_id}
     recovered={{ ...savedStock, ok: false, run_id: null, message: "Batch tidak dapat diakses atau belum lengkap." }} />));
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("tidak dapat diakses");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Batch 11111111");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Jangan siapkan ulang");
   expect(host.querySelector('a[href*="persediaan-awal"]')).toBeNull();
 });

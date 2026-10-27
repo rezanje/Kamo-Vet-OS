@@ -140,7 +140,8 @@ export function AccurateImportForm({
   const canSkipInitialStock = canProceedWithMasterOnly({
     masterReady: Boolean(state?.ok && state.run_id),
     stockCheckComplete: oneClickStockState !== null,
-    stockReady: Boolean(oneClickStockState?.ok),
+    // A saved batch, even an unreadable one, must not be relabelled as "stock not imported".
+    stockReady: Boolean(oneClickStockState?.ok || oneClickStockState?.run_id),
   });
   const canCheck = files.length === 1 && !isBusy && !previewReady && !accountingReviewReady && !importComplete;
   const canImportOnce = previewReady && !isBusy;
@@ -340,8 +341,8 @@ export function AccurateImportForm({
       <ol aria-label="Status tahap impor" style={{fontSize:12,lineHeight:1.6}}>
         <li>Master: {state?.phase === "done" && state.ok ? "tersimpan" : state?.ok ? "sudah diperiksa, belum disimpan" : "belum lolos pemeriksaan"}.</li>
         <li>Persiapan saldo: {skipInitialStock ? "tidak diminta" : oneClickStockState?.run_id ? "batch tersimpan" : "belum tersimpan"}.</li>
-        <li>Review akun dan nilai: {oneClickStockState?.run_id ? "lanjutkan ke OWNER di Persediaan Awal" : "menunggu persiapan saldo"}.</li>
-        <li>Posting stok + jurnal: {skipInitialStock ? "tidak diminta pada impor master saja" : oneClickStockState?.phase === "done" ? "bukti batch tersimpan; periksa di Persediaan Awal" : "belum diposting"}.</li>
+        <li>Review akun dan nilai: {oneClickStockState?.ok && oneClickStockState.run_id ? "lanjutkan ke OWNER di Persediaan Awal" : oneClickStockState?.run_id ? "menunggu batch tersimpan terbaca; muat ulang halaman" : "menunggu persiapan saldo"}.</li>
+        <li>Posting stok + jurnal: {skipInitialStock ? "tidak diminta pada impor master saja" : oneClickStockState?.phase === "done" ? "bukti batch tersimpan; periksa di Persediaan Awal" : oneClickStockState && !oneClickStockState.ok && oneClickStockState.run_id ? "belum dapat dipastikan" : "belum diposting"}.</li>
       </ol>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7, marginTop: 12 }}>
         {[

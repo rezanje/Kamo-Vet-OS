@@ -1320,7 +1320,8 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     return {
       ...recovered,
       run_id: String(prepared.data),
-      message: `Batch tersimpan, tetapi rinciannya belum dapat dibaca (${recovered.message}). Muat ulang halaman untuk membuka batch yang sama; stok dan jurnal belum diposting.`,
+      // The same hash may name an already posted batch, so posting status is not asserted here.
+      message: `Batch tersimpan, tetapi rinciannya belum dapat dibaca (${recovered.message}). Status posting belum dapat dipastikan; muat ulang halaman untuk membuka batch yang sama sebelum mengambil tindakan lain.`,
     };
   } catch (error) {
     return initialStockStateError(error instanceof Error ? error.message : "Saldo awal gagal dibaca.");
