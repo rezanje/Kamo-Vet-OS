@@ -261,7 +261,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   const { data: fjData } = await completeReportQuery(supabase
     .from("sales_invoices")
     .select("id, tanggal, dpp, branch_id, created_by, sales_invoice_items(order_item_id, item_id, qty, harga)", { count: "exact" })
-    .neq("status", "batal")
+    .neq("status", "batal").is("opening_batch_id", null)
     .gte("tanggal", awal).lte("tanggal", akhir));
 
   const fakturs = (fjData ?? []) as FakturJualRow[];

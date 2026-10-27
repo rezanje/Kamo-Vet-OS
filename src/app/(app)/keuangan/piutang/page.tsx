@@ -16,6 +16,8 @@ type Row = {
   total: number; dibayar: number; sisa: number; days: number; bucket: AgingBucket;
   /** klinik = tagihan kunjungan (dilunasi di layar ini) · reseller = faktur penjualan B2B. */
   sumber: "klinik" | "reseller";
+  /** Faktur saldo awal impor Accurate (M05): nomor faktur Accurate ada di catatan. */
+  saldoAwal?: string | null;
 };
 
 export default async function PiutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
@@ -38,7 +40,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
       .order("created_at"),
     supabase
       .from("sales_invoices")
-      .select("id, no_faktur, tanggal, total, carried_paid, customers(name)")
+      .select("id, no_faktur, tanggal, total, carried_paid, opening_batch_id, catatan, customers(name)")
       .neq("status", "batal")
       .order("tanggal"),
     supabase.from("sales_receipts").select("invoice_id, jumlah"),
@@ -59,6 +61,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
 
   const barisReseller: Row[] = ((fjs ?? []) as unknown as {
     id: string; no_faktur: string; tanggal: string; total: number; carried_paid: number;
+    opening_batch_id: string | null; catatan: string | null;
     customers: { name: string } | { name: string }[] | null;
   }[])
     .map((f) => {
@@ -70,6 +73,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
         total: Number(f.total), dibayar, sisa: Math.max(0, Number(f.total) - dibayar),
         days: agingDays(f.tanggal, today), bucket: agingBucket(f.tanggal, today),
         sumber: "reseller" as const,
+        saldoAwal: f.opening_batch_id ? (f.catatan ?? "Saldo awal") : null,
       };
     })
     .filter((r) => r.sisa > 0);
@@ -152,8 +156,8 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{r.invoice_no ?? "—"}</td>
-                  <td><span className={`bge ${r.sumber === "reseller" ? "b" : ""}`}>{r.sumber === "reseller" ? "Reseller" : "Klinik"}</span></td>
+                  <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{r.invoice_no ?? "—"}{r.saldoAwal && <div style={{ fontFamily: "inherit", fontSize: 9.5, color: "var(--td)" }}>{r.saldoAwal}</div>}</td>
+                  <td><span className={`bge ${r.sumber === "reseller" ? "b" : ""}`}>{r.saldoAwal ? "Saldo awal" : r.sumber === "reseller" ? "Reseller" : "Klinik"}</span></td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(r.tanggal)}</td>
                   <td style={{ fontSize: 12 }}>{r.customer}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.total)}</td>

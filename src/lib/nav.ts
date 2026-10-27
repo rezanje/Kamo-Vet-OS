@@ -144,6 +144,7 @@ export const TILES: Record<string, Tile[]> = {
     // "Jurnal Berulang" dihapus dari menu (meeting 14 Agustus): layar yang sama
     // sudah berdiri sebagai "Transaksi Berulang" di modul Perusahaan.
     { label: "Saldo Awal", icon: "ti-flag", ...G, href: "/keuangan/saldo-awal" },
+    { label: "Saldo Awal per Faktur", icon: "ti-file-invoice", ...G, nw: true, href: "/keuangan/saldo-awal-faktur" },
     { label: "Tutup Buku", icon: "ti-lock", ...G, href: "/keuangan/tutup-buku" },
     { label: "Sinkronisasi Jurnal", icon: "ti-refresh-dot", ...A, href: "/keuangan/sinkron" },
   ],

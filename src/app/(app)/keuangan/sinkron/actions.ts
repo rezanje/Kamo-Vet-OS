@@ -116,7 +116,8 @@ export async function findDriftLain(supabase: Awaited<ReturnType<typeof createCl
     (refs ?? []).some((r) => r.source === source && r.source_ref === ref);
 
   const [faktur, bayar, gaji, kas, transfer, returJual, returBeli] = await Promise.all([
-    supabase.from("purchase_invoices").select("no_faktur, tanggal, total"),
+    // Faktur saldo awal (M05) dijurnal sekali per batch, bukan per faktur — bukan drift.
+    supabase.from("purchase_invoices").select("no_faktur, tanggal, total").is("opening_batch_id", null),
     supabase.from("purchase_invoice_payments").select("amount, tanggal, journal_id, purchase_invoices(no_faktur)").is("reversal_of", null),
     // Hanya slip yang SUDAH disahkan yang punya jurnal; yang masih draft memang belum.
     supabase.from("payrolls").select("periode, total").eq("status", "final"),

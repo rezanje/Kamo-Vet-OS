@@ -47,7 +47,7 @@ export default async function PenjualPage({
       completeReportQuery(supabase.from("items").select("id, name, unit", { count: "exact" })),
       completeReportQuery(supabase.from("sales_invoices")
         .select("id, no_faktur, tanggal, jatuh_tempo, total, carried_paid, status, created_by, customers(name)", { count: "exact" })
-        .neq("status", "batal").gte("tanggal", awal).lte("tanggal", akhir)),
+        .neq("status", "batal").is("opening_batch_id", null).gte("tanggal", awal).lte("tanggal", akhir)),
       completeReportQuery(supabase.from("sales_receipts").select("id, invoice_id, jumlah", { count: "exact" })),
     ]);
 
