@@ -31,9 +31,11 @@ const categories = [
 const procedure = { ...base, id: "steril", name: "Sintetis Steril", sell_price: 75000, item_type: "Jasa", category_id: "bedah", tindakan_kategori: "Konsultasi" };
 const grooming = { ...base, id: "groom", name: "Sintetis Grooming", item_type: "Jasa", category_id: "grooming", tindakan_kategori: "Konsultasi" };
 const pickup = { ...base, id: "pickup", name: "Sintetis Antar Jemput", item_type: "Jasa", category_id: "delivery", tindakan_kategori: "Konsultasi" };
+const vaccine = { ...base, id: "vaksin", name: "Sintetis Vaksin Stok", sell_price: 235000, item_type: "Persediaan", category_id: "bedah", tindakan_kategori: null, unit: "VIAL",
+  units: [{ unit: "VIAL", factor: 1, sell_price: 235000, buy_price: 150000 }] };
 const gauze = { ...base, id: "gauze", name: "Kasa sintetis", item_type: "Persediaan", category_id: null, unit: "lembar",
   units: [{ unit: "lembar", factor: 1, sell_price: 1000, buy_price: 500 }, { unit: "pak", factor: 10, sell_price: 9000, buy_price: 5000 }] };
-const groups = splitClinicItems([procedure, grooming, pickup, gauze], categories, new Set());
+const groups = splitClinicItems([procedure, vaccine, grooming, pickup, gauze], categories, new Set());
 const common = {
   requestKey: "request", draftUserId: "owner", items: groups.obat, jasaItems: groups.jasa, tindakanItems: groups.tindakan,
   bahanItems: groups.bahan, racikanItems: groups.racikan, katalogRacikan: [], bolehManual: true,
@@ -54,7 +56,7 @@ const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="
 const bmhpEditors = () => host.querySelectorAll('input[aria-label^="Tambah BMHP"], button[aria-label^="Ubah BMHP"]');
 
 it("classifies by category tree, not by service type or name", () => {
-  expect(groups.tindakan.map(item => item.id)).toEqual(["steril"]);
+  expect(groups.tindakan.map(item => item.id)).toEqual(["steril", "vaksin"]);
   expect(groups.jasa.map(item => item.id).sort()).toEqual(["groom", "pickup"]);
 });
 
@@ -110,4 +112,14 @@ it.each(["exam", "inpatient"])("%s keeps BMHP already stored on a service row re
   expect(cart()[0].bmhp).toEqual(saved.snapshot.cart[0].bmhp);
   expect(bmhpEditors()).toHaveLength(0);
   expect(host.textContent).toContain("Kasa sintetis × 2 lembar");
+});
+
+it.each(["exam", "inpatient"])("%s stocked procedure SKU joins the cart as stock without a BMHP composer that could not be saved", async kind => {
+  await render(kind); await tab("Tindakan");
+  await click('button[aria-label="Tambah Sintetis Vaksin Stok"]');
+  expect(host.textContent).not.toContain("Komposisi BMHP tindakan");
+  expect(cart()).toHaveLength(1);
+  expect(cart()[0]).toMatchObject({ item_id: "vaksin", jenis: "obat", satuan: "VIAL", harga: 235000 });
+  expect(cart()[0]).not.toHaveProperty("bmhp");
+  expect(bmhpEditors()).toHaveLength(0);
 });

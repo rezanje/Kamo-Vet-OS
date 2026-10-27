@@ -167,6 +167,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     });
   };
   const selectProcedure = (item: ItemLite) => {
+    // K02 BMHP is stored only on service (Jasa) master lines; a stocked procedure SKU is sold as stock.
+    if (item.item_type !== "Jasa") return addObat(item);
     if (procedureDraft?.item.id === item.id && !procedureDraft.editKey) return;
     procedureCommitted.current = false;
     setProcedureError("");
