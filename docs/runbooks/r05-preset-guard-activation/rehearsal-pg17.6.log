@@ -1,0 +1,83 @@
+PostgreSQL 17.6; guard pre-image md5 2af62273edc72a46899471ccb7c0edfb, post-image md5 a638bdea4dfe40865e312257f3936f56; migration sha256 e2d2ed479561fe75f590794114393fe14771d810b2ccfb410fd98940a4f60b2a
+server 17.6; pre-release fixture: 1:898d97c53c46a75e33ed1a9debe70472
+01 preflight:
+info: server version||17.6|
+history: prerequisite 20261026000345 recorded|1|1|t
+history: 20261027090000 not yet recorded|0|0|t
+guard function present|true|true|t
+guard is not security definer|false|false|t
+guard search_path is empty|true|true|t
+trigger private_report_preset_guard enabled on the guard|1|1|t
+no EXECUTE on guard for anon/authenticated/service_role|false|false|t
+RLS enabled and forced on private_report_presets|true|true|t
+policies on private_report_presets|private_report_presets_owner|private_report_presets_owner|t
+info: current role can count all presets (bypasses RLS)||true|
+info: saved presets (count only)||1|
+info: presets using promo_id or the historical report (0 before first activation)||0|
+guard fingerprint = repository pre-image|2af62273edc72a46899471ccb7c0edfb|2af62273edc72a46899471ccb7c0edfb|t
+anchor: path list occurs once|1|1|t
+anchor: report-specific key clause occurs once|1|1|t
+dry run: patched fingerprint = repository post-image|a638bdea4dfe40865e312257f3936f56|a638bdea4dfe40865e312257f3936f56|t
+SUMMARY|0 failed|0 failed|
+02 apply: ok
+03 readback:
+info: server version||17.6|
+history: 20261027090000 recorded once as private_report_promo_history_presets|1|1|t
+guard function present|true|true|t
+guard is not security definer|false|false|t
+guard search_path is empty|true|true|t
+trigger private_report_preset_guard enabled on the guard|1|1|t
+no EXECUTE on guard for anon/authenticated/service_role|false|false|t
+RLS enabled and forced on private_report_presets|true|true|t
+policies on private_report_presets|private_report_presets_owner|private_report_presets_owner|t
+info: current role can count all presets (bypasses RLS)||true|
+info: saved presets (count only)||1|
+info: presets using promo_id or the historical report (0 before first activation)||0|
+guard fingerprint = repository post-image|a638bdea4dfe40865e312257f3936f56|a638bdea4dfe40865e312257f3936f56|t
+promo_id clause present once|1|1|t
+historical report path present|true|true|t
+SUMMARY|0 failed|0 failed|
+after release activity (A saved 2, edited 1; B saved 1): 4:8f76708f8e4379dda2f63a414d012b67
+02 apply again: refused R05_ACTIVATION_ALREADY_RECORDED, rows unchanged
+04 rollback: ok, rows identical 4:8f76708f8e4379dda2f63a414d012b67
+01 preflight after rollback:
+info: server version||17.6|
+history: prerequisite 20261026000345 recorded|1|1|t
+history: 20261027090000 not yet recorded|0|0|t
+guard function present|true|true|t
+guard is not security definer|false|false|t
+guard search_path is empty|true|true|t
+trigger private_report_preset_guard enabled on the guard|1|1|t
+no EXECUTE on guard for anon/authenticated/service_role|false|false|t
+RLS enabled and forced on private_report_presets|true|true|t
+policies on private_report_presets|private_report_presets_owner|private_report_presets_owner|t
+info: current role can count all presets (bypasses RLS)||true|
+info: saved presets (count only)||4|
+info: presets using promo_id or the historical report (0 before first activation)||4|
+guard fingerprint = repository pre-image|2af62273edc72a46899471ccb7c0edfb|2af62273edc72a46899471ccb7c0edfb|t
+anchor: path list occurs once|1|1|t
+anchor: report-specific key clause occurs once|1|1|t
+dry run: patched fingerprint = repository post-image|a638bdea4dfe40865e312257f3936f56|a638bdea4dfe40865e312257f3936f56|t
+SUMMARY|0 failed|0 failed|
+after rollback: old guard refuses new promo_id saves and edits of post-release rows; A still reads its 3 rows
+02 re-apply: ok
+03 readback:
+info: server version||17.6|
+history: 20261027090000 recorded once as private_report_promo_history_presets|1|1|t
+guard function present|true|true|t
+guard is not security definer|false|false|t
+guard search_path is empty|true|true|t
+trigger private_report_preset_guard enabled on the guard|1|1|t
+no EXECUTE on guard for anon/authenticated/service_role|false|false|t
+RLS enabled and forced on private_report_presets|true|true|t
+policies on private_report_presets|private_report_presets_owner|private_report_presets_owner|t
+info: current role can count all presets (bypasses RLS)||true|
+info: saved presets (count only)||4|
+info: presets using promo_id or the historical report (0 before first activation)||4|
+guard fingerprint = repository post-image|a638bdea4dfe40865e312257f3936f56|a638bdea4dfe40865e312257f3936f56|t
+promo_id clause present once|1|1|t
+historical report path present|true|true|t
+SUMMARY|0 failed|0 failed|
+after re-apply: rows identical before the edit; editing a post-release promo preset works again
+drifted target: preflight reports 2 failed (pre-image and dry-run fingerprints); apply refused R05_ACTIVATION_PREIMAGE_MISMATCH; function and history untouched
+REHEARSAL PASS
