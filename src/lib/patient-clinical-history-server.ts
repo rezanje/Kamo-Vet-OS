@@ -2,7 +2,7 @@ import {createServerClient} from '@supabase/ssr';
 import {cookies} from 'next/headers';
 import {createClient} from './supabase/server';
 import {readCompleteList} from './checked-list';
-import type {ClinicalRecord,ClinicalPrescription,PatientClinicalHistory,PatientClinicalVisit} from './patient-clinical-history';
+import type {ClinicalAddendum,ClinicalRecord,ClinicalPrescription,PatientClinicalHistory,PatientClinicalVisit} from './patient-clinical-history';
 
 type VisitRow=Omit<PatientClinicalVisit,'records'|'branchName'>&{branches:{name:string}|{name:string}[]|null};
 type RecordRow=Omit<ClinicalRecord,'prescriptions'>&{visit_id:string};
@@ -18,10 +18,45 @@ async function patientReadClient(){
  });
 }
 
+type RpcRecord={id:string;created_at:string;diagnosis:string|null;anamnesis:string|null;therapy:string|null;
+ prescriptions?:ClinicalPrescription[]|null;addenda?:ClinicalAddendum[]|null};
+type RpcVisit={id:string;pet_id:string;branch_id:string|null;branch_name:string|null;created_at:string;poli:string;
+ dokter:string|null;keluhan:string|null;can_open:boolean|null;records?:RpcRecord[]|null};
+
+/** K13: cross-branch history for ONE patient id through the checked, read-only
+ * database reader. Returns null only when that reader is not installed yet, so
+ * the branch-scoped reader below keeps working until the owner applies it.
+ */
+async function readViaHistoryRpc(visitId:string,expectedPetId:string):Promise<PatientClinicalHistory|null>{
+ const unavailable:PatientClinicalHistory={available:false,visits:[]};
+ const operational=await createClient();
+ const {data,error}=await operational.rpc('clinic_patient_clinical_history',{p_pet_id:expectedPetId,p_anchor_visit_id:visitId});
+ if(error)return error.code==='PGRST202'||error.code==='42883'?null:unavailable;
+ const payload=data as {pet_id?:string;visits?:RpcVisit[]}|null;
+ if(!payload||payload.pet_id!==expectedPetId||!Array.isArray(payload.visits))return unavailable;
+ // Never mix another patient (same name or not) into this timeline.
+ if(payload.visits.some(v=>v.pet_id!==expectedPetId)||!payload.visits.some(v=>v.id===visitId))return unavailable;
+ return {available:true,visits:payload.visits.map(v=>({
+  id:v.id,pet_id:v.pet_id,branch_id:v.branch_id,branchName:v.branch_name??'Cabang tidak tercatat',
+  created_at:v.created_at,poli:v.poli,dokter:v.dokter,keluhan:v.keluhan,canOpen:v.can_open===true,
+  records:(v.records??[]).map(m=>({id:m.id,created_at:m.created_at,diagnosis:m.diagnosis,anamnesis:m.anamnesis,therapy:m.therapy,
+   prescriptions:m.prescriptions??[],addenda:m.addenda??[]})),
+ }))};
+}
+
 /** The operational visit is authority; caller-supplied pet identity is only a
  * stale-display check. All cross-branch reads stay inside this exact patient.
  */
 export async function readPatientClinicalHistory(visitId:string,expectedPetId:string):Promise<PatientClinicalHistory>{
+ try{
+  const viaRpc=await readViaHistoryRpc(visitId,expectedPetId);
+  if(viaRpc)return viaRpc;
+ }catch{return {available:false,visits:[]};}
+ return readBranchScopedHistory(visitId,expectedPetId);
+}
+
+/** Pre-K13 reader: unchanged branch RLS (only branches granted to the account). */
+async function readBranchScopedHistory(visitId:string,expectedPetId:string):Promise<PatientClinicalHistory>{
  const unavailable:PatientClinicalHistory={available:false,visits:[]};
  try{
   const operational=await createClient();

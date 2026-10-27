@@ -210,6 +210,35 @@ export async function simpanRekamMedis(formData: FormData) {
   return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
 }
 
+/** K01: billed records stay untouched; this only appends a diagnosis/therapy addendum. */
+export async function tambahAdendumRekamMedis(formData: FormData) {
+  const visitId = String(formData.get("visitId") ?? "").trim();
+  const recordId = String(formData.get("medical_record_id") ?? "").trim();
+  const back = `/klinik/rekam-medis/${encodeURIComponent(visitId)}`;
+  const diagnosis = String(formData.get("diagnosis_addendum") ?? "").trim();
+  const therapy = String(formData.get("therapy_addendum") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const requestKey = String(formData.get("draft_key") ?? "").trim();
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(visitId) || !uuid.test(recordId) || !requestKey || requestKey.length > 100
+    || (!diagnosis && !therapy) || diagnosis.length > 4000 || therapy.length > 4000 || reason.length > 1000) {
+    redirect(`${back}?error=${encodeURIComponent("Isi adendum diagnosa atau terapi (maks. 4000 karakter).")}`);
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("clinic_add_record_addendum", {
+    p_visit_id: visitId,
+    p_record_id: recordId,
+    p_diagnosis: diagnosis || null,
+    p_therapy: therapy || null,
+    p_reason: reason || null,
+    p_request_key: requestKey,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicRecordError(error))}`);
+  revalidatePath(back);
+  revalidatePath(`${back}/dokumen`);
+  redirect(`${back}?success=addendum${transactionDraftAck(formData)}`);
+}
+
 // Clinical corrections never call initial submission or accept billing/master fields.
 export async function koreksiRekamMedis(formData: FormData) {
   const visitId = String(formData.get("visitId") ?? "");

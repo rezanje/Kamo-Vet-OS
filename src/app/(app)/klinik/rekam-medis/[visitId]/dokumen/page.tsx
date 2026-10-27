@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
+import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null { return Array.isArray(r) ? (r[0] ?? null) : r; }
@@ -57,6 +58,9 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   const obat = (presc ?? []).filter((p) => p.jenis !== "jasa");
   const jasa = (presc ?? []).filter((p) => p.jenis === "jasa");
 
+  // K01: addenda are part of the clinical record; never print a partial history.
+  const addenda: AddendaLoad = mr ? await loadRecordAddenda(supabase, mr.id) : { state: "ok", rows: [] };
+
   const { data: invoice } = await supabase
     .from("invoices").select("metode_bayar, total, paid_status").eq("visit_id", visitId).is("voided_at", null).maybeSingle();
 
@@ -71,7 +75,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
     <>
       <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <Link href={`/klinik/rekam-medis/${visitId}`} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke rekam medis</Link>
-        <PrintButton label="Cetak Rekam Medis" />
+        {addenda.state === "error" ? <span role="alert">Riwayat adendum belum dapat dimuat; cetak ditahan. Muat ulang.</span> : <PrintButton label="Cetak Rekam Medis" />}
       </div>
 
       <div className="rm-doc" style={{ maxWidth: 900, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", padding: "30px 34px", fontSize: 11.5, color: "#141413" }}>
@@ -219,6 +223,17 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
             <Row label="Status" value={invoice?.paid_status ?? "Belum Lunas"} />
           </div>
         </div>
+
+        {addenda.rows.length > 0 && <section style={{ marginTop: 16, borderTop: `1px solid ${BLUE}`, paddingTop: 12 }}>
+          <SecTitle icon="ti-file-plus" text="ADENDUM DIAGNOSA / TERAPI" />
+          <p>Catatan asli di atas tetap seperti tersimpan; adendum berikut dicatat terpisah.</p>
+          {addenda.rows.map(row => <div key={row.id} style={{ border: ".5px solid var(--bd)", borderRadius: 6, padding: 8, marginTop: 8, breakInside: "avoid" }}>
+            <b>{addendumAuthor(row)}</b> · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
+            {row.diagnosis_addendum && <div>Diagnosa: {row.diagnosis_addendum}</div>}
+            {row.therapy_addendum && <div>Terapi: {row.therapy_addendum}</div>}
+            {row.reason && <div>Alasan: {row.reason}</div>}
+          </div>)}
+        </section>}
 
         {/* ===== Tanda tangan + info ===== */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.3fr", gap: 20, marginTop: 22, alignItems: "end" }}>

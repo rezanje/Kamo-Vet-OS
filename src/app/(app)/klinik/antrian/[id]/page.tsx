@@ -86,7 +86,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
       tindakan: actions[0]?.nama_obat ?? null,
       tindakanCount: actions.length,
       resepCount:prescriptions.length,
-      branchName:v.branchName,records:v.records,readOnly:true,
+      branchName:v.branchName,records:v.records,readOnly:true,canOpen:v.canOpen,
       color: POLI_COLOR[v.poli as string] ?? CYCLE[i % CYCLE.length],
     };
   });
